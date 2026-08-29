@@ -56,6 +56,7 @@ import {
   recipeVerdictReason,
   RECIPE_FORBIDDEN_SLUGS,
 } from './recipe';
+import { isMcpManagedSecretService } from './mcp-oauth';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { str } from './coerce';
 
@@ -398,14 +399,14 @@ const api_tool_list: BuiltinToolDef = {
   readOnly: true,
   name: 'List registered tools',
   description:
-    'List every tool in the registry (builtin, http, shell): slug, kind, enabled, requires_confirm, and a short description. Use api_tool_get for full details of one tool.',
+    'List every tool in the registry (builtin, http, shell, recipe, mcp): slug, kind, enabled, requires_confirm, and a short description. Use api_tool_get for full details of one tool.',
   inputSchema: {
     type: 'object',
     properties: {
       q: { type: 'string', description: 'optional substring filter on slug/name/description' },
       kind: {
         type: 'string',
-        enum: ['builtin', 'http', 'shell'],
+        enum: ['builtin', 'http', 'shell', 'recipe', 'mcp'],
         description: 'optional kind filter',
       },
     },
@@ -853,12 +854,16 @@ const api_key_refs: BuiltinToolDef = {
     return {
       ok: true,
       output: {
-        keys: keys.map((k) => ({
-          service: k.service,
-          label: k.label,
-          masked: k.masked,
-          ref: `{{secret:${k.service}/${k.label}}}`,
-        })),
+        keys: keys
+          // Connector-sealed OAuth state (live tokens under 'mcp-*') is never
+          // a template credential — the dispatcher refuses such refs too.
+          .filter((k) => !isMcpManagedSecretService(k.service))
+          .map((k) => ({
+            service: k.service,
+            label: k.label,
+            masked: k.masked,
+            ref: `{{secret:${k.service}/${k.label}}}`,
+          })),
       },
     };
   },
@@ -1595,6 +1600,17 @@ const tool_group_ensure: BuiltinToolDef = {
       .from(toolGroups)
       .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, slug)))
       .limit(1);
+
+    // MCP connector groups are off-limits to ensure entirely: their SYNC owns
+    // membership (a mode:'replace' here could silently empty a granted
+    // connector), and the mcp- prefix is the connector namespace — creating a
+    // plain group there would squat a future connector's slug.
+    if (existing?.integration?.mcp || (!existing && slug.startsWith('mcp-'))) {
+      return {
+        ok: false,
+        error: `'${slug}' is ${existing ? 'an MCP connector group' : "in the reserved 'mcp-' connector namespace"} — its membership is owned by the connector sync; manage it via Settings → Connectors (or the /api/mcp-connectors API), and pick another slug for a plain bundle`,
+      };
+    }
 
     // Integration binding. Only touched when the call carries one of its fields,
     // so a plain capability-bundle ensure leaves `integration` NULL as before.

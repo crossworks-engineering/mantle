@@ -218,7 +218,7 @@ export function parseRecipeSteps(raw: unknown): { steps: RecipeStep[] } | { erro
   return { steps };
 }
 
-export type RecipeStepVerdict = 'ok' | 'missing' | 'forbidden' | 'shell' | 'confirm';
+export type RecipeStepVerdict = 'ok' | 'missing' | 'forbidden' | 'shell' | 'confirm' | 'mcp';
 
 /** Decide whether a recipe step is allowed to call a given tool. The single
  *  source of truth for the safety envelope, shared by the authoring builtin
@@ -233,6 +233,10 @@ export function classifyRecipeStepTool(opts: {
   if (!opts.exists) return 'missing';
   if (RECIPE_FORBIDDEN_SLUGS.has(opts.slug)) return 'forbidden';
   if (opts.kind === 'shell') return 'shell';
+  // Connector tools stay inside their connector's group. A recipe wrapping
+  // one would be agent-bundleable into ANY group — a quiet route for external
+  // MCP content onto the persona, exactly what tool_group_ensure refuses.
+  if (opts.kind === 'mcp') return 'mcp';
   if (opts.requiresConfirm) return 'confirm';
   return 'ok';
 }
@@ -246,6 +250,8 @@ export function recipeVerdictReason(slug: string, v: RecipeStepVerdict): string 
       return `'${slug}' can't be used in a recipe (terminal/secrets/delegation/tool-authoring are off-limits)`;
     case 'shell':
       return `'${slug}' is a shell tool — recipes can't call shell tools`;
+    case 'mcp':
+      return `'${slug}' is an MCP connector tool — recipes can't call connector tools (grant the connector's own mcp-* group to the agent instead)`;
     case 'confirm':
       return `'${slug}' is confirm-gated — recipes can't call tools that require approval`;
     case 'ok':

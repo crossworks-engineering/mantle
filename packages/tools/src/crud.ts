@@ -64,6 +64,11 @@ export async function createTool(ownerId: string, input: CreateToolInput): Promi
   if (input.handler.kind === 'builtin') {
     throw new Error('cannot register builtin tools via API — they are seeded by the agent');
   }
+  if (input.handler.kind === 'mcp') {
+    throw new Error(
+      "cannot register 'mcp' tools by hand — they are materialised by an MCP connector's sync (create the connector via POST /api/mcp-connectors)",
+    );
+  }
   const [row] = await db
     .insert(tools)
     .values({
@@ -99,6 +104,18 @@ export async function updateTool(
   if (!existing) return null;
   if (existing.handler.kind === 'builtin' && patch.handler && patch.handler.kind !== 'builtin') {
     throw new Error('cannot change a builtin tool to another kind');
+  }
+  // Connector-mirrored rows: enabled/requiresConfirm may toggle, everything
+  // else is the sync's to write — and no other row may be turned INTO one.
+  if (existing.handler.kind === 'mcp' && patch.handler !== undefined) {
+    throw new Error(
+      "connector tools mirror the remote server — edit the connector's binding and re-run its sync instead of patching the handler (enabled/requires_confirm can still toggle)",
+    );
+  }
+  if (existing.handler.kind !== 'mcp' && patch.handler?.kind === 'mcp') {
+    throw new Error(
+      "cannot change a tool into an 'mcp' handler — connector tools are materialised by their connector's sync",
+    );
   }
   if (
     existing.handler.kind === 'builtin' &&
@@ -141,6 +158,11 @@ export async function deleteTool(ownerId: string, id: string): Promise<boolean> 
   if (existing.handler.kind === 'builtin') {
     throw new Error(
       'cannot delete a builtin tool — remove from packages/tools/src/builtins.ts and restart',
+    );
+  }
+  if (existing.handler.kind === 'mcp') {
+    throw new Error(
+      `cannot delete a connector-mirrored tool — it would leave its connector group dangling; delete the whole connector (DELETE /api/mcp-connectors/${existing.handler.group.replace(/^mcp-/, '')}) or let its sync manage the row`,
     );
   }
   const rows = await db

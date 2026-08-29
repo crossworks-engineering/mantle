@@ -402,7 +402,12 @@ function diffExtras(live: LiveConfig, m: ManifestSlices): EntityDiffCore[] {
       name: g.name || g.slug,
       status: 'extra',
       severity: 'low',
-      summary: 'operator-added (not in template)',
+      // Connector groups (`mcp-<slug>`) mirror an external MCP server; their
+      // membership is owned by the connector sync, so an "extra" here is the
+      // feature working, not drift.
+      summary: g.slug.startsWith('mcp-')
+        ? 'MCP connector group (external server mirror; membership owned by its sync)'
+        : 'operator-added (not in template)',
       fields: [],
     });
   }

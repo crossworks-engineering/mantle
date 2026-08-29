@@ -80,10 +80,11 @@ export type McpSyncRowState = Pick<Tool, 'slug' | 'name' | 'description' | 'enab
 export type McpSyncPlan = {
   inserts: Array<Omit<McpSyncRowState, 'enabled'>>;
   /** slug → fields to update (only rows that actually changed). */
-  updates: Array<{ slug: string } & Partial<Omit<McpSyncRowState, 'slug' | 'handler'>>>;
-  /** Rows whose remote tool vanished — disabled, never deleted. */
-  disableSlugs: string[];
-  /** The group's new membership: every remote-present tool, sorted. */
+  updates: Array<{ slug: string } & Partial<Omit<McpSyncRowState, 'slug'>>>;
+  /** Rows whose remote tool vanished — disabled + marked, never deleted. */
+  disables: Array<{ slug: string; handler: McpSyncRowState['handler'] }>;
+  /** The group's new membership: every remote-present, ENABLED tool, sorted.
+   *  Owner-disabled rows are excluded so a grant never lists a dead member. */
   toolSlugs: string[];
 };
 
@@ -93,17 +94,25 @@ export type McpSyncPlan = {
  * holds (new slugs must be unique owner-wide, not just group-wide). Identity
  * is the remote `toolName`, not the slug — a sanitisation change must not fork
  * a second row.
+ *
+ * Disable/re-enable is asymmetric on purpose: the sync marks its own disables
+ * with `handler.vanishedAt` and only auto-re-enables rows carrying that mark.
+ * A row the OWNER disabled has no mark and stays off — the sync must never
+ * win a fight the owner started.
  */
 export function planMcpSync(args: {
   groupSlug: string;
   remote: McpRemoteTool[];
   existing: McpSyncRowState[];
   ownerSlugs: Iterable<string>;
+  /** Timestamp stamped onto vanish markers; injectable for tests. */
+  now?: string;
 }): McpSyncPlan {
   const { groupSlug, remote, existing } = args;
+  const now = args.now ?? new Date().toISOString();
   const byToolName = new Map(existing.map((r) => [r.handler.toolName, r]));
   const taken = new Set(args.ownerSlugs);
-  const plan: McpSyncPlan = { inserts: [], updates: [], disableSlugs: [], toolSlugs: [] };
+  const plan: McpSyncPlan = { inserts: [], updates: [], disables: [], toolSlugs: [] };
   const seen = new Set<string>();
 
   for (const t of remote) {
@@ -113,14 +122,21 @@ export function planMcpSync(args: {
     const inputSchema = cappedSchema(t.inputSchema);
     const row = byToolName.get(t.name);
     if (row) {
-      plan.toolSlugs.push(row.slug);
+      const syncDisabled = !row.enabled && !!row.handler.vanishedAt;
+      const ownerDisabled = !row.enabled && !row.handler.vanishedAt;
       const patch: (typeof plan.updates)[number] = { slug: row.slug };
       if (row.description !== description) patch.description = description;
       if (JSON.stringify(row.inputSchema) !== JSON.stringify(inputSchema)) {
         patch.inputSchema = inputSchema;
       }
-      if (!row.enabled) patch.enabled = true; // reappeared after a vanish
+      if (syncDisabled) {
+        // Reappeared after a vanish WE recorded — restore it.
+        patch.enabled = true;
+        const { vanishedAt: _dropped, ...rest } = row.handler;
+        patch.handler = rest;
+      }
       if (Object.keys(patch).length > 1) plan.updates.push(patch);
+      if (!ownerDisabled) plan.toolSlugs.push(row.slug);
     } else {
       const slug = mcpToolSlug(groupSlug, t.name, taken);
       taken.add(slug);
@@ -136,7 +152,9 @@ export function planMcpSync(args: {
   }
 
   for (const r of existing) {
-    if (!seen.has(r.handler.toolName) && r.enabled) plan.disableSlugs.push(r.slug);
+    if (!seen.has(r.handler.toolName) && r.enabled) {
+      plan.disables.push({ slug: r.slug, handler: { ...r.handler, vanishedAt: now } });
+    }
   }
   plan.toolSlugs.sort();
   return plan;
@@ -223,11 +241,11 @@ export async function syncMcpConnector(ownerId: string, groupSlug: string): Prom
       .set({ ...fields, updatedAt: now })
       .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, slug)));
   }
-  for (const slug of plan.disableSlugs) {
+  for (const d of plan.disables) {
     await db
       .update(tools)
-      .set({ enabled: false, updatedAt: now })
-      .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, slug)));
+      .set({ enabled: false, handler: d.handler, updatedAt: now })
+      .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, d.slug)));
   }
 
   const nextIntegration: ToolGroupIntegration = {
@@ -248,7 +266,7 @@ export async function syncMcpConnector(ownerId: string, groupSlug: string): Prom
     groupSlug,
     added: plan.inserts.length,
     updated: plan.updates.length,
-    disabled: plan.disableSlugs.length,
+    disabled: plan.disables.length,
     toolSlugs: plan.toolSlugs,
     ...(serverInfo ? { serverInfo } : {}),
   };

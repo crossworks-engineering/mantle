@@ -25,6 +25,7 @@ import {
 } from './recipe';
 import { sanitizedEnv } from './sanitized-env';
 import { mcpCallRemoteTool } from './mcp-client';
+import { isMcpManagedSecretService } from './mcp-oauth';
 import { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 
@@ -319,6 +320,13 @@ async function resolveHandlerSecrets(
 ): Promise<{ secrets: Map<string, string> } | { error: string }> {
   const secrets = new Map<string, string>();
   for (const ref of collectSecretRefs(h)) {
+    // The `mcp-` service namespace holds connector-sealed OAuth state (live
+    // bearer tokens, registration secrets). Never resolvable from a template.
+    if (isMcpManagedSecretService(ref.service)) {
+      return {
+        error: `secret '${refKey(ref)}' is connector-managed OAuth state (the 'mcp-' service namespace is reserved) — it cannot be referenced from tool templates; use a key the owner added under Settings → API keys`,
+      };
+    }
     const plaintext = await getApiKey(ownerId, ref.service, ref.label);
     if (plaintext === null) {
       return {

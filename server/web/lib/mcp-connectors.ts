@@ -9,6 +9,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import { db, toolGroups, type ToolGroup, type ToolGroupMcpBinding } from '@mantle/db';
+import { listApiKeys } from '@mantle/api-keys';
 import {
   closeMcpClient,
   KNOWN_MCP_SERVERS,
@@ -21,14 +22,35 @@ import type { ToolGroupDTO } from '@mantle/client-types';
 
 export type McpConnectorSummary = ToolGroupDTO & { grantedTo: string[] };
 
-function toDTO(g: ToolGroup, grantedTo: string[]): McpConnectorSummary {
+/** Services (= connector group slugs) that currently hold sealed OAuth
+ *  tokens. Presence is the truth about "connected": the stored status field
+ *  can go stale if the token row is removed out-of-band. */
+async function oauthTokenServices(ownerId: string): Promise<Set<string>> {
+  const rows = await listApiKeys(ownerId);
+  return new Set(rows.filter((k) => k.label === 'oauth-tokens').map((k) => k.service));
+}
+
+function toDTO(g: ToolGroup, grantedTo: string[], tokenServices: Set<string>): McpConnectorSummary {
+  let integration = g.integration ?? null;
+  const oauth = integration?.mcp?.oauth;
+  // Derive, don't trust: a 'connected' claim without tokens in the vault is a
+  // reconnect waiting to happen — show it as one.
+  if (integration?.mcp && oauth?.status === 'connected' && !tokenServices.has(g.slug)) {
+    integration = {
+      ...integration,
+      mcp: {
+        ...integration.mcp,
+        oauth: { ...oauth, status: 'needs_reconnect', lastError: 'stored tokens are missing' },
+      },
+    };
+  }
   return {
     id: g.id,
     slug: g.slug,
     name: g.name,
     description: g.description,
     toolSlugs: g.toolSlugs ?? [],
-    integration: g.integration ?? null,
+    integration,
     enabled: g.enabled,
     createdAt: g.createdAt.toISOString(),
     updatedAt: g.updatedAt.toISOString(),
@@ -40,14 +62,15 @@ export async function listMcpConnectors(ownerId: string): Promise<{
   connectors: McpConnectorSummary[];
   catalog: Array<KnownMcpServer & { connected: boolean }>;
 }> {
-  const [rows, backrefs] = await Promise.all([
+  const [rows, backrefs, tokenServices] = await Promise.all([
     db.select().from(toolGroups).where(eq(toolGroups.ownerId, ownerId)),
     listToolGroupBackrefs(ownerId),
+    oauthTokenServices(ownerId),
   ]);
   const connectors = rows
     .filter((g) => g.integration?.mcp)
     .sort((a, b) => a.slug.localeCompare(b.slug))
-    .map((g) => toDTO(g, backrefs.get(g.slug) ?? []));
+    .map((g) => toDTO(g, backrefs.get(g.slug) ?? [], tokenServices));
   const have = new Set(connectors.map((c) => c.slug));
   const catalog = KNOWN_MCP_SERVERS.map((s) => ({
     ...s,
@@ -66,8 +89,11 @@ export async function getMcpConnector(
     .where(and(eq(toolGroups.ownerId, ownerId), eq(toolGroups.slug, groupSlug)))
     .limit(1);
   if (!row?.integration?.mcp) return null;
-  const backrefs = await listToolGroupBackrefs(ownerId);
-  return toDTO(row, backrefs.get(row.slug) ?? []);
+  const [backrefs, tokenServices] = await Promise.all([
+    listToolGroupBackrefs(ownerId),
+    oauthTokenServices(ownerId),
+  ]);
+  return toDTO(row, backrefs.get(row.slug) ?? [], tokenServices);
 }
 
 export type UpdateMcpConnectorInput = {
@@ -130,6 +156,9 @@ export async function updateMcpConnector(
     .where(eq(toolGroups.id, row.id))
     .returning();
   if (bindingTouched) await closeMcpClient(ownerId, groupSlug);
-  const backrefs = await listToolGroupBackrefs(ownerId);
-  return { connector: toDTO(updated!, backrefs.get(groupSlug) ?? []) };
+  const [backrefs, tokenServices] = await Promise.all([
+    listToolGroupBackrefs(ownerId),
+    oauthTokenServices(ownerId),
+  ]);
+  return { connector: toDTO(updated!, backrefs.get(groupSlug) ?? [], tokenServices) };
 }

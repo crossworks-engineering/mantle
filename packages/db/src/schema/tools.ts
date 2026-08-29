@@ -59,6 +59,11 @@ export type ToolHandler =
       kind: 'mcp';
       group: string;
       toolName: string;
+      /** Set (with the row disabled) when the SYNC disabled it because the
+       *  remote tool vanished. Its presence is what lets the next sync
+       *  re-enable a returned tool without overriding a disable the OWNER
+       *  made by hand — an owner-disabled row has no marker and stays off. */
+      vanishedAt?: string;
     }
   | {
       /** A composition of existing tools. Steps run in order; each step's

@@ -206,3 +206,4 @@ export {
   type McpOAuthStore,
   type StartMcpOAuthResult,
 } from './mcp-oauth';
+export { isMcpManagedSecretService, MCP_VAULT_SERVICE_PREFIX } from './integration-meta';

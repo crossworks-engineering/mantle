@@ -41,7 +41,7 @@ Every tool call in a turn passes through these stages, in order
    survives is validated (required / type / enum / range / unknown keys).
    Violations produce **teaching errors**: field, expected vs got, the
    recovery move, and a did-you-mean on enum/key near-misses.
-5. **Failure-aware guards**: keyed by *canonical* signature (post-repair
+5. **Failure-aware guards**: keyed by _canonical_ signature (post-repair
    args, sorted keys), so encoding drift can't evade them:
    - the same call failing repeatedly: the error payload teaches from the
      2nd failure; the 6th attempt is blocked (`repeated_failure`);
@@ -54,10 +54,10 @@ Every tool call in a turn passes through these stages, in order
    stage 4 block dispatch here.
 8. **Approval gate**: `requires_confirm` tools are parked in
    `pending_tool_calls` for the operator; the model is told the action is
-   queued, and the outcome ledger reports it as *queued*, never done.
+   queued, and the outcome ledger reports it as _queued_, never done.
 9. **Preconditions** (`packages/tools/src/preconditions.ts`): declarative
    referential checks on the tool def (`{ kind: 'node_exists', param,
-   nodeType, lookup }`): malformed id, missing node, and **wrong node type**
+nodeType, lookup }`): malformed id, missing node, and **wrong node type**
    ("id … is a note, not a page") each get a uniform teaching error before
    the handler runs.
 10. **Handler**: the tool's own logic; its checks remain as backstops.
@@ -65,9 +65,10 @@ Every tool call in a turn passes through these stages, in order
     `[system]`-style bracket markers, code fences, CDATA stripped; 2 KB cap).
     Successful results carrying third-party content are **fenced by
     provenance**: the web builtins by slug, and anything the dispatch layer
-    flagged `untrusted`, every http-kind tool result, and any recipe whose
-    chain ran an http/web step. Fencing happens before the inline/spill
-    decision, so `read_result` pages are fenced too.
+    flagged `untrusted`, every http-kind and every mcp-kind (external MCP
+    connector) tool result, and any recipe whose chain ran an http/web step.
+    Fencing happens before the inline/spill decision, so `read_result` pages
+    are fenced too.
 12. **Ledger**: every call lands in the turn's `ToolCallRecord` list. When a
     turn is ended by budget or iteration cap, the model is handed the
     runtime's own tally ("17 issued, 14 succeeded, 2 FAILED, 1 queued for
@@ -77,11 +78,11 @@ Every tool call in a turn passes through these stages, in order
 
 ## Ops: `MANTLE_TOOL_VALIDATION`
 
-| Mode | Coercion | Violations | Use |
-|---|---|---|---|
-| `off` | none | ignored | escape hatch only |
-| `warn` *(default)* | applied | **telemetry only**: logged, still dispatched | rollout / observation |
-| `enforce` | applied | **block dispatch** with the teaching error | steady state, per box |
+| Mode               | Coercion | Violations                                   | Use                   |
+| ------------------ | -------- | -------------------------------------------- | --------------------- |
+| `off`              | none     | ignored                                      | escape hatch only     |
+| `warn` _(default)_ | applied  | **telemetry only**: logged, still dispatched | rollout / observation |
+| `enforce`          | applied  | **block dispatch** with the teaching error   | steady state, per box |
 
 Rollout playbook: leave the box on `warn` (the default, no env change
 needed), let real traffic accumulate, then read the telemetry in

@@ -58,6 +58,7 @@ const ROUTE_TOPICS: ReadonlyArray<readonly [route: string, topic: string]> = [
   ['/settings/calendar', 'calendar'],
   ['/settings/profile', 'profile'],
   ['/settings/mcp', 'mcp'],
+  ['/settings/connectors', 'connectors'],
   ['/settings/network', 'network'],
   ['/settings/config', 'config'],
   ['/settings/entities', 'entities'],

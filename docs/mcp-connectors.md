@@ -44,14 +44,35 @@ on a cron — cost-safety rule.
   external servers by definition.
 - **Secrets.** The credential resolves at connect time; `scrubSecrets` runs
   over result text AND error messages, so an echoing endpoint can't leak the
-  key to the model.
+  key to the model. The `mcp-` vault namespace (where OAuth state is sealed)
+  is RESERVED: those rows never appear in `api_key_refs` or the keys API, a
+  `{{secret:mcp-…}}` template ref is refused at dispatch, and a binding's
+  `secret_ref` may not point into it — a prompt-injected author cannot ship a
+  connector's live token anywhere.
 - **Grants.** Connector groups are granted to no one by default. The
   generated group description recommends the researcher-firewall pattern
   (no-write specialist), never the persona/team responder. Agents may
   _request_ a grant (`agent_grant_tool_group` — still parked for operator
-  approval) but can never _bundle_ mcp tools into other groups
-  (`tool_group_ensure` refuses; sync owns membership) and can't patch a
-  connector tool's definition (`api_tool_update` refuses).
+  approval) but can never _bundle_ mcp tools into other groups, edit or
+  squat a connector group (`tool_group_ensure` refuses both the `mcp-`
+  namespace and any group carrying the binding), wrap a connector tool in a
+  recipe (the recipe safety envelope refuses — a recipe is bundleable
+  anywhere, which would tunnel external content past the firewall), or
+  patch/delete/hand-create a connector tool row (the crud layer refuses all
+  three; the sync owns the rows).
+- **Ownership boundaries.** The generic tool-group surface cooperates:
+  deleting a connector group through `DELETE /api/tool-groups/[id]`
+  delegates to the connector-aware delete (rows + grants + sealed secrets),
+  and its PATCH refuses `toolSlugs`/binding edits on connector groups.
+  Sync-vs-owner disable is asymmetric: the sync marks its own disables
+  (`handler.vanishedAt`) and only re-enables those — a tool the OWNER
+  disabled stays off and drops out of the group's membership until
+  re-enabled by hand.
+- **Remote schemas.** A tool's `inputSchema` arrives verbatim from the
+  server (capped; oversized ones fall back to an open object). The central
+  arg validator applies its usual JSON-Schema subset to model input; unknown
+  constructs (`$ref`, `anyOf`, …) pass through and the remote server remains
+  the final validator of its own arguments.
 - **Timeouts.** 25 s per call / 15 s connect; the client is a lazy
   per-connector singleton with 5-minute idle teardown and respawn-once
   recovery (`packages/tools/src/mcp-client.ts`). The OPTIONAL standalone GET
@@ -81,7 +102,9 @@ Engine: `packages/tools/src/mcp-oauth.ts`.
   flow, expiry) sits on `integration.mcp.oauth`. The registration JSON,
   tokens, and PKCE verifier are **vault-sealed** under the connector's group
   slug (labels `oauth-client` / `oauth-tokens` / `oauth-verifier`) and never
-  cross the API or reach a model.
+  cross the API or reach a model — the keys screen hides them, the key-test
+  probe refuses them, and the connectors API derives "connected" from actual
+  token presence rather than trusting the stored status.
 - **The flow.** `POST /api/mcp-connectors` with `"oauth": true` (or
   `POST /api/mcp-connectors/<slug>/oauth/start` later) returns an
   `authorizeUrl`. The OWNER opens it in a browser, approves, and the provider

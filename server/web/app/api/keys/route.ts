@@ -3,11 +3,17 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { listApiKeys, setApiKey } from '@/lib/api-keys';
 import { KNOWN_KEY_SERVICES } from '@mantle/api-keys';
+import { isMcpManagedSecretService } from '@mantle/tools';
 
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const keys = await listApiKeys(user.id);
+  // Rows under the reserved 'mcp-' namespace are connector-sealed OAuth state
+  // (tokens, registrations) written by the MCP connector flow, not keys the
+  // owner typed in. They are hidden here — deleting one from the keys screen
+  // would break a connector while it still claims connected; the connector's
+  // own delete purges them.
+  const keys = (await listApiKeys(user.id)).filter((k) => !isMcpManagedSecretService(k.service));
   // Known non-LLM services ride along so the UI can show an empty
   // placeholder row per unconfigured service (discoverability — the user
   // shouldn't need to know the slug to learn the capability exists).

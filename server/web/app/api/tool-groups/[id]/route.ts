@@ -44,6 +44,37 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     );
   }
   const { integration, ...rest } = parsed.data;
+
+  // Connector groups (`integration.mcp` set) are managed by the connectors
+  // API: their sync owns `toolSlugs`, and unbinding/rebinding here would
+  // orphan mirrored tool rows and sealed OAuth state. Name/description/
+  // enabled edits stay allowed. The mcp binding also can't be ATTACHED here —
+  // POST /api/mcp-connectors is the one creation path.
+  const current = await getToolGroup(user.id, idParsed.data.id);
+  if (!current) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  if (current.integration?.mcp && (integration !== undefined || rest.toolSlugs !== undefined)) {
+    return NextResponse.json(
+      {
+        error: `'${current.slug}' is an MCP connector group — its binding and membership are managed via /api/mcp-connectors/${current.slug.replace(/^mcp-/, '')} (Settings → Connectors); only name/description/enabled can change here`,
+      },
+      { status: 400 },
+    );
+  }
+  if (
+    !current.integration?.mcp &&
+    integration &&
+    typeof integration === 'object' &&
+    'mcp' in integration
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          'connectors are created via POST /api/mcp-connectors, not by attaching an mcp binding to an existing group',
+      },
+      { status: 400 },
+    );
+  }
+
   let integrationPatch: Parameters<typeof updateToolGroup>[2]['integration'];
   const warnings: string[] = [];
   if (integration !== undefined) {

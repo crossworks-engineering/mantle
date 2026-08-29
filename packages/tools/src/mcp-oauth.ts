@@ -37,6 +37,8 @@ import { assertFetchableUrl } from './ssrf-guard';
 export const MCP_OAUTH_SECRET_LABELS = ['oauth-client', 'oauth-tokens', 'oauth-verifier'] as const;
 type OAuthSecretLabel = (typeof MCP_OAUTH_SECRET_LABELS)[number];
 
+export { isMcpManagedSecretService, MCP_VAULT_SERVICE_PREFIX } from './integration-meta';
+
 /** Persistence seam: bookkeeping on the binding + sealed secrets. */
 export type McpOAuthStore = {
   groupSlug: string;

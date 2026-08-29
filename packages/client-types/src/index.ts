@@ -75,7 +75,7 @@ export type ToolHandler =
       timeoutMs?: number;
     }
   | { kind: 'shell'; cmd: string }
-  | { kind: 'mcp'; group: string; toolName: string }
+  | { kind: 'mcp'; group: string; toolName: string; vanishedAt?: string }
   | { kind: 'recipe'; steps: RecipeStep[]; output?: unknown };
 
 /** A tool as returned by `GET /api/tools`. */

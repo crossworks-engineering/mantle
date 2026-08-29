@@ -69,7 +69,7 @@ describe('planMcpSync', () => {
     expect(plan.inserts[0]!.slug).toBe('mcp_firecrawl_scrape');
     expect(plan.inserts[0]!.handler).toEqual({ kind: 'mcp', group: GROUP, toolName: 'scrape' });
     expect(plan.toolSlugs).toEqual(['mcp_firecrawl_scrape']);
-    expect(plan.disableSlugs).toEqual([]);
+    expect(plan.disables).toEqual([]);
   });
 
   it('matches by remote toolName, not slug, and only updates changed rows', () => {
@@ -95,27 +95,58 @@ describe('planMcpSync', () => {
     expect(plan.updates).toHaveLength(0);
   });
 
-  it('disables vanished tools (never deletes) and drops them from membership', () => {
+  it('disables vanished tools with a marker (never deletes) and drops them from membership', () => {
     const existing = [row({ toolName: 'scrape' }), row({ toolName: 'extract' })];
     const plan = planMcpSync({
       groupSlug: GROUP,
       remote: [{ name: 'scrape', description: 'd', inputSchema: { type: 'object' } }],
       existing,
       ownerSlugs: existing.map((r) => r.slug),
+      now: 'T1',
     });
-    expect(plan.disableSlugs).toEqual(['mcp_firecrawl_extract']);
+    expect(plan.disables).toEqual([
+      {
+        slug: 'mcp_firecrawl_extract',
+        handler: { kind: 'mcp', group: GROUP, toolName: 'extract', vanishedAt: 'T1' },
+      },
+    ]);
     expect(plan.toolSlugs).toEqual(['mcp_firecrawl_scrape']);
   });
 
-  it('re-enables a tool that reappears after a vanish', () => {
-    const existing = [row({ toolName: 'scrape', enabled: false })];
+  it('re-enables a SYNC-disabled tool that reappears, clearing the marker', () => {
+    const existing = [
+      row({
+        toolName: 'scrape',
+        enabled: false,
+        handler: { kind: 'mcp', group: GROUP, toolName: 'scrape', vanishedAt: 'T0' },
+      }),
+    ];
     const plan = planMcpSync({
       groupSlug: GROUP,
       remote: [{ name: 'scrape', description: 'd', inputSchema: { type: 'object' } }],
       existing,
       ownerSlugs: existing.map((r) => r.slug),
     });
-    expect(plan.updates).toEqual([{ slug: existing[0]!.slug, enabled: true }]);
+    expect(plan.updates).toEqual([
+      {
+        slug: existing[0]!.slug,
+        enabled: true,
+        handler: { kind: 'mcp', group: GROUP, toolName: 'scrape' },
+      },
+    ]);
+    expect(plan.toolSlugs).toEqual([existing[0]!.slug]);
+  });
+
+  it('never re-enables an OWNER-disabled tool, and keeps it out of membership', () => {
+    const existing = [row({ toolName: 'scrape', enabled: false })]; // no vanish marker
+    const plan = planMcpSync({
+      groupSlug: GROUP,
+      remote: [{ name: 'scrape', description: 'd', inputSchema: { type: 'object' } }],
+      existing,
+      ownerSlugs: existing.map((r) => r.slug),
+    });
+    expect(plan.updates).toEqual([]);
+    expect(plan.toolSlugs).toEqual([]);
   });
 
   it('avoids slug collisions with unrelated owner tools', () => {

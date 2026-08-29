@@ -35,4 +35,27 @@ export const ToolHandlerSchema = z.discriminatedUnion('kind', [
     kind: z.literal('shell'),
     cmd: z.string().min(1).max(8000),
   }),
+  // Present so a client echoing a row's handler back doesn't 400 on the
+  // discriminator. Creating/patching INTO these kinds is refused in
+  // @mantle/tools crud (mcp rows belong to their connector's sync).
+  z.object({
+    kind: z.literal('mcp'),
+    group: z.string().min(1).max(120),
+    toolName: z.string().min(1).max(200),
+    vanishedAt: z.string().max(40).optional(),
+  }),
+  z.object({
+    kind: z.literal('recipe'),
+    steps: z
+      .array(
+        z.object({
+          tool: z.string().min(1).max(120),
+          input: z.record(z.string(), z.unknown()).optional(),
+          as: z.string().max(60).optional(),
+        }),
+      )
+      .min(1)
+      .max(20),
+    output: z.unknown().optional(),
+  }),
 ]);

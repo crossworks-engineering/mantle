@@ -42,11 +42,11 @@ nothing surfaces it.
 
 Two orthogonal concerns, cleanly separated:
 
-| Concept        | Answers                                       | Carries                              | Granted to           |
-| -------------- | --------------------------------------------- | ------------------------------------ | -------------------- |
-| **Tool**       | _what an atomic capability is_                | a handler (`builtin`/`http`/`shell`) | , (registry atom)    |
-| **Tool group** | _a named bundle of tools you grant as a unit_ | `tool_slugs[]`                       | agents               |
-| **Skill**      | _how to do something well_                    | `instructions` (prose only)          | agents **+ workers** |
+| Concept        | Answers                                       | Carries                                             | Granted to           |
+| -------------- | --------------------------------------------- | --------------------------------------------------- | -------------------- |
+| **Tool**       | _what an atomic capability is_                | a handler (`builtin`/`http`/`shell`/`recipe`/`mcp`) | , (registry atom)    |
+| **Tool group** | _a named bundle of tools you grant as a unit_ | `tool_slugs[]`                                      | agents               |
+| **Skill**      | _how to do something well_                    | `instructions` (prose only)                         | agents **+ workers** |
 
 - **Tools** stay as the existing first-class [`tools`](../packages/db/src/schema/tools.ts)
   registry + [`/settings/tools`](<../apps/web/app/(app)/settings/tools>) manager.

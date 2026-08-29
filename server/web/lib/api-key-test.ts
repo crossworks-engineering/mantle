@@ -15,6 +15,15 @@ import type { TestApiKeyResult } from '@mantle/client-types';
 export type { TestApiKeyResult };
 
 export async function probeApiKey(keyId: string, service: string): Promise<TestApiKeyResult> {
+  // Connector-sealed OAuth state, not a provider key — nothing to probe.
+  if (service.startsWith('mcp-')) {
+    return {
+      ok: false,
+      message: `'${service}' rows hold MCP connector OAuth state, not a provider key — there is nothing to test here; manage the connector under Settings → Connectors.`,
+      provider: service,
+      adapter: '',
+    };
+  }
   const provider = getProvider(service);
   const providerLabel = provider?.label ?? service;
 
