@@ -54,7 +54,11 @@ on a cron — cost-safety rule.
   connector tool's definition (`api_tool_update` refuses).
 - **Timeouts.** 25 s per call / 15 s connect; the client is a lazy
   per-connector singleton with 5-minute idle teardown and respawn-once
-  recovery (`packages/tools/src/mcp-client.ts`).
+  recovery (`packages/tools/src/mcp-client.ts`). The OPTIONAL standalone GET
+  notification stream gets a 5 s time-to-headers bound: a server that accepts
+  the GET and never answers (DeepWiki does this) would otherwise wedge every
+  queued tool call behind the dead request; timing it out degrades to
+  "server doesn't push", which the spec allows.
 
 ## API (owner-gated)
 
@@ -97,6 +101,8 @@ prose that lands in the generated group description — that's where
 "call this vs the built-ins" judgment lives. The Firecrawl entry marks the
 boundary explicitly: `web_map`/`web_crawl` own crawl-and-ingest;
 the connector is for ad-hoc scrape/search/extract into context.
+The DeepWiki entry (no auth at all — an empty binding is valid) is the
+generality proof: an unrelated third-party server, verified live.
 Pre-known services are **not** auto-provisioned.
 
 ## Firecrawl quick start
@@ -120,4 +126,6 @@ OAuth (no stored key):
 ## Deferred
 
 stdio transports (sandbox infra only, never the web process), MCP
-resources/prompts, the jackdaw `/settings/connectors` screen.
+resources/prompts. The `/settings/connectors` screen lives in the jackdaw
+repo; its nav entry ships here in `@crossworks/share-ui` (nav-items) and
+reaches the client on the next pin bump.

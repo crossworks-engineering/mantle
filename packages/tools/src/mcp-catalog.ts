@@ -47,6 +47,16 @@ export const KNOWN_MCP_SERVERS: readonly KnownMcpServer[] = [
     whenToUse:
       'Use for one-off scrape/search/extract where the page content should land IN the conversation. For crawling a site into durable, searchable brain documentation use the built-in `web_map` / `web_crawl` tools instead — they own the ingest path and return counts, not content.',
   },
+  {
+    slug: 'deepwiki',
+    label: 'DeepWiki MCP',
+    description:
+      'DeepWiki’s free hosted MCP server: ask questions about any public GitHub repository and read its AI-generated docs. No key needed.',
+    url: 'https://mcp.deepwiki.com/mcp',
+    docsUrl: 'https://docs.devin.ai/work-with-devin/deepwiki-mcp',
+    whenToUse:
+      'Use to understand a public GitHub repository — its structure, docs, or how something in it works. For general web questions use the researcher’s `web_search`/`web_fetch` instead; for THIS product’s own code the brain’s indexed docs win.',
+  },
 ];
 
 export function knownMcpServer(slug: string): KnownMcpServer | undefined {

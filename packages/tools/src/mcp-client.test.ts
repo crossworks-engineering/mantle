@@ -120,3 +120,62 @@ describe('mcp-client against an in-process streamable-HTTP server', () => {
     ).rejects.toThrow(/not found in the API-key vault/);
   });
 });
+
+describe('a server whose standalone GET stream hangs (DeepWiki class)', () => {
+  // The optional GET notification stream is accepted but never answered —
+  // found in the wild. The client must bound time-to-headers so queued tool
+  // calls are not wedged behind the dead request.
+  let hangServer: http.Server;
+  let hangBinding: ToolGroupMcpBinding;
+  const openSockets: import('node:net').Socket[] = [];
+
+  beforeAll(async () => {
+    hangServer = http.createServer((req, res) => {
+      void (async () => {
+        if (req.method === 'GET') {
+          // Swallow the request: no response headers, ever.
+          openSockets.push(req.socket);
+          return;
+        }
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        const raw = Buffer.concat(chunks).toString('utf8');
+        const body: unknown = raw ? JSON.parse(raw) : undefined;
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: undefined,
+          enableJsonResponse: true,
+        });
+        await buildRemoteServer().connect(transport);
+        await transport.handleRequest(req, res, body);
+      })().catch(() => {
+        if (!res.headersSent) res.writeHead(500);
+        res.end();
+      });
+    });
+    await new Promise<void>((resolve) => hangServer.listen(0, '127.0.0.1', resolve));
+    const { port } = hangServer.address() as AddressInfo;
+    hangBinding = { url: `http://127.0.0.1:${port}/mcp` };
+  });
+
+  afterAll(async () => {
+    await closeMcpClient(OWNER, 'mcp-hangy');
+    for (const s of openSockets) s.destroy();
+    await new Promise<void>((resolve) => hangServer.close(() => resolve()));
+  });
+
+  it('still lists and calls tools', { timeout: 20_000 }, async () => {
+    const { tools } = await mcpListRemoteTools(OWNER, 'mcp-hangy', {
+      ...hangBinding,
+      secretRef: 'testsvc/default',
+    });
+    expect(tools.map((t) => t.name)).toEqual(['echo']);
+    const res = await mcpCallRemoteTool(
+      OWNER,
+      'mcp-hangy',
+      { ...hangBinding, secretRef: 'testsvc/default' },
+      'echo',
+      { msg: 'through' },
+    );
+    expect(res.isError).toBe(false);
+  });
+});

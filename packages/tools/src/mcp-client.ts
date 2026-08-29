@@ -72,6 +72,15 @@ export function setMcpOAuthStoreFactoryForTests(f: typeof dbMcpOAuthStore): void
   oauthStoreFactory = f;
 }
 
+/** Time-to-HEADERS bound on the standalone GET notification stream. The
+ *  stream itself may (and should) stay open forever — only the headers must
+ *  arrive promptly. Found in the wild: DeepWiki accepts the GET socket and
+ *  never answers, and the hung request wedges subsequent POSTs queued on the
+ *  same origin — every tool call then times out. The stream is OPTIONAL per
+ *  the MCP spec, so timing it out degrades to "server doesn't push", which
+ *  is exactly right. */
+const SSE_GET_HEADERS_TIMEOUT_MS = 5_000;
+
 /** SSRF-guarded fetch: every request URL is re-checked (the transport may
  *  follow the server's session redirects/resumption URLs) and redirects are
  *  refused outright — an external MCP endpoint has no business redirecting,
@@ -80,7 +89,32 @@ const guardedFetch: typeof fetch = async (input, init) => {
   const url =
     typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
   await assertFetchableUrl(url);
-  return fetch(input, { ...init, redirect: 'error' });
+
+  const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+  const accept =
+    new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).get(
+      'accept',
+    ) ?? '';
+  const isSseGet = method === 'GET' && accept.includes('text/event-stream');
+  if (!isSseGet) return fetch(input, { ...init, redirect: 'error' });
+
+  // Headers-only timeout: abort while waiting for headers, never after — the
+  // timer is cleared the moment the response resolves, so a healthy SSE
+  // stream lives indefinitely. The transport's own signal still cancels the
+  // stream via the forwarding listener.
+  const ctrl = new AbortController();
+  const timer = setTimeout(
+    () => ctrl.abort(new Error('SSE stream headers not received in time')),
+    SSE_GET_HEADERS_TIMEOUT_MS,
+  );
+  const upstream = init?.signal;
+  if (upstream?.aborted) ctrl.abort(upstream.reason);
+  else upstream?.addEventListener('abort', () => ctrl.abort(upstream.reason), { once: true });
+  try {
+    return await fetch(input, { ...init, redirect: 'error', signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 async function resolveAuth(
