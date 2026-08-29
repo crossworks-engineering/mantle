@@ -254,9 +254,9 @@ provably stale, never a number someone typed once.
 | 📐 &nbsp;TypeScript (excl. tests) | **187,539** lines in 1,174 files |
 | 🧪 &nbsp;Test suite | **3,618+** cases declared in 319 files |
 | ⚖️ &nbsp;Test weight | 51,895 lines — 1 for every 3.6 of source |
-| 🗂️ &nbsp;Tracked files | 2,367 |
+| 🗂️ &nbsp;Tracked files | 2,368 |
 | 🐘 &nbsp;SQL migrations | 155, replayed in order on every boot |
-| 📚 &nbsp;Docs | 123 engineering docs, 79 user-guide pages, 224 changelog entries (56,636 lines) |
+| 📚 &nbsp;Docs | 123 engineering docs, 79 user-guide pages, 224 changelog entries (56,952 lines) |
 | 🐳 &nbsp;Compose services | 26 (core + opt-in profiles) |
 
 **What a fresh brain ships with** — declared once in the [system manifest](./server/web/lib/system-manifest/), checked by CI and by a live integrity audit.
@@ -270,10 +270,10 @@ provably stale, never a number someone typed once.
 | 💾 &nbsp;Datastores | **1** (Postgres — vectors, graph, FTS, queues, realtime, auth) |
 | 🧊 &nbsp;Idle footprint | ~2.5 GB RAM, whole stack |
 
-**Velocity** — v0.232.76, 2,776 commits and 238 releases since 2026-05-14 (108 days, ~25.7 commits/day).
+**Velocity** — v0.232.77, 2,778 commits and 238 releases since 2026-05-14 (108 days, ~25.7 commits/day).
 
 ```
-commits/week, last 16 weeks   ▁▆▇▇▂▁▆▆▃▅▅█▆▄▄▂   peak 333
+commits/week, last 16 weeks   ▁▇▇▇▂▁▇▆▃▅▅█▆▄▄▂   peak 332
 ```
 
 ```mermaid
