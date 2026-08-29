@@ -10,7 +10,7 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { db, tools, type Tool, type ToolHandler } from '@mantle/db';
+import { db, toolGroups, tools, type Tool, type ToolHandler } from '@mantle/db';
 import { getApiKey } from '@mantle/api-keys';
 import { getBuiltin, getBuiltinHandler } from './registry';
 import { checkToolPreconditions } from './preconditions';
@@ -24,6 +24,7 @@ import {
   type RecipeScope,
 } from './recipe';
 import { sanitizedEnv } from './sanitized-env';
+import { mcpCallRemoteTool } from './mcp-client';
 import { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 
@@ -89,7 +90,81 @@ export async function dispatchTool(
   if (h.kind === 'recipe') {
     return dispatchRecipe(h, input, ctx, depth);
   }
+  if (h.kind === 'mcp') {
+    return dispatchMcp(h, input, ctx);
+  }
   return { ok: false, error: `unknown handler kind` };
+}
+
+/** Text cap on an MCP result before the normal inline/spill machinery —
+ *  matches web_fetch's MAX_TEXT_CAP; the same class of egress. */
+const MCP_RESULT_TEXT_CAP = 80_000;
+
+/**
+ * Run a connector tool against its external MCP server. The connector config
+ * lives on the group's `integration.mcp` (resolved per call so a config edit
+ * takes effect immediately); the client manager caches the connection. Every
+ * result is third-party authored → capped, secret-scrubbed, `untrusted`.
+ */
+async function dispatchMcp(
+  h: Extract<ToolHandler, { kind: 'mcp' }>,
+  input: Record<string, unknown>,
+  ctx: ToolHandlerContext,
+): Promise<ToolHandlerResult> {
+  const [group] = await db
+    .select()
+    .from(toolGroups)
+    .where(and(eq(toolGroups.ownerId, ctx.ownerId), eq(toolGroups.slug, h.group)))
+    .limit(1);
+  const mcp = group?.integration?.mcp;
+  if (!group || !mcp) {
+    return {
+      ok: false,
+      error: `MCP connector group '${h.group}' no longer exists or lost its server binding — recreate the connector (or re-run its sync) before calling this tool`,
+    };
+  }
+  if (!group.enabled) {
+    return {
+      ok: false,
+      error: `MCP connector '${h.group}' is disabled — ask the owner to enable it under Settings → Tool groups`,
+    };
+  }
+  try {
+    const res = await mcpCallRemoteTool(ctx.ownerId, h.group, mcp, h.toolName, input);
+    const scrub = (s: string) => scrubSecrets(s, res.secrets);
+    let text = scrub(res.text);
+    const truncated = text.length > MCP_RESULT_TEXT_CAP;
+    if (truncated) text = text.slice(0, MCP_RESULT_TEXT_CAP);
+    ctx.step?.setMeta({
+      mcp_group: h.group,
+      mcp_tool: h.toolName,
+      length: res.text.length,
+      ...(truncated ? { truncated: true } : {}),
+    });
+    if (res.isError) {
+      return { ok: false, error: `remote MCP tool '${h.toolName}' failed: ${text.slice(0, 2000)}` };
+    }
+    // Prefer the server's structured result (scrubbed via its JSON text) and
+    // fall back to text, JSON-parsed when possible — mirrors dispatchHttp.
+    let output: unknown;
+    if (res.structured !== undefined) {
+      try {
+        output = JSON.parse(scrub(JSON.stringify(res.structured)).slice(0, MCP_RESULT_TEXT_CAP));
+      } catch {
+        output = text;
+      }
+    } else {
+      try {
+        output = JSON.parse(text);
+      } catch {
+        output = truncated ? `${text}\n[truncated at ${MCP_RESULT_TEXT_CAP} chars]` : text;
+      }
+    }
+    return { ok: true, output, untrusted: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg.slice(0, 2000) };
+  }
 }
 
 /**

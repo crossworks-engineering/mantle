@@ -50,6 +50,17 @@ export type ToolHandler =
     }
   | { kind: 'shell'; cmd: string }
   | {
+      /** A tool served by an EXTERNAL MCP server. `group` names the connector's
+       *  tool group, whose `integration.mcp` binding holds the endpoint + auth;
+       *  `toolName` is the remote server's own tool name (the row's slug is the
+       *  namespaced `mcp_<connector>_<tool>` form). Rows of this kind are
+       *  materialised and pruned by the connector sync (@mantle/tools
+       *  mcp-sync.ts), never authored by hand. */
+      kind: 'mcp';
+      group: string;
+      toolName: string;
+    }
+  | {
       /** A composition of existing tools. Steps run in order; each step's
        *  output is addressable by later steps (`$0`, `$name.path`). The
        *  recipe's output is `output` (resolved like a step input) when set,

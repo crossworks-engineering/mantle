@@ -75,6 +75,7 @@ export type ToolHandler =
       timeoutMs?: number;
     }
   | { kind: 'shell'; cmd: string }
+  | { kind: 'mcp'; group: string; toolName: string }
   | { kind: 'recipe'; steps: RecipeStep[]; output?: unknown };
 
 /** A tool as returned by `GET /api/tools`. */
@@ -121,6 +122,18 @@ export interface ToolGroupIntegrationDTO {
   docsUpdatedAt?: string;
   /** Slug of the usage skill that travels with this group's grant. */
   skillSlug?: string;
+  /** Set when the group is an MCP CONNECTOR — a mirror of an external MCP
+   *  server's tools. `secretRef` is a `service/label` vault pointer; the
+   *  sync-bookkeeping fields are written by the connector sync. */
+  mcp?: {
+    url: string;
+    secretRef?: string;
+    authHeader?: string;
+    authScheme?: string;
+    lastSyncAt?: string;
+    toolCount?: number;
+    serverInfo?: { name?: string; version?: string };
+  };
 }
 
 /** A tool group — a named bundle of tool slugs granted to agents wholesale. */

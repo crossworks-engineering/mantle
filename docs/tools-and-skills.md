@@ -30,8 +30,8 @@ consumed by [`assistant.ts`](../apps/web/lib/assistant.ts) and
 [`invoke-agent.ts`](../packages/agent-runtime/src/invoke-agent.ts).
 
 This is a **split-brain**. To answer "why can this agent edit pages?" you check
-two places. It directly contradicts Studio's governing principle, *no hidden
-prompts, make composition visible*. A concrete leak it produces today: the
+two places. It directly contradicts Studio's governing principle, _no hidden
+prompts, make composition visible_. A concrete leak it produces today: the
 `assistant` persona's `rich_writing` skill bundles the full `PAGE_TOOLS`
 including `page_delete`, which the assistant deny-set
 ([`builtins.ts` `ASSISTANT_TOOL_DENY`](../packages/tools/src/builtins.ts))
@@ -42,19 +42,19 @@ nothing surfaces it.
 
 Two orthogonal concerns, cleanly separated:
 
-| Concept | Answers | Carries | Granted to |
-|---|---|---|---|
-| **Tool** | *what an atomic capability is* | a handler (`builtin`/`http`/`shell`) |, (registry atom) |
-| **Tool group** | *a named bundle of tools you grant as a unit* | `tool_slugs[]` | agents |
-| **Skill** | *how to do something well* | `instructions` (prose only) | agents **+ workers** |
+| Concept        | Answers                                       | Carries                              | Granted to           |
+| -------------- | --------------------------------------------- | ------------------------------------ | -------------------- |
+| **Tool**       | _what an atomic capability is_                | a handler (`builtin`/`http`/`shell`) | , (registry atom)    |
+| **Tool group** | _a named bundle of tools you grant as a unit_ | `tool_slugs[]`                       | agents               |
+| **Skill**      | _how to do something well_                    | `instructions` (prose only)          | agents **+ workers** |
 
 - **Tools** stay as the existing first-class [`tools`](../packages/db/src/schema/tools.ts)
-  registry + [`/settings/tools`](../apps/web/app/(app)/settings/tools) manager.
-- **Tool groups** are NEW, named bundles (e.g. *Pages toolkit*, *Calendar*,
-  *Memory core*) an owner grants to an agent in one move. They are capability-only
+  registry + [`/settings/tools`](<../apps/web/app/(app)/settings/tools>) manager.
+- **Tool groups** are NEW, named bundles (e.g. _Pages toolkit_, _Calendar_,
+  _Memory core_) an owner grants to an agent in one move. They are capability-only
   in the sense that matters: they carry **no instructions of their own and no
   behaviour**. (Since API integration groups they may carry static integration
-  *configuration* and REFERENCE one skill, see
+  _configuration_ and REFERENCE one skill, see
   [Integration groups](#integration-groups-a-group-that-is-an-api) below.)
 - **Skills lose `tool_slugs` entirely** and become pure teaching, the prose layer
   Studio already versions. A skill never confers a capability; it only shapes how
@@ -73,12 +73,13 @@ Two orthogonal concerns, cleanly separated:
 
 **Reused as-is:** the `tools` table, `/settings/tools`, the manifest spine,
 `checkSystemIntegrity`, the Studio graph read model. (`agent.tool_slugs` was
-reused as the direct/escape-hatch grant *through P5*, then **dropped in P6**,
+reused as the direct/escape-hatch grant _through P5_, then **dropped in P6**,
 groups are now the sole grant.)
 
 **New:**
+
 - `tool_groups` table, `{ id, ownerId, slug, name, description, toolSlugs[],
-  enabled, createdAt, updatedAt }`. Owner-scoped, mirrors the `skills`/`tools`
+enabled, createdAt, updatedAt }`. Owner-scoped, mirrors the `skills`/`tools`
   shape. (No nesting: a group is a flat list of tool slugs; groups don't contain
   groups.)
 - `agents.tool_group_slugs text[]`, the bundles granted to this agent.
@@ -92,14 +93,16 @@ granted directly by the fire path, so nothing was lost.)
 ### Effective-tools resolution
 
 > **Final (P6).** Groups are the sole grant:
+>
 > ```
 > effectiveToolSlugs(agent) = expand(agent.tool_group_slugs → group.tool_slugs)
 >                             (+ heartbeat_* injected per-turn when a heartbeat is active)
 > ```
+>
 > No skill arm (removed P4) and no direct `agent.tool_slugs` arm (the column was
 > dropped in P6, migration `0083`).
 
-Through P3–P5 the formula *additionally* unioned `agent.tool_slugs` as a migration
+Through P3–P5 the formula _additionally_ unioned `agent.tool_slugs` as a migration
 cushion + one-off escape hatch (Saskia kept her flat grant on day one; the persona
 carried `page_delete`). **P6 removed that arm** so the source of truth is
 undivided, the escape-hatch cases became dedicated groups (e.g. `page-admin`,
@@ -113,27 +116,27 @@ The seed taxonomy is pre-drawn: the `*_TOOLS` arrays in
 [`packages/tools/src`](../packages/tools/src) ARE the bundles. Each becomes a
 `MANIFEST_TOOL_GROUPS` entry:
 
-| Group slug | Source array | Notes |
-|---|---|---|
-| `memory-core` | the loose head of `BUILTIN_TOOLS` | `search_nodes`, `search_chunks`, `node_read`, `tree_list`, entity/graph reads, the read primitives every responder needs |
-| `files` | `file_*` + `folder_*` | source-file read/list/get |
-| `notes` | `NOTE_TOOLS` | |
-| `events` | `EVENT_TOOLS` | calendar CRUD |
-| `tasks` | `TASK_TOOLS` | |
-| `pages` | `PAGE_TOOLS` | authoring subset (no `page_delete`), decision 3; delete rides the escape hatch where intended |
-| `tables` | `TABLE_TOOLS` | |
-| `spreadsheets` | `SHEET_TOOLS` | `sheet_build` — compose a formatted .xlsx as the deliverable, as opposed to a table the user keeps querying |
-| `contacts` | `CONTACT_TOOLS` | the email gate ([contacts.md](contacts.md)) |
-| `journal` | `JOURNAL_TOOLS` | identity |
-| `recall` | `RECALL_TOOLS` | `find_window`, `replay_window` |
-| `research` | `RESEARCH_TOOLS` | `web_search` |
-| `email` | `EMAIL_TOOLS` | send/list/get |
-| `persona` | `PERSONA_TOOLS` | `update_persona` |
-| `media-workers` | `WORKER_DELEGATION_TOOLS` | TTS/vision/summarize/image |
-| `delegation` | `invoke_agent` | |
-| `terminal` | `TERMINAL_TOOLS` | `run_terminal`, coder only |
-| `tool-results` | `TOOL_RESULT_TOOLS` | `read_result`, always offered by the loop anyway |
-| `federation` | `PEER_TOOLS` | opt-in |
+| Group slug      | Source array                      | Notes                                                                                                                    |
+| --------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `memory-core`   | the loose head of `BUILTIN_TOOLS` | `search_nodes`, `search_chunks`, `node_read`, `tree_list`, entity/graph reads, the read primitives every responder needs |
+| `files`         | `file_*` + `folder_*`             | source-file read/list/get                                                                                                |
+| `notes`         | `NOTE_TOOLS`                      |                                                                                                                          |
+| `events`        | `EVENT_TOOLS`                     | calendar CRUD                                                                                                            |
+| `tasks`         | `TASK_TOOLS`                      |                                                                                                                          |
+| `pages`         | `PAGE_TOOLS`                      | authoring subset (no `page_delete`), decision 3; delete rides the escape hatch where intended                            |
+| `tables`        | `TABLE_TOOLS`                     |                                                                                                                          |
+| `spreadsheets`  | `SHEET_TOOLS`                     | `sheet_build` — compose a formatted .xlsx as the deliverable, as opposed to a table the user keeps querying              |
+| `contacts`      | `CONTACT_TOOLS`                   | the email gate ([contacts.md](contacts.md))                                                                              |
+| `journal`       | `JOURNAL_TOOLS`                   | identity                                                                                                                 |
+| `recall`        | `RECALL_TOOLS`                    | `find_window`, `replay_window`                                                                                           |
+| `research`      | `RESEARCH_TOOLS`                  | `web_search`                                                                                                             |
+| `email`         | `EMAIL_TOOLS`                     | send/list/get                                                                                                            |
+| `persona`       | `PERSONA_TOOLS`                   | `update_persona`                                                                                                         |
+| `media-workers` | `WORKER_DELEGATION_TOOLS`         | TTS/vision/summarize/image                                                                                               |
+| `delegation`    | `invoke_agent`                    |                                                                                                                          |
+| `terminal`      | `TERMINAL_TOOLS`                  | `run_terminal`, coder only                                                                                               |
+| `tool-results`  | `TOOL_RESULT_TOOLS`               | `read_result`, always offered by the loop anyway                                                                         |
+| `federation`    | `PEER_TOOLS`                      | opt-in                                                                                                                   |
 
 `DEFAULT_ASSISTANT_TOOL_SLUGS` is then re-expressible as a set of these groups
 (everything minus terminal/federation/the specialist-delegated bits), but that
@@ -146,12 +149,13 @@ unchanged unless explicitly noted. The runtime already unions, which is what
 makes the cutover a no-op.
 
 ### Phase 0: Introduce the substrate (additive, dormant): ✅ SHIPPED
+
 - ✅ Migration `0080_tool_groups`: `tool_groups` table + `agents.tool_group_slugs`
   (default `{}`). Drizzle schema: `packages/db/src/schema/tool-groups.ts`.
 - ✅ Manifest: `MANIFEST_TOOL_GROUPS` (19 groups mirroring the `*_TOOLS` clusters)
-  + `KNOWN_TOOL_GROUP_SLUGS` + `ManifestAgent.toolGroupSlugs?`. `applyManifest`
-  seeds group rows (gap-fill/overwrite, like skills) and wires the agent grant,
-  every agent's grant is `[]` today, so the system is unchanged at runtime.
+  - `KNOWN_TOOL_GROUP_SLUGS` + `ManifestAgent.toolGroupSlugs?`. `applyManifest`
+    seeds group rows (gap-fill/overwrite, like skills) and wires the agent grant,
+    every agent's grant is `[]` today, so the system is unchanged at runtime.
 - ✅ Drift-test (`manifest.test.ts`): groups bundle only known tools, unique +
   non-empty; agents reference only known groups. Integrity (`integrity.ts`):
   `group-tools` (every group seeded + tools resolve) + `dangling-groups` (agent
@@ -160,11 +164,12 @@ makes the cutover a no-op.
   groups into the effective set is the Phase 3 step.
 
 ### Phase 1: Collapse the skill arm (behavior-identical): ✅ SHIPPED
+
 - ✅ Migration `0081_collapse_skill_tools`: for the three agent-capability skills
   (`page_editing`, `rich_writing`, `table_authoring`), UNION each one's tools onto
   every attached agent's `tool_slugs`, then empty those skills' `tool_slugs`.
   Scoped to those three slugs only.
-- ✅ Manifest: those skills now carry `toolSlugs: []` (drift-test enforces *every*
+- ✅ Manifest: those skills now carry `toolSlugs: []` (drift-test enforces _every_
   manifest skill is tool-free); the agents that relied on them list the tools
   directly, the `pages` agent gains the full page set, and the persona keeps
   `page_delete` via a new `extraToolSlugs` escape hatch (decision 1). Onboarding
@@ -173,8 +178,8 @@ makes the cutover a no-op.
   "drop the skill arm," but the same union is used by heartbeats
   ([`heartbeats/fire.ts`](../packages/heartbeats/src/fire.ts)) to confer a
   heartbeat's bound-skill tools (e.g. `profile_interview`). Ripping it out would
-  break those. Instead the *agent* skills are drained (so they add nothing to the
-  union) while *heartbeat* skills keep theirs, a separate mechanism. The
+  break those. Instead the _agent_ skills are drained (so they add nothing to the
+  union) while _heartbeat_ skills keep theirs, a separate mechanism. The
   invariant "agent/manifest skills are pure teaching" is enforced at the manifest
   (drift-test), not by deleting the union.
 - **Net effect: identical effective sets**: verified on dev by diffing every
@@ -182,6 +187,7 @@ makes the cutover a no-op.
   Skills are now pure teaching prose.
 
 ### Phase 2: Tools manager + Studio nodes ("no hidden tool grants"): ✅ SHIPPED
+
 - ✅ Tool-group CRUD: `lib/tool-groups.ts` + `app/api/tool-groups/[…]` + a
   dedicated **`/settings/tool-groups`** page (create bundle, pick member tools via
   the shared `ToolPicker`, enable/disable, slug immutable). Delete strips the slug
@@ -196,12 +202,13 @@ makes the cutover a no-op.
   instead of a (now-always-zero) tool count. Group nodes appear in an agent's
   subgraph only when granted, so today (no grants) the canvas is unchanged; it
   lights up in P3.
-- *Scope note:* individual per-tool nodes (`agent → tool`) were **not** added,
+- _Scope note:_ individual per-tool nodes (`agent → tool`) were **not** added,
   68 tool nodes per agent would bury the graph. Direct grants stay summarised as
   the agent's tool count; groups are the visible unit. The agent inspector already
   lists the count.
 
 ### Phase 3: Break up the god-grant: ✅ SHIPPED
+
 - ✅ **Runtime (P3a):** `effectiveToolSlugs` gained a third arm, granted-group
   tools, resolved via `resolveAgentToolGroups` at all four call sites (web
   assistant, agent process, heartbeats, delegation). Dormant until grants exist.
@@ -215,14 +222,15 @@ makes the cutover a no-op.
   pre-P3 brain. Applied to dev, Saskia went **70 flat tools → 26 direct + 11
   groups**; every agent verified behavior-identical by diffing its full effective
   set (direct ∪ skill ∪ group tools) before vs. after (zero diff).
-- *Residuals are legitimate:* a group is granted only when the agent holds **all**
+- _Residuals are legitimate:_ a group is granted only when the agent holds **all**
   its tools, so an incomplete cluster stays direct, alongside true one-offs
   (`page_delete`, `secret_create`, …). Operators refine further in the Studio /
   Tools-manager UIs (P2).
 
 ### Phase 4: Drop the dead column: ✅ SHIPPED
+
 - ✅ Migration `0082_drop_skills_tool_slugs`: `ALTER TABLE skills DROP COLUMN
-  tool_slugs`. The gate was clear; the only remaining user was the heartbeat fire
+tool_slugs`. The gate was clear; the only remaining user was the heartbeat fire
   path, and the sole heartbeat skill (`profile_interview`) carried only
   `heartbeat_update_state` / `heartbeat_complete`, which `fire.ts` already grants
   unconditionally via `HEARTBEAT_CONTROL_TOOLS`. So the column conferred nothing.
@@ -235,12 +243,14 @@ makes the cutover a no-op.
   skills still load. 105 tests green.
 
 ### Phase 5: Make it durable + the editor: ✅ SHIPPED
+
 Two surfaces still spoke the pre-group language, so the decomposition didn't
-*stick* and the agent editor told the old story.
+_stick_ and the agent editor told the old story.
+
 - ✅ **Group/auto-grant alignment:** the `contacts` and `journal` groups are now
   the no-delete subsets (= `CONTACT`/`JOURNAL_AUTO_GRANT_SLUGS`), matching the
   pages/tables authoring-subset pattern (decision 3). `*_delete` rides the escape
-  hatch. This lets an auto-granted conversational agent qualify for the *whole*
+  hatch. This lets an auto-granted conversational agent qualify for the _whole_
   group instead of carrying ~9 tools flat forever.
 - ✅ **Group-native self-heal:** `ensureCoreToolsOnConversationalAgents` (runs at
   agent boot) is now coverage-aware; it skips any core tool already conferred by
@@ -302,7 +312,7 @@ agent editor, the Tools manager, and the Studio graph all draw it the same way.
 
 ## Phase 6: groups as the sole tool-grant (✅ SHIPPED)
 
-**Goal (met):** tool groups are the *only* way to grant a tool. `agent.tool_slugs`
+**Goal (met):** tool groups are the _only_ way to grant a tool. `agent.tool_slugs`
 and the agent editor's "Direct tools · advanced" section are gone; skills are
 teaching, groups are capability, one source of truth, end to end.
 
@@ -334,19 +344,19 @@ Shipped in two commits (approach A, coarse groups, specialists expand):
   Effective-tools readout remain); the integrity checker + Studio compute the
   effective set from groups; and the dead `deriveGroupGrants` /
   `resolveManifestToolSlugs` / `DEFAULT_ASSISTANT_TOOL_SLUGS` / `ASSISTANT_TOOL_DENY`
-  + the reexpress CLI are removed.
+  - the reexpress CLI are removed.
 
 - ✅ **P6c** (audit follow-up, [docs/audit-brief-tools-skills.md](audit-brief-tools-skills.md)):
   three fixes from the independent audit.
   - **Floor sufficiency (R5).** `CORE_AUTO_GRANT_GROUP_SLUGS` gained `memory-core`
-    + `delegation`. The old 7-group floor conferred neither `search_*` nor
-    `invoke_agent`, so a self-healed-only persona (a *new* operator persona, since
-    operator personas aren't manifest-seeded) couldn't ground answers and failed
-    the integrity persona check ("missing invoke_agent, cannot delegate"). The
-    floor is now the functional minimum; the richer generalist groups stay opt-in
-    / manifest-seeded so a locked-down responder isn't over-granted. The decision
-    logic moved to `apps/agent/src/core-tools.ts` (`computeFloorGroupAdditions`)
-    and is unit-tested (`core-tools.test.ts`).
+    - `delegation`. The old 7-group floor conferred neither `search_*` nor
+      `invoke_agent`, so a self-healed-only persona (a _new_ operator persona, since
+      operator personas aren't manifest-seeded) couldn't ground answers and failed
+      the integrity persona check ("missing invoke_agent, cannot delegate"). The
+      floor is now the functional minimum; the richer generalist groups stay opt-in
+      / manifest-seeded so a locked-down responder isn't over-granted. The decision
+      logic moved to `apps/agent/src/core-tools.ts` (`computeFloorGroupAdditions`)
+      and is unit-tested (`core-tools.test.ts`).
   - **Web heartbeat dispatch (R8).** `apps/web/lib/assistant.ts` now calls
     `registerHeartbeatTools()` at module load (beside `registerAgentInvoker`). The
     web responder runs its tool loop in-process and injects the continuity tools
@@ -366,15 +376,15 @@ Shipped in two commits (approach A, coarse groups, specialists expand):
     (the runtime + self-heal floor drop it silently, previously the check read
     the row but never its `enabled` flag, and dangling-groups only fires for a
     group an agent grants) and validates **custom (operator-created) groups'**
-    member tools resolve, not just the manifest ones. A disabled *custom* group is
+    member tools resolve, not just the manifest ones. A disabled _custom_ group is
     left alone (parking is operator discretion; a disabled granted group is caught
     by dangling-groups).
   - **Housekeeping (N1/N2/N3).** Migration `0085` drops the dead legacy
     `agents.tools` jsonb column (the pre-P6 free-form MCP name array; its CRUD-lib
-    + API plumbing went with it). Group descriptions for `pages`/`tables` reworded
-    to say block/row/column deletes ARE in the authoring set, only the
-    whole-object delete is isolated to `*-admin`. The stray ungrouped `test-tool`
-    row was removed from dev, so every enabled tool now lives in ≥1 group.
+    - API plumbing went with it). Group descriptions for `pages`/`tables` reworded
+      to say block/row/column deletes ARE in the authoring set, only the
+      whole-object delete is isolated to `*-admin`. The stray ungrouped `test-tool`
+      row was removed from dev, so every enabled tool now lives in ≥1 group.
 
 The original design brief is preserved at
 **[docs/handover-tools-skills-p6.md](handover-tools-skills-p6.md)** (historical).
@@ -388,17 +398,17 @@ migration `0137`) that turns it from a grant bundle into a whole API integration
 {
   "service": "openweathermap",
   "baseUrl": "https://api.openweathermap.org/data/2.5",
-  "secretRef": "openweathermap/default",          // service/label — never a plaintext
+  "secretRef": "openweathermap/default", // service/label — never a plaintext
   "authTemplate": { "query": { "appid": "{{secret:openweathermap/default}}" } },
-  "docsNodeId": "…",                              // files/api-docs/<group-slug>.md
-  "skillSlug": "api-weather-tools"                // the usage skill
+  "docsNodeId": "…", // files/api-docs/<group-slug>.md
+  "skillSlug": "api-weather-tools", // the usage skill
 }
 ```
 
 Two things about this are worth stating plainly against the capability-only rule:
 
 1. **Configuration is not behaviour.** A base URL, a vault pointer and an auth
-   placement are static data the *authoring* path reads, `api_tool_create` folds
+   placement are static data the _authoring_ path reads, `api_tool_create` folds
    them into the stored handler at authoring time (see
    [toolsmith.md](toolsmith.md)). No instruction reaches a model from them, and
    the dispatcher is untouched.
@@ -411,12 +421,12 @@ Two things about this are worth stating plainly against the capability-only rule
    ```
 
    resolved in `resolveAgentSkills` (`@mantle/agent-runtime`), agent's own first,
-   deduped, capped at 32 (loudly). Grant `weather-tools` and the agent both *can*
-   call the weather tools and *knows how*, no second attach step to forget.
+   deduped, capped at 32 (loudly). Grant `weather-tools` and the agent both _can_
+   call the weather tools and _knows how_, no second attach step to forget.
 
    **The context cost is the reason these stay short.** A group skill ships in the
    system prompt of every granted agent on every turn. `api_skill_set` enforces a
-   hard character cap and warns past ~320 words; the *reference* stays in the docs
+   hard character cap and warns past ~320 words; the _reference_ stays in the docs
    file, which is read on demand via `api_docs_get`.
 
 Manifest groups leave `integration` NULL, so nothing above changes a
@@ -427,9 +437,23 @@ extras. `api_skill_set` can only write the skill of the integration it names, an
 refuses a row it doesn't already own, so an agent cannot reach a persona or
 product skill.
 
+## MCP connector groups: a group that IS an external MCP server
+
+The second `integration` binding: `integration.mcp` marks a group as an **MCP
+connector** — a mirror of an external MCP server's tools, each an ordinary
+`tools` row with `handler.kind === 'mcp'` (slug `mcp_<connector>_<tool>`,
+group slug `mcp-<connector>`). Membership is owned by the connector **sync**,
+not by authoring: `tool_group_ensure` refuses to bundle mcp tools elsewhere,
+`api_tool_update` refuses to patch their definitions, and
+`agent_grant_tool_group` can grant a connector group (parked for operator
+approval like any agent-initiated grant). Every result comes back
+`untrusted` and fenced; connector groups are granted to nobody by default —
+give them to a no-write specialist (researcher pattern). Full detail:
+[`mcp-connectors.md`](./mcp-connectors.md).
+
 ## House style: the owner's prose layer (v0.214.0)
 
-Skills teach *how to do something well*; they ship with the product and speak
+Skills teach _how to do something well_; they ship with the product and speak
 with the product's voice. What they cannot carry is the **owner's own taste**,
 "never use em dashes", "don't say 'delve'", without either editing a manifest
 skill (permanent drift against `/settings/config`) or authoring and attaching a
@@ -443,11 +467,11 @@ shipped writing guidance by recency.
 
 ### Why not the existing layers
 
-| Layer | Authored by | Reaches | Misses |
-|---|---|---|---|
-| Skill (`chat_writing`, `rich_writing`…) | product (manifest) or owner | the agents it's attached to | every agent it isn't; editing manifest skills = permanent config drift |
+| Layer                                         | Authored by                  | Reaches                                        | Misses                                                                                                                                                                                                                                   |
+| --------------------------------------------- | ---------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Skill (`chat_writing`, `rich_writing`…)       | product (manifest) or owner  | the agents it's attached to                    | every agent it isn't; editing manifest skills = permanent config drift                                                                                                                                                                   |
 | Persona note (`update_persona`, kind `style`) | the agent, from conversation | the responder turn only (`renderPersonaBlock`) | **delegated specialists**: `invoke-agent` composes a child's prompt from its own `skillSlugs` and never sees the parent's notes. A style note on the assistant never reached Pages or Tables, precisely the agents that author documents |
-| **House style** | owner, as a setting | **every composition path** (below) |, |
+| **House style**                               | owner, as a setting          | **every composition path** (below)             | ,                                                                                                                                                                                                                                        |
 
 ### Reach
 
@@ -467,7 +491,7 @@ hidden prompt Studio exists to prevent.
   actually sets a style. Pinned by test in `skills.test.ts` and (per call
   site) `assemble-turn.test.ts`.
 - **Verbatim carve-out.** The block instructs that it governs prose the agent
-  *authors*, never quoted text, retrieved content, code, or a document being
+  _authors_, never quoted text, retrieved content, code, or a document being
   reproduced or edited verbatim, an agent "fixing" source material to satisfy
   a style preference is a correctness bug, not a style fix.
 - **Capped** at `HOUSE_STYLE_MAX` (2000 chars, ~500 tokens): it rides in the

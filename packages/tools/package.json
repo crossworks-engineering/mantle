@@ -30,6 +30,7 @@
     "@mantle/tracing": "workspace:*",
     "@mantle/voice": "workspace:*",
     "@mantle/voice-client": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@openrouter/sdk": "^1.2.7",
     "drizzle-orm": "^0.45.2",
     "firecrawl": "^4.35.0"

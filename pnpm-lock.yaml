@@ -800,6 +800,9 @@ importers:
       '@mantle/voice-client':
         specifier: workspace:*
         version: link:../voice-client
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.4.3)
       '@openrouter/sdk':
         specifier: ^1.2.7
         version: 1.2.7

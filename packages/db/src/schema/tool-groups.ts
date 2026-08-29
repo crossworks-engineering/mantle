@@ -22,6 +22,34 @@ import {
  * already use — a plaintext secret never lands here. Validation +
  * accessors live in @mantle/tools (`integration.ts`).
  */
+/**
+ * The binding that makes a group an MCP CONNECTOR: the streamable-HTTP endpoint
+ * of an external MCP server whose tools are mirrored into this group as
+ * `handler.kind === 'mcp'` rows by the connector sync. The connector and the
+ * group are strictly 1:1 — no separate connectors table (same reasoning as the
+ * API-integration binding above it).
+ *
+ * `secretRef` is a `service/label` pointer into `api_keys`, resolved only at
+ * connect time; a plaintext credential never lands here. The sync-bookkeeping
+ * fields (`lastSyncAt`, `toolCount`, `serverInfo`) are written by the sync,
+ * not by hand.
+ */
+export type ToolGroupMcpBinding = {
+  /** Streamable-HTTP endpoint, e.g. 'https://mcp.firecrawl.dev/v2/mcp'. */
+  url: string;
+  /** `service/label` pointer into the api_keys vault — never a plaintext. */
+  secretRef?: string;
+  /** Header the credential is sent in. Default 'Authorization'. */
+  authHeader?: string;
+  /** Prefix before the credential in the header value. Default 'Bearer '.
+   *  An empty string sends the credential bare. */
+  authScheme?: string;
+  /** Set by the connector sync. */
+  lastSyncAt?: string;
+  toolCount?: number;
+  serverInfo?: { name?: string; version?: string };
+};
+
 export type ToolGroupIntegration = {
   /** Vendor/service key, e.g. 'openweathermap'. */
   service: string;
@@ -48,6 +76,8 @@ export type ToolGroupIntegration = {
   /** Where the stored docs came from (URL) + when they were captured. */
   docsSourceUrl?: string;
   docsUpdatedAt?: string;
+  /** Set when this group is an MCP connector; absent on every other group. */
+  mcp?: ToolGroupMcpBinding;
 };
 
 /**

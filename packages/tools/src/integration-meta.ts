@@ -15,9 +15,9 @@
  * carries no ref.
  */
 
-import type { ToolGroupIntegration } from '@mantle/db';
+import type { ToolGroupIntegration, ToolGroupMcpBinding } from '@mantle/db';
 
-export type { ToolGroupIntegration };
+export type { ToolGroupIntegration, ToolGroupMcpBinding };
 
 /** `service/label`, matching the api_keys column charset + the ref pattern in
  *  http-template.ts (kept in sync by `integration-meta.test.ts`). */
@@ -194,6 +194,13 @@ export function parseIntegrationMeta(raw: unknown): ParsedIntegration | Integrat
     value.skillSlug = skillSlug;
   }
 
+  const mcpRaw = r.mcp;
+  if (mcpRaw !== undefined && mcpRaw !== null) {
+    const parsedMcp = parseMcpBinding(mcpRaw);
+    if (!parsedMcp.ok) return parsedMcp;
+    value.mcp = parsedMcp.value;
+  }
+
   const sourceUrlRaw = pick('docsSourceUrl', 'docs_source_url');
   if (sourceUrlRaw !== undefined && sourceUrlRaw !== null && String(sourceUrlRaw).trim() !== '') {
     value.docsSourceUrl = String(sourceUrlRaw).trim().slice(0, 2000);
@@ -222,6 +229,108 @@ export function parseIntegrationMeta(raw: unknown): ParsedIntegration | Integrat
   }
 
   return { ok: true, value, warnings };
+}
+
+const AUTH_HEADER_RE = /^[A-Za-z0-9-]{1,64}$/;
+const MAX_AUTH_SCHEME_CHARS = 20;
+
+/**
+ * Validate + normalise the `integration.mcp` connector binding. Accepts camel
+ * and snake case, unwraps a full `{{secret:svc/label}}` handed as `secret_ref`,
+ * and carries the sync-bookkeeping fields (`lastSyncAt`, `toolCount`,
+ * `serverInfo`) through so a validated round-trip of a DB row doesn't drop
+ * the connector's sync state.
+ */
+export function parseMcpBinding(
+  raw: unknown,
+): { ok: true; value: ToolGroupMcpBinding } | IntegrationParseError {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {
+      ok: false,
+      error:
+        'integration.mcp must be an object like { url, secret_ref?, auth_header?, auth_scheme? }',
+    };
+  }
+  const r = raw as Record<string, unknown>;
+  const pick = (camel: string, snake: string): unknown => r[camel] ?? r[snake];
+
+  const url = String(r.url ?? '').trim();
+  if (!HTTP_URL_RE.test(url)) {
+    return {
+      ok: false,
+      error: `integration.mcp.url '${url}' must be the server's streamable-HTTP endpoint, starting with http(s):// and containing no spaces — e.g. https://mcp.firecrawl.dev/v2/mcp`,
+    };
+  }
+  const value: ToolGroupMcpBinding = { url };
+
+  const secretRefRaw = pick('secretRef', 'secret_ref');
+  if (secretRefRaw !== undefined && secretRefRaw !== null && String(secretRefRaw).trim() !== '') {
+    const secretRef = String(secretRefRaw)
+      .trim()
+      .replace(/^\{\{\s*secret:/i, '')
+      .replace(/\s*\}\}$/, '')
+      .trim();
+    if (!SECRET_REF_RE.test(secretRef)) {
+      return {
+        ok: false,
+        error: `integration.mcp.secret_ref '${secretRef}' must be 'service/label' (list the real ones with api_key_refs; the key itself is added by the owner under Settings → API keys)`,
+      };
+    }
+    value.secretRef = secretRef;
+  }
+
+  const authHeaderRaw = pick('authHeader', 'auth_header');
+  if (
+    authHeaderRaw !== undefined &&
+    authHeaderRaw !== null &&
+    String(authHeaderRaw).trim() !== ''
+  ) {
+    const authHeader = String(authHeaderRaw).trim();
+    if (!AUTH_HEADER_RE.test(authHeader)) {
+      return {
+        ok: false,
+        error: `integration.mcp.auth_header '${authHeader}' must be a plain header name (letters/digits/dash) — e.g. Authorization or X-API-Key`,
+      };
+    }
+    value.authHeader = authHeader;
+  }
+
+  const authSchemeRaw = pick('authScheme', 'auth_scheme');
+  if (authSchemeRaw !== undefined && authSchemeRaw !== null) {
+    const authScheme = String(authSchemeRaw);
+    if (authScheme.length > MAX_AUTH_SCHEME_CHARS || HAS_SECRET_REF.test(authScheme)) {
+      return {
+        ok: false,
+        error: `integration.mcp.auth_scheme must be a short prefix like 'Bearer ' (or '' to send the credential bare) — the credential itself stays in the vault as secret_ref`,
+      };
+    }
+    value.authScheme = authScheme;
+  }
+
+  // Sync bookkeeping — written by the connector sync; validated lightly so a
+  // round-trip of a stored row preserves it without letting junk grow.
+  const lastSyncRaw = pick('lastSyncAt', 'last_sync_at');
+  if (lastSyncRaw !== undefined && lastSyncRaw !== null && String(lastSyncRaw).trim() !== '') {
+    value.lastSyncAt = String(lastSyncRaw).trim().slice(0, 40);
+  }
+  const toolCountRaw = pick('toolCount', 'tool_count');
+  if (toolCountRaw !== undefined && toolCountRaw !== null) {
+    const n = Number(toolCountRaw);
+    if (Number.isInteger(n) && n >= 0) value.toolCount = n;
+  }
+  const serverInfoRaw = pick('serverInfo', 'server_info');
+  if (serverInfoRaw && typeof serverInfoRaw === 'object' && !Array.isArray(serverInfoRaw)) {
+    const si = serverInfoRaw as Record<string, unknown>;
+    const serverInfo: NonNullable<ToolGroupMcpBinding['serverInfo']> = {};
+    if (typeof si.name === 'string' && si.name.trim())
+      serverInfo.name = si.name.trim().slice(0, 200);
+    if (typeof si.version === 'string' && si.version.trim()) {
+      serverInfo.version = si.version.trim().slice(0, 60);
+    }
+    if (Object.keys(serverInfo).length > 0) value.serverInfo = serverInfo;
+  }
+
+  return { ok: true, value };
 }
 
 /** Naming convention for an integration's usage skill — one skill per group, so

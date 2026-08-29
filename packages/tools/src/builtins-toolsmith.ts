@@ -282,6 +282,7 @@ function summarizeHandler(h: ToolHandler): Record<string, unknown> {
     };
   }
   if (h.kind === 'builtin') return { kind: 'builtin', ref: h.ref };
+  if (h.kind === 'mcp') return { kind: 'mcp', group: h.group, toolName: h.toolName };
   if (h.kind === 'recipe') {
     return {
       kind: 'recipe',
@@ -718,6 +719,13 @@ const api_tool_update: BuiltinToolDef = {
           ok: false,
           error:
             "recipe tools aren't patched in place — api_tool_delete and recipe_tool_create a new one (enabled/requires_confirm can still toggle here)",
+        };
+      }
+      if (existing.kind === 'mcp') {
+        return {
+          ok: false,
+          error:
+            "mcp connector tools mirror the remote server — edit the connector's binding and re-run its sync instead of patching the tool (enabled/requires_confirm can still toggle here)",
         };
       }
       if (input.name !== undefined) patch.name = str(input.name).trim();
@@ -1566,13 +1574,15 @@ const tool_group_ensure: BuiltinToolDef = {
     // Hard stop: agents may only bundle agent-grantable tools (http + recipe).
     // A shell/builtin slug (e.g. the unrestricted `run_terminal`) would let a
     // later grant escalate an agent past the authoring boundary — refuse, don't warn.
+    // `mcp` connector tools are also refused here: their connector group's sync
+    // owns membership, so they never get bundled into a second group.
     const nonGrantable = requested.filter(
       (s) => kindBySlug.has(s) && !AGENT_GRANTABLE_KINDS.has(kindBySlug.get(s)!),
     );
     if (nonGrantable.length > 0) {
       return {
         ok: false,
-        error: `tool groups may only contain http or recipe tools; refused: ${nonGrantable.join(', ')}`,
+        error: `tool groups may only contain http or recipe tools (mcp connector tools stay in their own connector group); refused: ${nonGrantable.join(', ')}`,
       };
     }
 
@@ -1755,17 +1765,24 @@ const agent_grant_tool_group: BuiltinToolDef = {
 
     // Re-check at grant time: a slug bundled while unknown may since have
     // resolved to a human-authored shell/builtin tool. Agents may only hand
-    // out http capabilities, so refuse to grant a group that holds anything else.
+    // out http capabilities, so refuse to grant a group that holds anything
+    // else. `mcp` connector tools are grantable — a connector group is a
+    // normal capability bundle (and agent-initiated grants still park below
+    // for operator approval) — they just can't be BUNDLED (see
+    // tool_group_ensure's guard: sync owns connector-group membership).
     const kindBySlug = new Map(
       (await listToolsForOwner(ctx.ownerId)).map((t) => [t.slug, t.handler.kind] as const),
     );
     const nonGrantable = (group.toolSlugs ?? []).filter(
-      (s) => kindBySlug.has(s) && !AGENT_GRANTABLE_KINDS.has(kindBySlug.get(s)!),
+      (s) =>
+        kindBySlug.has(s) &&
+        !AGENT_GRANTABLE_KINDS.has(kindBySlug.get(s)!) &&
+        kindBySlug.get(s) !== 'mcp',
     );
     if (nonGrantable.length > 0) {
       return {
         ok: false,
-        error: `group '${groupSlug}' contains non-grantable tools (${nonGrantable.join(', ')}) — agents can only grant http/recipe tool groups`,
+        error: `group '${groupSlug}' contains non-grantable tools (${nonGrantable.join(', ')}) — agents can only grant http/recipe/mcp tool groups`,
       };
     }
     const current = agent.groups ?? [];

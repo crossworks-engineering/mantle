@@ -168,3 +168,29 @@ export {
   type DepthCheckResult,
   type AllowlistCheckResult,
 } from './invoke-agent-guards';
+
+export { KNOWN_MCP_SERVERS, knownMcpServer, type KnownMcpServer } from './mcp-catalog';
+export {
+  closeMcpClient,
+  MCP_CALL_TIMEOUT_MS,
+  mcpCallRemoteTool,
+  mcpListRemoteTools,
+  type McpCallOutcome,
+  type McpRemoteTool,
+} from './mcp-client';
+export {
+  createMcpConnector,
+  deleteMcpConnector,
+  MCP_GROUP_PREFIX,
+  mcpGroupDescription,
+  mcpGroupSlug,
+  mcpToolSlug,
+  planMcpSync,
+  syncMcpConnector,
+  type CreateMcpConnectorInput,
+  type CreateMcpConnectorResult,
+  type McpSyncPlan,
+  type McpSyncResult,
+  type McpSyncRowState,
+} from './mcp-sync';
+export { parseMcpBinding, type ToolGroupMcpBinding } from './integration-meta';
