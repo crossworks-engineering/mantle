@@ -451,6 +451,37 @@ approval like any agent-initiated grant). Every result comes back
 give them to a no-write specialist (researcher pattern). Full detail:
 [`mcp-connectors.md`](./mcp-connectors.md).
 
+## The delegate roster: live capability lines in `invoke_agent`
+
+The routing skill (`specialist_routing`) is policy prose; it cannot know a
+delegate just gained a capability. The delegate roster closes that gap at
+runtime: the `invoke_agent` dynamic-schema hook (the same one that injects
+the delegate-slug enum) appends a per-delegate section to the tool's
+DESCRIPTION listing each delegate's enabled granted tool GROUPS as
+`slug — Group (first sentence of the group description)` lines. Generated at
+toolset-assembly time from grants, never stored: a grant change reaches the
+parent on its next turn, and the text only changes when grants change
+(prompt-cache friendly).
+
+Rules, in `packages/tools/src/delegate-roster.ts`:
+
+- **Brain-authored text only.** Group names + group descriptions; never tool
+  slugs, tool descriptions, or remote `serverInfo` strings. MCP connector
+  tools carry third-party prose, and pasting it into the persona prompt
+  would re-open the injection door the connectors audit closed.
+- **Group level, never tool level.** Groups are few and already carry the
+  "when to use" prose.
+- **Stoplist + caps.** Ubiquitous groups (`memory-core`, `tool-results`,
+  `delegation`, `persona`) are skipped; per-group chunk ~90 chars, per-line
+  ~220 chars with a `+N more` marker, whole roster ~1,200 chars; newlines
+  stripped.
+- **Best-effort.** A roster failure degrades to the enum-only patch; the
+  delegate-slug enum (the v0.82.2 hallucinated-slug guard) never regresses.
+
+The routing skill body now points at the roster as authoritative for WHAT a
+delegate carries; the skill stays the policy for WHEN to delegate and how to
+pack the hand-off.
+
 ## House style: the owner's prose layer (v0.214.0)
 
 Skills teach _how to do something well_; they ship with the product and speak

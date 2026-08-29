@@ -41,6 +41,16 @@ export {
   type DynamicSchemaPatch,
   type DynamicSchemaFn,
 } from './dynamic-schema';
+export {
+  renderDelegateRoster,
+  buildDelegateRoster,
+  ROSTER_GROUP_STOPLIST,
+  ROSTER_GROUP_CLIP,
+  ROSTER_LINE_MAX,
+  ROSTER_TOTAL_MAX,
+  type RosterDelegate,
+  type RosterGroup,
+} from './delegate-roster';
 
 export { BUILTIN_TOOLS, FILE_MANAGE_TOOLS } from './builtins';
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';

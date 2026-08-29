@@ -70,7 +70,26 @@ export function withDelegateEnum(
   };
 }
 
-registerDynamicSchema('invoke_agent', (current, ctx) => {
+registerDynamicSchema('invoke_agent', async (current, ctx) => {
   if (!ctx.delegateTo || ctx.delegateTo.length === 0) return null;
-  return { parameters: withDelegateEnum(current.parameters, ctx.delegateTo) };
+  const patch: { description?: string; parameters: Record<string, unknown> } = {
+    parameters: withDelegateEnum(current.parameters, ctx.delegateTo),
+  };
+  // The delegate roster (live per-delegate capability lines, group-level,
+  // brain-authored text only — see delegate-roster.ts) is best-effort: its
+  // own try/catch keeps a db failure from ever costing the enum patch above,
+  // which guards against the hallucinated-slug incident (v0.82.2).
+  try {
+    const { buildDelegateRoster } = await import('./delegate-roster');
+    const roster = await buildDelegateRoster(ctx.ownerId, ctx.delegateTo);
+    if (roster) {
+      patch.description = `${current.description}\n\nYour delegates and what each currently carries (live, from their granted tool groups):\n${roster}`;
+    }
+  } catch (err) {
+    console.warn(
+      "[dynamic-schema] delegate roster failed; keeping the enum-only patch for 'invoke_agent':",
+      err,
+    );
+  }
+  return patch;
 });

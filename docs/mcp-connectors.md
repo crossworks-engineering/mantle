@@ -59,7 +59,11 @@ on a cron — cost-safety rule.
   recipe (the recipe safety envelope refuses — a recipe is bundleable
   anywhere, which would tunnel external content past the firewall), or
   patch/delete/hand-create a connector tool row (the crud layer refuses all
-  three; the sync owns the rows).
+  three; the sync owns the rows). Granting a connector group to a delegate
+  also teaches the parent: the live delegate roster inside `invoke_agent`
+  names the group under that delegate on the parent's next turn, using the
+  brain-authored group name + description only, never the mirrored tools'
+  own text (see `docs/tools-and-skills.md`, delegate roster section).
 - **Ownership boundaries.** The generic tool-group surface cooperates:
   deleting a connector group through `DELETE /api/tool-groups/[id]`
   delegates to the connector-aware delete (rows + grants + sealed secrets),
