@@ -47,6 +47,16 @@ export type ToolHandler =
       headersRef?: string | null;
       authRef?: string | null;
       timeoutMs?: number;
+      /** Present ONLY on rows materialised by an OpenAPI connector's sync
+       *  (@mantle/tools openapi-sync.ts). `group` names the connector's tool
+       *  group, `op` the spec operation identity (operationId, else
+       *  'method /path'). `vanishedAt` mirrors the mcp marker: set when the
+       *  SYNC disabled the row because the operation vanished or was
+       *  deselected — only marked rows auto-re-enable, so an owner-disable is
+       *  never overridden. `editedAt` is stamped when the definition is
+       *  edited by hand; the sync then leaves the row alone until asked to
+       *  overwrite. Never authored directly — the crud layer refuses. */
+      openapi?: { group: string; op: string; vanishedAt?: string; editedAt?: string };
     }
   | { kind: 'shell'; cmd: string }
   | {

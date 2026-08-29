@@ -70,6 +70,13 @@ a usage skill may contain a key.
 The owner sees and can correct all of it at **Settings → Tool groups**: service,
 base URL, credential, stored docs (view/replace), and a link to the usage skill.
 
+When the service publishes an **OpenAPI 3.x spec**, the whole authoring loop can
+be skipped: an [OpenAPI connector](./openapi-connectors.md) compiles selected
+operations into http tools in its own `openapi-<slug>` group, using this same
+inheritance for base URL + auth. Toolsmith cannot author into or bundle from a
+connector group (its sync owns membership), but MAY edit a mirrored tool's
+definition; the edit is stamped and survives re-sync.
+
 ## 1. The two ways in
 
 | Surface | Path | Who pays for the LLM |

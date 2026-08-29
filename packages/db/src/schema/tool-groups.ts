@@ -78,6 +78,34 @@ export type ToolGroupMcpBinding = {
   serverInfo?: { name?: string; version?: string };
 };
 
+/**
+ * The binding that makes a group an OPENAPI CONNECTOR: a service's
+ * OpenAPI/Swagger spec URL whose operations are compiled into ordinary
+ * `handler.kind === 'http'` rows (provenance on `handler.openapi`) by the
+ * connector sync. Composes with the surrounding integration fields: the
+ * group's `baseUrl`/`secretRef`/`authTemplate` feed the same authoring-time
+ * inheritance hand-authored http tools use, so auth never comes from the
+ * spec. The sync-bookkeeping fields are written by the sync, not by hand.
+ */
+export type ToolGroupOpenapiBinding = {
+  /** Where the spec is fetched from, e.g. 'https://example.com/openapi.json'. */
+  specUrl: string;
+  /** sha256 of the raw fetched spec bytes — change visibility, not identity. */
+  specHash?: string;
+  /**
+   * Which operations materialise as tools. `tags` includes every operation
+   * carrying one of these spec tags; `operations` names identities
+   * (operationId, or 'get /path' for id-less operations). Effective set =
+   * union of both; absent means ALL, which is only legal under the hard cap.
+   */
+  selection?: { tags?: string[]; operations?: string[] };
+  apiTitle?: string;
+  apiVersion?: string;
+  /** Set by the connector sync. */
+  lastSyncAt?: string;
+  toolCount?: number;
+};
+
 export type ToolGroupIntegration = {
   /** Vendor/service key, e.g. 'openweathermap'. */
   service: string;
@@ -106,6 +134,8 @@ export type ToolGroupIntegration = {
   docsUpdatedAt?: string;
   /** Set when this group is an MCP connector; absent on every other group. */
   mcp?: ToolGroupMcpBinding;
+  /** Set when this group is an OpenAPI connector; absent on every other group. */
+  openapi?: ToolGroupOpenapiBinding;
 };
 
 /**

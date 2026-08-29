@@ -73,6 +73,8 @@ export type ToolHandler =
       headersRef?: string | null;
       authRef?: string | null;
       timeoutMs?: number;
+      /** Provenance on rows materialised by an OpenAPI connector's sync. */
+      openapi?: { group: string; op: string; vanishedAt?: string; editedAt?: string };
     }
   | { kind: 'shell'; cmd: string }
   | { kind: 'mcp'; group: string; toolName: string; vanishedAt?: string }
@@ -145,6 +147,19 @@ export interface ToolGroupIntegrationDTO {
     lastSyncAt?: string;
     toolCount?: number;
     serverInfo?: { name?: string; version?: string };
+  };
+  /** Set when the group is an OPENAPI CONNECTOR — its operations are compiled
+   *  into ordinary http tools by the connector sync. Auth stays on the
+   *  surrounding integration fields (`baseUrl`/`secretRef`/`authTemplate`),
+   *  never in this block; the sync-bookkeeping fields are written by the sync. */
+  openapi?: {
+    specUrl: string;
+    specHash?: string;
+    selection?: { tags?: string[]; operations?: string[] };
+    apiTitle?: string;
+    apiVersion?: string;
+    lastSyncAt?: string;
+    toolCount?: number;
   };
 }
 

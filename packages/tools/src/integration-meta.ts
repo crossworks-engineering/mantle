@@ -15,9 +15,13 @@
  * carries no ref.
  */
 
-import type { ToolGroupIntegration, ToolGroupMcpBinding } from '@mantle/db';
+import type {
+  ToolGroupIntegration,
+  ToolGroupMcpBinding,
+  ToolGroupOpenapiBinding,
+} from '@mantle/db';
 
-export type { ToolGroupIntegration, ToolGroupMcpBinding };
+export type { ToolGroupIntegration, ToolGroupMcpBinding, ToolGroupOpenapiBinding };
 
 /** `service/label`, matching the api_keys column charset + the ref pattern in
  *  http-template.ts (kept in sync by `integration-meta.test.ts`). */
@@ -199,6 +203,13 @@ export function parseIntegrationMeta(raw: unknown): ParsedIntegration | Integrat
     const parsedMcp = parseMcpBinding(mcpRaw);
     if (!parsedMcp.ok) return parsedMcp;
     value.mcp = parsedMcp.value;
+  }
+
+  const openapiRaw = r.openapi;
+  if (openapiRaw !== undefined && openapiRaw !== null) {
+    const parsedOpenapi = parseOpenapiBinding(openapiRaw);
+    if (!parsedOpenapi.ok) return parsedOpenapi;
+    value.openapi = parsedOpenapi.value;
   }
 
   const sourceUrlRaw = pick('docsSourceUrl', 'docs_source_url');
@@ -418,6 +429,109 @@ export function parseMcpBinding(
     value.oauth = oauth;
   }
 
+  return { ok: true, value };
+}
+
+const SELECTION_MAX_TAGS = 40;
+const SELECTION_MAX_OPERATIONS = 200;
+const SELECTION_ITEM_MAX_CHARS = 200;
+
+/**
+ * Validate + normalise the `integration.openapi` connector binding. Accepts
+ * camel and snake case and carries the sync-bookkeeping fields (`specHash`,
+ * `apiTitle`, `apiVersion`, `lastSyncAt`, `toolCount`) through so a validated
+ * round-trip of a stored row doesn't drop the connector's sync state.
+ */
+export function parseOpenapiBinding(
+  raw: unknown,
+): { ok: true; value: ToolGroupOpenapiBinding } | IntegrationParseError {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {
+      ok: false,
+      error: 'integration.openapi must be an object like { spec_url, selection? }',
+    };
+  }
+  const r = raw as Record<string, unknown>;
+  const pick = (camel: string, snake: string): unknown => r[camel] ?? r[snake];
+
+  const specUrl = String(pick('specUrl', 'spec_url') ?? '').trim();
+  if (!HTTP_URL_RE.test(specUrl)) {
+    return {
+      ok: false,
+      error: `integration.openapi.spec_url '${specUrl}' must be the URL of the service's OpenAPI 3.x document, starting with http(s):// and containing no spaces — e.g. https://example.com/openapi.json`,
+    };
+  }
+  const value: ToolGroupOpenapiBinding = { specUrl };
+
+  const selectionRaw = r.selection;
+  if (selectionRaw !== undefined && selectionRaw !== null) {
+    if (typeof selectionRaw !== 'object' || Array.isArray(selectionRaw)) {
+      return {
+        ok: false,
+        error:
+          'integration.openapi.selection must be an object with `tags` and/or `operations` string arrays — e.g. { "operations": ["getForecast"] }; omit it to include every operation (only legal under the per-connector tool cap)',
+      };
+    }
+    const sel = selectionRaw as Record<string, unknown>;
+    const unknownKeys = Object.keys(sel).filter((k) => k !== 'tags' && k !== 'operations');
+    if (unknownKeys.length > 0) {
+      return {
+        ok: false,
+        error: `integration.openapi.selection may only carry \`tags\` and \`operations\` (got ${unknownKeys.join(', ')})`,
+      };
+    }
+    const selection: NonNullable<ToolGroupOpenapiBinding['selection']> = {};
+    for (const [key, cap] of [
+      ['tags', SELECTION_MAX_TAGS],
+      ['operations', SELECTION_MAX_OPERATIONS],
+    ] as const) {
+      const arr = sel[key];
+      if (arr === undefined || arr === null) continue;
+      if (!Array.isArray(arr) || arr.some((v) => typeof v !== 'string')) {
+        return {
+          ok: false,
+          error: `integration.openapi.selection.${key} must be an array of strings`,
+        };
+      }
+      const items = [
+        ...new Set(
+          (arr as string[]).map((s) => s.trim().slice(0, SELECTION_ITEM_MAX_CHARS)).filter(Boolean),
+        ),
+      ];
+      if (items.length > cap) {
+        return {
+          ok: false,
+          error: `integration.openapi.selection.${key} carries ${items.length} entries (max ${cap}) — select with tags, or narrow the list`,
+        };
+      }
+      if (items.length > 0) selection[key] = items;
+    }
+    if (Object.keys(selection).length > 0) value.selection = selection;
+  }
+
+  // Sync bookkeeping — written by the connector sync; validated lightly so a
+  // round-trip of a stored row preserves it without letting junk grow.
+  const specHashRaw = pick('specHash', 'spec_hash');
+  if (typeof specHashRaw === 'string' && /^[0-9a-f]{16,64}$/i.test(specHashRaw.trim())) {
+    value.specHash = specHashRaw.trim().toLowerCase();
+  }
+  const titleRaw = pick('apiTitle', 'api_title');
+  if (typeof titleRaw === 'string' && titleRaw.trim()) {
+    value.apiTitle = titleRaw.trim().slice(0, 200);
+  }
+  const versionRaw = pick('apiVersion', 'api_version');
+  if (typeof versionRaw === 'string' && versionRaw.trim()) {
+    value.apiVersion = versionRaw.trim().slice(0, 60);
+  }
+  const lastSyncRaw = pick('lastSyncAt', 'last_sync_at');
+  if (lastSyncRaw !== undefined && lastSyncRaw !== null && String(lastSyncRaw).trim() !== '') {
+    value.lastSyncAt = String(lastSyncRaw).trim().slice(0, 40);
+  }
+  const toolCountRaw = pick('toolCount', 'tool_count');
+  if (toolCountRaw !== undefined && toolCountRaw !== null) {
+    const n = Number(toolCountRaw);
+    if (Number.isInteger(n) && n >= 0) value.toolCount = n;
+  }
   return { ok: true, value };
 }
 

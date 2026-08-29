@@ -238,6 +238,14 @@ async function resolveAuthoringGroup(
       error: `tool group '${slug}' not found — list the real ones with tool_group_list, or create it (with its service/base_url/secret_ref) using tool_group_ensure before authoring into it`,
     };
   }
+  // Connector groups (mcp or openapi) never take hand-authored members:
+  // their SYNC owns membership and would drop the addition on its next run.
+  if (group.integration?.mcp || group.integration?.openapi) {
+    return {
+      ok: false,
+      error: `'${slug}' is a connector group — its membership is owned by the connector sync; author the tool into a plain integration group instead (tool_group_ensure a new one if needed)`,
+    };
+  }
   return { ok: true, group };
 }
 
@@ -696,6 +704,15 @@ const api_tool_update: BuiltinToolDef = {
     if (!resolvedGroup.ok) return { ok: false, error: resolvedGroup.error };
     const group = resolvedGroup.group;
 
+    const isOpenapiMirror = existing.kind === 'http' && !!existing.openapi;
+    if (group && (existing.kind === 'mcp' || isOpenapiMirror)) {
+      return {
+        ok: false,
+        error:
+          "connector-mirrored tools stay in their connector's group — group_slug cannot re-home or bundle them",
+      };
+    }
+
     let inherited: InheritedPieces | null = null;
     const touchesDefinition =
       input.name !== undefined ||
@@ -752,6 +769,11 @@ const api_tool_update: BuiltinToolDef = {
         updated.handler.kind === 'http'
           ? await handlerWarnings(ctx.ownerId, updated.handler as HttpHandler, updated.inputSchema)
           : [];
+      if (isOpenapiMirror && touchesDefinition) {
+        warnings.push(
+          "this tool is mirrored from an OpenAPI spec — your edit is recorded as hand-made and the connector's sync will preserve it (re-sync with overwrite_edited to restore the spec version)",
+        );
+      }
       if (group) {
         await addToolToGroup(ctx.ownerId, group.slug, slug);
         if (group.integration) {
@@ -1572,22 +1594,26 @@ const tool_group_ensure: BuiltinToolDef = {
     if (!requested) return { ok: false, error: 'tool_slugs must be an array of strings' };
     const mode = str(input.mode) === 'replace' ? 'replace' : 'add';
 
-    const kindBySlug = new Map(
-      (await listToolsForOwner(ctx.ownerId)).map((t) => [t.slug, t.handler.kind] as const),
+    const ownerTools = await listToolsForOwner(ctx.ownerId);
+    const kindBySlug = new Map(ownerTools.map((t) => [t.slug, t.handler.kind] as const));
+    const mirrorSlugs = new Set(
+      ownerTools.filter((t) => t.handler.kind === 'http' && t.handler.openapi).map((t) => t.slug),
     );
 
     // Hard stop: agents may only bundle agent-grantable tools (http + recipe).
     // A shell/builtin slug (e.g. the unrestricted `run_terminal`) would let a
     // later grant escalate an agent past the authoring boundary — refuse, don't warn.
-    // `mcp` connector tools are also refused here: their connector group's sync
-    // owns membership, so they never get bundled into a second group.
+    // Connector-mirrored tools (`mcp`, and http rows carrying openapi
+    // provenance) are also refused here: their connector group's sync owns
+    // membership, so they never get bundled into a second group.
     const nonGrantable = requested.filter(
-      (s) => kindBySlug.has(s) && !AGENT_GRANTABLE_KINDS.has(kindBySlug.get(s)!),
+      (s) =>
+        mirrorSlugs.has(s) || (kindBySlug.has(s) && !AGENT_GRANTABLE_KINDS.has(kindBySlug.get(s)!)),
     );
     if (nonGrantable.length > 0) {
       return {
         ok: false,
-        error: `tool groups may only contain http or recipe tools (mcp connector tools stay in their own connector group); refused: ${nonGrantable.join(', ')}`,
+        error: `tool groups may only contain http or recipe tools (connector-mirrored tools stay in their own connector group); refused: ${nonGrantable.join(', ')}`,
       };
     }
 
@@ -1605,10 +1631,14 @@ const tool_group_ensure: BuiltinToolDef = {
     // membership (a mode:'replace' here could silently empty a granted
     // connector), and the mcp- prefix is the connector namespace — creating a
     // plain group there would squat a future connector's slug.
-    if (existing?.integration?.mcp || (!existing && slug.startsWith('mcp-'))) {
+    if (
+      existing?.integration?.mcp ||
+      existing?.integration?.openapi ||
+      (!existing && (slug.startsWith('mcp-') || slug.startsWith('openapi-')))
+    ) {
       return {
         ok: false,
-        error: `'${slug}' is ${existing ? 'an MCP connector group' : "in the reserved 'mcp-' connector namespace"} — its membership is owned by the connector sync; manage it via Settings → Connectors (or the /api/mcp-connectors API), and pick another slug for a plain bundle`,
+        error: `'${slug}' is ${existing ? 'a connector group' : "in a reserved connector namespace ('mcp-' / 'openapi-')"} — its membership is owned by the connector sync; manage it via Settings → Connectors (or the connectors APIs), and pick another slug for a plain bundle`,
       };
     }
 

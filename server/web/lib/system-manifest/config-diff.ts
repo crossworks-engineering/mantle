@@ -407,7 +407,9 @@ function diffExtras(live: LiveConfig, m: ManifestSlices): EntityDiffCore[] {
       // feature working, not drift.
       summary: g.slug.startsWith('mcp-')
         ? 'MCP connector group (external server mirror; membership owned by its sync)'
-        : 'operator-added (not in template)',
+        : g.slug.startsWith('openapi-')
+          ? 'OpenAPI connector group (spec-compiled tools; membership owned by its sync)'
+          : 'operator-added (not in template)',
       fields: [],
     });
   }

@@ -69,6 +69,11 @@ export async function createTool(ownerId: string, input: CreateToolInput): Promi
       "cannot register 'mcp' tools by hand — they are materialised by an MCP connector's sync (create the connector via POST /api/mcp-connectors)",
     );
   }
+  if (input.handler.kind === 'http' && input.handler.openapi) {
+    throw new Error(
+      "cannot register a tool carrying openapi connector provenance by hand — such rows are materialised by an OpenAPI connector's sync (create the connector via POST /api/openapi-connectors)",
+    );
+  }
   const [row] = await db
     .insert(tools)
     .values({
@@ -117,6 +122,36 @@ export async function updateTool(
       "cannot change a tool into an 'mcp' handler — connector tools are materialised by their connector's sync",
     );
   }
+  // OpenAPI-mirrored rows are ordinary http tools whose definition MAY be
+  // edited (the plan's deliberate difference from mcp), but their provenance
+  // is the sync's bookkeeping: it must survive every edit, an edit stamps
+  // `editedAt` so the next sync leaves the row alone, and no other row can be
+  // dressed up as a mirror.
+  const existingOpenapi = existing.handler.kind === 'http' ? existing.handler.openapi : undefined;
+  if (existingOpenapi) {
+    if (patch.handler !== undefined && patch.handler.kind !== 'http') {
+      throw new Error(
+        "cannot change an openapi connector tool to another handler kind — edit its http definition, or manage the row via its connector's sync",
+      );
+    }
+    const editsDefinition =
+      patch.handler !== undefined ||
+      patch.name !== undefined ||
+      patch.description !== undefined ||
+      patch.inputSchema !== undefined;
+    if (editsDefinition) {
+      // Both sides are http here (the non-http patch case threw above).
+      const base = (patch.handler ?? existing.handler) as Extract<ToolHandler, { kind: 'http' }>;
+      patch.handler = {
+        ...base,
+        openapi: { ...existingOpenapi, editedAt: new Date().toISOString() },
+      };
+    }
+  } else if (patch.handler?.kind === 'http' && patch.handler.openapi) {
+    throw new Error(
+      "cannot attach openapi connector provenance to a tool — such rows are materialised by an OpenAPI connector's sync",
+    );
+  }
   if (
     existing.handler.kind === 'builtin' &&
     (patch.name !== undefined ||
@@ -163,6 +198,11 @@ export async function deleteTool(ownerId: string, id: string): Promise<boolean> 
   if (existing.handler.kind === 'mcp') {
     throw new Error(
       `cannot delete a connector-mirrored tool — it would leave its connector group dangling; delete the whole connector (DELETE /api/mcp-connectors/${existing.handler.group.replace(/^mcp-/, '')}) or let its sync manage the row`,
+    );
+  }
+  if (existing.handler.kind === 'http' && existing.handler.openapi) {
+    throw new Error(
+      `cannot delete an openapi connector tool — disable it, drop the operation from the connector's selection, or delete the whole connector (DELETE /api/openapi-connectors/${existing.handler.openapi.group.replace(/^openapi-/, '')})`,
     );
   }
   const rows = await db

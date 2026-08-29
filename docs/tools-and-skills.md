@@ -451,6 +451,23 @@ approval like any agent-initiated grant). Every result comes back
 give them to a no-write specialist (researcher pattern). Full detail:
 [`mcp-connectors.md`](./mcp-connectors.md).
 
+## OpenAPI connector groups: a group compiled from a service's spec
+
+The third binding: `integration.openapi` marks a group as an **OpenAPI
+connector**, whose selected spec operations are compiled into ordinary
+`http` tool rows (slug `openapi_<connector>_<operation>`, group slug
+`openapi-<connector>`, provenance on `handler.openapi`). No new handler
+kind: dispatch, templating, fencing and secret scrubbing are the normal http
+path, and auth comes from the group's own `baseUrl`/`secretRef`/
+`authTemplate`, never from the spec. Membership is owned by the connector
+**sync** exactly like mcp (ensure/bundle/delete refusals, reserved
+`openapi-` namespace), with one deliberate difference: `api_tool_update` MAY
+edit a mirrored row's definition; the edit is stamped
+(`handler.openapi.editedAt`) and survives re-sync until an overwrite is
+asked for. A hard cap of 80 tools per connector plus a tag/operation
+`selection` keeps prompt cost bounded. Full detail:
+[`openapi-connectors.md`](./openapi-connectors.md).
+
 ## The delegate roster: live capability lines in `invoke_agent`
 
 The routing skill (`specialist_routing`) is policy prose; it cannot know a

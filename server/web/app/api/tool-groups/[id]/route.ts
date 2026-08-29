@@ -60,16 +60,25 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       { status: 400 },
     );
   }
+  if (current.integration?.openapi && (integration !== undefined || rest.toolSlugs !== undefined)) {
+    return NextResponse.json(
+      {
+        error: `'${current.slug}' is an OpenAPI connector group — its binding and membership are managed via /api/openapi-connectors/${current.slug.replace(/^openapi-/, '')} (Settings → Connectors); only name/description/enabled can change here`,
+      },
+      { status: 400 },
+    );
+  }
   if (
     !current.integration?.mcp &&
+    !current.integration?.openapi &&
     integration &&
     typeof integration === 'object' &&
-    'mcp' in integration
+    ('mcp' in integration || 'openapi' in integration)
   ) {
     return NextResponse.json(
       {
         error:
-          'connectors are created via POST /api/mcp-connectors, not by attaching an mcp binding to an existing group',
+          'connectors are created via POST /api/mcp-connectors or POST /api/openapi-connectors, not by attaching a connector binding to an existing group',
       },
       { status: 400 },
     );

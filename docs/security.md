@@ -20,8 +20,10 @@
   you explicitly send, Telegram messages on a paired bot, tool calls to any
   **MCP connector you explicitly connect** (model-authored arguments go to
   that external server; results come back fenced as untrusted —
-  [`mcp-connectors.md`](./mcp-connectors.md)), and update checks (version
-  metadata only). That's the list.
+  [`mcp-connectors.md`](./mcp-connectors.md)), HTTP calls of any **OpenAPI
+  connector you explicitly connect** (compiled http tools calling the one
+  base URL you set; see [`openapi-connectors.md`](./openapi-connectors.md)),
+  and update checks (version metadata only). That's the list.
 - **The brain is the trust boundary.** This is a deliberate design decision:
   everyone admitted to a brain (owner, admins, team members within their
   surface) is trusted to the level that surface grants. There are no in-brain
@@ -71,6 +73,7 @@ complete list of ways that surface can change the brain.
 | Telegram                                      | explicit bot pairing                                             | owner-level assistant (this is _your_ channel, not a team one)                                                                                                                                                  | assistant tools per its grants                                                                                                          | traces                            |
 | MCP (Claude Desktop etc.)                     | SSH/exec into the container, operator-only today                 | owner-level tools                                                                                                                                                                                               | owner-level tools                                                                                                                       | traces                            |
 | MCP connectors (outbound)                     | owner connects a server explicitly; key/OAuth creds vault-sealed | the external server sees only the arguments of calls to ITS tools                                                                                                                                               | agents granted the connector's `mcp-*` group call the remote tools; results return fenced as untrusted                                  | traces                            |
+| OpenAPI connectors (outbound)                 | owner connects a spec explicitly; key stays a vault ref          | the service sees only the arguments of calls compiled from ITS spec, sent to the one owner-set base URL                                                                                                         | agents granted the connector's `openapi-*` group call the compiled http tools; results return fenced like every http result             | traces                            |
 
 Two structural points:
 

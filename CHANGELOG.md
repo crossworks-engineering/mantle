@@ -4,6 +4,25 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — OpenAPI connectors: a service's spec as an http tool group (branch claude/zealous-leakey-73c34c)
+
+The raw-API twin of MCP connectors, per docs/plans/openapi-connector.md.
+Point the brain at an OpenAPI 3.x spec URL (JSON or YAML) and the selected
+operations compile into ordinary `http` tools inside an `openapi-<slug>`
+group; the dispatcher gained no new handler kind, and auth stays on the
+group's own baseUrl/secretRef/authTemplate (never from the spec, whose text
+is stripped of secret refs and whose per-operation server overrides are
+ignored). Explicit sync with the mcp disable-on-vanish asymmetry; hand-edits
+of mirrored tools are stamped and survive re-sync until overwriteEdited.
+Selection by tag/operation with a hard 80-tool cap and a no-create preview
+endpoint; `openapi-` namespace reserved across ensure/crud/generic routes;
+KNOWN_OPENAPI_APIS catalog ships Open-Meteo (no key). One shared-engine
+improvement: an http query pair whose optional `{param}` goes unfilled is
+now dropped instead of shipping the literal brace string. API at
+/api/openapi-connectors (+ preview, [slug], [slug]/sync);
+docs/openapi-connectors.md; help page extended; 45 new tests including an
+in-process spec-server end to end.
+
 ## Unreleased — YouTube ingests from a VPS: the cookies-file escape hatch (branch claude/media-cookies)
 
 Live testing surfaced the expected wall: YouTube blocks datacenter IPs

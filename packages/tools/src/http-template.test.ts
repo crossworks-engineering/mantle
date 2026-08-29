@@ -87,6 +87,41 @@ describe('{param} substitution', () => {
     expect(req.url).toBe('https://x.test/{missing}');
   });
 
+  it('drops a query pair whose template stays unfilled (optional param omitted)', () => {
+    const h: HttpHandler = {
+      kind: 'http',
+      url: 'https://api.example.com/search',
+      method: 'GET',
+      query: { q: '{q}', limit: '{limit}' },
+    };
+    const req = buildHttpRequest(h, { q: 'rain' }, new Map());
+    expect(req.url).toBe('https://api.example.com/search?q=rain');
+  });
+
+  it('keeps a filled query pair even when its value is empty, and keeps literals', () => {
+    const h: HttpHandler = {
+      kind: 'http',
+      url: 'https://api.example.com/search',
+      method: 'GET',
+      query: { q: '{q}', format: 'json' },
+    };
+    const req = buildHttpRequest(h, { q: '' }, new Map());
+    expect(req.url).toBe('https://api.example.com/search?q=&format=json');
+  });
+
+  it('a dropped query pair does not mark its param as consumed elsewhere', () => {
+    // `limit` appears only in the dropped pair; an input that never had it
+    // stays absent, and other inputs still spill normally on GET.
+    const h: HttpHandler = {
+      kind: 'http',
+      url: 'https://api.example.com/list',
+      method: 'GET',
+      query: { limit: '{limit}' },
+    };
+    const req = buildHttpRequest(h, { cursor: 'abc' }, new Map());
+    expect(req.url).toBe('https://api.example.com/list?cursor=abc');
+  });
+
   it('collects param names across url, query, headers, and body', () => {
     const h: HttpHandler = {
       kind: 'http',

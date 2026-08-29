@@ -217,3 +217,41 @@ export {
   type StartMcpOAuthResult,
 } from './mcp-oauth';
 export { isMcpManagedSecretService, MCP_VAULT_SERVICE_PREFIX } from './integration-meta';
+
+export { KNOWN_OPENAPI_APIS, knownOpenapiApi, type KnownOpenapiApi } from './openapi-catalog';
+export {
+  compileOperations,
+  extractInventory,
+  OPENAPI_SPEC_MAX_BYTES,
+  OPENAPI_TOOL_HARD_CAP,
+  OPENAPI_TOOL_WARN_THRESHOLD,
+  operationKeyOf,
+  operationSelected,
+  parseOpenapiDocument,
+  stripSecretRefs,
+  type CompiledOperation,
+  type CompileResult,
+  type OpenapiSelection,
+  type SpecInventory,
+} from './openapi-spec';
+export {
+  createOpenapiConnector,
+  deleteOpenapiConnector,
+  fetchSpecText,
+  isOpenapiMirrorHandler,
+  OPENAPI_GROUP_PREFIX,
+  openapiGroupDescription,
+  openapiGroupSlug,
+  openapiToolSlug,
+  planOpenapiSync,
+  previewOpenapiSpec,
+  syncOpenapiConnector,
+  type CreateOpenapiConnectorInput,
+  type CreateOpenapiConnectorResult,
+  type OpenapiMirrorHandler,
+  type OpenapiPreview,
+  type OpenapiSyncPlan,
+  type OpenapiSyncResult,
+  type OpenapiSyncRowState,
+} from './openapi-sync';
+export { parseOpenapiBinding, type ToolGroupOpenapiBinding } from './integration-meta';

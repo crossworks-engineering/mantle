@@ -80,9 +80,10 @@ export function computeGroupToolFindings(
           // Connector groups get the connector-aware recovery move: the sync
           // rewrites membership, so a stale member means "re-sync" (or the
           // owner disabled the tool by hand since the last sync).
-          detail: row.slug.startsWith('mcp-')
-            ? `MCP connector group '${row.slug}' → tool '${t}' has no enabled row — re-run the connector's sync (or the tool was disabled by hand since the last sync)`
-            : `custom tool group '${row.slug}' → tool '${t}' has no enabled row`,
+          detail:
+            row.slug.startsWith('mcp-') || row.slug.startsWith('openapi-')
+              ? `connector group '${row.slug}' → tool '${t}' has no enabled row — re-run the connector's sync (or the tool was disabled by hand since the last sync)`
+              : `custom tool group '${row.slug}' → tool '${t}' has no enabled row`,
         });
       }
     }

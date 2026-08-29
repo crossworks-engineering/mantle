@@ -30,6 +30,17 @@ export const ToolHandlerSchema = z.discriminatedUnion('kind', [
     headersRef: z.string().nullable().optional(),
     authRef: z.string().nullable().optional(),
     timeoutMs: z.number().int().min(100).max(120_000).optional(),
+    // Present so a client echoing an OpenAPI-mirrored row's handler back
+    // doesn't 400. Creating a row WITH this provenance (or attaching it) is
+    // refused in @mantle/tools crud — the connector's sync owns it.
+    openapi: z
+      .object({
+        group: z.string().min(1).max(120),
+        op: z.string().min(1).max(300),
+        vanishedAt: z.string().max(40).optional(),
+        editedAt: z.string().max(40).optional(),
+      })
+      .optional(),
   }),
   z.object({
     kind: z.literal('shell'),
