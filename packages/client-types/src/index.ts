@@ -130,6 +130,18 @@ export interface ToolGroupIntegrationDTO {
     secretRef?: string;
     authHeader?: string;
     authScheme?: string;
+    /** OAuth bookkeeping when the server uses the MCP auth flow. Tokens and
+     *  the client registration are vault-sealed and never cross this wire. */
+    oauth?: {
+      enabled: true;
+      status: 'pending' | 'connected' | 'needs_reconnect';
+      clientId?: string;
+      pending?: { state: string; redirectUri: string; startedAt: string };
+      redirectUri?: string;
+      tokenExpiresAt?: string;
+      connectedAt?: string;
+      lastError?: string;
+    };
     lastSyncAt?: string;
     toolCount?: number;
     serverInfo?: { name?: string; version?: string };

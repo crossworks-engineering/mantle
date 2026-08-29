@@ -2,9 +2,9 @@
 
 Point Mantle at an external MCP server and its tools become a normal
 per-connector **tool group** any agent can be granted. The plan that shaped
-this: [`docs/plans/mcp-connectors.md`](./plans/mcp-connectors.md). Phase 1
-(this doc): streamable-HTTP servers with a static key from the vault. OAuth
-servers and the settings UI are later phases.
+this: [`docs/plans/mcp-connectors.md`](./plans/mcp-connectors.md).
+Streamable-HTTP servers only, with either a static key from the vault or the
+full MCP OAuth flow. The settings UI is the remaining (jackdaw) phase.
 
 ## The model — no new entities
 
@@ -65,6 +65,30 @@ on a cron — cost-safety rule.
 | `GET/PATCH/DELETE /api/mcp-connectors/<slug>` | Inspect / edit binding (bounces the cached client) / delete (rows + group + grants)                                                                                                       |
 | `POST /api/mcp-connectors/<slug>/sync`        | Re-list + reconcile                                                                                                                                                                       |
 
+## OAuth servers (the MCP auth flow)
+
+For servers that authenticate via OAuth 2.1 (e.g. Firecrawl's
+`/v2/mcp-oauth`), the connector runs the full MCP client flow — RFC 9728
+discovery, RFC 8414 metadata, RFC 7591 dynamic registration, PKCE
+authorization code, silent refresh — via the SDK's `auth()` orchestrator.
+Engine: `packages/tools/src/mcp-oauth.ts`.
+
+- **Where things live.** Non-secret bookkeeping (status, client_id, pending
+  flow, expiry) sits on `integration.mcp.oauth`. The registration JSON,
+  tokens, and PKCE verifier are **vault-sealed** under the connector's group
+  slug (labels `oauth-client` / `oauth-tokens` / `oauth-verifier`) and never
+  cross the API or reach a model.
+- **The flow.** `POST /api/mcp-connectors` with `"oauth": true` (or
+  `POST /api/mcp-connectors/<slug>/oauth/start` later) returns an
+  `authorizeUrl`. The OWNER opens it in a browser, approves, and the provider
+  redirects to `GET /api/mcp-connectors/oauth/callback` (owner-gated), which
+  exchanges the code, seals the tokens, and runs the first sync.
+- **Runtime.** The transport refreshes tokens silently. When a refresh dies,
+  the connector flips to `needs_reconnect`, tool calls return a teaching
+  error naming the reconnect route, and `oauth/start` re-arms the flow.
+- **Same egress rules.** Discovery/registration/token requests run through
+  the SSRF guard with redirects refused, like every other connector request.
+
 ## The catalog
 
 `KNOWN_MCP_SERVERS` (`packages/tools/src/mcp-catalog.ts`) is the
@@ -75,7 +99,9 @@ boundary explicitly: `web_map`/`web_crawl` own crawl-and-ingest;
 the connector is for ad-hoc scrape/search/extract into context.
 Pre-known services are **not** auto-provisioned.
 
-## Firecrawl quick start (key-authed, works today)
+## Firecrawl quick start
+
+Key-authed:
 
 1. Store the key: Settings → API keys, service `firecrawl`, label `default`.
 2. `POST /api/mcp-connectors` with
@@ -83,10 +109,15 @@ Pre-known services are **not** auto-provisioned.
 "secretRef": "firecrawl/default" }`.
 3. Grant `mcp-firecrawl` to the researcher (or another no-write specialist).
 
-The `/v2/mcp-oauth` endpoint needs the Phase 2 OAuth client — not yet wired.
+OAuth (no stored key):
+
+1. `POST /api/mcp-connectors` with `{ "slug": "firecrawl",
+"url": "https://mcp.firecrawl.dev/v2/mcp-oauth", "oauth": true }`.
+2. Open the returned `authorizeUrl` in the browser and approve; the callback
+   page confirms the sync.
+3. Grant `mcp-firecrawl` as above.
 
 ## Deferred
 
 stdio transports (sandbox infra only, never the web process), MCP
-resources/prompts, OAuth 2.1 client flow, the jackdaw
-`/settings/connectors` screen.
+resources/prompts, the jackdaw `/settings/connectors` screen.

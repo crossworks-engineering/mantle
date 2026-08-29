@@ -330,6 +330,74 @@ export function parseMcpBinding(
     if (Object.keys(serverInfo).length > 0) value.serverInfo = serverInfo;
   }
 
+  // OAuth bookkeeping — non-secret state only (tokens/registration/verifier
+  // live sealed in the vault). Validated so a round-trip preserves it and a
+  // model can never smuggle junk or a credential into the row.
+  const oauthRaw = r.oauth;
+  if (oauthRaw !== undefined && oauthRaw !== null) {
+    if (typeof oauthRaw !== 'object' || Array.isArray(oauthRaw)) {
+      return {
+        ok: false,
+        error:
+          'integration.mcp.oauth must be an object — set { enabled: true } to mark the connector as OAuth-authenticated (the flow itself is driven via the connectors API, not by editing this field)',
+      };
+    }
+    const o = oauthRaw as Record<string, unknown>;
+    const pickO = (camel: string, snake: string): unknown => o[camel] ?? o[snake];
+    if (o.enabled !== true) {
+      return {
+        ok: false,
+        error:
+          'integration.mcp.oauth.enabled must be exactly true — to drop OAuth from a connector, clear the whole oauth object instead',
+      };
+    }
+    const status = String(o.status ?? 'pending');
+    if (!['pending', 'connected', 'needs_reconnect'].includes(status)) {
+      return {
+        ok: false,
+        error: `integration.mcp.oauth.status '${status}' must be pending | connected | needs_reconnect`,
+      };
+    }
+    const oauth: NonNullable<ToolGroupMcpBinding['oauth']> = {
+      enabled: true,
+      status: status as 'pending' | 'connected' | 'needs_reconnect',
+    };
+    const clientIdRaw = pickO('clientId', 'client_id');
+    if (typeof clientIdRaw === 'string' && clientIdRaw.trim()) {
+      oauth.clientId = clientIdRaw.trim().slice(0, 300);
+    }
+    const pendingRaw = o.pending;
+    if (pendingRaw && typeof pendingRaw === 'object' && !Array.isArray(pendingRaw)) {
+      const p = pendingRaw as Record<string, unknown>;
+      const state = String(p.state ?? '').trim();
+      const redirectUri = String(p.redirectUri ?? p.redirect_uri ?? '').trim();
+      const startedAt = String(p.startedAt ?? p.started_at ?? '').trim();
+      if (state && HTTP_URL_RE.test(redirectUri)) {
+        oauth.pending = {
+          state: state.slice(0, 100),
+          redirectUri: redirectUri.slice(0, 2000),
+          startedAt: startedAt.slice(0, 40),
+        };
+      }
+    }
+    const redirectUriRaw = pickO('redirectUri', 'redirect_uri');
+    if (typeof redirectUriRaw === 'string' && HTTP_URL_RE.test(redirectUriRaw.trim())) {
+      oauth.redirectUri = redirectUriRaw.trim().slice(0, 2000);
+    }
+    for (const [camel, snake] of [
+      ['tokenExpiresAt', 'token_expires_at'],
+      ['connectedAt', 'connected_at'],
+    ] as const) {
+      const v = pickO(camel, snake);
+      if (typeof v === 'string' && v.trim()) oauth[camel] = v.trim().slice(0, 40);
+    }
+    const lastErrorRaw = pickO('lastError', 'last_error');
+    if (typeof lastErrorRaw === 'string' && lastErrorRaw.trim()) {
+      oauth.lastError = lastErrorRaw.trim().slice(0, 500);
+    }
+    value.oauth = oauth;
+  }
+
   return { ok: true, value };
 }
 

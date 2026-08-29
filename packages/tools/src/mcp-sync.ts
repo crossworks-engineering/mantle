@@ -24,6 +24,7 @@ import {
 } from '@mantle/db';
 import { parseMcpBinding } from './integration-meta';
 import { closeMcpClient, mcpListRemoteTools, type McpRemoteTool } from './mcp-client';
+import { clearMcpOAuthSecrets, dbMcpOAuthStore } from './mcp-oauth';
 import { knownMcpServer } from './mcp-catalog';
 
 /** Every connector group slug starts with this — guarantees no collision with
@@ -261,6 +262,10 @@ export type CreateMcpConnectorInput = {
   secretRef?: string;
   authHeader?: string;
   authScheme?: string;
+  /** True when the server authenticates via the MCP OAuth flow: the first
+   *  sync is skipped (it would 401) — the caller starts the authorization
+   *  flow next and syncs after the callback. */
+  oauth?: boolean;
 };
 
 export type CreateMcpConnectorResult = {
@@ -291,6 +296,7 @@ export async function createMcpConnector(
     secretRef: input.secretRef,
     authHeader: input.authHeader,
     authScheme: input.authScheme,
+    ...(input.oauth ? { oauth: { enabled: true, status: 'pending' } } : {}),
   });
   if (!parsed.ok) throw new Error(parsed.error);
 
@@ -315,6 +321,10 @@ export async function createMcpConnector(
     integration: { service: connectorSlug, mcp: parsed.value },
     enabled: true,
   });
+
+  // An OAuth connector has no credential yet — the first sync would 401.
+  // The caller starts the authorization flow and syncs after the callback.
+  if (input.oauth) return { groupSlug, created: true };
 
   try {
     const sync = await syncMcpConnector(ownerId, groupSlug);
@@ -358,5 +368,10 @@ export async function deleteMcpConnector(ownerId: string, groupSlug: string): Pr
       .where(and(eq(agents.ownerId, ownerId), sql`${groupSlug} = ANY(${agents.toolGroupSlugs})`));
   });
   await closeMcpClient(ownerId, groupSlug);
+  // OAuth connectors keep their registration/tokens/verifier sealed in the
+  // vault under the group slug — purge them so nothing orphaned survives.
+  if (group.integration.mcp.oauth) {
+    await clearMcpOAuthSecrets(dbMcpOAuthStore(ownerId, groupSlug));
+  }
   return true;
 }

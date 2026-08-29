@@ -34,11 +34,39 @@ import {
  * fields (`lastSyncAt`, `toolCount`, `serverInfo`) are written by the sync,
  * not by hand.
  */
+/**
+ * OAuth 2.1 client state for a connector whose server requires the MCP auth
+ * flow (discovery → dynamic registration → PKCE authorization code → refresh).
+ * Only NON-SECRET bookkeeping lives here; the client registration, tokens, and
+ * PKCE verifier are sealed in the api_keys vault under the connector's group
+ * slug (labels `oauth-client` / `oauth-tokens` / `oauth-verifier`).
+ */
+export type ToolGroupMcpOAuth = {
+  enabled: true;
+  /** 'pending' until the first authorization completes; 'needs_reconnect'
+   *  when a refresh died and the owner must re-authorize. */
+  status: 'pending' | 'connected' | 'needs_reconnect';
+  /** client_id from dynamic registration (public identifier, not a secret). */
+  clientId?: string;
+  /** Set while an authorization redirect is in flight. */
+  pending?: { state: string; redirectUri: string; startedAt: string };
+  /** The redirect_uri of the last completed authorization — the runtime
+   *  refresh path must present a redirect-capable client to the SDK, or the
+   *  flow is misread as non-interactive and refresh never runs. */
+  redirectUri?: string;
+  tokenExpiresAt?: string;
+  connectedAt?: string;
+  lastError?: string;
+};
+
 export type ToolGroupMcpBinding = {
   /** Streamable-HTTP endpoint, e.g. 'https://mcp.firecrawl.dev/v2/mcp'. */
   url: string;
   /** `service/label` pointer into the api_keys vault — never a plaintext. */
   secretRef?: string;
+  /** Set when the server authenticates via the MCP OAuth flow instead of a
+   *  static key; `secretRef`/`authHeader` are ignored while enabled. */
+  oauth?: ToolGroupMcpOAuth;
   /** Header the credential is sent in. Default 'Authorization'. */
   authHeader?: string;
   /** Prefix before the credential in the header value. Default 'Bearer '.

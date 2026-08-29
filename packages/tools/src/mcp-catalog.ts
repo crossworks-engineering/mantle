@@ -24,6 +24,8 @@ export type KnownMcpServer = {
   description: string;
   /** The server's streamable-HTTP endpoint (key-authed shape). */
   url: string;
+  /** The server's OAuth endpoint, when it also offers the MCP OAuth flow. */
+  oauthUrl?: string;
   /** `api_keys.service` the credential is stored under, when key-authed. */
   secretService?: string;
   /** Where the user gets a key / reads about the server. */
@@ -39,6 +41,7 @@ export const KNOWN_MCP_SERVERS: readonly KnownMcpServer[] = [
     description:
       'Firecrawl’s hosted MCP server: ad-hoc web scrape, search, and structured extract straight into the conversation.',
     url: 'https://mcp.firecrawl.dev/v2/mcp',
+    oauthUrl: 'https://mcp.firecrawl.dev/v2/mcp-oauth',
     secretService: 'firecrawl',
     docsUrl: 'https://docs.firecrawl.dev/mcp-server',
     whenToUse:

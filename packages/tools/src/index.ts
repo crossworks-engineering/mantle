@@ -194,3 +194,15 @@ export {
   type McpSyncRowState,
 } from './mcp-sync';
 export { parseMcpBinding, type ToolGroupMcpBinding } from './integration-meta';
+export {
+  clearMcpOAuthSecrets,
+  completeMcpOAuth,
+  dbMcpOAuthStore,
+  findConnectorByOAuthState,
+  loadMcpOAuthTokens,
+  MCP_OAUTH_SECRET_LABELS,
+  runtimeMcpOAuthProvider,
+  startMcpOAuth,
+  type McpOAuthStore,
+  type StartMcpOAuthResult,
+} from './mcp-oauth';

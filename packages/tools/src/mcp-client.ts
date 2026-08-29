@@ -15,11 +15,13 @@
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { ToolGroupMcpBinding } from '@mantle/db';
 import { getApiKey } from '@mantle/api-keys';
 import { assertFetchableUrl } from './ssrf-guard';
 import { scrubSecrets } from './http-template';
+import { dbMcpOAuthStore, loadMcpOAuthTokens, runtimeMcpOAuthProvider } from './mcp-oauth';
 
 const IDLE_SHUTDOWN_MS = 5 * 60 * 1000;
 /** Matches web_fetch's budget — an MCP call is the same class of egress. */
@@ -54,7 +56,20 @@ const g = globalThis as typeof globalThis & { __mantleMcpClients?: Map<string, E
 const cache: Map<string, Entry> = (g.__mantleMcpClients ??= new Map());
 
 function fingerprintOf(mcp: ToolGroupMcpBinding): string {
-  return JSON.stringify([mcp.url, mcp.secretRef ?? '', mcp.authHeader ?? '', mcp.authScheme ?? '']);
+  return JSON.stringify([
+    mcp.url,
+    mcp.secretRef ?? '',
+    mcp.authHeader ?? '',
+    mcp.authScheme ?? '',
+    mcp.oauth?.enabled ? 'oauth' : '',
+  ]);
+}
+
+/** Store factory for the OAuth runtime provider — swappable so the client can
+ *  be tested against an in-memory store. Production leaves the default. */
+let oauthStoreFactory: typeof dbMcpOAuthStore = dbMcpOAuthStore;
+export function setMcpOAuthStoreFactoryForTests(f: typeof dbMcpOAuthStore): void {
+  oauthStoreFactory = f;
 }
 
 /** SSRF-guarded fetch: every request URL is re-checked (the transport may
@@ -89,12 +104,26 @@ async function resolveAuth(
   return { headers, secrets };
 }
 
-async function spawn(ownerId: string, mcp: ToolGroupMcpBinding): Promise<Entry> {
+async function spawn(ownerId: string, groupSlug: string, mcp: ToolGroupMcpBinding): Promise<Entry> {
   await assertFetchableUrl(mcp.url);
-  const { headers, secrets } = await resolveAuth(ownerId, mcp);
+  let headers: Record<string, string> = {};
+  let secrets = new Map<string, string>();
+  let authProvider: OAuthClientProvider | undefined;
+  if (mcp.oauth?.enabled) {
+    // OAuth mode: the transport owns the Authorization header + silent
+    // refresh via the provider; a needed re-authorization surfaces as a
+    // teaching error from the provider (a tool call can't open a browser).
+    const store = oauthStoreFactory(ownerId, groupSlug);
+    authProvider = runtimeMcpOAuthProvider(store, mcp.oauth.redirectUri);
+    const tokens = await loadMcpOAuthTokens(store);
+    if (tokens?.access_token) secrets.set(`${groupSlug}/oauth`, tokens.access_token);
+  } else {
+    ({ headers, secrets } = await resolveAuth(ownerId, mcp));
+  }
   const transport = new StreamableHTTPClientTransport(new URL(mcp.url), {
     requestInit: { headers },
     fetch: guardedFetch,
+    ...(authProvider ? { authProvider } : {}),
   });
   const client = new Client({ name: 'mantle-mcp-connector', version: '1.0.0' });
   await client.connect(transport, { timeout: CONNECT_TIMEOUT_MS });
@@ -132,7 +161,7 @@ async function getEntry(
     return existing;
   }
   if (existing) await closeMcpClient(ownerId, groupSlug);
-  const fresh = await spawn(ownerId, mcp);
+  const fresh = await spawn(ownerId, groupSlug, mcp);
   cache.set(key, fresh);
   bumpIdle(key, fresh);
   return fresh;
