@@ -33,6 +33,7 @@
     "reap:dangling-derived": "tsx --env-file-if-exists=./.env.local scripts/reap-dangling-derived.ts",
     "regenerate:digests": "tsx --env-file-if-exists=./.env.local scripts/regenerate-digests.ts",
     "relations:backfill": "tsx --env-file-if-exists=./.env.local scripts/relations-backfill.ts",
+    "roster:dump": "tsx --env-file-if-exists=./.env.local scripts/roster-dump.ts",
     "rotate:master-key": "tsx --env-file-if-exists=./.env.local scripts/rotate-master-key.ts",
     "route-manifest": "tsx scripts/gen-route-manifest.ts",
     "seed:appsmith": "tsx --env-file-if-exists=./.env.local scripts/seed-appsmith-agent.ts",
