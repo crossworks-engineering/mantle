@@ -241,8 +241,7 @@ describe('parts (avatar builder choices)', () => {
 
   it('a pinned variant is deterministic and actually changes the avatar', async () => {
     const loaded = await loadAvatarStyle('adventurer');
-    const [component, names] =
-      Object.entries(loaded.variants).find(([, v]) => v.length >= 2) ?? [];
+    const [component, names] = Object.entries(loaded.variants).find(([, v]) => v.length >= 2) ?? [];
     if (!component || !names) throw new Error('adventurer lost its multi-variant components');
     const base = { style: 'adventurer', seed: 'Remy', size: 40 };
     const a1 = await renderAvatarSvg({ ...base, parts: { [component]: names[0]! } });
