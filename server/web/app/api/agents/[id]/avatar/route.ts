@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
 import { getOwnerOr401 } from '@/lib/auth';
@@ -60,22 +61,39 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const style = prefs?.avatarStyle;
   const tint = resolveAvatarTint(prefs?.avatarTint);
 
+  // The drawing is a pure function of these inputs, so they ARE the cache
+  // identity. The URL isn't (id + size only), and the old blanket
+  // max-age=86400 kept a companion showing a stale avatar for a day after a
+  // builder edit. no-cache + ETag = the client revalidates every time but a
+  // 304 costs no render and no body; an edit shows up on the next fetch.
+  const inputs = {
+    seed: agent.avatar.seed || agent.slug,
+    parts: agent.avatar.parts ?? null,
+    style: style ?? null,
+    tint,
+    size,
+  };
+  const etag = `"${createHash('sha1').update(JSON.stringify(inputs)).digest('hex')}"`;
+  const headers = {
+    'Content-Type': 'image/svg+xml; charset=utf-8',
+    'Cache-Control': 'private, no-cache',
+    ETag: etag,
+  };
+  if (req.headers.get('if-none-match') === etag) {
+    return new Response(null, { status: 304, headers });
+  }
+
   // Async because style JSON is fetched on demand (avatar.ts) — 50 styles are
   // far too much to hold resident just to serve one avatar. Cached after the
   // first request, and a brain draws one style.
   const svg = await renderAvatarSvg({
     style,
-    seed: agent.avatar.seed || agent.slug,
+    seed: inputs.seed,
     parts: agent.avatar.parts,
     size,
     ramp: PALETTE,
     tint,
   });
 
-  return new Response(svg, {
-    headers: {
-      'Content-Type': 'image/svg+xml; charset=utf-8',
-      'Cache-Control': 'private, max-age=86400',
-    },
-  });
+  return new Response(svg, { headers });
 }

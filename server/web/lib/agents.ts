@@ -188,6 +188,14 @@ export type CreateAgentInput = {
   enabled?: boolean;
 };
 
+/** Drop an explicit-clear `parts: {}` so the row never stores the empty map
+ *  (absent and {} must read identically — see the avatar note in updateAgent). */
+function normalizeAvatar(a: AgentAvatar | null): AgentAvatar | null {
+  if (!a?.parts || Object.keys(a.parts).length > 0) return a;
+  const { parts: _cleared, ...rest } = a;
+  return rest;
+}
+
 /** `db`, or a transaction handle standing in for it. Lets a caller compose
  *  several writes atomically without re-implementing the insert mapping (the
  *  pattern `packages/agent-runtime/src/conversation.ts` uses). */
@@ -223,7 +231,7 @@ export async function createAgent(
       toolGroupSlugs: input.toolGroupSlugs ?? [],
       memoryConfig: input.memoryConfig ?? {},
       params: input.params ?? {},
-      avatar: input.avatar ?? null,
+      avatar: normalizeAvatar(input.avatar ?? null),
       priority: input.priority ?? 100,
       enabled: input.enabled ?? true,
     })
@@ -271,7 +279,21 @@ export async function updateAgent(
     )}::jsonb`;
   }
   if (patch.params !== undefined) next.params = patch.params;
-  if (patch.avatar !== undefined) next.avatar = patch.avatar;
+  // Avatar writes must not let a parts-unaware client wipe builder pins: a
+  // pre-builder jackdaw (or any wire type predating `parts`) rebuilds the
+  // avatar as {style, seed}, and a wholesale replace would silently drop the
+  // stored pins. So an ABSENT parts key means "keep what's stored" (jsonb ||,
+  // same top-level-merge pattern as memoryConfig above), and clearing is
+  // explicit: parts: {} — normalized away so the row never stores the empty
+  // map. A non-empty parts (or null avatar) replaces outright.
+  if (patch.avatar !== undefined) {
+    const a = patch.avatar;
+    if (a && a.parts === undefined) {
+      next.avatar = sql`coalesce(${agents.avatar}, '{}'::jsonb) || ${JSON.stringify(a)}::jsonb`;
+    } else {
+      next.avatar = normalizeAvatar(a);
+    }
+  }
   if (patch.priority !== undefined) next.priority = patch.priority;
   if (patch.enabled !== undefined) next.enabled = patch.enabled;
 

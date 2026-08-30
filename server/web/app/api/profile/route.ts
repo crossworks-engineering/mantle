@@ -19,6 +19,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { AvatarPartsSchema } from '@/lib/avatar-schema';
 import {
   DEFAULT_PREFERENCES,
   isPurposeArchetype,
@@ -60,10 +61,7 @@ const Body = z.object({
   // Applied only when SENT (an older client must not clear a saved build);
   // send {} to clear — it projects to unset. Shape is re-checked in
   // projectAvatarParts, so this only bounds the payload.
-  avatarParts: z
-    .record(z.string().min(1).max(64), z.string().min(1).max(64).nullable())
-    .refine((p) => Object.keys(p).length <= 64, 'too many parts')
-    .optional(),
+  avatarParts: AvatarPartsSchema.optional(),
   // Empty = "most recent chat" (unset).
   reminderAgentSlug: z.string().max(120).optional(),
   reminderChannel: z.string().max(32).optional(),
