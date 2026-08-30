@@ -176,6 +176,25 @@ export function projectAvatarStyle(raw: unknown): string | undefined {
   return /^[a-z0-9][a-z0-9-]{0,63}$/.test(t) ? t : undefined;
 }
 
+/** Project stored avatar-builder choices: component → pinned variant | null
+ *  ("hide"). Shape-checked only, same contract as projectAvatarStyle — which
+ *  components a style actually has is web-layer knowledge, and stale entries
+ *  are dropped at RENDER time so a style switch never invalidates a row.
+ *  Empty/garbage → undefined (= seed only). Names follow DiceBear's camelCase
+ *  identifier pattern; the entry cap is a storage guard. */
+const AVATAR_PART_NAME = /^[a-z][a-zA-Z0-9]{0,63}$/;
+export function projectAvatarParts(raw: unknown): Record<string, string | null> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Record<string, string | null> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (!AVATAR_PART_NAME.test(k)) continue;
+    if (v === null) out[k] = null;
+    else if (typeof v === 'string' && AVATAR_PART_NAME.test(v)) out[k] = v;
+    if (Object.keys(out).length >= 64) break;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 /**
  * Project a stored `backgrounds` map, `area=style` pairs, comma separated.
  *
@@ -411,6 +430,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
       typeof prefs.avatarSeed === 'string' && prefs.avatarSeed.length > 0
         ? prefs.avatarSeed
         : undefined,
+    avatarParts: projectAvatarParts(prefs.avatarParts),
     reminderAgentSlug:
       typeof prefs.reminderAgentSlug === 'string' && prefs.reminderAgentSlug.length > 0
         ? prefs.reminderAgentSlug
@@ -614,6 +634,7 @@ export async function updateProfilePreferences(
     defaultMode: projectDefaultMode(merged.defaultMode),
     shareNeat: merged.shareNeat !== false,
     avatarSeed: merged.avatarSeed || undefined,
+    avatarParts: projectAvatarParts(merged.avatarParts),
     reminderAgentSlug: merged.reminderAgentSlug || undefined,
     reminderChannel: isReminderChannel(merged.reminderChannel) ? merged.reminderChannel : undefined,
     displayName: merged.displayName || undefined,

@@ -56,6 +56,14 @@ const Body = z.object({
   // clear it, which is why it is spread conditionally below.
   avatarStyle: z.string().max(64).optional(),
   avatarSeed: z.string().max(200).optional(),
+  // Avatar-builder choices for THIS user's avatar (component → variant | null).
+  // Applied only when SENT (an older client must not clear a saved build);
+  // send {} to clear — it projects to unset. Shape is re-checked in
+  // projectAvatarParts, so this only bounds the payload.
+  avatarParts: z
+    .record(z.string().min(1).max(64), z.string().min(1).max(64).nullable())
+    .refine((p) => Object.keys(p).length <= 64, 'too many parts')
+    .optional(),
   // Empty = "most recent chat" (unset).
   reminderAgentSlug: z.string().max(120).optional(),
   reminderChannel: z.string().max(32).optional(),
@@ -93,6 +101,7 @@ export async function PUT(req: Request) {
     locale,
     avatarStyle,
     avatarSeed,
+    avatarParts,
     reminderAgentSlug,
     reminderChannel,
     purpose,
@@ -121,6 +130,7 @@ export async function PUT(req: Request) {
       ...(loc ? { locale: loc } : {}),
       ...(avatarStyle !== undefined ? { avatarStyle: avatarStyle.trim() } : {}),
       avatarSeed: (avatarSeed ?? '').trim(),
+      ...(avatarParts !== undefined ? { avatarParts } : {}),
       reminderAgentSlug: (reminderAgentSlug ?? '').trim(),
       ...(isReminderChannel((reminderChannel ?? '').trim())
         ? { reminderChannel: (reminderChannel ?? '').trim() as 'telegram' | 'mobile' }

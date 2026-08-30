@@ -66,6 +66,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const svg = await renderAvatarSvg({
     style,
     seed: agent.avatar.seed || agent.slug,
+    parts: agent.avatar.parts,
     size,
     ramp: PALETTE,
     tint,

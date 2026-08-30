@@ -227,3 +227,65 @@ describe('determinism', () => {
     expect(await renderAvatarSvg({ style: 'shapes', seed: 'x', size: 96 })).toContain('width="96"');
   });
 });
+
+describe('parts (avatar builder choices)', () => {
+  it('exposes each style’s components, variants, and optional set', async () => {
+    const loaded = await loadAvatarStyle('adventurer');
+    expect(Object.keys(loaded.variants).length).toBeGreaterThan(0);
+    for (const names of Object.values(loaded.variants)) {
+      expect(names.length).toBeGreaterThan(0);
+    }
+    // Every optional component is a real component.
+    for (const c of loaded.optional) expect(loaded.variants[c]).toBeDefined();
+  });
+
+  it('a pinned variant is deterministic and actually changes the avatar', async () => {
+    const loaded = await loadAvatarStyle('adventurer');
+    const [component, names] =
+      Object.entries(loaded.variants).find(([, v]) => v.length >= 2) ?? [];
+    if (!component || !names) throw new Error('adventurer lost its multi-variant components');
+    const base = { style: 'adventurer', seed: 'Remy', size: 40 };
+    const a1 = await renderAvatarSvg({ ...base, parts: { [component]: names[0]! } });
+    const a2 = await renderAvatarSvg({ ...base, parts: { [component]: names[0]! } });
+    const b = await renderAvatarSvg({ ...base, parts: { [component]: names[1]! } });
+    expect(a1).toBe(a2);
+    expect(a1).not.toBe(b);
+  });
+
+  it('drops unknown components and variants instead of throwing', async () => {
+    const loaded = await loadAvatarStyle('adventurer');
+    const component = Object.keys(loaded.variants)[0]!;
+    const plain = await renderAvatarSvg({ style: 'adventurer', seed: 'Remy' });
+    const junk = await renderAvatarSvg({
+      style: 'adventurer',
+      seed: 'Remy',
+      parts: { noSuchComponent: 'x', [component]: 'noSuchVariant' },
+    });
+    expect(junk).toBe(plain);
+  });
+
+  it('null hides an optional component; a pin force-shows it', async () => {
+    const loaded = await loadAvatarStyle('adventurer');
+    const component = loaded.optional[0];
+    if (!component) throw new Error('adventurer lost its optional components');
+    const variant = loaded.variants[component]![0]!;
+    const base = { style: 'adventurer', seed: 'Remy', size: 40 };
+    const shown = await renderAvatarSvg({ ...base, parts: { [component]: variant } });
+    const hidden = await renderAvatarSvg({ ...base, parts: { [component]: null } });
+    expect(shown).not.toBe(hidden);
+  });
+
+  it('stays deterministic with a themed ramp on top', async () => {
+    const loaded = await loadAvatarStyle('adventurer');
+    const component = Object.keys(loaded.variants)[0]!;
+    const variant = loaded.variants[component]![0]!;
+    const opts = {
+      style: 'adventurer',
+      seed: 'Remy',
+      ramp: RAMP,
+      tint: 'theme' as const,
+      parts: { [component]: variant },
+    };
+    expect(await renderAvatarSvg(opts)).toBe(await renderAvatarSvg(opts));
+  });
+});

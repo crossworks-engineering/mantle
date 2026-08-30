@@ -258,6 +258,10 @@ export type AgentRole =
 export interface AgentAvatarDTO {
   style: string;
   seed: string;
+  /** Avatar-builder component choices layered over the seed: component name →
+   *  pinned variant, or null to hide an optional component. Stale entries
+   *  (from another style) are ignored at render time. Absent = seed only. */
+  parts?: Record<string, string | null>;
 }
 
 /** Memory/budget tuning (jsonb). All fields optional — empty = runtime defaults.
@@ -926,6 +930,11 @@ export type ProfilePreferences = {
    *  so an avatar still renders. Personal — two admins share the brain's style
    *  but never the same avatar. */
   avatarSeed?: string;
+  /** Avatar-builder component choices for THIS user's avatar, layered over the
+   *  seed: component name → pinned variant, or null to hide an optional
+   *  component. Personal, like avatarSeed. Stale entries (saved under another
+   *  brain style) are ignored at render time. Absent/empty = seed only. */
+  avatarParts?: Record<string, string | null>;
   /** Slug of the responder agent whose Telegram bot delivers event reminders.
    *  Unset → the reminder worker falls back to the most-recently-active allowed
    *  DM (whichever bot you last messaged). Set it to pin reminders to one

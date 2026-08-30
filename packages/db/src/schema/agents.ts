@@ -46,6 +46,13 @@ export const agentRole = pgEnum('agent_role', [
 export type AgentAvatar = {
   style: string;
   seed: string;
+  /** Explicit component choices layered over the seed (avatar builder):
+   *  component name → pinned variant, or null to hide an optional component.
+   *  Validated per-style at RENDER time, not here — a choice saved under one
+   *  brain style must survive the brain switching styles (stale entries are
+   *  ignored by the renderer, never an error). Absent = seed-only, the
+   *  pre-builder behaviour. */
+  parts?: Record<string, string | null>;
 };
 
 export type AgentMemoryConfig = {

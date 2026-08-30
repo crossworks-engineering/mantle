@@ -571,6 +571,9 @@ export type Loaded = {
   /** component name → the variant names it offers, e.g. `rotation` →
    *  `['quarter', 'none', 'free']`. Empty for styles that declare none. */
   variants: Record<string, string[]>;
+  /** Components the style may leave out (declared probability < 100). Only
+   *  these accept `null` ("hide it") in {@link AvatarParts}. */
+  optional: string[];
 };
 
 /**
@@ -606,15 +609,20 @@ function tintableGroups(json: unknown): string[] {
  * has a `rotation` component. Reading the declaration is the only way to know;
  * guessing by style id would break the moment a style is added or renamed.
  */
-function componentVariants(json: unknown): Record<string, string[]> {
+function componentVariants(json: unknown): Pick<Loaded, 'variants' | 'optional'> {
   const components = (json as { components?: Record<string, unknown> } | null)?.components;
-  if (!components) return {};
-  const out: Record<string, string[]> = {};
+  if (!components) return { variants: {}, optional: [] };
+  const variants: Record<string, string[]> = {};
+  const optional: string[] = [];
   for (const [name, spec] of Object.entries(components)) {
-    const variants = (spec as { variants?: Record<string, unknown> } | null)?.variants;
-    if (variants) out[name] = Object.keys(variants);
+    // Alias components (`extends`) declare no variants of their own — skipped,
+    // like every other component without a variants map.
+    const s = spec as { variants?: Record<string, unknown>; probability?: number } | null;
+    if (!s?.variants) continue;
+    variants[name] = Object.keys(s.variants);
+    if (typeof s.probability === 'number' && s.probability < 100) optional.push(name);
   }
-  return out;
+  return { variants, optional };
 }
 
 // `Style` parses and validates the JSON once; building one per render would
@@ -655,7 +663,7 @@ export function loadAvatarStyle(id: string | null | undefined): Promise<Loaded> 
       const loaded: Loaded = {
         style: new Style(json as ConstructorParameters<typeof Style>[0]),
         tintGroups: tintableGroups(json),
-        variants: componentVariants(json),
+        ...componentVariants(json),
       };
       STYLES.set(key, loaded);
       INFLIGHT.delete(key);
@@ -681,11 +689,23 @@ function hexOnly(colors: readonly string[] | undefined): string[] | undefined {
   return ok.length ? ok : undefined;
 }
 
+/**
+ * Explicit per-component choices layered over the seed: component name → the
+ * variant to pin, or `null` to hide an OPTIONAL component. Components the map
+ * does not name keep their seed-picked look, so a stored choice set stays
+ * valid as the user re-rolls the seed underneath it. Unknown components and
+ * variants are DROPPED, not rejected — a choice saved under one brain style
+ * must never make an avatar throw after the brain switches styles.
+ */
+export type AvatarParts = Record<string, string | null>;
+
 export type RenderAvatarOptions = {
   /** Stored style id; legacy and unknown ids are resolved, not rejected. */
   style?: string | null;
   /** Stable per-entity seed — the same seed always yields the same avatar. */
   seed: string;
+  /** Explicit component choices layered over the seed; see {@link AvatarParts}. */
+  parts?: AvatarParts | null;
   /** Rendered px. Sets the root svg width/height; the viewBox scales. */
   size?: number;
   /** The theme's chart ramp, as hex. Ignored when tint is `native`. */
@@ -694,7 +714,7 @@ export type RenderAvatarOptions = {
   tint?: AvatarTint;
 };
 
-function draw(loaded: Loaded, { seed, size = 40, ramp, tint }: RenderAvatarOptions): string {
+function draw(loaded: Loaded, { seed, size = 40, ramp, tint, parts }: RenderAvatarOptions): string {
   const colors = hexOnly(ramp);
   const opts: Record<string, unknown> = { seed: seed || 'mantle', size };
   const mode = resolveAvatarTint(tint);
@@ -705,6 +725,25 @@ function draw(loaded: Loaded, { seed, size = 40, ramp, tint }: RenderAvatarOptio
     opts.backgroundColor = colors;
     if (mode === 'theme') {
       for (const g of loaded.tintGroups) opts[`${g}Color`] = colors;
+    }
+  }
+  if (parts) {
+    for (const [component, variant] of Object.entries(parts)) {
+      // DiceBear throws on options for components the style does not declare,
+      // so only choices the loaded style recognises may pass (see the note on
+      // componentVariants). Everything else is a stale choice — ignore it.
+      const known = loaded.variants[component];
+      if (!known) continue;
+      if (variant === null) {
+        // "Hide it" — only meaningful for components the style may omit.
+        if (loaded.optional.includes(component)) opts[`${component}Probability`] = 0;
+        continue;
+      }
+      if (!known.includes(variant)) continue;
+      opts[`${component}Variant`] = variant;
+      // A pinned variant must actually show: probability rolls independently
+      // of variant choice, so an optional component needs the 100 as well.
+      if (loaded.optional.includes(component)) opts[`${component}Probability`] = 100;
     }
   }
   return new Avatar(loaded.style, opts).toString();

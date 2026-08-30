@@ -65,6 +65,13 @@ const Avatar = z
   .object({
     style: z.string().min(1).max(64),
     seed: z.string().min(1).max(200),
+    // Avatar-builder choices: component → pinned variant | null ("hide").
+    // Names are validated per-style at render time, not here — see AgentAvatar
+    // in @mantle/db. The caps only bound the stored blob.
+    parts: z
+      .record(z.string().min(1).max(64), z.string().min(1).max(64).nullable())
+      .refine((p) => Object.keys(p).length <= 64, 'too many parts')
+      .optional(),
   })
   .strict()
   .nullable();

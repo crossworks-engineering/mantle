@@ -32,7 +32,7 @@ export async function GET() {
   // an agent, a human opting out to initials is a real choice the profile
   // screen offers, so absence here means initials rather than a default seed.
   const avatar = prefs.avatarSeed
-    ? { style: prefs.avatarStyle ?? '', seed: prefs.avatarSeed }
+    ? { style: prefs.avatarStyle ?? '', seed: prefs.avatarSeed, parts: prefs.avatarParts ?? null }
     : null;
   // Short-lived asset-access token so a detached client's <img>/<iframe>/download
   // srcs (which can't carry a bearer) can load `?raw=1` files + attachments. The
