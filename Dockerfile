@@ -113,6 +113,12 @@ RUN useradd -m -u 1001 media \
 ENV PATH="/opt/venv/bin:$PATH"
 USER media
 RUN pip install --no-cache-dir yt-dlp
+# CAD tier: ezdwf (MIT, Rust wheel) renders Autodesk DWF plot-set sheets to
+# PNG for the /dwf/render route; matplotlib is its raster backend. Pinned —
+# unlike yt-dlp, nothing here needs "always latest", and ezdwf is pre-alpha
+# so an unreviewed bump could change render output under us.
+ENV MPLBACKEND=Agg
+RUN pip install --no-cache-dir "ezdwf==0.0.3" "matplotlib>=3.9,<4"
 COPY infra/media-sidecar/app.py /srv/app.py
 COPY infra/media-sidecar/entrypoint.sh /srv/entrypoint.sh
 EXPOSE 8095

@@ -26,18 +26,25 @@ Wire notes that bit us once already (keep them true):
     unread body would be parsed as the next request.
 
 Routes (bearer auth on everything except /healthz):
-  GET  /healthz                        -> {ok, versions:{yt_dlp, ffmpeg}}
+  GET  /healthz                        -> {ok, versions:{yt_dlp, ffmpeg, ezdwf}}
   POST /probe          {url}           -> metadata + caption availability
   POST /captions       {url,lang?,prefer?} -> {content: "<vtt>", source, lang}
   POST /audio          {url,maxDurationSeconds?,maxBytes?} -> mp3 bytes
   POST /extract-audio  <raw video bytes>   -> mp3 bytes
   POST /video          {url,maxBytes?}     -> mp4 bytes
+  POST /dwf/render     <raw DWF bytes> (X-Dwf-Dpi?) -> {sheets:[{name,width,
+                       height,png_base64}], truncated} — per-sheet rasters of
+                       an Autodesk DWF plot set, rendered by ezdwf (MIT; the
+                       CAD-visual half of this sidecar's single purpose:
+                       extracting viewable media from formats the app process
+                       shouldn't parse itself)
 
 Error envelope on every non-2xx: {"ok":false,"error":{"code","message"}}.
 Codes: unauthorized, bad_request, blocked_url, no_captions,
 extraction_failed, duration_exceeded, size_exceeded, timeout, busy.
 """
 
+import base64
 import ipaddress
 import json
 import hmac
@@ -119,7 +126,14 @@ def get_versions() -> dict:
             ffmpeg = first[0].split()[2] if first and len(first[0].split()) > 2 else None
         except Exception:
             pass
-        value = {"yt_dlp": ytdlp, "ffmpeg": ffmpeg}
+        ezdwf_version = None
+        try:
+            import ezdwf  # noqa: PLC0415 — optional; absent on images built before the CAD tier
+
+            ezdwf_version = getattr(ezdwf, "__version__", "unknown")
+        except Exception:
+            pass
+        value = {"yt_dlp": ytdlp, "ffmpeg": ffmpeg, "ezdwf": ezdwf_version}
         _versions_cache.update(at=time.time(), value=value)
         return value
 
@@ -531,6 +545,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._heavy(self._op_extract_audio)
             elif self.path == "/video":
                 self._heavy(self._op_video)
+            elif self.path == "/dwf/render":
+                self._heavy(self._op_dwf_render)
             else:
                 raise OpError(404, "bad_request", "unknown route")
         except OpError as err:
@@ -619,6 +635,77 @@ class Handler(BaseHTTPRequestHandler):
                 out,
                 "audio/mpeg",
                 {"X-Media-Duration-Seconds": duration, "X-Media-Title": info.get("title")},
+            )
+
+    def _op_dwf_render(self):
+        """Raster every 2D sheet of a DWF plot set via ezdwf (in-process Rust,
+        no subprocess: the 9-sheet reference set renders in ~2s, and the
+        heavy-op semaphore plus the client's abort timer bound a pathological
+        file). Response is JSON with base64 PNGs — sheet count and cumulative
+        payload are capped, and `truncated` says when either cap bit."""
+        try:
+            import ezdwf  # noqa: PLC0415 — lazy: absent on images built before the CAD tier
+        except Exception:
+            raise OpError(
+                500, "extraction_failed", "ezdwf is not installed in this sidecar image"
+            )
+        length = self._content_length(MAX_UPLOAD_BYTES)
+        if length <= 0:
+            raise OpError(400, "bad_request", "raw DWF bytes required as the request body")
+        dpi = int_field(self.headers.get("X-Dwf-Dpi"), 300, 50, 400, "X-Dwf-Dpi")
+        max_sheets = int_field(self.headers.get("X-Dwf-Max-Sheets"), 64, 1, 256, "X-Dwf-Max-Sheets")
+        payload_cap = 48 * 1024 * 1024  # raw PNG bytes before base64
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "in.dwf")
+            remaining = length
+            with open(src, "wb") as f:
+                while remaining > 0:
+                    chunk = self.rfile.read(min(64 * 1024, remaining))
+                    if not chunk:
+                        raise OpError(400, "bad_request", "request body ended early")
+                    f.write(chunk)
+                    remaining -= len(chunk)
+            try:
+                drawing = ezdwf.read(src)
+                sheets = list(drawing.sheets)
+            except Exception as err:
+                raise OpError(422, "extraction_failed", f"ezdwf could not read the DWF: {err}")
+            out, total, rendered = [], 0, 0
+            for sheet in sheets[:max_sheets]:
+                png_path = os.path.join(tmp, f"sheet-{rendered}.png")
+                try:
+                    sheet.save_plot(png_path, dpi=dpi)
+                    with open(png_path, "rb") as f:
+                        png = f.read()
+                except Exception:
+                    # One bad sheet must not sink the set — skip it; the count
+                    # gap is visible to the caller via truncated/len(sheets).
+                    continue
+                if total + len(png) > payload_cap:
+                    break
+                total += len(png)
+                width = height = None
+                if len(png) > 24 and png[:8] == b"\x89PNG\r\n\x1a\n":
+                    width = int.from_bytes(png[16:20], "big")
+                    height = int.from_bytes(png[20:24], "big")
+                out.append(
+                    {
+                        "name": str(getattr(sheet, "name", "") or f"sheet {rendered + 1}"),
+                        "width": width,
+                        "height": height,
+                        "png_base64": base64.b64encode(png).decode("ascii"),
+                    }
+                )
+                rendered += 1
+            self._send_json(
+                200,
+                {
+                    "ok": True,
+                    "dpi": dpi,
+                    "sheet_count": len(sheets),
+                    "truncated": len(out) < len(sheets),
+                    "sheets": out,
+                },
             )
 
     def _op_extract_audio(self):

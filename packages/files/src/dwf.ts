@@ -338,8 +338,35 @@ export async function parseDwfStructured(bytes: Buffer): Promise<DwfParsed> {
  * still do. `location.sheet` carries the sheet title so the naming cascade
  * yields "… (21-62-09)"-style node titles.
  */
+/** Render resolution for sidecar sheet rasters. 300 dpi puts an A1 P&ID at
+ *  ~1500×970 — tags and line numbers legible to people AND the vision worker,
+ *  ~400 KB/sheet. (The embedded thumbnails this replaces are 262×170.) */
+const DWF_RENDER_DPI = 300;
+
 export async function extractDwfImages(bytes: Buffer): Promise<EmbeddedImage[]> {
   if (!sniffDwf(bytes)) return [];
+
+  // Sidecar first: when the media sidecar is up, each sheet becomes a real
+  // raster of its vector content via ezdwf (`/dwf/render`) instead of the
+  // container's 262×170 preview. Never-throws client: ANY failure — profile
+  // off, container down, ezdwf missing on an older image, render error —
+  // falls back to the embedded thumbnails below, so a box without the
+  // sidecar keeps exactly the pre-sidecar behaviour.
+  const { mediaSidecarEnabled, mediaDwfRender } = await import('./media-sidecar');
+  if (mediaSidecarEnabled()) {
+    const render = await mediaDwfRender(bytes, { dpi: DWF_RENDER_DPI });
+    if (render.ok && render.value.sheets.length > 0) {
+      return render.value.sheets.map((s, i) => ({
+        bytes: s.png,
+        ordinal: i + 1,
+        location: { sheet: s.name },
+        altText: `Sheet ${s.name}`,
+        essential: true,
+        ...describeImageBytes(s.png, 'png'),
+      }));
+    }
+  }
+
   const { entries, sectionEntries, sections } = await openDwf(bytes);
   const images: EmbeddedImage[] = [];
   for (const { name, title } of sections) {

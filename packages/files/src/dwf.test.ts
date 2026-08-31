@@ -12,7 +12,7 @@
  */
 import { createCanvas } from '@napi-rs/canvas';
 import JSZip from 'jszip';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   extractDwfImages,
   parseDwf,
@@ -195,6 +195,48 @@ describe('extractDwfImages (sheet thumbnails)', () => {
 
   it('returns [] for bytes without the DWF magic', async () => {
     expect(await extractDwfImages(Buffer.from('PK\x03\x04nope'))).toEqual([]);
+  });
+
+  it('prefers media-sidecar renders when configured, thumbnails when the call fails', async () => {
+    const renderPng = thumbnailPng();
+    vi.stubEnv('MEDIA_SIDECAR_URL', 'http://media.test:8095');
+    vi.stubEnv('MEDIA_SIDECAR_TOKEN', 'secret');
+    const fetchMock = vi.fn(async (_url: unknown, _init?: unknown) =>
+      Response.json({
+        ok: true,
+        dpi: 300,
+        sheet_count: 1,
+        truncated: false,
+        sheets: [
+          {
+            name: '90-10-01 Rev 2',
+            width: 262,
+            height: 170,
+            png_base64: renderPng.toString('base64'),
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const images = await extractDwfImages(await buildFixture());
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(String(fetchMock.mock.calls[0]![0])).toBe('http://media.test:8095/dwf/render');
+      expect(images).toHaveLength(1);
+      expect(images[0]!.bytes.equals(renderPng)).toBe(true);
+      expect(images[0]!.location?.sheet).toBe('90-10-01 Rev 2');
+      expect(images[0]!.essential).toBe(true);
+
+      // Sidecar down → typed failure inside the client → thumbnail fallback,
+      // never a throw.
+      fetchMock.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+      const fallback = await extractDwfImages(await buildFixture());
+      expect(fallback).toHaveLength(1);
+      expect(fallback[0]!.location?.sheet).toBe('90-10-01 Rev 2');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
   });
 });
 

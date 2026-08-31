@@ -361,3 +361,90 @@ export async function mediaVideo(
     consumeMedia(opts.maxBytes),
   );
 }
+
+// ── CAD: DWF sheet rendering ──────────────────────────────────────────
+
+export type DwfSheetRender = {
+  /** Sheet title as published ("21-62-09 Rev 8" style). */
+  name: string;
+  width: number | null;
+  height: number | null;
+  png: Buffer;
+};
+
+export type DwfRender = {
+  dpi: number;
+  /** How many 2D sheets the container holds — more than `sheets.length`
+   *  when the sidecar's sheet-count or payload cap truncated the set. */
+  sheetCount: number;
+  truncated: boolean;
+  sheets: DwfSheetRender[];
+};
+
+// Renders are in-process Rust (~2s for a real 9-sheet set); the generous
+// budget covers a 64-sheet pathological container under the heavy-op gate.
+const T_DWF_RENDER = 180_000 + BACKSTOP_MS;
+/** Decoded-bytes ceiling, mirroring the sidecar's 48 MB raw-PNG payload cap. */
+const DWF_RENDER_MAX_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Raster every sheet of an Autodesk DWF plot set via the sidecar's ezdwf
+ * (`POST /dwf/render`). Same never-throws contract as the media ops; callers
+ * that can fall back (the embedded-thumbnail path) treat any failure as
+ * "use the fallback", so every code path must come back typed.
+ */
+export async function mediaDwfRender(
+  dwf: Buffer,
+  opts?: { dpi?: number; maxSheets?: number },
+): Promise<MediaResult<DwfRender>> {
+  return exchange(
+    '/dwf/render',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        ...(opts?.dpi ? { 'X-Dwf-Dpi': String(opts.dpi) } : {}),
+        ...(opts?.maxSheets ? { 'X-Dwf-Max-Sheets': String(opts.maxSheets) } : {}),
+      },
+      body: dwf as unknown as BodyInit,
+    },
+    T_DWF_RENDER,
+    (res) =>
+      consumeJson(res, (body) => {
+        const rawSheets = Array.isArray(body.sheets) ? body.sheets : null;
+        if (!rawSheets) {
+          return { ok: false, code: 'extraction_failed', message: 'render reply has no sheets' };
+        }
+        const sheets: DwfSheetRender[] = [];
+        let total = 0;
+        for (const raw of rawSheets) {
+          const s = raw as Record<string, unknown>;
+          if (typeof s.png_base64 !== 'string') continue;
+          const png = Buffer.from(s.png_base64, 'base64');
+          total += png.length;
+          if (total > DWF_RENDER_MAX_BYTES) {
+            return {
+              ok: false,
+              code: 'size_exceeded',
+              message: `decoded renders exceeded the ${DWF_RENDER_MAX_BYTES}-byte cap`,
+            };
+          }
+          sheets.push({
+            name: typeof s.name === 'string' && s.name ? s.name : `sheet ${sheets.length + 1}`,
+            width: typeof s.width === 'number' ? s.width : null,
+            height: typeof s.height === 'number' ? s.height : null,
+            png,
+          });
+        }
+        return {
+          ok: true,
+          value: {
+            dpi: typeof body.dpi === 'number' ? body.dpi : 0,
+            sheetCount: typeof body.sheet_count === 'number' ? body.sheet_count : sheets.length,
+            truncated: body.truncated === true,
+            sheets,
+          },
+        };
+      }),
+  );
+}
