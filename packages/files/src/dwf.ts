@@ -368,10 +368,19 @@ async function parseDwfStructuredUncached(bytes: Buffer): Promise<DwfParsed> {
  * `location.sheet` carries the sheet title so the naming cascade yields
  * "… (90-10-01)"-style node titles.
  */
-/** Render resolution for sidecar sheet rasters. 300 dpi puts an A1 P&ID at
- *  ~1500×970 — tags and line numbers legible to people AND the vision worker,
- *  ~400 KB/sheet. (The embedded thumbnails this replaces are 262×170.) */
-const DWF_RENDER_DPI = 300;
+/** Render resolution for sidecar sheet rasters — a PER-BOX dial via the
+ *  `DWF_RENDER_DPI` env (clamped to the sidecar's 50–600 range; default 300).
+ *  ezdwf's dpi acts on an internal figure, so on a real A1 plot 300 ≈ 1500 px
+ *  and 600 ≈ 3000 px. Tune to the box's VISION worker: tile-reading models
+ *  (Gemini) genuinely consume ~3000 px, so a drawing-heavy box pairs
+ *  DWF_RENDER_DPI=600 with a strong tiled reader; Claude-vision boxes gain
+ *  nothing past ~1500 px (provider downscale). Higher dpi ≈ 4× bytes and
+ *  vision tokens per sheet — a cost dial as much as a quality one. */
+function renderDpi(): number {
+  const raw = Number(process.env.DWF_RENDER_DPI);
+  if (!Number.isFinite(raw) || raw <= 0) return 300;
+  return Math.min(600, Math.max(50, Math.round(raw)));
+}
 
 function sheetImage(
   png: Buffer,
@@ -399,7 +408,7 @@ export async function extractDwfImages(
   const { mediaSidecarEnabled, mediaDwfRender } = await import('./media-sidecar');
   if (mediaSidecarEnabled()) {
     const render = await mediaDwfRender(bytes, {
-      dpi: DWF_RENDER_DPI,
+      dpi: renderDpi(),
       ...(opts?.maxSheets ? { maxSheets: opts.maxSheets } : {}),
     });
     if (render.ok) {

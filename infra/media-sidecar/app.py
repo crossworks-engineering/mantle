@@ -660,7 +660,11 @@ class Handler(BaseHTTPRequestHandler):
         length = self._content_length(MAX_UPLOAD_BYTES)
         if length <= 0:
             raise OpError(400, "bad_request", "raw DWF bytes required as the request body")
-        dpi = int_field(self.headers.get("X-Dwf-Dpi"), 300, 50, 400, "X-Dwf-Dpi")
+        # 600 is the useful top: ezdwf's dpi acts on its internal figure, so
+        # 600 puts a real A1 plot near ~3000 px — the ceiling tile-reading
+        # vision models (Gemini) actually consume. The child's output-pixel
+        # guard bounds memory regardless of what a sheet turns out to be.
+        dpi = int_field(self.headers.get("X-Dwf-Dpi"), 300, 50, 600, "X-Dwf-Dpi")
         max_sheets = int_field(self.headers.get("X-Dwf-Max-Sheets"), 64, 1, 256, "X-Dwf-Max-Sheets")
         payload_cap = 48 * 1024 * 1024  # raw PNG bytes before base64
         with tempfile.TemporaryDirectory() as tmp:
@@ -849,7 +853,7 @@ def dwf_render_worker(src: str, outdir: str, dpi: int, max_sheets: int) -> int:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt  # noqa: PLC0415
 
-    max_pixels = 30_000_000  # ~6600×4500; an A0 at 300 dpi would be 137 MP
+    max_pixels = 30_000_000  # ~6600×4500 output cap, checked on the REAL file
     drawing = ezdwf.read(src)
     sheets = list(drawing.sheets)
     index: dict = {
@@ -858,21 +862,31 @@ def dwf_render_worker(src: str, outdir: str, dpi: int, max_sheets: int) -> int:
         "capped": len(sheets) > max_sheets,
         "sheets": [],
     }
+
+    def png_pixels(path: str) -> int | None:
+        try:
+            with open(path, "rb") as f:
+                head = f.read(24)
+            if head[:8] != b"\x89PNG\r\n\x1a\n":
+                return None
+            return int.from_bytes(head[16:20], "big") * int.from_bytes(head[20:24], "big")
+        except OSError:
+            return None
+
     for i, sheet in enumerate(sheets[:max_sheets]):
-        eff_dpi = dpi
-        try:
-            bounds = getattr(sheet, "paper_bounds", None)
-            if bounds is not None:
-                w_in = abs(float(bounds[2]) - float(bounds[0]))
-                h_in = abs(float(bounds[3]) - float(bounds[1]))
-                pixels = (w_in * dpi) * (h_in * dpi)
-                if pixels > max_pixels:
-                    eff_dpi = max(50, int(dpi * (max_pixels / pixels) ** 0.5))
-        except Exception:
-            pass  # unknown paper shape — render at the requested dpi
         fname = f"sheet-{i}.png"
+        path = os.path.join(outdir, fname)
         try:
-            sheet.save_plot(os.path.join(outdir, fname), dpi=eff_dpi)
+            sheet.save_plot(path, dpi=dpi)
+            # The pixel guard measures the ACTUAL output. ezdwf's dpi acts on
+            # an internal figure size, not the paper size (300 dpi yields
+            # ~1500 px on a real A1 plot), so any paper-size × dpi prediction
+            # is off by an unknown factor — render, measure, and re-render
+            # once at a scaled dpi only when the real file is oversized.
+            pixels = png_pixels(path)
+            if pixels is not None and pixels > max_pixels:
+                eff_dpi = max(50, int(dpi * (max_pixels / pixels) ** 0.5))
+                sheet.save_plot(path, dpi=eff_dpi)
         except Exception:
             index["skipped"] += 1
             continue
