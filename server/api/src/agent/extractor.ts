@@ -406,7 +406,7 @@ async function loadFileHead(node: typeof nodes.$inferSelect, n = 8192): Promise<
  *  `xml` earns its place only conditionally: most XML is not a plan, so the
  *  grid parse below sniffs the content and a non-MSPDI document falls straight
  *  back out to the ordinary text path. */
-const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv', 'xml']);
+const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv', 'xml', 'dwf']);
 
 /** Max TABLES a single auto-import will create (sheets × paginated parts). Each
  *  table is its own indexed node, so a huge or many-sheet workbook would fan out
@@ -497,6 +497,19 @@ async function maybeAutoTableSpreadsheet(
           ` Durations are hours unless the column says days; slack is in days.` +
           ` Rows are in plan order.`;
       }
+    } else if (fileExt === 'dwf') {
+      // DWF plot sets: the registry workbook (Sheets / Layers / Labels tabs)
+      // from @mantle/files/dwf — on circuitization sets the Layers tab IS the
+      // circuit registry. Content-gated on the DWF magic like parse.ts.
+      const { sniffDwf, parseDwfToGrids } = await import('@mantle/files/dwf');
+      sheets = sniffDwf(loaded.bytes) ? await parseDwfToGrids(loaded.bytes) : [];
+      if (sheets.length > 0) {
+        description =
+          `Autodesk DWF plot-set registry. Layers is the cross-sheet layer/circuit` +
+          ` registry; Labels is every annotation string with its occurrence count and` +
+          ` sheets. Vector geometry is not in this table — fetch the Source DWG named` +
+          ` per row in Sheets for measurements.`;
+      }
     } else {
       sheets = await parseSpreadsheetToGrid(loaded.bytes, fileExt);
     }
@@ -512,7 +525,8 @@ async function maybeAutoTableSpreadsheet(
   // were never set post-v2).
   const toTab = sheets.slice(0, MAX_AUTO_TABLE_TABLES);
   const skipped = sheets.length - toTab.length;
-  const base = loaded.filename.replace(/\.(xlsx|xls|csv|xml)$/i, '').trim() || 'Imported table';
+  const base =
+    loaded.filename.replace(/\.(xlsx|xls|csv|xml|dwf)$/i, '').trim() || 'Imported table';
   await step(
     {
       name: 'auto_table',
@@ -580,6 +594,9 @@ const IMAGE_BEARING_EXTS = new Set([
   'xls',
   'xlsb',
   'rtf',
+  // DWF plot sets: one thumbnail per published sheet (marked essential in
+  // the extractor, so the small-image floor doesn't drop them).
+  'dwf',
 ]);
 
 /** Tag marking a file node as derived from a document rather than uploaded.

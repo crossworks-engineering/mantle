@@ -10,13 +10,37 @@
  *   - W2D streams that open with ASCII opcodes and carry annotation labels as
  *     quoted runs with a binary tail (`'2"'V…`).
  */
+import { createCanvas } from '@napi-rs/canvas';
 import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
-import { parseDwf, parseDwfStructured, scrapeW2d, sniffDwf } from './dwf';
+import {
+  extractDwfImages,
+  parseDwf,
+  parseDwfStructured,
+  parseDwfToGrids,
+  scrapeW2d,
+  sniffDwf,
+} from './dwf';
+import { extractEmbeddedImages, passesGate } from './embedded-images';
 import { parseDocumentBytes } from './parse';
 import { INGESTABLE_EXTS, exportHintForExt, mimeForExt, parserRouteForExt } from './slug';
 
 const SECTION = 'com.autodesk.dwf.ePlot_AAAA0000-0000-0000-0000-000000000001';
+
+/** A real, sniffable PNG at the exact shape AutoCAD writes DWF thumbnails
+ *  (262×170 — under the generic 200 px decoration floor on purpose). Drawn
+ *  with enough content to clear the absolute byte floor. */
+function thumbnailPng(): Buffer {
+  const canvas = createCanvas(262, 170);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, 262, 170);
+  ctx.strokeStyle = '#333333';
+  for (let i = 0; i < 24; i += 1) {
+    ctx.strokeRect(4 + i * 3, 4 + (i % 7) * 9, 40 + i, 20 + (i % 5) * 7);
+  }
+  return canvas.toBuffer('image/png');
+}
 
 function w2dStream(): Buffer {
   const asciiHead =
@@ -65,7 +89,7 @@ async function buildFixture(opts?: { sheets?: boolean }): Promise<Buffer> {
         `<ePlot:Property value="drafter1" name="Author" category="AutoCAD Drawing"/>` +
         `</ePlot:Section>`,
     );
-    zip.file(`${SECTION}\\thumb.png`, Buffer.from('89504e47', 'hex'));
+    zip.file(`${SECTION}\\thumb.png`, thumbnailPng());
     zip.file(`${SECTION}\\sheet.w2d`, w2dStream());
   } else {
     zip.file('manifest.xml', `<dwf:Manifest xmlns:dwf="x"></dwf:Manifest>`);
@@ -140,6 +164,64 @@ describe('parseDwf digest', () => {
     const fixture = await buildFixture();
     const bareZip = fixture.subarray('(DWF V06.20)'.length);
     expect(await parseDocumentBytes(bareZip, 'dwf')).toBe('');
+  });
+});
+
+describe('extractDwfImages (sheet thumbnails)', () => {
+  it('yields one essential image per sheet, located by sheet title', async () => {
+    const images = await extractDwfImages(await buildFixture());
+    expect(images).toHaveLength(1);
+    const img = images[0]!;
+    expect(img.location?.sheet).toBe('90-10-01 Rev 2');
+    expect(img.altText).toBe('Sheet 90-10-01 Rev 2');
+    expect(img.essential).toBe(true);
+    expect(img.ext).toBe('png');
+    expect(img.width).toBe(262);
+    expect(img.height).toBe(170);
+  });
+
+  it('survives the shared gate despite being under the 200px decoration floor', async () => {
+    const { images, rejected } = await extractEmbeddedImages(await buildFixture(), 'dwf');
+    expect(images).toHaveLength(1);
+    expect(rejected.too_small ?? 0).toBe(0);
+    // The same bytes WITHOUT the essential flag are decoration-filtered —
+    // the flag, not a loophole, is what keeps the thumbnail.
+    const img = images[0]!;
+    expect(passesGate({ ...img, essential: false }, new Set())).toEqual({
+      keep: false,
+      reason: 'too_small',
+    });
+  });
+
+  it('returns [] for bytes without the DWF magic', async () => {
+    expect(await extractDwfImages(Buffer.from('PK\x03\x04nope'))).toEqual([]);
+  });
+});
+
+describe('parseDwfToGrids (registry workbook)', () => {
+  it('emits Sheets / Layers / Labels tabs with cross-sheet aggregation', async () => {
+    const grids = await parseDwfToGrids(await buildFixture());
+    expect(grids.map((g) => g.name)).toEqual(['Sheets', 'Layers', 'Labels']);
+
+    const sheetsTab = grids[0]!;
+    expect(sheetsTab.rows).toHaveLength(1);
+    expect(sheetsTab.rows[0]!.slice(0, 4)).toEqual([
+      '90-10-01 Rev 2',
+      'A&B 90-10-01 Rev 2.dwg',
+      'Model',
+      'drafter1',
+    ]);
+
+    const layersTab = grids[1]!;
+    expect(layersTab.rows).toContainEqual(['Circuit 90000-001-01', '90-10-01 Rev 2', 1]);
+
+    const labelsTab = grids[2]!;
+    expect(labelsTab.rows).toContainEqual(['2"', 2, '90-10-01 Rev 2']);
+    expect(labelsTab.rows).toContainEqual(['DN150', 1, '90-10-01 Rev 2']);
+  });
+
+  it('returns [] for a container with no 2D sheets', async () => {
+    expect(await parseDwfToGrids(await buildFixture({ sheets: false }))).toEqual([]);
   });
 });
 

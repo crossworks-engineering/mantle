@@ -62,6 +62,7 @@ const DEFAULT_EXTS = [
   'xls',
   'xlsb',
   'rtf',
+  'dwf',
 ];
 
 /** Fallback worst case per document, mirroring MAX_EMBEDDED_IMAGES_PER_DOC in

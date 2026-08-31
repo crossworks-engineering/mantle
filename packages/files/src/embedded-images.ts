@@ -77,6 +77,13 @@ export type EmbeddedImage = {
   /** sha256 of `bytes`, computed once here because both the intra-document
    *  dedupe and the caller's cross-document dedupe want it. */
   sha256: string;
+  /** The FORMAT guarantees this is a real content raster, not decoration —
+   *  e.g. a DWF sheet thumbnail: exactly one per published sheet, and the
+   *  only raster the drawing has. The decoration heuristics (dimension and
+   *  no-dimensions size floors) don't apply; renderability, the absolute
+   *  byte floor and dedupe still do. Set it only where the format itself
+   *  proves content-ness — never from within a generic media scan. */
+  essential?: boolean;
 };
 
 /** Minimum edge length, in pixels, for an image to be worth keeping. Bullets,
@@ -130,7 +137,7 @@ export type GateResult = { keep: true } | { keep: false; reason: GateRejection }
  * logo repeated on all sixty slides collapses to a single node.
  */
 export function passesGate(
-  img: { bytes: Buffer; ext: string; sha256: string },
+  img: { bytes: Buffer; ext: string; sha256: string; essential?: boolean },
   seenHashes: Set<string>,
 ): GateResult {
   if (SKIPPED_IMAGE_EXTS.has(img.ext)) return { keep: false, reason: 'metafile' };
@@ -151,6 +158,11 @@ export function passesGate(
   // SVG scripts never execute regardless. Rejecting it here would only lose
   // the crispest diagrams — vector is the BEST case for a technical figure.
   if (!probed) return { keep: false, reason: 'unrenderable' };
+
+  // An `essential` image (see the EmbeddedImage field) is content by the
+  // format's own guarantee — a DWF sheet thumbnail is 262×170 and would fail
+  // the dimension floor below, yet it is the only raster the sheet has.
+  if (img.essential) return { keep: true };
 
   // Dimensions are the real filter — icons, bullets and rule lines all fail
   // here while a diagram or screenshot passes comfortably.
@@ -338,6 +350,9 @@ async function extractRaw(bytes: Buffer, ext: string): Promise<EmbeddedImage[]> 
   if (ext === 'odt' || ext === 'ods' || ext === 'odp') {
     return (await import('./ooxml-media')).extractOdfImages(bytes);
   }
+  // DWF plot sets: one thumbnail PNG per published sheet, marked essential
+  // (the format guarantees content-ness; see extractDwfImages).
+  if (ext === 'dwf') return (await import('./dwf')).extractDwfImages(bytes);
   // Tier 2 — the legacy binaries. `xlsb` is a zip but an undocumented binary
   // one, so it goes to Tika too rather than getting a bespoke reader.
   if (TIKA_EXTS.has(ext) || ext === 'xlsb') {

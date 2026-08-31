@@ -56,6 +56,8 @@
  * than indexing its own filename.
  */
 import JSZip from 'jszip';
+import { describeImageBytes, type EmbeddedImage } from './embedded-images';
+import type { ParsedSheet } from './sheet-to-grid';
 
 /** True when the bytes carry the classic DWF magic (`(DWF Vnn.nn)`). */
 export function sniffDwf(bytes: Buffer): boolean {
@@ -103,6 +105,10 @@ const MAX_UNIQUE_LABELS_PER_SHEET = 2000;
 const MAX_W2D_SCAN_BYTES = 16 * 1024 * 1024;
 /** Ceiling on an inflated XML entry (manifest / descriptor). */
 const MAX_XML_BYTES = 4 * 1024 * 1024;
+/** Ceiling on an inflated sheet thumbnail (real ones are ~5-10 KB). */
+const MAX_THUMBNAIL_BYTES = 2 * 1024 * 1024;
+/** Row ceiling for the Labels tab of the auto-imported registry workbook. */
+const MAX_LABEL_ROWS = 20_000;
 const DIGEST_LAYERS_PER_SHEET = 80;
 /** Per-sheet character budget for the label list — keeps ALL unique labels on
  *  real sheets (~a few hundred short strings); cuts only pathological ones. */
@@ -222,8 +228,17 @@ export function scrapeW2d(stream: Buffer): {
 /** Per-section entry paths, resolved in one pass over the archive. */
 type SectionEntries = { desc?: string; w2d?: string; png?: string };
 
-/** Open the container and extract every ePlot sheet's metadata + scrape. */
-export async function parseDwfStructured(bytes: Buffer): Promise<DwfParsed> {
+type OpenedDwf = {
+  version: string | null;
+  entries: Map<string, JSZip.JSZipObject>;
+  sectionEntries: Map<string, SectionEntries>;
+  /** ePlot sections in manifest order: sheet identity for every consumer. */
+  sections: Array<{ name: string; title: string }>;
+};
+
+/** Open the container, map every entry, and read the manifest's sheet list —
+ *  the shared front half of the digest, thumbnail and grid producers. */
+async function openDwf(bytes: Buffer): Promise<OpenedDwf> {
   const versionMatch = /^\(DWF (V[\d.]+)\)/.exec(bytes.subarray(0, 16).toString('latin1'));
   // One load on the whole buffer: JSZip corrects for the DWF magic prefix
   // itself, for both offset conventions (see the header comment). Rethrown
@@ -264,6 +279,13 @@ export async function parseDwfStructured(bytes: Buffer): Promise<DwfParsed> {
     if (sections.length >= MAX_SHEETS) break;
   }
 
+  return { version: versionMatch?.[1] ?? null, entries, sectionEntries, sections };
+}
+
+/** Open the container and extract every ePlot sheet's metadata + scrape. */
+export async function parseDwfStructured(bytes: Buffer): Promise<DwfParsed> {
+  const { version, entries, sectionEntries, sections } = await openDwf(bytes);
+
   const sheets: DwfSheet[] = [];
   for (const { name, title } of sections) {
     const paths = sectionEntries.get(name) ?? {};
@@ -303,7 +325,129 @@ export async function parseDwfStructured(bytes: Buffer): Promise<DwfParsed> {
     });
   }
 
-  return { version: versionMatch?.[1] ?? null, sheets };
+  return { version, sheets };
+}
+
+/**
+ * The per-sheet thumbnail PNGs, shaped for the shared embedded-image pipeline
+ * (`extractEmbeddedImages` → gate → file nodes). Each published sheet carries
+ * exactly one raster preview — the only picture the drawing has until real
+ * geometry rendering exists — so every thumbnail is marked `essential`: the
+ * decoration size floors don't apply (they are 262×170 on real AutoCAD
+ * output, under the generic 200 px floor), while renderability and dedupe
+ * still do. `location.sheet` carries the sheet title so the naming cascade
+ * yields "… (21-62-09)"-style node titles.
+ */
+export async function extractDwfImages(bytes: Buffer): Promise<EmbeddedImage[]> {
+  if (!sniffDwf(bytes)) return [];
+  const { entries, sectionEntries, sections } = await openDwf(bytes);
+  const images: EmbeddedImage[] = [];
+  for (const { name, title } of sections) {
+    const pngPath = sectionEntries.get(name)?.png;
+    const entry = pngPath ? entries.get(pngPath) : undefined;
+    if (!entry) continue;
+    const size = declaredSize(entry);
+    if (size < 0 || size > MAX_THUMBNAIL_BYTES) continue;
+    const png = await entry.async('nodebuffer');
+    images.push({
+      bytes: png,
+      ordinal: images.length + 1,
+      location: { sheet: title },
+      altText: `Sheet ${title}`,
+      essential: true,
+      ...describeImageBytes(png, 'png'),
+    });
+  }
+  return images;
+}
+
+/**
+ * The registry workbook: the same `ParsedSheet[]` shape spreadsheets and
+ * MSPDI plans produce, so the extractor's auto-table pass turns a DWF into a
+ * queryable Table with three tabs —
+ *
+ *   - **Sheets**: one row per published sheet (title, source DWG, layout,
+ *     author, paper, layer/label counts);
+ *   - **Layers**: the cross-sheet layer registry — on circuitization sets,
+ *     the circuit list itself — with the sheets each layer appears on;
+ *   - **Labels**: every unique annotation string with its total count and
+ *     sheets, so "which sheet carries valve tag X" is one `table_sql` query.
+ *
+ * Returns [] when the container has no 2D sheets, which the auto-table pass
+ * treats as "not tabular" and skips.
+ */
+export async function parseDwfToGrids(bytes: Buffer): Promise<ParsedSheet[]> {
+  const { sheets } = await parseDwfStructured(bytes);
+  if (sheets.length === 0) return [];
+
+  const sheetRows = sheets.map((s) => [
+    s.title,
+    s.sourceFile,
+    s.layout,
+    s.author,
+    s.paper,
+    s.layers.length,
+    s.labelTotal,
+  ]);
+
+  const layerMap = new Map<string, string[]>();
+  const labelMap = new Map<string, { count: number; sheets: string[] }>();
+  for (const s of sheets) {
+    for (const layer of s.layers) {
+      const on = layerMap.get(layer) ?? [];
+      on.push(s.title);
+      layerMap.set(layer, on);
+    }
+    for (const l of s.labels) {
+      const rec = labelMap.get(l.text) ?? { count: 0, sheets: [] };
+      rec.count += l.count;
+      rec.sheets.push(s.title);
+      labelMap.set(l.text, rec);
+    }
+  }
+
+  const layerRows = [...layerMap.entries()].map(([layer, on]) => [
+    layer,
+    on.join(', '),
+    on.length,
+  ]);
+  const labelRows = [...labelMap.entries()]
+    .slice(0, MAX_LABEL_ROWS)
+    .map(([text, rec]) => [text, rec.count, rec.sheets.join(', ')]);
+
+  return [
+    {
+      name: 'Sheets',
+      columns: [
+        { name: 'Sheet', type: 'text' },
+        { name: 'Source DWG', type: 'text' },
+        { name: 'Layout', type: 'text' },
+        { name: 'Author', type: 'text' },
+        { name: 'Paper', type: 'text' },
+        { name: 'Layer count', type: 'number' },
+        { name: 'Label count', type: 'number' },
+      ],
+      rows: sheetRows,
+    },
+    {
+      name: 'Layers',
+      columns: [
+        { name: 'Layer', type: 'text' },
+        { name: 'Sheets', type: 'text' },
+        { name: 'Sheet count', type: 'number' },
+      ],
+      rows: layerRows,
+    },
+    {
+      name: 'Labels',
+      columns: [
+        { name: 'Label', type: 'text' },
+        { name: 'Total count', type: 'number' },
+        { name: 'Sheets', type: 'text' },
+      ],
+      rows: labelRows,
+    },
+  ];
 }
 
 /**
