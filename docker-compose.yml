@@ -456,8 +456,12 @@ services:
     # peaks. DWF renders (v0.232.92+) run in a group-killed child whose
     # per-sheet canvas is pixel-capped, and the JSON reply is assembled in
     # a single buffer (<=64 MB) — bounded, but the one RAM-shaped payload
-    # this container now carries.
-    mem_limit: 1g
+    # this container now carries. ⚠ ezdwf 0.0.3's PARSER is the real ceiling:
+    # reading a 630 KB real plot set peaks at ~1.3 GB transient RSS (measured
+    # 2026-08-31; upstream inefficiency, child dies cleanly and the brain
+    # falls back to thumbnails). Boxes ingesting DWFs should set
+    # MEDIA_MEM_LIMIT=3g until upstream slims the parse.
+    mem_limit: ${MEDIA_MEM_LIMIT:-1g}
     environment:
       MEDIA_TOKEN: ${MEDIA_SIDECAR_TOKEN:-}
       MEDIA_MAX_CONCURRENT: ${MEDIA_MAX_CONCURRENT:-2}
