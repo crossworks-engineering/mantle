@@ -3,6 +3,7 @@ import {
   XP_WEIGHTS,
   experienceFromComponents,
   levelFromXp,
+  mergeComponentRows,
   xpForLevel,
   zeroExperience,
 } from './agent-experience';
@@ -65,5 +66,39 @@ describe('experienceFromComponents', () => {
     expect(e.xp).toBe(0);
     expect(e.levelXp).toBe(0);
     expect(e.nextLevelXp).toBe(100);
+  });
+});
+
+describe('mergeComponentRows', () => {
+  it('merges turn and trace rows for the same agent into one readout', () => {
+    const out = mergeComponentRows(
+      [{ agentId: 'a1', turns: 4, toolSuccesses: 6 }],
+      [{ agentId: 'a1', delegations: 2, heartbeats: 3 }],
+    );
+    expect(out.get('a1')?.components).toEqual({
+      turns: 4,
+      toolSuccesses: 6,
+      delegations: 2,
+      heartbeats: 3,
+    });
+  });
+
+  it('an agent present on only one side gets zeros for the other', () => {
+    const out = mergeComponentRows(
+      [{ agentId: 'a1', turns: 1, toolSuccesses: 0 }],
+      [{ agentId: 'a2', delegations: 1, heartbeats: 0 }],
+    );
+    expect(out.get('a1')?.components.delegations).toBe(0);
+    expect(out.get('a2')?.components.turns).toBe(0);
+    expect(out.size).toBe(2);
+  });
+
+  it('skips null agentId rows and handles empty input', () => {
+    const out = mergeComponentRows(
+      [{ agentId: null, turns: 9, toolSuccesses: 9 }],
+      [{ agentId: null, delegations: 9, heartbeats: 9 }],
+    );
+    expect(out.size).toBe(0);
+    expect(mergeComponentRows([], []).size).toBe(0);
   });
 });

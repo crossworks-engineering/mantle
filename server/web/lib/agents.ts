@@ -91,7 +91,16 @@ function toSummary(a: Agent): AgentSummary {
  *  reads the agents table doesn't disappear. */
 const CONVERSATIONAL_ROLES = ['responder', 'assistant', 'custom'] as const;
 
-export async function listAgents(userId: string): Promise<AgentSummary[]> {
+export async function listAgents(
+  userId: string,
+  opts: {
+    /** Also compute the experience rollup (two grouped aggregate queries over
+     *  the owner's history). Opt-IN: only the agents screens show the level
+     *  badge — internal callers (studio graph, model-combos context) must not
+     *  pay for data they throw away. */
+    withExperience?: boolean;
+  } = {},
+): Promise<AgentSummary[]> {
   const rows = await db
     .select()
     .from(agents)
@@ -100,8 +109,7 @@ export async function listAgents(userId: string): Promise<AgentSummary[]> {
   const conversational = rows.filter((r) =>
     (CONVERSATIONAL_ROLES as readonly string[]).includes(r.role),
   );
-  // Experience is a list-read concern (the agents screens show the level
-  // badge); single-row CRUD echoes skip it — see the DTO comment.
+  if (!opts.withExperience) return conversational.map(toSummary);
   const experience = await computeAgentExperience(
     userId,
     conversational.map((r) => r.id),

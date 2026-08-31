@@ -7,7 +7,7 @@ import { createAgent, listAgents } from '@/lib/agents';
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const rows = await listAgents(user.id);
+  const rows = await listAgents(user.id, { withExperience: true });
   return NextResponse.json({ agents: rows });
 }
 

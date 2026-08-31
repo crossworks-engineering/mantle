@@ -330,7 +330,9 @@ export interface PersonaNoteDTO {
  *  the level so the UI can show WHY it is level N. All are lifetime counts for
  *  THIS brain (experience is per-brain, display-only — never a trust gate). */
 export interface AgentExperienceComponentsDTO {
-  /** Conversation turns this agent answered (any channel). */
+  /** Completed conversation turns this agent answered on the assistant
+   *  stream (web, Telegram, mobile). Team/forum turns live in a different
+   *  store and are not counted (yet). */
   turns: number;
   /** Tool calls that succeeded across those turns. */
   toolSuccesses: number;

@@ -81,13 +81,19 @@ export async function computeAgentExperience(
       .select({
         agentId: assistantMessages.agentId,
         turns: sql<number>`count(*)::int`,
-        toolSuccesses: sql<number>`coalesce(sum(coalesce((${assistantMessages.data}->'toolStats'->>'succeeded')::int, 0)), 0)::int`,
+        // jsonb_typeof guard: one hand-imported row with a non-numeric
+        // `succeeded` must not turn the whole agents screen into a 500 via a
+        // cast error — count it as 0 instead.
+        toolSuccesses: sql<number>`coalesce(sum(case when jsonb_typeof(${assistantMessages.data}->'toolStats'->'succeeded') = 'number' then (${assistantMessages.data}->'toolStats'->>'succeeded')::int else 0 end), 0)::int`,
       })
       .from(assistantMessages)
       .where(
         and(
           eq(assistantMessages.ownerId, ownerId),
           eq(assistantMessages.direction, 'outbound'),
+          // Completed replies only — a failed or still-pending turn is not
+          // work "handled", and the traces half already requires success.
+          eq(assistantMessages.status, 'complete'),
           isNotNull(assistantMessages.agentId),
           notSuperseded(),
           scope,
@@ -116,6 +122,15 @@ export async function computeAgentExperience(
       .groupBy(traces.agentId),
   ]);
 
+  return mergeComponentRows(turnRows, traceRows);
+}
+
+/** Merge the two grouped result sets into per-agent experience. Pure — split
+ *  out so the merge is unit-testable without a database. */
+export function mergeComponentRows(
+  turnRows: { agentId: string | null; turns: number; toolSuccesses: number }[],
+  traceRows: { agentId: string | null; delegations: number; heartbeats: number }[],
+): Map<string, AgentExperienceDTO> {
   const components = new Map<string, AgentExperienceComponentsDTO>();
   const bucket = (id: string): AgentExperienceComponentsDTO => {
     let c = components.get(id);

@@ -127,7 +127,10 @@ async function queryActivity(
         eq(nodes.ownerId, userId),
       ),
     )
-    .leftJoin(agents, eq(traces.agentId, agents.id))
+    // Owner condition is defense-in-depth: every trace writer stamps agent_id
+    // from an agent resolved under the same owner, but a future writer bug
+    // must not leak another owner's agent name/seed into this feed.
+    .leftJoin(agents, and(eq(traces.agentId, agents.id), eq(agents.ownerId, userId)))
     .where(and(eq(traces.ownerId, userId), ...extraConds))
     .orderBy(desc(traces.startedAt))
     .limit(limit);
