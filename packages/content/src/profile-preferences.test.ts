@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AVATAR_PHOTO_TYPES,
+  projectAvatarPhotoType,
   isReminderChannel,
   isStreamThoughtsEnabled,
   isPersistThoughtsEnabled,
@@ -238,5 +240,19 @@ describe('thinking effort tiers', () => {
       if (t.budget === 0) expect(t.effort).toBeNull();
       else expect(THINKING_EFFORTS).toContain(t.effort);
     }
+  });
+});
+
+describe('projectAvatarPhotoType', () => {
+  it('accepts exactly the raster photo types', () => {
+    for (const t of AVATAR_PHOTO_TYPES) expect(projectAvatarPhotoType(t)).toBe(t);
+  });
+
+  it('rejects SVG — a photo is never a vector — and garbage', () => {
+    expect(projectAvatarPhotoType('image/svg+xml')).toBeUndefined();
+    expect(projectAvatarPhotoType('image/gif')).toBeUndefined();
+    expect(projectAvatarPhotoType('')).toBeUndefined();
+    expect(projectAvatarPhotoType(null)).toBeUndefined();
+    expect(projectAvatarPhotoType(42)).toBeUndefined();
   });
 });

@@ -143,6 +143,18 @@ export function logoVersion(logoKey: string | undefined): string | null {
   return projected ? projected.slice(-64).slice(0, 8) : null;
 }
 
+/** The raster types the profile PHOTO accepts. A photo is never an SVG —
+ *  that alone removes the logo route's whole active-content problem class.
+ *  Same replay contract as LOGO_TYPES: the serve route emits only a
+ *  projected value, so an unlisted type can never reach a Content-Type. */
+export const AVATAR_PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp'] as const;
+
+export function projectAvatarPhotoType(raw: unknown): string | undefined {
+  return typeof raw === 'string' && (AVATAR_PHOTO_TYPES as readonly string[]).includes(raw)
+    ? raw
+    : undefined;
+}
+
 /** Project a stored `colorTheme` jsonb value — a slug-shaped theme id, or
  *  undefined for unset/garbage (⇒ the default theme). The theme LIST lives in
  *  the web app (apps/web/lib/themes.ts); the server stores any well-formed id
@@ -431,6 +443,8 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
         ? prefs.avatarSeed
         : undefined,
     avatarParts: projectAvatarParts(prefs.avatarParts),
+    avatarPhotoKey: projectLogoKey(prefs.avatarPhotoKey),
+    avatarPhotoType: projectAvatarPhotoType(prefs.avatarPhotoType),
     reminderAgentSlug:
       typeof prefs.reminderAgentSlug === 'string' && prefs.reminderAgentSlug.length > 0
         ? prefs.reminderAgentSlug
@@ -635,6 +649,8 @@ export async function updateProfilePreferences(
     shareNeat: merged.shareNeat !== false,
     avatarSeed: merged.avatarSeed || undefined,
     avatarParts: projectAvatarParts(merged.avatarParts),
+    avatarPhotoKey: projectLogoKey(merged.avatarPhotoKey),
+    avatarPhotoType: projectAvatarPhotoType(merged.avatarPhotoType),
     reminderAgentSlug: merged.reminderAgentSlug || undefined,
     reminderChannel: isReminderChannel(merged.reminderChannel) ? merged.reminderChannel : undefined,
     displayName: merged.displayName || undefined,

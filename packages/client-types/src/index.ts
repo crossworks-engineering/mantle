@@ -935,6 +935,14 @@ export type ProfilePreferences = {
    *  component. Personal, like avatarSeed. Stale entries (saved under another
    *  brain style) are ignored at render time. Absent/empty = seed only. */
   avatarParts?: Record<string, string | null>;
+  /** Content-addressed storage key of THIS user's uploaded profile PHOTO —
+   *  when set, clients show the photo instead of the generated avatar
+   *  (photo → generated seed → initials). Personal, like avatarSeed; set only
+   *  from Settings → Profile, never for agents. Served privately by
+   *  GET /api/profile/photo (cookie or asset token). */
+  avatarPhotoKey?: string;
+  /** Content-Type of the photo bytes (png/jpeg/webp — never SVG). */
+  avatarPhotoType?: string;
   /** Slug of the responder agent whose Telegram bot delivers event reminders.
    *  Unset → the reminder worker falls back to the most-recently-active allowed
    *  DM (whichever bot you last messaged). Set it to pin reminders to one

@@ -34,6 +34,11 @@ export async function GET() {
   const avatar = prefs.avatarSeed
     ? { style: prefs.avatarStyle ?? '', seed: prefs.avatarSeed, parts: prefs.avatarParts ?? null }
     : null;
+  // Uploaded profile PHOTO — outranks the generated avatar in every client
+  // (photo → generated seed → initials), and is independent of the seed gate
+  // above: a photo works for someone who never rolled a generated avatar.
+  // The version is the sha8 cache-buster for GET /api/profile/photo.
+  const avatarPhotoVersion = logoVersion(prefs.avatarPhotoKey);
   // Short-lived asset-access token so a detached client's <img>/<iframe>/download
   // srcs (which can't carry a bearer) can load `?raw=1` files + attachments. The
   // client appends it via `assetUrl()`; same-origin ignores it (cookie auth). See
@@ -42,6 +47,7 @@ export async function GET() {
   return NextResponse.json({
     onboarded,
     avatar,
+    avatarPhotoVersion,
     pendingApprovals,
     assetToken,
     // Who this browser is signed in AS, for the rail's profile row. The ACTOR,

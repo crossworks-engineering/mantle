@@ -32,7 +32,10 @@ function isAssetPath(path: string): boolean {
   return (
     path.startsWith('/api/files/files/') ||
     path.startsWith('/api/attachments/') ||
-    path.startsWith('/api/export/')
+    path.startsWith('/api/export/') ||
+    // The user's profile photo: a private <img> src (the rail), same
+    // can't-carry-a-bearer shape. GET-only byte serving, owner-scoped.
+    path === '/api/profile/photo'
   );
 }
 

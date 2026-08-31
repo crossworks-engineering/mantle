@@ -752,6 +752,8 @@ export {
   projectLogoType,
   logoVersion,
   LOGO_TYPES,
+  projectAvatarPhotoType,
+  AVATAR_PHOTO_TYPES,
   BRAIN_PREFERENCE_KEYS,
   loadPreferencesFor,
   savePreferencesFor,
