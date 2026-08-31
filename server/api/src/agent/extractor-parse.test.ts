@@ -501,6 +501,28 @@ describe('isHollowFilenameBody (the filename-only false-success guard)', () => {
     ).toBe(false);
   });
 
+  it("catches the 'dwg' route: a sniff miss parses to '' by design, same as dwf", () => {
+    expect(
+      isHollowFilenameBody({
+        mime: 'application/acad',
+        parserRoute: 'dwg',
+        rawBody: '90-10-01.dwg',
+        title: '90-10-01.dwg',
+      }),
+    ).toBe(true);
+  });
+
+  it('a dwg whose parse produced a real digest is NOT hollow', () => {
+    expect(
+      isHollowFilenameBody({
+        mime: 'application/acad',
+        parserRoute: 'dwg',
+        rawBody: 'AutoCAD DWG drawing (AC1027) — 42 model-space entities…',
+        title: '90-10-01.dwg',
+      }),
+    ).toBe(false);
+  });
+
   it('catches the descriptive-recording case that defeated the 20-char check', () => {
     expect(
       isHollowFilenameBody({

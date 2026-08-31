@@ -375,6 +375,17 @@ export async function extractAttachmentForTurn(opts: {
       };
     }
 
+    // DWG parsing is a media-sidecar round trip (convert + parse + render) —
+    // never inline work for a live turn, whatever the file size. The durable
+    // extractor pays it once in the background.
+    if (ext === 'dwg') {
+      return {
+        kind: 'file',
+        text: '',
+        note: `${opts.filename} is an AutoCAD drawing — it is stored and being indexed in the background; its layers and annotation text become searchable shortly.`,
+      };
+    }
+
     // Native-PDF attempt (Claude/Gemini): the whole document in one call —
     // real layout/tables, no rasterization. Returns null when the provider
     // has no native path or the call produced nothing, so callers fall through.

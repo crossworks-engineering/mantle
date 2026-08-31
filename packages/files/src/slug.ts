@@ -124,6 +124,10 @@ export const INGESTABLE_EXTS = new Set<string>([
   // Autodesk DWF drawing sets (published plots). In-process parser — see
   // ./dwf.ts. Yields the metadata + layer/label digest, not vector geometry.
   'dwf',
+  // AutoCAD DWG drawings. Sidecar-parsed — see ./dwg.ts. The one ingestable
+  // format with no local parser: boxes without the media CAD tier get an
+  // honest extract error, not a filename index.
+  'dwg',
   ...TIKA_EXTS,
 ]);
 
@@ -215,6 +219,8 @@ export type ParserRoute =
   | 'utf8'
   /** Autodesk DWF container: sheets/layers/labels digest (./dwf.ts). */
   | 'dwf'
+  /** AutoCAD DWG: sidecar-converted registry digest (./dwg.ts). */
+  | 'dwg'
   | 'tika'
   | 'none';
 export function parserRouteForExt(ext: string): ParserRoute {
@@ -223,6 +229,7 @@ export function parserRouteForExt(ext: string): ParserRoute {
   if (ext === 'xls' || ext === 'xlsb') return 'legacy-sheet';
   if (ext === 'xlsx' || ext === 'xlsm') return 'exceljs';
   if (ext === 'dwf') return 'dwf';
+  if (ext === 'dwg') return 'dwg';
   if (TEXT_EXTS.has(ext)) return 'utf8';
   if (TIKA_EXTS.has(ext)) return 'tika';
   return 'none';
@@ -299,6 +306,11 @@ export function mimeForExt(ext: string): string {
       return 'model/vnd.dwf';
     case 'dwfx':
       return 'model/vnd.dwfx+xps';
+    case 'dwg':
+      // Deliberately NOT the also-registered image/vnd.dwg: a DWG is not a
+      // viewable raster, and every mime.startsWith('image/') path (hollow
+      // guard, previews, vision ingest) would mishandle it.
+      return 'application/acad';
     // ── Audio. These arrive constantly (Telegram voice notes are ogg/opus,
     // the transcriber's clips are m4a) and all fell through to octet-stream,
     // which made every media file render as a generic binary in the client.

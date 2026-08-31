@@ -442,7 +442,7 @@ async function loadFileHead(node: typeof nodes.$inferSelect, n = 8192): Promise<
  *  `xml` earns its place only conditionally: most XML is not a plan, so the
  *  grid parse below sniffs the content and a non-MSPDI document falls straight
  *  back out to the ordinary text path. */
-const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv', 'xml', 'dwf']);
+const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv', 'xml', 'dwf', 'dwg']);
 
 /** Max TABLES a single auto-import will create (sheets × paginated parts). Each
  *  table is its own indexed node, so a huge or many-sheet workbook would fan out
@@ -546,6 +546,21 @@ async function maybeAutoTableSpreadsheet(
           ` sheets. Vector geometry is not in this table — fetch the Source DWG named` +
           ` per row in Sheets for measurements.`;
       }
+    } else if (fileExt === 'dwg') {
+      // DWG drawings: the registry workbook (Layers / Texts / Counts tabs)
+      // from @mantle/files/dwg — sidecar-parsed, so this pass shares the one
+      // memoised exchange with the text digest and the image pass. Texts
+      // keeps model coordinates: on drawings with no DIMENSION entities (the
+      // bake-off norm) the text layer IS the annotation data.
+      const { sniffDwg, parseDwgToGrids } = await import('@mantle/files/dwg');
+      sheets = sniffDwg(loaded.bytes) ? await parseDwgToGrids(loaded.bytes) : [];
+      if (sheets.length > 0) {
+        description =
+          `AutoCAD DWG model-space registry. Layers counts entities per layer;` +
+          ` Texts is every annotation string with its layer and model-space X/Y` +
+          ` (drawing units); Counts totals entities by type. Vector geometry` +
+          ` beyond text positions is not in this table.`;
+      }
     } else {
       sheets = await parseSpreadsheetToGrid(loaded.bytes, fileExt);
     }
@@ -561,7 +576,8 @@ async function maybeAutoTableSpreadsheet(
   // were never set post-v2).
   const toTab = sheets.slice(0, MAX_AUTO_TABLE_TABLES);
   const skipped = sheets.length - toTab.length;
-  const base = loaded.filename.replace(/\.(xlsx|xls|csv|xml|dwf)$/i, '').trim() || 'Imported table';
+  const base =
+    loaded.filename.replace(/\.(xlsx|xls|csv|xml|dwf|dwg)$/i, '').trim() || 'Imported table';
   await step(
     {
       name: 'auto_table',
@@ -632,6 +648,8 @@ const IMAGE_BEARING_EXTS = new Set([
   // DWF plot sets: one thumbnail per published sheet (marked essential in
   // the extractor, so the small-image floor doesn't drop them).
   'dwf',
+  // DWG drawings: one essential model-space render from the sidecar.
+  'dwg',
 ]);
 
 /** Tag marking a file node as derived from a document rather than uploaded.

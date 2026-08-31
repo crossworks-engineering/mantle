@@ -44,6 +44,20 @@ Routes (bearer auth on everything except /healthz):
                        CAD-visual half of this sidecar's single purpose:
                        extracting viewable media from formats the app process
                        shouldn't parse itself.
+  POST /dwg/render     <raw DWG bytes> (X-Dwg-Dpi?)
+                       -> {ok, dpi, converter, version, entities, capped,
+                       layers:[{name,count}], texts:[{text,layer,x,y}],
+                       counts:{TYPE:n}, png_base64} — ONE call parses AND
+                       rasters an AutoCAD DWG's model space (--dwg-render
+                       child, same group-kill discipline). Conversion is
+                       dwg2dxf (LibreDWG, GPL — invoked as a subprocess
+                       binary only, never linked) with ezdwg (MIT) as the
+                       export_dxf fallback for files dwg2dxf mangles;
+                       everything downstream of DXF is one ezdxf path. The
+                       registry half (layers/texts/counts) rides along
+                       because the app process has no DWG parser of its own —
+                       for DWF it parses the container itself and only the
+                       pixels come from here.
 
 Error envelope on every non-2xx: {"ok":false,"error":{"code","message"}}.
 Codes: unauthorized, bad_request, blocked_url, no_captions,
@@ -87,6 +101,10 @@ TIMEOUT_VIDEO = 1500
 # covers a 64-sheet pathological set with a wide margin, and the group kill
 # is what keeps a wedged Rust/matplotlib call from pinning a heavy slot.
 TIMEOUT_DWF_RENDER = 120
+# DWG: convert + parse + render on real ~500 KB drawings runs 3-17s (the 17s
+# is the ezdwg-fallback worst case); 240s covers files an order of magnitude
+# bigger plus the fallback retry inside one child.
+TIMEOUT_DWG_RENDER = 240
 
 JSON_BODY_CAP = 64 * 1024  # JSON endpoints only; /extract-audio streams.
 # Optional operator-supplied cookies (YouTube's datacenter-IP bot check).
@@ -143,7 +161,32 @@ def get_versions() -> dict:
             ezdwf_version = getattr(ezdwf, "__version__", "unknown")
         except Exception:
             pass
-        value = {"yt_dlp": ytdlp, "ffmpeg": ffmpeg, "ezdwf": ezdwf_version}
+        # DWG tier (v0.232.99+): dwg2dxf binary + ezdxf. Reported so the app
+        # client can memo "this image predates the DWG tier" the same way it
+        # does for ezdwf, instead of paying an upload per guaranteed failure.
+        dwg2dxf_version = None
+        try:
+            out = subprocess.run(
+                ["dwg2dxf", "--version"], capture_output=True, text=True, timeout=20
+            )
+            first = (out.stdout or out.stderr).strip().splitlines()
+            dwg2dxf_version = first[0].split()[-1] if first else None
+        except Exception:
+            pass
+        ezdxf_version = None
+        try:
+            import ezdxf  # noqa: PLC0415 — optional; absent on pre-DWG images
+
+            ezdxf_version = getattr(ezdxf, "__version__", "unknown")
+        except Exception:
+            pass
+        value = {
+            "yt_dlp": ytdlp,
+            "ffmpeg": ffmpeg,
+            "ezdwf": ezdwf_version,
+            "dwg2dxf": dwg2dxf_version,
+            "ezdxf": ezdxf_version,
+        }
         _versions_cache.update(at=time.time(), value=value)
         return value
 
@@ -557,6 +600,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._heavy(self._op_video)
             elif self.path == "/dwf/render":
                 self._heavy(self._op_dwf_render)
+            elif self.path == "/dwg/render":
+                self._heavy(self._op_dwg_render)
             else:
                 raise OpError(404, "bad_request", "unknown route")
         except OpError as err:
@@ -744,6 +789,58 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(payload)
 
+    def _op_dwg_render(self):
+        """Parse AND raster an AutoCAD DWG's model space in one exchange, in a
+        group-killed `--dwg-render` child (same discipline and reasons as
+        /dwf/render). One call because the app process has no DWG parser: the
+        registry (layers/texts/entity counts) and the render both come out of
+        the single conversion the child already paid for. Conversion order is
+        dwg2dxf first (LibreDWG, subprocess-only), ezdwg export_dxf when that
+        output fails ezdxf's parse — the bake-off found real files on each
+        side of that line."""
+        length = self._content_length(MAX_UPLOAD_BYTES)
+        if length <= 0:
+            raise OpError(400, "bad_request", "raw DWG bytes required as the request body")
+        # Same bounds as X-Dwf-Dpi and for the same reason; the child's
+        # output-pixel guard bounds memory whatever the sheet extents are.
+        dpi = int_field(self.headers.get("X-Dwg-Dpi"), 300, 50, 600, "X-Dwg-Dpi")
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "in.dwg")
+            remaining = length
+            with open(src, "wb") as f:
+                while remaining > 0:
+                    chunk = self.rfile.read(min(64 * 1024, remaining))
+                    if not chunk:
+                        raise OpError(400, "bad_request", "request body ended early")
+                    f.write(chunk)
+                    remaining -= len(chunk)
+            outdir = os.path.join(tmp, "out")
+            os.makedirs(outdir)
+            try:
+                run(
+                    [sys.executable, os.path.abspath(__file__), "--dwg-render",
+                     src, outdir, str(dpi)],
+                    TIMEOUT_DWG_RENDER,
+                )
+            except OpError as err:
+                if err.code == "extraction_failed":
+                    raise OpError(422, "extraction_failed", f"DWG render worker failed: {err.message}")
+                raise
+            index_path = os.path.join(outdir, "index.json")
+            try:
+                with open(index_path, encoding="utf-8") as f:
+                    index = json.load(f)
+            except Exception:
+                raise OpError(422, "extraction_failed", "DWG render worker produced no index")
+            png_b64 = ""
+            try:
+                with open(os.path.join(outdir, "model.png"), "rb") as f:
+                    png_b64 = base64.b64encode(f.read()).decode("ascii")
+            except OSError:
+                pass  # registry without pixels is still an answer; ok stays true
+            index.update(ok=True, dpi=dpi, png_base64=png_b64)
+            self._send_json(200, index)
+
     def _op_extract_audio(self):
         length = self._content_length(MAX_UPLOAD_BYTES)
         if length <= 0:
@@ -899,6 +996,144 @@ def dwf_render_worker(src: str, outdir: str, dpi: int, max_sheets: int) -> int:
     return 0
 
 
+def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
+    """`--dwg-render` child entry: convert `src` to DXF, extract the model-
+    space registry, raster the model space, and write `index.json` + a
+    `model.png` into `outdir`. Own process (the parent's `run()` group-kills
+    it on timeout), so a wedged conversion or render dies here, never in the
+    server, and its exit frees every matplotlib figure by construction.
+
+    Conversion chain, decided by the 2026-08-31 bake-off on real drawings:
+      1. `dwg2dxf` (LibreDWG) — a subprocess call, never a linked library
+         (GPLv3; the process boundary is the licence boundary);
+      2. `ezdwg.export_dxf` (MIT) when dwg2dxf's output fails ezdxf's parse —
+         dwg2dxf 0.13.3 emits structurally invalid DXF on some real files,
+         and ezdwg reads exactly those.
+    Downstream of DXF there is ONE path: ezdxf for both registry and render
+    (its drawing add-on expands INSERT blocks — ezdwg's own plot() does not,
+    which is why it renders nothing usable on block-heavy drawings).
+
+    The registry is capped (texts/layers/text length) so the reply stays a
+    few MB whatever the drawing holds; the render carries the same measured
+    output-pixel guard as the DWF worker. Exits non-zero only when no
+    converter can produce a parseable DXF."""
+    import ezdxf  # noqa: PLC0415 — child-only import; absent on pre-DWG images
+
+    import matplotlib  # noqa: PLC0415
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+    from ezdxf.addons.drawing import Frontend, RenderContext  # noqa: PLC0415
+    from ezdxf.addons.drawing.matplotlib import MatplotlibBackend  # noqa: PLC0415
+
+    max_pixels = 30_000_000
+    max_texts = 20_000
+    max_text_len = 512
+    max_layers = 1_000
+
+    def try_parse(path: str):
+        try:
+            return ezdxf.readfile(path)
+        except Exception:
+            return None
+
+    doc = None
+    converter = None
+    dxf_a = os.path.join(outdir, "a.dxf")
+    proc = subprocess.run(
+        ["dwg2dxf", "-o", dxf_a, src], capture_output=True, text=True, timeout=120
+    )
+    if proc.returncode == 0 and os.path.isfile(dxf_a):
+        doc = try_parse(dxf_a)
+        if doc is not None:
+            converter = "dwg2dxf"
+    if doc is None:
+        import ezdwg  # noqa: PLC0415 — fallback tier; absent on pre-DWG images
+
+        dxf_b = os.path.join(outdir, "b.dxf")
+        ezdwg.read(src).export_dxf(dxf_b)
+        doc = try_parse(dxf_b)
+        if doc is None:
+            sys.stderr.write("no converter produced a parseable DXF\n")
+            return 1
+        converter = "ezdwg"
+
+    msp = doc.modelspace()
+    layer_counts: dict = {}
+    type_counts: dict = {}
+    texts = []
+    entities = 0
+    texts_capped = False
+    for e in msp:
+        entities += 1
+        etype = e.dxftype()
+        type_counts[etype] = type_counts.get(etype, 0) + 1
+        layer = str(getattr(e.dxf, "layer", "") or "")
+        layer_counts[layer] = layer_counts.get(layer, 0) + 1
+        if etype in ("TEXT", "MTEXT"):
+            try:
+                raw = e.plain_text() if etype == "MTEXT" else e.dxf.text
+                text = " ".join(str(raw).split())[:max_text_len]
+                if not text:
+                    continue
+                if len(texts) >= max_texts:
+                    texts_capped = True
+                    continue
+                point = e.dxf.insert if hasattr(e.dxf, "insert") else None
+                texts.append(
+                    {
+                        "text": text,
+                        "layer": layer,
+                        "x": round(float(point[0]), 1) if point is not None else None,
+                        "y": round(float(point[1]), 1) if point is not None else None,
+                    }
+                )
+            except Exception:
+                continue
+
+    layers = sorted(layer_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    index = {
+        "converter": converter,
+        "version": doc.dxfversion,
+        "entities": entities,
+        "capped": texts_capped or len(layers) > max_layers,
+        "layers": [{"name": n, "count": c} for n, c in layers[:max_layers]],
+        "texts": texts,
+        "counts": type_counts,
+    }
+
+    png = os.path.join(outdir, "model.png")
+    try:
+        fig = plt.figure(figsize=(16, 10))
+        ax = fig.add_axes([0, 0, 1, 1])
+        ax.set_axis_off()
+        Frontend(RenderContext(doc), MatplotlibBackend(ax)).draw_layout(msp, finalize=True)
+        fig.savefig(png, dpi=dpi)
+        # Measured guard, same as the DWF worker: figsize×dpi is known here
+        # (16×10in @600 = 57.6 MP) but measuring the artifact keeps the two
+        # workers on one rule and survives ezdxf changing its own layout.
+        with open(png, "rb") as f:
+            head = f.read(24)
+        if head[:8] == b"\x89PNG\r\n\x1a\n":
+            pixels = int.from_bytes(head[16:20], "big") * int.from_bytes(head[20:24], "big")
+            if pixels > max_pixels:
+                eff_dpi = max(50, int(dpi * (max_pixels / pixels) ** 0.5))
+                fig.savefig(png, dpi=eff_dpi)
+    except Exception:
+        # Registry without pixels still ships; the parent tolerates a missing
+        # model.png and the app side falls back to no-image extraction.
+        try:
+            os.unlink(png)
+        except OSError:
+            pass
+    finally:
+        plt.close("all")
+
+    with open(os.path.join(outdir, "index.json"), "w", encoding="utf-8") as f:
+        json.dump(index, f)
+    return 0
+
+
 def pick_output(tmp: str, prefix: str) -> str | None:
     """The finished artifact among yt-dlp's leavings. listdir order is
     arbitrary and fragments/.part files share the prefix — prefer the exact
@@ -932,4 +1167,6 @@ def main():
 if __name__ == "__main__":
     if len(sys.argv) >= 6 and sys.argv[1] == "--dwf-render":
         sys.exit(dwf_render_worker(sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5])))
+    if len(sys.argv) >= 5 and sys.argv[1] == "--dwg-render":
+        sys.exit(dwg_render_worker(sys.argv[2], sys.argv[3], int(sys.argv[4])))
     main()

@@ -365,6 +365,11 @@ async function extractRaw(
   if (ext === 'dwf') {
     return (await import('./dwf')).extractDwfImages(bytes, { maxSheets: opts?.maxImages });
   }
+  // DWG drawings: one essential model-space render from the sidecar; no
+  // fallback tier inside the file (see extractDwgImages).
+  if (ext === 'dwg') {
+    return (await import('./dwg')).extractDwgImages(bytes);
+  }
   // Tier 2 — the legacy binaries. `xlsb` is a zip but an undocumented binary
   // one, so it goes to Tika too rather than getting a bespoke reader.
   if (TIKA_EXTS.has(ext) || ext === 'xlsb') {

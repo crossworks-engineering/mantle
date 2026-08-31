@@ -18,6 +18,7 @@
     "./ooxml-media": "./src/ooxml-media.ts",
     "./mspdi": "./src/mspdi.ts",
     "./dwf": "./src/dwf.ts",
+    "./dwg": "./src/dwg.ts",
     "./legacy-sheet": "./src/legacy-sheet.ts"
   },
   "scripts": {

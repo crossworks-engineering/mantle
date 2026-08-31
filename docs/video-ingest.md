@@ -45,6 +45,15 @@ text, no segments).
 > means the image predates the tier — DWF ingests then fall back to the
 > container thumbnails. Enabling the `media` profile for CAD renders brings
 > the yt-dlp/video machinery with it (one image, one profile, by design).
+>
+> **The DWG half landed in v0.232.99**: `POST /dwg/render` converts an
+> AutoCAD DWG to DXF (`dwg2dxf` — LibreDWG, GPL, a standalone subprocess
+> binary built in its own Docker stage; `ezdwg` (MIT) is the fallback for
+> files dwg2dxf mangles), then parses AND rasters the model space with
+> `ezdxf` in one exchange: the reply carries the layer/text/entity registry
+> plus the render, because the app process has no DWG parser of its own.
+> `/healthz` reports `dwg2dxf` and `ezdxf`; their absence means DWG ingests
+> error honestly at extract (there is no offline fallback for this format).
 
 yt-dlp and ffmpeg never run in the app process. They live in their own
 container (`infra/media-sidecar`, compose service `media`, image

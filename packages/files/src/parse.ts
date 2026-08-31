@@ -54,6 +54,16 @@ export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<st
     if (!sniffDwf(bytes)) return '';
     return parseDwf(bytes);
   }
+  // AutoCAD DWG: the one routed format with NO local parser — the digest
+  // comes from the media sidecar's converter chain (see ./dwg.ts). Sniff
+  // miss returns '' (hollow skip, same carve-out as dwf); a missing or
+  // failing sidecar THROWS so the extract records an honest error and a
+  // re-queue after enabling the CAD tier heals the node.
+  if (ext === 'dwg') {
+    const { sniffDwg, parseDwg } = await import('./dwg');
+    if (!sniffDwg(bytes)) return '';
+    return parseDwg(bytes);
+  }
   // `.xml` is a container, not a format — routing by extension alone would send
   // a Project plan through a generic text parser and lose every task name. So
   // this one branches on CONTENT: sniff the root element, and only a document

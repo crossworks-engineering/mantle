@@ -216,17 +216,34 @@ export async function mediaSidecarHealth(timeoutMs = 1_500): Promise<{
   /** null on images built before the CAD tier (v0.232.92) — the signal that
    *  DWF renders will fail and thumbnails are all this box can produce. */
   ezdwfVersion: string | null;
+  /** null on images built before the DWG tier (v0.232.99) — DWG parsing and
+   *  rendering both need the sidecar, so absence means the whole format. */
+  dwg2dxfVersion: string | null;
+  ezdxfVersion: string | null;
 }> {
+  const down = {
+    ytDlpVersion: null,
+    ffmpegVersion: null,
+    ezdwfVersion: null,
+    dwg2dxfVersion: null,
+    ezdxfVersion: null,
+  };
   const cfg = config();
-  if (!cfg) return { up: null, ytDlpVersion: null, ffmpegVersion: null, ezdwfVersion: null };
+  if (!cfg) return { up: null, ...down };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(`${cfg.url}/healthz`, { signal: ctrl.signal });
-    if (!res.ok) return { up: false, ytDlpVersion: null, ffmpegVersion: null, ezdwfVersion: null };
+    if (!res.ok) return { up: false, ...down };
     const body = (await res.json()) as {
       ok?: boolean;
-      versions?: { yt_dlp?: string; ffmpeg?: string; ezdwf?: string };
+      versions?: {
+        yt_dlp?: string;
+        ffmpeg?: string;
+        ezdwf?: string;
+        dwg2dxf?: string;
+        ezdxf?: string;
+      };
     };
     return {
       // A tokenless sidecar serves /healthz with ok:false — configured but
@@ -235,9 +252,11 @@ export async function mediaSidecarHealth(timeoutMs = 1_500): Promise<{
       ytDlpVersion: body.versions?.yt_dlp ?? null,
       ffmpegVersion: body.versions?.ffmpeg ?? null,
       ezdwfVersion: body.versions?.ezdwf ?? null,
+      dwg2dxfVersion: body.versions?.dwg2dxf ?? null,
+      ezdxfVersion: body.versions?.ezdxf ?? null,
     };
   } catch {
-    return { up: false, ytDlpVersion: null, ffmpegVersion: null, ezdwfVersion: null };
+    return { up: false, ...down };
   } finally {
     clearTimeout(timer);
   }
@@ -406,6 +425,8 @@ const DWF_RENDER_MAX_BYTES = 48 * 1024 * 1024;
  *  every DWF ingest would pay a full-file upload for a guaranteed failure,
  *  forever. Transient states (sidecar down) are deliberately NOT cached. */
 let dwfTier: 'unknown' | 'present' | 'absent' = 'unknown';
+/** Same memo for the DWG tier (dwg2dxf + ezdxf, v0.232.99 images). */
+let dwgTier: 'unknown' | 'present' | 'absent' = 'unknown';
 
 /**
  * Raster every sheet of an Autodesk DWF plot set via the sidecar's ezdwf
@@ -489,6 +510,140 @@ export async function mediaDwfRender(
           capped: body.capped === true,
           truncated: body.truncated === true,
           sheets,
+        },
+      };
+    },
+  );
+}
+
+// ── CAD: DWG parse + render ───────────────────────────────────────────
+
+export type DwgTextEntity = {
+  text: string;
+  layer: string;
+  x: number | null;
+  y: number | null;
+};
+
+export type DwgRender = {
+  /** Which converter produced the DXF the registry and render came from. */
+  converter: 'dwg2dxf' | 'ezdwg';
+  /** DXF version of the converted document ("AC1027"). */
+  version: string | null;
+  /** Model-space entity total. */
+  entities: number;
+  /** A registry cap bit (texts or layers hit their ceiling). */
+  capped: boolean;
+  layers: Array<{ name: string; count: number }>;
+  texts: DwgTextEntity[];
+  counts: Record<string, number>;
+  /** Model-space raster; null when the render step failed (registry-only). */
+  png: Buffer | null;
+};
+
+// Mirror of TIMEOUT_DWG_RENDER in app.py, same +30s backstop convention.
+const T_DWG_RENDER = 240_000 + BACKSTOP_MS;
+/** Wire ceiling: one PNG (≤48 MB raw → ~64 MB base64) plus a few MB of
+ *  registry JSON. Enforced while streaming, like the DWF route. */
+const DWG_WIRE_MAX_BYTES = 80 * 1024 * 1024;
+const DWG_PNG_MAX_BYTES = 48 * 1024 * 1024;
+const DWG_TEXTS_MAX = 20_000;
+
+/**
+ * Parse AND raster an AutoCAD DWG's model space via the sidecar's converter
+ * chain (`POST /dwg/render`). One exchange serves the text digest, the
+ * registry workbook, and the image pass — DWG is the one routed format the
+ * app process cannot parse locally, so unlike DWF there is no offline
+ * fallback tier behind this call. Never throws; same contract as the rest.
+ */
+export async function mediaDwgRender(
+  dwg: Buffer,
+  opts?: { dpi?: number },
+): Promise<MediaResult<DwgRender>> {
+  if (dwgTier === 'unknown') {
+    const health = await mediaSidecarHealth();
+    if (health.up && !health.ezdxfVersion) dwgTier = 'absent';
+    else if (health.up) dwgTier = 'present';
+  }
+  if (dwgTier === 'absent') {
+    return {
+      ok: false,
+      code: 'extraction_failed',
+      message:
+        'the media sidecar image predates the DWG tier (no ezdxf on /healthz) — update the mantle-media image to v0.232.99+',
+    };
+  }
+  return exchange(
+    '/dwg/render',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        ...(opts?.dpi ? { 'X-Dwg-Dpi': String(opts.dpi) } : {}),
+      },
+      body: dwg as unknown as BodyInit,
+    },
+    T_DWG_RENDER,
+    async (res) => {
+      const raw = await collectBytes(res, DWG_WIRE_MAX_BYTES);
+      if (!raw.ok) return raw;
+      let body: Record<string, unknown>;
+      try {
+        body = JSON.parse(raw.value.toString('utf8')) as Record<string, unknown>;
+      } catch {
+        return {
+          ok: false,
+          code: 'extraction_failed',
+          message: 'sidecar returned non-JSON on a 200',
+        };
+      }
+      let png: Buffer | null = null;
+      if (typeof body.png_base64 === 'string' && body.png_base64) {
+        png = Buffer.from(body.png_base64, 'base64');
+        if (png.length > DWG_PNG_MAX_BYTES) {
+          return {
+            ok: false,
+            code: 'size_exceeded',
+            message: `decoded render exceeded the ${DWG_PNG_MAX_BYTES}-byte cap`,
+          };
+        }
+      }
+      const texts: DwgTextEntity[] = [];
+      for (const rawText of Array.isArray(body.texts) ? body.texts : []) {
+        if (texts.length >= DWG_TEXTS_MAX) break;
+        const t = rawText as Record<string, unknown>;
+        if (typeof t.text !== 'string' || !t.text) continue;
+        texts.push({
+          text: t.text,
+          layer: typeof t.layer === 'string' ? t.layer : '',
+          x: typeof t.x === 'number' ? t.x : null,
+          y: typeof t.y === 'number' ? t.y : null,
+        });
+      }
+      const layers: Array<{ name: string; count: number }> = [];
+      for (const rawLayer of Array.isArray(body.layers) ? body.layers : []) {
+        const l = rawLayer as Record<string, unknown>;
+        if (typeof l.name !== 'string') continue;
+        layers.push({ name: l.name, count: typeof l.count === 'number' ? l.count : 0 });
+      }
+      const counts: Record<string, number> = {};
+      if (body.counts && typeof body.counts === 'object') {
+        for (const [k, v] of Object.entries(body.counts as Record<string, unknown>)) {
+          if (typeof v === 'number') counts[k] = v;
+        }
+      }
+      dwgTier = 'present';
+      return {
+        ok: true,
+        value: {
+          converter: body.converter === 'ezdwg' ? 'ezdwg' : 'dwg2dxf',
+          version: typeof body.version === 'string' ? body.version : null,
+          entities: typeof body.entities === 'number' ? body.entities : 0,
+          capped: body.capped === true,
+          layers,
+          texts,
+          counts,
+          png,
         },
       };
     },

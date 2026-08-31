@@ -281,7 +281,14 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     browser: browserH ?? { up: false, version: null },
     embedder: emb ?? { up: null, provider: null, model: null, detail: null, scope: null },
     sandboxes: sbx ?? { up: null, total: null, running: null, disk: null },
-    media: media ?? { up: null, ytDlpVersion: null, ffmpegVersion: null, ezdwfVersion: null },
+    media: media ?? {
+      up: null,
+      ytDlpVersion: null,
+      ffmpegVersion: null,
+      ezdwfVersion: null,
+      dwg2dxfVersion: null,
+      ezdxfVersion: null,
+    },
     network: net ?? { up: null, detail: null },
     degraded,
   };

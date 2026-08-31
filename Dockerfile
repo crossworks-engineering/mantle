@@ -112,6 +112,26 @@ COPY infra/media-sidecar/ezdwf-patch/raw.py /tmp/ezdwf/src/ezdwf/raw.py
 WORKDIR /tmp/ezdwf
 RUN maturin build --release --interpreter python3.12 --out /wheels
 
+# ── 1a¾. libredwg-build: static dwg2dxf for the DWG tier ────────────────────
+# Debian ships no libredwg package, so the converter is built from the pinned
+# GNU release tarball. GPLv3: it enters the media image as a standalone
+# BINARY invoked via subprocess only — the process boundary is the licence
+# boundary; never link or bind it into anything. --disable-werror because
+# newer GCCs flag warnings 0.13.3 predates; the python base satisfies
+# configure's interpreter check.
+FROM python:3.12-slim AS libredwg-build
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends gcc make libc6-dev xz-utils \
+  && rm -rf /var/lib/apt/lists/*
+ADD https://ftp.gnu.org/gnu/libredwg/libredwg-0.13.3.tar.xz /tmp/libredwg.tar.xz
+RUN mkdir /tmp/libredwg \
+  && tar -xJf /tmp/libredwg.tar.xz -C /tmp/libredwg --strip-components=1
+WORKDIR /tmp/libredwg
+RUN ./configure --disable-shared --disable-bindings --disable-docs --disable-werror \
+    --prefix=/opt/libredwg \
+  && make -j"$(nproc)" \
+  && make install-strip
+
 # ── 1b. media: yt-dlp + ffmpeg sidecar (independent of the node stages) ─────
 # Deliberately NOT built on the node deps stage: this image runs a fast-moving,
 # auto-updating, network-facing binary (yt-dlp) that parses hostile input from
@@ -138,7 +158,12 @@ RUN pip install --no-cache-dir yt-dlp
 # of PyPI; revert to the plain PyPI pin once upstream ships the fix.
 ENV MPLBACKEND=Agg
 COPY --from=ezdwf-build /wheels /tmp/ezdwf-wheels
-RUN pip install --no-cache-dir /tmp/ezdwf-wheels/ezdwf-*.whl "matplotlib>=3.9,<4"
+# DWG tier (v0.232.99): ezdxf parses + renders the converted DXF (the one
+# code path downstream of conversion); ezdwg is the MIT fallback converter
+# for files dwg2dxf mangles. Both pinned like ezdwf and for the same reason.
+RUN pip install --no-cache-dir /tmp/ezdwf-wheels/ezdwf-*.whl "matplotlib>=3.9,<4" \
+    "ezdxf==1.4.4" "ezdwg==0.12.6"
+COPY --from=libredwg-build /opt/libredwg/bin/dwg2dxf /usr/local/bin/dwg2dxf
 COPY infra/media-sidecar/app.py /srv/app.py
 COPY infra/media-sidecar/entrypoint.sh /srv/entrypoint.sh
 EXPOSE 8095

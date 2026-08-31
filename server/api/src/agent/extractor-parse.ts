@@ -307,7 +307,10 @@ export function isHollowFilenameBody(opts: {
   rawBody: string;
   title: string;
 }): boolean {
-  if (opts.parserRoute !== 'none' && opts.parserRoute !== 'dwf') return false;
+  // dwg joins dwf in the carve-out: both routes return '' on a sniff miss
+  // (a renamed DWFx, a mislabelled non-DWG) instead of parsing junk.
+  if (opts.parserRoute !== 'none' && opts.parserRoute !== 'dwf' && opts.parserRoute !== 'dwg')
+    return false;
   if (opts.mime.startsWith('image/')) return false;
   return opts.rawBody.trim() === opts.title.trim();
 }

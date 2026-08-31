@@ -101,7 +101,11 @@ export async function resolveCapabilities(ownerId: string): Promise<Capabilities
                 `yt-dlp ${mediaH.ytDlpVersion ?? '?'} · ffmpeg ${mediaH.ffmpegVersion ?? '?'} · ` +
                 (mediaH.ezdwfVersion
                   ? `ezdwf ${mediaH.ezdwfVersion}`
-                  : 'ezdwf missing (image predates the CAD tier — DWF renders fall back to thumbnails)'),
+                  : 'ezdwf missing (image predates the CAD tier — DWF renders fall back to thumbnails)') +
+                ' · ' +
+                (mediaH.ezdxfVersion
+                  ? `dwg ${mediaH.dwg2dxfVersion ?? '?'}/ezdxf ${mediaH.ezdxfVersion}`
+                  : 'dwg tier missing (image predates v0.232.99 — DWG files error at extract)'),
             }
           : { available: false, detail: 'configured but unreachable' },
   };
