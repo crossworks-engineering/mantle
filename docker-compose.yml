@@ -176,6 +176,9 @@ x-app-env: &app-env
   # refuses instead of guessing.
   MEDIA_SIDECAR_URL: ${MEDIA_SIDECAR_URL:-http://media:8095}
   MEDIA_SIDECAR_TOKEN: ${MEDIA_SIDECAR_TOKEN:-}
+  # DWF sheet-render resolution (50-600, default 300) — pair 600 with a
+  # tile-reading vision worker on drawing-heavy boxes; see packages/files/src/dwf.ts.
+  DWF_RENDER_DPI: ${DWF_RENDER_DPI:-}
   # Runner queues (docs/runs.md) — DARK unless MANTLE_RUNS=1 in the host .env.
   # Read by THREE services off this shared anchor: web (run_* tools),
   # worker_runs (engine + sweep + claims), and api (the DBOS worker-turn
