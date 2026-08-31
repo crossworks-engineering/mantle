@@ -54,6 +54,7 @@ import {
   diskPathForFile,
   extOf,
   mimeForExt,
+  isVisionImage,
   parseDocumentBytes,
   INGESTABLE_EXTS,
   MEDIA_EXTS,
@@ -553,18 +554,36 @@ async function maybeAutoTableSpreadsheet(
       // keeps model coordinates: on drawings with no DIMENSION entities (the
       // bake-off norm) the text layer IS the annotation data.
       const { sniffDwg, parseDwgToGrids } = await import('@mantle/files/dwg');
-      sheets = sniffDwg(loaded.bytes) ? await parseDwgToGrids(loaded.bytes) : [];
+      const grids = sniffDwg(loaded.bytes)
+        ? await parseDwgToGrids(loaded.bytes)
+        : { sheets: [], capped: false };
+      sheets = grids.sheets;
       if (sheets.length > 0) {
+        // Honesty over confidence: a capped registry must not claim "every".
+        const textsClaim = grids.capped
+          ? `Texts holds the annotation strings the registry kept (TRUNCATED at` +
+            ` its cap — the drawing carries more)`
+          : `Texts is every annotation string`;
         description =
           `AutoCAD DWG model-space registry. Layers counts entities per layer;` +
-          ` Texts is every annotation string with its layer and model-space X/Y` +
+          ` ${textsClaim} with its layer and model-space X/Y` +
           ` (drawing units); Counts totals entities by type. Vector geometry` +
           ` beyond text positions is not in this table.`;
       }
     } else {
       sheets = await parseSpreadsheetToGrid(loaded.bytes, fileExt);
     }
-  } catch {
+  } catch (err) {
+    // DWG: the workbook, the text digest and the image pass all hang off the
+    // SAME sidecar exchange. A transient sidecar failure here used to vanish
+    // (`return`), the text pass then succeeded against a recovered sidecar,
+    // and the node completed WITHOUT its registry table, permanently and
+    // silently. Rethrow (flagged for the call site) so the whole extract
+    // errors and the pg-boss retry heals all passes together.
+    if (fileExt === 'dwg') {
+      const e = err instanceof Error ? err : new Error(String(err));
+      throw Object.assign(e, { fatalToExtract: true });
+    }
     return; // unparseable as a grid — leave it as a plain file
   }
   if (sheets.length === 0) return;
@@ -783,6 +802,25 @@ async function maybeExtractEmbeddedImages(
         { name: 'extract_images', kind: 'compute', input: { filename: loaded.filename } },
         async (h) => {
           h.setMeta({ candidates: result.candidates, kept: 0, rejected: result.rejected });
+        },
+      );
+    } else if (ext === 'dwg' || ext === 'dwf') {
+      // CAD formats are different from a manual with no pictures: a drawing
+      // ALWAYS has renderable content, so zero candidates means the render
+      // tier failed (sidecar down/missing, render error) — invisible before
+      // this step existed. Record the reason so /traces explains the missing
+      // image child instead of leaving no trace at all.
+      const reason =
+        ext === 'dwg'
+          ? await (await import('@mantle/files/dwg')).explainDwgImageMiss(loaded.bytes)
+          : 'no sheets rendered and no embedded thumbnails found';
+      await stepInOwnTrace(
+        ownerId,
+        node,
+        { name: 'extract_images', kind: 'compute', input: { filename: loaded.filename } },
+        async (h) => {
+          h.setMeta({ candidates: 0, kept: 0 });
+          h.setError(`no render produced for this drawing — ${reason}`);
         },
       );
     }
@@ -1160,6 +1198,7 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
   if (node.type === 'file') {
     const loaded = await loadFileBytes(node);
     if (loaded && INGESTABLE_EXTS.has(loaded.ext)) {
+      const route = parserRouteForExt(loaded.ext);
       try {
         // Wrap the parse in a step so the trace shows WHICH tier ran
         // (pdf-parse / mammoth / exceljs / legacy-sheet / utf8 / tika), how long it took,
@@ -1167,7 +1206,6 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
         // since it's an HTTP call with its own failure modes (service down,
         // timeout, unparseable bytes — all swallowed to '' by design); the
         // step makes Tika invisible→visible without changing behaviour.
-        const route = parserRouteForExt(loaded.ext);
         const text = await step(
           {
             name: 'parse_document',
@@ -1186,7 +1224,13 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
           },
         );
         if (text.trim().length > 0) return cleanText(text);
-      } catch {
+      } catch (err) {
+        // DWG has NO local parser: a throw here means the media sidecar is
+        // missing or the exchange failed — a title fallback would record a
+        // terminal `no_parser` skip telling the user to convert the file,
+        // which is false (the fix is enabling the CAD tier). Rethrow so the
+        // extract errors for real and pg-boss retries heal the node.
+        if (route === 'dwg') throw err;
         // Parse / read failed. The step (if it opened) already recorded the
         // error; fall through to the title.
       }
@@ -1916,11 +1960,15 @@ async function loadExtractableBody(
     return { ok: false };
   }
 
+  // isVisionImage: EXT routing beats the client-supplied mime — uploaders
+  // send `image/vnd.dwg` for DWGs, and following that mime shipped the CAD
+  // binary to the vision worker (empty read → false `no_vision_text` skip)
+  // instead of the dwg parser route.
   const isImageNeedingVision =
     node.type === 'file' &&
     !existingData.text &&
     !existingData.content &&
-    fileMime.startsWith('image/');
+    isVisionImage(fileExt, fileMime);
 
   // Read the FULL extracted text once. `body` (truncated) is what the LLM
   // sees; `rawBody` is what we persist so the document stays retrievable.
@@ -2093,7 +2141,14 @@ async function loadExtractableBody(
         title: node.title,
         filename: existingData.filename,
         extension: fileExt,
-        hint: `No parser reads .${fileExt || 'unknown'} files, so there is nothing to index beyond the filename. Convert the file to a supported format (pdf, docx, xlsx, text) and re-upload to make its content searchable.`,
+        // CAD routes land here only on a SNIFF MISS (the bytes are not that
+        // format — a renamed DWFx, a mislabelled file); "no parser reads
+        // .dwg" would be false, and a sidecar failure never reaches this
+        // guard (it throws upstream as a real, retryable extract error).
+        hint:
+          fileExt === 'dwg' || fileExt === 'dwf'
+            ? `The file is named .${fileExt} but does not contain readable ${fileExt.toUpperCase()} data (a renamed or mislabelled format?). Nothing to index beyond the filename — re-export it from the CAD tool and re-upload.`
+            : `No parser reads .${fileExt || 'unknown'} files, so there is nothing to index beyond the filename. Convert the file to a supported format (pdf, docx, xlsx, text) and re-upload to make its content searchable.`,
       },
     });
     return { ok: false };
@@ -3155,9 +3210,13 @@ export async function extractNode(nodeId: string, ownerId: string): Promise<void
   // text-extraction allowlist below (registers should reach /tables even if
   // 'file' isn't in target_types). Best-effort: never let it block or fail the
   // text-extraction pass. Deduped + published inside the helper.
-  await maybeAutoTableSpreadsheet(node, ownerId).catch((err) =>
-    console.error('[extractor] auto-table failed:', err instanceof Error ? err.message : err),
-  );
+  await maybeAutoTableSpreadsheet(node, ownerId).catch((err) => {
+    // Flagged fatal (DWG sidecar failure): every pass depends on that same
+    // exchange, so let the whole extract fail and retry rather than complete
+    // a node that silently lost its registry workbook.
+    if ((err as { fatalToExtract?: boolean })?.fatalToExtract) throw err;
+    console.error('[extractor] auto-table failed:', err instanceof Error ? err.message : err);
+  });
 
   // target_types is the new home for the type allowlist. We still
   // accept extract_types for legacy backfilled rows in the same

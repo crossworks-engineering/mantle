@@ -19,6 +19,7 @@ import {
   exportHintForExt,
   extOf,
   INGESTABLE_EXTS,
+  isVisionImage,
   ltreeToDash,
   MEDIA_EXTS,
   mimeForExt,
@@ -331,5 +332,30 @@ describe('exportHintForExt', () => {
     for (const ext of EXPORT_REQUIRED_EXTS.keys()) {
       expect(parserRouteForExt(ext)).toBe('none');
     }
+  });
+});
+
+describe('isVisionImage (ext routing beats client-supplied mime)', () => {
+  it('a DWG upload claiming image/vnd.dwg stays on the dwg route, never vision', () => {
+    // The replayed defect: the upload request's mime sent the CAD binary to
+    // the vision worker → empty read → terminal no_vision_text skip.
+    expect(isVisionImage('dwg', 'image/vnd.dwg')).toBe(false);
+  });
+
+  it('no ingestable extension ever routes to vision, whatever the mime claims', () => {
+    for (const ext of INGESTABLE_EXTS) {
+      expect(isVisionImage(ext, 'image/png'), `${ext} must keep its parser route`).toBe(false);
+    }
+  });
+
+  it('real images route to vision by mime or by extension', () => {
+    expect(isVisionImage('png', 'image/png')).toBe(true);
+    expect(isVisionImage('png', 'application/octet-stream')).toBe(true);
+    // Email attachments: no usable extension, truth in data.mimeType.
+    expect(isVisionImage('', 'image/jpeg')).toBe(true);
+  });
+
+  it('unrouted non-images stay off the vision path', () => {
+    expect(isVisionImage('bin', 'application/octet-stream')).toBe(false);
   });
 });

@@ -23,6 +23,7 @@
  * only '' return is a sniff miss (not actually DWG bytes), which takes the
  * extractor's hollow-skip carve-out like a renamed DWFx does on the dwf route.
  */
+import { createHash } from 'node:crypto';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
 import { mediaDwgRender, mediaSidecarEnabled, type DwgRender } from './media-sidecar';
 import type { ParsedSheet } from './sheet-to-grid';
@@ -59,21 +60,45 @@ export function dwgRenderDpi(): number {
 }
 
 /**
- * One sidecar exchange per Buffer per process — extractor passes hand every
- * pass the same Buffer (see loadFileBytes), which is what makes this memo
- * work. The PROMISE is memoised so concurrent passes share the in-flight
- * upload; a failed exchange is evicted so a retry actually retries.
+ * One sidecar exchange per drawing per process. Keyed by CONTENT HASH, not
+ * Buffer identity: the extractor's byte cache can evict and re-read a file
+ * between passes under load, and a fresh Buffer of the same bytes must reuse
+ * the exchange rather than pay a second upload. Tiny LRU (a node's passes run
+ * back-to-back, so 2 in-flight drawings is the realistic ceiling). The
+ * PROMISE is memoised so concurrent passes share the in-flight upload; a
+ * failed exchange is evicted so a retry actually retries — but its failure
+ * message is kept (per hash) so a later pass can explain the missing image.
  */
-const renderMemo = new WeakMap<Buffer, Promise<Awaited<ReturnType<typeof mediaDwgRender>>>>();
+const RENDER_MEMO_MAX = 2;
+const renderMemo = new Map<string, Promise<Awaited<ReturnType<typeof mediaDwgRender>>>>();
+const failureMemo = new Map<string, string>();
+
+function dwgHash(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
 
 function fetchDwgRender(bytes: Buffer) {
-  let entry = renderMemo.get(bytes);
+  const key = dwgHash(bytes);
+  let entry = renderMemo.get(key);
   if (!entry) {
     entry = mediaDwgRender(bytes, { dpi: dwgRenderDpi() }).then((res) => {
-      if (!res.ok) renderMemo.delete(bytes);
+      if (!res.ok) {
+        renderMemo.delete(key);
+        failureMemo.set(key, `${res.code}: ${res.message}`);
+        if (failureMemo.size > RENDER_MEMO_MAX) {
+          const oldest = failureMemo.keys().next().value;
+          if (oldest !== undefined) failureMemo.delete(oldest);
+        }
+      } else {
+        failureMemo.delete(key);
+      }
       return res;
     });
-    renderMemo.set(bytes, entry);
+    renderMemo.set(key, entry);
+    if (renderMemo.size > RENDER_MEMO_MAX) {
+      const oldest = renderMemo.keys().next().value;
+      if (oldest !== undefined) renderMemo.delete(oldest);
+    }
   }
   return entry;
 }
@@ -150,12 +175,20 @@ export async function parseDwg(bytes: Buffer): Promise<string> {
 
 /* ---------------------------------------------------------------- workbook */
 
+export type DwgGrids = {
+  sheets: ParsedSheet[];
+  /** True when the registry is INCOMPLETE — the sidecar hit its text/layer
+   *  caps or the Texts tab was cut at MAX_TEXT_ROWS. The auto-table
+   *  description must not claim "every annotation string" then. */
+  capped: boolean;
+};
+
 /**
  * Registry workbook tabs for the auto-table pass: Layers, Texts (with model
  * coordinates — the geometry phase's feed), and entity-type Counts.
  */
-export async function parseDwgToGrids(bytes: Buffer): Promise<ParsedSheet[]> {
-  if (!sniffDwg(bytes)) return [];
+export async function parseDwgToGrids(bytes: Buffer): Promise<DwgGrids> {
+  if (!sniffDwg(bytes)) return { sheets: [], capped: false };
   const r = await renderOrThrow(bytes);
   const sheets: ParsedSheet[] = [];
   if (r.layers.length) {
@@ -191,10 +224,37 @@ export async function parseDwgToGrids(bytes: Buffer): Promise<ParsedSheet[]> {
       rows: countRows,
     });
   }
-  return sheets;
+  return { sheets, capped: r.capped || r.texts.length > MAX_TEXT_ROWS };
 }
 
 /* ------------------------------------------------------------------ images */
+
+/**
+ * Why {@link extractDwgImages} came back empty for these bytes, answered from
+ * the memos alone — NEVER a fresh sidecar exchange (this runs after the image
+ * pass on the same bytes, so retrying here would double a failed upload).
+ * Feeds the extractor's zero-candidate `extract_images` trace step.
+ */
+export async function explainDwgImageMiss(bytes: Buffer): Promise<string> {
+  if (!sniffDwg(bytes)) return 'not DWG bytes (sniff miss)';
+  if (!mediaSidecarEnabled()) {
+    return 'media sidecar not enabled — no render tier on this box';
+  }
+  const key = dwgHash(bytes);
+  const entry = renderMemo.get(key);
+  if (entry) {
+    // Settled by the time this runs (the image pass awaited the same promise).
+    const res = await entry;
+    if (res.ok) {
+      if (res.value.renderError) return `sidecar render failed: ${res.value.renderError}`;
+      if (!res.value.png) return 'the sidecar shipped the registry but no render and no reason';
+      return 'a render exists for these bytes (not a miss)';
+    }
+  }
+  const failure = failureMemo.get(key);
+  if (failure) return `sidecar exchange failed (${failure})`;
+  return 'no sidecar exchange was recorded for these bytes';
+}
 
 /**
  * The model-space render as a single essential image node. Unlike DWF there

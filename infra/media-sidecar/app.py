@@ -69,6 +69,7 @@ import ipaddress
 import json
 import hmac
 import os
+import re
 import shutil
 import signal
 import socket
@@ -169,8 +170,14 @@ def get_versions() -> dict:
             out = subprocess.run(
                 ["dwg2dxf", "--version"], capture_output=True, text=True, timeout=20
             )
-            first = (out.stdout or out.stderr).strip().splitlines()
-            dwg2dxf_version = first[0].split()[-1] if first else None
+            # rc and shape both checked: a broken binary that prints an error
+            # and exits non-zero must read as "tier absent", not as a version —
+            # the app memoises tier-absence off this field.
+            if out.returncode == 0:
+                first = (out.stdout or out.stderr).strip().splitlines()
+                token = first[0].split()[-1] if first and first[0].split() else ""
+                if re.match(r"^\d+\.\d+", token):
+                    dwg2dxf_version = token
         except Exception:
             pass
         ezdxf_version = None
@@ -261,11 +268,17 @@ def assert_public_host(url: str) -> None:
 # ─── subprocess plumbing ────────────────────────────────────────────────────
 
 
-def run(cmd: list, timeout: int, cwd: str | None = None) -> subprocess.CompletedProcess:
+def run(
+    cmd: list, timeout: int, cwd: str | None = None, fail_hint: str | None = None
+) -> subprocess.CompletedProcess:
     """Run a subprocess in its OWN PROCESS GROUP with a hard timeout. On
     timeout the whole group is killed — yt-dlp's ffmpeg grandchildren
     included, so a cancelled job can't keep burning CPU into a tempdir that
-    is about to be rmtree'd."""
+    is about to be rmtree'd.
+
+    `fail_hint` replaces the default yt-dlp-flavoured advice in the non-zero
+    exit message — the CAD render workers exit with their own curated stderr,
+    and "yt-dlp self-updates daily" on a drawing failure is a lie."""
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -285,11 +298,15 @@ def run(cmd: list, timeout: int, cwd: str | None = None) -> subprocess.Completed
         raise OpError(504, "timeout", f"{cmd[0]} exceeded {timeout}s and was killed")
     if proc.returncode != 0:
         tail = (stderr or "")[-STDERR_TAIL:]
+        hint = (
+            fail_hint
+            if fail_hint is not None
+            else "yt-dlp self-updates daily; if this is a site change, retry later."
+        )
         raise OpError(
             502,
             "extraction_failed",
-            f"{cmd[0]} exited {proc.returncode}. yt-dlp self-updates daily; if this is a "
-            f"site change, retry later. stderr tail:\n{tail}",
+            f"{cmd[0]} exited {proc.returncode}. {hint} stderr tail:\n{tail}",
         )
     return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
 
@@ -729,10 +746,11 @@ class Handler(BaseHTTPRequestHandler):
                     [sys.executable, os.path.abspath(__file__), "--dwf-render",
                      src, outdir, str(dpi), str(max_sheets)],
                     TIMEOUT_DWF_RENDER,
+                    fail_hint="The DWF could not be read as a plot set.",
                 )
             except OpError as err:
                 if err.code == "extraction_failed":
-                    # run()'s generic message talks about yt-dlp; rewrap.
+                    # run()'s generic message carries the CAD fail_hint; rewrap to 422.
                     raise OpError(422, "extraction_failed", f"DWF render worker failed: {err.message}")
                 raise
             index_path = os.path.join(outdir, "index.json")
@@ -821,6 +839,7 @@ class Handler(BaseHTTPRequestHandler):
                     [sys.executable, os.path.abspath(__file__), "--dwg-render",
                      src, outdir, str(dpi)],
                     TIMEOUT_DWG_RENDER,
+                    fail_hint="No converter produced a parseable DXF from this DWG.",
                 )
             except OpError as err:
                 if err.code == "extraction_failed":
@@ -832,14 +851,26 @@ class Handler(BaseHTTPRequestHandler):
                     index = json.load(f)
             except Exception:
                 raise OpError(422, "extraction_failed", "DWG render worker produced no index")
-            png_b64 = ""
+            # Assemble the reply with the DWF-style single-buffer splice: the
+            # registry JSON is dumped once and the PNG's base64 is appended
+            # into the same buffer — never dict→dumps→encode holding the
+            # texts + png in three copies at once.
+            png_b64 = b""
             try:
                 with open(os.path.join(outdir, "model.png"), "rb") as f:
-                    png_b64 = base64.b64encode(f.read()).decode("ascii")
+                    png_b64 = base64.b64encode(f.read())
             except OSError:
                 pass  # registry without pixels is still an answer; ok stays true
-            index.update(ok=True, dpi=dpi, png_base64=png_b64)
-            self._send_json(200, index)
+            index.update(ok=True, dpi=dpi)
+            index.setdefault("render_error", None)
+            head = json.dumps(index).encode()
+            payload = head[:-1] + b',"png_base64":"' + png_b64 + b'"}'
+            self._responded = True
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
 
     def _op_extract_audio(self):
         length = self._content_length(MAX_UPLOAD_BYTES)
@@ -1040,19 +1071,31 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     doc = None
     converter = None
     dxf_a = os.path.join(outdir, "a.dxf")
-    proc = subprocess.run(
-        ["dwg2dxf", "-o", dxf_a, src], capture_output=True, text=True, timeout=120
-    )
-    if proc.returncode == 0 and os.path.isfile(dxf_a):
-        doc = try_parse(dxf_a)
-        if doc is not None:
-            converter = "dwg2dxf"
+    # Tier 1 guarded: a missing binary (FileNotFoundError), a hung conversion
+    # (TimeoutExpired) or any other failure must fall THROUGH to ezdwg, not
+    # kill the child before the fallback ever runs.
+    try:
+        proc = subprocess.run(
+            ["dwg2dxf", "-o", dxf_a, src], capture_output=True, text=True, timeout=120
+        )
+        if proc.returncode == 0 and os.path.isfile(dxf_a):
+            doc = try_parse(dxf_a)
+            if doc is not None:
+                converter = "dwg2dxf"
+    except Exception:
+        pass  # tier 2 decides
     if doc is None:
-        import ezdwg  # noqa: PLC0415 — fallback tier; absent on pre-DWG images
+        # Tier 2 guarded too: the import (pre-DWG image), read() (unsupported
+        # file) and export_dxf() can all raise — every failure takes the ONE
+        # curated exit instead of a raw traceback.
+        try:
+            import ezdwg  # noqa: PLC0415 — fallback tier; absent on pre-DWG images
 
-        dxf_b = os.path.join(outdir, "b.dxf")
-        ezdwg.read(src).export_dxf(dxf_b)
-        doc = try_parse(dxf_b)
+            dxf_b = os.path.join(outdir, "b.dxf")
+            ezdwg.read(src).export_dxf(dxf_b)
+            doc = try_parse(dxf_b)
+        except Exception:
+            doc = None
         if doc is None:
             sys.stderr.write("no converter produced a parseable DXF\n")
             return 1
@@ -1064,6 +1107,27 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     texts = []
     entities = 0
     texts_capped = False
+
+    def add_text(entity, layer: str) -> None:
+        """Harvest one text-bearing entity into `texts` under the shared caps."""
+        nonlocal texts_capped
+        raw = entity.plain_text() if entity.dxftype() == "MTEXT" else entity.dxf.text
+        text = " ".join(str(raw).split())[:max_text_len]
+        if not text:
+            return
+        if len(texts) >= max_texts:
+            texts_capped = True
+            return
+        point = entity.dxf.insert if hasattr(entity.dxf, "insert") else None
+        texts.append(
+            {
+                "text": text,
+                "layer": layer,
+                "x": round(float(point[0]), 1) if point is not None else None,
+                "y": round(float(point[1]), 1) if point is not None else None,
+            }
+        )
+
     for e in msp:
         entities += 1
         etype = e.dxftype()
@@ -1072,24 +1136,19 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
         layer_counts[layer] = layer_counts.get(layer, 0) + 1
         if etype in ("TEXT", "MTEXT"):
             try:
-                raw = e.plain_text() if etype == "MTEXT" else e.dxf.text
-                text = " ".join(str(raw).split())[:max_text_len]
-                if not text:
-                    continue
-                if len(texts) >= max_texts:
-                    texts_capped = True
-                    continue
-                point = e.dxf.insert if hasattr(e.dxf, "insert") else None
-                texts.append(
-                    {
-                        "text": text,
-                        "layer": layer,
-                        "x": round(float(point[0]), 1) if point is not None else None,
-                        "y": round(float(point[1]), 1) if point is not None else None,
-                    }
-                )
+                add_text(e, layer)
             except Exception:
                 continue
+        elif etype == "INSERT":
+            # Block ATTRIBs carry the real content on attribute-driven
+            # drawings (title blocks, circuit/line-number tags) — a top-level
+            # TEXT/MTEXT sweep alone misses hundreds of values per file.
+            for attrib in getattr(e, "attribs", None) or []:
+                try:
+                    type_counts["ATTRIB"] = type_counts.get("ATTRIB", 0) + 1
+                    add_text(attrib, str(getattr(attrib.dxf, "layer", "") or ""))
+                except Exception:
+                    continue
 
     layers = sorted(layer_counts.items(), key=lambda kv: (-kv[1], kv[0]))
     index = {
@@ -1100,6 +1159,7 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
         "layers": [{"name": n, "count": c} for n, c in layers[:max_layers]],
         "texts": texts,
         "counts": type_counts,
+        "render_error": None,
     }
 
     png = os.path.join(outdir, "model.png")
@@ -1108,20 +1168,28 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
         ax = fig.add_axes([0, 0, 1, 1])
         ax.set_axis_off()
         Frontend(RenderContext(doc), MatplotlibBackend(ax)).draw_layout(msp, finalize=True)
-        fig.savefig(png, dpi=dpi)
-        # Measured guard, same as the DWF worker: figsize×dpi is known here
-        # (16×10in @600 = 57.6 MP) but measuring the artifact keeps the two
-        # workers on one rule and survives ezdxf changing its own layout.
+        # figsize is fixed (16×10in = 160 in²), so the output-pixel cap maps
+        # straight to a dpi ceiling — clamp BEFORE the first savefig instead
+        # of paying a ~230 MB over-budget render only to redo it smaller. The
+        # measured guard below stays as the backstop for a layout change.
+        eff_dpi = min(dpi, max(50, int((max_pixels / 160) ** 0.5)))
+        fig.savefig(png, dpi=eff_dpi)
         with open(png, "rb") as f:
             head = f.read(24)
         if head[:8] == b"\x89PNG\r\n\x1a\n":
             pixels = int.from_bytes(head[16:20], "big") * int.from_bytes(head[20:24], "big")
             if pixels > max_pixels:
-                eff_dpi = max(50, int(dpi * (max_pixels / pixels) ** 0.5))
-                fig.savefig(png, dpi=eff_dpi)
-    except Exception:
+                # Nested guard: a failed DOWNSCALE must not delete the good
+                # first render — only a genuinely unusable output is removed.
+                try:
+                    fig.savefig(png, dpi=max(50, int(eff_dpi * (max_pixels / pixels) ** 0.5)))
+                except Exception:
+                    pass  # keep the over-budget-but-valid first PNG
+    except Exception as err:
         # Registry without pixels still ships; the parent tolerates a missing
-        # model.png and the app side falls back to no-image extraction.
+        # model.png. The reason is recorded so the app side can say WHY the
+        # drawing has no image child instead of silently emitting nothing.
+        index["render_error"] = f"{type(err).__name__}: {err}"[:500]
         try:
             os.unlink(png)
         except OSError:

@@ -2236,6 +2236,14 @@ export type SystemHealth = {
     up: boolean | null;
     ytDlpVersion: string | null;
     ffmpegVersion: string | null;
+    /** null on images built before the CAD tier (v0.232.92) — DWF renders
+     *  fall back to embedded thumbnails without it. */
+    ezdwfVersion: string | null;
+    /** null on images built before the DWG tier (v0.232.99) — with either of
+     *  these missing the UI should show "DWG tier missing" (DWG parsing and
+     *  rendering both need the sidecar; absence means the whole format). */
+    dwg2dxfVersion: string | null;
+    ezdxfVersion: string | null;
   };
   /** Tailscale / local network — the optional tailnet that lets a cloud VPS
    *  reach a LAN model box by MagicDNS name. Profile-gated and off by default

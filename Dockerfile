@@ -123,7 +123,8 @@ FROM python:3.12-slim AS libredwg-build
 RUN apt-get update \
   && apt-get install -y --no-install-recommends gcc make libc6-dev xz-utils \
   && rm -rf /var/lib/apt/lists/*
-ADD https://ftp.gnu.org/gnu/libredwg/libredwg-0.13.3.tar.xz /tmp/libredwg.tar.xz
+ADD --checksum=sha256:83f1f6e78a744777a481ff4520e4cef3f8ac4b2c1c25671077ca12fe81e8816e \
+  https://ftp.gnu.org/gnu/libredwg/libredwg-0.13.3.tar.xz /tmp/libredwg.tar.xz
 RUN mkdir /tmp/libredwg \
   && tar -xJf /tmp/libredwg.tar.xz -C /tmp/libredwg --strip-components=1
 WORKDIR /tmp/libredwg

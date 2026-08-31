@@ -14,12 +14,14 @@
  *   pnpm -C server/web extract:images-backfill --types=pdf,docx
  *   pnpm -C server/web extract:images-backfill --upgrade-dwf        # DRY RUN
  *   pnpm -C server/web extract:images-backfill --upgrade-dwf --go
+ *   pnpm -C server/web extract:images-backfill --upgrade-dwg        # DRY RUN
+ *   pnpm -C server/web extract:images-backfill --upgrade-dwg --go
  *
- * `--upgrade-dwf` targets the OPPOSITE cohort of the normal mode: DWF plot
- * sets that already produced images, but on the low-res tier (no child
- * carries `provenance: 'sidecar_render'` — sets ingested before the media
- * sidecar's CAD tier, or while it was down/busy). In live mode it deletes
- * those thumbnail children and re-notifies the parent so the extractor
+ * `--upgrade-dwf` / `--upgrade-dwg` target the OPPOSITE cohort of the normal
+ * mode: CAD files that already produced images, but on the wrong tier (no
+ * child carries `provenance: 'sidecar_render'` — files ingested before the
+ * media sidecar's CAD/DWG tier, or while it was down/busy). In live mode it
+ * deletes those image children and re-notifies the parent so the extractor
  * re-renders through the sidecar. Deleting children breaks links to the OLD
  * image node ids (Page embeds, chat citations) — the dry run says how many.
  *
@@ -73,6 +75,7 @@ const DEFAULT_EXTS = [
   'xlsb',
   'rtf',
   'dwf',
+  'dwg',
 ];
 
 /** Fallback worst case per document, mirroring MAX_EMBEDDED_IMAGES_PER_DOC in
@@ -100,14 +103,17 @@ type Args = {
   limit: number | null;
   rateSec: number;
   exts: string[];
-  upgradeDwf: boolean;
+  /** CAD upgrade cohort: re-render existing image children through the
+   *  sidecar for this extension (see the header). */
+  upgradeExt: 'dwf' | 'dwg' | null;
 };
 
 function parseArgs(argv: string[]): Args {
-  const out: Args = { go: false, limit: null, rateSec: 1, exts: DEFAULT_EXTS, upgradeDwf: false };
+  const out: Args = { go: false, limit: null, rateSec: 1, exts: DEFAULT_EXTS, upgradeExt: null };
   for (const arg of argv) {
     if (arg === '--go') out.go = true;
-    else if (arg === '--upgrade-dwf') out.upgradeDwf = true;
+    else if (arg === '--upgrade-dwf') out.upgradeExt = 'dwf';
+    else if (arg === '--upgrade-dwg') out.upgradeExt = 'dwg';
     else if (arg.startsWith('--limit=')) {
       const n = parseInt(arg.slice('--limit='.length), 10);
       if (!Number.isNaN(n)) out.limit = n;
@@ -137,9 +143,10 @@ async function main() {
     rate: `${args.rateSec}s between notifies`,
   });
 
-  if (args.upgradeDwf) {
-    // The upgrade cohort: DWFs whose extracted images exist but none of them
-    // came from the sidecar render tier.
+  if (args.upgradeExt) {
+    const upExt = args.upgradeExt;
+    // The upgrade cohort: CAD files whose extracted images exist but none of
+    // them came from the sidecar render tier.
     const rows = (await sql.unsafe(
       `select n.id, n.title,
               (select count(*) from nodes c
@@ -148,7 +155,7 @@ async function main() {
                    and 'extracted-image' = any(c.tags)) as children
          from nodes n
         where n.type = 'file'
-          and lower(coalesce(n.data->>'filename', n.title)) ~ '\\.dwf$'
+          and lower(coalesce(n.data->>'filename', n.title)) ~ '\\.${upExt}$'
           and n.data->>'sourceFileId' is null
           and exists (
             select 1 from nodes c
@@ -164,7 +171,7 @@ async function main() {
       [],
     )) as Array<{ id: string; title: string; children: number }>;
 
-    console.log(`[images-backfill] ${rows.length} DWF(s) are on the thumbnail tier`);
+    console.log(`[images-backfill] ${rows.length} ${upExt.toUpperCase()}(s) lack a sidecar render`);
     for (const r of rows) {
       console.log(
         `[images-backfill]   ${r.id.slice(0, 8)} — ${r.title.slice(0, 60)} (${r.children} images to replace)`,
@@ -174,7 +181,7 @@ async function main() {
       console.log('');
       console.log('[images-backfill] DRY RUN — nothing deleted, nothing fired.');
       console.log(
-        '[images-backfill] Live mode DELETES the listed thumbnail image nodes (links to their ids dangle) and re-notifies each DWF so the extractor re-renders through the media sidecar. Make sure the sidecar is up with the CAD tier (check /healthz for ezdwf) or the re-run just recreates thumbnails.',
+        `[images-backfill] Live mode DELETES the listed image nodes (links to their ids dangle) and re-notifies each ${upExt.toUpperCase()} so the extractor re-renders through the media sidecar. Make sure the sidecar is up with the CAD tier (check /healthz for ${upExt === 'dwf' ? 'ezdwf' : 'dwg2dxf + ezdxf'}) or the re-run ${upExt === 'dwf' ? 'just recreates thumbnails' : 'yields no image at all'}.`,
       );
       console.log('[images-backfill] Re-run with --go to proceed.');
       await sql.end();
@@ -198,7 +205,9 @@ async function main() {
       );
       if (i < rows.length) await new Promise((r) => setTimeout(r, args.rateSec * 1000));
     }
-    console.log(`[images-backfill] done. ${rows.length} DWFs re-queued for sidecar renders.`);
+    console.log(
+      `[images-backfill] done. ${rows.length} ${upExt.toUpperCase()}s re-queued for sidecar renders.`,
+    );
     await sql.end();
     return;
   }

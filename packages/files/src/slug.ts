@@ -235,6 +235,21 @@ export function parserRouteForExt(ext: string): ParserRoute {
   return 'none';
 }
 
+/**
+ * Should this attachment be handled as an IMAGE (vision worker) rather than a
+ * routed document? EXT routing wins over the client-supplied MIME: uploaders
+ * send `image/vnd.dwg` for a DWG (a registered alias), and letting that mime
+ * steer would ship a CAD binary to the vision worker — an empty read and a
+ * false terminal skip — instead of the format's real parser. No ingestable
+ * extension maps to an image format, so the exclusion is exact. Files with no
+ * or an unrouted extension still follow the mime (email attachments whose
+ * filename lives in the title).
+ */
+export function isVisionImage(ext: string, mime: string): boolean {
+  if (INGESTABLE_EXTS.has(ext)) return false;
+  return mime.startsWith('image/') || mimeForExt(ext).startsWith('image/');
+}
+
 /** Map an extension to a sensible MIME type. Falls back to octet-stream. */
 export function mimeForExt(ext: string): string {
   switch (ext) {

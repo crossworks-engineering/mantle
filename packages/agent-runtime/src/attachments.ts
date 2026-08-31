@@ -22,7 +22,7 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { bumpWorkerUsage, getDefaultWorker } from '@mantle/db';
 import {
   extOf,
-  mimeForExt,
+  isVisionImage,
   parseDocumentBytes,
   transcodeImageForVision,
   INGESTABLE_EXTS,
@@ -348,7 +348,10 @@ export async function extractAttachmentForTurn(opts: {
   question?: string;
 }): Promise<AttachmentExtract> {
   const ext = extOf(opts.filename);
-  const isImage = opts.mimeType.startsWith('image/') || mimeForExt(ext).startsWith('image/');
+  // EXT routing beats the client-supplied mime: uploaders send `image/vnd.dwg`
+  // for DWGs, and the old mime-first gate shipped the CAD binary to the vision
+  // worker instead of taking the dwg deferral below.
+  const isImage = isVisionImage(ext, opts.mimeType);
 
   if (isImage) {
     const question = opts.question?.trim();

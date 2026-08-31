@@ -539,6 +539,9 @@ export type DwgRender = {
   counts: Record<string, number>;
   /** Model-space raster; null when the render step failed (registry-only). */
   png: Buffer | null;
+  /** Why the render step failed, when it did — the reply is still ok:true
+   *  (the registry shipped), but the missing image is explainable. */
+  renderError: string | null;
 };
 
 // Mirror of TIMEOUT_DWG_RENDER in app.py, same +30s backstop convention.
@@ -644,6 +647,8 @@ export async function mediaDwgRender(
           texts,
           counts,
           png,
+          renderError:
+            typeof body.render_error === 'string' && body.render_error ? body.render_error : null,
         },
       };
     },

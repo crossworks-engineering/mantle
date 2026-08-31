@@ -13,6 +13,7 @@ export {
   EXPORT_REQUIRED_EXTS,
   exportHintForExt,
   parserRouteForExt,
+  isVisionImage,
   type ParserRoute,
 } from './slug';
 

@@ -523,6 +523,19 @@ describe('isHollowFilenameBody (the filename-only false-success guard)', () => {
     ).toBe(false);
   });
 
+  it('a client-supplied image mime cannot shield a routed CAD sniff-miss', () => {
+    // Uploaders send `image/vnd.dwg` for DWGs; the image exemption must not
+    // beat the dwf/dwg carve-out or the sniff-miss would index its filename.
+    expect(
+      isHollowFilenameBody({
+        mime: 'image/vnd.dwg',
+        parserRoute: 'dwg',
+        rawBody: '90-10-01.dwg',
+        title: '90-10-01.dwg',
+      }),
+    ).toBe(true);
+  });
+
   it('catches the descriptive-recording case that defeated the 20-char check', () => {
     expect(
       isHollowFilenameBody({
