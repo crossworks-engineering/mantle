@@ -326,6 +326,34 @@ export interface PersonaNoteDTO {
   supersededBy?: string;
 }
 
+/** Raw counters behind an agent's experience level — always shipped next to
+ *  the level so the UI can show WHY it is level N. All are lifetime counts for
+ *  THIS brain (experience is per-brain, display-only — never a trust gate). */
+export interface AgentExperienceComponentsDTO {
+  /** Conversation turns this agent answered (any channel). */
+  turns: number;
+  /** Tool calls that succeeded across those turns. */
+  toolSuccesses: number;
+  /** Delegated runs this agent completed for other agents. */
+  delegations: number;
+  /** Heartbeat fires this agent completed. */
+  heartbeats: number;
+}
+
+/** An agent's experience readout — a soft-capped level derived from real
+ *  accumulated usage (see `agent-experience.ts` server-side for the weights
+ *  and curve). Computed at read time; nothing is stored. */
+export interface AgentExperienceDTO {
+  level: number;
+  /** Total XP earned. */
+  xp: number;
+  /** Cumulative XP at which the current level began. */
+  levelXp: number;
+  /** Cumulative XP needed to reach the next level. */
+  nextLevelXp: number;
+  components: AgentExperienceComponentsDTO;
+}
+
 /** An agent as returned by `GET /api/agents` (and `…/[id]`). Dates are ISO
  *  strings. The server aliases its `AgentSummary` to this so the wire shape and
  *  the consuming client can't drift. */
@@ -371,6 +399,11 @@ export interface AgentDTO {
   manifestManaged: boolean;
   lastUsedAt: string | null;
   usageCount: number;
+  /** Experience readout (level + raw counters). Optional: filled on the list
+   *  reads the agent screens use (`GET /api/agents`, the assistant thread
+   *  bundle); absent on single-row CRUD echoes where computing it would cost
+   *  extra queries for nothing. */
+  experience?: AgentExperienceDTO;
   createdAt: string;
   updatedAt: string;
 }

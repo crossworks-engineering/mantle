@@ -14,6 +14,7 @@ import {
   type PersonaNote,
 } from '@mantle/db';
 import { CHATTABLE_ROLES } from '@mantle/assistant-runtime';
+import { computeAgentExperience, zeroExperience } from './agent-experience';
 import { MANIFEST_AGENTS } from './system-manifest/manifest';
 import { cloneAgentFields, slugifyAgentName, uniqueAgentSlug } from './agent-clone';
 
@@ -96,9 +97,19 @@ export async function listAgents(userId: string): Promise<AgentSummary[]> {
     .from(agents)
     .where(eq(agents.ownerId, userId))
     .orderBy(desc(agents.priority), desc(agents.updatedAt));
-  return rows
-    .filter((r) => (CONVERSATIONAL_ROLES as readonly string[]).includes(r.role))
-    .map(toSummary);
+  const conversational = rows.filter((r) =>
+    (CONVERSATIONAL_ROLES as readonly string[]).includes(r.role),
+  );
+  // Experience is a list-read concern (the agents screens show the level
+  // badge); single-row CRUD echoes skip it — see the DTO comment.
+  const experience = await computeAgentExperience(
+    userId,
+    conversational.map((r) => r.id),
+  );
+  return conversational.map((r) => ({
+    ...toSummary(r),
+    experience: experience.get(r.id) ?? zeroExperience(),
+  }));
 }
 
 export async function getAgent(userId: string, id: string): Promise<AgentSummary | null> {

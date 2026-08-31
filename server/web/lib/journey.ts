@@ -1,6 +1,15 @@
 import { and, desc, eq, gte, isNull, lt, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { db, entities, entityEdges, facts, isWriteRefused, nodes, traces } from '@mantle/db';
+import {
+  agents,
+  db,
+  entities,
+  entityEdges,
+  facts,
+  isWriteRefused,
+  nodes,
+  traces,
+} from '@mantle/db';
 import { getTrace } from './traces';
 import { deriveAction, type ActionCategory } from '@mantle/client-types/journey-format';
 import type {
@@ -43,6 +52,10 @@ function mapActivityRow(r: {
   factCount: number | null;
   mentionCount: number | null;
   relationCount: number | null;
+  agentId: string | null;
+  agentName: string | null;
+  agentSlug: string | null;
+  agentAvatar: unknown;
 }): ActivityItem {
   const traceData = (r.data ?? {}) as Record<string, unknown>;
   const nodeData = (r.nodeData ?? {}) as Record<string, unknown>;
@@ -50,6 +63,7 @@ function mapActivityRow(r: {
   const mime = strOf(nodeData.mimeType) ?? strOf(nodeData.mime);
   const pres = deriveAction({ kind: r.kind, nodeType: r.nodeType, mime, source });
   const title = r.nodeTitle ?? strOf(traceData.filename) ?? strOf(traceData.title);
+  const avatarSeed = strOf((r.agentAvatar as Record<string, unknown> | null)?.seed) ?? r.agentSlug;
   return {
     ...pres,
     traceId: r.id,
@@ -65,6 +79,12 @@ function mapActivityRow(r: {
     factCount: r.factCount ?? 0,
     mentionCount: r.mentionCount ?? 0,
     relationCount: r.relationCount ?? 0,
+    agentId: r.agentId,
+    agentName: r.agentName,
+    agentSlug: r.agentSlug,
+    avatarSeed,
+    workerSlug: strOf(traceData.worker_slug),
+    parentTraceId: strOf(traceData.parent_trace_id),
   };
 }
 
@@ -93,6 +113,10 @@ async function queryActivity(
       factCount: sql<number>`(select count(*)::int from ${facts} where ${facts.sourceNodeId} = ${traces.subjectId} and ${facts.validTo} is null)`,
       mentionCount: sql<number>`(select count(*)::int from ${entityEdges} where ${entityEdges.targetId} = ${traces.subjectId} and ${entityEdges.targetKind} = 'node' and ${entityEdges.relation} = 'mentioned_in')`,
       relationCount: sql<number>`(select count(*)::int from ${entityEdges} where ${entityEdges.data}->>'source_node_id' = ${traces.subjectId}::text)`,
+      agentId: traces.agentId,
+      agentName: agents.name,
+      agentSlug: agents.slug,
+      agentAvatar: agents.avatar,
     })
     .from(traces)
     .leftJoin(
@@ -103,6 +127,7 @@ async function queryActivity(
         eq(nodes.ownerId, userId),
       ),
     )
+    .leftJoin(agents, eq(traces.agentId, agents.id))
     .where(and(eq(traces.ownerId, userId), ...extraConds))
     .orderBy(desc(traces.startedAt))
     .limit(limit);

@@ -6,6 +6,7 @@ import {
   resolveAgentForActor,
 } from '@/lib/assistant';
 import { getAssignedAgentSummary } from '@/lib/agents';
+import { getAgentExperience } from '@/lib/agent-experience';
 
 /**
  * GET /api/assistant/thread?agent=<slug> — the initial /assistant bundle: the
@@ -42,13 +43,16 @@ export async function GET(req: Request) {
     resolveAgentForActor(user, slug),
     getAssignedAgentSummary(user.id, user.actor.id),
   ]);
-  const messages =
-    agent && withMessages ? await recentAssistantMessages(user.id, agent.id, 100) : [];
+  const [messages, experience] = await Promise.all([
+    agent && withMessages ? recentAssistantMessages(user.id, agent.id, 100) : [],
+    // The header shows the active agent's level badge; one scoped rollup.
+    agent ? getAgentExperience(user.id, agent.id) : null,
+  ]);
 
   return NextResponse.json(
     {
       agents,
-      agent,
+      agent: agent ? { ...agent, experience } : null,
       messages,
       assigned: assigned ? { slug: assigned.slug, assignedAt: assigned.assignedAt } : null,
     },

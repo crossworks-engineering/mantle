@@ -247,6 +247,20 @@ export type ActivityItem = ActionPresentation & {
   factCount: number;
   mentionCount: number;
   relationCount: number;
+  /** Who performed the action. Null for pipeline traces that carry no agent
+   *  (extractor/summarizer runs identify via workerSlug instead; ingest and
+   *  federation traces have neither). */
+  agentId: string | null;
+  agentName: string | null;
+  agentSlug: string | null;
+  /** Seed for GeneratedAvatar: the agent's stored avatar seed, falling back
+   *  to its slug (same convention the settings screens use). */
+  avatarSeed: string | null;
+  /** ai-worker identity for worker-driven traces (extractor, summarizer). */
+  workerSlug: string | null;
+  /** Set on delegated child runs (invoke_agent) — the parent trace's id, so
+   *  the UI can nest fan-out under the delegating turn. */
+  parentTraceId: string | null;
 };
 
 export type JourneyDetail = TraceDetail & { landed: LandedLayers | null };
