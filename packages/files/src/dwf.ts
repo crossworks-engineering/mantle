@@ -248,7 +248,7 @@ async function openDwf(bytes: Buffer): Promise<OpenedDwf> {
     zip = await JSZip.loadAsync(bytes);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`dwf: no readable ZIP archive in container (${msg})`);
+    throw new Error(`dwf: no readable ZIP archive in container (${msg})`, { cause: err });
   }
 
   // One pass: normalised path → entry, plus per-section-directory roles.
