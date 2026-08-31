@@ -21,6 +21,11 @@ export async function GET() {
     isOnboarded(user.id, prefs),
     countPending(user.id),
   ]);
+  // The FACE is per-login: seed, builder pins, and the uploaded photo come
+  // from the ACTOR's row (loadPreferencesFor routes brain keys to the anchor
+  // regardless), while everything else here — brand, fonts, onboarding —
+  // stays on the anchor read above. Same-row when the actor IS the anchor.
+  const personal = user.actor.id === user.id ? prefs : await loadPreferencesFor(user.actor.id);
   // Gated on the SEED, which is this user's own, not on the style, which is the
   // brain's. It used to gate on the style back when that was personal too, and
   // moving the style to brain level broke both directions of this: with a style
@@ -31,19 +36,23 @@ export async function GET() {
   // The seed is the honest test of "has this person chosen an avatar" — unlike
   // an agent, a human opting out to initials is a real choice the profile
   // screen offers, so absence here means initials rather than a default seed.
-  const avatar = prefs.avatarSeed
-    ? { style: prefs.avatarStyle ?? '', seed: prefs.avatarSeed, parts: prefs.avatarParts ?? null }
+  const avatar = personal.avatarSeed
+    ? {
+        style: prefs.avatarStyle ?? '',
+        seed: personal.avatarSeed,
+        parts: personal.avatarParts ?? null,
+      }
     : null;
   // Uploaded profile PHOTO — outranks the generated avatar in every client
   // (photo → generated seed → initials), and is independent of the seed gate
   // above: a photo works for someone who never rolled a generated avatar.
   // The version is the sha8 cache-buster for GET /api/profile/photo.
-  const avatarPhotoVersion = logoVersion(prefs.avatarPhotoKey);
+  const avatarPhotoVersion = logoVersion(personal.avatarPhotoKey);
   // Short-lived asset-access token so a detached client's <img>/<iframe>/download
   // srcs (which can't carry a bearer) can load `?raw=1` files + attachments. The
   // client appends it via `assetUrl()`; same-origin ignores it (cookie auth). See
   // lib/asset-url.ts + getOwnerForAsset.
-  const assetToken = buildAssetToken(user.id);
+  const assetToken = buildAssetToken(user.id, user.actor.id);
   return NextResponse.json({
     onboarded,
     avatar,

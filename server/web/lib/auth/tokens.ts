@@ -191,15 +191,26 @@ export function mobileTokenJti(token: string): string | null {
 
 const ASSET_TOKEN_TTL_SECONDS = 2 * 60 * 60; // 2h — one working session.
 
-/** Mint a short-lived asset-access token for `userId` (see block comment). */
-export function buildAssetToken(userId: string): string {
-  return signClaims({ uid: userId, k: 'a' }, ASSET_TOKEN_TTL_SECONDS).value;
+/** Mint a short-lived asset-access token for `userId` (see block comment).
+ *  `actorId` names the LOGIN the token was minted for, when it differs from
+ *  the anchor: per-login asset routes (the profile photo) read it so a
+ *  detached second admin sees their own face, while owner-scoped byte routes
+ *  keep using `uid` (everything is owned by the anchor). */
+export function buildAssetToken(userId: string, actorId?: string): string {
+  return signClaims(
+    { uid: userId, ...(actorId && actorId !== userId ? { act: actorId } : {}), k: 'a' },
+    ASSET_TOKEN_TTL_SECONDS,
+  ).value;
 }
 
 /** Verify an asset token's signature, expiry and kind (`k:'a'`). No DB. */
-export function verifyAssetToken(token: string): { uid: string } | null {
+export function verifyAssetToken(token: string): { uid: string; act?: string } | null {
   const claims = verifySigned(token, 'a');
-  return claims && typeof claims.uid === 'string' ? { uid: claims.uid } : null;
+  if (!claims || typeof claims.uid !== 'string') return null;
+  return {
+    uid: claims.uid,
+    ...(typeof claims.act === 'string' ? { act: claims.act } : {}),
+  };
 }
 
 // ── Team-visitor cookies (`k:'t'`) ───────────────────────────────────────────

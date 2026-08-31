@@ -84,12 +84,14 @@ export async function getOwnerForAsset(req: Request): Promise<SessionUser | Next
     // The signature proves the server minted this for `uid`; the route scopes to
     // it. No DB lookup — the token is short-lived and email isn't needed here.
     // Byte-serving is GET-only, so the synthetic actor never reaches the
-    // mutation/audit choke point.
+    // mutation/audit choke point. `act` names the LOGIN the token was minted
+    // for, so per-login asset routes (the profile photo) can address that
+    // row; absent, the actor is the anchor itself — the pre-claim behavior.
     if (claims) {
       return {
         id: claims.uid,
         email: '',
-        actor: { id: claims.uid, email: '', displayName: null, isOwner: false },
+        actor: { id: claims.act ?? claims.uid, email: '', displayName: null, isOwner: false },
       };
     }
   }

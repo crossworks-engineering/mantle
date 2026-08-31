@@ -260,7 +260,12 @@ export interface AgentAvatarDTO {
   seed: string;
   /** Avatar-builder component choices layered over the seed: component name →
    *  pinned variant, or null to hide an optional component. Stale entries
-   *  (from another style) are ignored at render time. Absent = seed only. */
+   *  (from another style) are ignored at render time.
+   *
+   *  READ: absent = seed only. WRITE protocol (agents create/patch): an
+   *  ABSENT parts key means "keep what's stored" — so a parts-unaware client
+   *  can never wipe pins — `{}` is the explicit clear, and a non-empty map
+   *  replaces. Every client that writes avatars must send `{}` to clear. */
   parts?: Record<string, string | null>;
 }
 
@@ -930,16 +935,18 @@ export type ProfilePreferences = {
    *  so an avatar still renders. Personal — two admins share the brain's style
    *  but never the same avatar. */
   avatarSeed?: string;
-  /** Avatar-builder component choices for THIS user's avatar, layered over the
-   *  seed: component name → pinned variant, or null to hide an optional
-   *  component. Personal, like avatarSeed. Stale entries (saved under another
-   *  brain style) are ignored at render time. Absent/empty = seed only. */
+  /** Avatar-builder component choices for THIS login's avatar, layered over
+   *  the seed: component name → pinned variant, or null to hide an optional
+   *  component. Per-login (the profile routes address the ACTOR's row). Stale
+   *  entries (saved under another brain style) are ignored at render time.
+   *  READ: absent/empty = seed only. WRITE (profile PUT): applied only when
+   *  SENT; `{}` clears. */
   avatarParts?: Record<string, string | null>;
-  /** Content-addressed storage key of THIS user's uploaded profile PHOTO —
+  /** Content-addressed storage key of THIS login's uploaded profile PHOTO —
    *  when set, clients show the photo instead of the generated avatar
-   *  (photo → generated seed → initials). Personal, like avatarSeed; set only
-   *  from Settings → Profile, never for agents. Served privately by
-   *  GET /api/profile/photo (cookie or asset token). */
+   *  (photo → generated seed → initials). Per-login (the photo routes address
+   *  the ACTOR's row); set only from Settings → Profile, never for agents.
+   *  Served privately by GET /api/profile/photo (cookie or asset token). */
   avatarPhotoKey?: string;
   /** Content-Type of the photo bytes (png/jpeg/webp — never SVG). */
   avatarPhotoType?: string;

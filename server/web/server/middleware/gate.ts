@@ -35,7 +35,13 @@ function isAssetPath(path: string): boolean {
     path.startsWith('/api/export/') ||
     // The user's profile photo: a private <img> src (the rail), same
     // can't-carry-a-bearer shape. GET-only byte serving, owner-scoped.
-    path === '/api/profile/photo'
+    path === '/api/profile/photo' ||
+    // Drawing SVGs: the route has ALWAYS called getOwnerForAsset and its
+    // header promises `?at=` auth for detached clients — but this list never
+    // admitted the path, so the gate 401'd the token before the route ran
+    // (worked same-origin via cookie, broken only detached). Registering an
+    // asset route means BOTH ends: getOwnerForAsset in the route AND here.
+    /^\/api\/draws\/[^/]+\/svg$/.test(path)
   );
 }
 

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { APP_VERSION } from '@mantle/client-types/version';
 import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
 import { getOwnerOr401 } from '@/lib/auth';
@@ -61,12 +62,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const style = prefs?.avatarStyle;
   const tint = resolveAvatarTint(prefs?.avatarTint);
 
-  // The drawing is a pure function of these inputs, so they ARE the cache
-  // identity. The URL isn't (id + size only), and the old blanket
-  // max-age=86400 kept a companion showing a stale avatar for a day after a
-  // builder edit. no-cache + ETag = the client revalidates every time but a
-  // 304 costs no render and no body; an edit shows up on the next fetch.
+  // The drawing is a pure function of these inputs PLUS the renderer itself,
+  // so the ETag hashes APP_VERSION too — a DiceBear/style pin bump changes
+  // what identical inputs draw, and without the salt a revalidating client
+  // would 304 onto the old image forever. The URL alone isn't the identity
+  // (id + size only), and the old blanket max-age=86400 kept a companion a
+  // day stale after a builder edit; max-age=300 bounds staleness at 5 min
+  // while capping revalidation traffic (a 304 still pays auth + two reads —
+  // per render was too often, per 5 minutes is noise).
   const inputs = {
+    v: APP_VERSION,
     seed: agent.avatar.seed || agent.slug,
     parts: agent.avatar.parts ?? null,
     style: style ?? null,
@@ -76,10 +81,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const etag = `"${createHash('sha1').update(JSON.stringify(inputs)).digest('hex')}"`;
   const headers = {
     'Content-Type': 'image/svg+xml; charset=utf-8',
-    'Cache-Control': 'private, no-cache',
+    'Cache-Control': 'private, max-age=300',
     ETag: etag,
   };
-  if (req.headers.get('if-none-match') === etag) {
+  // Tolerate weak validators: a compressing proxy may rewrite the strong tag
+  // to W/"…", and a strict compare would silently defeat every 304.
+  const inm = req.headers.get('if-none-match');
+  if (inm && inm.replace(/^W\//, '') === etag) {
     return new Response(null, { status: 304, headers });
   }
 
