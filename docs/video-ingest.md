@@ -38,6 +38,14 @@ text, no segments).
 
 ## The media sidecar
 
+> **The sidecar also carries the CAD tier since v0.232.92**: `POST
+> /dwf/render` rasters Autodesk DWF plot-set sheets via `ezdwf` (MIT, pinned
+> — unlike yt-dlp it is deliberately NOT auto-updated) in a group-killed
+> child process; `/healthz` reports the `ezdwf` version, and its absence
+> means the image predates the tier — DWF ingests then fall back to the
+> container thumbnails. Enabling the `media` profile for CAD renders brings
+> the yt-dlp/video machinery with it (one image, one profile, by design).
+
 yt-dlp and ffmpeg never run in the app process. They live in their own
 container (`infra/media-sidecar`, compose service `media`, image
 `mantle-media`), behind a bearer-authed internal-only HTTP interface —

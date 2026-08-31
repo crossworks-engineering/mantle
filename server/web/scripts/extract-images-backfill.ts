@@ -12,6 +12,16 @@
  *   pnpm -C server/web extract:images-backfill --go --limit=50
  *   pnpm -C server/web extract:images-backfill --go --rate=2  # seconds between notifies
  *   pnpm -C server/web extract:images-backfill --types=pdf,docx
+ *   pnpm -C server/web extract:images-backfill --upgrade-dwf        # DRY RUN
+ *   pnpm -C server/web extract:images-backfill --upgrade-dwf --go
+ *
+ * `--upgrade-dwf` targets the OPPOSITE cohort of the normal mode: DWF plot
+ * sets that already produced images, but on the low-res tier (no child
+ * carries `provenance: 'sidecar_render'` — sets ingested before the media
+ * sidecar's CAD tier, or while it was down/busy). In live mode it deletes
+ * those thumbnail children and re-notifies the parent so the extractor
+ * re-renders through the sidecar. Deleting children breaks links to the OLD
+ * image node ids (Page embeds, chat citations) — the dry run says how many.
  *
  * ## What this costs
  *
@@ -85,12 +95,19 @@ async function effectiveImageCap(sql: postgres.Sql): Promise<number> {
   return cap && cap > 0 ? cap : DEFAULT_MAX_IMAGES_PER_DOC;
 }
 
-type Args = { go: boolean; limit: number | null; rateSec: number; exts: string[] };
+type Args = {
+  go: boolean;
+  limit: number | null;
+  rateSec: number;
+  exts: string[];
+  upgradeDwf: boolean;
+};
 
 function parseArgs(argv: string[]): Args {
-  const out: Args = { go: false, limit: null, rateSec: 1, exts: DEFAULT_EXTS };
+  const out: Args = { go: false, limit: null, rateSec: 1, exts: DEFAULT_EXTS, upgradeDwf: false };
   for (const arg of argv) {
     if (arg === '--go') out.go = true;
+    else if (arg === '--upgrade-dwf') out.upgradeDwf = true;
     else if (arg.startsWith('--limit=')) {
       const n = parseInt(arg.slice('--limit='.length), 10);
       if (!Number.isNaN(n)) out.limit = n;
@@ -119,6 +136,72 @@ async function main() {
     limit: args.limit ?? '(none)',
     rate: `${args.rateSec}s between notifies`,
   });
+
+  if (args.upgradeDwf) {
+    // The upgrade cohort: DWFs whose extracted images exist but none of them
+    // came from the sidecar render tier.
+    const rows = (await sql.unsafe(
+      `select n.id, n.title,
+              (select count(*) from nodes c
+                 where c.owner_id = n.owner_id and c.type = 'file'
+                   and c.data->>'sourceFileId' = n.id::text
+                   and 'extracted-image' = any(c.tags)) as children
+         from nodes n
+        where n.type = 'file'
+          and lower(coalesce(n.data->>'filename', n.title)) ~ '\\.dwf$'
+          and n.data->>'sourceFileId' is null
+          and exists (
+            select 1 from nodes c
+             where c.owner_id = n.owner_id and c.type = 'file'
+               and c.data->>'sourceFileId' = n.id::text
+               and 'extracted-image' = any(c.tags))
+          and not exists (
+            select 1 from nodes c
+             where c.owner_id = n.owner_id and c.type = 'file'
+               and c.data->>'sourceFileId' = n.id::text
+               and c.data->>'provenance' = 'sidecar_render')
+        order by n.created_at desc` + (args.limit ? ` limit ${args.limit}` : ''),
+      [],
+    )) as Array<{ id: string; title: string; children: number }>;
+
+    console.log(`[images-backfill] ${rows.length} DWF(s) are on the thumbnail tier`);
+    for (const r of rows) {
+      console.log(
+        `[images-backfill]   ${r.id.slice(0, 8)} — ${r.title.slice(0, 60)} (${r.children} images to replace)`,
+      );
+    }
+    if (!args.go) {
+      console.log('');
+      console.log('[images-backfill] DRY RUN — nothing deleted, nothing fired.');
+      console.log(
+        '[images-backfill] Live mode DELETES the listed thumbnail image nodes (links to their ids dangle) and re-notifies each DWF so the extractor re-renders through the media sidecar. Make sure the sidecar is up with the CAD tier (check /healthz for ezdwf) or the re-run just recreates thumbnails.',
+      );
+      console.log('[images-backfill] Re-run with --go to proceed.');
+      await sql.end();
+      return;
+    }
+    let i = 0;
+    for (const row of rows) {
+      i++;
+      await sql.begin(async (tx) => {
+        await tx.unsafe(
+          `delete from nodes c
+            where c.type = 'file'
+              and c.data->>'sourceFileId' = $1
+              and 'extracted-image' = any(c.tags)`,
+          [row.id],
+        );
+        await tx.unsafe(`select pg_notify('node_ingested', $1)`, [row.id]);
+      });
+      console.log(
+        `[images-backfill] (${i}/${rows.length}) upgraded ${row.id.slice(0, 8)} — ${row.title.slice(0, 60)}`,
+      );
+      if (i < rows.length) await new Promise((r) => setTimeout(r, args.rateSec * 1000));
+    }
+    console.log(`[images-backfill] done. ${rows.length} DWFs re-queued for sidecar renders.`);
+    await sql.end();
+    return;
+  }
 
   const extPattern = `\\.(${args.exts.join('|')})$`;
   const params: Array<string | number> = [extPattern];

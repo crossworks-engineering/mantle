@@ -452,7 +452,11 @@ services:
     init: true
     logging: *default-logging
     profiles: ["media"]
-    # Transcodes stream through temp files, never RAM; 1g covers ffmpeg peaks.
+    # Transcodes stream through temp files, never RAM; 1g covers ffmpeg
+    # peaks. DWF renders (v0.232.92+) run in a group-killed child whose
+    # per-sheet canvas is pixel-capped, and the JSON reply is assembled in
+    # a single buffer (<=64 MB) — bounded, but the one RAM-shaped payload
+    # this container now carries.
     mem_limit: 1g
     environment:
       MEDIA_TOKEN: ${MEDIA_SIDECAR_TOKEN:-}

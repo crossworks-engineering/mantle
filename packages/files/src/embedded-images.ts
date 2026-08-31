@@ -84,6 +84,11 @@ export type EmbeddedImage = {
    *  byte floor and dedupe still do. Set it only where the format itself
    *  proves content-ness — never from within a generic media scan. */
   essential?: boolean;
+  /** Which tier produced the bytes, for formats with more than one (DWF:
+   *  a sidecar vector render vs the container's small preview). Persisted
+   *  onto the image node so "which drawings are still on the low-res tier"
+   *  is a query, and an upgrade pass has a safe predicate. */
+  provenance?: 'sidecar_render' | 'embedded_thumbnail';
 };
 
 /** Minimum edge length, in pixels, for an image to be worth keeping. Bullets,
@@ -216,8 +221,8 @@ export async function extractEmbeddedImages(
   ext: string,
   opts?: { maxImages?: number },
 ): Promise<ExtractEmbeddedImagesResult> {
-  const raw = await extractRaw(bytes, ext.toLowerCase());
   const cap = Math.max(0, opts?.maxImages ?? MAX_EMBEDDED_IMAGES_PER_DOC);
+  const raw = await extractRaw(bytes, ext.toLowerCase(), { maxImages: cap });
 
   const seen = new Set<string>();
   const rejected: ExtractEmbeddedImagesResult['rejected'] = {};
@@ -341,7 +346,11 @@ export function buildImageFilename(img: EmbeddedImage, sourceSlug: string, ext =
 
 /** Format dispatch. Each branch returns candidates in document order with a
  *  provisional ordinal; gating and renumbering happen above. */
-async function extractRaw(bytes: Buffer, ext: string): Promise<EmbeddedImage[]> {
+async function extractRaw(
+  bytes: Buffer,
+  ext: string,
+  opts?: { maxImages?: number },
+): Promise<EmbeddedImage[]> {
   if (ext === 'docx') return (await import('./docx')).extractDocxImages(bytes);
   if (ext === 'pdf') return (await import('./pdf')).extractPdfImages(bytes);
   if (ext === 'pptx' || ext === 'xlsx' || ext === 'xlsm') {
@@ -350,9 +359,12 @@ async function extractRaw(bytes: Buffer, ext: string): Promise<EmbeddedImage[]> 
   if (ext === 'odt' || ext === 'ods' || ext === 'odp') {
     return (await import('./ooxml-media')).extractOdfImages(bytes);
   }
-  // DWF plot sets: one thumbnail PNG per published sheet, marked essential
-  // (the format guarantees content-ness; see extractDwfImages).
-  if (ext === 'dwf') return (await import('./dwf')).extractDwfImages(bytes);
+  // DWF plot sets: one raster per published sheet, marked essential (the
+  // format guarantees content-ness; see extractDwfImages). The caller's cap
+  // is forwarded so the sidecar never renders sheets the gate would discard.
+  if (ext === 'dwf') {
+    return (await import('./dwf')).extractDwfImages(bytes, { maxSheets: opts?.maxImages });
+  }
   // Tier 2 — the legacy binaries. `xlsb` is a zip but an undocumented binary
   // one, so it goes to Tika too rather than getting a bespoke reader.
   if (TIKA_EXTS.has(ext) || ext === 'xlsb') {

@@ -282,8 +282,24 @@ async function openDwf(bytes: Buffer): Promise<OpenedDwf> {
   return { version: versionMatch?.[1] ?? null, entries, sectionEntries, sections };
 }
 
+/** One structural parse per Buffer: the digest, the registry workbook and
+ *  the image pass all consume the same result, and the extractor hands all
+ *  three passes the same Buffer within one ingest — without the memo the
+ *  dominant W2D scrape ran two to three times on byte-identical input.
+ *  Failures are not memoized. */
+const parsedCache = new WeakMap<Buffer, Promise<DwfParsed>>();
+
+export function parseDwfStructured(bytes: Buffer): Promise<DwfParsed> {
+  const hit = parsedCache.get(bytes);
+  if (hit) return hit;
+  const parsed = parseDwfStructuredUncached(bytes);
+  parsedCache.set(bytes, parsed);
+  parsed.catch(() => parsedCache.delete(bytes));
+  return parsed;
+}
+
 /** Open the container and extract every ePlot sheet's metadata + scrape. */
-export async function parseDwfStructured(bytes: Buffer): Promise<DwfParsed> {
+async function parseDwfStructuredUncached(bytes: Buffer): Promise<DwfParsed> {
   const { version, entries, sectionEntries, sections } = await openDwf(bytes);
 
   const sheets: DwfSheet[] = [];
@@ -329,41 +345,90 @@ export async function parseDwfStructured(bytes: Buffer): Promise<DwfParsed> {
 }
 
 /**
- * The per-sheet thumbnail PNGs, shaped for the shared embedded-image pipeline
- * (`extractEmbeddedImages` → gate → file nodes). Each published sheet carries
- * exactly one raster preview — the only picture the drawing has until real
- * geometry rendering exists — so every thumbnail is marked `essential`: the
- * decoration size floors don't apply (they are 262×170 on real AutoCAD
- * output, under the generic 200 px floor), while renderability and dedupe
- * still do. `location.sheet` carries the sheet title so the naming cascade
- * yields "… (21-62-09)"-style node titles.
+ * One raster per published sheet, shaped for the shared embedded-image
+ * pipeline (`extractEmbeddedImages` → gate → file nodes) and stamped with
+ * its `provenance` tier:
+ *
+ *   - **sidecar_render** — the media sidecar's ezdwf raster of the sheet's
+ *     vector content (300 dpi, engineering-legible). Taken only when the
+ *     render set is COMPLETE: no sheet skipped, nothing lost to the payload
+ *     cap. A partial render never silently replaces the full set below.
+ *     Sheet identity comes from the container MANIFEST (mapped by the
+ *     render's sheet index), so titles do not depend on which tier ran.
+ *   - **embedded_thumbnail** — the container's own 262×170 preview, the
+ *     exact pre-sidecar behaviour and the fallback for every failure mode
+ *     (profile off, container down, pre-ezdwf image, busy, timeout, partial
+ *     render). The fallback is logged with the failure code, and the
+ *     provenance stamp is what lets `extract-images-backfill --upgrade-dwf`
+ *     re-render this cohort later.
+ *
+ * Every image is `essential`: the format guarantees one content raster per
+ * sheet, so the decoration size floors don't apply (thumbnails are under
+ * the generic 200 px floor); renderability and dedupe still do.
+ * `location.sheet` carries the sheet title so the naming cascade yields
+ * "… (90-10-01)"-style node titles.
  */
 /** Render resolution for sidecar sheet rasters. 300 dpi puts an A1 P&ID at
  *  ~1500×970 — tags and line numbers legible to people AND the vision worker,
  *  ~400 KB/sheet. (The embedded thumbnails this replaces are 262×170.) */
 const DWF_RENDER_DPI = 300;
 
-export async function extractDwfImages(bytes: Buffer): Promise<EmbeddedImage[]> {
+function sheetImage(
+  png: Buffer,
+  sheet: string,
+  ordinal: number,
+  provenance: 'sidecar_render' | 'embedded_thumbnail',
+): EmbeddedImage {
+  return {
+    bytes: png,
+    ordinal,
+    location: { sheet },
+    altText: `Sheet ${sheet}`,
+    essential: true,
+    provenance,
+    ...describeImageBytes(png, 'png'),
+  };
+}
+
+export async function extractDwfImages(
+  bytes: Buffer,
+  opts?: { maxSheets?: number },
+): Promise<EmbeddedImage[]> {
   if (!sniffDwf(bytes)) return [];
 
-  // Sidecar first: when the media sidecar is up, each sheet becomes a real
-  // raster of its vector content via ezdwf (`/dwf/render`) instead of the
-  // container's 262×170 preview. Never-throws client: ANY failure — profile
-  // off, container down, ezdwf missing on an older image, render error —
-  // falls back to the embedded thumbnails below, so a box without the
-  // sidecar keeps exactly the pre-sidecar behaviour.
   const { mediaSidecarEnabled, mediaDwfRender } = await import('./media-sidecar');
   if (mediaSidecarEnabled()) {
-    const render = await mediaDwfRender(bytes, { dpi: DWF_RENDER_DPI });
-    if (render.ok && render.value.sheets.length > 0) {
-      return render.value.sheets.map((s, i) => ({
-        bytes: s.png,
-        ordinal: i + 1,
-        location: { sheet: s.name },
-        altText: `Sheet ${s.name}`,
-        essential: true,
-        ...describeImageBytes(s.png, 'png'),
-      }));
+    const render = await mediaDwfRender(bytes, {
+      dpi: DWF_RENDER_DPI,
+      ...(opts?.maxSheets ? { maxSheets: opts.maxSheets } : {}),
+    });
+    if (render.ok) {
+      const { sheetCount, skipped, sheets } = render.value;
+      // Complete = every sheet we ASKED for came back. A shortfall from a
+      // skipped sheet or the payload cap falls through to the thumbnails,
+      // which cover the whole set; a shortfall only from our own maxSheets
+      // request is exactly what the caller's cap would keep anyway.
+      const wanted = Math.min(sheetCount, opts?.maxSheets ?? Number.POSITIVE_INFINITY);
+      if (skipped === 0 && sheets.length >= wanted && sheets.length > 0) {
+        // Titles from the manifest, mapped by the render's sheet index, so
+        // node identity is the same whichever tier produced the pixels.
+        let titles: string[] = [];
+        try {
+          titles = (await parseDwfStructured(bytes)).sheets.map((sheet) => sheet.title);
+        } catch {
+          /* renders still ship under their wire names */
+        }
+        return sheets.map((s, i) =>
+          sheetImage(s.png, titles[s.index] ?? s.name, i + 1, 'sidecar_render'),
+        );
+      }
+      console.warn(
+        `[dwf] sidecar render incomplete (${sheets.length}/${sheetCount}, skipped ${skipped}) — using embedded thumbnails`,
+      );
+    } else {
+      console.warn(
+        `[dwf] sidecar render unavailable (${render.code}: ${render.message}) — using embedded thumbnails`,
+      );
     }
   }
 
@@ -376,14 +441,7 @@ export async function extractDwfImages(bytes: Buffer): Promise<EmbeddedImage[]> 
     const size = declaredSize(entry);
     if (size < 0 || size > MAX_THUMBNAIL_BYTES) continue;
     const png = await entry.async('nodebuffer');
-    images.push({
-      bytes: png,
-      ordinal: images.length + 1,
-      location: { sheet: title },
-      altText: `Sheet ${title}`,
-      essential: true,
-      ...describeImageBytes(png, 'png'),
-    });
+    images.push(sheetImage(png, title, images.length + 1, 'embedded_thumbnail'));
   }
   return images;
 }

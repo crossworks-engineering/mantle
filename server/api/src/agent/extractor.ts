@@ -312,7 +312,43 @@ function cleanText(s: string): string {
  * uploaded one. Ext/mime derive from `data.filename` when present, else the
  * title (which IS the filename for attachment nodes) / `data.mimeType`.
  */
-async function loadFileBytes(
+/** One ingest of a file runs three passes (auto-table, images, body text)
+ *  and each used to re-read the bytes from disk/storage independently — for
+ *  a 64 MB DWF that is three full reads and three live Buffers for the GC.
+ *  A tiny FIFO memo keyed by node id + content sha collapses them to one
+ *  read AND hands every pass the SAME Buffer, which is what lets dwf.ts's
+ *  per-Buffer parse memo fire across passes. Four entries bounds it to the
+ *  extract concurrency with headroom; a re-upload changes the sha and
+ *  naturally misses. */
+const fileBytesCache = new Map<
+  string,
+  Promise<{ bytes: Buffer; filename: string; ext: string; mime: string } | null>
+>();
+const FILE_BYTES_CACHE_MAX = 4;
+
+function loadFileBytes(
+  node: typeof nodes.$inferSelect,
+): Promise<{ bytes: Buffer; filename: string; ext: string; mime: string } | null> {
+  const sha = ((node.data ?? {}) as Record<string, unknown>).sha256;
+  const key = `${node.id}:${typeof sha === 'string' ? sha : ''}`;
+  const hit = fileBytesCache.get(key);
+  if (hit) return hit;
+  const load = loadFileBytesUncached(node);
+  fileBytesCache.set(key, load);
+  // Never memoize a failed read — the bytes may land moments later.
+  load
+    .then((r) => {
+      if (r === null) fileBytesCache.delete(key);
+    })
+    .catch(() => fileBytesCache.delete(key));
+  if (fileBytesCache.size > FILE_BYTES_CACHE_MAX) {
+    const oldest = fileBytesCache.keys().next().value;
+    if (oldest !== undefined) fileBytesCache.delete(oldest);
+  }
+  return load;
+}
+
+async function loadFileBytesUncached(
   node: typeof nodes.$inferSelect,
 ): Promise<{ bytes: Buffer; filename: string; ext: string; mime: string } | null> {
   const data = (node.data ?? {}) as Record<string, unknown>;
@@ -749,6 +785,15 @@ async function maybeExtractEmbeddedImages(
         candidates: result.candidates,
         keeping: result.images.length,
         sourceFileId: node.id,
+        // Tier visibility (DWF): a box whose sidecar was down/busy shows
+        // thumbnails here instead of renders — the downgrade is explainable
+        // from /traces rather than only from PNG dimensions.
+        ...(result.images.some((i) => i.provenance)
+          ? {
+              renders: result.images.filter((i) => i.provenance === 'sidecar_render').length,
+              thumbnails: result.images.filter((i) => i.provenance === 'embedded_thumbnail').length,
+            }
+          : {}),
       },
     },
     async (h) => {
@@ -773,6 +818,10 @@ async function maybeExtractEmbeddedImages(
               sourceOrdinal: img.ordinal,
               sourceTotal: result.images.length,
               ...(img.location ? { sourceLocation: img.location } : {}),
+              // Which tier produced the pixels (DWF: sidecar render vs the
+              // container's small preview) — the predicate the backfill's
+              // --upgrade-dwf mode selects on.
+              ...(img.provenance ? { provenance: img.provenance } : {}),
               extractedFrom: node.title || loaded.filename,
               // Read back by the vision path so the durable index carries the
               // document this picture came from — a bare "a screenshot of a

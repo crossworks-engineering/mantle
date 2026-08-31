@@ -97,7 +97,11 @@ export async function resolveCapabilities(ownerId: string): Promise<Capabilities
         : mediaH.up
           ? {
               available: true,
-              detail: `yt-dlp ${mediaH.ytDlpVersion ?? '?'} · ffmpeg ${mediaH.ffmpegVersion ?? '?'}`,
+              detail:
+                `yt-dlp ${mediaH.ytDlpVersion ?? '?'} · ffmpeg ${mediaH.ffmpegVersion ?? '?'} · ` +
+                (mediaH.ezdwfVersion
+                  ? `ezdwf ${mediaH.ezdwfVersion}`
+                  : 'ezdwf missing (image predates the CAD tier — DWF renders fall back to thumbnails)'),
             }
           : { available: false, detail: 'configured but unreachable' },
   };

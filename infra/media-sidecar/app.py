@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Media sidecar: yt-dlp + ffmpeg behind a narrow HTTP interface.
+"""Media sidecar: yt-dlp + ffmpeg + ezdwf behind a narrow HTTP interface —
+the one place that extracts viewable media from formats the app process
+shouldn't parse itself (web video/audio, and CAD plot sets since v0.232.92).
 
 The one container in the stack allowed to run a fast-moving, auto-updating,
 network-facing binary that parses hostile input from the open web. Its safety
@@ -32,12 +34,16 @@ Routes (bearer auth on everything except /healthz):
   POST /audio          {url,maxDurationSeconds?,maxBytes?} -> mp3 bytes
   POST /extract-audio  <raw video bytes>   -> mp3 bytes
   POST /video          {url,maxBytes?}     -> mp4 bytes
-  POST /dwf/render     <raw DWF bytes> (X-Dwf-Dpi?) -> {sheets:[{name,width,
-                       height,png_base64}], truncated} — per-sheet rasters of
-                       an Autodesk DWF plot set, rendered by ezdwf (MIT; the
+  POST /dwf/render     <raw DWF bytes> (X-Dwf-Dpi?, X-Dwf-Max-Sheets?)
+                       -> {ok, dpi, sheet_count, skipped, capped, truncated,
+                       sheets:[{name,index,png_base64}]} — per-sheet rasters
+                       of an Autodesk DWF plot set, rendered by ezdwf (MIT)
+                       in a group-killed child process (--dwf-render mode of
+                       this same file). `skipped` counts sheets that errored;
+                       `capped` says a sheet-count or payload cap bit; the
                        CAD-visual half of this sidecar's single purpose:
                        extracting viewable media from formats the app process
-                       shouldn't parse itself)
+                       shouldn't parse itself.
 
 Error envelope on every non-2xx: {"ok":false,"error":{"code","message"}}.
 Codes: unauthorized, bad_request, blocked_url, no_captions,
@@ -77,6 +83,10 @@ TIMEOUT_CAPTIONS = 120
 TIMEOUT_AUDIO = 900
 TIMEOUT_EXTRACT = 600
 TIMEOUT_VIDEO = 1500
+# DWF renders: the real 9-sheet reference set takes ~2s in the worker; 120s
+# covers a 64-sheet pathological set with a wide margin, and the group kill
+# is what keeps a wedged Rust/matplotlib call from pinning a heavy slot.
+TIMEOUT_DWF_RENDER = 120
 
 JSON_BODY_CAP = 64 * 1024  # JSON endpoints only; /extract-audio streams.
 # Optional operator-supplied cookies (YouTube's datacenter-IP bot check).
@@ -638,17 +648,15 @@ class Handler(BaseHTTPRequestHandler):
             )
 
     def _op_dwf_render(self):
-        """Raster every 2D sheet of a DWF plot set via ezdwf (in-process Rust,
-        no subprocess: the 9-sheet reference set renders in ~2s, and the
-        heavy-op semaphore plus the client's abort timer bound a pathological
-        file). Response is JSON with base64 PNGs — sheet count and cumulative
-        payload are capped, and `truncated` says when either cap bit."""
-        try:
-            import ezdwf  # noqa: PLC0415 — lazy: absent on images built before the CAD tier
-        except Exception:
-            raise OpError(
-                500, "extraction_failed", "ezdwf is not installed in this sidecar image"
-            )
+        """Raster every 2D sheet of a DWF plot set via ezdwf, in a CHILD
+        process under the same discipline as every other heavy op: own process
+        group, hard TIMEOUT_DWF_RENDER, group kill on expiry (`run()`), so a
+        wedged Rust/matplotlib call can never pin a heavy-semaphore slot. The
+        child also isolates render memory — a sheet that blows the budget
+        kills the child, not the server — and its exit frees every matplotlib
+        figure by construction. Response is JSON with base64 PNGs; sheet count
+        and cumulative payload are capped; `skipped` counts sheets that
+        errored, `capped` says a cap bit — the two are distinct on purpose."""
         length = self._content_length(MAX_UPLOAD_BYTES)
         if length <= 0:
             raise OpError(400, "bad_request", "raw DWF bytes required as the request body")
@@ -665,48 +673,72 @@ class Handler(BaseHTTPRequestHandler):
                         raise OpError(400, "bad_request", "request body ended early")
                     f.write(chunk)
                     remaining -= len(chunk)
+            outdir = os.path.join(tmp, "out")
+            os.makedirs(outdir)
             try:
-                drawing = ezdwf.read(src)
-                sheets = list(drawing.sheets)
-            except Exception as err:
-                raise OpError(422, "extraction_failed", f"ezdwf could not read the DWF: {err}")
-            out, total, rendered = [], 0, 0
-            for sheet in sheets[:max_sheets]:
-                png_path = os.path.join(tmp, f"sheet-{rendered}.png")
+                run(
+                    [sys.executable, os.path.abspath(__file__), "--dwf-render",
+                     src, outdir, str(dpi), str(max_sheets)],
+                    TIMEOUT_DWF_RENDER,
+                )
+            except OpError as err:
+                if err.code == "extraction_failed":
+                    # run()'s generic message talks about yt-dlp; rewrap.
+                    raise OpError(422, "extraction_failed", f"DWF render worker failed: {err.message}")
+                raise
+            index_path = os.path.join(outdir, "index.json")
+            try:
+                with open(index_path, encoding="utf-8") as f:
+                    index = json.load(f)
+            except Exception:
+                raise OpError(422, "extraction_failed", "DWF render worker produced no index")
+            # Assemble the reply in ONE buffer, appending each sheet's base64
+            # and freeing its PNG before the next — not dict → dumps → encode,
+            # which held three full copies at once (the "never RAM" invariant
+            # on this container is why).
+            body = bytearray()
+            total = 0
+            capped = False
+            emitted = 0
+            for entry in index.get("sheets", []):
+                png_path = os.path.join(outdir, entry["file"])
                 try:
-                    sheet.save_plot(png_path, dpi=dpi)
                     with open(png_path, "rb") as f:
                         png = f.read()
-                except Exception:
-                    # One bad sheet must not sink the set — skip it; the count
-                    # gap is visible to the caller via truncated/len(sheets).
+                except OSError:
                     continue
                 if total + len(png) > payload_cap:
-                    break
+                    capped = True
+                    continue  # a later, smaller sheet may still fit
                 total += len(png)
-                width = height = None
-                if len(png) > 24 and png[:8] == b"\x89PNG\r\n\x1a\n":
-                    width = int.from_bytes(png[16:20], "big")
-                    height = int.from_bytes(png[20:24], "big")
-                out.append(
-                    {
-                        "name": str(getattr(sheet, "name", "") or f"sheet {rendered + 1}"),
-                        "width": width,
-                        "height": height,
-                        "png_base64": base64.b64encode(png).decode("ascii"),
-                    }
-                )
-                rendered += 1
-            self._send_json(
-                200,
+                if emitted:
+                    body += b","
+                body += json.dumps(
+                    {"name": entry.get("name") or f"sheet {entry.get('index', emitted) + 1}",
+                     "index": entry.get("index"),
+                     "png_base64": base64.b64encode(png).decode("ascii")}
+                ).encode()
+                emitted += 1
+            head = json.dumps(
                 {
                     "ok": True,
                     "dpi": dpi,
-                    "sheet_count": len(sheets),
-                    "truncated": len(out) < len(sheets),
-                    "sheets": out,
-                },
-            )
+                    "sheet_count": index.get("sheet_count", emitted),
+                    "skipped": index.get("skipped", 0),
+                    "capped": capped or bool(index.get("capped")),
+                    "truncated": capped
+                    or bool(index.get("capped"))
+                    or index.get("skipped", 0) > 0
+                    or emitted < index.get("sheet_count", emitted),
+                }
+            ).encode()
+            payload = head[:-1] + b',"sheets":[' + bytes(body) + b"]}"
+            self._responded = True
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
 
     def _op_extract_audio(self):
         length = self._content_length(MAX_UPLOAD_BYTES)
@@ -794,6 +826,65 @@ class Handler(BaseHTTPRequestHandler):
             )
 
 
+def dwf_render_worker(src: str, outdir: str, dpi: int, max_sheets: int) -> int:
+    """`--dwf-render` child entry: raster every 2D sheet of `src` into
+    `outdir` and write `index.json` describing what happened. Runs in its own
+    process (group-killed on timeout by the parent's `run()`), so a wedged or
+    memory-hungry render dies HERE, never in the server. Per sheet:
+
+      - files and fallback names are keyed to the sheet's TRUE index in the
+        set, so a failed sheet shifts nothing and no path is ever reused;
+      - the output is pixel-capped: when paper size × dpi would exceed
+        MAX_RENDER_PIXELS the dpi is scaled down for that sheet instead of
+        allocating an unbounded canvas;
+      - matplotlib figures are closed after every sheet (harmless if ezdwf
+        uses the OO API, load-bearing if it goes through pyplot's registry).
+
+    Exits non-zero only when the whole file is unreadable; a single bad sheet
+    is counted in `skipped` and the rest of the set still ships."""
+    import ezdwf  # noqa: PLC0415 — child-only import; absent on pre-CAD images
+
+    import matplotlib  # noqa: PLC0415
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt  # noqa: PLC0415
+
+    max_pixels = 30_000_000  # ~6600×4500; an A0 at 300 dpi would be 137 MP
+    drawing = ezdwf.read(src)
+    sheets = list(drawing.sheets)
+    index: dict = {
+        "sheet_count": len(sheets),
+        "skipped": 0,
+        "capped": len(sheets) > max_sheets,
+        "sheets": [],
+    }
+    for i, sheet in enumerate(sheets[:max_sheets]):
+        eff_dpi = dpi
+        try:
+            bounds = getattr(sheet, "paper_bounds", None)
+            if bounds is not None:
+                w_in = abs(float(bounds[2]) - float(bounds[0]))
+                h_in = abs(float(bounds[3]) - float(bounds[1]))
+                pixels = (w_in * dpi) * (h_in * dpi)
+                if pixels > max_pixels:
+                    eff_dpi = max(50, int(dpi * (max_pixels / pixels) ** 0.5))
+        except Exception:
+            pass  # unknown paper shape — render at the requested dpi
+        fname = f"sheet-{i}.png"
+        try:
+            sheet.save_plot(os.path.join(outdir, fname), dpi=eff_dpi)
+        except Exception:
+            index["skipped"] += 1
+            continue
+        finally:
+            plt.close("all")
+        name = str(getattr(sheet, "name", "") or "").strip() or f"sheet {i + 1}"
+        index["sheets"].append({"index": i, "name": name, "file": fname})
+    with open(os.path.join(outdir, "index.json"), "w", encoding="utf-8") as f:
+        json.dump(index, f)
+    return 0
+
+
 def pick_output(tmp: str, prefix: str) -> str | None:
     """The finished artifact among yt-dlp's leavings. listdir order is
     arbitrary and fragments/.part files share the prefix — prefer the exact
@@ -825,4 +916,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) >= 6 and sys.argv[1] == "--dwf-render":
+        sys.exit(dwf_render_worker(sys.argv[2], sys.argv[3], int(sys.argv[4]), int(sys.argv[5])))
     main()

@@ -213,17 +213,20 @@ export async function mediaSidecarHealth(timeoutMs = 1_500): Promise<{
   up: boolean | null;
   ytDlpVersion: string | null;
   ffmpegVersion: string | null;
+  /** null on images built before the CAD tier (v0.232.92) — the signal that
+   *  DWF renders will fail and thumbnails are all this box can produce. */
+  ezdwfVersion: string | null;
 }> {
   const cfg = config();
-  if (!cfg) return { up: null, ytDlpVersion: null, ffmpegVersion: null };
+  if (!cfg) return { up: null, ytDlpVersion: null, ffmpegVersion: null, ezdwfVersion: null };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(`${cfg.url}/healthz`, { signal: ctrl.signal });
-    if (!res.ok) return { up: false, ytDlpVersion: null, ffmpegVersion: null };
+    if (!res.ok) return { up: false, ytDlpVersion: null, ffmpegVersion: null, ezdwfVersion: null };
     const body = (await res.json()) as {
       ok?: boolean;
-      versions?: { yt_dlp?: string; ffmpeg?: string };
+      versions?: { yt_dlp?: string; ffmpeg?: string; ezdwf?: string };
     };
     return {
       // A tokenless sidecar serves /healthz with ok:false — configured but
@@ -231,9 +234,10 @@ export async function mediaSidecarHealth(timeoutMs = 1_500): Promise<{
       up: body.ok !== false,
       ytDlpVersion: body.versions?.yt_dlp ?? null,
       ffmpegVersion: body.versions?.ffmpeg ?? null,
+      ezdwfVersion: body.versions?.ezdwf ?? null,
     };
   } catch {
-    return { up: false, ytDlpVersion: null, ffmpegVersion: null };
+    return { up: false, ytDlpVersion: null, ffmpegVersion: null, ezdwfVersion: null };
   } finally {
     clearTimeout(timer);
   }
@@ -365,27 +369,43 @@ export async function mediaVideo(
 // ── CAD: DWF sheet rendering ──────────────────────────────────────────
 
 export type DwfSheetRender = {
-  /** Sheet title as published ("21-62-09 Rev 8" style). */
+  /** Sheet title as published ("90-10-01 Rev 2" style). */
   name: string;
-  width: number | null;
-  height: number | null;
+  /** The sheet's true index in the plot set (failed sheets leave gaps). */
+  index: number;
   png: Buffer;
 };
 
 export type DwfRender = {
-  dpi: number;
-  /** How many 2D sheets the container holds — more than `sheets.length`
-   *  when the sidecar's sheet-count or payload cap truncated the set. */
+  /** How many 2D sheets the container holds. */
   sheetCount: number;
+  /** Sheets that errored in the render worker (counted, never renamed over). */
+  skipped: number;
+  /** A sheet-count or payload cap bit. */
+  capped: boolean;
+  /** Anything at all is missing from `sheets` — cap, error, or otherwise.
+   *  Callers with a complete fallback (the embedded thumbnails) should treat
+   *  a truncated set as a miss rather than silently shipping fewer sheets. */
   truncated: boolean;
   sheets: DwfSheetRender[];
 };
 
-// Renders are in-process Rust (~2s for a real 9-sheet set); the generous
-// budget covers a 64-sheet pathological container under the heavy-op gate.
-const T_DWF_RENDER = 180_000 + BACKSTOP_MS;
-/** Decoded-bytes ceiling, mirroring the sidecar's 48 MB raw-PNG payload cap. */
-const DWF_RENDER_MAX_BYTES = 64 * 1024 * 1024;
+// Mirror of TIMEOUT_DWF_RENDER in app.py — the render runs in a group-killed
+// child over there, so this budget is a real server-side bound, not hope.
+const T_DWF_RENDER = 120_000 + BACKSTOP_MS;
+/** Wire ceiling: the sidecar caps raw PNGs at 48 MB, ~64 MB as base64 plus
+ *  envelope. Enforced WHILE STREAMING via collectBytes — never after a bare
+ *  res.json() has already materialised an unbounded body. */
+const DWF_WIRE_MAX_BYTES = 80 * 1024 * 1024;
+/** Decoded-bytes ceiling, matching the sidecar's raw cap so it can actually
+ *  fire against a misbehaving sidecar. */
+const DWF_RENDER_MAX_BYTES = 48 * 1024 * 1024;
+
+/** Process-lifetime memo of whether the sidecar image carries ezdwf. An image
+ *  built before the CAD tier answers 422 on every render — without the memo,
+ *  every DWF ingest would pay a full-file upload for a guaranteed failure,
+ *  forever. Transient states (sidecar down) are deliberately NOT cached. */
+let dwfTier: 'unknown' | 'present' | 'absent' = 'unknown';
 
 /**
  * Raster every sheet of an Autodesk DWF plot set via the sidecar's ezdwf
@@ -397,6 +417,20 @@ export async function mediaDwfRender(
   dwf: Buffer,
   opts?: { dpi?: number; maxSheets?: number },
 ): Promise<MediaResult<DwfRender>> {
+  if (dwfTier === 'unknown') {
+    const health = await mediaSidecarHealth();
+    if (health.up && !health.ezdwfVersion) dwfTier = 'absent';
+    else if (health.up) dwfTier = 'present';
+    // Not up: leave 'unknown' — the render call below will fail typed anyway.
+  }
+  if (dwfTier === 'absent') {
+    return {
+      ok: false,
+      code: 'extraction_failed',
+      message:
+        'the media sidecar image predates the CAD tier (no ezdwf on /healthz) — update the mantle-media image to v0.232.92+',
+    };
+  }
   return exchange(
     '/dwf/render',
     {
@@ -409,42 +443,54 @@ export async function mediaDwfRender(
       body: dwf as unknown as BodyInit,
     },
     T_DWF_RENDER,
-    (res) =>
-      consumeJson(res, (body) => {
-        const rawSheets = Array.isArray(body.sheets) ? body.sheets : null;
-        if (!rawSheets) {
-          return { ok: false, code: 'extraction_failed', message: 'render reply has no sheets' };
-        }
-        const sheets: DwfSheetRender[] = [];
-        let total = 0;
-        for (const raw of rawSheets) {
-          const s = raw as Record<string, unknown>;
-          if (typeof s.png_base64 !== 'string') continue;
-          const png = Buffer.from(s.png_base64, 'base64');
-          total += png.length;
-          if (total > DWF_RENDER_MAX_BYTES) {
-            return {
-              ok: false,
-              code: 'size_exceeded',
-              message: `decoded renders exceeded the ${DWF_RENDER_MAX_BYTES}-byte cap`,
-            };
-          }
-          sheets.push({
-            name: typeof s.name === 'string' && s.name ? s.name : `sheet ${sheets.length + 1}`,
-            width: typeof s.width === 'number' ? s.width : null,
-            height: typeof s.height === 'number' ? s.height : null,
-            png,
-          });
-        }
+    async (res) => {
+      const raw = await collectBytes(res, DWF_WIRE_MAX_BYTES);
+      if (!raw.ok) return raw;
+      let body: Record<string, unknown>;
+      try {
+        body = JSON.parse(raw.value.toString('utf8')) as Record<string, unknown>;
+      } catch {
         return {
-          ok: true,
-          value: {
-            dpi: typeof body.dpi === 'number' ? body.dpi : 0,
-            sheetCount: typeof body.sheet_count === 'number' ? body.sheet_count : sheets.length,
-            truncated: body.truncated === true,
-            sheets,
-          },
+          ok: false,
+          code: 'extraction_failed',
+          message: 'sidecar returned non-JSON on a 200',
         };
-      }),
+      }
+      const rawSheets = Array.isArray(body.sheets) ? body.sheets : null;
+      if (!rawSheets) {
+        return { ok: false, code: 'extraction_failed', message: 'render reply has no sheets' };
+      }
+      const sheets: DwfSheetRender[] = [];
+      let total = 0;
+      for (const rawSheet of rawSheets) {
+        const s = rawSheet as Record<string, unknown>;
+        if (typeof s.png_base64 !== 'string') continue;
+        const png = Buffer.from(s.png_base64, 'base64');
+        total += png.length;
+        if (total > DWF_RENDER_MAX_BYTES) {
+          return {
+            ok: false,
+            code: 'size_exceeded',
+            message: `decoded renders exceeded the ${DWF_RENDER_MAX_BYTES}-byte cap`,
+          };
+        }
+        sheets.push({
+          name: typeof s.name === 'string' && s.name ? s.name : `sheet ${sheets.length + 1}`,
+          index: typeof s.index === 'number' ? s.index : sheets.length,
+          png,
+        });
+      }
+      dwfTier = 'present';
+      return {
+        ok: true,
+        value: {
+          sheetCount: typeof body.sheet_count === 'number' ? body.sheet_count : sheets.length,
+          skipped: typeof body.skipped === 'number' ? body.skipped : 0,
+          capped: body.capped === true,
+          truncated: body.truncated === true,
+          sheets,
+        },
+      };
+    },
   );
 }
