@@ -3,7 +3,13 @@ import { z } from 'zod';
 import type { AiWorkerParams } from '@mantle/db';
 import { clearEmbeddingModelCache } from '@mantle/embeddings';
 import { getOwnerOr401 } from '@/lib/auth';
-import { deleteAiWorker, getAiWorker, toAiWorkerDTO, updateAiWorker } from '@/lib/ai-workers';
+import {
+  deleteAiWorker,
+  getAiWorker,
+  openRouterModelIssue,
+  toAiWorkerDTO,
+  updateAiWorker,
+} from '@/lib/ai-workers';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -52,6 +58,23 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     );
   }
   const { params, ...rest } = parsed.data;
+  // Save-time catalog check against the EFFECTIVE post-patch config — a
+  // patch may change only the model, only the provider, or both. Fail-open
+  // when the catalog is unreachable (see openRouterModelIssue).
+  if (rest.model !== undefined || rest.provider !== undefined || rest.backupModel !== undefined) {
+    const existing = await getAiWorker(user.id, idParsed.data.id);
+    if (!existing) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    for (const [provider, model] of [
+      [rest.provider ?? existing.provider, rest.model ?? existing.model],
+      [
+        rest.backupProvider !== undefined ? rest.backupProvider : existing.backupProvider,
+        rest.backupModel !== undefined ? rest.backupModel : existing.backupModel,
+      ],
+    ] as const) {
+      const issue = await openRouterModelIssue({ kind: existing.kind, provider, model });
+      if (issue) return NextResponse.json({ error: issue }, { status: 400 });
+    }
+  }
   const worker = await updateAiWorker(user.id, idParsed.data.id, {
     ...rest,
     ...(params !== undefined ? { params: params as AiWorkerParams } : {}),

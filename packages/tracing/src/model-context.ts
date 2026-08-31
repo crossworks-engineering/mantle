@@ -69,6 +69,10 @@ export type LiveModelInfo = {
 };
 
 let liveModels: Record<string, LiveModelInfo> | null = null;
+/** EVERY id the catalog listed, unfiltered — {@link parseCatalog} drops
+ *  entries without a context window, but for existence checks (does this
+ *  model id exist at all?) the raw roster is the truth. */
+let liveModelIds: Set<string> | null = null;
 let liveFetchedAt = 0;
 let inFlight: Promise<void> | null = null;
 
@@ -152,6 +156,11 @@ export async function refreshModelCatalog(force = false): Promise<void> {
       // response shouldn't wipe good data.
       if (Object.keys(parsed).length > 0) {
         liveModels = parsed;
+        liveModelIds = new Set(
+          (body.data ?? [])
+            .map((m) => (typeof m.id === 'string' ? m.id.toLowerCase() : ''))
+            .filter(Boolean),
+        );
         liveFetchedAt = Date.now();
       }
     } catch (err) {
@@ -298,4 +307,47 @@ export function maxImageBytesFor(modelSlug: string | null | undefined): number {
   if (!modelSlug) return ANTHROPIC_LIMIT;
   if (modelSlug.toLowerCase().startsWith('openai/')) return OPENAI_LIMIT;
   return ANTHROPIC_LIMIT;
+}
+
+// ─── catalog membership (worker-config validation) ────────────────────
+
+/**
+ * Does the live OpenRouter catalog list this exact model id?
+ *
+ * Three-valued on purpose: `null` means the catalog has never loaded
+ * (unreachable network, first boot) — UNKNOWN, which callers must treat as
+ * "allow", never as "invalid". Existence checks gate CONFIG SAVES, and a
+ * provider outage must not block an operator from saving a worker.
+ * `~`-prefixed auto-updating aliases are real catalog entries and count.
+ */
+export function catalogHasModel(id: string): boolean | null {
+  if (!liveModelIds) return null;
+  return liveModelIds.has(id.trim().toLowerCase());
+}
+
+/**
+ * Closest catalog ids to a miss, for "did you mean" in a save error. Cheap
+ * scoring, not fuzzy matching: an id that CONTAINS the query (the classic
+ * missing `-preview` suffix), then longest shared prefix. Returns [] when
+ * the catalog is unloaded.
+ */
+export function catalogSuggestions(id: string, limit = 3): string[] {
+  if (!liveModelIds) return [];
+  const q = id.trim().toLowerCase();
+  const scored: Array<{ id: string; score: number }> = [];
+  for (const known of liveModelIds) {
+    let score: number;
+    if (known.includes(q) || q.includes(known)) {
+      score = 1000 + Math.min(q.length, known.length);
+    } else {
+      let i = 0;
+      while (i < q.length && i < known.length && q[i] === known[i]) i += 1;
+      score = i;
+    }
+    if (score >= 8) scored.push({ id: known, score });
+  }
+  return scored
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+    .slice(0, limit)
+    .map((s) => s.id);
 }

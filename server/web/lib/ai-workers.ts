@@ -257,3 +257,48 @@ export async function listAiWorkersByKind(
 // getDefaultWorker / bumpWorkerUsage are re-exported from @mantle/db
 // at the top of this file. The CRUD operations below are only used
 // by the /settings/ai-workers UI in this app.
+
+/** Worker kinds whose models come from OpenRouter's chat catalog — the set
+ *  `/api/v1/models` actually enumerates. TTS/STT/embedding/image ids live in
+ *  other rosters, so checking them here would false-reject valid config. */
+const CHAT_CATALOG_KINDS = new Set([
+  'reflector',
+  'extractor',
+  'summarizer',
+  'vision',
+  'document',
+  'search',
+  'search_advanced',
+  'narrator',
+  'suggester',
+]);
+
+/**
+ * Validate an OpenRouter model id against the LIVE catalog at save time.
+ * Returns the error message to reject with, or null to allow.
+ *
+ * Exists because a bad id fails SILENTLY at call time — the 2026-08-31
+ * incident put a nonexistent id on a vision worker and nine drawing sheets
+ * indexed with no text while every trace read "success". Fail-open by
+ * design: an unloaded/unreachable catalog allows the save (a provider
+ * outage must never lock an operator out of their own config); only a
+ * loaded catalog that positively lacks the id rejects. `~`-prefixed
+ * auto-updating aliases are real catalog entries and pass.
+ */
+export async function openRouterModelIssue(opts: {
+  kind: string;
+  provider: string | null | undefined;
+  model: string | null | undefined;
+}): Promise<string | null> {
+  if (opts.provider !== 'openrouter' || !opts.model) return null;
+  if (!CHAT_CATALOG_KINDS.has(opts.kind)) return null;
+  const { refreshModelCatalog, catalogHasModel, catalogSuggestions } =
+    await import('@mantle/tracing');
+  await refreshModelCatalog();
+  if (catalogHasModel(opts.model) !== false) return null;
+  const suggestions = catalogSuggestions(opts.model);
+  return (
+    `Model '${opts.model}' is not in OpenRouter's catalog — a worker saved with it fails silently at call time.` +
+    (suggestions.length ? ` Did you mean: ${suggestions.join(', ')}?` : '')
+  );
+}

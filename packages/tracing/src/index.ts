@@ -54,6 +54,8 @@ export {
   contextLimitMap,
   contextLimitsFetchedAt,
   refreshModelCatalog,
+  catalogHasModel,
+  catalogSuggestions,
   modelSupportsVision,
   maxImageBytesFor,
   pricingFor,

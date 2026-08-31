@@ -3,7 +3,12 @@ import { z } from 'zod';
 import type { AiWorkerParams } from '@mantle/db';
 import { clearEmbeddingModelCache } from '@mantle/embeddings';
 import { getOwnerOr401 } from '@/lib/auth';
-import { createAiWorker, listAiWorkers, toAiWorkerDTO } from '@/lib/ai-workers';
+import {
+  createAiWorker,
+  listAiWorkers,
+  openRouterModelIssue,
+  toAiWorkerDTO,
+} from '@/lib/ai-workers';
 
 const KIND = z.enum([
   'reflector',
@@ -65,6 +70,16 @@ export async function POST(req: Request) {
       { error: parsed.error.issues[0]?.message ?? 'invalid input' },
       { status: 400 },
     );
+  }
+  // Save-time catalog check: a bad OpenRouter id fails SILENTLY at call time
+  // (the 2026-08-31 vision incident), so the save is where it must be caught.
+  // Fail-open when the catalog is unreachable.
+  for (const [provider, model] of [
+    [parsed.data.provider, parsed.data.model],
+    [parsed.data.backupProvider, parsed.data.backupModel],
+  ] as const) {
+    const issue = await openRouterModelIssue({ kind: parsed.data.kind, provider, model });
+    if (issue) return NextResponse.json({ error: issue }, { status: 400 });
   }
   try {
     const { params, ...rest } = parsed.data;

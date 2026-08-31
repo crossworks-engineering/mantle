@@ -1198,10 +1198,10 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
 async function visionIngestImageNode(
   node: typeof nodes.$inferSelect,
   ownerId: string,
-): Promise<string | null> {
+): Promise<{ text: string | null; failure: string | null }> {
   // Bytes from disk (uploads) or object storage (email image attachments).
   const loaded = await loadFileBytes(node);
-  if (!loaded) return null;
+  if (!loaded) return { text: null, failure: 'file bytes could not be read from disk or storage' };
   const filename = loaded.filename;
 
   return await startTrace(
@@ -1247,7 +1247,11 @@ async function visionIngestImageNode(
         },
       );
 
-      if (!result.text) return null; // nothing to index; the trace records why.
+      if (!result.text) {
+        // Nothing to index — hand the WHY up so the terminal skip names it
+        // (a wrong model id fails here silently otherwise; 2026-08-31).
+        return { text: null, failure: result.note ?? 'vision worker returned no text' };
+      }
       const text = cleanText(result.text); // strip NULs the model/OCR may emit
 
       // Persist data.text now (robustness — survives a later index failure),
@@ -1262,7 +1266,7 @@ async function visionIngestImageNode(
           .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
         h.setMeta({ chars: text.length });
       });
-      return text;
+      return { text, failure: null };
     },
   );
 }
@@ -1904,8 +1908,8 @@ async function loadExtractableBody(
   // sees; `rawBody` is what we persist so the document stays retrievable.
   let rawBody: string;
   if (isImageNeedingVision) {
-    const visionText = await visionIngestImageNode(node, ownerId);
-    if (!visionText) {
+    const vision = await visionIngestImageNode(node, ownerId);
+    if (!vision.text) {
       // Vision produced no text — an SVG/vector the model can't read, a blank
       // image, or an unwired/erroring vision worker. Record a TERMINAL skip so
       // the node counts as processed. Without this it has only a `photo_ingest`
@@ -1923,7 +1927,12 @@ async function loadExtractableBody(
           title: node.title,
           filename: existingData.filename,
           mime: fileMime,
-          hint: 'Image produced no describable text (a vector/blank image, or the vision worker is unwired/failing). Nothing to index; the node is marked processed so the sweep stops re-queuing it.',
+          // The ACTUAL reason, not a guess — a wrong model id on the vision
+          // worker used to surface as this generic skip while the provider's
+          // 404 vanished (2026-08-31: nine drawing sheets, three debugging
+          // rounds). The worker's failure note names it now.
+          vision_failure: vision.failure,
+          hint: `Image produced no describable text — ${vision.failure ?? 'the model returned empty output for this image'}. Nothing to index; the node is marked processed so the sweep stops re-queuing it.`,
         },
       });
       return { ok: false };
@@ -1931,7 +1940,7 @@ async function loadExtractableBody(
     // An extracted document image carries a provenance header; folding it in
     // here means the summary, embedding and chunks all know which manual and
     // which step this picture belongs to. A no-op for ordinary photos.
-    rawBody = composeImageBody(existingData, visionText);
+    rawBody = composeImageBody(existingData, vision.text);
   } else {
     rawBody = await readNodeBodyRaw(node);
   }

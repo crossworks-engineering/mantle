@@ -11,7 +11,7 @@
  * stop sending pictures (or send them to a text-only model).
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   maxImageBytesFor,
   modelSupportsVision,
@@ -203,5 +203,41 @@ describe('contextLimitFor / contextSourceFor (static fallback, no live refresh)'
     expect(contextLimitFor(null)).toBeNull();
     expect(contextLimitFor(undefined)).toBeNull();
     expect(contextSourceFor(null)).toBe('unknown');
+  });
+});
+
+describe('catalogHasModel / catalogSuggestions (save-time validation)', () => {
+  it('is three-valued: unknown before any catalog load, then membership', async () => {
+    const { refreshModelCatalog, catalogHasModel, catalogSuggestions } =
+      await import('./model-context');
+    // Before any load in THIS worker, membership is unknown → fail-open.
+    // (Another test may have loaded the catalog already; only assert the
+    // unknown state when it genuinely is unknown.)
+    const before = catalogHasModel('google/gemini-3.1-pro');
+    if (before === null) expect(catalogSuggestions('google/gemini-3.1-pro')).toEqual([]);
+
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        data: [
+          { id: 'google/gemini-3.1-pro-preview', context_length: 1_000_000 },
+          { id: 'google/gemini-3.1-flash-lite', context_length: 1_000_000 },
+          // Auto-updating alias — a real entry that must count as valid.
+          { id: '~google/gemini-pro-latest', context_length: 1_000_000 },
+          { id: 'anthropic/claude-sonnet-5', context_length: 1_000_000 },
+        ],
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await refreshModelCatalog(true);
+      expect(catalogHasModel('google/gemini-3.1-pro-preview')).toBe(true);
+      expect(catalogHasModel('~google/gemini-pro-latest')).toBe(true);
+      // The 2026-08-31 typo: missing '-preview'. Must be a definite miss with
+      // the real id as the suggestion.
+      expect(catalogHasModel('google/gemini-3.1-pro')).toBe(false);
+      expect(catalogSuggestions('google/gemini-3.1-pro')[0]).toBe('google/gemini-3.1-pro-preview');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
