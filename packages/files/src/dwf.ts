@@ -406,11 +406,7 @@ export async function parseDwfToGrids(bytes: Buffer): Promise<ParsedSheet[]> {
     }
   }
 
-  const layerRows = [...layerMap.entries()].map(([layer, on]) => [
-    layer,
-    on.join(', '),
-    on.length,
-  ]);
+  const layerRows = [...layerMap.entries()].map(([layer, on]) => [layer, on.join(', '), on.length]);
   const labelRows = [...labelMap.entries()]
     .slice(0, MAX_LABEL_ROWS)
     .map(([text, rec]) => [text, rec.count, rec.sheets.join(', ')]);

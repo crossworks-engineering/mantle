@@ -490,7 +490,7 @@ describe('isHollowFilenameBody (the filename-only false-success guard)', () => {
     ).toBe(true);
   });
 
-  it("a dwf whose parse produced real text is NOT hollow", () => {
+  it('a dwf whose parse produced real text is NOT hollow', () => {
     expect(
       isHollowFilenameBody({
         mime: 'model/vnd.dwf',
