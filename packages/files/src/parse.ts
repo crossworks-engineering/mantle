@@ -42,6 +42,11 @@ export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<st
     return (await import('./xlsx')).parseXlsx(bytes);
   }
   if (TEXT_EXTS.has(ext)) return bytes.toString('utf8');
+  // Autodesk DWF plot sets: in-process container parse → sheets/layers/labels
+  // digest (see ./dwf.ts). Throws on a corrupt container; returns '' for a DWF
+  // with no 2D sheets (3D eModel), which callers treat as the honest no-text
+  // skip. Tika has no DWF handler, so there is no fallback tier to drop to.
+  if (ext === 'dwf') return (await import('./dwf')).parseDwf(bytes);
   // `.xml` is a container, not a format — routing by extension alone would send
   // a Project plan through a generic text parser and lose every task name. So
   // this one branches on CONTENT: sniff the root element, and only a document

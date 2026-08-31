@@ -17,6 +17,7 @@
     "./image-probe": "./src/image-probe.ts",
     "./ooxml-media": "./src/ooxml-media.ts",
     "./mspdi": "./src/mspdi.ts",
+    "./dwf": "./src/dwf.ts",
     "./legacy-sheet": "./src/legacy-sheet.ts"
   },
   "scripts": {

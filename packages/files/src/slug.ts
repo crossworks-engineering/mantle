@@ -121,6 +121,9 @@ export const INGESTABLE_EXTS = new Set<string>([
   'xls',
   'xlsm',
   'xlsb',
+  // Autodesk DWF drawing sets (published plots). In-process parser — see
+  // ./dwf.ts. Yields the metadata + layer/label digest, not vector geometry.
+  'dwf',
   ...TIKA_EXTS,
 ]);
 
@@ -181,6 +184,14 @@ export const EXPORT_REQUIRED_EXTS = new Map<string, string>([
     'mpt',
     "Microsoft Project templates are a proprietary binary format Mantle can't read. Open it in Project and use File → Save As → XML (*.xml), then upload that instead.",
   ],
+  // DWFx is the XPS-based successor to DWF. Mantle reads classic DWF (.dwf);
+  // the DWFx package is a different container and stream format that this
+  // parser does not decode. Re-publishing is a one-click choice in the plot
+  // dialog, so the honest move is to name it.
+  [
+    'dwfx',
+    'DWFx drawings use a different container than the classic DWF Mantle can read. In AutoCAD plot/publish again choosing the "DWF" (not DWFx) format and upload that — or upload the source DWG/DXF once CAD ingestion supports it.',
+  ],
 ]);
 
 /** The recovery hint for a format that needs exporting, or undefined when the
@@ -202,6 +213,8 @@ export type ParserRoute =
   /** Legacy .xls/.xlsb: converted to .xlsx via Tika, then read by exceljs. */
   | 'legacy-sheet'
   | 'utf8'
+  /** Autodesk DWF container: sheets/layers/labels digest (./dwf.ts). */
+  | 'dwf'
   | 'tika'
   | 'none';
 export function parserRouteForExt(ext: string): ParserRoute {
@@ -209,6 +222,7 @@ export function parserRouteForExt(ext: string): ParserRoute {
   if (ext === 'docx') return 'mammoth';
   if (ext === 'xls' || ext === 'xlsb') return 'legacy-sheet';
   if (ext === 'xlsx' || ext === 'xlsm') return 'exceljs';
+  if (ext === 'dwf') return 'dwf';
   if (TEXT_EXTS.has(ext)) return 'utf8';
   if (TIKA_EXTS.has(ext)) return 'tika';
   return 'none';
@@ -281,6 +295,10 @@ export function mimeForExt(ext: string): string {
       return 'application/vnd.ms-visio.drawing';
     case 'vsd':
       return 'application/vnd.visio';
+    case 'dwf':
+      return 'model/vnd.dwf';
+    case 'dwfx':
+      return 'model/vnd.dwfx+xps';
     // ── Audio. These arrive constantly (Telegram voice notes are ogg/opus,
     // the transcriber's clips are m4a) and all fell through to octet-stream,
     // which made every media file render as a generic binary in the client.
