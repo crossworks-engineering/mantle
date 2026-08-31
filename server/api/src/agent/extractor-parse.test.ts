@@ -475,6 +475,32 @@ describe('parseOccurredAt + episodic occurred_at', () => {
 });
 
 describe('isHollowFilenameBody (the filename-only false-success guard)', () => {
+  it("catches the 'dwf' route: it has no recovery tier, so an empty parse is hollow", () => {
+    // A 3D eModel DWF or a renamed DWFx sniffs/parses to '' by design;
+    // readNodeBodyRaw then falls back to the title. Without this carve-out
+    // the route being non-'none' would skip the guard and the filename would
+    // index as the document with disposition success.
+    expect(
+      isHollowFilenameBody({
+        mime: 'model/vnd.dwf',
+        parserRoute: 'dwf',
+        rawBody: 'circuitization-set-rev-13.dwf',
+        title: 'circuitization-set-rev-13.dwf',
+      }),
+    ).toBe(true);
+  });
+
+  it("a dwf whose parse produced real text is NOT hollow", () => {
+    expect(
+      isHollowFilenameBody({
+        mime: 'model/vnd.dwf',
+        parserRoute: 'dwf',
+        rawBody: 'DWF drawing set — 9 sheets. …',
+        title: 'circuitization-set-rev-13.dwf',
+      }),
+    ).toBe(false);
+  });
+
   it('catches the descriptive-recording case that defeated the 20-char check', () => {
     expect(
       isHollowFilenameBody({

@@ -35,6 +35,14 @@ import { fallbackCostMicroUsd, recordStepUsage, step } from '@mantle/tracing';
  *  text is persisted + indexed by the extractor; the turn only needs a slice. */
 export const DOC_TEXT_MAX = 24_000;
 
+/** Live-turn ceiling for DWF containers. DWF is the one INGESTABLE format
+ *  whose whole parse is in-process CPU (pure-JS inflate + regex scans over
+ *  every sheet, no Tika hop, no streaming), so a large container parsed
+ *  inline would stall the event loop for every concurrent request. Above
+ *  this size the turn answers with a stored-and-indexing note instead; the
+ *  durable extractor parses the same bytes in the background either way. */
+export const DWF_INLINE_PARSE_MAX = 8 * 1024 * 1024;
+
 export type VisionResult = {
   /** true when the adapter ran and returned (text may still be empty). */
   ran: boolean;
@@ -356,6 +364,16 @@ export async function extractAttachmentForTurn(opts: {
 
   if (INGESTABLE_EXTS.has(ext)) {
     const isPdf = ext === 'pdf';
+
+    // See DWF_INLINE_PARSE_MAX: a big drawing set is deferred to the durable
+    // extractor rather than ground through synchronously on the request path.
+    if (ext === 'dwf' && opts.bytes.length > DWF_INLINE_PARSE_MAX) {
+      return {
+        kind: 'file',
+        text: '',
+        note: `${opts.filename} is a large drawing set — it is stored and being indexed in the background; its sheets and layers become searchable shortly.`,
+      };
+    }
 
     // Native-PDF attempt (Claude/Gemini): the whole document in one call —
     // real layout/tables, no rasterization. Returns null when the provider

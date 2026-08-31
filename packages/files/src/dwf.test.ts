@@ -33,6 +33,11 @@ function w2dStream(): Buffer {
     Buffer.from([0x00, 0x7f]),
     Buffer.from("'2\"'V'2\"'V", 'latin1'),
     Buffer.from("'____'V", 'latin1'),
+    // UTF-8 bytes on the wire: a German layer tag and a fully Cyrillic label.
+    // The scraper must re-decode them, and the Cyrillic one must survive the
+    // word-character filter despite having no ASCII alphanumerics.
+    Buffer.from("'Kühlkreis'V", 'utf8'),
+    Buffer.from("'Отвод'V", 'utf8'),
     Buffer.from("('NotALabel')", 'latin1'),
   ]);
   return Buffer.concat([Buffer.from(asciiHead, 'latin1'), body]);
@@ -54,8 +59,10 @@ async function buildFixture(opts?: { sheets?: boolean }): Promise<Buffer> {
         `<ePlot:Paper units="in" width="16.999999519408217" height="10.999999759704108"/>` +
         `<ePlot:Property name="Title" value="Model" category="AutoCAD Drawing"/>` +
         `<ePlot:Property name="Layout Name" value="Model" category="AutoCAD Drawing"/>` +
-        `<ePlot:Property name="File Name" value="90-10-01 Rev 2.dwg" category="AutoCAD Drawing"/>` +
-        `<ePlot:Property name="Author" value="drafter1" category="AutoCAD Drawing"/>` +
+        // Entity in the value, and value BEFORE name on Author: the parser
+        // must decode entities and not depend on attribute order.
+        `<ePlot:Property name="File Name" value="A&amp;B 90-10-01 Rev 2.dwg" category="AutoCAD Drawing"/>` +
+        `<ePlot:Property value="drafter1" name="Author" category="AutoCAD Drawing"/>` +
         `</ePlot:Section>`,
     );
     zip.file(`${SECTION}\\thumb.png`, Buffer.from('89504e47', 'hex'));
@@ -76,14 +83,16 @@ describe('sniffDwf', () => {
 });
 
 describe('scrapeW2d', () => {
-  it('dedupes layers, counts labels, drops artifacts and non-label quotes', () => {
+  it('dedupes layers, counts labels, decodes UTF-8, drops artifacts and non-label quotes', () => {
     const { layers, labels, labelTotal } = scrapeW2d(w2dStream());
     expect(layers).toEqual(['Circuit 90000-001-01', 'Circuit 90000-001-01-DL', 'Level 12']);
     expect(labels).toEqual([
       { text: '2"', count: 2 },
       { text: 'DN150', count: 1 },
+      { text: 'Kühlkreis', count: 1 },
+      { text: 'Отвод', count: 1 },
     ]);
-    expect(labelTotal).toBe(3);
+    expect(labelTotal).toBe(5);
   });
 });
 
@@ -94,7 +103,7 @@ describe('parseDwfStructured', () => {
     expect(parsed.sheets).toHaveLength(1);
     const s = parsed.sheets[0]!;
     expect(s.title).toBe('90-10-01 Rev 2');
-    expect(s.sourceFile).toBe('90-10-01 Rev 2.dwg');
+    expect(s.sourceFile).toBe('A&B 90-10-01 Rev 2.dwg');
     expect(s.author).toBe('drafter1');
     expect(s.layout).toBe('Model');
     expect(s.paper).toBe('17.0 × 11.0 in');
@@ -112,7 +121,7 @@ describe('parseDwf digest', () => {
     const digest = await parseDwf(await buildFixture());
     expect(digest).toContain('DWF drawing set (V06.20) — 1 sheet');
     expect(digest).toContain('## Sheet 90-10-01 Rev 2');
-    expect(digest).toContain('source drawing: 90-10-01 Rev 2.dwg');
+    expect(digest).toContain('source drawing: A&B 90-10-01 Rev 2.dwg');
     expect(digest).toContain('2" (×2)');
     expect(digest).toContain('## Layer registry across sheets (3)');
     expect(digest).toContain('Circuit 90000-001-01 — on sheet 90-10-01 Rev 2');
@@ -125,6 +134,12 @@ describe('parseDwf digest', () => {
   it('is reachable through the shared dispatcher', async () => {
     const text = await parseDocumentBytes(await buildFixture(), 'dwf');
     expect(text).toContain('DWF drawing set');
+  });
+
+  it('a ZIP without the DWF magic (renamed DWFx) is sniff-rejected to ""', async () => {
+    const fixture = await buildFixture();
+    const bareZip = fixture.subarray('(DWF V06.20)'.length);
+    expect(await parseDocumentBytes(bareZip, 'dwf')).toBe('');
   });
 });
 

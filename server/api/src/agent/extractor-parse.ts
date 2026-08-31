@@ -293,6 +293,13 @@ export function parseExtractorOutput(
  * body equals the title, because for THOSE a title-body means a parse failure
  * with its own recovery paths (OCR, passwords) handled elsewhere. Images are
  * excluded because the vision path owns them and records its own skip.
+ *
+ * The `dwf` route is the exception among routed formats: it has NO recovery
+ * path (no OCR tier, no Tika fallback), and its parser returns '' by design
+ * for a container with no 2D sheets — a 3D eModel, or a renamed DWFx that
+ * fails the sniff. For those a title-body means "nothing was extracted", the
+ * same situation as an unrouted file, so it takes the same honest skip
+ * instead of indexing its own filename as the document.
  */
 export function isHollowFilenameBody(opts: {
   mime: string;
@@ -300,7 +307,7 @@ export function isHollowFilenameBody(opts: {
   rawBody: string;
   title: string;
 }): boolean {
-  if (opts.parserRoute !== 'none') return false;
+  if (opts.parserRoute !== 'none' && opts.parserRoute !== 'dwf') return false;
   if (opts.mime.startsWith('image/')) return false;
   return opts.rawBody.trim() === opts.title.trim();
 }

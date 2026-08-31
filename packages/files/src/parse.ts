@@ -43,10 +43,17 @@ export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<st
   }
   if (TEXT_EXTS.has(ext)) return bytes.toString('utf8');
   // Autodesk DWF plot sets: in-process container parse → sheets/layers/labels
-  // digest (see ./dwf.ts). Throws on a corrupt container; returns '' for a DWF
-  // with no 2D sheets (3D eModel), which callers treat as the honest no-text
-  // skip. Tika has no DWF handler, so there is no fallback tier to drop to.
-  if (ext === 'dwf') return (await import('./dwf')).parseDwf(bytes);
+  // digest (see ./dwf.ts). Content-gated like the MSPDI branch below — a file
+  // named `.dwf` that lacks the DWF magic (usually a renamed DWFx, an OPC zip)
+  // must not parse to a junk digest, so it returns '' and takes the extractor's
+  // honest hollow skip (isHollowFilenameBody carves the 'dwf' route in for
+  // exactly this). Throws on a corrupt container; returns '' for a DWF with no
+  // 2D sheets (3D eModel). Tika has no DWF handler — no fallback tier.
+  if (ext === 'dwf') {
+    const { sniffDwf, parseDwf } = await import('./dwf');
+    if (!sniffDwf(bytes)) return '';
+    return parseDwf(bytes);
+  }
   // `.xml` is a container, not a format — routing by extension alone would send
   // a Project plan through a generic text parser and lose every task name. So
   // this one branches on CONTENT: sniff the root element, and only a document
