@@ -63,7 +63,6 @@ import {
   effectiveBrainDepth,
   ensureExtractedImagesFolder,
   exportHintForExt,
-  slugifyFolder,
   upsertFile,
   resolveEffectiveIndexing,
   metadataSpineText,
@@ -796,7 +795,7 @@ async function maybeExtractEmbeddedImages(
     return;
   }
 
-  const { extractEmbeddedImages, buildImageTitles, buildImageFilename } =
+  const { extractEmbeddedImages, buildImageTitles, buildImageFilename, buildSourceSlug } =
     await import('@mantle/files/embedded-images');
   const result = await extractEmbeddedImages(loaded.bytes, loaded.ext, {
     // Blank/0 on the worker means "use the built-in default", not "keep none".
@@ -839,7 +838,9 @@ async function maybeExtractEmbeddedImages(
     return;
   }
 
-  const sourceSlug = slugifyFolder(loaded.filename.replace(/\.[a-z0-9]+$/i, '')) ?? 'document';
+  // Extension included (90-10-01-dwg vs 90-10-01-dxf) so cross-format twins
+  // of one drawing never share a folder or an image path — see buildSourceSlug.
+  const sourceSlug = buildSourceSlug(loaded.filename);
   const titles = buildImageTitles(result.images, node.title || loaded.filename);
 
   await stepInOwnTrace(
@@ -871,6 +872,7 @@ async function maybeExtractEmbeddedImages(
         sourceTitle: node.title || loaded.filename,
       });
       const createdIds: string[] = [];
+      const saveErrors: string[] = [];
       for (const [i, img] of result.images.entries()) {
         const title = titles[i]!;
         try {
@@ -908,11 +910,13 @@ async function maybeExtractEmbeddedImages(
           });
           createdIds.push(saved.id);
         } catch (err) {
-          // One bad image must not cost the rest of the document.
-          console.error(
-            '[extractor] embedded image save failed:',
-            err instanceof Error ? err.message : err,
-          );
+          // One bad image must not cost the rest of the document — but the
+          // failure must reach the trace. A console.error alone made a
+          // fully-failed save loop end status=success with created:0, which
+          // read exactly like "this document has no pictures" (the same
+          // ambiguity the bytes_available fix above exists to kill).
+          saveErrors.push(err instanceof Error ? err.message : String(err));
+          console.error('[extractor] embedded image save failed:', saveErrors.at(-1));
         }
       }
       h.setMeta({
@@ -920,7 +924,13 @@ async function maybeExtractEmbeddedImages(
         candidates: result.candidates,
         rejected: result.rejected,
         folder: folderPath,
+        ...(saveErrors.length > 0
+          ? { save_errors: saveErrors.length, first_save_error: saveErrors[0] }
+          : {}),
       });
+      if (createdIds.length === 0 && saveErrors.length > 0) {
+        h.setError(`every image save failed — first error: ${saveErrors[0]}`);
+      }
       return createdIds;
     },
   );

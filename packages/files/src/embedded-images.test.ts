@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildImageFilename,
   buildImageTitles,
+  buildSourceSlug,
   describeImageBytes,
   extractEmbeddedImages,
   MAX_EMBEDDED_IMAGES_PER_DOC,
@@ -186,7 +187,45 @@ describe('buildImageTitles', () => {
   });
 });
 
+describe('buildSourceSlug', () => {
+  // Fixtures are synthesized decoy drawing numbers (90-xx series) only.
+  it('keeps cross-format twins apart by folding the extension into the slug', () => {
+    // Regression: 90-10-01.dwg and 90-10-01.dxf slugified to the SAME folder
+    // and the SAME image filenames, so the twin's saves all collided and were
+    // swallowed — created:0 with a status=success step.
+    expect(buildSourceSlug('90-10-01.dwg')).toBe('90-10-01-dwg');
+    expect(buildSourceSlug('90-10-01.dxf')).toBe('90-10-01-dxf');
+  });
+
+  it('lowercases and slugs odd characters the same way the folder layer does', () => {
+    expect(buildSourceSlug('Pump Station (Rev B).DWG')).toBe('pump-station-rev-b-dwg');
+  });
+
+  it('keeps the extension even when the stem hits the 64-char slug cap', () => {
+    const stem = 'a'.repeat(80);
+    expect(buildSourceSlug(`${stem}.dwg`).endsWith('-dwg')).toBe(true);
+    expect(buildSourceSlug(`${stem}.dxf`).endsWith('-dxf')).toBe(true);
+  });
+
+  it('falls back to "document" for an unusable stem, still carrying the extension', () => {
+    expect(buildSourceSlug('???.dwg')).toBe('document-dwg');
+    expect(buildSourceSlug('???.dxf')).toBe('document-dxf');
+  });
+
+  it('handles a filename with no extension', () => {
+    expect(buildSourceSlug('90-10-02')).toBe('90-10-02');
+    expect(buildSourceSlug('')).toBe('document');
+  });
+});
+
 describe('buildImageFilename', () => {
+  it('never collides for same-stem cross-format sources', () => {
+    const a = buildImageFilename(img({ ordinal: 1 }), buildSourceSlug('90-10-01.dwg'));
+    const b = buildImageFilename(img({ ordinal: 1 }), buildSourceSlug('90-10-01.dxf'));
+    expect(a).toBe('001-90-10-01-dwg.png');
+    expect(b).toBe('001-90-10-01-dxf.png');
+  });
+
   it('zero-pads the ordinal so lexical sort is reading order', () => {
     const names = [img({ ordinal: 2 }), img({ ordinal: 10 })].map((i) =>
       buildImageFilename(i, 'apn-manual'),

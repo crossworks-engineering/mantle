@@ -43,7 +43,7 @@
 
 import { createHash } from 'node:crypto';
 import { sniffImage } from './image-probe';
-import { slugifyFolder, TIKA_EXTS } from './slug';
+import { extOf, slugifyFolder, TIKA_EXTS } from './slug';
 
 /** Where the image sits in its source document. Which field is populated
  *  depends on what the format can tell us: PDFs know pages, decks know
@@ -319,6 +319,32 @@ export function buildImageTitles(images: EmbeddedImage[], sourceTitle: string): 
     used.set(base, seen + 1);
     return seen === 0 ? base : clamp(`${base} #${seen + 1}`);
   });
+}
+
+/**
+ * The per-document slug that names BOTH the extracted-images folder and every
+ * image filename inside it — the extractor's one source of identity for a
+ * document's pictures.
+ *
+ * The extension is part of the slug, not stripped from it. A drawing ingested
+ * as both `90-10-01.dwg` and `90-10-01.dxf` (cross-format twins are routine in
+ * CAD hand-offs) used to slugify to the same folder AND the same image
+ * filenames, so the second document's saves all collided with the first's and
+ * every image was silently lost. `90-10-01-dwg` vs `90-10-01-dxf` can never
+ * share a path.
+ *
+ * The extension is appended AFTER the stem is slugged (and capped), so a stem
+ * long enough to hit `slugifyFolder`'s 64-char cap cannot truncate the
+ * extension away and re-collide. Existing folders from older extractions keep
+ * their names — the extractor's `sourceFileId` dedupe means an already
+ * extracted document is never renamed, only new extractions use this scheme.
+ */
+export function buildSourceSlug(filename: string): string {
+  const ext = extOf(filename);
+  const stem = ext ? filename.slice(0, -(ext.length + 1)) : filename;
+  const stemSlug = slugifyFolder(stem) ?? 'document';
+  const extSlug = ext ? slugifyFolder(ext) : null;
+  return extSlug ? `${stemSlug}-${extSlug}` : stemSlug;
 }
 
 /**
