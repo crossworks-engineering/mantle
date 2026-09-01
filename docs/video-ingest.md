@@ -56,8 +56,12 @@ text, no segments).
 > error honestly at extract (there is no offline fallback for this format).
 > Since v0.232.102 the same route also takes native **DXF** bytes: the
 > worker sniffs its input, skips the conversion chain, reads the DXF with
-> `ezdxf` directly, and reports converter `"none"` — no new dependency, so
-> a v0.232.99+ media image serves DXF without a rebuild.
+> `ezdxf` directly, and reports converter `"none"`. No new *dependency* —
+> but the sniff is app.py code inside the image, so DXF DOES need the
+> **v0.232.102+ media image**. A v0.232.99–101 image feeds the DXF to the
+> DWG converter chain and answers 422 ("no converter produced a parseable
+> DXF") for a perfectly valid file; if DXF ingests fail that way, pull the
+> current mantle-media image.
 
 yt-dlp and ffmpeg never run in the app process. They live in their own
 container (`infra/media-sidecar`, compose service `media`, image
