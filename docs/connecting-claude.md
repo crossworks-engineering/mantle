@@ -133,18 +133,49 @@ If instead you see `No account yet`, sign up in the web app first. If
 
 ## What you get
 
+**Full parity with the in-brain agents.** Every tool a Mantle agent can be
+granted is on this surface. The client IS the owner, authenticated, driving
+their own brain, so it is not given a smaller catalog than an agent running
+inside the box. Two exceptions, both named below.
+
 | Area | Tools |
 |---|---|
-| Search | `search` (hybrid semantic+keyword), `search_chunks` (passage-level), `tree_list` |
-| Email | `email_list`, `email_get` |
-| Files | `folder_*`, `file_*` (list/read/upload/delete) |
-| Content | `note_*`, `task_*`, `event_*`, `journal_*` (full CRUD), `page_*` / `table_*` (read-only) |
+| Search | `search` (hybrid semantic+keyword), `search_chunks` (passage-level), `tree_list`, `node_read`, `read_section` |
 | Knowledge graph | `entity_search`, `entity_facts`, `entity_neighbors`, `entity_mentions`, `graph_path` |
+| Recall | `recall_index`, `recall_open`, `recall_go`, `recall_match` |
+| Content | `note_*`, `task_*`, `event_*`, `journal_*` (full CRUD), `page_*`, `table_*`, `draw_*`, `content_supersede` |
+| Files | `folder_*`, `file_*` (list/read/create/upload/move/copy/delete), `show_image`, `export_node`, `sheet_build` |
+| Email | `email_list`, `email_get`, `email_send`, `email_page` (sending is gated by the contacts allowlist, same as for the responder) |
+| Sandboxes | `sandbox_create` / `sandbox_exec` / `sandbox_list` / `sandbox_stop` / `sandbox_rm` / `sandbox_export` / `sandbox_publish` / `sandbox_mcp_*` — isolated Ubuntu containers to run code in (docs/sandboxes.md); needs the `sandboxes` compose profile, and says so plainly when it is off |
+| Research | `web_search`, `web_search_pro`, `web_fetch`, `web_map`, `web_crawl`, `video_ingest` — these reach the open internet and bill your keys |
+| Compute | `calculate`, `formula_*` |
+| Apps | `app_*` (author, build, publish), `app_db_list`, `app_db_query` |
+| Toolsmith | `api_tool_*`, `tool_group_*`, `agent_*`, `recipe_tool_*` (writes gated by `MANTLE_MCP_TOOLSMITH_WRITE`) |
+| Runs | `run_plan`, `run_append`, `run_state`, `run_cancel`, `run_audit` (creation also needs `MANTLE_RUNS=1` on the box) |
+| Team Chat (owner side) | `team_chat_list`, `team_chat_read`, `team_access_list`, `team_member_list`, `team_notify` |
 | Telegram | `telegram_pending`, `telegram_send` (allowlisted chats only), `telegram_react`, `telegram_edit`, `telegram_pair` |
+| Replay | `find_window`, `replay_window` |
 | Operator | `pending_list` / `pending_get` / `pending_approve` / `pending_reject` |
-| Federation | `peer_list`, `peer_query`, `peer_node_get` |
-| Responder | `ask_responder` (ask a responder; it answers with its real persona + tools), `ask_as_responder` (adopt its persona and answer yourself) |
-| Sandboxes | `sandbox_create` / `sandbox_exec` / `sandbox_list` / `sandbox_stop` / `sandbox_rm` / `sandbox_export` / `sandbox_publish` / `sandbox_mcp_*` — isolated Ubuntu containers to run code in (docs/sandboxes.md). The brain's own shell (`run_terminal`) is deliberately NOT exposed; a sandbox has no route to postgres, minio or the web tier. Needs the `sandboxes` compose profile on the box, and says so plainly when it is off. |
+| Federation | `peer_list`, `peer_query`, `peer_search_chunks`, `peer_node_get` |
+| Owner state | `update_persona`, `set_timezone`, `secret_create`, `node_share`, `node_unshare`, `process_extraction`, `brain_capacity` |
+| Models | `model_catalog`, `model_pool_*`, `openrouter_*`, `recall_eval` |
+| Responder | `ask_responder`, `ask_as_responder`, `respond_as_agent`, `invoke_agent` |
+| Location | `location_save`, `location_nearby`, `location_distance`, `route_map` |
+
+### The two that are not on it
+
+- **`run_terminal`** — a shell in the brain's OWN container: postgres, minio,
+  the file store, the master key. Over **stdio** it ships, because spawning the
+  process already grants the owner's full data access on a machine you control.
+  Over the **HTTP connector** it is off, because a stolen bearer would become a
+  root shell on the box; set `MANTLE_MCP_TERMINAL=1` in the box's `.env` to turn
+  it on anyway, or `=0` to turn it off for stdio too. `sandbox_exec` is the
+  contained alternative and is always available on both.
+- **`synthesize_speech`** — needs a live delivery surface (a Telegram chat, the
+  web reply stream) to play audio into. Over MCP it could only ever error.
+
+A gap of any other kind is a bug: `packages/mcp-core/src/bridge.test.ts` fails
+the build when a builtin tool is not registered here.
 
 Things to try: *"search my Mantle for …"*, *"any unanswered Telegram
 messages? draft replies"*, *"what do I know about \<person\>?"*, *"log a

@@ -1973,6 +1973,31 @@ const invoke_agent: BuiltinToolDef = {
  *  MCP server can BRIDGE them (one implementation, one behaviour) instead of
  *  hand-writing twins — see mcp-core's no-duplicate-tools test for why twins
  *  rot. In-app registration still comes from BUILTIN_TOOLS below. */
+/**
+ * The tools that used to live only in this catch-all with no exported group,
+ * which is the sole reason the MCP surface could not bridge them (see
+ * packages/mcp-core/src/build-server.ts). Grouped by what they do, not by which
+ * agent holds them — a group here is an addressable bundle, never a grant.
+ */
+
+/** Read the brain by id, plus the corpus-capacity self-check. */
+export const NODE_READ_TOOLS: readonly BuiltinToolDef[] = [node_read, brain_capacity];
+
+/** Create a file from text, and resolve a folder by its path. */
+export const FILE_CREATE_TOOLS: readonly BuiltinToolDef[] = [file_create, folder_get_by_path];
+
+/** Mark content superseded so retrieval prefers the living copy. */
+export const CONTENT_CURATION_TOOLS: readonly BuiltinToolDef[] = [content_supersede];
+
+/** Kick off content extraction on an uploaded or referenced source. */
+export const INGEST_TOOLS: readonly BuiltinToolDef[] = [process_extraction];
+
+/** Store a credential the user shared in conversation. */
+export const SECRET_TOOLS: readonly BuiltinToolDef[] = [secret_create];
+
+/** Invoke a specialist sub-agent. */
+export const DELEGATION_TOOLS: readonly BuiltinToolDef[] = [invoke_agent];
+
 export const FILE_MANAGE_TOOLS: readonly BuiltinToolDef[] = [
   file_move,
   file_copy,

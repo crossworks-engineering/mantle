@@ -6,16 +6,27 @@
  *   - the remote HTTP endpoint (`apps/web/app/api/mcp/route.ts`), reached as a
  *     claude.ai custom connector behind OAuth.
  *
- * `registerMantleTools(server, ownerId)` registers every tool onto a given
+ * `registerMantleTools(server, ownerId, opts)` registers every tool onto a given
  * `McpServer`, scoped to `ownerId`; `buildMantleMcpServer(ownerId)` creates a
  * fresh server and registers them. The owner is a TRUSTED input here — each
  * transport authenticates and resolves it (stdio: the single local owner; HTTP:
- * the OAuth bearer) BEFORE calling in. No tool is more dangerous over HTTP than
- * over stdio (the server's own shell, `run_terminal`, is NOT exposed — the only
- * command execution here is `sandbox_exec`, which runs inside an isolated
- * container with no route to postgres, minio or the web tier); the new exposure
- * is purely that the surface is reachable over the network, which the
- * transport's auth gates.
+ * the OAuth bearer) BEFORE calling in.
+ *
+ * FULL PARITY is the rule: every tool an in-brain agent can be granted is on
+ * this surface. A desktop client is not a lesser citizen than an agent running
+ * inside the brain — it is the owner, authenticated, driving their own data.
+ * The surface used to be a hand-picked subset, and every gap read to the client
+ * as a missing capability it could not even name (the CLI sandboxes were
+ * enabled on a box and the client still reported it had no such tool).
+ *
+ * ONE tool is transport-dependent: `run_terminal` runs a shell in the brain's
+ * OWN container — postgres, minio, the file store, the master key. Over stdio
+ * that is no escalation at all (spawning the process already grants the owner's
+ * full data access on a machine you control), so it ships. Over HTTP the
+ * surface is reachable from the network and a stolen OAuth token would become a
+ * root shell on the box, so it is OFF unless the operator sets
+ * MANTLE_MCP_TERMINAL=1. `sandbox_exec` — the contained shell, in a container
+ * with no route to any of that — is unconditional on both.
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
@@ -87,6 +98,30 @@ import {
   FILE_MANAGE_TOOLS,
   RECALL_TOOLS,
   SANDBOX_TOOLS,
+  NODE_READ_TOOLS,
+  FILE_CREATE_TOOLS,
+  CONTENT_CURATION_TOOLS,
+  INGEST_TOOLS,
+  SECRET_TOOLS,
+  DELEGATION_TOOLS,
+  CALCULATE_TOOLS,
+  FORMULA_TOOLS,
+  APP_DATA_TOOLS,
+  REPLAY_TOOLS,
+  IMAGE_TOOLS,
+  TEAM_TOOLS,
+  RESEARCH_TOOLS,
+  CURATION_TOOLS,
+  CRAWL_TOOLS,
+  VIDEO_TOOLS,
+  LOCATION_TOOLS,
+  PERSONA_TOOLS,
+  PROFILE_TOOLS,
+  SHARE_TOOLS,
+  RUN_TOOLS,
+  TOOL_RESULT_TOOLS,
+  EVAL_TOOLS,
+  TERMINAL_TOOLS,
 } from '@mantle/tools';
 import type { BuiltinToolDef } from '@mantle/tools';
 import {
@@ -128,10 +163,28 @@ if (!toolsmithWriteEnabled) {
   );
 }
 
+/** Which transport is registering. Only `run_terminal` reads it (see the file
+ *  header); everything else is identical on both. */
+export type MantleMcpTransport = 'stdio' | 'http';
+
 /** Register every Mantle MCP tool onto `server`, scoped to `ownerId`. Both the
  *  stdio entry and the HTTP route call this; `ownerId` is already authenticated
- *  by the caller. */
-export function registerMantleTools(server: McpServer, ownerId: string): void {
+ *  by the caller. `transport` defaults to the SAFER of the two: a caller that
+ *  forgets to say gets the network posture, never the trusted-local one. */
+export function registerMantleTools(
+  server: McpServer,
+  ownerId: string,
+  opts: { transport?: MantleMcpTransport } = {},
+): void {
+  const transport = opts.transport ?? 'http';
+  // Explicit env wins in both directions: =1 opts a network surface in, =0 opts
+  // a local one out. Unset means stdio yes, HTTP no.
+  const terminalEnv = process.env.MANTLE_MCP_TERMINAL ?? '';
+  const exposeTerminal = /^(1|true|on|yes)$/i.test(terminalEnv)
+    ? true
+    : /^(0|false|off|no)$/i.test(terminalEnv)
+      ? false
+      : transport === 'stdio';
   // ─── response hygiene ───────────────────────────────────────────────────────
   // MCP tool results are serialised straight into the model's context, so they
   // must NOT leak raw DB internals. A `select()` row carries `embedding` (768
@@ -1099,14 +1152,12 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
   // permalinks and teaching errors on read, and `isError` actually set on a
   // failure rather than a bare "not found" the client reads as success.
   //
-  // `only` restricts each group to the slugs MCP ALREADY exposed. Bridging is a
-  // deduplication, not a widening: NOTE_TOOLS also carries note_from_file /
-  // note_from_page, PEER_TOOLS carries peer_search_chunks, and EMAIL_TOOLS
-  // carries email_send / email_page — exposing outbound email over MCP is a
-  // product decision, and emphatically not a side effect of a refactor.
-  registerBuiltinTools(NOTE_TOOLS, {
-    only: new Set(['note_list', 'note_get', 'note_create', 'note_update']),
-  });
+  // These groups were once restricted with `only` to the slugs MCP already had,
+  // so that bridging stayed a deduplication rather than a widening. The widening
+  // has since been made deliberately (see "Full parity" above), so the whole
+  // group goes out: note_from_file / note_from_page here, peer_search_chunks and
+  // email_send / email_page below.
+  registerBuiltinTools(NOTE_TOOLS);
   registerBuiltinTools(TASK_TOOLS);
   registerBuiltinTools(EVENT_TOOLS);
 
@@ -1118,10 +1169,11 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
   // read here is one indexed row.
   registerBuiltinTools(RECALL_TOOLS);
   registerBuiltinTools(JOURNAL_TOOLS);
-  registerBuiltinTools(PEER_TOOLS, {
-    only: new Set(['peer_list', 'peer_query', 'peer_node_get']),
-  });
-  registerBuiltinTools(EMAIL_TOOLS, { only: new Set(['email_list', 'email_get']) });
+  registerBuiltinTools(PEER_TOOLS);
+  // Outbound email included: email_send is gated by the contacts allowlist the
+  // same way it is for the responder, so the allowlist stays the boundary on
+  // every surface rather than the surface being its own second boundary.
+  registerBuiltinTools(EMAIL_TOOLS);
 
   // The one exception: there is no note_delete builtin — the in-app agent
   // cannot delete notes — so MCP's own registration is not a duplicate and
@@ -1647,6 +1699,77 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
   // client a clear reason instead of a missing tool it cannot ask about.
   registerBuiltinTools(SANDBOX_TOOLS);
 
+  // ─── Full parity: the rest of the in-app catalog ─────────────────────────────
+  // Everything below was agent-only until the parity rule above. Grouped by what
+  // it does, with a note only where the exposure is worth a second thought.
+
+  // Reads. node_read fetches any node by id (the typed getters cover one type
+  // each); brain_capacity is the corpus-vs-split-policy self-check.
+  registerBuiltinTools(NODE_READ_TOOLS);
+  registerBuiltinTools(TOOL_RESULT_TOOLS);
+  registerBuiltinTools(IMAGE_TOOLS);
+  registerBuiltinTools(APP_DATA_TOOLS);
+
+  // Pure computation — no I/O, no spend.
+  registerBuiltinTools(CALCULATE_TOOLS);
+  registerBuiltinTools(FORMULA_TOOLS);
+
+  // Files: create-from-text and resolve-a-folder-by-path, the two the
+  // hand-written file surface never had.
+  registerBuiltinTools(FILE_CREATE_TOOLS);
+
+  // Content lifecycle. content_supersede down-weights, never deletes;
+  // process_extraction spends model budget, which is the point of asking for it.
+  registerBuiltinTools(CONTENT_CURATION_TOOLS);
+  registerBuiltinTools(INGEST_TOOLS);
+
+  // Replay reads the owner's OWN past conversations. Private, but the caller is
+  // the authenticated owner — the same person those conversations belong to.
+  registerBuiltinTools(REPLAY_TOOLS);
+
+  // Owner-side Team Chat: read members, threads and the access log, and file a
+  // member-to-member notification. This is the OWNER's view over the team
+  // surface, never the team responder's own tools.
+  registerBuiltinTools(TEAM_TOOLS);
+
+  // Outbound and spend. web_search / video_ingest / web_map / web_crawl all
+  // reach the open internet and bill the owner's keys, so they are real actions
+  // rather than reads — exposed because a client asked to research something
+  // should be able to, and refusing quietly is worse than spending on request.
+  registerBuiltinTools(RESEARCH_TOOLS);
+  registerBuiltinTools(VIDEO_TOOLS);
+  registerBuiltinTools(CRAWL_TOOLS);
+  registerBuiltinTools(LOCATION_TOOLS);
+
+  // Owner state: persona calibration, timezone, stored credentials.
+  registerBuiltinTools(PERSONA_TOOLS);
+  registerBuiltinTools(PROFILE_TOOLS);
+  registerBuiltinTools(SECRET_TOOLS);
+
+  // node_share PUBLISHES outward (mints a public link). It is confirm-gated in
+  // the in-app loop and keeps that gate here — the bridge runs the same def.
+  registerBuiltinTools(SHARE_TOOLS);
+
+  // Delegation + durable runs. invoke_agent hands work to an in-brain
+  // specialist; the run tools plan and drive background queues (creation is
+  // additionally gated by MANTLE_RUNS on the box, docs/runs.md).
+  registerBuiltinTools(DELEGATION_TOOLS);
+  registerBuiltinTools(RUN_TOOLS);
+
+  // Model curation (OpenRouter reads + the curated pools) and the retrieval
+  // eval. recall_eval embeds a query set, so it costs — advisory tools, none of
+  // which change what any agent actually runs.
+  registerBuiltinTools(CURATION_TOOLS);
+  registerBuiltinTools(EVAL_TOOLS);
+
+  // ─── The brain's own shell ────────────────────────────────────────────────────
+  // The one transport-dependent tool on this surface. See the file header: over
+  // stdio it grants nothing that spawning the process did not already grant;
+  // over HTTP it turns a stolen bearer into a root shell on the box, so it needs
+  // MANTLE_MCP_TERMINAL=1. `sandbox_exec` above is the contained alternative and
+  // is always available.
+  if (exposeTerminal) registerBuiltinTools(TERMINAL_TOOLS);
+
   // ─── Toolsmith ───────────────────────────────────────────────────────────────
   // Writes gated behind MANTLE_MCP_TOOLSMITH_WRITE (see TOOLSMITH_WRITE_SLUGS).
   registerBuiltinTools(TOOLSMITH_TOOLS, {
@@ -1667,13 +1790,15 @@ export const MANTLE_MCP_INSTRUCTIONS = [
 ].join(' ');
 
 /** Create a fresh `McpServer` with the full Mantle tool surface, scoped to
- *  `ownerId`. Used by the stdio entry; the HTTP route registers onto the
- *  adapter-provided server via `registerMantleTools`. */
+ *  `ownerId`. This is the STDIO entry's builder — no port, no token, spawned by
+ *  a client on a machine the owner controls — so it registers the stdio
+ *  posture. The HTTP route registers onto the adapter-provided server via
+ *  `registerMantleTools` with `transport: 'http'`. */
 export function buildMantleMcpServer(ownerId: string): McpServer {
   const server = new McpServer(
     { name: 'mantle', version: '0.0.1' },
     { instructions: MANTLE_MCP_INSTRUCTIONS },
   );
-  registerMantleTools(server, ownerId);
+  registerMantleTools(server, ownerId, { transport: 'stdio' });
   return server;
 }

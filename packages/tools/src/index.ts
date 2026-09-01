@@ -52,7 +52,16 @@ export {
   type RosterGroup,
 } from './delegate-roster';
 
-export { BUILTIN_TOOLS, FILE_MANAGE_TOOLS } from './builtins';
+export {
+  BUILTIN_TOOLS,
+  FILE_MANAGE_TOOLS,
+  NODE_READ_TOOLS,
+  FILE_CREATE_TOOLS,
+  CONTENT_CURATION_TOOLS,
+  INGEST_TOOLS,
+  SECRET_TOOLS,
+  DELEGATION_TOOLS,
+} from './builtins';
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';
 export { DRAW_TOOLS, DRAW_TOOL_SLUGS } from './builtins-draws';
 export { APP_TOOLS, APP_TOOL_SLUGS, APP_DATA_TOOLS, APP_DATA_TOOL_SLUGS } from './builtins-apps';
@@ -95,6 +104,15 @@ export { CALCULATE_TOOLS, CALCULATE_TOOL_SLUGS } from './builtins-calculate';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
 export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';
 export { RUN_TOOLS, BANNED_ITEM_TOOLS, parsePlan } from './builtins-runs';
+export { REPLAY_TOOLS } from './builtins-replay';
+export { IMAGE_TOOLS } from './builtins-images';
+export { TEAM_TOOLS } from './builtins-team';
+export { RESEARCH_TOOLS } from './builtins-research';
+export { CURATION_TOOLS } from './builtins-curation';
+export { CRAWL_TOOLS } from './builtins-crawl';
+export { VIDEO_TOOLS } from './builtins-video';
+export { SHARE_TOOLS } from './builtins-share';
+export { EVAL_TOOLS } from './builtins-eval';
 // Re-exported so MCP/route layers can pin their input caps to the SAME
 // contract the plan parser validates against (they already depend on us).
 export { ASK_HUMAN_FORM_LIMITS } from '@mantle/client-types';

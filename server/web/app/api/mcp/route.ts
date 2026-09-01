@@ -57,7 +57,9 @@ async function handler(req: Request): Promise<Response> {
   if (!ownerId) return unauthorized();
 
   const mcpHandler = createMcpHandler(
-    (server) => registerMantleTools(server, ownerId),
+    // Network transport: `run_terminal` stays off unless the operator sets
+    // MANTLE_MCP_TERMINAL=1 on the box (see packages/mcp-core/src/build-server.ts).
+    (server) => registerMantleTools(server, ownerId, { transport: 'http' }),
     // Recall's tier-1 hook rides the server instructions — the one surface a
     // client auto-loads besides the tool list (docs/recall.md).
     { instructions: MANTLE_MCP_INSTRUCTIONS },
