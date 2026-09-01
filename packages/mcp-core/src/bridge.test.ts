@@ -114,6 +114,8 @@ describe('CLI sandboxes are on the MCP surface', () => {
     'sandbox_rm',
     'sandbox_export',
     'sandbox_import',
+    'sandbox_ls',
+    'sandbox_autostart',
     'sandbox_publish',
     'sandbox_mcp_tools',
     'sandbox_mcp_call',

@@ -29,11 +29,15 @@ import {
 import {
   createFolder,
   dashToLtree,
+  diskPathForLtree,
   ensureFilesRootBranch,
+  filesRoot,
+  folderById,
   folderByPath,
   readFileById,
   upsertFile,
 } from '@mantle/files';
+import { relative } from 'node:path';
 import { setApiKey } from '@mantle/api-keys';
 import { and, eq } from 'drizzle-orm';
 import { db, toolGroups, type ToolGroupIntegration } from '@mantle/db';
@@ -206,6 +210,15 @@ const sandbox_create: BuiltinToolDef = {
           'package registries, GitHub and apt mirrors via an allowlisting proxy; "none" = offline.',
       },
     },
+    inbox_folder_id: {
+      type: 'string',
+      format: 'uuid',
+      description:
+        'A Files folder to expose READ-ONLY at /mnt/inbox — from `folder_list` / `tree_list`. ' +
+        'Use it when the work starts from files a colleague will keep adding: they drop them ' +
+        'in that folder through the web UI and the sandbox sees them at once, with no import ' +
+        'step and no shell access. The sandbox cannot write back to it.',
+    },
     required: ['name'],
     additionalProperties: false,
   },
@@ -232,11 +245,38 @@ const sandbox_create: BuiltinToolDef = {
       typeof input.image === 'string' && input.image
         ? input.image
         : process.env.SANDBOX_DEFAULT_IMAGE || 'titanwest/mantle-sandbox:24.04-v2';
+    // Map the folder node to the path it occupies under the Files root, and
+    // send only that RELATIVE part: sandboxd joins it onto the box's own
+    // host-absolute root, which is the only path the docker daemon can resolve.
+    let inboxSub: string | undefined;
+    const inboxId = typeof input.inbox_folder_id === 'string' ? input.inbox_folder_id.trim() : '';
+    if (inboxId) {
+      const folder = await folderById({ ownerId: ctx.ownerId, folderId: inboxId });
+      if (!folder) return notFound('folder', inboxId, 'folder_list / tree_list');
+      const abs = diskPathForLtree(folder.path);
+      const root = filesRoot();
+      if (!abs) {
+        return {
+          ok: false,
+          error: `folder ${folder.title} is not mirrored on disk, so it cannot be mounted — pick a folder under Files`,
+        };
+      }
+      inboxSub = abs === root ? '' : relative(root, abs);
+      if (!inboxSub) {
+        return {
+          ok: false,
+          error:
+            'mounting the whole Files root is refused — name a specific folder, so the sandbox sees only what it needs',
+        };
+      }
+    }
+
     const created = await sandboxd('POST', '/sandboxes', {
       id,
       ownerId: ctx.ownerId,
       image,
       network,
+      inbox: inboxSub,
     });
     if (!created.ok) return created;
     const row = await createSandboxRow({
@@ -252,7 +292,15 @@ const sandbox_create: BuiltinToolDef = {
     ctx.step?.setMeta({ sandboxId: id, name, image, network });
     return {
       ok: true,
-      output: { id: row.id, name, image, network, status: 'running', filesDir: '/files' },
+      output: {
+        id: row.id,
+        name,
+        image,
+        network,
+        status: 'running',
+        filesDir: '/files',
+        ...(created.data.inbox ? { inbox: created.data.inbox } : {}),
+      },
     };
   },
 };
@@ -603,6 +651,87 @@ const sandbox_import: BuiltinToolDef = {
   },
 };
 
+const sandbox_ls: BuiltinToolDef = {
+  slug: 'sandbox_ls',
+  readOnly: true,
+  name: 'List sandbox files',
+  description:
+    "List a directory under a sandbox's /files as structured rows (name, type, size, modified) " +
+    'rather than text you have to parse. Prefer this over `sandbox_exec ls`: `ls` output shifts ' +
+    'with flags and locale, so parsing it is a guess. Works while the sandbox is STOPPED, so ' +
+    'checking what is there costs nothing and does not wake the container.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      sandbox: { type: 'string', description: 'Sandbox name or id.' },
+      path: {
+        type: 'string',
+        description: 'Directory under /files, e.g. "data" or "out/reports". Defaults to /files.',
+      },
+    },
+    required: ['sandbox'],
+    additionalProperties: false,
+  },
+  requiresConfirm: false,
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
+    const row = await getSandboxByRef(ctx.ownerId, ref);
+    if (!row) return notFound('sandbox', ref, 'sandbox_list');
+    const relPath = typeof input.path === 'string' ? input.path.trim() : '';
+    ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, path: relPath || '/files' });
+
+    const res = await sandboxd(
+      'GET',
+      `/sandboxes/${row.id}/ls?path=${encodeURIComponent(relPath)}`,
+    );
+    if (!res.ok) return res;
+    // Deliberately no touchSandbox: looking is not use, and refreshing the
+    // idle clock on a read would keep an abandoned sandbox alive forever.
+    return { ok: true, output: res.data };
+  },
+};
+
+const sandbox_autostart: BuiltinToolDef = {
+  slug: 'sandbox_autostart',
+  name: 'Set a sandbox wake command',
+  description:
+    'Store a command the sandbox runs every time it wakes. A sandbox idle-stops after an hour: ' +
+    '/files and installed packages survive, running PROCESSES do not, so anything serving a port ' +
+    'comes back deaf until someone re-runs its start script. Set that script here once and ' +
+    'waking becomes self-healing. The command MUST be idempotent — it runs on every wake, so it ' +
+    'should notice an already-running service and say so. Call with no command to clear it.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      sandbox: { type: 'string', description: 'Sandbox name or id.' },
+      command: {
+        type: 'string',
+        description:
+          'Shell run on wake, e.g. "sh /files/start.sh". Omit or pass "" to clear the hook.',
+      },
+    },
+    required: ['sandbox'],
+    additionalProperties: false,
+  },
+  requiresConfirm: false,
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
+    const row = await getSandboxByRef(ctx.ownerId, ref);
+    if (!row) return notFound('sandbox', ref, 'sandbox_list');
+    const command = typeof input.command === 'string' ? input.command.trim() : '';
+    ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, cleared: !command });
+
+    const res = await sandboxd('POST', `/sandboxes/${row.id}/autostart`, { command });
+    if (!res.ok) return res;
+    return {
+      ok: true,
+      output: command
+        ? { sandbox: row.name, wakeCommand: command, script: res.data.wake }
+        : { sandbox: row.name, wakeCommand: null, cleared: true },
+    };
+  },
+};
+
 const sandbox_publish: BuiltinToolDef = {
   slug: 'sandbox_publish',
   name: 'Publish sandbox service',
@@ -849,6 +978,8 @@ export const SANDBOX_TOOLS: BuiltinToolDef[] = [
   sandbox_rm,
   sandbox_export,
   sandbox_import,
+  sandbox_ls,
+  sandbox_autostart,
   sandbox_publish,
   sandbox_mcp_tools,
   sandbox_mcp_call,

@@ -30,7 +30,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { execFile } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
-import { chown, mkdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { chown, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import * as docker from './docker';
@@ -43,6 +43,15 @@ const execFileP = promisify(execFile);
 const PORT = Number(process.env.SANDBOXD_PORT || 8090);
 const TOKEN = process.env.SANDBOXD_TOKEN || '';
 const SANDBOXES_DIR = process.env.SANDBOXES_DIR || '/data/sandboxes';
+/**
+ * HOST-absolute path of the brain's Files root, for the read-only inbox mount.
+ * Host-absolute for the same reason SANDBOXES_DIR is: sandboxd hands bind
+ * SOURCES to the host daemon, which resolves them on the host, not in here. The
+ * same path is mounted read-only into sandboxd at the identical location so the
+ * subpath can be validated before it is handed over. Unset (the default) turns
+ * the feature off, and `sandbox_create` says so rather than guessing.
+ */
+const INBOX_ROOT = process.env.SANDBOX_INBOX_ROOT || '';
 const SANDBOX_NETWORK = process.env.SANDBOX_NETWORK || 'mantle_sandbox';
 /** INTERNAL network for balanced-tier sandboxes: no NAT, so their only way
  *  out is the allowlisting egress proxy below. */
@@ -173,6 +182,65 @@ async function chownFiles(containerId: string): Promise<void> {
   }
 }
 
+/** Name of the wake script inside /files. One convention, no registry. */
+const WAKE_SCRIPT = '.sandbox-wake';
+
+/**
+ * Start the container if it is down, then re-run the sandbox's wake script.
+ *
+ * The idle-stop keeps /files and the installed packages but not the RUNNING
+ * PROCESSES, so a sandbox that serves something came back deaf: the next exec
+ * woke the container and the service was simply gone, and a person had to know
+ * to re-run the start script by hand. That is a poor deal for the specialists
+ * this is built for, who do not think in terms of containers at all.
+ *
+ * The command lives IN the sandbox as `/files/.sandbox-wake`, not in a registry
+ * here: sandboxd holds no database, and a convention file survives a sandboxd
+ * restart, moves with an export, and is visible to anyone looking at /files.
+ * It is expected to be idempotent (running it while the service is already up
+ * should be a no-op that says so) because it runs on EVERY wake.
+ *
+ * Fire and forget: the script is backgrounded with its output appended to
+ * `.sandbox-wake.log`, and a failure is logged, never raised. A wake hook that
+ * can fail a caller's exec would be worse than no hook at all.
+ */
+async function ensureRunning(c: docker.ContainerSummary, id: string): Promise<void> {
+  if (c.State === 'running') return;
+  await docker.startContainer(c.Id);
+  try {
+    await stat(path.join(filesDir(id), WAKE_SCRIPT));
+  } catch {
+    return; // no hook for this sandbox
+  }
+  try {
+    await docker.execInContainer(
+      c.Id,
+      [
+        'sh',
+        '-lc',
+        `nohup sh /files/${WAKE_SCRIPT} >>/files/${WAKE_SCRIPT}.log 2>&1 & echo started`,
+      ],
+      { workingDir: '/files', hardTimeoutMs: 15_000, maxBytes: 4096 },
+    );
+  } catch (e) {
+    console.warn(`[sandboxd] wake script failed for ${id} (continuing):`, (e as Error).message);
+  }
+}
+
+/** Write (or clear) a sandbox's wake script. */
+async function setWakeScript(id: string, command: string): Promise<{ wake: string | null }> {
+  await findContainer(id);
+  const dest = path.join(filesDir(id), WAKE_SCRIPT);
+  if (!command.trim()) {
+    await unlink(dest).catch(() => {});
+    return { wake: null };
+  }
+  await mkdir(filesDir(id), { recursive: true });
+  await writeFile(dest, `#!/bin/sh\n${command}\n`, { mode: 0o755 });
+  await chown(dest, 1000, 1000).catch(() => {});
+  return { wake: `/files/${WAKE_SCRIPT}` };
+}
+
 async function ensureImage(image: string): Promise<void> {
   // Create-then-pull-on-404 would need a throwaway create; probing the pull
   // path directly is simpler and a no-op when the image is already local.
@@ -208,7 +276,7 @@ async function publishService(id: string, body: Record<string, unknown>) {
     throw new HttpError(400, 'port must be an integer 1–65535');
   }
   const c = await findContainer(id);
-  if (c.State !== 'running') await docker.startContainer(c.Id);
+  await ensureRunning(c, id);
   markActive(id);
   const ip = await docker.containerIp(c.Id, SANDBOX_NETWORK);
   if (!ip) throw new HttpError(502, 'sandbox container has no network address');
@@ -250,7 +318,7 @@ async function proxyToService(
     return;
   }
   const c = await findContainer(id);
-  if (c.State !== 'running') await docker.startContainer(c.Id);
+  await ensureRunning(c, id);
   markActive(id);
   const ip = await docker.containerIp(c.Id, SANDBOX_NETWORK);
   if (!ip) throw new HttpError(502, 'sandbox container has no network address');
@@ -289,6 +357,8 @@ type CreateInput = {
   ownerId: string;
   image?: string;
   network?: 'full' | 'balanced' | 'none';
+  /** Folder under the Files root to expose read-only at /mnt/inbox. */
+  inbox?: string;
 };
 
 async function createSandbox(input: CreateInput) {
@@ -315,6 +385,8 @@ async function createSandbox(input: CreateInput) {
     );
   }
 
+  const inboxBind = await resolveInboxBind(input.inbox);
+
   await mkdir(filesDir(id), { recursive: true });
   await ensureImage(image);
 
@@ -337,7 +409,7 @@ async function createSandbox(input: CreateInput) {
     Labels: { [LABEL]: 'true', [`${LABEL}.id`]: id, [`${LABEL}.owner`]: ownerId },
     HostConfig: {
       // The work outlives the container: /files is the sandbox's host dir.
-      Binds: [`${filesDir(id)}:/files:rw`],
+      Binds: inboxBind ? [`${filesDir(id)}:/files:rw`, inboxBind] : [`${filesDir(id)}:/files:rw`],
       // Hardening + guardrails. Caps: minimal set apt/dpkg need as root.
       CapDrop: ['ALL'],
       CapAdd: ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'SETGID', 'SETUID', 'KILL', 'SETPCAP'],
@@ -353,7 +425,7 @@ async function createSandbox(input: CreateInput) {
   });
   await docker.startContainer(containerId);
   markActive(id);
-  return { containerId, image, network };
+  return { containerId, image, network, inbox: inboxBind ? '/mnt/inbox' : null };
 }
 
 /**
@@ -369,7 +441,7 @@ async function exportSandbox(id: string, body: Record<string, unknown>): Promise
     throw new HttpError(400, 'path must stay under /files (no ..)');
   }
   const c = await findContainer(id);
-  if (c.State !== 'running') await docker.startContainer(c.Id);
+  await ensureRunning(c, id);
   markActive(id);
 
   const tmpName = `.sbx-export-${Date.now()}.tgz`;
@@ -416,6 +488,42 @@ async function exportSandbox(id: string, body: Record<string, unknown>): Promise
  * The file is chowned to uid 1000 to match what stop/rm hand back, so the
  * sandbox user can read it without a root step of its own.
  */
+/**
+ * Resolve the read-only inbox bind for a create, or null when none was asked
+ * for. Throws when one was asked for and cannot be honoured, because silently
+ * creating a sandbox WITHOUT the folder it was supposed to read is the failure
+ * mode that wastes an afternoon: every later step looks fine and /mnt/inbox is
+ * simply empty.
+ */
+async function resolveInboxBind(sub: string | undefined): Promise<string | null> {
+  const rel = (sub ?? '').trim().replace(/^\/+/, '');
+  if (!rel) return null;
+  if (!INBOX_ROOT) {
+    throw new HttpError(
+      400,
+      'inbox mounts are not configured on this box — set MANTLE_FILES_HOST_DIR (host-absolute) in the .env and restart, see docs/sandboxes.md',
+    );
+  }
+  if (rel.split('/').some((seg) => seg === '..')) {
+    throw new HttpError(400, 'inbox must be a folder under the Files root (no ..)');
+  }
+  const root = path.resolve(INBOX_ROOT);
+  const dir = path.resolve(path.join(root, rel));
+  if (dir !== root && !dir.startsWith(root + path.sep)) {
+    throw new HttpError(400, 'inbox must be a folder under the Files root');
+  }
+  let st;
+  try {
+    st = await stat(dir);
+  } catch {
+    throw new HttpError(404, `inbox folder not found on the box: ${rel}`);
+  }
+  if (!st.isDirectory()) throw new HttpError(400, `inbox must be a folder, not a file: ${rel}`);
+  // `ro` is the whole trust argument: the sandbox reads the owner's chosen
+  // folder and can write nothing back into the brain's file store.
+  return `${dir}:/mnt/inbox:ro`;
+}
+
 async function importSandbox(
   id: string,
   relPathRaw: string,
@@ -493,6 +601,70 @@ async function fetchSandboxFile(id: string, relPathRaw: string): Promise<Buffer>
   return await readFile(dest);
 }
 
+/**
+ * Structured listing of a path under /files, read host-side.
+ *
+ * Without this the only way to see what is in a sandbox is `sandbox_exec ls`,
+ * whose output a model then has to parse — and `ls` output varies with flags,
+ * locale and terminal width, so the parse is a guess that usually works. This
+ * is the call an agent makes constantly, so it should return data. It also
+ * works while the sandbox is STOPPED, where an exec would first have to wake
+ * the container just to answer "what is in here".
+ */
+async function listSandboxFiles(
+  id: string,
+  relRaw: string,
+): Promise<{ path: string; entries: unknown[]; truncated: boolean }> {
+  const rel = relRaw.replace(/^\/?files\/?/, '').trim();
+  if (rel.startsWith('/') || rel.split('/').some((seg) => seg === '..')) {
+    throw new HttpError(400, 'path must stay under /files (no leading / and no ..)');
+  }
+  const root = path.resolve(filesDir(id));
+  const dir = rel ? path.resolve(path.join(root, rel)) : root;
+  if (dir !== root && !dir.startsWith(root + path.sep)) {
+    throw new HttpError(400, 'path must stay under /files');
+  }
+  await findContainer(id);
+
+  let dirents;
+  try {
+    dirents = await readdir(dir, { withFileTypes: true });
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOTDIR') {
+      throw new HttpError(400, `${relRaw} is a file, not a directory`);
+    }
+    throw new HttpError(404, `no such directory: ${relRaw || '/files'}`);
+  }
+
+  const MAX = 500;
+  const sorted = dirents.sort((a, b) => a.name.localeCompare(b.name));
+  const entries = [];
+  for (const d of sorted.slice(0, MAX)) {
+    const full = path.join(dir, d.name);
+    let size: number | null = null;
+    let modified: string | null = null;
+    try {
+      const st = await stat(full);
+      size = d.isDirectory() ? null : st.size;
+      modified = st.mtime.toISOString();
+    } catch {
+      // A dangling symlink or a file removed mid-listing: report the name we
+      // saw rather than failing the whole listing over one entry.
+    }
+    entries.push({
+      name: d.name,
+      type: d.isDirectory() ? 'dir' : d.isSymbolicLink() ? 'symlink' : 'file',
+      sizeBytes: size,
+      modified,
+    });
+  }
+  return {
+    path: `/files${rel ? `/${rel}` : ''}`,
+    entries,
+    truncated: sorted.length > MAX,
+  };
+}
+
 async function execSandbox(id: string, body: Record<string, unknown>) {
   const command = typeof body.command === 'string' ? body.command : '';
   if (!command.trim()) throw new HttpError(400, 'command is required');
@@ -503,7 +675,7 @@ async function execSandbox(id: string, body: Record<string, unknown>) {
   );
 
   const c = await findContainer(id);
-  if (c.State !== 'running') await docker.startContainer(c.Id);
+  await ensureRunning(c, id);
   markActive(id);
 
   const started = Date.now();
@@ -540,6 +712,9 @@ async function rmSandbox(id: string, purge: boolean) {
   try {
     const c = await findContainer(id);
     try {
+      // Raw start, NOT ensureRunning: this wakes the container only to hand
+      // /files back before removal. Running the wake script here would start a
+      // service inside a sandbox that is being deleted.
       if (c.State !== 'running') await docker.startContainer(c.Id);
       await chownFiles(c.Id);
     } catch (e) {
@@ -608,7 +783,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (req.method === 'POST' && seg[2] === 'start') {
         const c = await findContainer(id);
-        if (c.State !== 'running') await docker.startContainer(c.Id);
+        await ensureRunning(c, id);
         markActive(id);
         return send(200, { ok: true });
       }
@@ -626,7 +801,7 @@ const server = http.createServer(async (req, res) => {
           });
         }
         const c = await findContainer(id);
-        if (c.State !== 'running') await docker.startContainer(c.Id);
+        await ensureRunning(c, id);
         markActive(id);
         const timeoutMs = Math.min(
           MAX_TIMEOUT_S * 1000,
@@ -647,6 +822,16 @@ const server = http.createServer(async (req, res) => {
       }
       // Import takes the file as the RAW body (metadata rides the query
       // string), so it cannot go through `readBody`'s JSON + 1 MB path.
+      if (req.method === 'GET' && seg[2] === 'ls') {
+        return send(200, await listSandboxFiles(id, url.searchParams.get('path') ?? ''));
+      }
+      if (req.method === 'POST' && seg[2] === 'autostart') {
+        const body = await readBody(req);
+        return send(
+          200,
+          await setWakeScript(id, typeof body.command === 'string' ? body.command : ''),
+        );
+      }
       if (req.method === 'POST' && seg[2] === 'import') {
         const rel = url.searchParams.get('path') ?? '';
         const bytes = await readRawBody(req, IMPORT_MAX_BYTES);

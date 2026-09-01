@@ -800,9 +800,16 @@ services:
       SANDBOX_DEFAULT_IMAGE: ${SANDBOX_DEFAULT_IMAGE:-titanwest/mantle-sandbox:24.04-v2}
       SANDBOX_MAX_COUNT: ${SANDBOX_MAX_COUNT:-3}
       SANDBOX_EGRESS_ALLOW: ${SANDBOX_EGRESS_ALLOW:-}
+      # Read-only inbox mounts (docs/sandboxes.md). HOST-absolute, for the same
+      # reason MANTLE_SANDBOXES_HOST_DIR is: sandboxd hands the bind SOURCE to
+      # the host daemon. Unset = the feature is off and sandbox_create says so.
+      SANDBOX_INBOX_ROOT: ${MANTLE_FILES_HOST_DIR:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}:${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}
+      # Same path inside as out, so a subpath can be checked here before it is
+      # handed to the daemon. READ-ONLY: sandboxd never writes the file store.
+      - ${MANTLE_FILES_HOST_DIR:-/opt/mantle-data/files}:${MANTLE_FILES_HOST_DIR:-/opt/mantle-data/files}:ro
     networks:
       - default
       - sandbox

@@ -50,6 +50,13 @@ SANDBOXD_TOKEN=<openssl rand -hex 32>
 MANTLE_SANDBOXES_HOST_DIR=/opt/mantle-data/sandboxes   # HOST-absolute
 ```
 
+**Read-only inboxes need one more line.** To let a sandbox see a Files folder
+at `/mnt/inbox`, set `MANTLE_FILES_HOST_DIR` to the HOST-absolute path of the
+files root (e.g. `/opt/mantle/data/files`). Host-absolute for the same reason
+`MANTLE_SANDBOXES_HOST_DIR` is: sandboxd hands the bind SOURCE to the host
+daemon. Unset, `sandbox_create` refuses an inbox with that instruction rather
+than making a sandbox whose `/mnt/inbox` is silently empty.
+
 Optional: `SANDBOX_DEFAULT_IMAGE` (pin a different base image),
 `SANDBOX_MAX_COUNT` (default 3), `SANDBOX_IDLE_STOP_MINUTES` (default 60),
 `SANDBOX_DISK_BUDGET_BYTES` (default 10 GB), `SANDBOX_EGRESS_ALLOW`
@@ -73,6 +80,15 @@ caps, or devices), and requires the bearer token on every control-plane call.
 Containers are hardened runc: `cap-drop ALL` plus the minimal apt set,
 `no-new-privileges`, 1 GB / 1 CPU / 512-pid caps, tini as init.
 
+**The inbox mount.** `sandbox_create(inbox_folder_id: …)` binds one Files
+folder read-only at `/mnt/inbox`. It is the no-copy answer to work that starts
+from files: a colleague drops documents in that folder through the web UI and
+the sandbox sees them immediately, with no import step and no shell access to
+the box. Read-only is the whole trust argument — the sandbox reads the folder
+the owner chose and can write nothing back into the file store — and mounting
+the Files ROOT is refused outright, so a sandbox sees only what it was given.
+`sandbox_import` remains the answer for a one-off file.
+
 **Networks.** Sandboxes never join the app network. `full`-tier sandboxes
 live on `mantle_sandbox` (internet via NAT, no route to the brain);
 `balanced` sandboxes live on `mantle_sandbox_restricted` (`internal: true`,
@@ -81,7 +97,13 @@ no NAT at all) and egress only through sandboxd's allowlisting CONNECT proxy;
 
 **Lifecycle hygiene.** A sandbox idle for an hour is chown-and-stopped
 (installed packages and `/files` survive; the next exec restarts it
-transparently). New creations are refused past the disk budget, the budget
+transparently). What the stop does NOT keep is running processes, so a sandbox
+serving a port used to come back deaf. `sandbox_autostart` fixes that: the
+command is stored in the sandbox as `/files/.sandbox-wake` (a convention file,
+not a registry, so it survives a sandboxd restart and travels with an export)
+and sandboxd re-runs it on every wake, backgrounded, output appended to
+`.sandbox-wake.log`. It must be idempotent, and a failure is logged rather than
+raised: a wake hook that can fail a caller's exec would be worse than none. New creations are refused past the disk budget, the budget
 guards the box and never deletes work. `sandbox_list` merges live container
 state so the registry cannot lie after an idle-stop.
 
@@ -109,6 +131,8 @@ say why rather than appear to lack the capability.
 | `sandbox_stop` / `sandbox_rm` | stop (keeps everything) / remove (keeps `/files` unless `purge_files`; confirm-gated) |
 | `sandbox_export` | tar a `/files` path into `files/sandbox-exports/` (100 MB cap); `raw: true` brings ONE file out under its own name instead |
 | `sandbox_import` | copy a Files-workspace file into `/files`, byte for byte (100 MB cap); works on a stopped sandbox |
+| `sandbox_ls` | structured directory listing (name, type, size, modified); works stopped, does not wake the container |
+| `sandbox_autostart` | store a command re-run on every wake, so an idle-stopped service comes back by itself |
 | `sandbox_publish` | declare a service port; creates an integration tool group bound to the proxy |
 | `sandbox_mcp_tools` / `sandbox_mcp_call` | the in-sandbox Claude Code toolbelt over MCP |
 
