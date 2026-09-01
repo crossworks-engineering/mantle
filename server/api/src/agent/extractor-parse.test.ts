@@ -536,6 +536,38 @@ describe('isHollowFilenameBody (the filename-only false-success guard)', () => {
     ).toBe(true);
   });
 
+  it("catches the 'dxf' route: sniff miss + image/vnd.dxf mime both stay hollow", () => {
+    // dxf mirrors dwg: '' on a sniff miss by design, and the registered
+    // image/vnd.dxf alias must not shield it via the image-mime exemption.
+    expect(
+      isHollowFilenameBody({
+        mime: 'application/dxf',
+        parserRoute: 'dxf',
+        rawBody: '90-10-02.dxf',
+        title: '90-10-02.dxf',
+      }),
+    ).toBe(true);
+    expect(
+      isHollowFilenameBody({
+        mime: 'image/vnd.dxf',
+        parserRoute: 'dxf',
+        rawBody: '90-10-02.dxf',
+        title: '90-10-02.dxf',
+      }),
+    ).toBe(true);
+  });
+
+  it('a dxf whose parse produced a real digest is NOT hollow', () => {
+    expect(
+      isHollowFilenameBody({
+        mime: 'application/dxf',
+        parserRoute: 'dxf',
+        rawBody: 'AutoCAD DXF drawing (AC1027) — 42 model-space entities…',
+        title: '90-10-02.dxf',
+      }),
+    ).toBe(false);
+  });
+
   it('catches the descriptive-recording case that defeated the 20-char check', () => {
     expect(
       isHollowFilenameBody({

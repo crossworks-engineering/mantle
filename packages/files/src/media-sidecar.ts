@@ -526,8 +526,9 @@ export type DwgTextEntity = {
 };
 
 export type DwgRender = {
-  /** Which converter produced the DXF the registry and render came from. */
-  converter: 'dwg2dxf' | 'ezdwg';
+  /** Which converter produced the DXF the registry and render came from —
+   *  'none' when the upload already WAS a DXF and ezdxf read it natively. */
+  converter: 'dwg2dxf' | 'ezdwg' | 'none';
   /** DXF version of the converted document ("AC1027"). */
   version: string | null;
   /** Model-space entity total. */
@@ -553,9 +554,11 @@ const DWG_PNG_MAX_BYTES = 48 * 1024 * 1024;
 const DWG_TEXTS_MAX = 20_000;
 
 /**
- * Parse AND raster an AutoCAD DWG's model space via the sidecar's converter
- * chain (`POST /dwg/render`). One exchange serves the text digest, the
- * registry workbook, and the image pass — DWG is the one routed format the
+ * Parse AND raster an AutoCAD drawing's model space via the sidecar
+ * (`POST /dwg/render`). The route takes DWG *or* DXF bytes — the worker
+ * sniffs: DWG magic runs the converter chain, anything else is read as
+ * native DXF (converter 'none'). One exchange serves the text digest, the
+ * registry workbook, and the image pass — these are the routed formats the
  * app process cannot parse locally, so unlike DWF there is no offline
  * fallback tier behind this call. Never throws; same contract as the rest.
  */
@@ -639,7 +642,8 @@ export async function mediaDwgRender(
       return {
         ok: true,
         value: {
-          converter: body.converter === 'ezdwg' ? 'ezdwg' : 'dwg2dxf',
+          converter:
+            body.converter === 'ezdwg' ? 'ezdwg' : body.converter === 'none' ? 'none' : 'dwg2dxf',
           version: typeof body.version === 'string' ? body.version : null,
           entities: typeof body.entities === 'number' ? body.entities : 0,
           capped: body.capped === true,

@@ -19,6 +19,7 @@
     "./mspdi": "./src/mspdi.ts",
     "./dwf": "./src/dwf.ts",
     "./dwg": "./src/dwg.ts",
+    "./dxf": "./src/dxf.ts",
     "./legacy-sheet": "./src/legacy-sheet.ts"
   },
   "scripts": {

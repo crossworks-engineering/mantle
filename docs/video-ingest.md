@@ -54,6 +54,10 @@ text, no segments).
 > plus the render, because the app process has no DWG parser of its own.
 > `/healthz` reports `dwg2dxf` and `ezdxf`; their absence means DWG ingests
 > error honestly at extract (there is no offline fallback for this format).
+> Since v0.232.102 the same route also takes native **DXF** bytes: the
+> worker sniffs its input, skips the conversion chain, reads the DXF with
+> `ezdxf` directly, and reports converter `"none"` — no new dependency, so
+> a v0.232.99+ media image serves DXF without a rebuild.
 
 yt-dlp and ffmpeg never run in the app process. They live in their own
 container (`infra/media-sidecar`, compose service `media`, image

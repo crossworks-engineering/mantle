@@ -44,20 +44,23 @@ Routes (bearer auth on everything except /healthz):
                        CAD-visual half of this sidecar's single purpose:
                        extracting viewable media from formats the app process
                        shouldn't parse itself.
-  POST /dwg/render     <raw DWG bytes> (X-Dwg-Dpi?)
+  POST /dwg/render     <raw DWG or DXF bytes> (X-Dwg-Dpi?)
                        -> {ok, dpi, converter, version, entities, capped,
                        layers:[{name,count}], texts:[{text,layer,x,y}],
                        counts:{TYPE:n}, png_base64} — ONE call parses AND
-                       rasters an AutoCAD DWG's model space (--dwg-render
-                       child, same group-kill discipline). Conversion is
-                       dwg2dxf (LibreDWG, GPL — invoked as a subprocess
-                       binary only, never linked) with ezdwg (MIT) as the
-                       export_dxf fallback for files dwg2dxf mangles;
-                       everything downstream of DXF is one ezdxf path. The
-                       registry half (layers/texts/counts) rides along
-                       because the app process has no DWG parser of its own —
-                       for DWF it parses the container itself and only the
-                       pixels come from here.
+                       rasters an AutoCAD drawing's model space (--dwg-render
+                       child, same group-kill discipline). The worker sniffs
+                       the bytes: DWG magic (AC1xxx) takes the conversion
+                       chain — dwg2dxf (LibreDWG, GPL — invoked as a
+                       subprocess binary only, never linked) with ezdwg (MIT)
+                       as the export_dxf fallback for files dwg2dxf mangles;
+                       anything else is tried as native DXF (ASCII or binary)
+                       and reports converter "none". Everything downstream of
+                       DXF is one ezdxf path. The registry half
+                       (layers/texts/counts) rides along because the app
+                       process has no DWG/DXF parser of its own — for DWF it
+                       parses the container itself and only the pixels come
+                       from here.
 
 Error envelope on every non-2xx: {"ok":false,"error":{"code","message"}}.
 Codes: unauthorized, bad_request, blocked_url, no_captions,
@@ -808,17 +811,18 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(payload)
 
     def _op_dwg_render(self):
-        """Parse AND raster an AutoCAD DWG's model space in one exchange, in a
-        group-killed `--dwg-render` child (same discipline and reasons as
-        /dwf/render). One call because the app process has no DWG parser: the
-        registry (layers/texts/entity counts) and the render both come out of
-        the single conversion the child already paid for. Conversion order is
-        dwg2dxf first (LibreDWG, subprocess-only), ezdwg export_dxf when that
-        output fails ezdxf's parse — the bake-off found real files on each
-        side of that line."""
+        """Parse AND raster an AutoCAD drawing's model space in one exchange,
+        in a group-killed `--dwg-render` child (same discipline and reasons as
+        /dwf/render). One call because the app process has no DWG/DXF parser:
+        the registry (layers/texts/entity counts) and the render both come out
+        of the single document the child already paid for. The child sniffs
+        the bytes — DWG magic takes the conversion chain (dwg2dxf first,
+        LibreDWG, subprocess-only; ezdwg export_dxf when that output fails
+        ezdxf's parse — the bake-off found real files on each side of that
+        line), anything else is tried as native DXF (converter "none")."""
         length = self._content_length(MAX_UPLOAD_BYTES)
         if length <= 0:
-            raise OpError(400, "bad_request", "raw DWG bytes required as the request body")
+            raise OpError(400, "bad_request", "raw DWG or DXF bytes required as the request body")
         # Same bounds as X-Dwf-Dpi and for the same reason; the child's
         # output-pixel guard bounds memory whatever the sheet extents are.
         dpi = int_field(self.headers.get("X-Dwg-Dpi"), 300, 50, 600, "X-Dwg-Dpi")
@@ -839,7 +843,7 @@ class Handler(BaseHTTPRequestHandler):
                     [sys.executable, os.path.abspath(__file__), "--dwg-render",
                      src, outdir, str(dpi)],
                     TIMEOUT_DWG_RENDER,
-                    fail_hint="No converter produced a parseable DXF from this DWG.",
+                    fail_hint="No parseable DXF came out of this file (DWG conversion and native DXF both failed).",
                 )
             except OpError as err:
                 if err.code == "extraction_failed":
@@ -1028,26 +1032,33 @@ def dwf_render_worker(src: str, outdir: str, dpi: int, max_sheets: int) -> int:
 
 
 def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
-    """`--dwg-render` child entry: convert `src` to DXF, extract the model-
+    """`--dwg-render` child entry: get `src` into ezdxf, extract the model-
     space registry, raster the model space, and write `index.json` + a
     `model.png` into `outdir`. Own process (the parent's `run()` group-kills
     it on timeout), so a wedged conversion or render dies here, never in the
     server, and its exit frees every matplotlib figure by construction.
 
-    Conversion chain, decided by the 2026-08-31 bake-off on real drawings:
-      1. `dwg2dxf` (LibreDWG) — a subprocess call, never a linked library
-         (GPLv3; the process boundary is the licence boundary);
-      2. `ezdwg.export_dxf` (MIT) when dwg2dxf's output fails ezdxf's parse —
-         dwg2dxf 0.13.3 emits structurally invalid DXF on some real files,
-         and ezdwg reads exactly those.
+    Input sniff decides the road in:
+      - DWG magic (AC1xxx) → the conversion chain, decided by the 2026-08-31
+        bake-off on real drawings:
+          1. `dwg2dxf` (LibreDWG) — a subprocess call, never a linked library
+             (GPLv3; the process boundary is the licence boundary);
+          2. `ezdwg.export_dxf` (MIT) when dwg2dxf's output fails ezdxf's
+             parse — dwg2dxf 0.13.3 emits structurally invalid DXF on some
+             real files, and ezdwg reads exactly those.
+      - anything else → tried as native DXF (ASCII or binary — ezdxf reads
+        both; `recover` mops up malformed files) and reported as converter
+        "none". No format gate beyond "ezdxf can read it": a junk upload
+        fails the read and takes the same curated exit as a DWG no converter
+        can crack.
     Downstream of DXF there is ONE path: ezdxf for both registry and render
     (its drawing add-on expands INSERT blocks — ezdwg's own plot() does not,
     which is why it renders nothing usable on block-heavy drawings).
 
     The registry is capped (texts/layers/text length) so the reply stays a
     few MB whatever the drawing holds; the render carries the same measured
-    output-pixel guard as the DWF worker. Exits non-zero only when no
-    converter can produce a parseable DXF."""
+    output-pixel guard as the DWF worker. Exits non-zero only when no road
+    produces a parseable DXF document."""
     import ezdxf  # noqa: PLC0415 — child-only import; absent on pre-DWG images
 
     import matplotlib  # noqa: PLC0415
@@ -1070,20 +1081,39 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
 
     doc = None
     converter = None
-    dxf_a = os.path.join(outdir, "a.dxf")
-    # Tier 1 guarded: a missing binary (FileNotFoundError), a hung conversion
-    # (TimeoutExpired) or any other failure must fall THROUGH to ezdwg, not
-    # kill the child before the fallback ever runs.
-    try:
-        proc = subprocess.run(
-            ["dwg2dxf", "-o", dxf_a, src], capture_output=True, text=True, timeout=120
-        )
-        if proc.returncode == 0 and os.path.isfile(dxf_a):
-            doc = try_parse(dxf_a)
-            if doc is not None:
-                converter = "dwg2dxf"
-    except Exception:
-        pass  # tier 2 decides
+    with open(src, "rb") as f:
+        head = f.read(6)
+    if not re.match(rb"^AC1\d{3}$", head):
+        # Not DWG bytes — try native DXF. ezdxf.readfile handles both ASCII
+        # and binary DXF; recover.readfile mops up files a strict parse
+        # rejects (the common state of hand-edited or third-party exports).
+        doc = try_parse(src)
+        if doc is None:
+            try:
+                from ezdxf import recover  # noqa: PLC0415 — child-only import
+
+                doc, _auditor = recover.readfile(src)
+            except Exception:
+                doc = None
+        if doc is None:
+            sys.stderr.write("not DWG bytes and not parseable DXF\n")
+            return 1
+        converter = "none"
+    if doc is None:
+        dxf_a = os.path.join(outdir, "a.dxf")
+        # Tier 1 guarded: a missing binary (FileNotFoundError), a hung conversion
+        # (TimeoutExpired) or any other failure must fall THROUGH to ezdwg, not
+        # kill the child before the fallback ever runs.
+        try:
+            proc = subprocess.run(
+                ["dwg2dxf", "-o", dxf_a, src], capture_output=True, text=True, timeout=120
+            )
+            if proc.returncode == 0 and os.path.isfile(dxf_a):
+                doc = try_parse(dxf_a)
+                if doc is not None:
+                    converter = "dwg2dxf"
+        except Exception:
+            pass  # tier 2 decides
     if doc is None:
         # Tier 2 guarded too: the import (pre-DWG image), read() (unsupported
         # file) and export_dxf() can all raise — every failure takes the ONE

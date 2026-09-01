@@ -1,14 +1,19 @@
 /**
- * AutoCAD DWG → text digest, registry workbook, and model-space render.
+ * AutoCAD DWG/DXF → text digest, registry workbook, and model-space render.
  *
  * A `.dwg` is the LIVE drawing (unlike a `.dwf`, which is a published plot
- * set), and it is the one routed format this process cannot parse locally:
- * everything comes from ONE media-sidecar exchange (`mediaDwgRender`), whose
- * worker converts DWG→DXF (dwg2dxf primary, ezdwg fallback — the 2026-08-31
- * bake-off found real files each converter fails and the other saves) and
- * extracts with ezdxf. The three extractor passes (text digest, auto-table
- * workbook, image node) all consume the SAME memoised sidecar reply, so a
- * DWG costs one upload however many passes run.
+ * set); a `.dxf` is the same drawing in AutoCAD's interchange encoding
+ * (ASCII or binary). Both are routed formats this process cannot parse
+ * locally: everything comes from ONE media-sidecar exchange
+ * (`mediaDwgRender`), whose worker sniffs the bytes — DWG magic takes the
+ * converter chain (dwg2dxf primary, ezdwg fallback — the 2026-08-31 bake-off
+ * found real files each converter fails and the other saves), a DXF is read
+ * natively by ezdxf (converter "none") — and extracts with ezdxf either way.
+ * The three extractor passes (text digest, auto-table workbook, image node)
+ * all consume the SAME memoised sidecar reply, so a drawing costs one upload
+ * however many passes run. The `.dxf` public surface (parseDxf & co) lives
+ * in ./dxf.ts as thin re-exports of the wrappers defined here; the code path
+ * is this one file.
  *
  * Digest philosophy mirrors ./dwf.ts: small and text-shaped, indexes like one
  * document. Layers ordered by entity count; text labels deduped and kept by a
@@ -20,8 +25,9 @@
  * Failure honesty: no sidecar (or a pre-DWG image) throws a typed Error so
  * the extract shows a real error and a re-queue after enabling the sidecar
  * heals the node — silently indexing a filename would poison retrieval. The
- * only '' return is a sniff miss (not actually DWG bytes), which takes the
- * extractor's hollow-skip carve-out like a renamed DWFx does on the dwf route.
+ * only '' return is a sniff miss (not actually DWG/DXF bytes), which takes
+ * the extractor's hollow-skip carve-out like a renamed DWFx does on the dwf
+ * route.
  */
 import { createHash } from 'node:crypto';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
@@ -31,6 +37,38 @@ import type { ParsedSheet } from './sheet-to-grid';
 /** True when the bytes open with a DWG version magic (`AC1012`…`AC1032`). */
 export function sniffDwg(bytes: Buffer): boolean {
   return /^AC1\d{3}$/.test(bytes.subarray(0, 6).toString('latin1'));
+}
+
+/** The binary-DXF sentinel, byte-exact per the DXF reference. */
+const DXF_BINARY_SENTINEL = 'AutoCAD Binary DXF\r\n\x1a\x00';
+
+/**
+ * True when the bytes look like a DXF. Binary DXF is the fixed 22-byte
+ * sentinel. ASCII DXF is group-code/value line pairs from the top: the first
+ * non-comment pair must be `0` / `SECTION` (group codes may be space-padded;
+ * `999` pairs are comments and legitimately lead the file; a UTF-8 BOM is
+ * tolerated). A DWG (binary, starts `AC1…`) and arbitrary text both fail the
+ * pair check, which is the point — the '' hollow-skip path keys off this.
+ */
+export function sniffDxf(bytes: Buffer): boolean {
+  if (bytes.subarray(0, 22).toString('latin1') === DXF_BINARY_SENTINEL) return true;
+  const start = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? 3 : 0;
+  const lines = bytes
+    .subarray(start, start + 8192)
+    .toString('latin1')
+    .split(/\r?\n/);
+  for (let i = 0; i + 1 < lines.length; i += 2) {
+    if (lines[i]!.trim() === '999') continue; // leading comment pair
+    return lines[i]!.trim() === '0' && lines[i + 1]!.trim().toUpperCase() === 'SECTION';
+  }
+  return false;
+}
+
+/** The two formats this module serves; picks the sniff and the wording. */
+type CadFormat = 'DWG' | 'DXF';
+
+function sniffFor(format: CadFormat, bytes: Buffer): boolean {
+  return format === 'DWG' ? sniffDwg(bytes) : sniffDxf(bytes);
 }
 
 /** Human name for the release behind a DXF/DWG version code, when known. */
@@ -52,7 +90,8 @@ const DIGEST_LABEL_CHARS = 12_000;
 /** Row ceiling for the Texts tab of the auto-imported registry workbook. */
 const MAX_TEXT_ROWS = 20_000;
 
-/** Env dial for render sharpness, mirroring DWF_RENDER_DPI (docs there). */
+/** Env dial for render sharpness, mirroring DWF_RENDER_DPI (docs there).
+ *  One dial for DWG and DXF — same sidecar route, same rasteriser. */
 export function dwgRenderDpi(): number {
   const raw = Number(process.env.DWG_RENDER_DPI);
   if (!Number.isFinite(raw)) return 300;
@@ -103,37 +142,33 @@ function fetchDwgRender(bytes: Buffer) {
   return entry;
 }
 
-function requireSidecar(): void {
+function requireSidecar(format: CadFormat): void {
   if (!mediaSidecarEnabled()) {
     throw new Error(
-      'DWG extraction needs the media sidecar CAD tier (compose profile `media` + MEDIA_SIDECAR_TOKEN, image v0.232.99+); enable it and re-queue this file',
+      `${format} extraction needs the media sidecar CAD tier (compose profile \`media\` + MEDIA_SIDECAR_TOKEN, image v0.232.99+); enable it and re-queue this file`,
     );
   }
 }
 
-async function renderOrThrow(bytes: Buffer): Promise<DwgRender> {
-  requireSidecar();
+async function renderOrThrow(bytes: Buffer, format: CadFormat): Promise<DwgRender> {
+  requireSidecar(format);
   const res = await fetchDwgRender(bytes);
-  if (!res.ok) throw new Error(`DWG extraction failed (${res.code}): ${res.message}`);
+  if (!res.ok) throw new Error(`${format} extraction failed (${res.code}): ${res.message}`);
   return res.value;
 }
 
 /* ----------------------------------------------------------------- digest */
 
-/**
- * The indexable text digest. Returns '' only on a sniff miss (bytes are not
- * DWG — hollow-skip); throws when the sidecar is missing or the exchange
- * fails, so the node shows an honest extract error instead of junk.
- */
-export async function parseDwg(bytes: Buffer): Promise<string> {
-  if (!sniffDwg(bytes)) return '';
-  const r = await renderOrThrow(bytes);
+async function parseCad(bytes: Buffer, format: CadFormat): Promise<string> {
+  if (!sniffFor(format, bytes)) return '';
+  const r = await renderOrThrow(bytes, format);
   const out: string[] = [];
   const versionName = (r.version && VERSION_NAMES[r.version]) || null;
   out.push(
-    `AutoCAD DWG drawing${r.version ? ` (${r.version}${versionName ? ` / ${versionName}` : ''})` : ''} — ` +
+    `AutoCAD ${format} drawing${r.version ? ` (${r.version}${versionName ? ` / ${versionName}` : ''})` : ''} — ` +
       `${r.entities} model-space entities, ${r.layers.length} layers` +
-      `${r.capped ? ' (registry capped)' : ''}. Converted via ${r.converter}.`,
+      `${r.capped ? ' (registry capped)' : ''}. ` +
+      (r.converter === 'none' ? 'Parsed natively as DXF.' : `Converted via ${r.converter}.`),
   );
 
   const typeLine = Object.entries(r.counts)
@@ -173,6 +208,20 @@ export async function parseDwg(bytes: Buffer): Promise<string> {
   return out.join('\n');
 }
 
+/**
+ * The indexable text digest. Returns '' only on a sniff miss (bytes are not
+ * DWG — hollow-skip); throws when the sidecar is missing or the exchange
+ * fails, so the node shows an honest extract error instead of junk.
+ */
+export async function parseDwg(bytes: Buffer): Promise<string> {
+  return parseCad(bytes, 'DWG');
+}
+
+/** DXF twin of {@link parseDwg} — same contract, DXF sniff. */
+export async function parseDxf(bytes: Buffer): Promise<string> {
+  return parseCad(bytes, 'DXF');
+}
+
 /* ---------------------------------------------------------------- workbook */
 
 export type DwgGrids = {
@@ -183,13 +232,9 @@ export type DwgGrids = {
   capped: boolean;
 };
 
-/**
- * Registry workbook tabs for the auto-table pass: Layers, Texts (with model
- * coordinates — the geometry phase's feed), and entity-type Counts.
- */
-export async function parseDwgToGrids(bytes: Buffer): Promise<DwgGrids> {
-  if (!sniffDwg(bytes)) return { sheets: [], capped: false };
-  const r = await renderOrThrow(bytes);
+async function parseCadToGrids(bytes: Buffer, format: CadFormat): Promise<DwgGrids> {
+  if (!sniffFor(format, bytes)) return { sheets: [], capped: false };
+  const r = await renderOrThrow(bytes, format);
   const sheets: ParsedSheet[] = [];
   if (r.layers.length) {
     sheets.push({
@@ -227,16 +272,23 @@ export async function parseDwgToGrids(bytes: Buffer): Promise<DwgGrids> {
   return { sheets, capped: r.capped || r.texts.length > MAX_TEXT_ROWS };
 }
 
+/**
+ * Registry workbook tabs for the auto-table pass: Layers, Texts (with model
+ * coordinates — the geometry phase's feed), and entity-type Counts.
+ */
+export async function parseDwgToGrids(bytes: Buffer): Promise<DwgGrids> {
+  return parseCadToGrids(bytes, 'DWG');
+}
+
+/** DXF twin of {@link parseDwgToGrids} — same tabs, DXF sniff. */
+export async function parseDxfToGrids(bytes: Buffer): Promise<DwgGrids> {
+  return parseCadToGrids(bytes, 'DXF');
+}
+
 /* ------------------------------------------------------------------ images */
 
-/**
- * Why {@link extractDwgImages} came back empty for these bytes, answered from
- * the memos alone — NEVER a fresh sidecar exchange (this runs after the image
- * pass on the same bytes, so retrying here would double a failed upload).
- * Feeds the extractor's zero-candidate `extract_images` trace step.
- */
-export async function explainDwgImageMiss(bytes: Buffer): Promise<string> {
-  if (!sniffDwg(bytes)) return 'not DWG bytes (sniff miss)';
+async function explainCadImageMiss(bytes: Buffer, format: CadFormat): Promise<string> {
+  if (!sniffFor(format, bytes)) return `not ${format} bytes (sniff miss)`;
   if (!mediaSidecarEnabled()) {
     return 'media sidecar not enabled — no render tier on this box';
   }
@@ -257,13 +309,22 @@ export async function explainDwgImageMiss(bytes: Buffer): Promise<string> {
 }
 
 /**
- * The model-space render as a single essential image node. Unlike DWF there
- * is no thumbnail fallback tier inside the file: no sidecar (or a failed
- * render) yields [] and the file simply has no image child — the honest
- * outcome, and the extract-images trace records the reason upstream.
+ * Why {@link extractDwgImages} came back empty for these bytes, answered from
+ * the memos alone — NEVER a fresh sidecar exchange (this runs after the image
+ * pass on the same bytes, so retrying here would double a failed upload).
+ * Feeds the extractor's zero-candidate `extract_images` trace step.
  */
-export async function extractDwgImages(bytes: Buffer): Promise<EmbeddedImage[]> {
-  if (!sniffDwg(bytes)) return [];
+export async function explainDwgImageMiss(bytes: Buffer): Promise<string> {
+  return explainCadImageMiss(bytes, 'DWG');
+}
+
+/** DXF twin of {@link explainDwgImageMiss}. */
+export async function explainDxfImageMiss(bytes: Buffer): Promise<string> {
+  return explainCadImageMiss(bytes, 'DXF');
+}
+
+async function extractCadImages(bytes: Buffer, format: CadFormat): Promise<EmbeddedImage[]> {
+  if (!sniffFor(format, bytes)) return [];
   if (!mediaSidecarEnabled()) return [];
   const res = await fetchDwgRender(bytes);
   if (!res.ok || !res.value.png) return [];
@@ -280,4 +341,19 @@ export async function extractDwgImages(bytes: Buffer): Promise<EmbeddedImage[]> 
       provenance: 'sidecar_render',
     },
   ];
+}
+
+/**
+ * The model-space render as a single essential image node. Unlike DWF there
+ * is no thumbnail fallback tier inside the file: no sidecar (or a failed
+ * render) yields [] and the file simply has no image child — the honest
+ * outcome, and the extract-images trace records the reason upstream.
+ */
+export async function extractDwgImages(bytes: Buffer): Promise<EmbeddedImage[]> {
+  return extractCadImages(bytes, 'DWG');
+}
+
+/** DXF twin of {@link extractDwgImages}. */
+export async function extractDxfImages(bytes: Buffer): Promise<EmbeddedImage[]> {
+  return extractCadImages(bytes, 'DXF');
 }

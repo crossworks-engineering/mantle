@@ -378,10 +378,10 @@ export async function extractAttachmentForTurn(opts: {
       };
     }
 
-    // DWG parsing is a media-sidecar round trip (convert + parse + render) —
-    // never inline work for a live turn, whatever the file size. The durable
-    // extractor pays it once in the background.
-    if (ext === 'dwg') {
+    // DWG/DXF parsing is a media-sidecar round trip (convert/read + parse +
+    // render) — never inline work for a live turn, whatever the file size.
+    // The durable extractor pays it once in the background.
+    if (ext === 'dwg' || ext === 'dxf') {
       return {
         kind: 'file',
         text: '',

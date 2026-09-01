@@ -307,12 +307,13 @@ export function isHollowFilenameBody(opts: {
   rawBody: string;
   title: string;
 }): boolean {
-  // dwg joins dwf in the carve-out: both routes return '' on a sniff miss
-  // (a renamed DWFx, a mislabelled non-DWG) instead of parsing junk. Checked
-  // BEFORE the image-mime exemption: uploaders send `image/vnd.dwg` for DWGs,
-  // and a client-supplied mime must not shield a routed CAD sniff-miss from
-  // its honest skip (extension routing wins over claimed mime throughout).
-  if (opts.parserRoute === 'dwf' || opts.parserRoute === 'dwg') {
+  // dwg and dxf join dwf in the carve-out: all three routes return '' on a
+  // sniff miss (a renamed DWFx, a mislabelled non-DWG/DXF) instead of parsing
+  // junk. Checked BEFORE the image-mime exemption: uploaders send
+  // `image/vnd.dwg` / `image/vnd.dxf` for these, and a client-supplied mime
+  // must not shield a routed CAD sniff-miss from its honest skip (extension
+  // routing wins over claimed mime throughout).
+  if (opts.parserRoute === 'dwf' || opts.parserRoute === 'dwg' || opts.parserRoute === 'dxf') {
     return opts.rawBody.trim() === opts.title.trim();
   }
   if (opts.parserRoute !== 'none') return false;

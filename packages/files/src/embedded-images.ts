@@ -370,6 +370,10 @@ async function extractRaw(
   if (ext === 'dwg') {
     return (await import('./dwg')).extractDwgImages(bytes);
   }
+  // DXF drawings: same single render off the same sidecar exchange.
+  if (ext === 'dxf') {
+    return (await import('./dxf')).extractDxfImages(bytes);
+  }
   // Tier 2 — the legacy binaries. `xlsb` is a zip but an undocumented binary
   // one, so it goes to Tika too rather than getting a bespoke reader.
   if (TIKA_EXTS.has(ext) || ext === 'xlsb') {

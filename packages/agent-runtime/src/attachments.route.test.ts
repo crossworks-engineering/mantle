@@ -33,4 +33,16 @@ describe('extractAttachmentForTurn — ext routing beats client mime', () => {
     expect(out.text).toBe('');
     expect(out.note).toContain('indexed in the background');
   });
+
+  it('defers a DXF labelled image/vnd.dxf to the background extractor', async () => {
+    const out = await extractAttachmentForTurn({
+      ownerId: 'o-1',
+      bytes: Buffer.from('0\nSECTION\n2\nHEADER\n0\nENDSEC\n0\nEOF\n'),
+      mimeType: 'image/vnd.dxf',
+      filename: '90-10-02.dxf',
+    });
+    expect(out.kind).toBe('file');
+    expect(out.text).toBe('');
+    expect(out.note).toContain('indexed in the background');
+  });
 });

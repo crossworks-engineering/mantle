@@ -443,7 +443,7 @@ async function loadFileHead(node: typeof nodes.$inferSelect, n = 8192): Promise<
  *  `xml` earns its place only conditionally: most XML is not a plan, so the
  *  grid parse below sniffs the content and a non-MSPDI document falls straight
  *  back out to the ordinary text path. */
-const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv', 'xml', 'dwf', 'dwg']);
+const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv', 'xml', 'dwf', 'dwg', 'dxf']);
 
 /** Max TABLES a single auto-import will create (sheets × paginated parts). Each
  *  table is its own indexed node, so a huge or many-sheet workbook would fan out
@@ -547,16 +547,24 @@ async function maybeAutoTableSpreadsheet(
           ` sheets. Vector geometry is not in this table — fetch the Source DWG named` +
           ` per row in Sheets for measurements.`;
       }
-    } else if (fileExt === 'dwg') {
-      // DWG drawings: the registry workbook (Layers / Texts / Counts tabs)
-      // from @mantle/files/dwg — sidecar-parsed, so this pass shares the one
-      // memoised exchange with the text digest and the image pass. Texts
-      // keeps model coordinates: on drawings with no DIMENSION entities (the
-      // bake-off norm) the text layer IS the annotation data.
-      const { sniffDwg, parseDwgToGrids } = await import('@mantle/files/dwg');
-      const grids = sniffDwg(loaded.bytes)
-        ? await parseDwgToGrids(loaded.bytes)
-        : { sheets: [], capped: false };
+    } else if (fileExt === 'dwg' || fileExt === 'dxf') {
+      // DWG/DXF drawings: the registry workbook (Layers / Texts / Counts
+      // tabs) from @mantle/files/{dwg,dxf} — sidecar-parsed, so this pass
+      // shares the one memoised exchange with the text digest and the image
+      // pass. Texts keeps model coordinates: on drawings with no DIMENSION
+      // entities (the bake-off norm) the text layer IS the annotation data.
+      let grids: import('@mantle/files/dwg').DwgGrids;
+      if (fileExt === 'dwg') {
+        const { sniffDwg, parseDwgToGrids } = await import('@mantle/files/dwg');
+        grids = sniffDwg(loaded.bytes)
+          ? await parseDwgToGrids(loaded.bytes)
+          : { sheets: [], capped: false };
+      } else {
+        const { sniffDxf, parseDxfToGrids } = await import('@mantle/files/dxf');
+        grids = sniffDxf(loaded.bytes)
+          ? await parseDxfToGrids(loaded.bytes)
+          : { sheets: [], capped: false };
+      }
       sheets = grids.sheets;
       if (sheets.length > 0) {
         // Honesty over confidence: a capped registry must not claim "every".
@@ -565,7 +573,7 @@ async function maybeAutoTableSpreadsheet(
             ` its cap — the drawing carries more)`
           : `Texts is every annotation string`;
         description =
-          `AutoCAD DWG model-space registry. Layers counts entities per layer;` +
+          `AutoCAD ${fileExt.toUpperCase()} model-space registry. Layers counts entities per layer;` +
           ` ${textsClaim} with its layer and model-space X/Y` +
           ` (drawing units); Counts totals entities by type. Vector geometry` +
           ` beyond text positions is not in this table.`;
@@ -574,13 +582,13 @@ async function maybeAutoTableSpreadsheet(
       sheets = await parseSpreadsheetToGrid(loaded.bytes, fileExt);
     }
   } catch (err) {
-    // DWG: the workbook, the text digest and the image pass all hang off the
-    // SAME sidecar exchange. A transient sidecar failure here used to vanish
-    // (`return`), the text pass then succeeded against a recovered sidecar,
-    // and the node completed WITHOUT its registry table, permanently and
-    // silently. Rethrow (flagged for the call site) so the whole extract
+    // DWG/DXF: the workbook, the text digest and the image pass all hang off
+    // the SAME sidecar exchange. A transient sidecar failure here used to
+    // vanish (`return`), the text pass then succeeded against a recovered
+    // sidecar, and the node completed WITHOUT its registry table, permanently
+    // and silently. Rethrow (flagged for the call site) so the whole extract
     // errors and the pg-boss retry heals all passes together.
-    if (fileExt === 'dwg') {
+    if (fileExt === 'dwg' || fileExt === 'dxf') {
       const e = err instanceof Error ? err : new Error(String(err));
       throw Object.assign(e, { fatalToExtract: true });
     }
@@ -596,7 +604,7 @@ async function maybeAutoTableSpreadsheet(
   const toTab = sheets.slice(0, MAX_AUTO_TABLE_TABLES);
   const skipped = sheets.length - toTab.length;
   const base =
-    loaded.filename.replace(/\.(xlsx|xls|csv|xml|dwf|dwg)$/i, '').trim() || 'Imported table';
+    loaded.filename.replace(/\.(xlsx|xls|csv|xml|dwf|dwg|dxf)$/i, '').trim() || 'Imported table';
   await step(
     {
       name: 'auto_table',
@@ -669,6 +677,8 @@ const IMAGE_BEARING_EXTS = new Set([
   'dwf',
   // DWG drawings: one essential model-space render from the sidecar.
   'dwg',
+  // DXF drawings: same single render off the same sidecar exchange.
+  'dxf',
 ]);
 
 /** Tag marking a file node as derived from a document rather than uploaded.
@@ -804,7 +814,7 @@ async function maybeExtractEmbeddedImages(
           h.setMeta({ candidates: result.candidates, kept: 0, rejected: result.rejected });
         },
       );
-    } else if (ext === 'dwg' || ext === 'dwf') {
+    } else if (ext === 'dwg' || ext === 'dxf' || ext === 'dwf') {
       // CAD formats are different from a manual with no pictures: a drawing
       // ALWAYS has renderable content, so zero candidates means the render
       // tier failed (sidecar down/missing, render error) — invisible before
@@ -813,7 +823,9 @@ async function maybeExtractEmbeddedImages(
       const reason =
         ext === 'dwg'
           ? await (await import('@mantle/files/dwg')).explainDwgImageMiss(loaded.bytes)
-          : 'no sheets rendered and no embedded thumbnails found';
+          : ext === 'dxf'
+            ? await (await import('@mantle/files/dxf')).explainDxfImageMiss(loaded.bytes)
+            : 'no sheets rendered and no embedded thumbnails found';
       await stepInOwnTrace(
         ownerId,
         node,
@@ -1225,12 +1237,12 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
         );
         if (text.trim().length > 0) return cleanText(text);
       } catch (err) {
-        // DWG has NO local parser: a throw here means the media sidecar is
-        // missing or the exchange failed — a title fallback would record a
+        // DWG/DXF have NO local parser: a throw here means the media sidecar
+        // is missing or the exchange failed — a title fallback would record a
         // terminal `no_parser` skip telling the user to convert the file,
         // which is false (the fix is enabling the CAD tier). Rethrow so the
         // extract errors for real and pg-boss retries heal the node.
-        if (route === 'dwg') throw err;
+        if (route === 'dwg' || route === 'dxf') throw err;
         // Parse / read failed. The step (if it opened) already recorded the
         // error; fall through to the title.
       }
@@ -2146,7 +2158,7 @@ async function loadExtractableBody(
         // .dwg" would be false, and a sidecar failure never reaches this
         // guard (it throws upstream as a real, retryable extract error).
         hint:
-          fileExt === 'dwg' || fileExt === 'dwf'
+          fileExt === 'dwg' || fileExt === 'dxf' || fileExt === 'dwf'
             ? `The file is named .${fileExt} but does not contain readable ${fileExt.toUpperCase()} data (a renamed or mislabelled format?). Nothing to index beyond the filename — re-export it from the CAD tool and re-upload.`
             : `No parser reads .${fileExt || 'unknown'} files, so there is nothing to index beyond the filename. Convert the file to a supported format (pdf, docx, xlsx, text) and re-upload to make its content searchable.`,
       },

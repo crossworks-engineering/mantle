@@ -303,7 +303,7 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
             body: {
               error:
                 `unsupported file type '${file.type || ext || 'unknown'}'. ` +
-                'Supported: images, and documents (pdf, docx, xlsx, csv, txt, md, json, yaml, dwf).',
+                'Supported: images, and documents (pdf, docx, xlsx, csv, txt, md, json, yaml, dwf, dwg, dxf).',
             },
           };
         }

@@ -140,7 +140,7 @@ export async function POST(req: Request): Promise<NextResponse> {
             {
               error:
                 `unsupported file type '${file.type || ext || 'unknown'}'. ` +
-                'Supported: images, and documents (pdf, docx, xlsx, csv, txt, md, json, yaml, dwf).',
+                'Supported: images, and documents (pdf, docx, xlsx, csv, txt, md, json, yaml, dwf, dwg, dxf).',
             },
             { status: 415 },
           );

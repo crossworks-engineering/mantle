@@ -124,10 +124,14 @@ export const INGESTABLE_EXTS = new Set<string>([
   // Autodesk DWF drawing sets (published plots). In-process parser — see
   // ./dwf.ts. Yields the metadata + layer/label digest, not vector geometry.
   'dwf',
-  // AutoCAD DWG drawings. Sidecar-parsed — see ./dwg.ts. The one ingestable
-  // format with no local parser: boxes without the media CAD tier get an
-  // honest extract error, not a filename index.
+  // AutoCAD DWG drawings. Sidecar-parsed — see ./dwg.ts. No local parser:
+  // boxes without the media CAD tier get an honest extract error, not a
+  // filename index.
   'dwg',
+  // AutoCAD DXF drawings (the DWG interchange twin). Same sidecar route and
+  // machinery — see ./dxf.ts. Deliberately NOT in TEXT_EXTS even though
+  // ASCII DXF is text: raw group codes would index as garbage.
+  'dxf',
   ...TIKA_EXTS,
 ]);
 
@@ -194,7 +198,7 @@ export const EXPORT_REQUIRED_EXTS = new Map<string, string>([
   // dialog, so the honest move is to name it.
   [
     'dwfx',
-    'DWFx drawings use a different container than the classic DWF Mantle can read. In AutoCAD plot/publish again choosing the "DWF" (not DWFx) format and upload that — or upload the source DWG/DXF once CAD ingestion supports it.',
+    'DWFx drawings use a different container than the classic DWF Mantle can read. In AutoCAD plot/publish again choosing the "DWF" (not DWFx) format and upload that — or upload the source DWG or DXF directly, both ingest.',
   ],
 ]);
 
@@ -221,6 +225,8 @@ export type ParserRoute =
   | 'dwf'
   /** AutoCAD DWG: sidecar-converted registry digest (./dwg.ts). */
   | 'dwg'
+  /** AutoCAD DXF: same sidecar registry digest, read natively (./dxf.ts). */
+  | 'dxf'
   | 'tika'
   | 'none';
 export function parserRouteForExt(ext: string): ParserRoute {
@@ -230,6 +236,7 @@ export function parserRouteForExt(ext: string): ParserRoute {
   if (ext === 'xlsx' || ext === 'xlsm') return 'exceljs';
   if (ext === 'dwf') return 'dwf';
   if (ext === 'dwg') return 'dwg';
+  if (ext === 'dxf') return 'dxf';
   if (TEXT_EXTS.has(ext)) return 'utf8';
   if (TIKA_EXTS.has(ext)) return 'tika';
   return 'none';
@@ -326,6 +333,10 @@ export function mimeForExt(ext: string): string {
       // viewable raster, and every mime.startsWith('image/') path (hollow
       // guard, previews, vision ingest) would mishandle it.
       return 'application/acad';
+    case 'dxf':
+      // Same reasoning as dwg: NEVER the also-registered image/vnd.dxf —
+      // every image-mime path would misroute the drawing.
+      return 'application/dxf';
     // ── Audio. These arrive constantly (Telegram voice notes are ogg/opus,
     // the transcriber's clips are m4a) and all fell through to octet-stream,
     // which made every media file render as a generic binary in the client.

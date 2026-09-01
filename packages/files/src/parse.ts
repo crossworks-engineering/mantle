@@ -64,6 +64,16 @@ export async function parseDocumentBytes(bytes: Buffer, ext: string): Promise<st
     if (!sniffDwg(bytes)) return '';
     return parseDwg(bytes);
   }
+  // AutoCAD DXF: the DWG interchange twin, same sidecar exchange (the worker
+  // reads a DXF natively — converter "none") and the same contract: '' on a
+  // sniff miss (hollow skip), THROW when the sidecar is missing or fails.
+  // ASCII DXF is text but must never take the utf8 tier — raw group codes
+  // index as garbage, which is why 'dxf' stays out of TEXT_EXTS.
+  if (ext === 'dxf') {
+    const { sniffDxf, parseDxf } = await import('./dxf');
+    if (!sniffDxf(bytes)) return '';
+    return parseDxf(bytes);
+  }
   // `.xml` is a container, not a format — routing by extension alone would send
   // a Project plan through a generic text parser and lose every task name. So
   // this one branches on CONTENT: sniff the root element, and only a document

@@ -342,6 +342,11 @@ describe('isVisionImage (ext routing beats client-supplied mime)', () => {
     expect(isVisionImage('dwg', 'image/vnd.dwg')).toBe(false);
   });
 
+  it('a DXF upload claiming image/vnd.dxf stays on the dxf route, never vision', () => {
+    // image/vnd.dxf is the registered alias clients send; same trap as dwg.
+    expect(isVisionImage('dxf', 'image/vnd.dxf')).toBe(false);
+  });
+
   it('no ingestable extension ever routes to vision, whatever the mime claims', () => {
     for (const ext of INGESTABLE_EXTS) {
       expect(isVisionImage(ext, 'image/png'), `${ext} must keep its parser route`).toBe(false);
