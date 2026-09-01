@@ -1193,39 +1193,74 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     }
 
     png = os.path.join(outdir, "model.png")
-    try:
-        fig = plt.figure(figsize=(16, 10))
-        ax = fig.add_axes([0, 0, 1, 1])
-        ax.set_axis_off()
-        Frontend(RenderContext(doc), MatplotlibBackend(ax)).draw_layout(msp, finalize=True)
-        # figsize is fixed (16×10in = 160 in²), so the output-pixel cap maps
-        # straight to a dpi ceiling — clamp BEFORE the first savefig instead
-        # of paying a ~230 MB over-budget render only to redo it smaller. The
-        # measured guard below stays as the backstop for a layout change.
-        eff_dpi = min(dpi, max(50, int((max_pixels / 160) ** 0.5)))
-        fig.savefig(png, dpi=eff_dpi)
-        with open(png, "rb") as f:
-            head = f.read(24)
-        if head[:8] == b"\x89PNG\r\n\x1a\n":
-            pixels = int.from_bytes(head[16:20], "big") * int.from_bytes(head[20:24], "big")
-            if pixels > max_pixels:
-                # Nested guard: a failed DOWNSCALE must not delete the good
-                # first render — only a genuinely unusable output is removed.
-                try:
-                    fig.savefig(png, dpi=max(50, int(eff_dpi * (max_pixels / pixels) ** 0.5)))
-                except Exception:
-                    pass  # keep the over-budget-but-valid first PNG
-    except Exception as err:
-        # Registry without pixels still ships; the parent tolerates a missing
-        # model.png. The reason is recorded so the app side can say WHY the
-        # drawing has no image child instead of silently emitting nothing.
-        index["render_error"] = f"{type(err).__name__}: {err}"[:500]
+
+    def render_png(document) -> str | None:
+        """Raster `document`'s model space to model.png. Returns None on
+        success, the error string on failure (with any partial PNG removed)."""
         try:
-            os.unlink(png)
-        except OSError:
-            pass
-    finally:
-        plt.close("all")
+            fig = plt.figure(figsize=(16, 10))
+            ax = fig.add_axes([0, 0, 1, 1])
+            ax.set_axis_off()
+            Frontend(RenderContext(document), MatplotlibBackend(ax)).draw_layout(
+                document.modelspace(), finalize=True
+            )
+            # figsize is fixed (16×10in = 160 in²), so the output-pixel cap maps
+            # straight to a dpi ceiling — clamp BEFORE the first savefig instead
+            # of paying a ~230 MB over-budget render only to redo it smaller. The
+            # measured guard below stays as the backstop for a layout change.
+            eff_dpi = min(dpi, max(50, int((max_pixels / 160) ** 0.5)))
+            fig.savefig(png, dpi=eff_dpi)
+            with open(png, "rb") as f:
+                head = f.read(24)
+            if head[:8] == b"\x89PNG\r\n\x1a\n":
+                pixels = int.from_bytes(head[16:20], "big") * int.from_bytes(head[20:24], "big")
+                if pixels > max_pixels:
+                    # Nested guard: a failed DOWNSCALE must not delete the good
+                    # first render — only a genuinely unusable output is removed.
+                    try:
+                        fig.savefig(png, dpi=max(50, int(eff_dpi * (max_pixels / pixels) ** 0.5)))
+                    except Exception:
+                        pass  # keep the over-budget-but-valid first PNG
+            return None
+        except Exception as err:
+            try:
+                os.unlink(png)
+            except OSError:
+                pass
+            return f"{type(err).__name__}: {err}"[:500]
+        finally:
+            plt.close("all")
+
+    # Registry without pixels still ships; the parent tolerates a missing
+    # model.png. The reason is recorded so the app side can say WHY the
+    # drawing has no image child instead of silently emitting nothing.
+    render_error = render_png(doc)
+
+    if render_error is not None and converter == "dwg2dxf":
+        # The registry parsed but the RENDER failed: dwg2dxf can emit a DXF
+        # that parses yet is missing block DEFINITIONS the renderer needs
+        # (anonymous "*U" blocks on real drawings). ezdwg's own export keeps
+        # them — retry the render ONCE from its DXF. The registry above stays
+        # from the first parse (already extracted, caps applied); only the
+        # pixels change provenance, recorded as `render_converter`.
+        try:
+            import ezdwg  # noqa: PLC0415 — fallback tier; absent on pre-DWG images
+
+            dxf_b = os.path.join(outdir, "b.dxf")
+            if not os.path.isfile(dxf_b):
+                ezdwg.read(src).export_dxf(dxf_b)
+            doc_b = try_parse(dxf_b)
+            if doc_b is not None:
+                retry_error = render_png(doc_b)
+                if retry_error is None:
+                    render_error = None
+                    index["render_converter"] = "ezdwg"
+                else:
+                    render_error = f"{render_error} (ezdwg render retry: {retry_error})"[:500]
+        except Exception:
+            pass  # keep the original render_error — the retry is best-effort
+
+    index["render_error"] = render_error
 
     with open(os.path.join(outdir, "index.json"), "w", encoding="utf-8") as f:
         json.dump(index, f)

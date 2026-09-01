@@ -543,6 +543,10 @@ export type DwgRender = {
   /** Why the render step failed, when it did — the reply is still ok:true
    *  (the registry shipped), but the missing image is explainable. */
   renderError: string | null;
+  /** Set when the PIXELS came from a different converter than the registry:
+   *  dwg2dxf's DXF can parse yet miss block definitions the renderer needs,
+   *  and the worker then retries the render once from ezdwg's DXF. */
+  renderConverter: 'ezdwg' | null;
 };
 
 // Mirror of TIMEOUT_DWG_RENDER in app.py, same +30s backstop convention.
@@ -653,6 +657,7 @@ export async function mediaDwgRender(
           png,
           renderError:
             typeof body.render_error === 'string' && body.render_error ? body.render_error : null,
+          renderConverter: body.render_converter === 'ezdwg' ? 'ezdwg' : null,
         },
       };
     },

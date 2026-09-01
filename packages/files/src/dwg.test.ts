@@ -250,3 +250,39 @@ describe('extractDwgImages', () => {
     }
   });
 });
+
+describe('render retry provenance (render_converter)', () => {
+  it('parses renderConverter when the pixels came from the ezdwg retry', async () => {
+    // Worker semantics: registry from dwg2dxf's DXF, render retried from
+    // ezdwg's DXF after a block-definition failure — the reply carries both
+    // the primary converter and the render's provenance.
+    stubSidecar({ ...sidecarReply(), render_converter: 'ezdwg' });
+    try {
+      const { mediaDwgRender } = await import('./media-sidecar');
+      const res = await mediaDwgRender(dwgFixture(13));
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.value.converter).toBe('dwg2dxf');
+        expect(res.value.renderConverter).toBe('ezdwg');
+        expect(res.value.png).not.toBeNull();
+      }
+      // The image pass ships the render like any other.
+      expect(await extractDwgImages(dwgFixture(13))).toHaveLength(1);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('renderConverter stays null on a first-shot render', async () => {
+    stubSidecar();
+    try {
+      const { mediaDwgRender } = await import('./media-sidecar');
+      const res = await mediaDwgRender(dwgFixture(14));
+      expect(res.ok && res.value.renderConverter).toBe(null);
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+});
