@@ -95,6 +95,39 @@ describe('bridging the content groups changed the implementation, not the surfac
   });
 });
 
+describe('CLI sandboxes are on the MCP surface', () => {
+  // The contained shell is the ONE command-execution path an MCP client gets.
+  // Before this it had none, and a client asked to work in a sandbox could only
+  // report that no such tool existed — the brain's own coder agent held the
+  // group, nothing else did. Pin the whole group so a future group edit cannot
+  // silently drop one verb (an exec you can start but not stop is worse than
+  // no exec at all).
+  const SANDBOX_SLUGS = [
+    'sandbox_create',
+    'sandbox_exec',
+    'sandbox_list',
+    'sandbox_stop',
+    'sandbox_rm',
+    'sandbox_export',
+    'sandbox_publish',
+    'sandbox_mcp_tools',
+    'sandbox_mcp_call',
+  ];
+
+  it('exposes every sandbox verb', () => {
+    const registered = surface();
+    expect(SANDBOX_SLUGS.filter((slug) => !registered.has(slug))).toEqual([]);
+  });
+
+  it("does not expose the server's own shell", () => {
+    // run_terminal acts on the brain's container — postgres, minio, the file
+    // store, the master key. `sandbox_exec` is its contained sibling and is the
+    // only reason this surface can run a command at all. Bridging TERMINAL_TOOLS
+    // would be a separate product decision, never a side effect.
+    expect(surface().has('run_terminal')).toBe(false);
+  });
+});
+
 describe('bridged tools run their declared preconditions', () => {
   it('answers a non-id argument with the teaching error, not a bare not-found', async () => {
     // contact_get declares an `id` precondition of nodeType 'contact'. A

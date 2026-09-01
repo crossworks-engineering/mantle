@@ -11,8 +11,11 @@
  * fresh server and registers them. The owner is a TRUSTED input here — each
  * transport authenticates and resolves it (stdio: the single local owner; HTTP:
  * the OAuth bearer) BEFORE calling in. No tool is more dangerous over HTTP than
- * over stdio (no shell tool is exposed); the new exposure is purely that the
- * surface is reachable over the network, which the transport's auth gates.
+ * over stdio (the server's own shell, `run_terminal`, is NOT exposed — the only
+ * command execution here is `sandbox_exec`, which runs inside an isolated
+ * container with no route to postgres, minio or the web tier); the new exposure
+ * is purely that the surface is reachable over the network, which the
+ * transport's auth gates.
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
@@ -83,6 +86,7 @@ import {
   EMAIL_TOOLS,
   FILE_MANAGE_TOOLS,
   RECALL_TOOLS,
+  SANDBOX_TOOLS,
 } from '@mantle/tools';
 import type { BuiltinToolDef } from '@mantle/tools';
 import {
@@ -1628,6 +1632,20 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
   // The app reaches owner data only through its declared tool allowlist — pair
   // this with the Toolsmith tools below to mint the data-access tools an app needs.
   registerBuiltinTools(APP_TOOLS);
+
+  // ─── CLI sandboxes ────────────────────────────────────────────────────────────
+  // Isolated Ubuntu containers the client can work in: clone a repo and explain
+  // it, evaluate a package, build and run a small service. This is the ONE place
+  // an MCP client gets command execution, and it is deliberately the contained
+  // one: `run_terminal` (the brain's own shell) stays off this surface, while
+  // `sandbox_exec` runs inside a container on an egress-only network with no
+  // route to postgres, minio or the web tier (docs/sandboxes.md).
+  //
+  // Bridged unconditionally, exactly as the in-app coder agent holds them: the
+  // handlers already answer "sandboxes are not enabled on this box" when the
+  // `sandboxes` compose profile is off, so a box without sandboxd gives the
+  // client a clear reason instead of a missing tool it cannot ask about.
+  registerBuiltinTools(SANDBOX_TOOLS);
 
   // ─── Toolsmith ───────────────────────────────────────────────────────────────
   // Writes gated behind MANTLE_MCP_TOOLSMITH_WRITE (see TOOLSMITH_WRITE_SLUGS).

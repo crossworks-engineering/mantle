@@ -144,6 +144,7 @@ If instead you see `No account yet`, sign up in the web app first. If
 | Operator | `pending_list` / `pending_get` / `pending_approve` / `pending_reject` |
 | Federation | `peer_list`, `peer_query`, `peer_node_get` |
 | Responder | `ask_responder` (ask a responder; it answers with its real persona + tools), `ask_as_responder` (adopt its persona and answer yourself) |
+| Sandboxes | `sandbox_create` / `sandbox_exec` / `sandbox_list` / `sandbox_stop` / `sandbox_rm` / `sandbox_export` / `sandbox_publish` / `sandbox_mcp_*` — isolated Ubuntu containers to run code in (docs/sandboxes.md). The brain's own shell (`run_terminal`) is deliberately NOT exposed; a sandbox has no route to postgres, minio or the web tier. Needs the `sandboxes` compose profile on the box, and says so plainly when it is off. |
 
 Things to try: *"search my Mantle for …"*, *"any unanswered Telegram
 messages? draft replies"*, *"what do I know about \<person\>?"*, *"log a
