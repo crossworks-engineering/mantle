@@ -30,12 +30,13 @@ import http from 'node:http';
 import net from 'node:net';
 import { execFile } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import { chown, mkdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import * as docker from './docker';
 import * as mcp from './mcp';
 import { startEgressProxy } from './egress';
+import { resolveImportPath } from './paths';
 
 const execFileP = promisify(execFile);
 
@@ -67,6 +68,7 @@ const IDLE_STOP_MINUTES = Number(process.env.SANDBOX_IDLE_STOP_MINUTES || 60);
  *  keep working — the budget guards the box, it never deletes work). */
 const DISK_BUDGET_BYTES = Number(process.env.SANDBOX_DISK_BUDGET_BYTES || 10 * 1024 ** 3);
 const EXPORT_MAX_BYTES = Number(process.env.SANDBOX_EXPORT_MAX_BYTES || 100 * 1024 * 1024);
+const IMPORT_MAX_BYTES = Number(process.env.SANDBOX_IMPORT_MAX_BYTES || 100 * 1024 * 1024);
 
 const LABEL = 'mantle.sandbox';
 const label = (id: string) => `${LABEL}.id=${id}`;
@@ -113,6 +115,28 @@ async function readBody(req: http.IncomingMessage): Promise<Record<string, unkno
   } catch {
     throw new HttpError(400, 'body must be JSON');
   }
+}
+
+/**
+ * Raw body for the ONE route whose payload is a file, not a document.
+ * `readBody` caps at 1 MB and parses JSON; an import is megabytes of binary,
+ * and base64 inside JSON would inflate it by a third and hold two copies. So
+ * the bytes ride the body as-is and the metadata rides the query string.
+ */
+async function readRawBody(req: http.IncomingMessage, maxBytes: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const c of req) {
+    size += (c as Buffer).length;
+    if (size > maxBytes) {
+      throw new HttpError(
+        413,
+        `body is over the ${Math.round(maxBytes / 1024 ** 2)} MB import cap — split the file, or raise SANDBOX_IMPORT_MAX_BYTES on the box`,
+      );
+    }
+    chunks.push(c as Buffer);
+  }
+  return Buffer.concat(chunks);
 }
 
 async function findContainer(id: string): Promise<docker.ContainerSummary> {
@@ -375,6 +399,100 @@ async function exportSandbox(id: string, body: Record<string, unknown>): Promise
   }
 }
 
+/**
+ * Import: the mirror of `exportSandbox`, and the reason a sandbox stops being
+ * write-only. Work could always come OUT (export tars a path into the Files
+ * workspace) but nothing could go IN, so any job that STARTS from a file — a
+ * database, a spreadsheet, a drawing set — needed someone with shell access on
+ * the box. That is exactly the person a specialist using Mantle does not have.
+ *
+ * No container round-trip: sandboxd already bind-mounts the sandbox's host dir
+ * at the same path it hands the daemon, so the write is an ordinary host write
+ * into `filesDir(id)`. That keeps binaries byte-exact (a base64 hop through
+ * `sandbox_exec` would be ~1.4x the bytes across dozens of calls, and would
+ * corrupt a Jet/ACE database silently rather than loudly) and works whether or
+ * not the container is running.
+ *
+ * The file is chowned to uid 1000 to match what stop/rm hand back, so the
+ * sandbox user can read it without a root step of its own.
+ */
+async function importSandbox(
+  id: string,
+  relPathRaw: string,
+  bytes: Buffer,
+): Promise<{ path: string; sizeBytes: number }> {
+  // Containment lives in paths.ts so it can be tested without the daemon.
+  let rel: string;
+  let dest: string;
+  try {
+    ({ rel, dest } = resolveImportPath(filesDir(id), relPathRaw));
+  } catch (e) {
+    throw new HttpError(400, (e as Error).message);
+  }
+
+  const used = await usedBytes().catch(() => 0);
+  if (used + bytes.length > DISK_BUDGET_BYTES) {
+    throw new HttpError(
+      409,
+      `importing ${Math.round(bytes.length / 1024 ** 2)} MB would pass the sandbox disk budget (${Math.round(used / 1024 ** 2)} MB used of ${Math.round(DISK_BUDGET_BYTES / 1024 ** 2)} MB) — free space with sandbox_rm and purge_files, or raise SANDBOX_DISK_BUDGET_BYTES`,
+    );
+  }
+
+  // The sandbox need not be running: /files is a host directory, so an import
+  // into a stopped (idle-stopped) sandbox lands correctly and is there when the
+  // next exec wakes it. Confirm the sandbox EXISTS, though — writing into the
+  // dir of a removed sandbox would silently recreate it.
+  await findContainer(id);
+
+  await mkdir(path.dirname(dest), { recursive: true });
+  await writeFile(dest, bytes);
+  await chown(dest, 1000, 1000).catch(() => {
+    // Non-fatal: on a box where sandboxd is not root the file is still there
+    // and readable; only the owner differs.
+  });
+  markActive(id);
+  return { path: `/files/${rel}`, sizeBytes: bytes.length };
+}
+
+/**
+ * Fetch ONE file out of a sandbox as itself, not as an archive.
+ *
+ * `exportSandbox` tars, which is right for a tree and wrong for the commonest
+ * case: a specialist asks for the report and gets `report.tgz`, which on a
+ * locked-down laptop they may not be able to open at all. Same host-side read
+ * as the import, same containment check, so a single artifact comes back with
+ * its own name and type. Directories still go through the tar path.
+ */
+async function fetchSandboxFile(id: string, relPathRaw: string): Promise<Buffer> {
+  let dest: string;
+  try {
+    ({ dest } = resolveImportPath(filesDir(id), relPathRaw));
+  } catch (e) {
+    throw new HttpError(400, (e as Error).message);
+  }
+  await findContainer(id);
+  let st;
+  try {
+    st = await stat(dest);
+  } catch {
+    throw new HttpError(
+      404,
+      `no such file: ${relPathRaw} — list what is there with sandbox_exec (ls) and re-issue`,
+    );
+  }
+  if (st.isDirectory()) {
+    throw new HttpError(400, `${relPathRaw} is a directory — omit raw to export it as a .tgz`);
+  }
+  if (st.size > EXPORT_MAX_BYTES) {
+    throw new HttpError(
+      413,
+      `file is ${Math.round(st.size / 1024 ** 2)} MB, over the ${Math.round(EXPORT_MAX_BYTES / 1024 ** 2)} MB cap`,
+    );
+  }
+  markActive(id);
+  return await readFile(dest);
+}
+
 async function execSandbox(id: string, body: Record<string, unknown>) {
   const command = typeof body.command === 'string' ? body.command : '';
   if (!command.trim()) throw new HttpError(400, 'command is required');
@@ -527,8 +645,21 @@ const server = http.createServer(async (req, res) => {
         }
         return send(200, { result });
       }
+      // Import takes the file as the RAW body (metadata rides the query
+      // string), so it cannot go through `readBody`'s JSON + 1 MB path.
+      if (req.method === 'POST' && seg[2] === 'import') {
+        const rel = url.searchParams.get('path') ?? '';
+        const bytes = await readRawBody(req, IMPORT_MAX_BYTES);
+        if (!bytes.length) throw new HttpError(400, 'body is empty — nothing to import');
+        return send(200, await importSandbox(id, rel, bytes));
+      }
       if (req.method === 'POST' && seg[2] === 'export') {
-        const bytes = await exportSandbox(id, await readBody(req));
+        const body = await readBody(req);
+        // raw: one file, as itself. Anything else still tars.
+        const bytes =
+          body.raw === true
+            ? await fetchSandboxFile(id, typeof body.path === 'string' ? body.path : '')
+            : await exportSandbox(id, body);
         res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Length': bytes.length });
         return res.end(bytes);
       }

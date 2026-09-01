@@ -113,6 +113,7 @@ describe('CLI sandboxes are on the MCP surface', () => {
     'sandbox_stop',
     'sandbox_rm',
     'sandbox_export',
+    'sandbox_import',
     'sandbox_publish',
     'sandbox_mcp_tools',
     'sandbox_mcp_call',

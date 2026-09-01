@@ -13,8 +13,19 @@ The container is disposable; the work is not. Every sandbox owns a host
 directory (`$MANTLE_SANDBOXES_HOST_DIR/<id>/files`), bind-mounted at `/files`
 and used as the default working directory. It survives `sandbox_rm` unless
 explicitly purged, is handed back to uid 1000 on stop/rm so the owner can
-copy or delete it without root, and can be snapshotted into the Files
-workspace with `sandbox_export`.
+copy or delete it without root, and moves both ways against the Files
+workspace: `sandbox_export` snapshots work out, `sandbox_import` puts a file
+in.
+
+**Work that starts from a file.** A specialist with a database, a spreadsheet
+or a drawing set has no shell on the box, and should not need one. They upload
+through the web UI like any other file; `sandbox_import` then places it in
+`/files` byte for byte. Never route a binary through `sandbox_exec` and
+base64: it is ~1.4x the bytes across dozens of calls and corrupts silently.
+If the file is only a payload and its text is worthless in the index (a 14 MB
+Access binary, say), set its folder to metadata-only with
+`folder_set_indexing` first — storing and indexing are separate choices, and
+that one skips extraction cost without giving up storage or search by name.
 
 ## Enabling
 
@@ -96,7 +107,8 @@ say why rather than appear to lack the capability.
 | `sandbox_exec` | run a bash command; `run_terminal`'s exact timeout/output/trace discipline |
 | `sandbox_list` | rows merged with live state + disk usage |
 | `sandbox_stop` / `sandbox_rm` | stop (keeps everything) / remove (keeps `/files` unless `purge_files`; confirm-gated) |
-| `sandbox_export` | tar a `/files` path into `files/sandbox-exports/` (100 MB cap) |
+| `sandbox_export` | tar a `/files` path into `files/sandbox-exports/` (100 MB cap); `raw: true` brings ONE file out under its own name instead |
+| `sandbox_import` | copy a Files-workspace file into `/files`, byte for byte (100 MB cap); works on a stopped sandbox |
 | `sandbox_publish` | declare a service port; creates an integration tool group bound to the proxy |
 | `sandbox_mcp_tools` / `sandbox_mcp_call` | the in-sandbox Claude Code toolbelt over MCP |
 

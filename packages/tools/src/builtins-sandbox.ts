@@ -31,6 +31,7 @@ import {
   dashToLtree,
   ensureFilesRootBranch,
   folderByPath,
+  readFileById,
   upsertFile,
 } from '@mantle/files';
 import { setApiKey } from '@mantle/api-keys';
@@ -64,6 +65,37 @@ async function sandboxd(
       method,
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    return { ok: false, error: NOT_ENABLED };
+  }
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) {
+    return {
+      ok: false,
+      error: typeof data.error === 'string' ? data.error : `sandboxd → ${res.status}`,
+    };
+  }
+  return { ok: true, data };
+}
+
+/**
+ * Binary sibling of `sandboxd()` for the IMPORT stream — bytes up, JSON back.
+ * The file is the body, so the destination path rides the query string.
+ */
+async function sandboxdUpload(
+  path: string,
+  bytes: Buffer,
+): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
+  const base = process.env.SANDBOXD_URL;
+  const token = process.env.SANDBOXD_TOKEN;
+  if (!base || !token) return { ok: false, error: NOT_ENABLED };
+  let res: Response;
+  try {
+    res = await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' },
+      body: new Uint8Array(bytes),
     });
   } catch {
     return { ok: false, error: NOT_ENABLED };
@@ -421,7 +453,8 @@ const sandbox_export: BuiltinToolDef = {
     '(`files/sandbox-exports/`) and return the file node. Use when work should outlive the ' +
     'sandbox or reach the owner — build outputs, reports, generated code. Export a specific ' +
     'subpath, not all of /files, when repos are cloned (size cap applies). For ad-hoc reads ' +
-    'inside the sandbox use `sandbox_exec` (cat/ls) instead.',
+    'inside the sandbox use `sandbox_exec` (cat/ls) instead. Pass `raw: true` to bring ONE ' +
+    'file out under its own name and type rather than inside an archive.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -435,6 +468,13 @@ const sandbox_export: BuiltinToolDef = {
         type: 'string',
         description: 'Archive filename, e.g. "myapi-v1.tgz". Defaults to <sandbox>-<path>.tgz.',
       },
+      raw: {
+        type: 'boolean',
+        description:
+          'Export ONE file as itself instead of wrapping it in a .tgz — the right choice when ' +
+          'the artifact is the deliverable (a report, a drawing, a spreadsheet) and a person ' +
+          'will open it. Requires `path` to name a file, not a directory. Default false.',
+      },
     },
     required: ['sandbox'],
     additionalProperties: false,
@@ -447,17 +487,31 @@ const sandbox_export: BuiltinToolDef = {
     const relPath = typeof input.path === 'string' && input.path.trim() ? input.path.trim() : '.';
     ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, path: relPath });
 
-    const res = await sandboxdBinary(`/sandboxes/${row.id}/export`, { path: relPath });
+    const raw = input.raw === true;
+    if (raw && (relPath === '.' || relPath.endsWith('/'))) {
+      return {
+        ok: false,
+        error: 'raw export needs `path` to name a single file, e.g. "out/report.pdf"',
+      };
+    }
+    const res = await sandboxdBinary(`/sandboxes/${row.id}/export`, { path: relPath, raw });
     if (!res.ok) return res;
     await touchSandbox(row.id);
 
-    const fallback = `${row.name}-${relPath === '.' ? 'files' : relPath.replace(/[/\\]+/g, '-')}.tgz`;
+    // Raw keeps the artifact's own name (and therefore its type), so the person
+    // who asked for the report receives the report.
+    const fallback = raw
+      ? (relPath.split('/').pop() ?? relPath)
+      : `${row.name}-${relPath === '.' ? 'files' : relPath.replace(/[/\\]+/g, '-')}.tgz`;
     const rawName =
       typeof input.filename === 'string' && input.filename.trim()
         ? input.filename.trim()
         : fallback;
-    const filename =
-      rawName.endsWith('.tgz') || rawName.endsWith('.tar.gz') ? rawName : `${rawName}.tgz`;
+    const filename = raw
+      ? rawName
+      : rawName.endsWith('.tgz') || rawName.endsWith('.tar.gz')
+        ? rawName
+        : `${rawName}.tgz`;
 
     await ensureExportsFolder(ctx.ownerId);
     const file = await upsertFile({
@@ -475,6 +529,75 @@ const sandbox_export: BuiltinToolDef = {
         file: `files/sandbox-exports/${filename}`,
         nodeId: file.id,
         sizeBytes: res.bytes.length,
+      },
+    };
+  },
+};
+
+const sandbox_import: BuiltinToolDef = {
+  slug: 'sandbox_import',
+  name: 'Import a file into a sandbox',
+  description:
+    "Copy a file from the Files workspace into a sandbox's /files, byte for byte. The mirror of " +
+    '`sandbox_export`, and how work that STARTS from a file gets in: a colleague uploads through ' +
+    'the web UI, this puts it where the sandbox can open it, and nobody needs shell access to ' +
+    'the server. Safe for binaries; never pipe one through `sandbox_exec` and base64, which is ' +
+    'slower, larger, and corrupts silently. Works on a stopped sandbox, since /files outlives ' +
+    'the container. When the file is only a payload and its text is worthless in the index, set ' +
+    'its folder to metadata-only with `folder_set_indexing` first.',
+  preconditions: [
+    { kind: 'node_exists', param: 'file_id', nodeType: 'file', lookup: 'file_list / search_nodes' },
+  ],
+  inputSchema: {
+    type: 'object',
+    properties: {
+      sandbox: { type: 'string', description: 'Sandbox name or id.' },
+      file_id: {
+        type: 'string',
+        format: 'uuid',
+        description: "The file's id (UUID) — from `file_list` / `search_nodes`.",
+      },
+      path: {
+        type: 'string',
+        description:
+          'Destination under /files, e.g. "data/register.accdb". Defaults to the file\'s own ' +
+          'name at the top of /files. Directories are created as needed.',
+      },
+    },
+    required: ['sandbox', 'file_id'],
+    additionalProperties: false,
+  },
+  requiresConfirm: false,
+  handler: async (input, ctx): Promise<ToolHandlerResult> => {
+    const ref = typeof input.sandbox === 'string' ? input.sandbox : '';
+    const row = await getSandboxByRef(ctx.ownerId, ref);
+    if (!row) return notFound('sandbox', ref, 'sandbox_list');
+
+    const fileId = typeof input.file_id === 'string' ? input.file_id : '';
+    const found = await readFileById({ ownerId: ctx.ownerId, fileId });
+    if (!found) return notFound('file', fileId, 'file_list');
+
+    // Default to the file's own name, so the common case needs no path at all.
+    const wanted = typeof input.path === 'string' && input.path.trim() ? input.path.trim() : '';
+    const dest = wanted || found.row.filename;
+    ctx.step?.setMeta({ sandboxId: row.id, sandbox: row.name, path: dest, fileId });
+
+    const res = await sandboxdUpload(
+      `/sandboxes/${row.id}/import?path=${encodeURIComponent(dest)}`,
+      found.bytes,
+    );
+    if (!res.ok) return res;
+    await touchSandbox(row.id);
+
+    const sizeBytes = Number(res.data.sizeBytes ?? found.bytes.length);
+    ctx.step?.setOutput({ path: res.data.path, sizeBytes });
+    return {
+      ok: true,
+      output: {
+        imported: found.row.filename,
+        path: res.data.path,
+        sizeBytes,
+        sandbox: row.name,
       },
     };
   },
@@ -725,6 +848,7 @@ export const SANDBOX_TOOLS: BuiltinToolDef[] = [
   sandbox_stop,
   sandbox_rm,
   sandbox_export,
+  sandbox_import,
   sandbox_publish,
   sandbox_mcp_tools,
   sandbox_mcp_call,
