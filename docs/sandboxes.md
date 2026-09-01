@@ -55,7 +55,10 @@ at `/mnt/inbox`, set `MANTLE_FILES_HOST_DIR` to the HOST-absolute path of the
 files root (e.g. `/opt/mantle/data/files`). Host-absolute for the same reason
 `MANTLE_SANDBOXES_HOST_DIR` is: sandboxd hands the bind SOURCE to the host
 daemon. Unset, `sandbox_create` refuses an inbox with that instruction rather
-than making a sandbox whose `/mnt/inbox` is silently empty.
+than making a sandbox whose `/mnt/inbox` is silently empty. The folder's
+existence is checked in `web` (which has the file store mounted), not in
+sandboxd — binding a defaulted path into sandboxd would have Docker create a
+stray root-owned directory on every box that never sets the variable.
 
 Optional: `SANDBOX_DEFAULT_IMAGE` (pin a different base image),
 `SANDBOX_MAX_COUNT` (default 3), `SANDBOX_IDLE_STOP_MINUTES` (default 60),

@@ -803,13 +803,14 @@ services:
       # Read-only inbox mounts (docs/sandboxes.md). HOST-absolute, for the same
       # reason MANTLE_SANDBOXES_HOST_DIR is: sandboxd hands the bind SOURCE to
       # the host daemon. Unset = the feature is off and sandbox_create says so.
+      # Deliberately NOT also mounted into sandboxd: the folder's existence is
+      # checked by `web`, which already has the file store, and binding a
+      # DEFAULTED path here would have Docker create a stray root-owned
+      # directory on every box that never sets the variable.
       SANDBOX_INBOX_ROOT: ${MANTLE_FILES_HOST_DIR:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}:${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}
-      # Same path inside as out, so a subpath can be checked here before it is
-      # handed to the daemon. READ-ONLY: sandboxd never writes the file store.
-      - ${MANTLE_FILES_HOST_DIR:-/opt/mantle-data/files}:${MANTLE_FILES_HOST_DIR:-/opt/mantle-data/files}:ro
     networks:
       - default
       - sandbox

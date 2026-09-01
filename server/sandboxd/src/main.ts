@@ -30,7 +30,17 @@ import http from 'node:http';
 import net from 'node:net';
 import { execFile } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
-import { chown, mkdir, readdir, readFile, rm, stat, unlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  chown,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import * as docker from './docker';
@@ -47,9 +57,11 @@ const SANDBOXES_DIR = process.env.SANDBOXES_DIR || '/data/sandboxes';
  * HOST-absolute path of the brain's Files root, for the read-only inbox mount.
  * Host-absolute for the same reason SANDBOXES_DIR is: sandboxd hands bind
  * SOURCES to the host daemon, which resolves them on the host, not in here. The
- * same path is mounted read-only into sandboxd at the identical location so the
- * subpath can be validated before it is handed over. Unset (the default) turns
- * the feature off, and `sandbox_create` says so rather than guessing.
+ * Not mounted into sandboxd itself: `web` already holds the file store and
+ * validates the folder from the database before calling, and binding a
+ * defaulted path in here would have Docker create a stray root-owned directory
+ * on every box that never sets it. Unset (the default) turns the feature off,
+ * and `sandbox_create` says so rather than guessing.
  */
 const INBOX_ROOT = process.env.SANDBOX_INBOX_ROOT || '';
 const SANDBOX_NETWORK = process.env.SANDBOX_NETWORK || 'mantle_sandbox';
@@ -236,8 +248,13 @@ async function setWakeScript(id: string, command: string): Promise<{ wake: strin
     return { wake: null };
   }
   await mkdir(filesDir(id), { recursive: true });
+  // Root-owned and NOT group/other-writable, deliberately unlike everything
+  // else in /files. sandboxd runs this file as root in the container on every
+  // wake, so a workload that could rewrite it would have a straight path from
+  // uid 1000 to container root — and the CapAdd set that comes with it. Only
+  // sandboxd writes it, and only root runs it, so uid 1000 never needs write.
   await writeFile(dest, `#!/bin/sh\n${command}\n`, { mode: 0o755 });
-  await chown(dest, 1000, 1000).catch(() => {});
+  await chmod(dest, 0o755).catch(() => {}); // writeFile honours umask on re-write
   return { wake: `/files/${WAKE_SCRIPT}` };
 }
 
@@ -270,6 +287,38 @@ async function saveServices(id: string, ports: number[]): Promise<void> {
   await writeFile(servicesPath(id), JSON.stringify({ ports }), 'utf8');
 }
 
+/** Can we open a TCP connection to ip:port within `timeoutMs`? */
+function portOpen(ip: string, port: number, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const sock = new net.Socket();
+    sock.setTimeout(timeoutMs);
+    sock.once('connect', () => (sock.destroy(), resolve(true)));
+    sock.once('timeout', () => (sock.destroy(), resolve(false)));
+    sock.once('error', () => resolve(false));
+    sock.connect(port, ip);
+  });
+}
+
+/**
+ * Give a just-woken service a moment to bind before we proxy to it.
+ *
+ * `ensureRunning` starts the wake script in the BACKGROUND — it must, since a
+ * hook that can block or fail a caller's exec would be worse than no hook —
+ * so on the data plane the container is up microseconds later while uvicorn is
+ * still importing. Without this wait the first request after every idle-stop
+ * fails, which is exactly the experience the wake hook exists to remove.
+ *
+ * Polls rather than sleeps, so an already-running service costs one connect.
+ */
+async function waitForPort(ip: string, port: number, totalMs = 20_000): Promise<boolean> {
+  const deadline = Date.now() + totalMs;
+  for (;;) {
+    if (await portOpen(ip, port, 1000)) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, 400));
+  }
+}
+
 async function publishService(id: string, body: Record<string, unknown>) {
   const port = Number(body.port);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -282,14 +331,7 @@ async function publishService(id: string, body: Record<string, unknown>) {
   if (!ip) throw new HttpError(502, 'sandbox container has no network address');
 
   // The service must actually answer before we declare it callable.
-  const reachable = await new Promise<boolean>((resolve) => {
-    const sock = new net.Socket();
-    sock.setTimeout(3000);
-    sock.once('connect', () => (sock.destroy(), resolve(true)));
-    sock.once('timeout', () => (sock.destroy(), resolve(false)));
-    sock.once('error', () => resolve(false));
-    sock.connect(port, ip);
-  });
+  const reachable = await portOpen(ip, port, 3000);
   if (!reachable) {
     throw new HttpError(
       409,
@@ -318,10 +360,20 @@ async function proxyToService(
     return;
   }
   const c = await findContainer(id);
+  const wasDown = c.State !== 'running';
   await ensureRunning(c, id);
   markActive(id);
   const ip = await docker.containerIp(c.Id, SANDBOX_NETWORK);
   if (!ip) throw new HttpError(502, 'sandbox container has no network address');
+
+  // Only after a wake: the script that restarts the service was backgrounded,
+  // so the port is not up yet. A running sandbox skips this entirely.
+  if (wasDown && !(await waitForPort(ip, port))) {
+    throw new HttpError(
+      504,
+      `the sandbox woke but nothing is listening on port ${port} yet — set a wake command with sandbox_autostart so the service restarts itself, or start it with sandbox_exec and retry`,
+    );
+  }
 
   const headers = { ...req.headers };
   delete headers.authorization;
@@ -472,23 +524,6 @@ async function exportSandbox(id: string, body: Record<string, unknown>): Promise
 }
 
 /**
- * Import: the mirror of `exportSandbox`, and the reason a sandbox stops being
- * write-only. Work could always come OUT (export tars a path into the Files
- * workspace) but nothing could go IN, so any job that STARTS from a file — a
- * database, a spreadsheet, a drawing set — needed someone with shell access on
- * the box. That is exactly the person a specialist using Mantle does not have.
- *
- * No container round-trip: sandboxd already bind-mounts the sandbox's host dir
- * at the same path it hands the daemon, so the write is an ordinary host write
- * into `filesDir(id)`. That keeps binaries byte-exact (a base64 hop through
- * `sandbox_exec` would be ~1.4x the bytes across dozens of calls, and would
- * corrupt a Jet/ACE database silently rather than loudly) and works whether or
- * not the container is running.
- *
- * The file is chowned to uid 1000 to match what stop/rm hand back, so the
- * sandbox user can read it without a root step of its own.
- */
-/**
  * Resolve the read-only inbox bind for a create, or null when none was asked
  * for. Throws when one was asked for and cannot be honoured, because silently
  * creating a sandbox WITHOUT the folder it was supposed to read is the failure
@@ -512,18 +547,34 @@ async function resolveInboxBind(sub: string | undefined): Promise<string | null>
   if (dir !== root && !dir.startsWith(root + path.sep)) {
     throw new HttpError(400, 'inbox must be a folder under the Files root');
   }
-  let st;
-  try {
-    st = await stat(dir);
-  } catch {
-    throw new HttpError(404, `inbox folder not found on the box: ${rel}`);
-  }
-  if (!st.isDirectory()) throw new HttpError(400, `inbox must be a folder, not a file: ${rel}`);
+  // Existence is NOT checked here: this path lives on the host and is not
+  // mounted into sandboxd (mounting a defaulted path would create stray
+  // directories on every box). `web` resolves the folder from the database and
+  // stats the real file store before calling, which is a stronger check than
+  // this could make anyway. If it is somehow wrong, Docker refuses the create
+  // and the error surfaces — it does not silently produce an empty /mnt/inbox.
   // `ro` is the whole trust argument: the sandbox reads the owner's chosen
   // folder and can write nothing back into the brain's file store.
   return `${dir}:/mnt/inbox:ro`;
 }
 
+/**
+ * Import: the mirror of `exportSandbox`, and the reason a sandbox stops being
+ * write-only. Work could always come OUT (export tars a path into the Files
+ * workspace) but nothing could go IN, so any job that STARTS from a file — a
+ * database, a spreadsheet, a drawing set — needed someone with shell access on
+ * the box. That is exactly the person a specialist using Mantle does not have.
+ *
+ * No container round-trip: sandboxd already bind-mounts the sandbox's host dir
+ * at the same path it hands the daemon, so the write is an ordinary host write
+ * into `filesDir(id)`. That keeps binaries byte-exact (a base64 hop through
+ * `sandbox_exec` would be ~1.4x the bytes across dozens of calls, and would
+ * corrupt a Jet/ACE database silently rather than loudly) and works whether or
+ * not the container is running.
+ *
+ * The file is chowned to uid 1000 to match what stop/rm hand back, so the
+ * sandbox user can read it without a root step of its own.
+ */
 async function importSandbox(
   id: string,
   relPathRaw: string,
@@ -630,10 +681,16 @@ async function listSandboxFiles(
   try {
     dirents = await readdir(dir, { withFileTypes: true });
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOTDIR') {
-      throw new HttpError(400, `${relRaw} is a file, not a directory`);
-    }
-    throw new HttpError(404, `no such directory: ${relRaw || '/files'}`);
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === 'ENOTDIR') throw new HttpError(400, `${relRaw} is a file, not a directory`);
+    if (code === 'ENOENT') throw new HttpError(404, `no such directory: ${relRaw || '/files'}`);
+    // Anything else (EACCES on a dir a root process made restrictive, EIO, …)
+    // is NOT "it isn't there" — saying so sends the caller hunting for a path
+    // they can plainly see in an `ls`.
+    throw new HttpError(
+      403,
+      `cannot read ${relRaw || '/files'} (${code ?? 'unknown error'}) — it exists but is not readable; check it with sandbox_exec (ls -la)`,
+    );
   }
 
   const MAX = 500;

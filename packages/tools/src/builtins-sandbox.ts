@@ -38,6 +38,7 @@ import {
   upsertFile,
 } from '@mantle/files';
 import { relative } from 'node:path';
+import { stat } from 'node:fs/promises';
 import { setApiKey } from '@mantle/api-keys';
 import { and, eq } from 'drizzle-orm';
 import { db, toolGroups, type ToolGroupIntegration } from '@mantle/db';
@@ -259,6 +260,21 @@ const sandbox_create: BuiltinToolDef = {
         return {
           ok: false,
           error: `folder ${folder.title} is not mirrored on disk, so it cannot be mounted — pick a folder under Files`,
+        };
+      }
+      // sandboxd cannot see the file store, so the folder's existence on disk
+      // is checked HERE, where it is mounted. Without this a typo'd or
+      // never-mirrored folder would produce a sandbox whose /mnt/inbox is
+      // simply empty, and every later step would look fine.
+      try {
+        const st = await stat(abs);
+        if (!st.isDirectory()) {
+          return { ok: false, error: `${folder.title} is not a directory on disk` };
+        }
+      } catch {
+        return {
+          ok: false,
+          error: `folder ${folder.title} has no directory on disk yet — add a file to it first, then create the sandbox`,
         };
       }
       inboxSub = abs === root ? '' : relative(root, abs);
