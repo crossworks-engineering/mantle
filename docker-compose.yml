@@ -170,6 +170,22 @@ x-app-env: &app-env
   # with the profile off (or the token unset) they refuse cleanly.
   SANDBOXD_URL: ${SANDBOXD_URL:-http://sandboxd:8090}
   SANDBOXD_TOKEN: ${SANDBOXD_TOKEN:-}
+  # MCP surface dials (packages/mcp-core/src/build-server.ts). Both are read by
+  # `web`, which serves the HTTP/OAuth connector, so they belong on this shared
+  # anchor and nowhere narrower — setting a flag on one service and not the
+  # runtime that actually reads it is the deploy footgun MANTLE_RUNS warns about
+  # further down. Unset is the safe posture for both, so a box that never heard
+  # of them behaves exactly as before.
+  #
+  # MANTLE_MCP_TERMINAL=1 puts `run_terminal` — a shell in THIS container, with
+  # postgres, minio, the file store and the master key — on the network-reachable
+  # connector. That makes a stolen OAuth bearer a root shell on the box, so it is
+  # off unless an operator opts in per box. Over stdio the tool ships regardless
+  # (spawning that process already grants full owner access). =0 turns it off
+  # there too. `sandbox_exec` is the contained alternative and needs none of this.
+  MANTLE_MCP_TERMINAL: ${MANTLE_MCP_TERMINAL:-}
+  # Toolsmith WRITES over MCP (default on; =0 exposes the kit read-only).
+  MANTLE_MCP_TOOLSMITH_WRITE: ${MANTLE_MCP_TOOLSMITH_WRITE:-}
   # Media sidecar (compose profile `media`) — yt-dlp + ffmpeg for video_ingest.
   # Same posture as sandboxd above: always present so the tool can say "not
   # enabled on this box" cleanly; with the profile off (or the token unset) it
