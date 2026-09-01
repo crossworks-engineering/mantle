@@ -256,7 +256,7 @@ provably stale, never a number someone typed once.
 | ⚖️ &nbsp;Test weight | 53,837 lines — 1 for every 3.6 of source |
 | 🗂️ &nbsp;Tracked files | 2,396 |
 | 🐘 &nbsp;SQL migrations | 155, replayed in order on every boot |
-| 📚 &nbsp;Docs | 124 engineering docs, 79 user-guide pages, 224 changelog entries (57,166 lines) |
+| 📚 &nbsp;Docs | 124 engineering docs, 79 user-guide pages, 224 changelog entries (57,170 lines) |
 | 🐳 &nbsp;Compose services | 26 (core + opt-in profiles) |
 
 **What a fresh brain ships with** — declared once in the [system manifest](./server/web/lib/system-manifest/), checked by CI and by a live integrity audit.
@@ -270,7 +270,7 @@ provably stale, never a number someone typed once.
 | 💾 &nbsp;Datastores | **1** (Postgres — vectors, graph, FTS, queues, realtime, auth) |
 | 🧊 &nbsp;Idle footprint | ~2.5 GB RAM, whole stack |
 
-**Velocity** — v0.232.102, 2,830 commits and 255 releases since 2026-05-14 (110 days, ~25.7 commits/day).
+**Velocity** — v0.232.103, 2,832 commits and 255 releases since 2026-05-14 (110 days, ~25.7 commits/day).
 
 ```
 commits/week, last 16 weeks   ▂▇▇▆▂▂█▄▃▅▇▅▄▄▄▃   peak 352
