@@ -112,6 +112,21 @@ COPY infra/media-sidecar/ezdwf-patch/raw.py /tmp/ezdwf/src/ezdwf/raw.py
 WORKDIR /tmp/ezdwf
 RUN maturin build --release --interpreter python3.12 --out /wheels
 
+# ── 1a⅞. ezdwg-build: the DWG fallback converter's wheel, both arches ───────
+# PyPI ships ezdwg wheels for x86_64 only; on arm64 pip falls back to the
+# sdist and tries to compile Rust inside the media stage, which has no
+# toolchain ("linker `cc` not found" — the v0.232.100 release failure). Build
+# the wheel here instead, in the same maturin image the ezdwf stage already
+# uses: pinned PyPI sdist (unpatched — unlike ezdwf there is no local fix),
+# checksum-locked like the LibreDWG tarball.
+FROM ghcr.io/pyo3/maturin:v1.15.0 AS ezdwg-build
+ADD --checksum=sha256:c3a8109e3331dd52d1ecfff0533693899f114c184e687d42bcf0564dbb924218 \
+  https://files.pythonhosted.org/packages/4e/93/927fc4b727e0ba0ce5b15d893fa1686e93ee6d4b78c1425c56b4b084907e/ezdwg-0.12.6.tar.gz /tmp/ezdwg-sdist.tar.gz
+RUN mkdir /tmp/ezdwg \
+  && tar -xzf /tmp/ezdwg-sdist.tar.gz -C /tmp/ezdwg --strip-components=1
+WORKDIR /tmp/ezdwg
+RUN maturin build --release --interpreter python3.12 --out /wheels
+
 # ── 1a¾. libredwg-build: static dwg2dxf for the DWG tier ────────────────────
 # Debian ships no libredwg package, so the converter is built from the pinned
 # GNU release tarball. GPLv3: it enters the media image as a standalone
@@ -162,8 +177,11 @@ COPY --from=ezdwf-build /wheels /tmp/ezdwf-wheels
 # DWG tier (v0.232.99): ezdxf parses + renders the converted DXF (the one
 # code path downstream of conversion); ezdwg is the MIT fallback converter
 # for files dwg2dxf mangles. Both pinned like ezdwf and for the same reason.
-RUN pip install --no-cache-dir /tmp/ezdwf-wheels/ezdwf-*.whl "matplotlib>=3.9,<4" \
-    "ezdxf==1.4.4" "ezdwg==0.12.6"
+# ezdwg installs from the ezdwg-build stage's wheel, never PyPI: PyPI has no
+# arm64 wheel and this stage has no compiler (the v0.232.100 arm64 failure).
+COPY --from=ezdwg-build /wheels /tmp/ezdwg-wheels
+RUN pip install --no-cache-dir /tmp/ezdwf-wheels/ezdwf-*.whl /tmp/ezdwg-wheels/ezdwg-*.whl \
+    "matplotlib>=3.9,<4" "ezdxf==1.4.4"
 COPY --from=libredwg-build /opt/libredwg/bin/dwg2dxf /usr/local/bin/dwg2dxf
 COPY infra/media-sidecar/app.py /srv/app.py
 COPY infra/media-sidecar/entrypoint.sh /srv/entrypoint.sh
