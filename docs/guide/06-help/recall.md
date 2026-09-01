@@ -15,12 +15,25 @@ state; open one to see its lint report, its nodes, and the **routing graph**;
 the whole map drawn as nodes and edges, with the entry marked and orphaned
 nodes flagged. The **Routing** button on a node edits its options without
 hand-writing the markdown convention: pick a target, write the label and the
-"use when" line, and the section is written for you.
+"use when" line, and the section is written for you. On the graph, each option
+carries a chip; hover or focus it for the full label and its "use when" line,
+and the **Labels / Dots / Off** toggle sets how much a dense map shows at once.
 
-Maps are authored as ordinary pages. Tagging a page tree's root `recall` (in
-the page editor; only you can do this) turns the tree into a served map. Every
-commit recompiles the map; if the new version fails its lint, agents keep
-reading the last good version and the report here says why.
+Maps are authored as ordinary pages, and **New** on this screen writes one for
+you: a map, or a standalone prompt. Inside a map, **Add node** creates the page
+AND the option that leads an agent to it, in one step. An index that has
+children but no options fails its lint, so the two are never separated. Each
+dialog runs the real lint as you type and tells you, before you save, whether
+the page will compile.
+
+You can also turn a page you are already writing into a prompt: open it and use
+**Make a prompt** in its header. It adds the `Use when` line and the tags in the
+order that keeps the compile clean.
+
+Tagging a page tree's root `recall` by hand still works and does the same thing.
+Only you can set that tag, or `prompt`. Every commit recompiles the map; if the
+new version fails its lint, agents keep reading the last good version and the
+report here says why.
 
 ## Assistant
 

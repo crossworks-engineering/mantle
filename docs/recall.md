@@ -79,6 +79,45 @@ watch — inside and outside, from one store.**
   ONLY serving surface for the content. New maps trigger a one-time
   re-ingest of their members to drop already-indexed chunks.
 
+## Authoring in the owner UI
+
+Every part of a Recall page's shape used to be tribal knowledge: two
+owner-only tags that appear nowhere in the UI, the leading `Use when:`
+paragraph, and an Options block on the PARENT. The last one is a cliff:
+`index-no-options` fires only once a root has children, so a fresh map is
+green and adding the second page turns the map red with no hint that the
+parent now needs routing. The `/recall` screen closes all three:
+
+- **New → Map / Prompt** on the catalog, and **Add node** inside a map
+  (`create-recall-dialog.tsx` in jackdaw). Creating a node WRITES the
+  parent's option in the same action, through `withAppendedOption` →
+  `recallOptionsMarkdown`, so the cliff above is unreachable by following
+  the UI. A new map can seed its first node the same way.
+- **A live preflight.** The dialog runs `parseRecallDoc` in the BROWSER.
+  It is pure, so the author sees exactly the issues the server-side compile
+  would raise, before saving. Doc-level rules only; the tree-level ones
+  (`index-no-options`, `target-outside-map`, `orphan-node`) need the whole
+  map and are what the create flow structurally prevents.
+- **Make this a prompt**, from the page editor's Recall control. Commits
+  the `Use when:` paragraph FIRST, then sets the tags. Tagging first would
+  make the page a prompt for the instant before its use-when exists,
+  recording a `prompt-no-use-when` failure the author never caused.
+
+All of it goes through `POST /api/pages` and `POST /api/pages/:id/commit`,
+which are owner-session-auth and have always accepted tags. **This is not a
+loosening of the trust model.** `stripOwnerOnlyTags` guards the AGENT tool
+surface (`packages/tools/src/builtins-pages.ts`), which is the boundary
+that stops injected content becoming a served map. The owner setting the
+tag through a form is the same single human act as typing it into the tag
+field; do not "fix" the owner route by stripping there.
+
+The map graph's option labels are a custom React Flow edge, not the
+built-in `label`: an SVG `<text>` cannot truncate, cannot lift above a
+neighbour, and takes raw fills rather than theme tokens, so labels piled up
+on any branching map. They now render in `EdgeLabelRenderer` as truncating
+chips with hover/focus tooltips, and the dagre layout RESERVES label space
+rather than treating every edge as a bare line.
+
 ## The owner HTTP API (the UI's read side)
 
 Session-auth routes for the jackdaw surfaces (roadmap tasks `073b322d` /
