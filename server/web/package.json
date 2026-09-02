@@ -112,7 +112,7 @@
     "libsodium-wrappers": "^0.8.4",
     "lowlight": "^3.3.0",
     "lucide-react": "^1.25.0",
-    "mcp-handler": "^1.1.0",
+    "mcp-handler": "^2.1.1",
     "pg-boss": "^12.26.1",
     "postgres": "^3.4.5",
     "prettier": "^3.9.6",
