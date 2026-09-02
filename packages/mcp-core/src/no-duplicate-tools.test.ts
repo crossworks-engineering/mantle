@@ -37,23 +37,16 @@ const KNOWN_UNBRIDGED = [
   'table_get',
   'table_list',
   'table_rows_list',
-  // Awaiting an exported group in @mantle/tools.
-  'entity_facts',
-  'entity_mentions',
-  'entity_neighbors',
-  'entity_search',
+  // Schemas MCP clients already depend on: the builtins take `file_id` /
+  // `folder_id` and (tree_list) optional path+limit, the hand-written twins
+  // take `id` and, for the folder pair, a path as an alternative to the id.
+  // Bridging them would rename arguments under shipped connectors.
+  'tree_list',
   'file_get',
-  'file_list',
   'file_read',
   'file_rename',
   'folder_describe',
-  'folder_list',
   'folder_rename',
-  'graph_path',
-  'read_section',
-  'search_chunks',
-  'telegram_send',
-  'tree_list',
 ].sort();
 
 /** Slugs registered by a literal `server.tool('…')` call in build-server.ts. */

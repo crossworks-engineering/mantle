@@ -40,16 +40,7 @@ import {
   telegramChats,
   telegramMessages,
 } from '@mantle/db';
-import {
-  entityFacts,
-  entityMentions,
-  entityNeighbors,
-  graphPath,
-  searchEntities,
-  searchNodes,
-  searchChunks,
-  readSection,
-} from '@mantle/search';
+import { searchNodes } from '@mantle/search';
 import { embed } from '@mantle/embeddings';
 import { describeResponderPersona, runSimulatedResponderTurn } from '@mantle/assistant-runtime';
 import { accountForChat, editMessage, reactToMessage, sendMessage } from '@mantle/telegram';
@@ -60,9 +51,6 @@ import {
   ensureFilesRootBranch,
   fileById,
   folderByPath,
-  listAllFolders,
-  listFiles,
-  listFolders,
   readFileById,
   renameFileById,
   renameFolderById,
@@ -99,6 +87,10 @@ import {
   RECALL_TOOLS,
   SANDBOX_TOOLS,
   NODE_READ_TOOLS,
+  SEARCH_TOOLS,
+  ENTITY_TOOLS,
+  FILE_TOOLS,
+  TELEGRAM_TOOLS,
   FILE_CREATE_TOOLS,
   CONTENT_CURATION_TOOLS,
   INGEST_TOOLS,
@@ -311,70 +303,7 @@ export function registerMantleTools(
     },
   );
 
-  server.tool(
-    'search_chunks',
-    "Hybrid (semantic + keyword) search over document passages — finds the most relevant *sections* inside pages, files, emails, notes (not just whole-node keyword hits). Reach for this FIRST on a content question: it returns the exact passages, so you answer without loading whole documents into context. Fall back to `search` (whole-node) or reading the full file only when the passages are insufficient or the user wants an exhaustive read. `branch` scopes by ltree path (e.g. 'files' or 'pages').",
-    {
-      q: z.string(),
-      branch: z.string().optional(),
-      limit: z.number().int().min(1).max(50).optional(),
-    },
-    async ({ q, branch, limit }) => {
-      const embedding = await embed(ownerId, q);
-      const hits = await searchChunks({
-        ownerId: ownerId,
-        embedding,
-        q,
-        branch,
-        limit: limit ?? 10,
-      });
-      return jsonReply(hits);
-    },
-  );
-
-  server.tool(
-    'read_section',
-    "Read one SECTION of a long document in full and in order — the rung between `search_chunks` (scattered passages) and reading the whole file. Use once you know WHERE the answer lives (search_chunks returns each passage's nodeId, heading, ordinal). Pass ONLY `node_id` for the OUTLINE (heading ranges); pass `heading` for every passage under that heading; or `from_ordinal`/`to_ordinal` for a contiguous range. Output is capped (~24k chars) with a `next_ordinal` to continue from. Only read the whole file for short documents or when the outline shows no indexed passages.",
-    {
-      node_id: z.string().uuid(),
-      heading: z.string().optional(),
-      from_ordinal: z.number().int().min(0).optional(),
-      to_ordinal: z.number().int().min(0).optional(),
-      max_chars: z.number().int().min(2000).max(60000).optional(),
-    },
-    async ({ node_id, heading, from_ordinal, to_ordinal, max_chars }) => {
-      const res = await readSection({
-        ownerId,
-        nodeId: node_id,
-        heading,
-        fromOrdinal: from_ordinal,
-        toOrdinal: to_ordinal,
-        maxChars: max_chars,
-      });
-      if ('error' in res) return { content: [{ type: 'text', text: res.error }], isError: true };
-      return jsonReply(res);
-    },
-  );
-
   // ─── files / folders ──────────────────────────────────────────────────────
-
-  server.tool(
-    'folder_list',
-    "List folders in the user's host-mirrored filesystem. Pass `parent` (ltree path, e.g. 'files.work') to list immediate children of that folder; pass `tree: true` to get every folder in the subtree at once. With no args, returns the immediate children of the root.",
-    {
-      parent: z.string().optional(),
-      tree: z.boolean().optional(),
-    },
-    async ({ parent, tree }) => {
-      await ensureFilesRootBranch(ownerId);
-      if (tree) {
-        const all = await listAllFolders(ownerId);
-        return jsonReply(all);
-      }
-      const rows = await listFolders({ ownerId: ownerId, parentPath: parent ?? 'files' });
-      return jsonReply(rows);
-    },
-  );
 
   server.tool(
     'folder_create',
@@ -486,18 +415,6 @@ export function registerMantleTools(
         return { content: [{ type: 'text', text: `folder_delete: ${res.reason}` }], isError: true };
       }
       return { content: [{ type: 'text', text: 'deleted' }] };
-    },
-  );
-
-  server.tool(
-    'file_list',
-    "List files in a folder. `parent_path` is the ltree path of the containing folder (e.g. 'files.work.lister-printer').",
-    {
-      parent_path: z.string().min(1).max(500),
-    },
-    async ({ parent_path }) => {
-      const rows = await listFiles({ ownerId: ownerId, parentPath: parent_path });
-      return jsonReply(rows);
     },
   );
 
@@ -812,100 +729,6 @@ export function registerMantleTools(
 
   // ─── entities ─────────────────────────────────────────────────────────────
 
-  server.tool(
-    'entity_search',
-    "Resolve a name or alias to entities in the user's memory. Exact name/alias matches return similarity=1; otherwise trigram fuzzy match. Optional `kind` filter (person, project, place, org, event, ...).",
-    {
-      q: z.string().min(1),
-      kind: z.string().optional(),
-      limit: z.number().int().min(1).max(50).optional(),
-    },
-    async ({ q, kind, limit }) => {
-      const hits = await searchEntities({ ownerId: ownerId, q, kind, limit });
-      return jsonReply(hits);
-    },
-  );
-
-  server.tool(
-    'entity_neighbors',
-    "Walk the entity graph one hop from a given entity. Returns connected entities via entity_edges in both directions by default. Optional `relation` filter (e.g. 'married_to', 'works_at', 'mentioned_in'), `direction` ('in'|'out'|'both'), and `current_only` to drop edges with valid_to set.",
-    {
-      entity_id: z.string().uuid(),
-      relation: z.string().optional(),
-      direction: z.enum(['in', 'out', 'both']).optional(),
-      current_only: z.boolean().optional(),
-      limit: z.number().int().min(1).max(200).optional(),
-    },
-    async ({ entity_id, relation, direction, current_only, limit }) => {
-      const rows = await entityNeighbors({
-        ownerId: ownerId,
-        entityId: entity_id,
-        relation,
-        direction,
-        currentOnly: current_only,
-        limit,
-      });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'graph_path',
-    "Multi-hop traversal of the entity knowledge graph (relationships BETWEEN entities). Pass from_id + to_id for the shortest path(s) between two entities ('how is Sarah connected to Acme?'); pass from_id only for everything reachable within max_depth ('what's within 2 hops of Lister?'). `relations` limits which verbs to follow; `directed:true` follows subject→object only (default undirected). For a single hop use entity_neighbors.",
-    {
-      from_id: z.string().uuid(),
-      to_id: z.string().uuid().optional(),
-      max_depth: z.number().int().min(1).max(6).optional(),
-      relations: z.array(z.string()).optional(),
-      directed: z.boolean().optional(),
-      limit: z.number().int().min(1).max(200).optional(),
-    },
-    async ({ from_id, to_id, max_depth, relations, directed, limit }) => {
-      const rows = await graphPath({
-        ownerId: ownerId,
-        fromId: from_id,
-        toId: to_id,
-        maxDepth: max_depth,
-        relations,
-        directed,
-        limit,
-      });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'entity_facts',
-    'All facts attached to an entity. By default returns currently-valid facts only; set `include_retired=true` to see superseded history too. Use after entity_search to get \'"what do I know about Sarah?"\' answers.',
-    {
-      entity_id: z.string().uuid(),
-      include_retired: z.boolean().optional(),
-      limit: z.number().int().min(1).max(200).optional(),
-    },
-    async ({ entity_id, include_retired, limit }) => {
-      const rows = await entityFacts({
-        ownerId: ownerId,
-        entityId: entity_id,
-        includeRetired: include_retired,
-        limit,
-      });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'entity_mentions',
-    'Content_store nodes that mention this entity, newest first. Walks entity_edges where source_kind=entity, target_kind=node, relation=mentioned_in. Returns node id, title, type, and the per-node summary if the extractor has populated one.',
-    {
-      entity_id: z.string().uuid(),
-      limit: z.number().int().min(1).max(200).optional(),
-    },
-    async ({ entity_id, limit }) => {
-      const rows = await entityMentions({ ownerId: ownerId, entityId: entity_id, limit });
-      return jsonReply(rows);
-    },
-  );
-
   // ─── telegram ─────────────────────────────────────────────────────────────
 
   server.tool(
@@ -945,59 +768,6 @@ export function registerMantleTools(
         .orderBy(asc(telegramMessages.sentAt))
         .limit(limit ?? 20);
       return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'telegram_send',
-    'Send a Telegram message to a chat. Pass chat_id from a telegram_pending row. Optionally pass reply_to (telegram_message_id) for threading. Long text is split into 4096-char chunks.',
-    {
-      chat_id: z.string(),
-      text: z.string().min(1),
-      reply_to: z.string().optional(),
-      markdown: z.boolean().optional(),
-    },
-    async ({ chat_id, text, reply_to, markdown }) => {
-      const account = await accountForChat(chat_id);
-      if (!account) {
-        return { content: [{ type: 'text', text: 'no enabled telegram account' }], isError: true };
-      }
-      // Outbound gate: only send to chats we already know (i.e. they DM'd us
-      // and were allowlisted). Prevents Claude from spamming arbitrary chat
-      // ids on its own initiative.
-      const [chat] = await db
-        .select()
-        .from(telegramChats)
-        .where(
-          and(eq(telegramChats.accountId, account.id), eq(telegramChats.telegramChatId, chat_id)),
-        )
-        .limit(1);
-      if (!chat || chat.allowlistStatus !== 'allowed') {
-        return {
-          content: [{ type: 'text', text: `chat ${chat_id} is not allowlisted` }],
-          isError: true,
-        };
-      }
-      try {
-        const ids = await sendMessage(account, chat_id, text, {
-          replyTo: reply_to,
-          markdown,
-        });
-        return {
-          content: [
-            {
-              type: 'text',
-              text:
-                ids.length === 1
-                  ? `sent (id: ${ids[0]})`
-                  : `sent ${ids.length} parts (ids: ${ids.join(', ')})`,
-            },
-          ],
-        };
-      } catch (err) {
-        const msg = errorMessage(err);
-        return { content: [{ type: 'text', text: `send failed: ${msg}` }], isError: true };
-      }
     },
   );
 
@@ -1693,6 +1463,18 @@ export function registerMantleTools(
   // Reads. node_read fetches any node by id (the typed getters cover one type
   // each); brain_capacity is the corpus-vs-split-policy self-check.
   registerBuiltinTools(NODE_READ_TOOLS);
+  // 2026-09-02 (audit): the search / entity / file-read / telegram groups now
+  // exist in @mantle/tools, so their MCP twins are bridged from the one tested
+  // handler each. Deliberately still hand-written (read-shape divergence, or
+  // a schema MCP clients already depend on): `search` (search_nodes under its
+  // shipped name), tree_list, file_get/file_read/file_rename (id vs file_id),
+  // folder_describe/folder_rename (accept a path as well as an id).
+  registerBuiltinTools(SEARCH_TOOLS, {
+    skip: (def) => def.slug === 'search_nodes' || def.slug === 'tree_list',
+  });
+  registerBuiltinTools(ENTITY_TOOLS);
+  registerBuiltinTools(FILE_TOOLS, { only: new Set(['folder_list', 'file_list']) });
+  registerBuiltinTools(TELEGRAM_TOOLS);
   registerBuiltinTools(TOOL_RESULT_TOOLS);
   registerBuiltinTools(IMAGE_TOOLS);
   registerBuiltinTools(APP_DATA_TOOLS);

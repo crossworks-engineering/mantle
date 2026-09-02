@@ -61,6 +61,10 @@ export {
   INGEST_TOOLS,
   SECRET_TOOLS,
   DELEGATION_TOOLS,
+  SEARCH_TOOLS,
+  ENTITY_TOOLS,
+  FILE_TOOLS,
+  TELEGRAM_TOOLS,
 } from './builtins';
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';
 export { DRAW_TOOLS, DRAW_TOOL_SLUGS } from './builtins-draws';
