@@ -754,8 +754,10 @@ export type TeamVisibleShare = {
 
 // ── Mirrors of @mantle/db jsonb/enum shapes (jackdaw split P0) ────────────────
 // Kept standalone so this package stays zero-dep (same convention as ToolHandler
-// above). Drift is caught where the server builds these DTOs from db rows —
-// an incompatible change there is a compile error at the row-builder.
+// above). Drift is pinned directly, at compile time, by
+// server/web/lib/client-types-drift.test.ts — the only place that can see both
+// sides, since this package may never import @mantle/db. Add a mirror here,
+// add its pin there.
 
 /** Task lifecycle vocabulary — mirrors content's TASK_STATUSES/TASK_PRIORITIES
  *  consts, which are `satisfies`-checked against these unions. */

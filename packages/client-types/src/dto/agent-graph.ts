@@ -173,9 +173,10 @@ export interface ToolGroupWithRefs extends ToolGroupDTO {
 
 // ── AI workers ────────────────────────────────────────────────────────────────
 
-/** Worker kinds (mirrors the @mantle/db `ai_worker_kind` enum). Drift is caught
- *  by `toAiWorkerDTO` in lib/ai-workers, whose mapping won't compile if the db
- *  enum gains/renames a value. */
+/** Worker kinds (mirrors the @mantle/db `ai_worker_kind` enum). Pinned against
+ *  the column at compile time by server/web/lib/client-types-drift.test.ts.
+ *  `toAiWorkerDTO` in lib/ai-workers also catches drift while its mapping
+ *  stays exhaustive, but that is a side effect rather than a guarantee. */
 export type AiWorkerKind =
   | 'reflector'
   | 'extractor'
