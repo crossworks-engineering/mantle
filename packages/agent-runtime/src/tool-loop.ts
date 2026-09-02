@@ -25,48 +25,42 @@
  * providers (Anthropic, OR-via-Anthropic).
  */
 
-import { createHash } from 'node:crypto';
+import { step, currentTurnAbortSignal } from '@mantle/tracing';
 import {
-  currentTrace,
-  step,
-  isTurnStreaming,
-  emitTurnDelta,
-  currentTurnAbortSignal,
-} from '@mantle/tracing';
-import {
-  dispatchTool,
-  getBuiltinRedactFields,
-  redactArgsForLogging,
   resolveTool,
   resolveTools,
-  processToolResultForModel,
   resolveResultHandling,
-  notifyPendingCreated,
   validateToolArgs,
-  sanitizeToolError,
   getDynamicSchema,
-  UNTRUSTED_CONTENT_TOOL_SLUGS,
   type ValidateArgsResult,
   type ResultHandlingConfig,
   type ToolCallRecord,
 } from '@mantle/tools';
-import { db, pendingToolCalls, type Tool, type AgentParams } from '@mantle/db';
+import { type Tool, type AgentParams } from '@mantle/db';
 import type { ToolArtifact } from '@mantle/tools';
 import {
   type ChatDispatcher,
   type ChatFinishReason,
-  type ChatOptions,
-  type ChatResult,
   type ChatToolDefinition,
   type ThinkingEffort,
 } from '@mantle/voice';
-import { recordChatUsage } from './llm-usage';
-import { isChatFailover } from './chat-failover';
+
 import type { ChatMessage } from './messages';
-import { fenceRetrieved } from './messages';
+
 import { parseToolArgs } from './tool-args';
+import {
+  HARD_MAX_CALLS_PER_TOOL_PER_TURN,
+  HARD_MAX_TOOL_CALLS_PER_TURN,
+  MAX_CALLS_PER_TOOL_PER_TURN,
+  MAX_TOOL_CALLS_PER_TURN,
+  TurnGuards,
+  canonicalJson,
+  resolveCap,
+} from './tool-loop/guards';
+import { createModelCaller } from './tool-loop/model-caller';
+import { executeToolCall, toolResultPayload } from './tool-loop/execute-call';
 import { env } from '@mantle/config';
-import { errorMessage, UUID_RE } from '@mantle/std';
+import { UUID_RE } from '@mantle/std';
 
 const DEFAULT_MAX_ITERATIONS = 6;
 
@@ -109,28 +103,6 @@ export function resolveMaxTokens(
   return thinkingBudget > 0 ? thinkingBudget * 2 : undefined;
 }
 
-/**
- * Run one chat round, streaming live token deltas when the runner has turn
- * streaming active (`isTurnStreaming()`) AND this route's adapter supports it.
- * Falls back to the one-shot `chat()` otherwise — the resolved `ChatResult` is
- * identical either way (text + toolCalls + usage), so the loop's tool-dispatch
- * logic doesn't care which path ran. Streaming is pure decoration around the
- * durable result. `round` tags each delta so the client can scope the live reply.
- */
-function dispatchChat(
-  adapter: ChatDispatcher,
-  opts: ChatOptions,
-  round: number,
-): Promise<ChatResult> {
-  // Thread the current turn's cancellation signal into every LLM call so a user
-  // Stop aborts generation (the streaming adapter returns its partial reply).
-  const withSignal = { ...opts, signal: currentTurnAbortSignal() };
-  if (isTurnStreaming() && typeof adapter.chatStream === 'function') {
-    return adapter.chatStream(withSignal, (d) => emitTurnDelta(round, d.type, d.text));
-  }
-  return adapter.chat(withSignal);
-}
-
 // Third-party content fencing: the web builtins are fenced by slug
 // (UNTRUSTED_CONTENT_TOOL_SLUGS, shared with dispatch), and the dispatch
 // layer flags provenance the loop can't see — http-kind tools (user-authored
@@ -140,40 +112,6 @@ function dispatchChat(
 // this to…" inside a page, hit, or API response can't be read as an
 // instruction. Auto-retrieved content (notes/emails/passages) is already
 // fenced in messages.ts; failed calls run through sanitizeToolError instead.
-
-// ── Tool-volume guards (structural backstop against tool-spam runaways) ──
-// A misbehaving model (notably Grok-4.x fixating on one tool) can emit hundreds
-// of tool calls, ballooning context + cost — one prod turn fired page_unshare
-// 1599× and burned $0.73 before crashing. max_iters caps ROUNDS, not
-// calls-per-round, and the in-response dedup only catches byte-identical
-// repeats, so volume needs its own caps.
-//
-// Enforcement is at BATCH boundaries: a response that STARTS under its caps
-// executes in full (bounded by MAX_TOOL_CALLS_PER_RESPONSE). Cutting a batch
-// halfway severed a coherent write batch once — 10 page_block_deletes cut at
-// 1-of-10 left a production SOP draft half-edited (2026-07-06) — and a bounded
-// overshoot is strictly better than a half-applied edit. A batch that starts
-// AT/OVER a cap is skipped call-by-call with guidance.
-//
-// The turn/per-tool caps are per-agent overridable via memory_config
-// (`max_tool_calls` / `max_calls_per_tool`) — heavy editors like the pages
-// agent legitimately need more than chat agents; hard ceilings below still
-// bound the blast radius.
-const MAX_TOOL_CALLS_PER_RESPONSE = 20; // calls beyond this in ONE response are dropped
-const MAX_TOOL_CALLS_PER_TURN = 40; // default cumulative budget across rounds → then force a final answer
-const MAX_CALLS_PER_TOOL_PER_TURN = 15; // default same-tool fixation breaker (counts even when args vary)
-const HARD_MAX_TOOL_CALLS_PER_TURN = 200; // ceiling for per-agent overrides
-const HARD_MAX_CALLS_PER_TOOL_PER_TURN = 100; // ceiling for per-agent overrides
-
-// ── Failure-aware guards (outcome-sensitive complements to the caps above) ──
-// The volume caps count calls regardless of what they produced, so a flail
-// loop — the model re-issuing one broken call verbatim, or re-reading state
-// that never changes — burns up to 15 calls before the fixation cap ends it.
-// These two watch OUTCOMES per exact signature (slug + raw args) and step in
-// far earlier. The error payload starts teaching at the 2nd identical
-// failure; at the limit the call is skipped, not dispatched.
-const REPEATED_FAILURE_LIMIT = 5; // identical call failed N times → further attempts blocked
-const NO_PROGRESS_LIMIT = 5; // identical call returned the identical result N times → blocked
 
 // ── Central arg validation (coerce-then-validate) ──
 // Every tool call's args are checked against the tool's own inputSchema
@@ -190,32 +128,6 @@ export function resolveToolValidationMode(
 ): ToolValidationMode {
   const raw = (value ?? '').trim().toLowerCase();
   return raw === 'off' || raw === 'enforce' ? raw : 'warn';
-}
-
-/** Resolve a per-agent cap override: positive ints only, floored, clamped to
- *  the hard ceiling; anything else falls back to the flat default. */
-function resolveCap(requested: number | undefined, fallback: number, ceiling: number): number {
-  if (typeof requested !== 'number' || !Number.isFinite(requested) || requested < 1)
-    return fallback;
-  return Math.min(ceiling, Math.floor(requested));
-}
-
-/** Cheap stable digest of a serialized tool result, for the no-progress
- *  guard's identical-result comparison. Keeping full payloads per signature
- *  would hold every large read in memory for the whole turn. */
-function hashToolResult(serialized: string): string {
-  return createHash('sha256').update(serialized).digest('base64').slice(0, 16);
-}
-
-/** Deterministic JSON encoding (recursively sorted object keys) so the
- *  failure-aware guards see `{"a":1,"b":2}` and `{"b":2,"a":1}` — and a
- *  post-repair `25` vs the model's `"25"` — as the same call. */
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  const rec = value as Record<string, unknown>;
-  const keys = Object.keys(rec).sort();
-  return `{${keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(rec[k])}`).join(',')}}`;
 }
 
 // ── Deterministic tool-outcome summary ──
@@ -601,7 +513,6 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     ownerId: args.ownerId,
     ...(args.delegateTo ? { delegateTo: args.delegateTo } : {}),
   });
-  const sendTools = toolsForModel.length > 0;
 
   const messages: ChatMessage[] = [...args.initialMessages];
   // The turn's latest USER message — threaded to handlers via ctx.agent so
@@ -626,58 +537,49 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // send* calls and don't populate this.
   const artifacts: ToolArtifact[] = [];
 
-  // The active route. Starts on the primary; a mid-loop route-DOWN / 429 / 5xx
-  // failure flips it to the backup for the REST of this turn (sticky), so we
-  // don't switch models halfway through a reasoning chain. A fresh turn calls
-  // runToolLoop again and starts on the primary.
-  let active = {
-    adapter: args.adapter,
-    apiKey: args.apiKey,
-    model: args.model,
-    baseUrl: args.baseUrl ?? null,
-    viaTailnet: args.viaTailnet ?? false,
-  };
-  let failedOver = false;
+  // True once the user hit Stop (the turn's AbortController fired). The signal
+  // is already threaded into every LLM call (dispatchChat) so generation
+  // halts; these loop-level checks are what stop the REST of the turn — tool
+  // execution and further rounds — which otherwise ran to completion after a
+  // Stop (the "stop doesn't stop it" bug). Delegated sub-agents run this same
+  // loop with the same turnId, so they inherit every check.
+  const turnAborted = () => currentTurnAbortSignal()?.aborted === true;
 
-  // Running output-token total for the whole turn (summed across every LLM
-  // round, including failover / empty-reply / force-final passes). Returned in
-  // the ToolLoopResult so the turn's `done` event can carry the real token count
-  // the live status footer reconciles its streamed estimate to.
-  let tokensOut = 0;
+  // Every LLM round of this turn runs through one caller that owns the active
+  // route (sticky primary→backup failover) and the output-token total.
+  const model = createModelCaller({ args, messages, toolsForModel, turnAborted });
 
-  // Tool-volume guards (see constants above). Turn-scoped: the budget is
-  // cumulative across rounds; per-tool counts catch single-tool fixation even
-  // when the model varies the args to slip past the in-response dedup.
-  const maxToolCallsPerTurn = resolveCap(
-    args.maxToolCallsPerTurn,
-    MAX_TOOL_CALLS_PER_TURN,
-    HARD_MAX_TOOL_CALLS_PER_TURN,
-  );
-  const maxCallsPerToolPerTurn = resolveCap(
-    args.maxCallsPerToolPerTurn,
-    MAX_CALLS_PER_TOOL_PER_TURN,
-    HARD_MAX_CALLS_PER_TOOL_PER_TURN,
-  );
+  // Tool-volume + failure-aware guards (see tool-loop/guards.ts). Turn-scoped:
+  // the budget is cumulative across rounds; per-tool counts catch single-tool
+  // fixation even when the model varies the args to slip past the in-response
+  // dedup.
+  const guards = new TurnGuards({
+    maxToolCallsPerTurn: resolveCap(
+      args.maxToolCallsPerTurn,
+      MAX_TOOL_CALLS_PER_TURN,
+      HARD_MAX_TOOL_CALLS_PER_TURN,
+    ),
+    maxCallsPerToolPerTurn: resolveCap(
+      args.maxCallsPerToolPerTurn,
+      MAX_CALLS_PER_TOOL_PER_TURN,
+      HARD_MAX_CALLS_PER_TOOL_PER_TURN,
+    ),
+  });
   // Resolved once per turn: schemas (and therefore what counts as a
   // violation) are frozen for the turn, so the mode should be too.
   const argValidationMode = resolveToolValidationMode();
-  let totalToolCalls = 0;
-  const perToolCounts = new Map<string, number>();
-  // Failure-aware guard state, keyed by exact signature (slug + raw args).
-  const exactFailureCounts = new Map<string, number>();
-  const identicalResults = new Map<string, { hash: string; count: number }>();
-  let budgetExhausted = false;
   // A response whose tool calls were ALL guard-skipped (≥3 of them) forces the
   // final answer — see the batch-boundary check below.
   let batchFullySkipped = false;
 
   // Skip a tool call WITHOUT executing it, still emitting the synthetic
   // tool_result the provider protocol requires (every tool_call needs a paired
-  // result) plus a trace step. Used by the volume guards below.
+  // result) plus a trace step. Used by the guards and by a user Stop.
   const skipToolCall = async (
     call: { id: string; function: { name: string; arguments: string } },
     reason: string,
     note: string,
+    firstCallId?: string,
   ): Promise<void> => {
     const slug = call.function.name;
     const argsRaw = call.function.arguments ?? '{}';
@@ -687,10 +589,24 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     // Stop. The ledger entry + paired tool message below are record enough.
     if (reason !== 'cancelled_by_user') {
       await step(
-        { name: `tool: ${slug}`, kind: 'compute', input: { slug, args: '<capped, suppressed>' } },
+        {
+          name: `tool: ${slug}`,
+          kind: 'compute',
+          input: {
+            slug,
+            args: firstCallId !== undefined ? '<duplicate, suppressed>' : '<capped, suppressed>',
+          },
+        },
         async (handle) => {
           handle.setSkipped(reason);
-          handle.setMeta({ [reason]: true, call_id: call.id, model: args.model });
+          // `model` is denormalised onto the suppression step's meta so the
+          // /debug "duplicates suppressed by model" widget can group by it
+          // without a lateral join back to the trace's first llm_call step.
+          handle.setMeta(
+            firstCallId !== undefined
+              ? { [reason]: true, first_call_id: firstCallId, call_id: call.id, model: args.model }
+              : { [reason]: true, call_id: call.id, model: args.model },
+          );
         },
       );
     }
@@ -698,17 +614,13 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     messages.push({
       role: 'tool',
       toolCallId: call.id,
-      content: JSON.stringify({ ok: false, error: reason, note }),
+      content: JSON.stringify(
+        firstCallId !== undefined
+          ? { ok: false, error: reason, note, first_call_id: firstCallId }
+          : { ok: false, error: reason, note },
+      ),
     });
   };
-
-  // True once the user hit Stop (the turn's AbortController fired). The signal
-  // is already threaded into every LLM call (dispatchChat) so generation
-  // halts; these loop-level checks are what stop the REST of the turn — tool
-  // execution and further rounds — which otherwise ran to completion after a
-  // Stop (the "stop doesn't stop it" bug). Delegated sub-agents run this same
-  // loop with the same turnId, so they inherit every check.
-  const turnAborted = () => currentTurnAbortSignal()?.aborted === true;
 
   // The last round's non-empty commentary, kept so a Stop that lands in a
   // round whose own text is empty (models usually emit tool calls without
@@ -737,178 +649,12 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       toolCalls,
       pendingIds,
       artifacts,
-      tokensOut,
+      tokensOut: model.tokensOut,
     };
   };
 
-  // Empty-reply backstop. Some models return literally zero output tokens on
-  // a text-only call whose transcript ends in tool results — observed on
-  // gemini-3.5-flash in the force-final pass (2026-06-11 web turn that 500'd
-  // with 'assistant: empty reply from model'). One retry with an explicit
-  // user-role nudge gives the model something concrete to respond to; runs on
-  // the ACTIVE route. Still-empty after the retry is returned as-is — the
-  // caller decides how to degrade (the web assistant substitutes a fallback
-  // reply instead of failing the turn).
-  const retryEmptyReply = async (reason: string): Promise<string> => {
-    messages.push({
-      role: 'user',
-      content:
-        '(Your previous response was empty. Reply now with your final answer to ' +
-        'the user, in plain text. Do not call tools.)',
-    });
-    return step(
-      {
-        name: `${active.adapter.adapterName}_chat[empty_retry]`,
-        kind: 'llm_call',
-        input: { model: active.model, provider: active.adapter.providerId, reason },
-      },
-      async (h) => {
-        const r = await active.adapter.chat({
-          apiKey: active.apiKey,
-          model: active.model,
-          ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
-          ...(active.viaTailnet ? { viaTailnet: true } : {}),
-          messages,
-          toolChoice: 'none',
-          cacheControl: { systemPrompt: true },
-          ...(typeof args.params.max_retries === 'number'
-            ? { maxRetries: args.params.max_retries }
-            : {}),
-        });
-        recordChatUsage(h, r, active.model);
-        tokensOut += r.tokensOut ?? 0;
-        if (!r.text.trim()) h.setMeta({ still_empty: true });
-        return r.text;
-      },
-    );
-  };
-
   for (let iter = 0; iter < maxIters; iter++) {
-    const result = await step(
-      {
-        name:
-          iter === 0
-            ? `${active.adapter.adapterName}_chat`
-            : `${active.adapter.adapterName}_chat[${iter}]`,
-        kind: 'llm_call',
-        input: {
-          model: active.model,
-          provider: active.adapter.providerId,
-          iter,
-          tools: toolsForModel.length,
-          ...(failedOver ? { failed_over: true } : {}),
-        },
-      },
-      async (h) => {
-        // Adaptive thinking on the tool-loop turn (gated per user — resolved by
-        // the caller from profile prefs: switch ON + positive budget). When on,
-        // the model reasons before answering and the reasoning streams back as
-        // `reasoning` deltas + signed `reasoning_details` (echoed across rounds
-        // above). Reasoning-capable models reject sampling params, so we drop
-        // temperature/top_p whenever thinking is requested.
-        //
-        // Clamp the budget against the agent's max_tokens: the reasoning
-        // providers (OpenRouter→Anthropic, Gemini) require the thinking budget to
-        // be < max_tokens AND need room left for the answer, else they 400. Cap
-        // at half the token budget; if that floor is below the 1024 provider
-        // minimum, drop thinking rather than send a doomed request. When
-        // max_tokens is unset the provider uses its own large default, so the
-        // budget passes through. (Anthropic-direct ignores the magnitude — it
-        // treats any >0 as adaptive on/off — so the clamp is a no-op there.)
-        const thinkingBudget = clampThinkingBudget(
-          args.thinkingBudget ?? 0,
-          args.params.max_tokens,
-        );
-        // Effective max_tokens for the request. When thinking is on but the agent
-        // pinned NO max_tokens, send an explicit ceiling above the budget — the
-        // reasoning providers require max_tokens > budget and may inject a small
-        // default of their own (e.g. OpenRouter→Anthropic), which would 400. A
-        // ceiling of budget*2 keeps the same half-budget headroom the clamp uses.
-        const effectiveMaxTokens = resolveMaxTokens(args.params.max_tokens, thinkingBudget);
-        const chatOpts = {
-          messages,
-          ...(sendTools ? { tools: toolsForModel } : {}),
-          // Prompt-cache breakpoints: mark the system block (persona +
-          // skills stay turn-to-turn) and the most recent user message
-          // (re-sent context monotonically grows; pre-mark for next-turn
-          // cache hit). Adapters whose providers don't support cache
-          // markers ignore this — see ChatCacheControl docs.
-          cacheControl: { systemPrompt: true, lastUserMessage: true },
-          ...(thinkingBudget > 0 ? { thinkingBudget } : {}),
-          // Gated on the CLAMPED budget, not the raw effort: when the clamp
-          // drops thinking (budget below the provider floor for this agent's
-          // max_tokens) the effort must drop with it, or the request would ask
-          // for reasoning the token ceiling can't accommodate.
-          ...(thinkingBudget > 0 && args.thinkingEffort
-            ? { thinkingEffort: args.thinkingEffort }
-            : {}),
-          ...(thinkingBudget === 0 && typeof args.params.temperature === 'number'
-            ? { temperature: args.params.temperature }
-            : {}),
-          ...(typeof effectiveMaxTokens === 'number' ? { maxTokens: effectiveMaxTokens } : {}),
-          ...(thinkingBudget === 0 && typeof args.params.top_p === 'number'
-            ? { topP: args.params.top_p }
-            : {}),
-          ...(typeof args.params.max_retries === 'number'
-            ? { maxRetries: args.params.max_retries }
-            : {}),
-        };
-        try {
-          const r = await dispatchChat(
-            active.adapter,
-            {
-              apiKey: active.apiKey,
-              model: active.model,
-              ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
-              ...(active.viaTailnet ? { viaTailnet: true } : {}),
-              ...chatOpts,
-            },
-            iter,
-          );
-          recordChatUsage(h, r, active.model);
-          tokensOut += r.tokensOut ?? 0;
-          return r;
-        } catch (err) {
-          // Fail over to the backup once per turn, only on a route-DOWN /
-          // 429 / 5xx error. 4xx bad-input would fail identically on the
-          // backup, so rethrow those.
-          // A user Stop on the one-shot chat() path surfaces as a thrown
-          // AbortError — that's the Stop, not a route failure. Rethrow before
-          // the failover check so we don't dispatch the backup (and burn its
-          // retries) against an already-dead signal; run-turn's catch
-          // recognises the aborted signal and finalizes as a stop.
-          if (turnAborted()) throw err;
-          if (!args.backup || failedOver || !isChatFailover(err)) throw err;
-          console.warn(
-            `[tool-loop] primary '${active.adapter.adapterName}:${active.model}' failed ` +
-              `(${errorMessage(err)}) — failing over to backup ` +
-              `'${args.backup.adapter.adapterName}:${args.backup.model}' for the rest of this turn`,
-          );
-          active = {
-            adapter: args.backup.adapter,
-            apiKey: args.backup.apiKey,
-            model: args.backup.model,
-            baseUrl: args.backup.baseUrl ?? null,
-            viaTailnet: args.backup.viaTailnet ?? false,
-          };
-          failedOver = true;
-          const r = await dispatchChat(
-            active.adapter,
-            {
-              apiKey: active.apiKey,
-              model: active.model,
-              ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
-              ...(active.viaTailnet ? { viaTailnet: true } : {}),
-              ...chatOpts,
-            },
-            iter,
-          );
-          recordChatUsage(h, r, active.model);
-          tokensOut += r.tokensOut ?? 0;
-          return r;
-        }
-      },
-    );
+    const result = await model.round(iter);
 
     if (result.text.trim()) lastRoundText = result.text;
 
@@ -929,7 +675,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       // Skip the retry there and let the caller degrade with an honest message.
       const blocked = result.finishReason === 'content_filter';
       if (!text.trim() && !turnAborted() && !blocked) {
-        text = await retryEmptyReply('final_round_empty');
+        text = await model.retryEmpty('final_round_empty');
       }
       messages.push({ role: 'assistant', content: text });
       return {
@@ -939,7 +685,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         toolCalls,
         pendingIds,
         artifacts,
-        tokensOut,
+        tokensOut: model.tokensOut,
         ...(result.finishReason ? { finishReason: result.finishReason } : {}),
       };
     }
@@ -962,25 +708,10 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         : {}),
     });
 
-    // Execute each call, append tool message.
-    //
-    // In-response duplicate guard. Some models (notably Grok-4.x) hedge by
-    // emitting multiple BYTE-IDENTICAL `tool_use` blocks for the same write
-    // operation in a single response. Without this guard the loop happily
-    // dispatched all of them — 3× page_create with the same body created 3
-    // pages. Scope is per-iteration (one model response): an across-turn
-    // repeat is legitimate (the model re-reading after some processing), so
-    // the Map resets at the top of each iter. Raw-string compare is fine
-    // because models emit deterministic JSON within one response.
-    const seenSignatures = new Map<string, string>(); // signature → first call.id
-    let responseCallIndex = 0; // non-duplicate calls dispatched THIS response (per-response cap)
-    // Snapshot the per-tool counters at BATCH start: cap decisions inside this
-    // response compare against the snapshot, so a batch that begins under a
-    // cap executes in full instead of being severed halfway (see the guard
-    // constants' comment — a half-applied write batch is worse than a bounded
-    // overshoot; MAX_TOOL_CALLS_PER_RESPONSE bounds the overshoot).
-    const perToolCountsAtBatchStart = new Map(perToolCounts);
-    let dispatchedThisBatch = 0; // calls that made it past every guard
+    // Execute each call, append tool message. The guards decide, in a fixed
+    // order, which calls run (see TurnGuards); every skipped call still gets
+    // its paired synthetic result.
+    guards.beginBatch();
     for (const call of calls) {
       // Stop mid-batch: nothing new starts. Each remaining call still gets a
       // paired synthetic result (providers reject an unpaired tool_use on any
@@ -996,98 +727,9 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       const startedAt = Date.now();
       const slug = call.function.name;
       const argsRaw = call.function.arguments ?? '{}';
-      const signature = `${slug}::${argsRaw}`;
-      const firstCallId = seenSignatures.get(signature);
-      if (firstCallId !== undefined) {
-        // Suppress. We still MUST push a tool message paired with this
-        // call.id — providers (OpenAI, Anthropic) reject the next request
-        // shape otherwise — so the synthetic result tells the model what
-        // happened and points at the first call's id for reference.
-        const dupNote = {
-          ok: false as const,
-          error: 'duplicate_in_response',
-          note:
-            `This exact tool call (same name + same arguments) appeared more ` +
-            `than once in your response. Only the first was dispatched ` +
-            `(call_id ${firstCallId}); this duplicate was suppressed to ` +
-            `prevent accidental write amplification. If you intended a ` +
-            `single operation, the first call's result stands. If you ` +
-            `intended distinct operations, re-issue with different arguments.`,
-          first_call_id: firstCallId,
-        };
-        await step(
-          {
-            name: `tool: ${slug}`,
-            kind: 'compute',
-            input: { slug, args: '<duplicate, suppressed>' },
-          },
-          async (handle) => {
-            handle.setSkipped('duplicate_in_response');
-            // `model` is denormalised onto the suppression step's meta so
-            // the /debug "duplicates suppressed by model" widget can group
-            // by it without a lateral join back to the trace's first
-            // llm_call step. Cheap to write, cheap to query.
-            handle.setMeta({
-              duplicate_in_response: true,
-              first_call_id: firstCallId,
-              call_id: call.id,
-              model: args.model,
-            });
-          },
-        );
-        toolCalls.push({
-          slug,
-          argsJson: argsRaw,
-          durationMs: 0,
-          status: 'error',
-          error: 'duplicate_in_response',
-        });
-        messages.push({
-          role: 'tool',
-          toolCallId: call.id,
-          content: JSON.stringify(dupNote),
-        });
-        continue;
-      }
-      seenSignatures.set(signature, call.id);
-
-      // ── Volume guards (structural backstop against tool-spam runaways) ──
-      // Each emits a paired synthetic result so the provider protocol stays
-      // valid, then skips execution — bounding cost regardless of how wild the
-      // model gets. These count only non-duplicate calls (dupes already handled).
-      responseCallIndex += 1;
-      if (responseCallIndex > MAX_TOOL_CALLS_PER_RESPONSE) {
-        await skipToolCall(
-          call,
-          'too_many_calls_in_response',
-          `You issued more than ${MAX_TOOL_CALLS_PER_RESPONSE} tool calls in one ` +
-            `response; the rest were not run. Issue fewer, more deliberate calls.`,
-        );
-        continue;
-      }
-      if (budgetExhausted) {
-        // Only reachable when the budget tripped BETWEEN batches (defensive —
-        // the post-batch break below normally ends the loop first).
-        await skipToolCall(
-          call,
-          'turn_tool_budget_reached',
-          `This turn reached its tool-call budget (${maxToolCallsPerTurn}). ` +
-            `Stop calling tools and answer with what you already have.`,
-        );
-        continue;
-      }
-      const priorAtBatchStart = perToolCountsAtBatchStart.get(slug) ?? 0;
-      if (priorAtBatchStart >= maxCallsPerToolPerTurn) {
-        await skipToolCall(
-          call,
-          'tool_repeat_limit',
-          `You've called '${slug}' ${perToolCounts.get(slug) ?? priorAtBatchStart} times this turn ` +
-            `(limit ${maxCallsPerToolPerTurn}); further '${slug}' calls are blocked. ` +
-            `If you were partway through a multi-item job, stop NOW and report exactly ` +
-            `what completed and what remains, so your caller can continue it — a bulk/batch ` +
-            `variant of this tool, if one exists, does the whole job in one call next time. ` +
-            `Do NOT improvise with a different tool to force the same change through.`,
-        );
+      const pre = guards.preParse({ id: call.id, slug, argsRaw });
+      if (pre) {
+        await skipToolCall(call, pre.reason, pre.note, pre.firstCallId);
         continue;
       }
       const tool = toolsByName.get(slug);
@@ -1104,7 +746,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       // Safe repairs (string→number, "true"→true, scalar→array-wrap, …) are
       // applied to `input` here so the handler — and, for confirm-gated
       // tools, the pending queue — always sees the repaired args. Violations
-      // only BLOCK below, inside the step, when the mode is 'enforce'.
+      // only BLOCK inside the step, when the mode is 'enforce'.
       const argValidation: ValidateArgsResult | null =
         !argParseError && tool && argValidationMode !== 'off'
           ? validateToolArgs(
@@ -1115,201 +757,30 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           : null;
       if (argValidation) input = argValidation.input;
 
-      // ── Failure-aware guards (outcome-sensitive, cross-round) ──
-      // The volume caps above count CALLS; these two count what the calls
-      // produced. In-response dedup means a signature appears at most once
-      // per round, so these only trip on genuine cross-round flail loops —
-      // no batch-severing concern. (Pattern from hermes-agent's
-      // tool_guardrails: a call that keeps failing identically, or keeps
-      // returning the identical result, deserves intervention long before
-      // the 15-call fixation cap.)
-      //
       // Keyed by the CANONICAL signature — post-repair args with sorted
       // keys — so `{"limit":"25"}` and `{"limit":25}` (and key-order
-      // shuffles) count as the same call. The raw-string signature above is
-      // only for the in-response dedup, where byte-identity is the point.
+      // shuffles) count as the same call. The raw-string signature the
+      // in-response dedup uses is byte-identity on purpose.
       const guardSig = `${slug}::${argParseError ? argsRaw : canonicalJson(input)}`;
-      const priorExactFailures = exactFailureCounts.get(guardSig) ?? 0;
-      if (priorExactFailures >= REPEATED_FAILURE_LIMIT) {
-        await skipToolCall(
-          call,
-          'repeated_failure',
-          `This exact call ('${slug}' with these same arguments) has already failed ` +
-            `${priorExactFailures} times this turn; it was blocked, not re-run — repeating it ` +
-            `verbatim cannot succeed. Change the arguments or the approach, or answer with ` +
-            `what you have.`,
-        );
+      const post = guards.postParse(slug, guardSig);
+      if (post) {
+        await skipToolCall(call, post.reason, post.note);
         continue;
       }
-      const priorIdentical = identicalResults.get(guardSig);
-      if (priorIdentical && priorIdentical.count >= NO_PROGRESS_LIMIT) {
-        await skipToolCall(
-          call,
-          'no_progress',
-          `You've made this exact call ('${slug}' with these same arguments) ` +
-            `${priorIdentical.count} times and received the identical result every time — the ` +
-            `state isn't changing, so it was blocked, not re-run. Use the result already in ` +
-            `context above; if you need different data, change the arguments.`,
-        );
-        continue;
-      }
-      perToolCounts.set(slug, (perToolCounts.get(slug) ?? 0) + 1);
-      totalToolCalls += 1;
-      dispatchedThisBatch += 1;
+      guards.admit(slug);
 
-      // Redact sensitive input fields BEFORE they're written to
-      // `trace_steps.input`. The `redactedInput` is what we log; the
-      // handler still receives the original `input` with the plaintext
-      // value. This is the only mitigation for tools like
-      // `secret_create` whose whole point is sealing a value — if we
-      // logged the raw args, the plaintext PIN would live in Postgres
-      // forever next to the sealed copy. Belt and braces.
-      const redactedInput = redactArgsForLogging(input, getBuiltinRedactFields(slug));
-      const outcome = await step(
-        {
-          name: `tool: ${slug}`,
-          kind: 'compute',
-          input: { slug, args: redactedInput },
-        },
-        async (handle) => {
-          if (argParseError) {
-            handle.setMeta({ argsRaw: call.function.arguments });
-            handle.setError(argParseError);
-            return {
-              ok: false as const,
-              error:
-                `${argParseError}. Re-issue the tool call with a valid JSON object ` +
-                `whose keys match the tool's inputSchema. Do not retry with the same arguments.`,
-            };
-          }
-          if (!tool) {
-            handle.setError(`tool '${slug}' is not in this agent's allowlist`);
-            return {
-              ok: false as const,
-              error: `tool '${slug}' is not in this agent's allowlist`,
-            };
-          }
-          // Arg-validation telemetry + (enforce-mode) rejection. The meta is
-          // written in EVERY mode so /debug can chart repair + violation
-          // rates per tool before anyone flips enforcement on.
-          if (
-            argValidation &&
-            (argValidation.repairs.length > 0 ||
-              argValidation.unknownKeys.length > 0 ||
-              argValidation.violations.length > 0)
-          ) {
-            handle.setMeta({
-              arg_validation: {
-                mode: argValidationMode,
-                ...(argValidation.repairs.length > 0 ? { repairs: argValidation.repairs } : {}),
-                ...(argValidation.unknownKeys.length > 0
-                  ? { unknown_keys: argValidation.unknownKeys }
-                  : {}),
-                ...(argValidation.violations.length > 0
-                  ? { violations: argValidation.violations.map((v) => v.message) }
-                  : {}),
-              },
-            });
-          }
-          if (argValidationMode === 'enforce' && argValidation?.error) {
-            handle.setError(argValidation.error);
-            return { ok: false as const, error: argValidation.error };
-          }
-          // Confirmation gate: a tool flagged requires_confirm doesn't
-          // execute here. Instead we persist a pending_tool_calls row;
-          // the operator approves/rejects via /pending. The synthetic
-          // tool_result tells the model the action is queued so it can
-          // wrap up its turn coherently.
-          if (tool.requiresConfirm) {
-            const traceId = currentTrace()?.id ?? null;
-            // Note: pendingToolCalls.args stores the UN-REDACTED input —
-            // post-repair (the central validator's safe coercions applied),
-            // never the redacted logging copy — because the approve path
-            // needs real args to execute the tool later. Sensitive tools
-            // that route through requires_confirm therefore expose their
-            // args to /pending until they're approved or rejected. That's
-            // an acceptable single-user tradeoff; if multi-tenant ever
-            // happens, pendingToolCalls.args needs to be sealed too.
-            const [pending] = await db
-              .insert(pendingToolCalls)
-              .values({
-                ownerId: args.ownerId,
-                agentId: args.agentId ?? null,
-                toolSlug: slug,
-                args: input,
-                traceId,
-              })
-              .returning({ id: pendingToolCalls.id });
-            const pendingId = pending?.id ?? null;
-            if (pendingId) {
-              pendingIds.push(pendingId);
-              // Surface the approval wherever the operator is: live badge
-              // + a one-tap Telegram card. Fire-and-forget — the row is
-              // already persisted and /pending owns the truth.
-              void notifyPendingCreated({
-                ownerId: args.ownerId,
-                pendingId,
-                toolSlug: slug,
-                args: input,
-                via: args.agentSlug ? `agent ${args.agentSlug}` : undefined,
-              });
-            }
-            handle.setSkipped('requires_confirm');
-            handle.setMeta({ pendingId, requiresConfirm: true });
-            return {
-              ok: true as const,
-              output: {
-                status: 'queued_for_approval',
-                pending_id: pendingId,
-                message:
-                  `The tool '${slug}' requires operator approval. ` +
-                  `A pending entry was queued at /pending. Tell the user what's queued ` +
-                  `and that it'll run once approved. Do not call the same tool again ` +
-                  `in this turn.`,
-              },
-            };
-          }
-          const result = await dispatchTool(tool, input, {
-            ownerId: args.ownerId,
-            step: {
-              setMeta: (m) => handle.setMeta(m),
-              setOutput: (o) => handle.setOutput(o),
-              // Let a tool that calls an LLM (e.g. web_search → Sonar)
-              // attribute its spend to this step → the active trace.
-              addTokens: (d) => handle.addTokens(d),
-              addCost: (mu) => handle.addCost(mu),
-            },
-            // Populated only when the caller passed agent context.
-            // The `invoke_agent` builtin requires it; regular tools
-            // ignore it.
-            ...(args.agentSlug
-              ? {
-                  agent: {
-                    slug: args.agentSlug,
-                    depth: args.agentDepth ?? 1,
-                    delegateTo: args.delegateTo ?? [],
-                    parentTraceId: args.parentTraceId ?? null,
-                    // Forward the parent's resolved (pre-clamp) budget so a
-                    // delegated specialist inherits the per-user thinking pref.
-                    ...(args.thinkingBudget ? { thinkingBudget: args.thinkingBudget } : {}),
-                    ...(lastUserMessage ? { lastUserMessage } : {}),
-                  },
-                }
-              : {}),
-            // Per-turn surface (Telegram chat id, /assistant, …) so
-            // worker-delegation tools know where to send results.
-            // Absent for background callers (reflector/extractor) —
-            // synthesize_speech & friends refuse cleanly when missing.
-            ...(args.surface ? { surface: args.surface } : {}),
-          });
-          // Surface a tool's structured failure onto the step so /traces shows
-          // it as an error, not a 'success' with empty output. (A mis-calling
-          // model — e.g. Grok page_share with a bogus id — otherwise looks like
-          // it succeeded N times.)
-          if (!result.ok) handle.setError(result.error);
-          return result;
-        },
-      );
+      const outcome = await executeToolCall({
+        args,
+        slug,
+        call,
+        tool,
+        input,
+        argParseError,
+        argValidation,
+        argValidationMode,
+        lastUserMessage,
+        pendingIds,
+      });
 
       const duration = Date.now() - startedAt;
       // A confirm-gated call returns ok:true (the QUEUING succeeded) but the
@@ -1342,88 +813,14 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         for (const a of outcome.artifacts) artifacts.push(a);
       }
 
-      // Feed the result back to the model. Errors are sent as JSON too —
-      // the model usually adapts (retries with different args, falls
-      // back to a plain answer) rather than blowing up.
-      //
-      // Oversized OK results no longer get truncated (which silently dropped
-      // content): they spill to the tool-result store and the model receives
-      // a handle envelope it can page/grep/query via `read_result`. The small
-      // path stays a plain inline assignment with zero overhead.
-      let payload: string;
-      if (!outcome.ok) {
-        // Failure-aware guard accounting: identical failing calls escalate —
-        // the payload teaches from the 2nd failure, the guard above blocks
-        // at the limit. Keyed by the same canonical signature the guard
-        // checks, so encoding drift can't reset the count.
-        const failures = (exactFailureCounts.get(guardSig) ?? 0) + 1;
-        exactFailureCounts.set(guardSig, failures);
-        // Error strings can embed EXTERNAL content (an HTTP body excerpt, a
-        // recipe step's inner error) and bypass the success-path fence below
-        // — sanitize centrally so no handler has to remember to.
-        payload = JSON.stringify({
-          error: sanitizeToolError(outcome.error),
-          ...(failures >= 2
-            ? {
-                loop_guard:
-                  `This exact call has now failed ${failures} times this turn with the same ` +
-                  `arguments. Change the arguments or the approach — after ` +
-                  `${REPEATED_FAILURE_LIMIT} identical failures further attempts are blocked.`,
-              }
-            : {}),
-        });
-      } else {
-        let serialized = JSON.stringify(outcome.output);
-        // No-progress accounting: consecutive identical results for the same
-        // signature. A different result resets the streak — re-reads after
-        // writes legitimately repeat and are never penalised.
-        {
-          const resultHash = hashToolResult(serialized);
-          const prior = identicalResults.get(guardSig);
-          identicalResults.set(
-            guardSig,
-            prior && prior.hash === resultHash
-              ? { hash: resultHash, count: prior.count + 1 }
-              : { hash: resultHash, count: 1 },
-          );
-        }
-        // Fence untrusted external content BEFORE the inline/spill decision so
-        // the boundary travels both paths: inline results carry it directly,
-        // and spilled results are stored fenced — so read_result page/grep/
-        // query return fenced content too, never a clean instruction.
-        if (
-          UNTRUSTED_CONTENT_TOOL_SLUGS.has(slug) ||
-          (outcome as { untrusted?: boolean }).untrusted === true
-        ) {
-          serialized = fenceRetrieved(serialized);
-        }
-        if (Buffer.byteLength(serialized, 'utf8') <= handling.inlineMaxBytes) {
-          payload = serialized;
-        } else {
-          payload = await step(
-            {
-              name: `spill_result: ${slug}`,
-              kind: 'compute',
-              input: { bytes: Buffer.byteLength(serialized, 'utf8') },
-            },
-            async (h) => {
-              const processed = await processToolResultForModel({
-                serialized,
-                ownerId: args.ownerId,
-                traceId: currentTrace()?.id ?? null,
-                toolSlug: slug,
-                handling,
-              });
-              h.setMeta({
-                spilled: processed.spilled,
-                handle: processed.handle,
-                bytes: processed.bytes,
-              });
-              return processed.payload;
-            },
-          );
-        }
-      }
+      const payload = await toolResultPayload({
+        outcome,
+        slug,
+        guardSig,
+        guards,
+        ownerId: args.ownerId,
+        handling,
+      });
       messages.push({
         role: 'tool',
         toolCallId: call.id,
@@ -1439,14 +836,11 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     // the transcript (the tool_calls assistant message pushed above) — don't
     // push it twice.
     if (turnAborted()) return stoppedResult(result.text, iter, { pushAssistantMessage: false });
-    // A sizeable batch whose calls were ALL guard-skipped did zero work — a
-    // model that mass re-emits into a wall it was just told about is flailing,
-    // not adapting (NATREF 2026-07-28: a capped child re-issued 47 blocked
-    // row-adds across two more rounds before giving up). Force the final
-    // answer now instead of paying LLM rounds for more of the same. The ≥3
-    // floor leaves room for genuine adaptation after a single skipped call
-    // (a lone duplicate or a one-off cap graze is normal traffic).
-    if (calls.length >= 3 && dispatchedThisBatch === 0) {
+    const boundary = guards.endBatch(calls.length);
+    if (boundary === 'batch_fully_skipped') {
+      // (NATREF 2026-07-28: a capped child re-issued 47 blocked row-adds across
+      // two more rounds before giving up.) Force the final answer now instead
+      // of paying LLM rounds for more of the same.
       batchFullySkipped = true;
       messages.push({
         role: 'user',
@@ -1460,17 +854,15 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
       });
       break;
     }
-    // Per-turn tool budget check at the BATCH boundary (never mid-batch —
-    // see the snapshot above). Budget spent → stop looping; the force-final
-    // pass below produces the answer. The explicit nudge tells the model the
-    // budget (not its own judgment) ended the turn, so it reports honestly
-    // what completed vs what remains instead of narrating false completion.
-    if (totalToolCalls >= maxToolCallsPerTurn) budgetExhausted = true;
-    if (budgetExhausted) {
+    if (boundary === 'budget_exhausted') {
+      // Budget spent → stop looping; the force-final pass below produces the
+      // answer. The explicit nudge tells the model the budget (not its own
+      // judgment) ended the turn, so it reports honestly what completed vs
+      // what remains instead of narrating false completion.
       messages.push({
         role: 'user',
         content:
-          `[system] This turn's tool-call budget (${maxToolCallsPerTurn}) is spent — no more tool calls ` +
+          `[system] This turn's tool-call budget (${guards.maxToolCallsPerTurn}) is spent — no more tool calls ` +
           `will run this turn. ${formatOutcomeSummary(summarizeToolOutcomes(toolCalls))} ` +
           `Give your final answer now: state plainly what was completed (per the record above) and what ` +
           `remains to be done. Do not claim unfinished work is done. The user can ` +
@@ -1488,7 +880,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
   // Max-iters path only (the budget path pushed its own nudge above): give
   // the model the deterministic outcome ledger so its forced answer reports
   // what ACTUALLY completed rather than what it remembers attempting.
-  if (!budgetExhausted && !batchFullySkipped && toolCalls.length > 0) {
+  if (!guards.budgetExhausted && !batchFullySkipped && toolCalls.length > 0) {
     messages.push({
       role: 'user',
       content:
@@ -1497,57 +889,20 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
         `Answer now with what you have; do not claim unfinished work is done.`,
     });
   }
-  // Runs on the ACTIVE route (not args.*): if the turn failed over mid-loop,
-  // going back to the primary here would re-hit the route that just died —
-  // and the active route's baseUrl/viaTailnet must travel too (a local
-  // adapter without its baseUrl is a dead call).
-  const finalResult = await step(
-    {
-      name: `${active.adapter.adapterName}_chat[force_final]`,
-      kind: 'llm_call',
-      input: {
-        model: active.model,
-        provider: active.adapter.providerId,
-        reason: budgetExhausted
-          ? 'tool_budget_reached'
-          : batchFullySkipped
-            ? 'batch_fully_skipped'
-            : 'max_iters_reached',
-        ...(failedOver ? { failed_over: true } : {}),
-      },
-    },
-    async (h) => {
-      const r = await dispatchChat(
-        active.adapter,
-        {
-          apiKey: active.apiKey,
-          model: active.model,
-          ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
-          ...(active.viaTailnet ? { viaTailnet: true } : {}),
-          messages: messages,
-          // toolChoice: 'none' explicitly disables tool calling for the
-          // final pass — force a text answer. Adapters whose providers
-          // don't honour 'none' fall back to dropping the tools field
-          // (Anthropic) or no-op (xAI/HF treat it as auto).
-          toolChoice: 'none',
-          cacheControl: { systemPrompt: true },
-          ...(typeof args.params.max_retries === 'number'
-            ? { maxRetries: args.params.max_retries }
-            : {}),
-        },
-        maxIters,
-      );
-      recordChatUsage(h, r, active.model);
-      tokensOut += r.tokensOut ?? 0;
-      return r;
-    },
+  const finalResult = await model.forceFinal(
+    guards.budgetExhausted
+      ? 'tool_budget_reached'
+      : batchFullySkipped
+        ? 'batch_fully_skipped'
+        : 'max_iters_reached',
+    maxIters,
   );
   let text = finalResult.text;
   // Same reasoning as the normal exit above: a withheld reply won't un-withhold
   // itself on a second ask.
   const finalBlocked = finalResult.finishReason === 'content_filter';
   if (!text.trim() && !turnAborted() && !finalBlocked) {
-    text = await retryEmptyReply('force_final_empty');
+    text = await model.retryEmpty('force_final_empty');
   }
   messages.push({ role: 'assistant', content: text });
   return {
@@ -1557,7 +912,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     toolCalls,
     pendingIds,
     artifacts,
-    tokensOut,
+    tokensOut: model.tokensOut,
     ...(finalResult.finishReason ? { finishReason: finalResult.finishReason } : {}),
   };
 }
