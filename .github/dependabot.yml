@@ -1,0 +1,24 @@
+# Dependabot (2026-09-02 audit, gap D9): until now CVE floors were hand-tracked
+# in pnpm-workspace.yaml `overrides`. Weekly, grouped, so the noise is one PR
+# per ecosystem; security updates still arrive as they land.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday

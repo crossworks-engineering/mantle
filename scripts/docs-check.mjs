@@ -16,7 +16,7 @@
  * into the brain, so a dead path there misleads the assistant, not just a
  * reader. Runs in build-check; `pnpm docs:check` locally.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 const root = resolve(new URL('..', import.meta.url).pathname);

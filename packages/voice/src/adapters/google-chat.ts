@@ -30,7 +30,15 @@ import type {
   ChatToolCall,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
-import { STREAM_IDLE_TIMEOUT_MS, chatAbortSignal, readSSE, safeDelta, streamAbort } from './sse';
+import {
+  STREAM_IDLE_TIMEOUT_MS,
+  chatAbortSignal,
+  readSSE,
+  routeBase,
+  safeDelta,
+  streamAbort,
+} from './sse';
+import { tailnetFetch } from './tailnet';
 import { wantGuardedThinking } from './thinking-guard';
 import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_CHAT_MODELS } from '../catalogs/google';
@@ -543,15 +551,18 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
 
   const body = buildGoogleBody(opts);
 
-  const res = await fetch(`${GOOGLE_BASE_URL}/models/${opts.model}:generateContent`, {
-    method: 'POST',
-    headers: {
-      'x-goog-api-key': opts.apiKey,
-      'content-type': 'application/json',
+  const res = await (opts.viaTailnet ? tailnetFetch : fetch)(
+    `${routeBase(opts.baseUrl, GOOGLE_BASE_URL)}/models/${opts.model}:generateContent`,
+    {
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': opts.apiKey,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: chatAbortSignal(opts.signal, 60_000),
     },
-    body: JSON.stringify(body),
-    signal: chatAbortSignal(opts.signal, 60_000),
-  });
+  );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     throw new ChatHttpError({
@@ -652,12 +663,15 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
   if (opts.signal?.aborted) return { text: '', model: opts.model };
 
   const abort = streamAbort(opts.signal);
-  const res = await fetch(`${GOOGLE_BASE_URL}/models/${opts.model}:streamGenerateContent?alt=sse`, {
-    method: 'POST',
-    headers: { 'x-goog-api-key': opts.apiKey, 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: abort.signal,
-  });
+  const res = await (opts.viaTailnet ? tailnetFetch : fetch)(
+    `${routeBase(opts.baseUrl, GOOGLE_BASE_URL)}/models/${opts.model}:streamGenerateContent?alt=sse`,
+    {
+      method: 'POST',
+      headers: { 'x-goog-api-key': opts.apiKey, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: abort.signal,
+    },
+  );
   abort.connected();
   if (!res.ok || !res.body) {
     const errBody = await res.text().catch(() => '');

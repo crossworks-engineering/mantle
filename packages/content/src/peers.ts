@@ -241,8 +241,9 @@ export async function deletePeer(ownerId: string, id: string): Promise<boolean> 
     .where(and(eq(mantlePeers.id, id), eq(mantlePeers.ownerId, ownerId)))
     .limit(1);
   if (!row) return false;
-  await db.delete(mantlePeers).where(eq(mantlePeers.id, id));
-  await db.delete(nodes).where(eq(nodes.id, row.nodeId)); // cascades peer_shares
+  // One statement: mantle_peers and peer_shares both cascade from the node
+  // (schema/mantle-peers.ts), so deleting it is the whole operation, atomically.
+  await db.delete(nodes).where(eq(nodes.id, row.nodeId));
   return true;
 }
 

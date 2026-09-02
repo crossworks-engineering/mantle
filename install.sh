@@ -44,7 +44,13 @@ set -euo pipefail
 # http server in CI). MANTLE_SKIP_START=1 scaffolds + writes .env but skips
 # the pull/up — used to test the installer without launching a stack.
 REPO_RAW="${MANTLE_REPO_RAW:-https://raw.githubusercontent.com/crossworks-engineering/mantle}"
-CHANNEL="${MANTLE_CHANNEL:-main}"
+# Default to the LATEST RELEASE, not main: a `curl | bash` user gets the compose
+# that was tested with the images it names, downloaded as the signed deploy
+# bundle release.yml publishes (verified against SHA256SUMS). Set
+# MANTLE_CHANNEL=main (or any branch) to fall back to raw file-by-file fetch.
+CHANNEL="${MANTLE_CHANNEL:-}"
+REPO_RELEASES="${MANTLE_REPO_RELEASES:-https://github.com/crossworks-engineering/mantle/releases}"
+REPO_API="${MANTLE_REPO_API:-https://api.github.com/repos/crossworks-engineering/mantle}"
 HOME_DIR="${MANTLE_HOME:-./mantle}"
 DOMAIN="${MANTLE_DOMAIN:-}"
 SKIP_START="${MANTLE_SKIP_START:-}"
@@ -63,6 +69,10 @@ docker compose version >/dev/null 2>&1 || die "the docker compose plugin is miss
 docker info >/dev/null 2>&1 || die "the docker daemon isn't running (or you lack permission — add your user to the docker group)"
 
 # ── 2. scaffold + fetch the deploy bundle ────────────────────────────────────
+if [ -z "$CHANNEL" ]; then
+  CHANNEL="$(curl -fsSL "${REPO_API}/releases/latest" 2>/dev/null | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
+  [ -n "$CHANNEL" ] || { warn "could not resolve the latest release tag — falling back to main"; CHANNEL=main; }
+fi
 say "Installing Mantle into ${HOME_DIR} (bundle ref: ${CHANNEL})"
 mkdir -p "$HOME_DIR/infra/caddy" "$HOME_DIR/infra/postgres/init" "$HOME_DIR/infra/updater" "$HOME_DIR/scripts" "$HOME_DIR/data"
 cd "$HOME_DIR"
@@ -71,6 +81,25 @@ fetch() { # fetch <repo-path> <local-path>
   curl -fsSL "${REPO_RAW}/${CHANNEL}/$1" -o "$2" || die "download failed: $1"
 }
 
+USE_BUNDLE=
+case "$CHANNEL" in
+  v[0-9]*)
+    say "Downloading the signed deploy bundle for ${CHANNEL}"
+    tmp="$(mktemp -d)"
+    curl -fsSL "${REPO_RELEASES}/download/${CHANNEL}/mantle-deploy-${CHANNEL}.tar.gz" -o "$tmp/bundle.tar.gz" || die "download failed: mantle-deploy-${CHANNEL}.tar.gz"
+    curl -fsSL "${REPO_RELEASES}/download/${CHANNEL}/SHA256SUMS" -o "$tmp/SHA256SUMS" || die "download failed: SHA256SUMS"
+    want="$(awk '{print $1}' "$tmp/SHA256SUMS" | head -1)"
+    if command -v sha256sum >/dev/null 2>&1; then have="$(sha256sum "$tmp/bundle.tar.gz" | awk '{print $1}')"; else have="$(shasum -a 256 "$tmp/bundle.tar.gz" | awk '{print $1}')"; fi
+    [ "$want" = "$have" ] || die "bundle checksum mismatch (expected $want, got $have) — refusing to install"
+    tar -xzf "$tmp/bundle.tar.gz" --strip-components=1 -C .
+    rm -rf "$tmp"
+    chmod +x scripts/*.sh
+    ok "bundle verified and unpacked"
+    USE_BUNDLE=1
+    ;;
+esac
+
+if [ -z "$USE_BUNDLE" ]; then
 fetch docker-compose.yml                 docker-compose.yml
 fetch docker-compose.client.yml          docker-compose.client.yml
 fetch docker-compose.core.yml            docker-compose.core.yml
@@ -106,6 +135,7 @@ fetch scripts/compose-adopt.sh           scripts/compose-adopt.sh
 # is the one that takes the data directory with it.
 fetch scripts/uninstall.sh               scripts/uninstall.sh
 chmod +x scripts/db-dump.sh scripts/db-restore.sh scripts/install.sh scripts/sanity.sh scripts/compose-adopt.sh scripts/uninstall.sh
+fi
 ok "deploy bundle fetched"
 
 # ── 3. configure + start + verify — ONE code path ────────────────────────────

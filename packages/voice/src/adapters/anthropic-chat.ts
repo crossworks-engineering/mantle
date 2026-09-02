@@ -34,7 +34,15 @@ import type {
   ThinkingEffort,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
-import { STREAM_IDLE_TIMEOUT_MS, chatAbortSignal, readSSE, safeDelta, streamAbort } from './sse';
+import {
+  STREAM_IDLE_TIMEOUT_MS,
+  chatAbortSignal,
+  readSSE,
+  routeBase,
+  safeDelta,
+  streamAbort,
+} from './sse';
+import { tailnetFetch } from './tailnet';
 import { wantGuardedThinking } from './thinking-guard';
 
 /** Models that REJECT `output_config.effort` outright. Sending it 400s the
@@ -658,16 +666,19 @@ async function anthropicChat(opts: ChatOptions): Promise<ChatResult> {
 
   const body = buildAnthropicBody(opts);
 
-  const res = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
-    method: 'POST',
-    headers: {
-      'x-api-key': opts.apiKey,
-      'anthropic-version': ANTHROPIC_API_VERSION,
-      'content-type': 'application/json',
+  const res = await (opts.viaTailnet ? tailnetFetch : fetch)(
+    `${routeBase(opts.baseUrl, ANTHROPIC_BASE_URL)}/v1/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'x-api-key': opts.apiKey,
+        'anthropic-version': ANTHROPIC_API_VERSION,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: chatAbortSignal(opts.signal, 60_000),
     },
-    body: JSON.stringify(body),
-    signal: chatAbortSignal(opts.signal, 60_000),
-  });
+  );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     throw new ChatHttpError({
@@ -867,16 +878,19 @@ async function anthropicChatStream(
   if (opts.signal?.aborted) return { text: '', model: opts.model };
 
   const abort = streamAbort(opts.signal);
-  const res = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
-    method: 'POST',
-    headers: {
-      'x-api-key': opts.apiKey,
-      'anthropic-version': ANTHROPIC_API_VERSION,
-      'content-type': 'application/json',
+  const res = await (opts.viaTailnet ? tailnetFetch : fetch)(
+    `${routeBase(opts.baseUrl, ANTHROPIC_BASE_URL)}/v1/messages`,
+    {
+      method: 'POST',
+      headers: {
+        'x-api-key': opts.apiKey,
+        'anthropic-version': ANTHROPIC_API_VERSION,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: abort.signal,
     },
-    body: JSON.stringify(body),
-    signal: abort.signal,
-  });
+  );
   abort.connected();
   if (!res.ok || !res.body) {
     const errBody = await res.text().catch(() => '');

@@ -112,7 +112,7 @@ export default tseslint.config(
     files: ['server/web/**/*.{ts,tsx}', 'packages/share-ui/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks, '@next/next': nextPlugin },
     rules: {
-      'react-hooks/rules-of-hooks': 'warn',
+      'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'error',
       '@next/next/no-img-element': 'warn',
     },
@@ -123,11 +123,7 @@ export default tseslint.config(
     // v0.206.1) — found by a user, not CI. See eslint-rules/ for why the rule is
     // deliberately narrow: the common `text-muted-foreground hover:bg-accent
     // hover:text-accent-foreground` idiom is CORRECT and must not be flagged.
-    files: [
-      'client/web/**/*.{ts,tsx}',
-      'server/web/**/*.{ts,tsx}',
-      'packages/share-ui/**/*.{ts,tsx}',
-    ],
+    files: ['server/web/**/*.{ts,tsx}', 'packages/share-ui/**/*.{ts,tsx}'],
     plugins: { mantle: mantlePlugin },
     rules: { 'mantle/pair-fill-foreground': 'error', 'mantle/use-ink-for-text': 'error' },
   },

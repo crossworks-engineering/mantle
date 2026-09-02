@@ -181,3 +181,12 @@ export function safeDelta(onDelta: ChatStreamSink, delta: ChatStreamDelta): void
     );
   }
 }
+
+/** The base URL a fetch adapter should hit: the route's own `baseUrl` when the
+ *  operator set one (trailing slashes dropped), else the provider default.
+ *  Before 2026-09-02 only the custom/local adapters read `opts.baseUrl`; a
+ *  per-route override on an Anthropic or Google route was silently ignored. */
+export function routeBase(override: string | undefined, fallback: string): string {
+  const trimmed = override?.trim().replace(/\/+$/, '');
+  return trimmed ? trimmed : fallback;
+}

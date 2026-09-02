@@ -385,16 +385,24 @@ export async function revokeShareTree(ownerId: string, shareId: string): Promise
     .limit(1);
   if (!row) return revokeShare(ownerId, shareId); // already gone / not found — idempotent
 
-  if (shareCascadeOf(row)) {
-    const ids = await listPageDescendantIds(ownerId, row.nodeId);
+  // Descendants and the parent revoke in ONE transaction: a failure between
+  // the two used to leave the subtree revoked while the parent stayed live.
+  const ids = shareCascadeOf(row) ? await listPageDescendantIds(ownerId, row.nodeId) : [];
+  return db.transaction(async (tx) => {
+    const now = new Date();
     if (ids.length > 0) {
-      await db
+      await tx
         .update(shares)
-        .set({ revokedAt: new Date() })
+        .set({ revokedAt: now })
         .where(
           and(eq(shares.ownerId, ownerId), inArray(shares.nodeId, ids), isNull(shares.revokedAt)),
         );
     }
-  }
-  return revokeShare(ownerId, shareId);
+    const rows = await tx
+      .update(shares)
+      .set({ revokedAt: now })
+      .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
+      .returning({ id: shares.id });
+    return rows.length > 0;
+  });
 }

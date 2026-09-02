@@ -18,3 +18,5 @@ export {
   answerCallback,
   parseApprovalCallback,
 } from './outbound';
+
+export { withTelegramRetry, telegramRetryAfterMs } from './retry';

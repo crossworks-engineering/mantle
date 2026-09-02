@@ -461,6 +461,7 @@ function enrichOpenRouterError(err: unknown, model: string, elapsedMs?: number):
 }
 
 async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
+  warnRouteOverride(opts);
   if (!opts.apiKey) throw new Error('openrouter-chat: apiKey required');
   if (!opts.model) throw new Error('openrouter-chat: model required');
 
@@ -732,6 +733,7 @@ async function openrouterChatStream(
   opts: ChatOptions,
   onDelta: ChatStreamSink,
 ): Promise<ChatResult> {
+  warnRouteOverride(opts);
   if (!opts.apiKey) throw new Error('openrouter-chat: apiKey required');
   if (!opts.model) throw new Error('openrouter-chat: model required');
 
@@ -915,6 +917,17 @@ function safeDelta(onDelta: ChatStreamSink, delta: ChatStreamDelta): void {
       err instanceof Error ? err.message : err,
     );
   }
+}
+
+let warnedRouteOverride = false;
+/** The OpenRouter SDK owns its endpoint; a per-route base URL or tailnet flag
+ *  cannot apply here. Say so once rather than ignore it silently. */
+function warnRouteOverride(opts: ChatOptions): void {
+  if (warnedRouteOverride || (!opts.baseUrl?.trim() && !opts.viaTailnet)) return;
+  warnedRouteOverride = true;
+  console.warn(
+    '[openrouter-chat] this route sets baseUrl/viaTailnet, which the OpenRouter SDK does not honour — use a custom or local route for a self-hosted endpoint.',
+  );
 }
 
 export const openrouterChatAdapter: ChatDispatcher = {

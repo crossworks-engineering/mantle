@@ -387,10 +387,21 @@ export async function resolveGapEntry(
   if (!answerBody) throw new Error('answer is required to resolve a gap');
   const answerKind = input.answerKind?.trim() || 'context';
 
+  // Write the answer FIRST. If marking the gap resolved then fails, the gap
+  // stays open and the next attempt simply answers it again; the old order
+  // could leave a gap marked resolved with no answer behind it (2026-09-02
+  // audit, sloppiness A10).
+  const answer = await createJournal(ownerId, {
+    body: answerBody,
+    kind: answerKind,
+    author: input.author,
+    agentSlug: input.agentSlug,
+  });
   const newData: Record<string, unknown> = {
     ...d,
     status: 'resolved',
     resolved_at: new Date().toISOString(),
+    answer_id: answer.id,
   };
   const [updated] = await db
     .update(nodes)
@@ -398,13 +409,6 @@ export async function resolveGapEntry(
     .where(eq(nodes.id, id))
     .returning();
   if (!updated) throw new Error('resolveGapEntry: update returned no row');
-
-  const answer = await createJournal(ownerId, {
-    body: answerBody,
-    kind: answerKind,
-    author: input.author,
-    agentSlug: input.agentSlug,
-  });
   return { gap: rowOf(updated), answer };
 }
 
