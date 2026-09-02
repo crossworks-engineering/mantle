@@ -161,7 +161,7 @@ stringified embedding vectors.
 
 ## 4. How LLM cost + tokens get captured
 
-`apps/agent/src/llm-usage.ts` exposes `captureLlmUsage(handle,
+`packages/tracing/src/llm-usage.ts` exposes `captureLlmUsage(handle,
 result, model)`. Every site that calls OpenRouter wraps the call in
 a `step('llm_call', …)` and feeds the raw response to this helper.
 It reads `usage.promptTokens`, `usage.completionTokens`,
@@ -185,13 +185,13 @@ roll-up at each level.
 
 | Flow | File | Trace kind | Top-level steps |
 |---|---|---|---|
-| Telegram responder turn | `apps/agent/src/main.ts handleMessage` | `responder_turn` (`subjectKind=telegram_message`) | load_context · build_messages · openrouter_chat · send_telegram · persist_outbound |
-| Web /assistant turn | `apps/web/lib/assistant.ts runAssistantTurn` | `responder_turn` (`subjectKind=assistant_message`, `data.surface=web`) | openrouter_chat + per-tool steps from the tool loop |
-| Extractor run | `apps/agent/src/extractor.ts extractNode` | `extractor_run` | llm_extract · update_index · reconcile_entities · process_facts |
+| Telegram responder turn | `server/api/src/main.ts handleMessage` | `responder_turn` (`subjectKind=telegram_message`) | load_context · build_messages · openrouter_chat · send_telegram · persist_outbound |
+| Web /assistant turn | `server/web/lib/assistant.ts runAssistantTurn` | `responder_turn` (`subjectKind=assistant_message`, `data.surface=web`) | openrouter_chat + per-tool steps from the tool loop |
+| Extractor run | `server/api/src/extractor.ts extractNode` | `extractor_run` | llm_extract · update_index · reconcile_entities · process_facts |
 | Extractor skip | (same) | `extractor_run` (status `skipped`) | (none, disposition + details in `data`) |
-| Summarizer run | `apps/agent/src/summarizer.ts summarizeChat` | `summarizer_run` | load_batch · load_chat_account · llm_summarize · insert_digest_node · mark_turns_digested |
-| Reflector run | `apps/agent/src/reflector.ts reflect` | `reflector_run` | load_recent_turns · llm_reflect · append_notes |
-| Telegram photo ingest | `apps/agent/src/main.ts (photo branch)` | `photo_ingest` | download_photo · persist_file · extract_vision |
+| Summarizer run | `server/api/src/summarizer.ts summarizeChat` | `summarizer_run` | load_batch · load_chat_account · llm_summarize · insert_digest_node · mark_turns_digested |
+| Reflector run | `server/api/src/reflector.ts reflect` | `reflector_run` | load_recent_turns · llm_reflect · append_notes |
+| Telegram photo ingest | `server/api/src/main.ts (photo branch)` | `photo_ingest` | download_photo · persist_file · extract_vision |
 | Content ingest | various entry points | `content_ingest` | `received` step with content snippet |
 | Embedder | `packages/embeddings/src/index.ts embedBatch` | (sub-step) | `embed_batch` step appears under whatever parent called it |
 
@@ -374,7 +374,7 @@ Discoverable from:
 ## 9. Dashboard widgets: `/debug`
 
 Five widget sections at the top of `/debug`, computed via
-`apps/web/lib/metrics.ts`:
+`server/web/lib/metrics.ts`:
 
 - **Last 24h**: total traces, success rate, avg duration.
 - **Token spend (7d)**: total + top-2 spending agents.
@@ -412,7 +412,7 @@ When a new flow goes live (e.g. a future research agent), add it:
    the pattern.)
 2. Update `packages/db/src/schema/traces.ts` to include the new value.
 3. Wrap the new flow's entrypoint in `startTrace({ kind: 'research_agent_run', … }, …)`.
-4. Add a row to `KIND_LABEL` in `apps/web/app/(app)/traces/page.tsx`
+4. Add a row to `KIND_LABEL` in `jackdaw/app/(app)/traces/page.tsx`
    so the filter chip + table cells render the friendly name.
 
 That's it. The list view, detail view, and dashboard widgets all
@@ -492,11 +492,11 @@ order:
 2. [`packages/tracing/src/store.ts`](../packages/tracing/src/store.ts),
    `AsyncLocalStorage` propagation, `startTrace` + `step`, the
    fire-and-forget writers.
-3. [`apps/agent/src/llm-usage.ts`](../apps/agent/src/llm-usage.ts),
+3. [`packages/tracing/src/llm-usage.ts`](../packages/tracing/src/llm-usage.ts),
    how OpenRouter usage gets normalised + rolled up.
-4. [`apps/web/app/(app)/traces/[id]/trace-detail.tsx`](../apps/web/app/(app)/traces/%5Bid%5D/trace-detail.tsx),
+4. [`jackdaw/app/(app)/traces/[id]/trace-detail.tsx`](../jackdaw/app/(app)/traces/%5Bid%5D/trace-detail.tsx),
    how `trace_steps` rows become a reactflow graph (`dagre` layout,
    status-driven styling).
 
-Aggregates at [`apps/web/lib/metrics.ts`](../apps/web/lib/metrics.ts);
-list + detail queries at [`apps/web/lib/traces.ts`](../apps/web/lib/traces.ts).
+Aggregates at [`server/web/lib/metrics.ts`](../server/web/lib/metrics.ts);
+list + detail queries at [`server/web/lib/traces.ts`](../server/web/lib/traces.ts).

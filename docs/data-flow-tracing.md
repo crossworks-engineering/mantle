@@ -61,7 +61,7 @@ trace trail. L1–L3 are about dialogue, not document ingest; trace those
 separately when debugging the responder.
 
 The whole per-entry flow hangs off one trigger: a `nodes` INSERT fires
-`pg_notify('node_ingested', <id>)`, the extractor (`apps/agent`) picks it
+`pg_notify('node_ingested', <id>)`, the extractor (`server/api`) picks it
 up, and writes L5 + L4 + graph. Every step is mirrored into a `traces`
 row.
 
@@ -219,7 +219,7 @@ force it.
 
 > **Do NOT confuse this with a backlog.** `pg_notify('node_ingested', id)`
 > is one node. A full re-process of history is
-> `pnpm -C apps/web extract:backfill`, that one *does* sweep old content
+> `pnpm -C server/web extract:backfill`, that one *does* sweep old content
 > (and spend LLM budget). Never run the backfill to test a single change.
 > Old **emails** are never re-pulled by anything short of the IMAP cursor
 > resetting; restarting the stack does not re-ingest mail.
@@ -231,7 +231,7 @@ force it.
 - **The agent must run the code you're testing.** The dev stack runs from
   the **main** worktree, and `tsx --watch` does *not* reliably reload
   workspace-package (`packages/*`) changes. After editing a package or
-  merging, **restart `apps/agent`**: otherwise you're tracing stale code.
+  merging, **restart `server/api`**: otherwise you're tracing stale code.
 - **New deps need `pnpm install` in the worktree the stack runs from**
   (main), then a restart, before a dynamically-imported parser resolves.
 - **Empty string ≠ NULL** for `data.summary` (see §3). This trips up

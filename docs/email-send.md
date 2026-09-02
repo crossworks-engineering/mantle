@@ -96,7 +96,7 @@ derives a plain-text fallback with `docToText` (so it's a proper
 `multipart/alternative`), and sends both parts.
 
 **Why a separate renderer.** The public-page renderer
-([`apps/web/lib/render-page-doc.ts`](../apps/web/lib/render-page-doc.ts)) emits
+([`server/web/lib/render-page-doc.ts`](../server/web/lib/render-page-doc.ts)) emits
 *class-based* HTML that leans on the app's stylesheet and `var(--chart-N)` theme
 tokens; none of which exist in a mail client. `renderPageEmail` is the
 email-flavoured fourth representation of the page schema: every style is inline,
@@ -143,7 +143,7 @@ upload sessions if ever needed), and Graph returns no RFC message id on send
 | Credentials | reuses `unsealImapPassword(account)`, same sealed app password as IMAP; Microsoft uses the sealed OAuth token store |
 | Tools + provider dispatch | [`packages/tools/src/builtins-email.ts`](../packages/tools/src/builtins-email.ts) (`email_send`, `email_page`; `sendFromAccount` routes SMTP vs Graph) |
 | Page → email HTML | [`packages/content/src/render-page-email.ts`](../packages/content/src/render-page-email.ts) (`renderPageEmail`, `cidForPageImage`) |
-| Grant | `CORE_AUTO_GRANT_SLUGS` in `apps/agent/src/main.ts` (`email_send`, `email_page`, `page_share`, `page_unshare` auto-granted to responder/assistant at boot) |
+| Grant | `CORE_AUTO_GRANT_SLUGS` in `server/api/src/main.ts` (`email_send`, `email_page`, `page_share`, `page_unshare` auto-granted to responder/assistant at boot) |
 | Schema | `smtp_*` on `email_accounts` (migration 0041) |
 | Config UI | the account add/edit form (`/settings/accounts`), optional "Sending (SMTP)" section; the save action probes SMTP before persisting |
 
@@ -152,7 +152,7 @@ upload sessions if ever needed), and Graph returns no RFC message id on send
 1. `/settings/accounts` → edit your account → fill the **Sending (SMTP)**
    section (host/port/TLS). The form verifies the SMTP login (same app password)
    before saving. Leave it blank to keep an account receive-only.
-2. **Restart `apps/agent`** so `email_send` registers + is granted (the builtin
+2. **Restart `server/api`** so `email_send` registers + is granted (the builtin
    handler + `CORE_AUTO_GRANT` run at boot; `tsx --watch` doesn't reload
    workspace packages).
 

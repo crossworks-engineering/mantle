@@ -2,13 +2,13 @@
 
 - **Status:** accepted (2026-07-21); slice-3 re-evaluation AUDITED same day
 , hybrid CONFIRMED with amendments (verdicts inline in
-  [runs-slice-3-plan.md](runs-slice-3-plan.md) §3, amendments folded into
+  [runs-slice-3-plan.md](_archive/runs-slice-3-plan.md) §3, amendments folded into
   its §1/§4, outcome + deferred items in its §8). Jason's plan-§7 decision:
   **implement with amendments**. Spine stays on tables as the intended end
   state; turns move to DBOS; `ask_human` and budget-pause stay on the table
   engine.
 - **Context:** runner queues slices 1+2 ([docs/runs.md](runs.md)), pre-deploy
-  audit ([docs/runs-audit-handover.md](runs-audit-handover.md) §8)
+  audit ([docs/runs-audit-handover.md](_archive/runs-audit-handover.md) §8)
 - **Decision owners:** Jason (release gate), recorded by the audit session
 
 ## Context
@@ -17,13 +17,13 @@ Mantle has **two durable-execution substrates**, and the runner-queue system
 (slices 1+2, `packages/runs`) was built on one without a recorded decision
 against the other:
 
-1. **DBOS** (`@dbos-inc/dbos-sdk`, `apps/api`): the durable engine for agent
+1. **DBOS** (`@dbos-inc/dbos-sdk`, `server/api`): the durable engine for agent
    turns. Assistant/telegram/team/forum turns run as DBOS workflows; every
    LLM call and tool dispatch is a journaled step via the `withDurableSteps`
    seam in `@mantle/tracing`; a crash mid-turn resumes from the last completed
    step; recovery is automatic; queues support concurrency caps and
    partitioning.
-2. **pg-boss** (`apps/web/workers/*`): the job-queue idiom of the worker
+2. **pg-boss** (`server/web/workers/*`): the job-queue idiom of the worker
    fleet (email-sync, telegram-poll, maintenance, …): plain queues + cron,
    jobs as disposable wake-ups.
 
@@ -52,7 +52,7 @@ are suspension-shaped go to DBOS rather than growing the hand-rolled engine.
 
 **Worker turns move to the DBOS turn runner when convenient** (independently
 of the engine question): `execute-worker.ts` runs a whole LLM turn with no
-mid-turn durability today, while `apps/api` already durably executes exactly
+mid-turn durability today, while `server/api` already durably executes exactly
 this shape (`assistant-turn.ts`). Running the worker turn as a DBOS workflow
 gives per-tool crash-resume for free and touches no engine invariant, the
 item still claims/completes through `packages/runs` either side of the turn.
@@ -77,7 +77,7 @@ Why not rewrite now:
   qualified once appends and verdicts arrive as messages.
 - Fleet deploys (CORRECTED by the slice-3 audit, the original wording
   overstated it): this fleet pins a STABLE `applicationVersion`
-  (`'mantle-runner-1'`, apps/api/src/config.ts), so routine in-place
+  (`'mantle-runner-1'`, server/api/src/config.ts), so routine in-place
   deploys do NOT strand in-flight DBOS workflows. The real hazard is a
   dilemma that only bites LONG-LIVED workflows: keep the pin and risk
   step-sequence divergence when replaying across code changes, or bump
@@ -109,7 +109,7 @@ Why the slice-3 gate, and the bias toward DBOS there:
   `engine.ts`/`sweep.ts` lock ordering as a hazard zone (see the run-row
   lock ordering rule added by the audit fixes, every multi-lock transaction
   acquires the run row first).
-- A v2 engine, if it ever happens, targets DBOS workflows in `apps/api`
+- A v2 engine, if it ever happens, targets DBOS workflows in `server/api`
   with `run_items` demoted to the audit-log projection; the `run_*` tool
   surface and compiled-state contract are stable and survive either
   substrate.

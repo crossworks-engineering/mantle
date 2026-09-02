@@ -4,7 +4,7 @@
  *
  * The turn-execution path (resolveAssistantAgent + runAssistantTurn) now lives
  * in @mantle/assistant-runtime so it can run OUTSIDE the Next.js request — from
- * the durable apps/api runner as well as this route — and is re-exported here so
+ * the durable server/api runner as well as this route — and is re-exported here so
  * existing `@/lib/assistant` importers stay unchanged. What remains below is the
  * web-only read side: the timeline queries the /assistant page and its scroll-up
  * pager use, plus the agent-selector list.

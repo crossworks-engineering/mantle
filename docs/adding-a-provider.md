@@ -2,7 +2,7 @@
 
 Cookbook for adding a new provider (or a new capability to an existing one) to Mantle's adapter framework. Written for AI agents; every step is "edit this exact file" with a copy-from-this-existing-adapter pointer.
 
-For the conceptual deep-dive on how dispatch works, read [`docs/phase-3-retrospective.md` Part 1](./_archive/phase-3-retrospective.md) first (15 minutes; it'll save you from grepping). For the per-capability routing table, [`docs/ai-workers.md` §8.1](./ai-workers.md#81-provider-routing-today--what-goes-through-what).
+For the conceptual deep-dive on how dispatch works, read [`docs/_archive/phase-3-retrospective.md` Part 1](./_archive/phase-3-retrospective.md) first (15 minutes; it'll save you from grepping). For the per-capability routing table, [`docs/ai-workers.md` §8.1](./ai-workers.md#81-provider-routing-today--what-goes-through-what).
 
 **Wrapping a `@ai-sdk/*` package instead of hand-writing the wire calls?** Read
 [`docs/adding-an-ai-sdk-provider.md`](./adding-an-ai-sdk-provider.md); it has the
@@ -260,7 +260,7 @@ Without this, `recordChatUsage` writes `cost_micro_usd: 0` for your provider; th
 
 ### Model-explorer parser
 
-[`apps/web/lib/model-explorer.ts`](../apps/web/lib/model-explorer.ts). The `/models` page parses `/v1/models` from each provider. If your provider's response shape doesn't fit one of the existing parsers (`parseOpenAiLike`, `parseAnthropic`, `parseGoogle`, etc.), add a new one. Only matters if you want full-catalog browsing on `/models`; the worker form gets its catalog from `discoverModels` on the adapter directly.
+[`server/web/lib/model-explorer.ts`](../server/web/lib/model-explorer.ts). The `/models` page parses `/v1/models` from each provider. If your provider's response shape doesn't fit one of the existing parsers (`parseOpenAiLike`, `parseAnthropic`, `parseGoogle`, etc.), add a new one. Only matters if you want full-catalog browsing on `/models`; the worker form gets its catalog from `discoverModels` on the adapter directly.
 
 ### Voices (TTS-specific)
 
@@ -281,7 +281,7 @@ After all the above, before commit:
 - [ ] `pnpm exec vitest run` from repo root, full monorepo, no regressions
 - [ ] [`catalog-consistency.test.ts`](../packages/voice/src/adapters/catalog-consistency.test.ts) passes, your provider's capabilities array matches what adapters you registered
 - [ ] The provider appears in `/settings/ai-workers` (or `/settings/agents`) dropdown after a dev-server restart
-- [ ] The Test affordance ([chat-test-button.tsx](<../apps/web/app/(app)/settings/ai-workers/chat-test-button.tsx>), or the equivalent for TTS / vision / etc.) returns a reply when clicked with a real key for your provider
+- [ ] The Test affordance ([chat-test-button.tsx](<../jackdaw/app/(app)/settings/ai-workers/chat-test-button.tsx>), or the equivalent for TTS / vision / etc.) returns a reply when clicked with a real key for your provider
 
 The last bullet is the **only verification you can't do at the unit-test level**: it requires a real API key + a dev server. Worth doing before claiming the work is finished.
 
@@ -297,7 +297,7 @@ The last bullet is the **only verification you can't do at the unit-test level**
 
 4. **Cache markers on providers that don't support them**: ignore `opts.cacheControl` silently. Don't try to emulate the marker by, e.g., reordering messages or stripping content. The runtime sets the flag every iteration; the assumption is "set + provider-decides".
 
-5. **Don't add the SDK as a dep unless you use it**. Phase 3 ended with four packages carrying `@openrouter/sdk` in their `package.json` despite no imports. Audit found it. Adding a provider with an SDK? Only add the SDK to `packages/voice/package.json` (or wherever the adapter lives), never to `apps/agent` / `apps/web` / `packages/agent-runtime` / `packages/heartbeats`. Those go through the adapter interface.
+5. **Don't add the SDK as a dep unless you use it**. Phase 3 ended with four packages carrying `@openrouter/sdk` in their `package.json` despite no imports. Audit found it. Adding a provider with an SDK? Only add the SDK to `packages/voice/package.json` (or wherever the adapter lives), never to `server/api` / `server/web` / `packages/agent-runtime` / `packages/heartbeats`. Those go through the adapter interface.
 
 6. **Vision content is the audit-#1 silent-drop pattern**. The runtime's `buildChatMessages` emits multimodal user content `[{type:'text', text}, {type:'image_url', imageUrl: ...}]` whenever a Telegram/web responder turn carries an image. If your adapter's user-message translator does `typeof m.content === 'string' ? m.content : ''`, you'll silently drop the image. Always handle the array case explicitly, even for non-vision-capable providers, you should at minimum extract the text parts.
 

@@ -25,7 +25,7 @@ import { errorMessage } from '@mantle/std';
  *  one file per app: <root>/<owner>/<app>.sqlite. When APP_DB_DIR is unset
  *  (bare full-stack dev) anchor to a SINGLE monorepo-root `.app-dbs` so every
  *  workspace process resolves the same directory — a cwd-relative default
- *  splits web (cwd apps/web) and api (cwd apps/api) into two roots, the same
+ *  splits web (cwd server/web) and api (cwd server/api) into two roots, the same
  *  split-brain that hit table-dbs (see packages/tabledb/src/paths.ts). */
 let cachedRoot: string | undefined;
 function appDbRoot(): string {

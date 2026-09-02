@@ -14,7 +14,7 @@
 > `Last-Event-ID` replay all shipped; the Flutter companion consumer is built +
 > unit-tested. This file is now both the **design** and a **status record** (each
 > section carries an inline "Implementation status" note). Session record:
-> [`live-turn-streaming-handover.md`](./live-turn-streaming-handover.md);
+> [`live-turn-streaming-handover.md`](_archive/live-turn-streaming-handover.md);
 > condensed summary in
 > [`architecture.md` §3a.3](./architecture.md#3a-durable-runners-the-febe-split-and-live-turn-streaming).
 
@@ -28,7 +28,7 @@ it so **both the web client and the Flutter companion** consume the same contrac
 
 ## 0. The one principle everything hangs off
 
-A turn runs on a **durable DBOS workflow** on `apps/api`. Durability and liveness are two
+A turn runs on a **durable DBOS workflow** on `server/api`. Durability and liveness are two
 separate concerns and must travel on two separate paths:
 
 | Concern | Carries | Path | Crash behaviour |
@@ -46,11 +46,11 @@ the answer was never *in* the stream. That asymmetry is the whole design.
 ## 0.1 Reconciled with the FE/BE split (2026-06-27)
 
 This plan was written against the pre-split world. The FE/BE split (PR #1, ~v0.66.41, see
-[`docs/fe-be-split-session-handover.md`](fe-be-split-session-handover.md)) changed the transport
+[`docs/_archive/fe-be-split-session-handover.md`](_archive/fe-be-split-session-handover.md)) changed the transport
 substrate. Incorporated here:
 
 - **Web SSE is now `apiEventStream`, not browser `EventSource`** (split item #5,
-  [`apps/web/lib/api-fetch.ts`](../apps/web/lib/api-fetch.ts)); it injects base-URL + bearer and
+  [`jackdaw/lib/api-fetch.ts`](../jackdaw/lib/api-fetch.ts)); it injects base-URL + bearer and
   bounces to `/login` on 401. The streaming consumer rides this, which makes it Electron/detached-
   ready for free. It already has exponential backoff + jitter and "throwing `onMessage` → `onError`
   (no reconnect storm)."
@@ -68,16 +68,16 @@ substrate. Incorporated here:
   instanceof Response) return user;` (global `Response`, no `NextResponse` import).
 - **⚠️ The in-process `EventEmitter` bus is INVALID, corrected to Postgres `NOTIFY` from day one.**
   An earlier draft of §2 assumed a single instance could bridge the producer and the SSE socket
-  with an in-process emitter. It can't: **`apps/api` (the DBOS runner, no HTTP) and `apps/web` (which
+  with an in-process emitter. It can't: **`server/api` (the DBOS runner, no HTTP) and `server/web` (which
   serves every `/api/**` route incl. SSE) are ALWAYS separate processes**, in dev and prod alike. The
-  turn executes in `apps/api`; the browser's socket is held by `apps/web`. The FE/BE split *causes*
+  turn executes in `server/api`; the browser's socket is held by `server/web`. The FE/BE split *causes*
   this separation rather than removing it. So the bus is Postgres `LISTEN/NOTIFY` (the existing
   `lib/realtime` bridge) from the very first commit, not a scale-out concern. See the corrected §2.
 
 > **Implementation status (Step 0, done):** the cross-client contract (`TurnEvent` in
 > `@mantle/client-types`), the server transport (`@mantle/turn-stream`: `TURN_STREAM_CHANNEL` +
 > `publishTurnEvent` via `pg_notify`), the web subscribe side (`subscribeTurnStream` in
-> `apps/web/lib/realtime.ts`), and the flagged bearer SSE endpoint
+> `server/web/lib/realtime.ts`), and the flagged bearer SSE endpoint
 > (`GET /api/assistant/turn/[turnId]/stream`, gated by `MANTLE_TURN_STREAMING`) are built and
 > typecheck-clean. No producer is wired, so the surface is dark, zero behaviour change.
 
@@ -130,7 +130,7 @@ Design rules that protect both clients:
 
 Use **Server-Sent Events**: unidirectional (server→client is all we need), survives HTTP infra,
 trivially parsed by both the web client and Flutter. The web client consumes it through
-**`apiEventStream`** ([`apps/web/lib/api-fetch.ts`](../apps/web/lib/api-fetch.ts), split item #5),
+**`apiEventStream`** ([`jackdaw/lib/api-fetch.ts`](../jackdaw/lib/api-fetch.ts), split item #5),
 NOT raw browser `EventSource`, so it carries the bearer + base-URL and is detached/Electron-ready.
 The endpoint is **bearer-authed from day one** (`getOwnerOr401`), unlike the legacy same-origin-only
 `assistant/turn/stream`; see §0.1.
@@ -141,11 +141,11 @@ behind the `conversation_changed` channel today. Note its current limit: **no ba
 reconnect can miss deltas, the §2 buffer is what adds `Last-Event-ID` replay on top.
 
 **Two server processes, always.** This is the crux the implementation made concrete: the turn runs
-in **`apps/api`** (DBOS runner, no HTTP surface) and the browser's SSE socket is held by **`apps/web`**
+in **`server/api`** (DBOS runner, no HTTP surface) and the browser's SSE socket is held by **`server/web`**
 (which serves every `/api/**` route). They never share memory, Postgres `NOTIFY` is the bridge.
 
 ```
-browser / flutter      apps/web (Next, /api/**)          apps/api (DBOS runner)
+browser / flutter      server/web (Next, /api/**)          server/api (DBOS runner)
    │                      │                                  │
    ├─ POST /assistant/turn ─▶ enqueue DBOS workflow ─────────▶ runs the turn (durable)
    │                      │   (today: awaits result;          │
@@ -165,10 +165,10 @@ browser / flutter      apps/web (Next, /api/**)          apps/api (DBOS runner)
 split rules that out. Two concrete halves over one Postgres channel:
 
 ```ts
-// producer side — @mantle/turn-stream (imported by the apps/api runner)
+// producer side — @mantle/turn-stream (imported by the server/api runner)
 publishTurnEvent(ownerId: string, event: TurnEvent): Promise<void>  // pg_notify; fire-and-forget, never throws
 
-// consumer side — apps/web/lib/realtime.ts (the SSE route subscribes)
+// consumer side — server/web/lib/realtime.ts (the SSE route subscribes)
 subscribeTurnStream(ownerId, turnId, (event: TurnEvent) => void): Promise<() => void>  // owner-filtered; returns unsubscribe
 ```
 
@@ -191,7 +191,7 @@ Swapping implementations must not touch the workflow or either client.
 
 ## 3. Phase 1: grounded status (cheap, model-free)
 
-Already 80 % built. Today [`turn-stage.ts`](../apps/web/lib/assistant/turn-stage.ts) maps the latest
+Already 80 % built. Today [`turn-stage.ts`](../server/web/lib/assistant/turn-stage.ts) maps the latest
 running `trace_steps.name` → a label via 900 ms polling. Phase 1:
 
 1. **Enrich** `stageLabelForStep()` to read `trace_steps.input` (tool args) → "Searching your brain
@@ -215,8 +215,8 @@ while the agent actually delegated). So:
   reasoning chunk). Prompt: *"describe this action in ≤6 words, present tense, do not speculate,
   never predict next steps."* That rule kills confabulation.
 - Run it on **local Ollama**: free, private (tool args / reasoning stay in-boundary), latency-
-  tolerant. Fits the existing worker pattern ([`summarizer.ts`](../apps/agent/src/summarizer.ts) /
-  [`extractor.ts`](../apps/agent/src/extractor.ts)).
+  tolerant. Fits the existing worker pattern ([`summarizer.ts`](../server/api/src/agent/summarizer.ts) /
+  [`extractor.ts`](../server/api/src/agent/extractor.ts)).
 - **Fire-and-forget, never on the critical path.** If it's slow or errors, the turn and the real
   stream proceed untouched. Tag each `status` with `round`/`seq`; a late narration for round 1 is
   dropped if round 2 already started (no overwrite of fresher truth).
@@ -359,6 +359,6 @@ Each step is independently shippable and degrades gracefully to the one before i
   verbosity dial. See §4's implementation note.
 - **Reasoning exposure:** show `reasoning-delta` to end users (collapsible) or only feed it to the
   narrator? Privacy/UX call, default to narrator-only first.
-- **Endpoint home, RESOLVED:** the SSE endpoint lives in **`apps/web`** (all `/api/**` routes do;
-  `apps/api` has no HTTP surface). It can't be "co-located with the workflow", that's exactly why
-  the bus is Postgres `NOTIFY` (§2). The producer (`publishTurnEvent`) runs in `apps/api`.
+- **Endpoint home, RESOLVED:** the SSE endpoint lives in **`server/web`** (all `/api/**` routes do;
+  `server/api` has no HTTP surface). It can't be "co-located with the workflow", that's exactly why
+  the bus is Postgres `NOTIFY` (§2). The producer (`publishTurnEvent`) runs in `server/api`.

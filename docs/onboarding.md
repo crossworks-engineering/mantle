@@ -25,7 +25,7 @@ remembers, in minutes.
 
 Three pieces make a clean boot possible (`docs/architecture.md §7` for auth):
 
-- **Signup replaces the manual SQL.** `apps/web/app/api/auth/signup/route.ts`
+- **Signup replaces the manual SQL.** `server/web/app/api/auth/signup/route.ts`
   creates the first `auth.users` row (bcrypt cost 12) and signs you in. It is
   open **only while `auth.users` is empty**: single-user, so the door closes
   after the first account (403 thereafter). `/login` renders **Create your
@@ -44,17 +44,17 @@ Three pieces make a clean boot possible (`docs/architecture.md §7` for auth):
 
 **Completion** is a single flag: `profiles.preferences.onboardedAt` (ISO).
 Unset ⇒ the `(app)` shell redirects to `/onboarding`; set ⇒ the app renders
-normally. Helpers in `apps/web/lib/onboarding.ts`
+normally. Helpers in `server/web/lib/onboarding.ts`
 (`isOnboarded`/`markOnboarded`). The wizard lives **outside** the `(app)` group
 so the gate can't loop. `preferences.onboardingStep` is a resume marker.
 
 ---
 
-## 3. The wizard (`apps/web/app/onboarding/`)
+## 3. The wizard (`jackdaw/app/onboarding/`)
 
 Resumable steps. Each persists immediately through existing primitives, so a
 refresh resumes from `onboardingStep`. Server work is in
-`apps/web/app/api/onboarding/route.ts` (a single action-dispatch route; it
+`server/web/app/api/onboarding/route.ts` (a single action-dispatch route; it
 replaced the older `actions.ts`); the stepper is `onboarding-client.tsx`.
 
 | # | Step | What it does |
@@ -84,7 +84,7 @@ over the same surfaces the settings pages use.
 
 ---
 
-## 4. What gets provisioned (`apps/web/lib/onboarding-provision.ts`)
+## 4. What gets provisioned (`server/web/lib/onboarding-provision.ts`)
 
 `provisionDefaults(ownerId)` is driven by which keys exist (idempotent, a
 kind/slug that already exists is left alone):
@@ -147,7 +147,7 @@ seeds the shared skills first (`page_editing`/`tool_grounding`/`voice_reply`,
 | **Researcher** (`researcher`) | web search | Saskia delegate (Perplexity Sonar) |
 | **Coder** (`coder`) | code specialist | responder; delegates to pages/tables |
 
-These are seeded from the **system manifest** (`apps/web/lib/system-manifest/`),
+These are seeded from the **system manifest** (`server/web/lib/system-manifest/`),
 the single declarative source of truth for the agent/skill/tool/worker graph, with
 a CI drift-test (`manifest.test.ts`) and a standing live checker
 (`checkSystemIntegrity`, surfaced at `/debug/integrity` → System config).
@@ -155,7 +155,7 @@ a CI drift-test (`manifest.test.ts`) and a standing live checker
 agents, wires each delegate specialist into every enabled responder/assistant's
 `memory_config.delegate_to`, and attaches the persona's behaviour skills, all
 idempotent + **gap-fill** (re-running the wizard never clobbers an operator's
-customised prompt/model/params). The `pnpm -C apps/web seed:*` CLIs are thin
+customised prompt/model/params). The `pnpm -C server/web seed:*` CLIs are thin
 wrappers over the same `applyManifest` (with `mode: 'overwrite'`), so the wizard,
 the CLI, and the integrity checker can't drift. Successes are listed back in the
 wizard's Set-up step (`ProvisionResult.seededSpecialists`).
@@ -215,12 +215,12 @@ on the Welcome step (`preferences.displayName`).
 
 ## 7. Files
 
-- **New:** `apps/web/app/api/auth/signup/route.ts`, `apps/web/lib/onboarding.ts`,
-  `apps/web/lib/onboarding-provision.ts`, `apps/web/app/onboarding/*`,
+- **New:** `server/web/app/api/auth/signup/route.ts`, `server/web/lib/onboarding.ts`,
+  `server/web/lib/onboarding-provision.ts`, `jackdaw/app/onboarding/*`,
   `packages/db/src/resolve-owner.ts`, `packages/content/src/persona-bank.ts`,
   `packages/content/src/onboarding-questions.ts` (+ tests).
-- **Modified:** `apps/web/app/login/*` (first-run mode), `apps/web/app/(app)/layout.tsx`
-  (server-side onboarding gate), the `apps/api` agent runtime +
-  `apps/web/workers/{files-watch,docs-sync}.ts` + `apps/mcp/src/server.ts`
+- **Modified:** `server/web/app/login/*` (first-run mode), `jackdaw/app/(app)/layout.tsx`
+  (server-side onboarding gate), the `server/api` agent runtime +
+  `server/web/workers/{files-watch,docs-sync}.ts` + `server/mcp/src/server.ts`
   (wait-for-owner), `packages/content/src/profile-preferences.ts`
   (displayName/purpose/onboardedAt/onboardingStep), env examples.

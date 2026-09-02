@@ -28,7 +28,7 @@ export type ExportFormat = 'docx' | 'xlsx' | 'md' | 'csv' | 'svg';
 export type ExportKind = 'page' | 'note' | 'table' | 'draw';
 
 /** Formats a node can be asked to download as (the caller picks). PDF is NOT
- *  here — it's rendered in apps/web via headless Chromium against the live HTML
+ *  here — it's rendered in server/web via headless Chromium against the live HTML
  *  surface, not through this pure (browser-free) package. Each node kind serves
  *  the subset it supports (page/note → docx|md; table → xlsx|md|csv) and falls
  *  back to its default for the rest. */

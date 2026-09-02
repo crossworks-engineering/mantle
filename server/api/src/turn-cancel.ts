@@ -1,14 +1,14 @@
 /**
  * Turn-cancel listener — the runner half of "stop a stream mid-flight".
  *
- * A user hitting Stop in `apps/web` publishes a `turn_cancel` NOTIFY (the cancel
- * route → `publishTurnCancel`). This process (apps/api), where the turn actually
+ * A user hitting Stop in `server/web` publishes a `turn_cancel` NOTIFY (the cancel
+ * route → `publishTurnCancel`). This process (server/api), where the turn actually
  * runs, LISTENs on that channel and aborts the matching turn's AbortController
  * (`abortTurn`), which the tool loop threaded into the streaming LLM call — so
  * generation halts upstream, keeping whatever partial reply already streamed.
  *
  * One dedicated single connection (a LISTEN monopolises its connection), mirroring
- * `apps/web/lib/realtime.ts`. Survives nothing fancy — if it can't start, turns
+ * `server/web/lib/realtime.ts`. Survives nothing fancy — if it can't start, turns
  * still run, they just can't be cancelled (the user's Stop becomes a no-op).
  */
 

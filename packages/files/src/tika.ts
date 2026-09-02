@@ -4,7 +4,7 @@ import { env } from '@mantle/config';
  *
  * The first tier is our in-process parsers (pdf-parse / mammoth / exceljs in
  * `./pdf`, `./docx`, `./xlsx`). The second tier is the vision worker (OCR for
- * scanned PDFs and images, see apps/agent/src/extractor.ts `ocrIngestPdfNode`).
+ * scanned PDFs and images, see server/api/src/extractor.ts `ocrIngestPdfNode`).
  * This third tier handles the long tail of formats neither of those covers:
  * `.odt` / `.ods` / `.odp` (LibreOffice), `.pptx` / `.ppt` (PowerPoint),
  * `.doc` (legacy Word), `.rtf`, `.epub`, and whatever else Tika knows about.
@@ -14,7 +14,7 @@ import { env } from '@mantle/config';
  * crash/restart loses no state.
  *
  * Kept behind a separate entry point (`@mantle/files/tika`) with a lazy
- * dynamic import, so apps/web bundling doesn't pull this in for paths that
+ * dynamic import, so server/web bundling doesn't pull this in for paths that
  * never hit a Tika-needed format. The wrapper is **never-throws** — every
  * failure mode (Tika down, network blip, timeout, unsupported bytes, 4xx /
  * 5xx response) returns `''`, which the caller treats as "no extractable

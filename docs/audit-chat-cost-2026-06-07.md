@@ -241,7 +241,7 @@ the 17 "legitimate" first-call writes were the *cross-turn* symptom of the
 same disease. **Fixed 2026-06-10:** facts moved to their own uncached block;
 `buildChatMessages` gained a `volatileContext` arg (uncached, after both
 breakpoints) carrying the time line + heartbeat-awareness block; both call
-sites (`apps/agent/src/main.ts`, `apps/web/lib/assistant.ts`) updated.
+sites (`server/api/src/main.ts`, `server/web/lib/assistant.ts`) updated.
 Regression tests in `messages.test.ts` pin the invariant.
 
 **Verify on prod after deploy:** re-run query #3, first calls of turns that

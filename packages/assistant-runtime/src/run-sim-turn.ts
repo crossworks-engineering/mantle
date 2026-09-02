@@ -3,7 +3,7 @@
  * to the conversation store.
  *
  * This is "Agent Studio sandbox, but with the real tool loop". Where the Studio
- * sandbox (apps/web/app/api/studio/sandbox/route.ts) composes the prompt and
+ * sandbox (server/web/app/api/studio/sandbox/route.ts) composes the prompt and
  * makes a single bare `adapter.chat()` call with tools + memory OFF, this runs
  * the full thing: composed persona prompt (identity + skills), real retrieval
  * context (facts, chunks, digests, persona notes, corpus map), real tool grants

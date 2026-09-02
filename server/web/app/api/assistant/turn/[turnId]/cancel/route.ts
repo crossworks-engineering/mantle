@@ -9,7 +9,7 @@ import { UUID_RE } from '@mantle/std';
  * POST /api/assistant/turn/[turnId]/cancel — stop an in-flight streamed turn.
  *
  * The user hit Stop. We publish a `turn_cancel` NOTIFY keyed on (owner, turnId);
- * the runner (apps/api) LISTENs, aborts that turn's LLM stream, and finalizes the
+ * the runner (server/api) LISTENs, aborts that turn's LLM stream, and finalizes the
  * outbound row with whatever partial reply had streamed. The turn then ends
  * normally (a `done` event), so the client reconciles the same way it does for a
  * completed turn — no special client teardown needed beyond firing this.

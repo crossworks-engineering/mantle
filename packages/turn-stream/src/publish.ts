@@ -7,7 +7,7 @@ import { env } from '@mantle/config';
 /**
  * Buffering is gated on the SAME master flag as the SSE route + the non-blocking
  * POST (`MANTLE_TURN_STREAMING`) — and mirrors its **on-by-default** stance
- * (see apps/web/lib/turn-streaming.ts): the buffer fills unless the flag is
+ * (see server/web/lib/turn-streaming.ts): the buffer fills unless the flag is
  * explicitly `0`/`false`/`off`/`no`. Keep these two defaults in lockstep — a
  * producer that buffers while the SSE route is dark (or vice versa) is the kind
  * of split-brain that made this hard to reason about before. (The `pg_notify`
@@ -78,8 +78,8 @@ export interface TurnStreamEnvelope {
 }
 
 /**
- * Publish one live turn event to subscribers (the apps/web SSE bridge) via
- * Postgres `NOTIFY` — the only channel that crosses the apps/api → apps/web
+ * Publish one live turn event to subscribers (the server/web SSE bridge) via
+ * Postgres `NOTIFY` — the only channel that crosses the server/api → server/web
  * process boundary. Mirrors the established `notifyPendingChanged` /
  * `notifyHeartbeatDue` pattern.
  *
@@ -117,7 +117,7 @@ export interface TurnCancelEnvelope {
 }
 
 /**
- * Ask the runner (apps/api) to CANCEL an in-flight turn — published by the web
+ * Ask the runner (server/api) to CANCEL an in-flight turn — published by the web
  * cancel route over `TURN_CANCEL_CHANNEL`. The runner LISTENs, looks up the
  * turn's `AbortController` and aborts it, halting LLM generation mid-stream and
  * keeping whatever partial reply has streamed so far.

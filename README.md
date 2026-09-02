@@ -331,8 +331,8 @@ pie showData title Lines of TypeScript by area
 - [`handover-trust-model.md`](./docs/handover-trust-model.md), **open work brief:** provenance tiers for untrusted content.
 
 **Engineering journal**: the audits and overhauls that shaped the system:
-[`hardening-audit-2026-05.md`](./docs/hardening-audit-2026-05.md) ·
-[`agent-overhaul-2026-05.md`](./docs/agent-overhaul-2026-05.md) ·
+[`hardening-audit-2026-05.md`](./docs/_archive/hardening-audit-2026-05.md) ·
+[`agent-overhaul-2026-05.md`](./docs/_archive/agent-overhaul-2026-05.md) ·
 [`audit-chat-cost-2026-06-07.md`](./docs/audit-chat-cost-2026-06-07.md) ·
 [`docs/_archive/`](./docs/_archive/) for frozen session handoffs.
 

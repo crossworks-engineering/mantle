@@ -13,7 +13,7 @@
  * tool loop including heartbeat_update_state if Saskia chooses to
  * call it), then re-reads the row and prints state before/after so
  * we can see whether the UPDATE landed in THIS process (separate
- * from the apps/agent process the UI Zap button would hit).
+ * from the server/api process the UI Zap button would hit).
  */
 
 import { and, eq } from 'drizzle-orm';
@@ -29,7 +29,7 @@ if (!USER_ID) {
   process.exit(1);
 }
 
-// Same boot sequence as apps/agent/src/main.ts.
+// Same boot sequence as server/api/src/main.ts.
 registerAgentInvoker(invokeAgent);
 registerHeartbeatTools();
 

@@ -70,7 +70,7 @@ client, so the encrypted vault rows decrypt. Nothing else is shared.
 
 ## Use cases this unlocks
 
-1. **Develop against real data**: run `pnpm -C apps/web dev` on your laptop
+1. **Develop against real data**: run `pnpm -C server/web dev` on your laptop
    against the live core, no local replica. The [remote-db-dev](./remote-db-dev.md)
    workflow.
 2. **A native desktop app**: an Electron build is just another app-layer client:
@@ -88,7 +88,7 @@ pnpm tailscale:serve          # publishes :5432 + :9000 on the tailnet
 pnpm tailscale:serve:status
 ```
 
-On each **client**: join the same tailnet, then point `apps/web/.env.local` at the
+On each **client**: join the same tailnet, then point `server/web/.env.local` at the
 MagicDNS name (`DATABASE_URL=…@mantle.<tailnet>.ts.net:5432`,
 `S3_ENDPOINT=http://mantle.<tailnet>.ts.net:9000`) with the core's credentials.
 Full steps + the SSH-tunnel fallback: [remote-db-dev.md](./remote-db-dev.md).

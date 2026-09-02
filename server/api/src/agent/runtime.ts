@@ -1,5 +1,5 @@
 /**
- * Mantle agent runtime — absorbed into apps/api (was the standalone apps/agent
+ * Mantle agent runtime — absorbed into server/api (was the standalone server/api
  * service). Listens on Postgres for `telegram_message_inserted` notifies and
  * replies via OpenRouter, plus the summarize/extract/heartbeat listeners and the
  * reflector/heartbeat/extract-sweep ticks. `startAgentRuntime()` wires it all up
@@ -227,7 +227,7 @@ function toConversationAttachments(
 
 /**
  * Run one Telegram responder turn for an inbound message. Exported so the
- * durable runner (apps/api/src/workflows/telegram-turn.ts) can execute it as a
+ * durable runner (server/api/src/workflows/telegram-turn.ts) can execute it as a
  * DBOS workflow under `withDurableSteps`: every @mantle/tracing `step()` here
  * (download/extract, transcribe, the tool loop, send_telegram, persist_outbound)
  * plus the two `runDurableStep` boundaries below (the atomic claim + the inbound
@@ -1432,7 +1432,7 @@ async function ensureCoreToolsOnConversationalAgents(ownerId: string): Promise<s
 }
 
 /** Options for the absorbed agent runtime. `enqueueTelegramTurn` is injected by
- *  apps/api (it owns the DBOS workflow registration) to avoid an import cycle
+ *  server/api (it owns the DBOS workflow registration) to avoid an import cycle
  *  between this module and the workflow that wraps `handleTelegramMessage`. */
 export interface AgentRuntimeOptions {
   enqueueTelegramTurn: (messageId: string) => Promise<unknown>;
@@ -1639,9 +1639,9 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   await drainPending(opts.enqueueTelegramTurn);
   await drainUnextractedNodes();
 
-  // Listeners + timers are now live; return so the host process (apps/api)
+  // Listeners + timers are now live; return so the host process (server/api)
   // stays alive via DBOS. Graceful extractor-queue shutdown is wired through
-  // stopAgentRuntime() below, called from apps/api's signal handler.
+  // stopAgentRuntime() below, called from server/api's signal handler.
 }
 
 // Backstop: every LISTEN handler and setInterval above already routes its
@@ -1657,7 +1657,7 @@ process.on('unhandledRejection', (reason) => {
 /**
  * Graceful stop for the absorbed agent runtime — drains the extractor queue so
  * in-flight pg-boss jobs finish (instead of being left `active` until the
- * maintenance reaper expires them). apps/api's shutdown calls this alongside
+ * maintenance reaper expires them). server/api's shutdown calls this alongside
  * DBOS.shutdown(). Idempotent via stopExtractQueue.
  */
 export async function stopAgentRuntime(): Promise<void> {

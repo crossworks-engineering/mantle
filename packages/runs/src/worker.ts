@@ -8,7 +8,7 @@
  * The definition constants below (slug / prompt / tool groups / model
  * sentinel) are the SINGLE SOURCE for this template. Slice 4 WP-E moved the
  * template into the system manifest: `MANIFEST_AGENTS` now carries a `worker`
- * entry that IMPORTS these constants (apps/web/lib/system-manifest/manifest.ts),
+ * entry that IMPORTS these constants (server/web/lib/system-manifest/manifest.ts),
  * so onboarding + the boot reconcile seed the row on every brain. The `runs`
  * tool group is still NOT attached to the persona while the feature dogfoods,
  * so seeding a dormant worker template changes nothing until a run invokes it.

@@ -211,11 +211,11 @@ starts; Caddy fetches an HTTPS certificate on first run. Continue at First run.
 git clone <your mantle repo> mantle
 cd mantle
 pnpm install
-cp .env.example apps/web/.env.local      # NOTE: apps/web/.env.local, not the repo root
-$EDITOR apps/web/.env.local              # set the two secrets below
+cp .env.example server/web/.env.local      # NOTE: server/web/.env.local, not the repo root
+$EDITOR server/web/.env.local              # set the two secrets below
 ```
 
-Set in `apps/web/.env.local`:
+Set in `server/web/.env.local`:
 
 - `MANTLE_MASTER_KEY`, `openssl rand -base64 32`
 - `SESSION_SECRET`, `openssl rand -base64 48`

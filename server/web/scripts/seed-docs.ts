@@ -137,7 +137,7 @@ async function main() {
 
   console.log(
     '[docs] done. Enable the System docs collection at /docs, ' +
-      'then restart apps/agent so the delegate is live.',
+      'then restart server/api so the delegate is live.',
   );
   process.exit(0);
 }

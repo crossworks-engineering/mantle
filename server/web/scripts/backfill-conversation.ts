@@ -54,7 +54,7 @@ const SUMMARIZE_TRIGGER = 'assistant_messages_summarize_due_trg';
 
 type AgentRef = { id: string; slug: string };
 
-/** Mirror of resolveResponderAgent (apps/agent/src/main.ts): per-chat override
+/** Mirror of resolveResponderAgent (server/api/src/main.ts): per-chat override
  *  → the channel's agent → global highest-priority enabled conversational
  *  agent (role-decoupled, docs/comms-channels.md). */
 async function resolveChatAgent(

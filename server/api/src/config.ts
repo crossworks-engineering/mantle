@@ -19,7 +19,7 @@ import { env } from '@mantle/config';
 
 // The system-DB resolver + queue name are the shared cross-process contract
 // (the web enqueuer uses the same), so they live in @mantle/assistant-runtime.
-// Re-exported here so the rest of apps/api keeps importing them from './config'.
+// Re-exported here so the rest of server/api keeps importing them from './config'.
 export { resolveSystemDatabaseUrl, RUNNER_QUEUE };
 
 /** DBOS admin server config. DBOS ships its own HTTP run-inspection server, but
@@ -63,7 +63,7 @@ export function configureDBOS(): void {
 }
 
 /** Concurrency cap for the shared RUNNER_QUEUE — bounds total in-flight runs
- *  across every apps/api process (the LLM-provider backpressure valve).
+ *  across every server/api process (the LLM-provider backpressure valve).
  *  Override with MANTLE_RUNNER_CONCURRENCY. */
 export function runnerConcurrency(): number {
   const raw = Number(env('MANTLE_RUNNER_CONCURRENCY'));

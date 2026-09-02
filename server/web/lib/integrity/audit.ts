@@ -84,7 +84,7 @@ const CHECKS: CheckDef[] = [
     key: 'half_indexed',
     label: 'Half-indexed nodes',
     severity: 'medium',
-    note: 'summary present but no embedding (an interrupted index write), or embedding present but no summary. Excludes types that opt out of embedding by design (telegram_message) and the no-summary direction for files (an image/binary with no text layer legitimately has no summary — silent_miss covers the real extractor-success-without-summary case). Conversation-digest notes ARE included since 2026-06-10: the summarizer embeds them at insert (find_window cosine-ranks digests), so an un-embedded digest is a real gap — heal with `pnpm -C apps/web backfill:digest-embeddings --apply`.',
+    note: 'summary present but no embedding (an interrupted index write), or embedding present but no summary. Excludes types that opt out of embedding by design (telegram_message) and the no-summary direction for files (an image/binary with no text layer legitimately has no summary — silent_miss covers the real extractor-success-without-summary case). Conversation-digest notes ARE included since 2026-06-10: the summarizer embeds them at insert (find_window cosine-ranks digests), so an un-embedded digest is a real gap — heal with `pnpm -C server/web backfill:digest-embeddings --apply`.',
     query: (o) => sql`
       SELECT n.id, n.type::text AS kind,
              CASE WHEN n.embedding IS NULL THEN 'summary, no embedding' ELSE 'embedding, no summary' END AS detail

@@ -60,12 +60,12 @@ file isn't).
 - [`packages/files`](../packages/files), host fs ops + slug helpers
   - the high-level operations (`createFolder`, `upsertFile`,
     `deleteFolder`, `listFiles`, …). Pure logic, no HTTP, no UI.
-- [`apps/web/lib/files.ts`](../apps/web/lib/files.ts), thin re-export
+- [`server/web/lib/files.ts`](../server/web/lib/files.ts), thin re-export
   so the web's API routes can import from `@/lib/files` (convention).
-- [`apps/web/app/api/files/**`](../apps/web/app/api/files/), REST API.
-- [`apps/web/app/(app)/files/`](<../apps/web/app/(app)/files/>), UI.
-- [`apps/mcp/src/server.ts`](../apps/mcp/src/server.ts), MCP tools.
-- [`apps/agent/src/extractor.ts`](../apps/agent/src/extractor.ts),
+- [`server/web/app/api/files/**`](../server/web/app/api/files/), REST API.
+- [`jackdaw/app/(app)/files/`](<../jackdaw/app/(app)/files/>), UI.
+- [`server/mcp/src/server.ts`](../server/mcp/src/server.ts), MCP tools.
+- [`server/api/src/agent/extractor.ts`](../server/api/src/agent/extractor.ts),
   `readNodeBody` falls back to disk for `type='file'` nodes whose
   `data.content` wasn't cached.
 
@@ -233,7 +233,7 @@ routes; the two-pane view in the client.
 
 ## 9. MCP tools
 
-Wired in [`apps/mcp/src/server.ts`](../apps/mcp/src/server.ts):
+Wired in [`server/mcp/src/server.ts`](../server/mcp/src/server.ts):
 
 | Tool              | Purpose                                                      |
 | ----------------- | ------------------------------------------------------------ |
@@ -254,7 +254,7 @@ Same auth model as the other MCP tools; every query is scoped to
 
 ## 10. External-edit watcher
 
-A separate worker (`apps/web/workers/files-watch.ts`, runs as the
+A separate worker (`server/web/workers/files-watch.ts`, runs as the
 `files` lane in `pnpm dev`) uses [chokidar](https://github.com/paulmillr/chokidar)
 to observe `MANTLE_FILES_ROOT` and reflect off-Mantle disk changes back
 into the DB. So if you `vim` a markdown file on the host, or Syncthing

@@ -2,8 +2,8 @@
  * Map a trace-step `name` (+ optional input args) to a short, grounded status
  * label — the live "what is the agent doing right now" line.
  *
- * Shared by the producer (apps/api, which publishes `status` events as steps
- * start) and the web poll fallback (apps/web/lib/assistant/turn-stage.ts) so both
+ * Shared by the producer (server/api, which publishes `status` events as steps
+ * start) and the web poll fallback (server/web/lib/assistant/turn-stage.ts) so both
  * speak with one voice. Granularity is deliberately coarse — a handful of stages
  * a user actually waits on (thinking, searching, delegating, writing). When the
  * step's input carries a safe, query-ish field we enrich the label with it

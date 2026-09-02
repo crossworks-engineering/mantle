@@ -85,6 +85,11 @@ jobs:
       - name: Format check
         run: pnpm format:check
 
+      # Every repo path a live doc names must exist (docs are indexed into the
+      # brain, so a dead path misleads the assistant too).
+      - name: Docs paths
+        run: pnpm docs:check
+
       # Replay every migration from scratch. This is the only place the full
       # 0000→latest path runs (boxes only ever apply the increment), so a
       # migration that cannot replay, or is missing from the journal, fails

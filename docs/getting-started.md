@@ -48,8 +48,8 @@ corepack enable && corepack prepare pnpm@10 --activate
 pnpm install
 
 # 3. Copy env (single file — Next.js, workers, MCP, agent, and Drizzle all read it)
-cp .env.example apps/web/.env.local
-$EDITOR apps/web/.env.local
+cp .env.example server/web/.env.local
+$EDITOR server/web/.env.local
 #  - MANTLE_MASTER_KEY  → openssl rand -base64 32
 #  - SESSION_SECRET     → openssl rand -base64 48
 
@@ -171,7 +171,7 @@ it for your mailbox; Mantle does not implement Microsoft OAuth.
 
 ## Connecting a Telegram bot
 
-The bot worker (`apps/web/workers/telegram-poll.ts`) long-polls
+The bot worker (`server/web/workers/telegram-poll.ts`) long-polls
 Telegram for DMs and stores them as `nodes` of type `telegram_message`.
 The MCP server exposes `telegram_pending` / `telegram_send` /
 `telegram_react` / `telegram_edit` / `telegram_pair` tools so Claude
@@ -205,7 +205,7 @@ can read and reply.
 
 Claude Desktop and Claude Code can drive your Mantle directly, search,
 mail, tasks, the knowledge graph, Telegram, through the bundled stdio MCP
-server (`apps/mcp`). It's a one-time config per client machine: Claude
+server (`server/mcp`). It's a one-time config per client machine: Claude
 spawns the server on demand (locally, or inside the `mantle_web` container
 over SSH for a remote install) and your SSH key is the entire auth layer.
 Full instructions, config snippets for all three deployment shapes, and the
@@ -229,7 +229,7 @@ label)` so you can swap a key without affecting another label.
 
 ## Agents & auto-responding
 
-`apps/agent` listens on `pg_notify('telegram_message_inserted')` and replies
+`server/api` listens on `pg_notify('telegram_message_inserted')` and replies
 through the shared agent runtime, the same code path the web `/assistant`
 uses (one conversation store across channels; see
 [`conversation.md`](./conversation.md)):
@@ -237,7 +237,7 @@ uses (one conversation store across channels; see
 ```
 inbound DM → telegram-poll worker → INSERT inbound telegram_messages row
           → pg_notify('telegram_message_inserted', new.id::text)   (inbound only)
-          → apps/agent picks up
+          → server/api picks up
           → resolve responder  (per-chat override → the bot's owning agent → global priority)
           → loadConversationContext  (persona + facts + digests + content hits + history)
           → chat adapter call  (provider-routed, failover-capable; cache_control for Anthropic)
@@ -279,9 +279,9 @@ rule.
 To bootstrap memory on existing content:
 
 ```bash
-pnpm -C apps/web extract:backfill                  # all eligible nodes
-pnpm -C apps/web extract:backfill --types=note     # restrict
-pnpm -C apps/web extract:backfill --since=2025-01-01
+pnpm -C server/web extract:backfill                  # all eligible nodes
+pnpm -C server/web extract:backfill --types=note     # restrict
+pnpm -C server/web extract:backfill --since=2025-01-01
 ```
 
 The agent must be running, the script just feeds `pg_notify('node_ingested')`;

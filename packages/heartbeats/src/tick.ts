@@ -1,5 +1,5 @@
 /**
- * Heartbeat tick loop. apps/agent calls `tickHeartbeats(ownerId)` on
+ * Heartbeat tick loop. server/api calls `tickHeartbeats(ownerId)` on
  * a per-minute setInterval (mirrors the reflector pattern). Each
  * tick selects up to BATCH due heartbeats and fires them
  * sequentially — heartbeats talk to users, so parallelism risks

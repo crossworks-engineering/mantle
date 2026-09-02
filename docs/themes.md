@@ -73,7 +73,7 @@ Three test layers, deliberately redundant:
    decision. Computed values (`color-mix()`, literal hex) **fail loudly**
    unless allowlisted with a reason; the `KNOWN_UNSAFE` baseline is empty and
    shrink-only.
-4. `client/web/components/theme-preview/color-palette.test.ts`, same
+4. `jackdaw/components/theme-preview/color-palette.test.ts`, same
    discover-don't-declare trick pointed at the **Color Palette tab**: every
    colour token `:root` ships must be visible there. Adding a role is one line
    in `ROLE_HUES` and one `@theme inline` mapping, neither of which passes

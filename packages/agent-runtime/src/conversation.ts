@@ -13,7 +13,7 @@
  *                               the last N raw turns (all channels).
  *
  * This module is the single home for logic that used to be copy-pasted as two
- * `loadContext` functions (apps/web/lib/assistant.ts + apps/agent/src/main.ts).
+ * `loadContext` functions (server/web/lib/assistant.ts + server/api/src/main.ts).
  * It carries the *richer* of the two behaviours forward:
  *   - facts: a 0.85 cosine mismatch guard (drops embedding-space-mismatch rows)
  *   - content hits: a 0.6 cosine relevance cutoff

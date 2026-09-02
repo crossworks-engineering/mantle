@@ -2,9 +2,9 @@
 
 **The single source of truth for colors, typography, and tokens.** Every diagram draws from this — not from hex values inlined in other reference files. If you want to change the visual skin of Diagram Design, change this file.
 
-Default skin is a cool editorial palette — white-smoke paper, jet-black ink, atomic-tangerine accent, blue-slate muted. It's designed to look good out of the box; swap these values (or run [`onboarding.md`](onboarding.md)) and every new diagram inherits the new skin without touching any type-specific logic.
+Default skin is a cool editorial palette — white-smoke paper, jet-black ink, atomic-tangerine accent, blue-slate muted. It's designed to look good out of the box; swap these values (or run [`onboarding.md`](../onboarding.md)) and every new diagram inherits the new skin without touching any type-specific logic.
 
-To generate your own from a website URL, see [`onboarding.md`](onboarding.md).
+To generate your own from a website URL, see [`onboarding.md`](../onboarding.md).
 
 ---
 
@@ -124,7 +124,7 @@ Semantic role combinations — reference these by name in type specs.
 
 Four options:
 
-1. **Run onboarding** — see [`onboarding.md`](onboarding.md). Drop a URL; the skill extracts the palette + fonts and rewrites this file.
+1. **Run onboarding** — see [`onboarding.md`](../onboarding.md). Drop a URL; the skill extracts the palette + fonts and rewrites this file.
 2. **Edit by hand** — change the hex values in the tables above. Run the pre-output taste gate afterward to verify the accent still reads as "focal" against the new paper color.
 3. **Brand handoff** — paste your existing design-token JSON into a new section here and map its tokens to the semantic roles above.
 4. **Client profiles** — save and switch named skins, or bind one to a project, using [`profiles.md`](profiles.md).

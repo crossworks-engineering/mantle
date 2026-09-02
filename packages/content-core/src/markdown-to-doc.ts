@@ -3,7 +3,7 @@
  * rich-markdown dialect into a ProseMirror / TipTap JSON document so an agent
  * can CREATE and UPDATE pages (which store `pages.doc` as ProseMirror JSON, not
  * markdown). The node names/attrs here MUST match the Pages editor schema
- * (`apps/web/components/page-editor/extensions.ts`): paragraph, heading,
+ * (`server/web/components/page-editor/extensions.ts`): paragraph, heading,
  * bulletList/orderedList/listItem, taskList/taskItem, codeBlock, blockquote,
  * horizontalRule, table/tableRow/tableHeader/tableCell, callout, columnList/
  * column, plus the bold/italic/strike/code/link/highlight/textColor marks.
@@ -77,7 +77,7 @@ const highlightExtension: TokenizerAndRendererExtension = {
 
 // `[text]{color=chart-2}` / `[text]{highlight=chart-3}` → themed text-colour and
 // highlight marks (tokens chart-1..5; both keys may appear in one span). Kept in
-// lockstep with apps/web/lib/rich-markdown.ts + the rich_writing skill.
+// lockstep with server/web/lib/rich-markdown.ts + the rich_writing skill.
 const COLOR_TOKEN_RE = /^chart-[1-5]$/;
 function parseColorAttrs(attrStr: string): { color?: string; highlight?: string } {
   const res: { color?: string; highlight?: string } = {};

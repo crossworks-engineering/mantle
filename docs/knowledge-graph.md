@@ -51,7 +51,7 @@ and auditable**, and the rebuild can key off it (below).
 
 Relations are produced in the **same `llm_extract` call** that already emits the
 summary, facts, and entities, marginal extra tokens, no second LLM pass. The
-prompt (`DEFAULT_EXTRACTOR_PROMPT` in `apps/agent/src/extractor.ts`) asks for a
+prompt (`DEFAULT_EXTRACTOR_PROMPT` in `server/api/src/agent/extractor.ts`) asks for a
 third output:
 
 ```json
@@ -152,7 +152,7 @@ blind-merges (`packages/content/src/entity-dedup.ts`):
 **Surfaces:**
 - **`/settings/entities`**: the review UI: tiered candidate list, one-click
   **Merge** / **Dismiss** per row. The home for ongoing graph hygiene.
-- **`pnpm -C apps/web entities:dedupe`**: the script: dry-run by default;
+- **`pnpm -C server/web entities:dedupe`**: the script: dry-run by default;
   `--go` applies the auto tier; `--include-review` the rest; `--merge=a,b` one
   pair. Free (no LLM).
 
@@ -220,7 +220,7 @@ not the legal form; it had merged "3D Printing SA" into generic "3D printing").
 ## 7. Backfilling history
 
 Relations were added after most content was ingested, so old nodes have entities
-but no relations. **`pnpm -C apps/web relations:backfill`** re-fires
+but no relations. **`pnpm -C server/web relations:backfill`** re-fires
 `node_ingested` for nodes with mentions but no relations, running them back
 through the (now relations-aware) extractor, the same production path. Dry-run by
 default; `--go` to fire; `--types` / `--limit` / `--rate` to stage and pace.
@@ -241,12 +241,12 @@ and the detail page lists the relations drawn (`subject → verb → object`).
 
 | Concern | File |
 |---|---|
-| Relation parse + verb canonicalization | `apps/agent/src/extractor-parse.ts` |
-| Relation extraction + entity reconcile | `apps/agent/src/extractor.ts` (`process_relations`, `reconcileEntity`) |
+| Relation parse + verb canonicalization | `server/api/src/agent/extractor-parse.ts` |
+| Relation extraction + entity reconcile | `server/api/src/agent/extractor.ts` (`process_relations`, `reconcileEntity`) |
 | Edge / entity schema | `packages/db/src/schema/{entities,entity-edges}.ts` |
 | Traversal (`entity_neighbors`, `graph_path`) | `packages/search/src/entities.ts` |
 | **Read-path expansion (`entityRelationsFor`)** | `packages/search/src/entities.ts` → `packages/agent-runtime/src/conversation.ts` |
 | Near-dup consolidation (`orgCompactKey`) | `packages/content/src/entity-dedup.ts` |
-| Review UI | `apps/web/app/(app)/settings/entities/*` |
-| Backfill / dedupe scripts | `apps/web/scripts/{relations-backfill,entities-dedupe}.ts` |
+| Review UI | `jackdaw/app/(app)/settings/entities/*` |
+| Backfill / dedupe scripts | `server/web/scripts/{relations-backfill,entities-dedupe}.ts` |
 | Migrations | 0055 (exact-dup merge + unique index), 0056 (dismissals) |

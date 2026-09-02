@@ -19,7 +19,7 @@ import { env } from '@mantle/config';
  *      for the tool's ship, not optional hardening.
  *
  * The worker is spawned from a self-contained eval string (no file URL), so
- * it behaves identically under tsx (apps/api) and Next's bundler (apps/web).
+ * it behaves identically under tsx (server/api) and Next's bundler (server/web).
  */
 
 export const SQL_ROW_CAP_DEFAULT = 200;

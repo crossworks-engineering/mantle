@@ -113,7 +113,7 @@ Her Mantle (asking)                         Your Mantle (answering)
   self-loopback peer (outbound token = own inbound token, base_url =
   localhost:3000): query returns the granted node, type filter scopes, node
   fetch works, unknown peer errors. **Operator step:** the builtins seed into
-  the `tools` table on the next `apps/agent` boot; grant `peer_query` /
+  the `tools` table on the next `server/api` boot; grant `peer_query` /
   `peer_node_get` / `peer_list` to a responder at `/settings/agents` for Saskia
   to use them.
 - **Phase 5, UI (DONE, 2026-05-29; pairing flow fixed 2026-07-14).**

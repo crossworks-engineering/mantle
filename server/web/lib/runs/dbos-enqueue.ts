@@ -1,7 +1,7 @@
 /**
  * Worker-side DBOS enqueue seam (slice 3 WP1). The runs WORKER process (a
  * plain tsx process, not Next.js) enqueues turn workflows onto the dedicated
- * RUNS_TURN_QUEUE by name — registering and executing them is apps/api's job.
+ * RUNS_TURN_QUEUE by name — registering and executing them is server/api's job.
  *
  * Queue choice (the starvation isolation): worker + resume turns ride
  * RUNS_TURN_QUEUE, NOT the shared RUNNER_QUEUE that carries the owner's

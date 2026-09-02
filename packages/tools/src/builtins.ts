@@ -2149,7 +2149,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
 
 // P6: there is no flat "default assistant grant" anymore. A generalist persona's
 // capability is the union of its granted tool GROUPS (the manifest persona's
-// `toolGroupSlugs`; see apps/web/lib/system-manifest/manifest.ts). The old
+// `toolGroupSlugs`; see server/web/lib/system-manifest/manifest.ts). The old
 // DEFAULT_ASSISTANT_TOOL_SLUGS / ASSISTANT_TOOL_DENY pair was removed with the
 // `agents.tool_slugs` column (migration 0083); the specialist/destructive split
 // it encoded now lives in the group taxonomy (terminal / research / federation /

@@ -8,8 +8,8 @@ import { open, seal } from '@mantle/crypto';
  * user's id explicitly; never trust client-supplied user ids.
  *
  * Used by:
- *   - apps/web (`/settings/keys` UI, /api/keys routes)
- *   - apps/agent (reads `openrouter` key at startup)
+ *   - server/web (`/settings/keys` UI, /api/keys routes)
+ *   - server/api (reads `openrouter` key at startup)
  *   - future MCP tools that need to call external LLMs
  */
 

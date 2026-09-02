@@ -59,7 +59,7 @@ write or first reveal, never a silent fallback to plaintext.
 
 ## 3. Metadata-only extraction
 
-The extractor agent (`apps/agent/src/extractor.ts`) is the boundary.
+The extractor agent (`server/api/src/agent/extractor.ts`) is the boundary.
 `readNodeBodyRaw` has a hard-coded special case for `type='secret'`:
 
 ```ts

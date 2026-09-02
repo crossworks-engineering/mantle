@@ -11,7 +11,7 @@
  *     it re-read the (now terminal) item, exited 'stale', and the recorded
  *     dispatch/resume actions were silently dropped — the run limped on the
  *     sweep instead of the engine's own choreography.
- *   - Flag discipline across runtimes: with MANTLE_RUNS off in apps/api the
+ *   - Flag discipline across runtimes: with MANTLE_RUNS off in server/api the
  *     item is completed `failed(disabled)` rather than left to rot.
  *   - Route inheritance, the mechanical evidence ledger, and the
  *     retry-then-fail policy.

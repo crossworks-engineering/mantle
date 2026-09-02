@@ -1,9 +1,9 @@
 /**
  * Assistant turn execution — the shared read+write+LLM path for one
  * conversational turn on the unified per-(owner, agent) stream
- * (docs/conversation.md). Originally "Sarah-on-the-web" in apps/web; lifted
+ * (docs/conversation.md). Originally "Sarah-on-the-web" in server/web; lifted
  * here so it can run OUTSIDE the Next.js request — from a durable server-side
- * runner (apps/api) as well as the web route — without a turn dying when the
+ * runner (server/api) as well as the web route — without a turn dying when the
  * user navigates away. Every turn (web, mobile, future channels) lands in
  * assistant_messages and is read back through the shared @mantle/agent-runtime
  * conversation module.
@@ -77,7 +77,7 @@ registerAgentInvoker(invokeAgent);
 // tools (heartbeat_update_state/complete/snooze) as a per-turn affordance
 // whenever a web-surface heartbeat is active (see hasActiveHeartbeatsOnSurface
 // below). Those handlers live in @mantle/heartbeats and only enter the builtin
-// registry via this call — apps/agent does the same at boot. Without it, the
+// registry via this call — server/api does the same at boot. Without it, the
 // model would be offered the tools (their rows are seeded) but dispatch would
 // fail with "builtin handler 'heartbeat_update_state' not registered in this
 // process", silently breaking the continuity flow. Idempotent.
@@ -177,7 +177,7 @@ export async function resolveAssistantAgent(ownerId: string, slug?: string): Pro
  * the LLM can recover it via search_nodes if it's relevant later.
  */
 /** Options for {@link runAssistantTurn}. All fields are plain serializable data
- *  so the durable apps/api runner can carry them as a workflow input. */
+ *  so the durable server/api runner can carry them as a workflow input. */
 export type RunAssistantTurnOptions = {
   displayText?: string;
   /** Whether the attachment is an image (vision) or a document (parsed
@@ -339,7 +339,7 @@ export async function runAssistantTurn(
   // millisecond timestamp, so it rides in the uncached volatile block —
   // prepending it to the system prompt put it inside cache breakpoint 1
   // and busted the persona prefix every turn (2026-06 chat-cost audit).
-  // Mirrors the apps/agent (Telegram) flow.
+  // Mirrors the server/api (Telegram) flow.
   let prefs = await loadProfilePreferences(ownerId);
   // Auto-set the timezone from a trustworthy device location (mobile always;
   // web when the fix isn't an IP/VPN fallback) so the time line below is right

@@ -12,9 +12,9 @@ import { env } from '@mantle/config';
  * both processes execute tool handlers). When unset (bare full-stack dev) we
  * anchor to a SINGLE monorepo-root `.table-dbs` so every workspace process
  * resolves the same directory. The previous cwd-relative default split web
- * (cwd apps/web) and api (cwd apps/api) into two roots, so a workbook the agent
- * wrote under apps/api/.table-dbs was "missing" when the web UI read
- * apps/web/.table-dbs — a guaranteed 500 on every table open in local dev, and
+ * (cwd server/web) and api (cwd server/api) into two roots, so a workbook the agent
+ * wrote under server/api/.table-dbs was "missing" when the web UI read
+ * server/web/.table-dbs — a guaranteed 500 on every table open in local dev, and
  * on any deployed box whose compose predates the table-dbs mount (TABLE_DB_DIR
  * unset). Prod always sets TABLE_DB_DIR, so the walk below is a dev-only path.
  */

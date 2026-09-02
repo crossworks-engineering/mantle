@@ -46,7 +46,7 @@ Corrected registration:
 ```bash
 claude mcp remove mantle -s local
 claude mcp add mantle -s local -- \
-  pnpm -C /Users/jasonschoeman/Projects/mantle/apps/mcp start
+  pnpm -C /Users/jasonschoeman/Projects/mantle/server/mcp start
 ```
 
 The `--` is critical, without it `claude mcp add` swallows the args
@@ -84,14 +84,14 @@ Abandoned artifact (left in place but not used):
 Telegram Bot API
        │  (getUpdates long-poll, ~25s timeout)
        ▼
-apps/web/workers/telegram-poll.ts
+server/web/workers/telegram-poll.ts
        │  loads enabled telegram_accounts, spawns one loop per account
        │  per inbound: gate() → upsert telegram_chats → insert telegram_messages + nodes row
        ▼
 Postgres (remote prod via SSH tunnel localhost:54322)
        │
        ▼
-apps/mcp/src/server.ts  (stdio MCP server)
+server/mcp/src/server.ts  (stdio MCP server)
        │  telegram_pending  → unprocessed messages, FIFO
        │  telegram_send     → bot.sendMessage
        │  telegram_react    → bot.setMessageReaction
@@ -156,7 +156,7 @@ Mirrors `packages/email` conventions.
 
 ### Worker
 
-- `apps/web/workers/telegram-poll.ts`, supervisor process. On boot
+- `server/web/workers/telegram-poll.ts`, supervisor process. On boot
   loads all `telegram_accounts WHERE enabled=true`, spawns one
   long-poll loop per account. Refreshes the account set every 60s so
   newly-added bots come online without a restart. Exponential backoff
@@ -165,13 +165,13 @@ Mirrors `packages/email` conventions.
 
 ### MCP server
 
-- `apps/mcp/src/server.ts`, extended with 7 new tools (full list below).
+- `server/mcp/src/server.ts`, extended with 7 new tools (full list below).
   Existing tools (`tree_list`, `search`, `email_get`, `email_list`)
   unchanged except that `search` accepts `type='telegram_message'`.
 
 ### Seed / migration
 
-- `apps/web/scripts/seed-telegram.ts`, idempotent. Reads
+- `server/web/scripts/seed-telegram.ts`, idempotent. Reads
   `~/.claude/channels/telegram/.env` (TELEGRAM_BOT_TOKEN) and
   `access.json` (allowFrom list), upserts one `telegram_accounts` row
   + one `telegram_chats` per allowlisted user. Re-running just refreshes
@@ -180,9 +180,9 @@ Mirrors `packages/email` conventions.
 
 ### Wiring
 
-- `apps/web/package.json`, added `worker:telegram:dev` script + the
+- `server/web/package.json`, added `worker:telegram:dev` script + the
   `@mantle/telegram` workspace dep + `seed:telegram` script.
-- `apps/mcp/package.json`, added `@mantle/telegram` dep.
+- `server/mcp/package.json`, added `@mantle/telegram` dep.
 - Root `package.json`, the `pnpm dev` concurrent group now includes
   the telegram worker as `tg` (yellow).
 
@@ -221,14 +221,14 @@ always-on. For now you just call `telegram_pending` manually.
   previous Claude Code session. **Will be killed when that session
   exits.** Restart it any time with:
   ```bash
-  cd ~/Projects/mantle/apps/web && \
+  cd ~/Projects/mantle/server/web && \
     pnpm worker:telegram:dev
   ```
   Or just `pnpm dev` from the root for the full stack.
 - **Mantle MCP server**: registered at **local** scope (per-project)
   in `~/.claude.json` under the project entry for
   `/Users/jasonschoeman/Projects/mantle`. Command:
-  `pnpm -C /Users/jasonschoeman/Projects/mantle/apps/mcp start`.
+  `pnpm -C /Users/jasonschoeman/Projects/mantle/server/mcp start`.
   Verified `✓ Connected` via `claude mcp get mantle`. **Requires
   Claude Code restart** to be loaded into a session, `/reload-plugins`
   is plugin-only. (Earlier in the day the entry was broken, see the
@@ -269,7 +269,7 @@ telegram_messages   (one unprocessed test)
    ```bash
    cd ~/Projects/mantle
    ./scripts/dev-tunnel.sh --background
-   pnpm -C apps/web worker:telegram:dev &
+   pnpm -C server/web worker:telegram:dev &
    ```
 
 2. **Verify mantle MCP is loaded.** Run `claude mcp list` from a
@@ -296,7 +296,7 @@ telegram_messages   (one unprocessed test)
 
 In rough priority order:
 
-- **Web UI** for telegram under `apps/web/(app)/telegram/`, list chats,
+- **Web UI** for telegram under `jackdaw/(app)/telegram/`, list chats,
   view messages, manage allowlist, view pairing codes. Mirror the
   `/settings/accounts` shape used for email.
 - **Always-on worker**: currently the worker dies when its parent
@@ -323,7 +323,7 @@ In rough priority order:
   group-policy logic from the abandoned plugin if you actually use
   groups.
 - **Webhooks** instead of long-poll; once Mantle has a public URL.
-  Telegram `setWebhook` + an HTTPS endpoint on `apps/web` would drop
+  Telegram `setWebhook` + an HTTPS endpoint on `server/web` would drop
   the polling worker entirely.
 - **`/start`, `/help`, `/status`** bot commands, the upstream plugin
   had these for the pairing UX. We didn't port them; pairing currently
@@ -364,11 +364,11 @@ packages/telegram/src/client.ts                        (new)
 packages/telegram/src/gate.ts                          (new)
 packages/telegram/src/sync.ts                          (new)
 packages/telegram/src/outbound.ts                      (new)
-apps/web/workers/telegram-poll.ts                      (new)
-apps/web/scripts/seed-telegram.ts                      (new)
-apps/web/package.json                                  (added scripts + dep)
-apps/mcp/src/server.ts                                 (added 7 tools)
-apps/mcp/package.json                                  (added dep)
+server/web/workers/telegram-poll.ts                      (new)
+server/web/scripts/seed-telegram.ts                      (new)
+server/web/package.json                                  (added scripts + dep)
+server/mcp/src/server.ts                                 (added 7 tools)
+server/mcp/package.json                                  (added dep)
 package.json                                           (added tg to pnpm dev)
 docs/telegram.md                                       (this file)
 ```

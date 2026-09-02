@@ -138,7 +138,7 @@ grant path, the console. This plan adds a **binding layer**, not a new factory.
 - Manifest checklist per `system-manifest/CLAUDE.md` (prompt force-syncs to
   existing brains on upgrade; no new agent, no new groups to seed).
 
-## Phase 4: Console + settings UI (`client/web`, modest)
+## Phase 4: Console + settings UI (`jackdaw`, modest)
 
 - `/settings/tool-groups` group detail: an **Integration** section, service,
   base URL, secret ref picker (from the vault list, refs only), auth-template
@@ -150,7 +150,7 @@ grant path, the console. This plan adds a **binding layer**, not a new factory.
   optional integration-group picker that applies the same inheritance the
   builtin does. Keep it small; the console is a power surface, not the
   showcase.
-- UI conventions per `docs/ui-style-guide.md` + `server/web/CLAUDE.md`
+- UI conventions per `jackdaw/docs/ui-style-guide.md` + `server/web/CLAUDE.md`
   non-negotiables.
 
 ## Phase 5: Verification

@@ -22,7 +22,7 @@ search, draft/commit, delegation, and brain-indexing machinery.
 | Source of truth | ProseMirror `doc` | the **workbook file** (`TABLE_DB_DIR/<owner>/<node>.sqlite`) |
 | Addressing | `block-ids.ts` (UUID per block) | native stable `tab.id` / `column.id` / `row.id` |
 | Pure ops | `block-edit.ts` / `block-list.ts` | `table-model.ts` (doc) + `packages/tabledb` ops (file) |
-| Derived text | `doc-to-text.ts` | L1 profile + schema chunks (`packages/tabledb/profile.ts`, `schema.ts`) |
+| Derived text | `doc-to-text.ts` | L1 profile + schema chunks (`packages/tabledb/src/profile.ts`, `schema.ts`) |
 | CRUD + draft/commit | `packages/content/src/pages.ts` | `packages/content/src/tables.ts` + `table-storage.ts` |
 | Builtin tools | `builtins-pages.ts` (`page_*`) | `builtins-tables.ts` (`table_*`) |
 | Specialist agent | `Pages` + `rich_writing` | `Ledger` + `table_authoring` |
@@ -229,7 +229,7 @@ pipe table, TSV, or quote-aware CSV, parsed with `fast-csv`) → the
 
 **Auto-import on ingest.** A spreadsheet uploaded *anywhere* (Files screen,
 chat attachment, email, Telegram) becomes ONE table with a tab per sheet
-(`maybeAutoTableSpreadsheet` in `apps/api`), published, indexed, deduped by
+(`maybeAutoTableSpreadsheet` in `server/api`), published, indexed, deduped by
 `data.sourceFileId` so a re-ingest never doubles. Sheets are capped at
 `MAX_AUTO_TABLE_TABLES` (20) tabs per upload; the explicit `table_from_file`
 tool is user-initiated and uncapped (but stamps `sourceFileId` too).

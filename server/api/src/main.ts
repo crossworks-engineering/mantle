@@ -1,9 +1,9 @@
 /**
- * Mantle runner service (apps/api) — the dedicated, always-on process that runs
+ * Mantle runner service (server/api) — the dedicated, always-on process that runs
  * durable LLM/agent work server-side so a turn never dies when the user
  * navigates away. It hosts the durable assistant-turn runner AND the absorbed
  * agent runtime (the Telegram responder, summarize/extract/heartbeat listeners,
- * and the reflector/heartbeat/extract-sweep ticks — formerly apps/agent). The
+ * and the reflector/heartbeat/extract-sweep ticks — formerly server/api). The
  * HTTP API stays in Next.js for now (runners-first).
  *
  * On launch DBOS auto-creates its system database (if absent) and AUTO-RECOVERS
@@ -81,13 +81,13 @@ async function main(): Promise<void> {
   // Pure registration; every real guard lives inside suggestFollowUp.
   installTurnSuggestionHook();
   // LISTEN for user "stop" requests so an in-flight streamed turn can be aborted
-  // (apps/web publishes the cancel; this process runs the turn). Best-effort.
+  // (server/web publishes the cancel; this process runs the turn). Best-effort.
   await startTurnCancelListener().catch((err) =>
     console.error('[api] turn-cancel listener failed to start (Stop will no-op):', err),
   );
   await DBOS.launch();
   // The shared runner queue — concurrency caps total in-flight runs across all
-  // apps/api processes (LLM-provider backpressure).
+  // server/api processes (LLM-provider backpressure).
   await DBOS.registerQueue(RUNNER_QUEUE, { concurrency: runnerConcurrency() });
   // Partitioned forum queue: concurrency 1 PER PARTITION (partition key =
   // topicId) serializes turns within a topic while different topics run in

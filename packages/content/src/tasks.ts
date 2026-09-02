@@ -10,7 +10,7 @@
  *   nodes.data.rank   fractional board-order key (optional; see rank.ts)
  *
  * Under the `tasks` ltree root. Lazy-created on first write. The
- * extractor's special case in apps/api/src/agent/extractor.ts:readNodeBodyRaw
+ * extractor's special case in server/api/src/agent/extractor.ts:readNodeBodyRaw
  * surfaces status + priority + due_at + todos into the body it summarises.
  * Comments live in the `node_comments` sidecar (node-comments.ts); rows here
  * carry only the count.

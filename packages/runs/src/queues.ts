@@ -21,9 +21,9 @@ export const RUN_RESUME_QUEUE = 'mantle.run.resume';
 
 /**
  * Dedicated DBOS queue for durable runs TURNS — both the worker-turn workflow
- * (`worker_invoke` items) and the resume-turn workflow. Registered in apps/api
+ * (`worker_invoke` items) and the resume-turn workflow. Registered in server/api
  * (its concurrency = `runsTurnConcurrency()`, env MANTLE_RUNS_TURN_CONCURRENCY,
- * default 2); enqueued from apps/web/lib/runs/dbos-enqueue.ts.
+ * default 2); enqueued from server/web/lib/runs/dbos-enqueue.ts.
  *
  * WHY a separate queue (the starvation watch-item): worker + resume turns used
  * to share RUNNER_QUEUE with the owner's INTERACTIVE assistant/telegram turns.
@@ -36,7 +36,7 @@ export const RUN_RESUME_QUEUE = 'mantle.run.resume';
  * above.
  *
  * Deploy-skew posture: a runs worker that enqueues to 'mantle.runs' before
- * apps/api has restarted with the queue registered leaves the job WAITING until
+ * server/api has restarted with the queue registered leaves the job WAITING until
  * the api process rolls (an unregistered queue is never drained, not an error).
  * Compose restarts web + api together, so this window is transient; the job is
  * picked up as soon as the api runner comes up registering the queue.
@@ -45,7 +45,7 @@ export const RUNS_TURN_QUEUE = 'mantle.runs';
 
 /**
  * DBOS workflow names — the cross-runtime contract for slice 3's turn
- * execution (plan §4 WP1/WP2). The apps/api runner REGISTERS these; the runs
+ * execution (plan §4 WP1/WP2). The server/api runner REGISTERS these; the runs
  * worker ENQUEUES them by name via DBOSClient after winning the claim CAS.
  * DBOS is deliberately NOT imported here (the assistant-runtime contract.ts
  * idiom) — callers pass the strings to the DBOS APIs themselves.

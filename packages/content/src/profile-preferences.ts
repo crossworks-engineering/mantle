@@ -2,8 +2,8 @@
  * Per-user preferences — timezone + locale, persisted on
  * profiles.preferences.
  *
- * Lives in @mantle/content so both apps/web (settings page +
- * formatters) and apps/agent (system-prompt time context) can read
+ * Lives in @mantle/content so both server/web (settings page +
+ * formatters) and server/api (system-prompt time context) can read
  * the same row without round-trip duplication.
  *
  * Why these two specifically: smallest set that makes time-aware UX
@@ -157,7 +157,7 @@ export function projectAvatarPhotoType(raw: unknown): string | undefined {
 
 /** Project a stored `colorTheme` jsonb value — a slug-shaped theme id, or
  *  undefined for unset/garbage (⇒ the default theme). The theme LIST lives in
- *  the web app (apps/web/lib/themes.ts); the server stores any well-formed id
+ *  the web app (server/web/lib/themes.ts); the server stores any well-formed id
  *  and the client falls back to the default for ids it doesn't know, so a
  *  theme added or removed in the UI never strands the stored preference. */
 export function projectColorTheme(raw: unknown): string | undefined {

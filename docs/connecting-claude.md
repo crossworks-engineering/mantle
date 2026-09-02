@@ -5,7 +5,7 @@ search your brain, read mail, manage tasks/notes/events, walk the entity
 graph, and answer Telegram, using the bundled MCP server. One-time setup
 per client machine; after that the tools are simply present every launch.
 
-**What this is (and isn't).** [`apps/mcp`](../apps/mcp/src/server.ts) is a
+**What this is (and isn't).** [`server/mcp`](../server/mcp/src/server.ts) is a
 **tool surface**, not a chat channel: ~70 tools of raw, persona-less access to
 your data, including the full Toolsmith set (`api_tool_*`, `web_fetch`,
 groups + grants), so a Claude Code session can read a service's API docs and
@@ -48,7 +48,7 @@ Code in the repo; for Claude Desktop point it at the same entry:
   "mcpServers": {
     "mantle": {
       "command": "pnpm",
-      "args": ["--dir", "/path/to/mantle/apps/mcp", "start"]
+      "args": ["--dir", "/path/to/mantle/server/mcp", "start"]
     }
   }
 }
@@ -67,7 +67,7 @@ server runs inside the existing `mantle_web` container, no extra install:
   "mcpServers": {
     "mantle": {
       "command": "docker",
-      "args": ["exec", "-i", "mantle_web", "pnpm", "-C", "apps/mcp", "start"]
+      "args": ["exec", "-i", "mantle_web", "pnpm", "-C", "server/mcp", "start"]
     }
   }
 }
@@ -94,7 +94,7 @@ Host my-mantle
     "mantle": {
       "command": "ssh",
       "args": ["my-mantle", "docker", "exec", "-i", "mantle_web",
-               "pnpm", "-C", "apps/mcp", "start"]
+               "pnpm", "-C", "server/mcp", "start"]
     }
   }
 }
@@ -114,7 +114,7 @@ in the tools menu.
 - **Claude Code:** one command, no file editing:
 
 ```bash
-claude mcp add mantle -- ssh my-mantle docker exec -i mantle_web pnpm -C apps/mcp start
+claude mcp add mantle -- ssh my-mantle docker exec -i mantle_web pnpm -C server/mcp start
 # add --scope user to make it available in every project
 ```
 
@@ -125,7 +125,7 @@ One line proves the whole path (SSH → container → server → DB), expect a
 
 ```bash
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}' \
-  | ssh my-mantle 'docker exec -i mantle_web pnpm -C apps/mcp start' | head -1
+  | ssh my-mantle 'docker exec -i mantle_web pnpm -C server/mcp start' | head -1
 ```
 
 If instead you see `No account yet`, sign up in the web app first. If

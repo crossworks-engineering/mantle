@@ -18,7 +18,7 @@ as a clickable link the user taps to land on it.
 
 ## The permalink: `/n/<id>`
 
-`apps/web/app/(app)/n/[id]/page.tsx` is the one canonical deep link. It loads
+`jackdaw/app/(app)/n/[id]/page.tsx` is the one canonical deep link. It loads
 the node **owner-scoped**, reads its `type`, and redirects to whichever surface
 edits or displays it:
 
@@ -68,13 +68,13 @@ markdown `[title](url)`:
 
 Because the tool descriptions carry the instruction, it propagates to **every
 agent** that holds the tool with no manifest reseed (see
-[`system-manifest/CLAUDE.md`](../apps/web/lib/system-manifest/CLAUDE.md) for why
+[`system-manifest/CLAUDE.md`](../server/web/lib/system-manifest/CLAUDE.md) for why
 that matters).
 
 ## Clicking through in chat
 
 Responder replies render read-only through TipTap
-([`rich-text.tsx`](../apps/web/components/assistant/rich-text.tsx)) using the
+([`rich-text.tsx`](../jackdaw/components/assistant/rich-text.tsx)) using the
 shared page-editor extensions, where `link.openOnClick` is **false** (correct
 for the editable canvas, where a click places the cursor). The reply renderer
 therefore intercepts link clicks itself:
@@ -90,7 +90,7 @@ The editable Pages canvas is untouched.
 
 The permalink lands on `?selected=<id>`, but selecting another item *within* a
 surface was pure client state, the URL went stale, so you couldn't copy a link
-to the item currently open. [`syncSelectionParam`](../apps/web/lib/url-sync.ts)
+to the item currently open. [`syncSelectionParam`](../jackdaw/lib/url-sync.ts)
 fixes that: on each selection it rewrites `?selected=` via
 `history.replaceState`, **no server refetch** (the item is already in client
 state), no scroll reset, and no back-stack entry (Back leaves the surface rather
@@ -103,9 +103,9 @@ navigation, and already reflect the selection in the URL.
 
 ## Files
 
-- `apps/web/app/(app)/n/[id]/page.tsx`, the universal permalink route.
+- `jackdaw/app/(app)/n/[id]/page.tsx`, the universal permalink route.
 - `packages/content/src/shares.ts`, `nodeUrl()`.
 - `packages/tools/src/builtins*.ts`, `url` fields + link instructions on the
   read tools.
-- `apps/web/components/assistant/rich-text.tsx`, chat link-click handling.
-- `apps/web/lib/url-sync.ts`, `syncSelectionParam` (replaceState).
+- `jackdaw/components/assistant/rich-text.tsx`, chat link-click handling.
+- `jackdaw/lib/url-sync.ts`, `syncSelectionParam` (replaceState).

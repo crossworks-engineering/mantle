@@ -90,7 +90,7 @@ type HubData = {
 Rules that bind the SDK (and any future addition to it):
 
 - **Enumerated, host-mediated, data-down / intent-up.** New capabilities are
-  new enumerated kinds in `apps/web/lib/app-bridge/protocol.ts`, mirrored in
+  new enumerated kinds in `packages/share-ui/src/app-bridge-protocol.ts`, mirrored in
   the `@host` kit string (`packages/app-build/src/kit.ts`; drift tripwire:
   `kit.test.ts`), never a generic passthrough.
 - **Chat and the reader are shell views.** The app opens them; it never

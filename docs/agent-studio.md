@@ -5,7 +5,7 @@
 > composed-prompt preview), P2 prose versioning (git-style history/diff/revert,
 > migration 0079 `prompt_versions`), P3 structure editing (model/params/skills/
 > delegates inline + reset-to-default), P4 no-persist sandbox. Code in
-> `apps/web/lib/studio/` + `apps/web/app/(app)/studio/` + `app/api/studio/`. The
+> `server/web/lib/studio/` + `jackdaw/app/(app)/studio/` + `app/api/studio/`. The
 > phased plan below is retained as the design record.
 >
 > **Update (2026-06, tools/skills reshape, see [docs/tools-and-skills.md](tools-and-skills.md)):**
@@ -71,11 +71,11 @@ can hide.
 
 ## What it reuses (most of the hard parts already exist)
 
-- **Graph canvas:** `@xyflow/react` v12 + `dagre`, already in `apps/web` deps,
-  already used by [`traces`](../apps/web/app/(app)/traces/trace-detail-view.tsx).
-- **Live linter:** `checkSystemIntegrity` (`apps/web/lib/system-manifest/`).
+- **Graph canvas:** `@xyflow/react` v12 + `dagre`, already in `server/web` deps,
+  already used by [`traces`](../jackdaw/app/(app)/traces/trace-detail-view.tsx).
+- **Live linter:** `checkSystemIntegrity` (`server/web/lib/system-manifest/`).
 - **Prompt composition:** `resolveAgentSkills` + `composeSystemPromptWithSkills`
-  ([`apps/web/lib/assistant.ts:227`](../apps/web/lib/assistant.ts)), the *exact*
+  ([`server/web/lib/assistant.ts:227`](../server/web/lib/assistant.ts)), the *exact*
   path a real turn runs, so the composed-prompt preview is true to runtime.
 - **Per-node editors + tests:** `/settings/agents` (incl. `AgentChatTestButton`,
   a one-shot test through the real path), `/settings/ai-workers` (per-kind test

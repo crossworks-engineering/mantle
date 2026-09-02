@@ -26,9 +26,9 @@ Two independent pieces, deliberately:
    ([`lib/skills.ts`](../server/web/lib/skills.ts)), attached via skill links.
    Toggle/edit it at `/settings/skills`.
 2. **The renderer**: makes the chat _show_ it. `richMarkdownToHtml`
-   ([`lib/rich-markdown.ts`](../client/web/lib/rich-markdown.ts)) converts the
+   ([`lib/rich-markdown.ts`](../jackdaw/lib/rich-markdown.ts)) converts the
    dialect to HTML; `<RichText>`
-   ([`components/assistant/rich-text.tsx`](../client/web/components/assistant/rich-text.tsx))
+   ([`components/assistant/rich-text.tsx`](../jackdaw/components/assistant/rich-text.tsx))
    feeds it to a read-only TipTap editor built on the **shared `pageExtensions`
    schema**, so chat output renders identically to a page and reuses the
    ProseMirror CSS in `globals.css`.
@@ -105,7 +105,7 @@ to the model); the richness is purely a _rendering_ of that text.
 ## 4. The document layout
 
 The `/assistant` page is a **document canvas**, not a chat transcript
-([`assistant-client.tsx`](<../client/web/app/(app)/assistant/assistant-client.tsx>)):
+([`assistant-client.tsx`](<../jackdaw/app/(app)/assistant/assistant-client.tsx>)):
 
 - Messages are grouped into **turns** (`prompt` + `response`).
 - Each turn is a grid row: Saskia's response is the wide reading column (the

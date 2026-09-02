@@ -54,10 +54,10 @@ describe('registerHeartbeatTools — dispatch registration', () => {
   // The heartbeat builtins live in @mantle/heartbeats and DO NOT ship in
   // @mantle/tools' BUILTIN_TOOLS — they enter the in-process registry only via
   // registerHeartbeatTools(). Any process that runs the tool loop and offers the
-  // continuity tools (apps/agent AND apps/web's /assistant responder) must call
+  // continuity tools (server/api AND server/web's /assistant responder) must call
   // it, or dispatch fails with "builtin handler '…' not registered in this
   // process" even though the tool rows are seeded. This pins that contract so the
-  // web bootstrap (apps/web/lib/assistant.ts) can't silently regress.
+  // web bootstrap (server/web/lib/assistant.ts) can't silently regress.
   it('makes every responder-continuity tool dispatchable', () => {
     registerHeartbeatTools();
     for (const slug of HEARTBEAT_RESPONDER_TOOLS) {
@@ -276,7 +276,7 @@ describe('HEARTBEAT_RESPONDER_TOOLS (auto-exclusion canonical list)', () => {
 });
 
 describe('auto-exclusion filter behaviour (pure-logic shape)', () => {
-  // The runtime filter in apps/agent + apps/web does this exact
+  // The runtime filter in server/api + server/web does this exact
   // computation. Pinning it here so a change to the constant
   // automatically validates the filter still produces the expected
   // shape. Doesn't touch the DB or the responder loop.

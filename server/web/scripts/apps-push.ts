@@ -2,7 +2,7 @@
  * apps:push — push a local directory of mini-app source into Mantle, build it,
  * and (optionally) publish. The headless counterpart to the /api/apps/import
  * route, for a single-user box: the owner is resolved at boot from
- * ALLOWED_USER_ID / the sole auth.users row (same trust model as apps/mcp), so
+ * ALLOWED_USER_ID / the sole auth.users row (same trust model as server/mcp), so
  * no session/API-key auth is needed — you must already have shell access.
  *
  * Usage:

@@ -73,7 +73,7 @@ useEffect(() => setRows(initialRows), [initialRows]);
 | The `tasks_changed` triggers | `packages/db/migrations/0148_tasks_changed_notify.sql` |
 | The `comments_changed` triggers | `packages/db/migrations/0149_comments_changed_notify.sql` |
 | The `node_indexed` notify (extractor) | `packages/db/src/notify.ts` (`notifyNodeIndexed`) |
-| LISTEN bridge + fan-out (both channels) | `apps/web/lib/realtime.ts` |
-| SSE endpoint | `apps/web/app/api/realtime/route.ts` |
-| Client hook | `apps/web/components/realtime/use-realtime.ts` |
-| Reference consumer | `apps/web/app/(app)/events/events-client.tsx` |
+| LISTEN bridge + fan-out (both channels) | `server/web/lib/realtime.ts` |
+| SSE endpoint | `server/web/app/api/realtime/route.ts` |
+| Client hook | `jackdaw/components/realtime/use-realtime.ts` |
+| Reference consumer | `jackdaw/app/(app)/events/events-client.tsx` |

@@ -176,11 +176,11 @@ At `/settings/embedding`:
 
 The CLI alternative is the same code path:
 ```
-pnpm -C apps/web re-embed --model=<model-id>
+pnpm -C server/web re-embed --model=<model-id>
 ```
 For a **dimension-migration repopulation** (every embedding nulled by an ALTER), add `--repopulate` so it embeds rows whose vector is currently null rather than only refreshing populated ones:
 ```
-pnpm -C apps/web re-embed --repopulate --model=embeddinggemma:latest
+pnpm -C server/web re-embed --repopulate --model=embeddinggemma:latest
 ```
 `--model` is required when repopulating, without it the CLI falls back to the resolver's no-row default (the keyless local config) rather than the model you actually configured.
 
@@ -278,7 +278,7 @@ A short list of reasons to leave your current embedder alone:
 2. **You chose local deliberately.** If privacy is the point, switching to a cloud model sends your entire corpus to a third party, the exact thing you opted out of. And local embedding has no per-token cost.
 3. **Retrieval already feels solid.** Don't fix what isn't broken, the upgrade headroom on a personal English/German corpus is small (that goes for EmbeddingGemma too, which is competitive).
 4. **Your corpus is small (< 1000 vectors).** At this scale every model finds everything.
-5. **You haven't tried tuning the retrieval params first.** `top_k`, the similarity threshold, the chunk size; these often matter more than the embedding model. The responder's `memory_config.{fact_limit, content_hit_limit, chunk_limit, digest_limit}` knobs at `/settings/agents`, plus the June-2026 ranking factors (`MANTLE_{SALIENCE_LAMBDA, RECENCY_EPISODIC, RECENCY_CONTENT, RECENCY_TAU_DAYS, QUERY_ENRICH}` env) are where to look first. Ranking is no longer raw cosine, see [`memory.md` §7](./memory.md#7-the-retrieval-order-in-the-prompt) and measure changes with `pnpm -C apps/web eval:recall`.
+5. **You haven't tried tuning the retrieval params first.** `top_k`, the similarity threshold, the chunk size; these often matter more than the embedding model. The responder's `memory_config.{fact_limit, content_hit_limit, chunk_limit, digest_limit}` knobs at `/settings/agents`, plus the June-2026 ranking factors (`MANTLE_{SALIENCE_LAMBDA, RECENCY_EPISODIC, RECENCY_CONTENT, RECENCY_TAU_DAYS, QUERY_ENRICH}` env) are where to look first. Ranking is no longer raw cosine, see [`memory.md` §7](./memory.md#7-the-retrieval-order-in-the-prompt) and measure changes with `pnpm -C server/web eval:recall`.
 
 ---
 

@@ -5,9 +5,9 @@ Status: **slices 1 + 2, plus slice 3 WP1**, the spine (schema, engine,
 dispatcher, sweep, `run_*` tools, resume turn, run view), worker agents +
 audits (per-run concurrency cap, model inheritance, mechanical evidence,
 resume-driven audit verdicts with a one-redo cycle, the per-worker acceptance
-metric), and **slice 3 complete** ([runs-slice-3-plan.md](runs-slice-3-plan.md)):
+metric), and **slice 3 complete** ([runs-slice-3-plan.md](_archive/runs-slice-3-plan.md)):
 durable turns (worker turns AND resume turns execute as DBOS workflows in
-apps/api, WP1/WP2, crash-test gate PASSED), `ask_human` gates (WP3), budget /
+server/api, WP1/WP2, crash-test gate PASSED), `ask_human` gates (WP3), budget /
 item-cap auto-pause (WP4), worker groups / panels (WP5), channel-routed
 resume delivery, and the run-view Cancel actuator. WP6 (partitioned per-run
 cap) stays deferred.
@@ -56,14 +56,14 @@ cancellation.
   duplicate wake-ups no-op. Engine calls return `PostCommitAction[]`; callers
   enqueue AFTER commit (`enqueueRunActionsSafe`) so pg-boss never observes
   uncommitted state. The table is the truth; jobs carry only ids.
-- **`apps/web/workers/runs.ts`** (`worker_runs` container): pg-boss handlers
+- **`server/web/workers/runs.ts`** (`worker_runs` container): pg-boss handlers
   for `mantle.run.tool` (tool/note items), `mantle.run.worker` (claim under
   the cap + hand off to DBOS), `mantle.run.resume` (relay the wake-up to
   DBOS), plus the every-minute sweep cron: overdue items → `failed(timeout)`
   (drives the counter; nothing wedges); stale `ready` items → re-dispatch
   (heals a crash between commit and enqueue, no outbox machinery);
   terminal-but-never-resumed roots → resume re-send.
-- **`apps/web/lib/runs/execute-item.ts`**: item execution through the SAME
+- **`server/web/lib/runs/execute-item.ts`**: item execution through the SAME
   `dispatchTool` executor as the inline loop (one executor, two entry points,
   non-negotiable). Central arg coercion, a `run_item` trace per execution
   (`trace_ref` links item → trace), structured failures
@@ -71,7 +71,7 @@ cancellation.
   per-item usage + cost in micro-USD. Semantic retries follow
   `retry_policy.maxAttempts`; **side-effecting items never auto-retry** (both
   retry layers off, failure surfaces for the resume turn to reason about).
-- **`apps/api/src/workflows/runs-resume-turn.ts`**: the resume turn, durable
+- **`server/api/src/workflows/runs-resume-turn.ts`**: the resume turn, durable
   since slice 3 WP2 (replay-hardened in v0.157.14): an ordinary responder
   turn (`assembleResponderTurn` + `runResponderLoop`) whose prompt is the
   compiled run state, run as a DBOS workflow. Every pre-claim decision that
@@ -113,8 +113,8 @@ cancellation.
 - **Execution, durable since slice 3 WP1**: the runs worker CLAIMS under
   the per-run concurrency cap (`MANTLE_RUNS_WORKER_CONCURRENCY`, default 3,
   serialized on the run row; completions emit slot-release wake-ups;
-  `apps/web/lib/runs/execute-worker.ts`), then hands the whole agent turn to
-  the DBOS runner (`apps/api/src/workflows/runs-worker-turn.ts`, enqueued by
+  `server/web/lib/runs/execute-worker.ts`), then hands the whole agent turn to
+  the DBOS runner (`server/api/src/workflows/runs-worker-turn.ts`, enqueued by
   name on the dedicated `RUNS_TURN_QUEUE` (`'mantle.runs'`),
   `workflowID = itemId:attempt`). Every LLM
   call + tool dispatch journals, so a crash mid-turn resumes from the last
@@ -320,15 +320,15 @@ grant it manually on the dev brain (`/settings/tool-groups` or
 
 Background runs turns get their OWN DBOS queue, `RUNS_TURN_QUEUE`
 (`'mantle.runs'`, `packages/runs/src/queues.ts`); both the worker-turn and the
-resume-turn workflows enqueue onto it (`apps/web/lib/runs/dbos-enqueue.ts`).
-apps/api registers it with its own concurrency cap
+resume-turn workflows enqueue onto it (`server/web/lib/runs/dbos-enqueue.ts`).
+server/api registers it with its own concurrency cap
 (`runsTurnConcurrency()`, env `MANTLE_RUNS_TURN_CONCURRENCY`, default 2). This
 closes the slice-3 starvation watch-item: worker + resume turns previously
 shared `RUNNER_QUEUE`'s FIFO with the owner's INTERACTIVE assistant/telegram
 turns, so a run fanning out N worker turns could queue ahead of a live chat
 message. Off the shared queue, background runs can never starve the foreground
 (the same isolation `FORUM_QUEUE` gives topic turns). Deploy-skew posture: a
-worker that enqueues to `'mantle.runs'` before apps/api restarts with the queue
+worker that enqueues to `'mantle.runs'` before server/api restarts with the queue
 registered leaves jobs WAITING until the api rolls; an unregistered queue is
 never drained, not an error. Compose restarts web + api together, so the window
 is transient and the jobs run as soon as the api runner comes up.
@@ -339,7 +339,7 @@ The run surfaces (`/runs` list + detail, the active-runs strip on
 `/assistant`) repaint off a Postgres LISTEN/NOTIFY channel, not a poll.
 Migration `0135` puts triggers on `runs` and `run_items` that raise
 `pg_notify('runs_changed', <owner id>)`; the web app's LISTEN bridge
-(`apps/web/lib/realtime.ts`, the same one behind `pending_changed`) relays it
+(`server/web/lib/realtime.ts`, the same one behind `pending_changed`) relays it
 to the browser as a `run` change type, which the clients consume with
 `useRealtime(['run'], …)`.
 

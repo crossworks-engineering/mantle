@@ -4,7 +4,7 @@
  * config changes — newly-discovered folders go through their 12-month
  * first scan.
  *
- *   cd apps/web && node --env-file=./.env.local --import tsx scripts/sync-now.ts
+ *   cd server/web && node --env-file=./.env.local --import tsx scripts/sync-now.ts
  */
 import { eq } from 'drizzle-orm';
 import { imap, syncAccount } from '@mantle/email';

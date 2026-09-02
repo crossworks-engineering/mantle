@@ -80,7 +80,7 @@ export type LandedState =
   | 'skipped'
   /** Success but a layer is missing (silent-miss / dim drift / duplicate edges). */
   | 'fail'
-  /** No extractor_run after the stall window — is apps/agent + an extractor up? */
+  /** No extractor_run after the stall window — is server/api + an extractor up? */
   | 'stalled';
 
 export type LandedItem = {
@@ -141,7 +141,7 @@ export type AuditReport = {
 // ─── system config integrity ────────────────────────────────────────────────
 //
 // Read-only check of the agent/skill/tool/worker CONFIG graph against the
-// declarative manifest (apps/web/lib/system-manifest). Catches the silent-drop
+// declarative manifest (server/web/lib/system-manifest). Catches the silent-drop
 // cases the runtime resolvers hide: an agent referencing a skill/tool that has
 // no row, a specialist not wired into the persona's delegate_to, a default
 // worker missing for a kind. Same severity vocabulary as the corpus audit.

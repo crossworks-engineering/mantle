@@ -181,7 +181,7 @@ data-corruption risk for power users who insert cron rows via SQL
 
 ## 3. The fire loop
 
-`apps/agent/src/main.ts` runs `tickHeartbeats(USER_ID)` on a 60-second
+`server/api/src/main.ts` runs `tickHeartbeats(USER_ID)` on a 60-second
 `setInterval` with the same exponential-backoff pattern the reflector
 uses (cap 30min). Each tick:
 
@@ -372,7 +372,7 @@ this turn.
 
 ## 6. The worked example: `get_to_know_user`
 
-Seeded by `apps/web/scripts/seed-get-to-know-user.ts`. **Fires once,
+Seeded by `server/web/scripts/seed-get-to-know-user.ts`. **Fires once,
 ~6 hours after install** (with a small random jitter so it doesn't
 always land at exactly 6h), sends a single warm invitation, and
 self-terminates on the user's first substantive reply. That's the
@@ -478,7 +478,7 @@ new symptoms surface.
   After rapid commits to `packages/heartbeats`, the agent process
   may run partially-stale code (some modules from disk, some
   cached). Symptom: trace says success but DB didn't update;
-  restart fixes it. **Operator habit: manually restart `apps/agent`
+  restart fixes it. **Operator habit: manually restart `server/api`
   after any change in `packages/heartbeats/`.** No code fix planned;
   this is a dev-tooling characteristic, not a runtime bug.
 
@@ -606,11 +606,11 @@ operator (click "Create", nothing happens).
 `packages/heartbeats/src/notify.ts` adds `notifyHeartbeatDue(ownerId)`
 which fires `pg_notify('heartbeat_due', <ownerId>)`. Producers:
 
-- `apps/web/lib/heartbeats.createHeartbeat` after every insert
-- `apps/web/lib/heartbeats.updateHeartbeat` after every update
+- `server/web/lib/heartbeats.ts` (`createHeartbeat`) after every insert
+- `server/web/lib/heartbeats.ts` (`updateHeartbeat`) after every update
   (covers schedule edits + resume-from-paused)
 
-Consumer: `apps/agent/src/main.ts` LISTENs on `heartbeat_due` and
+Consumer: `server/api/src/main.ts` LISTENs on `heartbeat_due` and
 calls `tickHeartbeats(ownerId)` on each notification, same code path
 as the 60s setInterval, just kicked early. Net effect: an operator's
 Create/Edit/Resume click lands in the trace within ~1s, not 60s.
@@ -627,7 +627,7 @@ the trace appears immediately. The two paths don't overlap.
 
 ### Catch-up spike after agent downtime (NEW-6)
 
-When `apps/agent` is down for an extended period (host reboot, deploy,
+When `server/api` is down for an extended period (host reboot, deploy,
 crash + auto-restart), every heartbeat whose `next_fire_at` passed
 during the outage becomes "due" simultaneously. On boot, the tick
 selects up to `TICK_BATCH=10` due rows per minute and fires them
@@ -805,9 +805,9 @@ the instructions are written.
 | `packages/heartbeats/src/fire.ts`             | Single-fire orchestration (inflight lock + snooze preservation + state reload) |
 | `packages/heartbeats/src/tick.ts`             | Tick loop + `openHeartbeatsForSurface`                                         |
 | `packages/heartbeats/src/tools.ts`            | 5 builtin control tools (dual-mode addressing)                                 |
-| `apps/agent/src/main.ts`                      | Tick wiring + responder context inject                                         |
-| `apps/web/lib/heartbeats.ts`                  | CRUD lib                                                                       |
-| `apps/web/app/(app)/settings/heartbeats/*`    | CRUD UI                                                                        |
-| `apps/web/app/(app)/heartbeats/[id]/page.tsx` | Detail / fire log                                                              |
-| `apps/web/scripts/seed-get-to-know-user.ts`   | Demo skill + heartbeat + tool grant                                            |
-| `apps/web/scripts/test-fire-heartbeat.ts`     | Diagnostic CLI: one-shot forceFire to compare in-process vs long-running agent |
+| `server/api/src/main.ts`                      | Tick wiring + responder context inject                                         |
+| `server/web/lib/heartbeats.ts`                  | CRUD lib                                                                       |
+| `jackdaw/app/(app)/settings/heartbeats/*`    | CRUD UI                                                                        |
+| `jackdaw/app/(app)/heartbeats/[id]/page.tsx` | Detail / fire log                                                              |
+| `server/web/scripts/seed-get-to-know-user.ts`   | Demo skill + heartbeat + tool grant                                            |
+| `server/web/scripts/test-fire-heartbeat.ts`     | Diagnostic CLI: one-shot forceFire to compare in-process vs long-running agent |

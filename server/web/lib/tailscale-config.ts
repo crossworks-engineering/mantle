@@ -1,6 +1,6 @@
 /**
  * The owner's Tailscale auth key + device name, sealed at rest. Web-only (the
- * app process owns the tailscaled socket), so this lives in apps/web/lib rather
+ * app process owns the tailscaled socket), so this lives in server/web/lib rather
  * than a shared package. Mirrors @mantle/api-keys: seal with the row id as AAD,
  * never surface plaintext to the UI (only `masked`).
  */

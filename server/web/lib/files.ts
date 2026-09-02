@@ -2,7 +2,7 @@
  * Web's view onto the shared file ops in `@mantle/files`. Kept as a
  * thin re-export so the API routes can import from `@/lib/files` (the
  * project convention) while the actual implementation lives in the
- * workspace package so apps/mcp can call the same functions.
+ * workspace package so server/mcp can call the same functions.
  */
 
 export {

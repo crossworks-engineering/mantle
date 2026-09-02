@@ -194,12 +194,12 @@ Cell: <country_code> <cell>
 So after "Don Carter is Alex's brother, runs Delphex Technologies…" lands
 on a contact, `search_nodes("Modular")` and `entity_facts(<don's entity>)`
 both find the right thing. The `contact` type is in `DEFAULT_EXTRACT_TYPES`
-in [`extractor.ts`](../apps/agent/src/extractor.ts).
+in [`extractor.ts`](../server/api/src/agent/extractor.ts).
 
 **Same-surname-different-given guard.** The reconciler used to collapse
 `Don Carter` into an existing `Alex Carter` entity because surname
 overlap alone passed the trigram + embedding thresholds. The guard
-`isLikelyDifferentPerson` ([`person-names.ts`](../apps/agent/src/person-names.ts))
+`isLikelyDifferentPerson` ([`person-names.ts`](../server/api/src/agent/person-names.ts))
 refuses that merge when both names look like full given-name + surname pairs
 with the same surname but distinct given names. Conservative: nickname/long-
 form pairs (Don/Donald), initials, and titles + initials still merge. See
@@ -226,7 +226,7 @@ descriptions, which are loud about *"use ONLY when the user explicitly asks…
 Never add contacts on your own initiative just because someone's name came up."*
 
 **Auto-granted at boot** to responder/assistant via `CONTACT_AUTO_GRANT_SLUGS`
-(part of `CORE_AUTO_GRANT_SLUGS` in `apps/agent/src/main.ts`): read + add +
+(part of `CORE_AUTO_GRANT_SLUGS` in `server/api/src/main.ts`): read + add +
 update. **Delete is excluded from the auto-grant**: destructive ops require
 an explicit per-agent grant in `/settings/tools`.
 
@@ -265,7 +265,7 @@ You → Saskia: "mail Modular and ask about 2020 profiles"
 - **Delete** is a top-right ghost button (`<Trash2 /> Delete`) with an
   `AlertDialog` confirm, matching events/notes/tasks.
 
-REST endpoints under [`apps/web/app/api/contacts/`](../apps/web/app/api/contacts/):
+REST endpoints under [`server/web/app/api/contacts/`](../server/web/app/api/contacts/):
 `GET /` list, `POST /` create, `GET /[id]`, `PATCH /[id]`, `DELETE /[id]`.
 Server side imports through `@/lib/contacts` (which barrels through
 `@mantle/content`); the client component imports types + pure helpers from
@@ -285,13 +285,13 @@ split is the intentional shape.
 | Pure-helper tests | [`packages/content/src/contacts.test.ts`](../packages/content/src/contacts.test.ts) |
 | Saskia's tools | [`packages/tools/src/builtins-contacts.ts`](../packages/tools/src/builtins-contacts.ts) |
 | Send-side gate + counter bump | [`packages/tools/src/builtins-email.ts`](../packages/tools/src/builtins-email.ts) (`blockedRecipients`, `noteContactActivity`) |
-| Auto-grant to responder/assistant | `CORE_AUTO_GRANT_SLUGS` in [`apps/agent/src/main.ts`](../apps/agent/src/main.ts) |
-| Extractor body resolver | [`apps/agent/src/extractor.ts`](../apps/agent/src/extractor.ts) (`contact` case + `DEFAULT_EXTRACT_TYPES`) |
-| Same-surname reconciler guard | [`apps/agent/src/person-names.ts`](../apps/agent/src/person-names.ts) |
-| Server REST | [`apps/web/app/api/contacts/`](../apps/web/app/api/contacts/) |
-| Server page (SSR) | [`apps/web/app/(app)/contacts/page.tsx`](../apps/web/app/(app)/contacts/page.tsx) |
-| Client UI | [`apps/web/app/(app)/contacts/contacts-client.tsx`](../apps/web/app/(app)/contacts/contacts-client.tsx) |
-| Lib re-export (server-only) | [`apps/web/lib/contacts.ts`](../apps/web/lib/contacts.ts) |
+| Auto-grant to responder/assistant | `CORE_AUTO_GRANT_SLUGS` in [`server/api/src/main.ts`](../server/api/src/main.ts) |
+| Extractor body resolver | [`server/api/src/agent/extractor.ts`](../server/api/src/agent/extractor.ts) (`contact` case + `DEFAULT_EXTRACT_TYPES`) |
+| Same-surname reconciler guard | [`server/api/src/agent/person-names.ts`](../server/api/src/agent/person-names.ts) |
+| Server REST | [`server/web/app/api/contacts/`](../server/web/app/api/contacts/) |
+| Server page (SSR) | [`jackdaw/app/(app)/contacts/page.tsx`](../jackdaw/app/(app)/contacts/page.tsx) |
+| Client UI | [`jackdaw/app/(app)/contacts/contacts-client.tsx`](../jackdaw/app/(app)/contacts/contacts-client.tsx) |
+| Lib re-export (server-only) | [`server/web/lib/contacts.ts`](../server/web/lib/contacts.ts) |
 
 ---
 
@@ -304,7 +304,7 @@ split is the intentional shape.
   business card; pairing that with `contact_create` gives a *"add this card
   as a contact"* flow.
 - **MCP parity.** The `contact_*` builtins live on the agent runtime side;
-  exposing them through `apps/mcp/src/server.ts` for Claude Desktop is the
+  exposing them through `server/mcp/src/server.ts` for Claude Desktop is the
   natural follow-up.
 - **Reconciler title-stripping vs nickname dictionary.** The guard handles
   prefix-overlap (Don/Donald) and titles + initials, but doesn't know about

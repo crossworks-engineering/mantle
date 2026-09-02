@@ -29,7 +29,7 @@ duplicated four things each:
 | Concern | Telegram | Web `/assistant` |
 |---|---|---|
 | Conversation store | `telegram_messages` (keyed per **chat**) | `assistant_messages` (keyed per **owner+agent**) |
-| History load | `loadContext` reads `telegram_messages` by `chat_id` ([main.ts:327](../apps/agent/src/main.ts)) | `loadContext` reads `assistant_messages` by `agent_id` ([assistant.ts:218](../apps/web/lib/assistant.ts)) |
+| History load | `loadContext` reads `telegram_messages` by `chat_id` ([main.ts:327](../server/api/src/main.ts)) | `loadContext` reads `assistant_messages` by `agent_id` ([assistant.ts:218](../server/web/lib/assistant.ts)) |
 | Digests | `summarizeChat(chatPk)` → notes keyed `data.chat_id` | `summarizeWebConversation(ownerId)` → notes `source:web` |
 | Summarize trigger | `summarize_due` on `telegram_messages` INSERT, payload `chat_id` ([0013](../packages/db/migrations/0013_conversation_digests.sql)) | `summarize_web_due` on `assistant_messages` INSERT, payload `owner_id` ([0044](../packages/db/migrations/0044_web_summarize_due.sql)) |
 | Brain node per message | yes (`type=telegram_message`) | no |
@@ -117,7 +117,7 @@ CREATE INDEX assistant_messages_owner_agent_channel_created_idx
 - **`channel`**: drives the UI badge and which transport sends an outbound reply.
 - **`attachments`**: what makes voice/images render in `/assistant`. Shape maps onto
   the existing `Artifact` type the chat already renders
-  ([assistant-client.tsx `ArtifactView`](../apps/web/app/\(app\)/assistant/assistant-client.tsx)).
+  ([assistant-client.tsx `ArtifactView`](../jackdaw/app/(app)/assistant/assistant-client.tsx)).
 - **`external_ref`**: lets the Telegram sender thread replies and lets us
   dedup/back-link to the transport row without a join table.
 
@@ -200,13 +200,13 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
 
 ## 5. Per-surface changes
 
-### 5a. Web (`apps/web/lib/assistant.ts`)
+### 5a. Web (`server/web/lib/assistant.ts`)
 - `loadContext` → call `loadConversationContext` (it now also returns real digests,
   closing the current `digests: []` gap for free).
 - Inbound/outbound inserts → `recordTurn(channel='web', attachments=[image artifact])`.
 - Pass real `digests` into `buildChatMessages`. Lowest-risk surface (same table).
 
-### 5b. Telegram (`apps/agent/src/main.ts`): as built
+### 5b. Telegram (`server/api/src/main.ts`): as built
 - **Keep** the `telegram_messages` insert (node, dedup, file_ids, delivery), the
   transport/brain record.
 - **Add** `recordTurn(channel='telegram', externalRef={accountId,chatId,messageId},
@@ -227,7 +227,7 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
   conversation row (`toConversationAttachments`) so they render in `/assistant`, no
   bytes stored, just `file_id` + (for ingested photos/docs) the file node id.
 
-### 5c. Summarizer (`apps/agent/src/summarizer.ts`)
+### 5c. Summarizer (`server/api/src/agent/summarizer.ts`)
 - Collapse `summarizeChat(chatPk)` + `summarizeWebConversation(ownerId)` into one
   **`summarizeAgentConversation(ownerId, agentId)`** reading
   `assistant_messages WHERE owner+agent AND digest_node_id IS NULL`.
@@ -241,7 +241,7 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
 ### 5d. `/assistant` UI
 - `recentAssistantMessages` / `assistantMessagesBefore` + the messages API return
   `channel` + `attachments`.
-- [assistant-client.tsx](../apps/web/app/\(app\)/assistant/assistant-client.tsx): map
+- [assistant-client.tsx](../jackdaw/app/(app)/assistant/assistant-client.tsx): map
   `attachments` → the existing `Artifact` shape (already renders `<audio controls>` +
   image preview); add a small channel badge on non-web turns.
 - Telegram voice notes need a playable URL, served via the existing
@@ -249,7 +249,7 @@ The "per-agent, cross-channel" semantics live here. The digest filter changes fr
 
 ## 6. Backfill (one-time)
 
-`scripts/backfill-conversation.ts`, dry-run by default (same convention as
+`server/web/scripts/backfill-conversation.ts`, dry-run by default (same convention as
 `dedupe:edges`):
 - For each `telegram_messages` row, insert a matching `assistant_messages` row
   (`channel='telegram'`, `agent_id` resolved from `chat.responder_agent_id` → the
@@ -363,13 +363,13 @@ committing per phase on `main` with `pnpm --filter @mantle/web run typecheck`:
 ```
 0  schema (ADDITIVE only)         0071_unified_conversation.sql  ✅ columns + index, no trigger change
 1  shared module                  packages/agent-runtime/src/conversation.ts            ✅
-2  web onto shared module         apps/web/lib/assistant.ts                             ✅
-4  one summarizer                 apps/agent/src/summarizer.ts + main.ts                ✅
-3  Telegram cutover               apps/agent/src/main.ts (inbound+outbound recordTurn,  ✅
+2  web onto shared module         server/web/lib/assistant.ts                             ✅
+4  one summarizer                 server/api/src/summarizer.ts + main.ts                ✅
+3  Telegram cutover               server/api/src/main.ts (inbound+outbound recordTurn,  ✅
                                    loadConversationContext) + summarizeChat removed
    + trigger swap                 0072_unified_conversation_triggers.sql                ✅
    + replay_window double-count   packages/tools/src/builtins-recall.ts (channel='web') ✅
-5  UI: channel badge + attachments apps/web/.../assistant-client.tsx + messages API  ✅
+5  UI: channel badge + attachments server/web/.../assistant-client.tsx + messages API  ✅
 6  backfill + digest re-key       scripts/backfill-conversation.ts (pnpm backfill:conversation)  ✅
 7  docs                           promote this file from DESIGN → as-built; update architecture.md §9b/§9g
 ```

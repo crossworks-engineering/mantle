@@ -15,7 +15,7 @@ import {
 
 /**
  * GET /api/dashboard — the full "brain health" bundle for the web dashboard
- * (apps/web/app/(app)/page.tsx): brain/vector counts, 30d ingest + spend,
+ * (server/web/app/(app)/page.tsx): brain/vector counts, 30d ingest + spend,
  * email/telegram/heartbeat ops, pending approvals, top errors + recent
  * failures, and graph integrity. Owner-scoped. (The compact mobile-companion
  * headline lives separately at /api/dashboard/summary.)

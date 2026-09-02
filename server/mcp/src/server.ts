@@ -4,7 +4,7 @@
  * Thin transport shell: resolve + validate the single local owner, build the
  * shared tool surface (`buildMantleMcpServer`, packages/mcp-core), and connect
  * over stdio. Claude Desktop / Claude Code spawn this process and talk to it
- * over JSON-RPC. The remote HTTP transport (apps/web/app/api/mcp) builds the
+ * over JSON-RPC. The remote HTTP transport (server/web/app/api/mcp) builds the
  * exact same surface from the same builder — change a tool in mcp-core, both
  * transports get it.
  *

@@ -8,8 +8,8 @@ export const TURN_EVENT_SCHEMA_VERSION = 1;
 
 /**
  * The Postgres `NOTIFY` channel that carries live turn events across the
- * apps/api → apps/web process boundary. The runner (apps/api) and the browser's
- * SSE socket (apps/web) are ALWAYS separate processes, so an in-process bus
+ * server/api → server/web process boundary. The runner (server/api) and the browser's
+ * SSE socket (server/web) are ALWAYS separate processes, so an in-process bus
  * can't bridge them — this channel is the only path (see
  * `docs/live-turn-streaming.md` §0.1). The web realtime bridge LISTENs here.
  *
@@ -20,7 +20,7 @@ export const TURN_STREAM_CHANNEL = 'turn_stream';
 
 /**
  * The Postgres `NOTIFY` channel that carries a user's request to CANCEL an
- * in-flight turn from `apps/web` (the cancel route) to `apps/api` (the runner
+ * in-flight turn from `server/web` (the cancel route) to `server/api` (the runner
  * executing the turn). Payload is `{ ownerId, turnId }` — the runner aborts the
  * matching turn's `AbortController`, halting LLM generation mid-stream. Separate
  * from `turn_stream` (which flows the other way: runner → browser).

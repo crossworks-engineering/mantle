@@ -8,7 +8,7 @@
  * a slug they were never going to have.
  *
  * This resolves the agent that ACTUALLY serves as the persona, mirroring the
- * runtime resolver `resolveAssistantAgent` (apps/web/lib/assistant.ts): prefer
+ * runtime resolver `resolveAssistantAgent` (server/web/lib/assistant.ts): prefer
  * the canonical slug; otherwise the highest-priority enabled responder (role
  * `assistant` before `responder`). Pure — no DB — so it's unit-tested directly.
  */

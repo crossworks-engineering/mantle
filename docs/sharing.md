@@ -92,9 +92,9 @@ This **supersedes** the page-only `nodes.data.visibility` flag; a page is
 
 ## 3. Public routes (outside the `(app)` shell)
 
-Live under `apps/web/app/s/…` (not in `(app)`, so they skip the app shell and
+Live under `server/web/app/s/…` (not in `(app)`, so they skip the app shell and
 get only the root layout). `/s` is added to `PUBLIC_PATHS`
-([`lib/auth-constants.ts`](../apps/web/lib/auth-constants.ts)) so middleware lets
+([`lib/auth-constants.ts`](../server/web/lib/auth-constants.ts)) so middleware lets
 them through without a session cookie.
 
 - **`GET /s/[token]`**: server component. `resolveActiveShareByToken` →
@@ -110,7 +110,7 @@ them through without a session cookie.
   (`path <@ folder.path`, re-derived per request). Streams via
   `readFileById` with content-type + range support (video/audio seeking) +
   cache headers. Anything outside the set → 404.
-- `apps/web/app/s/layout.tsx`, minimal public chrome: clean default theme,
+- `jackdaw/app/s/layout.tsx`, minimal public chrome: clean default theme,
   light/dark via `prefers-color-scheme`, a quiet "Shared via Mantle" footer.
 
 ---
@@ -129,7 +129,7 @@ them through without a session cookie.
   text + attributes are escaped, `href` restricted to http/https/mailto
   (optional `sanitize-html` for defense-in-depth).
 - `noindex` by default; rate-limit public + asset routes (reuse
-  [`lib/rate-limit.ts`](../apps/web/lib/rate-limit.ts)); secrets/emails/contacts
+  [`lib/rate-limit.ts`](../server/web/lib/rate-limit.ts)); secrets/emails/contacts
   excluded at the API.
 - **Team mode** (`settings.mode = 'team'`, toggle in `<ShareControl teamMode>`):
   the link additionally requires a **live team credential**: the share-scoped
@@ -161,7 +161,7 @@ them through without a session cookie.
 
 ## 5. Rendering a public page (server static HTML)
 
-`apps/web/lib/render-page-doc.ts`, `renderPageDoc(doc, { assetBase }) → string`
+`server/web/lib/render-page-doc.ts`, `renderPageDoc(doc, { assetBase }) → string`
 (sanitized HTML). Built on `@tiptap/html`'s `generateHTML(doc, headlessSchema)`
 so it **reuses each node's `renderHTML`** (a headless schema with no React
 NodeViews), then post-processes:
@@ -187,7 +187,7 @@ NodeViews), then post-processes:
 
 ## 6. Per-type presenters
 
-Clean, centered, media-appropriate (`apps/web/components/share/`):
+Clean, centered, media-appropriate (`server/web/components/share/`):
 
 | Type       | Presentation                                                                                                                                                                                          |
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -1,9 +1,9 @@
 /**
  * Mantle MCP server builder — the single source of truth for the MCP tool
  * surface, shared by BOTH transports:
- *   - the stdio entry (`apps/mcp/src/server.ts`), spawned by Claude Desktop /
+ *   - the stdio entry (`server/mcp/src/server.ts`), spawned by Claude Desktop /
  *     Code over JSON-RPC on a trusted local machine;
- *   - the remote HTTP endpoint (`apps/web/app/api/mcp/route.ts`), reached as a
+ *   - the remote HTTP endpoint (`server/web/app/api/mcp/route.ts`), reached as a
  *     claude.ai custom connector behind OAuth.
  *
  * `registerMantleTools(server, ownerId, opts)` registers every tool onto a given

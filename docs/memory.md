@@ -98,7 +98,7 @@ flowchart TD
     N --> TR{{"pg_notify('node_ingested', node_id)<br/>migration 0018, AFTER INSERT"}}
 
     %% Extractor agent
-    TR --> EX["extractor agent<br/>(apps/agent listens → durable pg-boss queue,<br/>concurrency-capped + retry/backoff)"]:::agent
+    TR --> EX["extractor agent<br/>(server/api listens → durable pg-boss queue,<br/>concurrency-capped + retry/backoff)"]:::agent
     EX -- "secret type:<br/>title + description only" --> EX
     EX --> SUM["LLM call:<br/>summary + facts + entities JSON<br/>(model from agents row)"]:::agent
     SUM --> EMB["embed summary →<br/>vector(768)"]:::agent
@@ -150,7 +150,7 @@ flowchart TD
     IN -- "if voice attachment" --> STT["STT worker<br/>(ai_workers kind='stt')<br/>Whisper-style transcription"]:::agent
     STT -- "UPDATE text=transcript" --> IN
 
-    IN --> RESP["responder agent<br/>(apps/agent or<br/>apps/web/lib/assistant.ts)"]:::agent
+    IN --> RESP["responder agent<br/>(server/api or<br/>server/web/lib/assistant.ts)"]:::agent
 
     RESP -- "agent.system_prompt<br/>+ persona_notes" --> L1["Layer 1<br/>persona"]:::layer
     RESP -- "last N rows by sent_at" --> L2["Layer 2<br/>recent_turns"]:::layer
@@ -570,7 +570,7 @@ sits behind it, and what's planned:
 |---|---|---|---|
 | `persona` | `agents.system_prompt` (seed) + planned `agents.persona_notes` jsonb (or sibling `agent_notes` table if it grows) | **Relational** + **jsonb** | Seed live; evolution unbuilt |
 | `recent_turns` | `telegram_messages` rows, direction-tagged. Schema in `packages/db/src/schema/telegram.ts` | **Relational** + **btree** index `(chat_id, sent_at desc)` | ✓ Live |
-| `conversation_digest` | `nodes` rows of `type='note'` with `tags @> ['conversation-digest']`. jsonb data carries summary, period, source turn ids | **Relational** + **jsonb** + **FTS** (tsvector) + **pgvector** (embedded at insert since 2026-06-10, `find_window` cosine-ranks digests; backfill older ones with `pnpm -C apps/web backfill:digest-embeddings`) | ✓ Live (migration 0013) |
+| `conversation_digest` | `nodes` rows of `type='note'` with `tags @> ['conversation-digest']`. jsonb data carries summary, period, source turn ids | **Relational** + **jsonb** + **FTS** (tsvector) + **pgvector** (embedded at insert since 2026-06-10, `find_window` cosine-ranks digests; backfill older ones with `pnpm -C server/web backfill:digest-embeddings`) | ✓ Live (migration 0013) |
 | `profile` | `facts` table + `entities` + `entity_edges` for the graph axis (entity↔entity relations, traversed via `graph_path`) | **Relational** + **jsonb** + **pgvector** (every fact embedded) + **Graph** via tables + recursive CTEs (no Neo4j) | ✓ Live, see [`knowledge-graph.md`](./knowledge-graph.md) |
 | `content_index` | Columns on existing `nodes`: `title`, `tags`, `data.summary`, `data.entities`, `embedding`, `search_tsv` | **Relational** + **jsonb** + **FTS** (tsvector + GIN) + **pgvector** (IVFFlat) + **ltree** + **GIN** on tags array | Columns exist; population unbuilt |
 | `content_store` | Existing `nodes` + specialised tables (`emails`, `email_attachments`, `telegram_messages`, `secrets`, future `files`) + MinIO for attachment bytes | **Relational** + **jsonb** + **ltree** (hierarchical paths) + **S3** (object bytes via MinIO) | ✓ Live |
@@ -681,7 +681,7 @@ as "where does Alex work *currently*?" via `WHERE valid_to IS NULL`.
 
 ### Entity reconciliation refinements
 
-`reconcileEntity` in [`apps/agent/src/extractor.ts`](../apps/agent/src/extractor.ts)
+`reconcileEntity` in [`server/api/src/agent/extractor.ts`](../server/api/src/agent/extractor.ts)
 matches in four steps: (1) exact name/alias, (2) trigram similarity ≥ 0.7,
 (3) embedding cosine < threshold, (4) new entity. Steps 2-3 are the merge
 paths; they collapse "Mr J Schoeman", "Schoeman", "Don Carter", "Jonathan
@@ -690,7 +690,7 @@ Schoeman" into one entity, which is great for spelling variations of the
 
 **Same-surname-different-given guard** (added 2026-05-26). When the candidate
 is `kind='person'`, the helper `isLikelyDifferentPerson`
-([`apps/agent/src/person-names.ts`](../apps/agent/src/person-names.ts)) sits
+([`server/api/src/agent/person-names.ts`](../server/api/src/agent/person-names.ts)) sits
 in front of both merge paths and refuses the merge when **both** names look
 like a full given-name + surname pair, share a surname, and have clearly
 distinct given names. Conservative, anything ambiguous returns false so the
@@ -870,11 +870,11 @@ agents. Different model type, different endpoint, different scale.
   two distinct `embed()` call sites:
   - **Write side**: the `extractor` ai_worker embeds stored content
     (`nodes`/`facts`/`entities`/`content_chunks`). Configured via
-    `ai_workers.params.embedding_model` (`apps/agent/src/extractor.ts`).
+    `ai_workers.params.embedding_model` (`server/api/src/agent/extractor.ts`).
   - **Read side**: the responder (Saskia) and web assistant embed the
     *incoming user message* to do similarity search at query time.
     Configured via `agents.memory_config.embedding_model`
-    (`apps/agent/src/main.ts`, `apps/web/lib/assistant.ts`). It lives on
+    (`server/api/src/main.ts`, `server/web/lib/assistant.ts`). It lives on
     the agent because the agent is what does the retrieving.
 
   So it's **not** "on the agent instead of the worker"; it's one model
@@ -1052,7 +1052,7 @@ into every ranker. For email it's derived from the header classifier
 (`emails.delivery_kind`: `marketing→0.25, list→0.5, automated→0.75, direct→1.0`,
 see [`email-ingest.md`](./email-ingest.md)). It is **never** a filter: a marketing
 email is still found by an explicit `search`. Set at ingest; legacy mail
-reclassified by `pnpm -C apps/web classify:backfill`. The audit caught newsletters
+reclassified by `pnpm -C server/web classify:backfill`. The audit caught newsletters
 crowding out personal notes; this fixes it without losing anything.
 
 ### 7b. Supersession: the content-currency layer
@@ -1175,19 +1175,19 @@ Live today, in order of first read:
    the graph axis.
 3. [`packages/embeddings/src/index.ts`](../packages/embeddings/src/index.ts),
    shared `embed`/`embedBatch` via OpenRouter, with hash-keyed cache.
-4. [`apps/agent/src/extractor.ts`](../apps/agent/src/extractor.ts),
+4. [`server/api/src/agent/extractor.ts`](../server/api/src/agent/extractor.ts),
    per-item summary + embedding + facts + entity reconciliation. The
    ADD/UPDATE/DELETE/NOOP classifier prompt lives in here.
-5. [`apps/agent/src/main.ts`](../apps/agent/src/main.ts) `loadContext()`,
+5. [`server/api/src/main.ts`](../server/api/src/main.ts) `loadContext()`,
    how persona / facts / digests / content_hits / turns get assembled
    into the responder's prompt.
-6. [`apps/agent/src/messages.ts`](../apps/agent/src/messages.ts),
+6. [`packages/agent-runtime/src/messages.ts`](../packages/agent-runtime/src/messages.ts),
    `buildChatMessages` with three Anthropic cache breakpoints.
-7. [`apps/agent/src/summarizer.ts`](../apps/agent/src/summarizer.ts),
+7. [`server/api/src/agent/summarizer.ts`](../server/api/src/agent/summarizer.ts),
    `conversation_digest` production from `recent_turns`.
-8. [`apps/agent/src/reflector.ts`](../apps/agent/src/reflector.ts),
+8. [`server/api/src/agent/reflector.ts`](../server/api/src/agent/reflector.ts),
    persona_notes evolution from dialog signals.
-9. [`apps/web/scripts/extract-backfill.ts`](../apps/web/scripts/extract-backfill.ts),
+9. [`server/web/scripts/extract-backfill.ts`](../server/web/scripts/extract-backfill.ts),
    re-fires `node_ingested` for existing nodes missing summary/embedding.
 
 The full lookup at `/debug` shows recent digests, facts, content_index

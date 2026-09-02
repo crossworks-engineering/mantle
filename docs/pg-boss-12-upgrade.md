@@ -102,7 +102,7 @@ it always did. Verified by walking a database up the v12 line:
 | 12.26.2 | no schema change, stays 37 |
 
 Nothing manual at any step. And we already have the right hook for it:
-[`apps/web/scripts/pgboss-init.ts`](../apps/web/scripts/pgboss-init.ts) runs
+[`server/web/scripts/pgboss-init.ts`](../server/web/scripts/pgboss-init.ts) runs
 exactly one `boss.start()` before any worker comes up (it exists to stop the
 workers racing to create the schema), and it's wired into `scripts/up.sh` and the
 production migrate gate. That single call is what will carry future schema
@@ -132,7 +132,7 @@ cannot run pg-boss 10 again without another rebuild in the other direction.
   test double in `packages/runs/src/boss.test.ts` had to match.
 - **`createQueue`/`updateQueue` options are now `Omit<Queue,'name'>`**: the
   queue name is the first argument and repeating it in the options object is
-  rejected. Fixed in `apps/api/src/agent/extract-queue.ts`.
+  rejected. Fixed in `server/api/src/agent/extract-queue.ts`.
 - **`pg` is pinned to 8.22.0** in `pnpm-workspace.yaml`. pg-boss 12 requires
   `^8.22.0` while the tree had settled on 8.20.0, and `drizzle-orm` peers on
   `pg`, two `pg` versions made pnpm build two peer-resolved drizzle instances

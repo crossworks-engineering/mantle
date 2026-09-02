@@ -24,9 +24,9 @@ runtime silently unions:
 effectiveToolSlugs = agent.tool_slugs  ∪  (every attached skill's tool_slugs)
 ```
 
-, [`effectiveToolSlugs`](../apps/web/lib/skills.ts) (web) and its twin
+, [`effectiveToolSlugs`](../server/web/lib/skills.ts) (web) and its twin
 [`packages/agent-runtime/src/skills.ts`](../packages/agent-runtime/src/skills.ts),
-consumed by [`assistant.ts`](../apps/web/lib/assistant.ts) and
+consumed by [`assistant.ts`](../server/web/lib/assistant.ts) and
 [`invoke-agent.ts`](../packages/agent-runtime/src/invoke-agent.ts).
 
 This is a **split-brain**. To answer "why can this agent edit pages?" you check
@@ -49,7 +49,7 @@ Two orthogonal concerns, cleanly separated:
 | **Skill**      | _how to do something well_                    | `instructions` (prose only)                         | agents **+ workers** |
 
 - **Tools** stay as the existing first-class [`tools`](../packages/db/src/schema/tools.ts)
-  registry + [`/settings/tools`](<../apps/web/app/(app)/settings/tools>) manager.
+  registry + [`/settings/tools`](<../jackdaw/app/(app)/settings/tools>) manager.
 - **Tool groups** are NEW, named bundles (e.g. _Pages toolkit_, _Calendar_,
   _Memory core_) an owner grants to an agent in one move. They are capability-only
   in the sense that matters: they carry **no instructions of their own and no
@@ -346,7 +346,7 @@ Shipped in two commits (approach A, coarse groups, specialists expand):
   `resolveManifestToolSlugs` / `DEFAULT_ASSISTANT_TOOL_SLUGS` / `ASSISTANT_TOOL_DENY`
   - the reexpress CLI are removed.
 
-- ✅ **P6c** (audit follow-up, [docs/audit-brief-tools-skills.md](audit-brief-tools-skills.md)):
+- ✅ **P6c** (audit follow-up, [docs/audit-brief-tools-skills.md](_archive/audit-brief-tools-skills.md)):
   three fixes from the independent audit.
   - **Floor sufficiency (R5).** `CORE_AUTO_GRANT_GROUP_SLUGS` gained `memory-core`
     - `delegation`. The old 7-group floor conferred neither `search_*` nor
@@ -355,9 +355,9 @@ Shipped in two commits (approach A, coarse groups, specialists expand):
       the integrity persona check ("missing invoke_agent, cannot delegate"). The
       floor is now the functional minimum; the richer generalist groups stay opt-in
       / manifest-seeded so a locked-down responder isn't over-granted. The decision
-      logic moved to `apps/agent/src/core-tools.ts` (`computeFloorGroupAdditions`)
+      logic moved to `server/api/src/agent/core-tools.ts` (`computeFloorGroupAdditions`)
       and is unit-tested (`core-tools.test.ts`).
-  - **Web heartbeat dispatch (R8).** `apps/web/lib/assistant.ts` now calls
+  - **Web heartbeat dispatch (R8).** `server/web/lib/assistant.ts` now calls
     `registerHeartbeatTools()` at module load (beside `registerAgentInvoker`). The
     web responder runs its tool loop in-process and injects the continuity tools
     when a **web-surface** heartbeat is active, but the handlers live in
@@ -387,7 +387,7 @@ Shipped in two commits (approach A, coarse groups, specialists expand):
       row was removed from dev, so every enabled tool now lives in ≥1 group.
 
 The original design brief is preserved at
-**[docs/handover-tools-skills-p6.md](handover-tools-skills-p6.md)** (historical).
+**[docs/handover-tools-skills-p6.md](_archive/handover-tools-skills-p6.md)** (historical).
 
 ## Integration groups: a group that IS an API
 

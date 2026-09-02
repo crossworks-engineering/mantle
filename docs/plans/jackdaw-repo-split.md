@@ -27,11 +27,11 @@ jackdaw origin; the P3 handshake becomes per-brain).
 The hard work is already done. The FE/BE split (docs/frontend-backend-split.md,
 completed v0.66.x; release machinery v0.200.0) delivered:
 
-- **`client/web` is a zero-secret client.** No `SESSION_SECRET`, no
+- **`jackdaw` is a zero-secret client.** No `SESSION_SECRET`, no
   `DATABASE_URL`, no server packages in the bundle. All data over
   `apiFetch` + bearer against `MANTLE_SERVER_ORIGIN`. Verified in this audit:
   **zero value-imports** of server packages; every `@mantle/*` import in
-  `client/web` is `import type` (erased) or a deliberately browser-safe
+  `jackdaw` is `import type` (erased) or a deliberately browser-safe
   subpath.
 - **`server/web` is API-only.** Its `app/` tree holds `api/**`, the `/s/[token]`
   share pages, and `globals.css`. Nothing else server-renders UI.
@@ -46,19 +46,19 @@ What still couples the two, and is therefore the actual work of a repo split:
 
 | Coupling | Detail |
 |---|---|
-| Workspace deps | `client/web` depends on `@mantle/{agent-runtime,content,email,microsoft,voice}` for **types and browser-safe subpaths only** (~20 `@mantle/content/*` modules such as `markdown`, `table-model`, `formula-eval`, `page-diff`; `@mantle/voice/client`). |
-| `web-ui` is two things | `packages/web-ui` holds the UI kit (client-only) **plus** shared contract modules that `server/web` imports (`version`, `types/integrity`, `types/maintenance`, `turn-streaming`, `traces-format`, `model-choices`, `slugify`, `runners-types`, `assistant-limits`, `safe-download`). |
+| Workspace deps | `jackdaw` depends on `@mantle/{agent-runtime,content,email,microsoft,voice}` for **types and browser-safe subpaths only** (~20 `@mantle/content/*` modules such as `markdown`, `table-model`, `formula-eval`, `page-diff`; `@mantle/voice/client`). |
+| `web-ui` is two things | `jackdaw/packages/web-ui` holds the UI kit (client-only) **plus** shared contract modules that `server/web` imports (`version`, `types/integrity`, `types/maintenance`, `turn-streaming`, `traces-format`, `model-choices`, `slugify`, `runners-types`, `assistant-limits`, `safe-download`). |
 | Lockstep releases | `docker-compose.client.yml` pins the **same** `MANTLE_IMAGE_TAG` as the server: "never roll one without the other". A split repo cannot keep that. |
 | One version stream | Both apps share the root `package.json` version and one changelog. |
-| Shared tooling | eslint rules, e2e suite, theme generator (`packages/web-ui` themes), `pnpm verify`. |
+| Shared tooling | eslint rules, e2e suite, theme generator (`jackdaw/packages/web-ui` themes), `pnpm verify`. |
 
 ## 2. Target shape
 
 ```
 jackdaw (new repo)                     mantle (this repo)
-├─ client/web        (owner UI)        ├─ server/{web,api,mcp,sandboxd}
+├─ jackdaw        (owner UI)        ├─ server/{web,api,mcp,sandboxd}
 ├─ client/desktop    (Electron)        ├─ packages/* minus what moves
-├─ packages/web-ui   (UI kit + themes) ├─ packages/contract  ← published
+├─ jackdaw/packages/web-ui   (UI kit + themes) ├─ packages/contract  ← published
 └─ e2e UI suite                        └─ compose: brain (+ new core profile)
         │            consumes                   │
         └── @mantle/contract, @mantle/content-core, @mantle/voice-client (npm)
@@ -91,7 +91,7 @@ publishable, server-free packages:
    re-export from it so the server keeps one implementation.
 3. **`@mantle/voice-client`**: today's `@mantle/voice/client` subpath.
 
-Enforcement: an eslint boundary rule so `client/*` and `packages/web-ui` may
+Enforcement: an eslint boundary rule so `client/*` and `jackdaw/packages/web-ui` may
 import only `contract | content-core | voice-client | web-ui`. This makes the
 split mechanical instead of aspirational, and CI holds the line.
 
@@ -117,7 +117,7 @@ Four commits on `main`, all green under `pnpm verify`:
    at their old homes; db jsonb/enum shapes hand-mirrored (ToolHandler
    convention); PublicEmailAccount / SyncRun / PublicMsAccount as wire-true
    mirrors (ISO-string dates) with key-set drift guards beside the server
-   types. `client/web`'s @mantle deps are now EXACTLY
+   types. `jackdaw`'s @mantle deps are now EXACTLY
    `{client-types, content-core, voice-client, web-ui}`.
 5. **Boundary enforced in eslint**: the client tier (client/**, web-ui) may
    import only the four split-safe packages — type imports of server packages
@@ -129,7 +129,7 @@ Learned along the way, feeding later phases:
 - **The share/docs surface is the real residual web-ui coupling.** server/web
   imports ~26 web-ui subpaths, all of them the `/s/[token]` share presenters
   (9 node kinds + formula-calculator + view-payload) and the docs/appearance
-  rendering (`server/pages`, `server/islands`). Decision needed before P2:
+  rendering (`server/web/server/pages`, `server/web/server/islands`). Decision needed before P2:
   (a) fork a minimal share-ui into server/web, (b) mantle consumes a published
   jackdaw UI package for share pages, or (c) share pages become a
   server-shipped static bundle built in jackdaw. Until decided, server keeps
@@ -138,7 +138,7 @@ Learned along the way, feeding later phases:
   imports are gone. ~70 view/query DTOs moved into client-types (journey-format
   moved wholesale; table DTOs live in content-core/table-model beside TableDoc).
   The @server tsconfig alias and the @/* server fallback were deleted from
-  client/web, and the eslint rule now bans @server/* outright. client/web no
+  jackdaw, and the eslint rule now bans @server/* outright. jackdaw no
   longer resolves ANY server/web source.
 - Package name: kept `@mantle/client-types` rather than renaming to
   `@mantle/contract` — 51 importing files, zero functional gain; the npm
@@ -183,8 +183,8 @@ moved to client-types. Server/web's web-ui imports are now ONLY
 
 ### P2: cut the repo — EXECUTED 2026-08-13 (v0.230.41)
 
-**https://github.com/crossworks-engineering/jackdaw is live**: client/web,
-client/desktop, packages/web-ui, e2e, and brand/ moved with full per-file
+**https://github.com/crossworks-engineering/jackdaw is live**: jackdaw,
+client/desktop, jackdaw/packages/web-ui, e2e, and brand/ moved with full per-file
 history (git filter-repo, 475 commits). Workspace imports keep their
 @mantle/* names — pnpm overrides map them to the published @crossworks/*
 packages, so the cut changed no source. jackdaw has its own Dockerfile +
@@ -203,7 +203,7 @@ the real packages (install + build + tests + commit its lockfile);
 
 ### P2 original plan (for reference)
 
-- `git filter-repo` (path filter: `client/`, `packages/web-ui/`, UI e2e) into
+- `git filter-repo` (path filter: `client/`, `jackdaw/packages/web-ui/`, UI e2e) into
   the new `jackdaw` repo, preserving history. mantle deletes those trees in the
   same release.
 - jackdaw swaps `workspace:*` for pinned npm versions of the three contract

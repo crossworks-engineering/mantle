@@ -1,7 +1,7 @@
 /**
  * Toolsmith tool set — lets an agent author, test, group, and grant
  * templated HTTP API tools. The same capability is mirrored by the MCP
- * server (apps/mcp) so Claude Code/Desktop can drive it on the user's
+ * server (server/mcp) so Claude Code/Desktop can drive it on the user's
  * own subscription; keep semantics in sync.
  *
  * The intended loop: web_fetch the service's API docs → api_tool_create
@@ -9,7 +9,7 @@
  * api_tool_test against the live API → tool_group_ensure →
  * agent_grant_tool_group. One prompt, a deployed ability.
  *
- * Security stances (deliberate, mirrored in apps/mcp):
+ * Security stances (deliberate, mirrored in server/mcp):
  *   - Agents author HTTP tools ONLY. Shell tools stay human-authored.
  *   - api_tool_test refuses non-http targets — otherwise "testing" a
  *     shell/builtin tool would be an unconfirmed execution side-channel.

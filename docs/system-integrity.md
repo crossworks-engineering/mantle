@@ -8,7 +8,7 @@
 > **drift-test** fails the build on a dangling link, and a standing **checker**
 > surfaces live drift.
 
-Shipped 2026-06. Code lives in `apps/web/lib/system-manifest/`.
+Shipped 2026-06. Code lives in `server/web/lib/system-manifest/`.
 
 > **Update (2026-06, tools/skills reshape, see [docs/tools-and-skills.md](tools-and-skills.md)):**
 > the graph is now **agents → {skills (teaching), tool groups (capability)} → tools**.
@@ -39,7 +39,7 @@ closed-set declarative catalog guarded by a drift test.
 
 ## 2. The manifest: single source of truth
 
-`apps/web/lib/system-manifest/manifest.ts` declares the **default** system:
+`server/web/lib/system-manifest/manifest.ts` declares the **default** system:
 
 - `MANIFEST_SKILLS`, `slug`, `name`, `toolSlugs` (builtin slugs it bundles),
   `instructions` (the body, from `./prompts.ts`).
@@ -106,7 +106,7 @@ the persona is the manifest `assistant` or an operator persona like Saskia).
 
 Consumers:
 - `onboarding-provision.ts` `seedSpecialistStack` → `applyManifest(ownerId)` (gap-fill).
-- The 8 CLI scripts (`pnpm -C apps/web seed:{pages,tables,remy,researcher,coder,
+- The 8 CLI scripts (`pnpm -C server/web seed:{pages,tables,remy,researcher,coder,
   rich-writing,tables-skill,shared-skills}`) are **thin wrappers** →
   `applyManifest(o, { only/onlySkills, mode: 'overwrite' })`. `seed:shared-skills`
   additionally keeps its operator-persona wiring (`telegram-default`/`apostle-paul`
@@ -118,7 +118,7 @@ Consumers:
 
 Loads the real DB rows and compares them to the manifest + validates referential
 integrity, catching the silent-drop cases. Returns severity-tagged
-`SystemCheck[]` (`apps/web/lib/integrity/types.ts`, reuses `AuditSeverity`):
+`SystemCheck[]` (the types in `server/web/lib/integrity/`, reuses `AuditSeverity`):
 
 | check | what it asserts |
 |---|---|
@@ -176,7 +176,7 @@ showing two reds for a slug it never had. A genuinely missing/broken persona
 
 - **Heartbeat tools in the web process.** Heartbeat control tools
   (`heartbeat_*`) register into the builtin registry only in the **agent** process
-  (`apps/agent` calls `registerHeartbeatTools()` before `seedBuiltinTools`). The
+  (`server/api` calls `registerHeartbeatTools()` before `seedBuiltinTools`). The
   web process (onboarding) never registers them, so `applyManifest`'s
   `seedBuiltinTools` won't seed their rows; they land when the agent next boots.
   `DEFAULT_ASSISTANT_TOOL_SLUGS` deliberately excludes them, so nothing references

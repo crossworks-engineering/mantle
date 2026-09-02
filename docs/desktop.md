@@ -1,11 +1,11 @@
 # Mantle Desktop
 
-The owner UI as a native app. It carries the full web client (`client/web`)
+The owner UI as a native app. It carries the full web client (`jackdaw`)
 inside an Electron shell, points it at whichever brain you choose, and adds
 the things a browser tab can't: OS notifications, `mantle://` deep links, a
 tray, and auto-update. Design history and decisions:
-[desktop-app-plan.md](desktop-app-plan.md); developer docs:
-[client/desktop/README.md](../client/desktop/README.md).
+[desktop-app-plan.md](_archive/desktop-app-plan.md); developer docs:
+[client/desktop/README.md](https://github.com/crossworks-engineering/jackdaw).
 
 ## Install
 

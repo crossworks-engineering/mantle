@@ -130,14 +130,14 @@ a muted "ended" after) and a day-grouped list (Today / Tomorrow / This
 week / Later / Past) with live relative-time badges. Each event has an
 **Add to calendar (.ics)** button, and date entry uses the shadcn
 `DateTimePicker` (calendar popover + time), not the native control. The
-live-time helpers are pure + tested in [`apps/web/lib/event-time.ts`].
+live-time helpers are pure + tested in [`packages/client-types/src/lib/event-time.ts`].
 
 ---
 
 ## 3. Extractor handoff
 
 All three are in `DEFAULT_EXTRACT_TYPES` in
-`apps/agent/src/extractor.ts`. The default body resolution is:
+`server/api/src/agent/extractor.ts`. The default body resolution is:
 
 - **note**: `data.content`, the markdown verbatim.
 - **task**: title + `Status:` + `Priority:` + `Due:` + body. Surfaces
@@ -155,7 +155,7 @@ fires `pg_notify('node_ingested', id)` so the extractor re-runs.
 
 ## 4. The reminder worker
 
-`apps/web/workers/events-reminders.ts`. Runs as the `events` lane in
+`server/web/workers/events-reminders.ts`. Runs as the `events` lane in
 `pnpm dev`. Loop:
 
 ```
@@ -192,7 +192,7 @@ section under `/settings/agents` and the next tick will drain the backlog.
 ## 5. The MCP surface
 
 The assistant in Claude Desktop can drive all three end-to-end via
-the new tools (apps/mcp/src/server.ts):
+the new tools (server/mcp/src/server.ts):
 
 | Surface | Tools                                                            |
 |---------|------------------------------------------------------------------|

@@ -1,7 +1,7 @@
 /**
  * Builtin event tools — Saskia's calendar surface.
  *
- * Mirrors the MCP event tools in apps/mcp/src/server.ts so Saskia
+ * Mirrors the MCP event tools in server/mcp/src/server.ts so Saskia
  * (responder / assistant) can read and write to the same events
  * Claude Code can, without going through MCP. Same underlying
  * @mantle/content helpers; same data shape.

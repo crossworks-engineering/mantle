@@ -2,7 +2,7 @@
  * Auto-set the profile timezone from the device's location, so a travelling
  * user's clock (and event scheduling / reminders / quiet hours, which all read
  * the profile timezone) stays correct without anyone touching Settings. Driven
- * by the per-turn `location` ping; runs in the turn pipeline (apps/web
+ * by the per-turn `location` ping; runs in the turn pipeline (server/web
  * assistant.ts), which both web and the companion flow through.
  *
  * Two safeguards make this safe to do automatically:

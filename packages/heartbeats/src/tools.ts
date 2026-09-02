@@ -5,8 +5,8 @@
  * would invert the dependency graph (heartbeats already depends on
  * tools, not the other way round).
  *
- * Registration: call `registerHeartbeatTools()` from apps/agent (and
- * apps/web's runtime if web ever fires heartbeats) at boot, BEFORE
+ * Registration: call `registerHeartbeatTools()` from server/api (and
+ * server/web's runtime if web ever fires heartbeats) at boot, BEFORE
  * `seedBuiltinTools(ownerId)` runs — the seed iterates the registry.
  *
  * Dual-mode addressing (slug arg vs ALS context)
@@ -418,7 +418,7 @@ export const HEARTBEAT_TOOLS: readonly BuiltinToolDef[] = [
  * outside the fire context). P6: these are a per-turn AFFORDANCE —
  * the responders INJECT them into the model's tool list only when
  * `hasActiveHeartbeatsOnSurface` returns true, and never grant them as
- * stored tools (see apps/web/lib/assistant.ts + apps/agent/src/main.ts).
+ * stored tools (see server/web/lib/assistant.ts + server/api/src/main.ts).
  *
  * Explicitly excludes:
  *  - `heartbeat_list`  — operator/skill tool, useful any time
@@ -431,7 +431,7 @@ export const HEARTBEAT_RESPONDER_TOOLS: readonly string[] = [
 ];
 
 /** Register the heartbeat-control tools with the @mantle/tools registry.
- *  Call once at boot from apps/agent (and any other process that
+ *  Call once at boot from server/api (and any other process that
  *  resolves tools). Idempotent — registerBuiltin overwrites the existing
  *  entry if called twice. */
 export function registerHeartbeatTools(): void {

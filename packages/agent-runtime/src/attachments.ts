@@ -436,7 +436,7 @@ export async function extractAttachmentForTurn(opts: {
 
     try {
       // Trace the parse for the live path too, mirroring the durable extractor
-      // (apps/agent/src/extractor.ts readNodeBodyRaw). Makes Tika vs in-process
+      // (server/api/src/extractor.ts readNodeBodyRaw). Makes Tika vs in-process
       // parser tiers visible in /traces on conversational attachments — same
       // diagnostic value as the durable path: parser=tika+chars_out=0 means
       // "Tika is down" vs "doc really has no text" without spelunking logs.

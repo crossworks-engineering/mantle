@@ -1,7 +1,7 @@
 /**
  * Account data layer — owner-scoped reads/writes for email accounts.
  *
- * Lifted out of `apps/web` (the settings/accounts pages + IMAP form action) so
+ * Lifted out of `server/web` (the settings/accounts pages + IMAP form action) so
  * the same logic is reachable both in-process (SSR) and over HTTP (`/api/email`)
  * and by any non-Next consumer. Every function takes the owner `userId` and
  * scopes by it — a stolen account UUID can never touch another owner's row.

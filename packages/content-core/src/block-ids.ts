@@ -25,7 +25,7 @@
  *                          persist them on the next user action)
  *  - `saveDraft` / `commitPage` — guarantees the stored doc carries ids
  *
- * The TipTap editor side is in `apps/web/components/page-editor/block-id.ts`
+ * The TipTap editor side is in `server/web/components/page-editor/block-id.ts`
  * — a global attribute extension that PRESERVES the `id` on parse/serialize
  * so user edits don't strip ids the agent placed.
  *

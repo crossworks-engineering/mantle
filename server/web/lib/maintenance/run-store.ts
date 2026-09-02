@@ -45,7 +45,7 @@ interface RunRecord {
 
 const store = globalThis as unknown as { __mantleMaintenanceRun?: RunRecord };
 
-/** Walk up from cwd to the workspace root (next dev/start runs in apps/web). */
+/** Walk up from cwd to the workspace root (next dev/start runs in server/web). */
 function repoRoot(): string {
   let dir = process.cwd();
   for (let i = 0; i < 6; i += 1) {

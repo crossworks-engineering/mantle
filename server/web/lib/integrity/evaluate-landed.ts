@@ -36,7 +36,7 @@ export function evaluateLanded(
             label: 'Trace',
             status: 'fail',
             detail:
-              'no extractor_run settled — is apps/agent running and an extractor worker configured?',
+              'no extractor_run settled — is server/api running and an extractor worker configured?',
           },
         ],
       };

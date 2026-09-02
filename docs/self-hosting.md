@@ -402,7 +402,7 @@ automatically.
 ## For maintainers: cutting a release
 
 ```bash
-pnpm version:bump patch          # bumps package.json (root + apps/web)
+pnpm version:bump patch          # bumps package.json (root + server/web)
 git commit -am "release: v0.108.1"
 git tag v0.108.1
 git push origin main v0.108.1    # ← the tag push triggers .github/workflows/release.yml

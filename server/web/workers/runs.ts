@@ -8,11 +8,11 @@
  *   mantle.run.tool   — tool_call / note items (fast, some concurrency)
  *   mantle.run.worker — worker_invoke items: claim under the per-run cap,
  *                       then hand the whole agent turn to the durable DBOS
- *                       runner in apps/api (slice 3 WP1 — the workflow
+ *                       runner in server/api (slice 3 WP1 — the workflow
  *                       completes the item; this process never runs the LLM)
  *   mantle.run.resume — resume wake-ups: relay to the durable DBOS runner
  *                       (slice 3 WP2 — the LLM turn + claimResume live in
- *                       apps/api; dedup keeps one queued resume per group)
+ *                       server/api; dedup keeps one queued resume per group)
  *   sweep cron        — every minute: deadline timeouts, lost-dispatch and
  *                       lost-resume healing (the engine's immune system)
  *
@@ -105,7 +105,7 @@ runWorker('runs', async () => {
   });
 
   // Resume lane (slice 3 WP2): claim-context only. The LLM turn runs as a
-  // durable DBOS workflow in apps/api (claimResume journaled AFTER its
+  // durable DBOS workflow in server/api (claimResume journaled AFTER its
   // preconditions there); this handler just relays the wake-up. The old
   // batchSize-1 serialization stops mattering — RUNNER_QUEUE's concurrency
   // is the LLM backpressure cap now. An enqueue failure just acks: the row

@@ -81,10 +81,10 @@ module, which reads three `NEXT_PUBLIC_*` env values and exposes `VERSION_LABEL`
 
 Where those vars come from differs by tier:
 
-- **`client/web` (Next.js)** inlines them at **build** in its `next.config.ts`,
+- **`jackdaw` (Next.js)** inlines them at **build** in its `next.config.ts`,
   so there's no runtime cost; the values are baked into the client bundle.
 - **`server/web` (Hono under `tsx`, no build step)** resolves them at **boot**
-  in `server/main.ts`, reading the root `package.json` version plus
+  in `server/web/server/main.ts`, reading the root `package.json` version plus
   `MANTLE_GIT_SHA`/`MANTLE_BUILD_TIME`, and sets the same `NEXT_PUBLIC_*` env
   before the app starts. `/api/version` reports from there.
 
@@ -112,7 +112,7 @@ so the build can't run `git` inside the image. The build script resolves the SHA
 - The [`Dockerfile`](../Dockerfile) turns those ARGs into ENV in each app
   target. The **client** target picks them up during `next build` (inlined into
   the bundle); the **server** target has no build step, so they stay as ENV and
-  `server/main.ts` reads them at boot.
+  `server/web/server/main.ts` reads them at boot.
 
 A bare `docker build .` with no args still works, the SHA/time are simply
 omitted from the label.

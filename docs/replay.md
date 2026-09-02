@@ -89,7 +89,7 @@ day, or a full ISO datetime) keep only digests whose
 Returns candidate windows, each: `{ node_id, topic, summary, period_start,
 period_end, surface, similarity }`. The caller picks the best and calls
 `replay_window` with its dates. The digest shape it reads is written by the
-summarizer ([`apps/agent/src/summarizer.ts`](../apps/agent/src/summarizer.ts),
+summarizer ([`server/api/src/agent/summarizer.ts`](../server/api/src/agent/summarizer.ts),
 `data.period_start` / `period_end` / `topic` / `summary`, tagged
 `conversation-digest`).
 
@@ -138,8 +138,8 @@ agents. Hence Remy carries no `delegate_to`.
 
 ### Remy's configuration
 
-Seeded by [`apps/web/scripts/seed-remy.ts`](../apps/web/scripts/seed-remy.ts)
-(`pnpm -C apps/web seed:remy`):
+Seeded by [`server/web/scripts/seed-agent.ts`](../server/web/scripts/seed-agent.ts)
+(`pnpm -C server/web seed:remy`):
 
 | Field | Value |
 |---|---|
@@ -198,7 +198,7 @@ into the parent, so `/debug` "spend by agent" stays correct.
   so insert-time is the only embed point; canonical text is `digestEmbedText`
   in `@mantle/embeddings`, shared with the re-embed walk). Digests created
   before the fix have no vector and are invisible to `find_window`, heal
-  with `pnpm -C apps/web backfill:digest-embeddings --apply`.
+  with `pnpm -C server/web backfill:digest-embeddings --apply`.
 - **Truncation is a signal, not silent.** A window past `limit` returns the
   earliest N turns with `truncated: true`; Remy is prompted to narrow and walk
   sub-ranges rather than answer from a partial slice.
@@ -208,9 +208,9 @@ into the parent, so `/debug` "spend by agent" stays correct.
 ## 7. Setup & activation
 
 1. An `openrouter` API key must exist (`/settings/keys`), the seed resolves it.
-2. `pnpm -C apps/web seed:remy`, creates/updates Remy + wires delegation.
+2. `pnpm -C server/web seed:remy`, creates/updates Remy + wires delegation.
    Idempotent.
-3. **Restart `apps/agent`** so the new builtin handlers register in the running
+3. **Restart `server/api`** so the new builtin handlers register in the running
    process, `tsx --watch` does not reload workspace packages, so a code change
    to `packages/tools` needs a process restart.
 
@@ -226,10 +226,10 @@ exact discussion and the conclusion"* and watch `/traces`.
 | The two tools + pure helpers | [`packages/tools/src/builtins-replay.ts`](../packages/tools/src/builtins-replay.ts) |
 | Helper unit tests | [`packages/tools/src/builtins-replay.test.ts`](../packages/tools/src/builtins-replay.test.ts) |
 | Registered into the catalog | [`packages/tools/src/builtins.ts`](../packages/tools/src/builtins.ts) (`RECALL_TOOLS`) |
-| Seed Remy + wire delegation | [`apps/web/scripts/seed-remy.ts`](../apps/web/scripts/seed-remy.ts) |
+| Seed Remy + wire delegation | [`server/web/scripts/seed-agent.ts`](../server/web/scripts/seed-agent.ts) |
 | Delegation bridge (targets `agents`) | [`packages/agent-runtime/src/invoke-agent.ts`](../packages/agent-runtime/src/invoke-agent.ts) |
 | Depth guard | [`packages/tools/src/invoke-agent-guards.ts`](../packages/tools/src/invoke-agent-guards.ts) |
-| Digest writer (the routing directory) | [`apps/agent/src/summarizer.ts`](../apps/agent/src/summarizer.ts) |
+| Digest writer (the routing directory) | [`server/api/src/agent/summarizer.ts`](../server/api/src/agent/summarizer.ts) |
 | Message archive schema | [`telegram.ts`](../packages/db/src/schema/telegram.ts), [`assistant-messages.ts`](../packages/db/src/schema/assistant-messages.ts) |
 
 ---

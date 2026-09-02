@@ -31,7 +31,7 @@ export interface ApprovalDecisionResult {
  * Optional callbacks the poll worker injects so transport-layer code
  * (this package) can act on inbound control events WITHOUT importing
  * `@mantle/tools` — that import would close a dependency cycle, since
- * tools already depends on telegram. The worker (apps/web) sits above
+ * tools already depends on telegram. The worker (server/web) sits above
  * both and can wire the two together.
  */
 export interface PollHandlers {

@@ -9,7 +9,7 @@
  *
  * Read-only. Owner-scoped. The composed-prompt preview runs the SAME
  * `resolveAgentSkills` + `composeSystemPromptWithSkills` a real turn uses
- * (apps/web/lib/assistant.ts), so what you see is what the model is sent —
+ * (server/web/lib/assistant.ts), so what you see is what the model is sent —
  * minus the per-turn time/locale line, which is noted, not faked.
  *
  * See docs/agent-studio.md.

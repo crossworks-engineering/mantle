@@ -86,7 +86,7 @@ for API providers; ICS leaves it empty), `last_sync_at` / `last_event_count` /
 
 ### Worker + UI
 
-- `apps/web/workers/calendar-sync.ts`, pg-boss, scheduler every 2 min →
+- `server/web/workers/calendar-sync.ts`, pg-boss, scheduler every 2 min →
   one single-flight sync per enabled calendar (+ `worker_calendar` compose
   service, `worker:calendar:dev` script).
 - `/settings/calendar`, subscribe by name + iCal URL, enable toggle, delete

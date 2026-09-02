@@ -8,7 +8,7 @@ read every `team` topic**. Plan of record: "PLAN: Team Forum" (dev brain page
 71601ba2, signed off 2026-07-17). This document covers Phase 1 (forum core).
 
 > **Topology (v0.200 member carve):** the `/team` UI (forum included) is served
-> by the **client app** (`client/web`); the data plane stays `/api/team/*` on
+> by the **client app** (`jackdaw`); the data plane stays `/api/team/*` on
 > the server origin. Cross-origin, the member credential is the **signed team
 > bearer** (localStorage `mantle_team_token`, minted by
 > `POST /api/team/auth {mode:'bearer'}`) sent via `teamFetch`/`teamEventStream`
@@ -98,7 +98,7 @@ both team surfaces.
   files root, outside the ltree, so nothing ingests until filed). The
   post's `attachments` jsonb references blobs by `fileId`; this row is the
   mutable review state. `contact_id` SET NULL, `topic_id`/`post_id` CASCADE.
-  A reconcile pass (`apps/web/lib/forum-quarantine.ts`, fired opportunistically
+  A reconcile pass (`server/web/lib/forum-quarantine.ts`, fired opportunistically
   from the upload route and the owner review load) sweeps stale staged rows
   and reclaims orphaned bytes.
 

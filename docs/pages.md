@@ -153,7 +153,7 @@ parser) that's **multi-line with strong block-markdown signals** (heading,
 `<aside>`, `:::` fence, code fence, table, image, task list); ordinary text paste
 is untouched. One ⌘Z reverts to raw text.
 
-Components live in [`client/web/components/page-editor/`](../client/web/components/page-editor/):
+Components live in [`jackdaw/components/page-editor/`](../jackdaw/components/page-editor/):
 
 - `extensions.ts`, the shared schema (used by both the live editor and the
   read-only renderer, so they render identically).
@@ -169,7 +169,7 @@ Components live in [`client/web/components/page-editor/`](../client/web/componen
 - `callout.ts`/`callout-view.tsx`, `aside.ts`/`aside-view.tsx`/`aside-style.ts`
   (the gradient cousin of callout), `column.ts`, `mention.ts`/`mention-list.tsx`.
 
-Editor route: [`client/web/app/(app)/pages/[id]`](<../client/web/app/(app)/pages>);
+Editor route: [`jackdaw/app/(app)/pages/[id]`](<../jackdaw/app/(app)/pages>);
 list (master-detail) at `/pages`. The page body uses base `prose` (16px).
 
 ### Custom-node pattern
@@ -187,7 +187,7 @@ they're schema + CSS with no NodeView.
 "register a new content type" seam every type uses:
 
 - `page` is in the extractor's `DEFAULT_EXTRACT_TYPES`
-  ([`apps/agent/src/extractor.ts`](../apps/agent/src/extractor.ts)).
+  ([`server/api/src/agent/extractor.ts`](../server/api/src/agent/extractor.ts)).
 - `readNodeBodyRaw` has a `page` branch that returns `pages.doc_text`.
 - `docToText` ([`packages/content/src/doc-to-text.ts`](../packages/content/src/doc-to-text.ts))
   flattens the ProseMirror JSON to plaintext (headings as `#`, to-do state as
@@ -411,7 +411,7 @@ cache + `extract_cost_cap_micro_usd`.
     TOP-LEVEL removed blocks with the text + anchor to ghost them. Pure +
     tested; recomputed client-side on every draft change so it always matches
     "what Commit will publish".
-  - `DiffReview` ([`diff-review.ts`](../client/web/components/page-editor/diff-review.ts))
+  - `DiffReview` ([`diff-review.ts`](../jackdaw/components/page-editor/diff-review.ts))
     is the editor overlay (same meta-driven decoration pattern as `focus-marks`):
     node borders for added (green/chart-4) + changed (amber/chart-5), and
     **widget "ghost" cards** for removed blocks (red, struck-through) rendered
@@ -544,7 +544,7 @@ preserve_intro?: boolean })`. Walks the doc, every Hx heading becomes
     Two surfaces: the agent tool `page_extract_section({ page_id,
 heading_block_id })` (in the `pages` group), and a **drag-handle
     "Extract to sub-page"** action shown on top-level headings
-    ([`drag-handle.tsx`](../client/web/components/page-editor/drag-handle.tsx)),
+    ([`drag-handle.tsx`](../jackdaw/components/page-editor/drag-handle.tsx)),
     client-side mirror that reuses the same `extractSection`, creates the
     child via `POST /api/pages` (with its body), and swaps the section for a
     `childPage` card (autosaved to draft like any edit).
@@ -575,9 +575,9 @@ heading_block_id })` (in the `pages` group), and a **drag-handle
 1. `packages/db/src/schema/pages.ts` + `content-chunks.ts`, the storage.
 2. `packages/content/src/pages.ts`, CRUD + draft/commit.
 3. `packages/content/src/doc-to-text.ts` + `chunk.ts`, the brain serializers.
-4. `client/web/components/page-editor/extensions.ts`, the editor schema; follow
+4. `jackdaw/components/page-editor/extensions.ts`, the editor schema; follow
    imports for each feature.
-5. `client/web/app/(app)/pages/[id]/page-detail-client.tsx`, the autosave/commit
+5. `jackdaw/app/(app)/pages/[id]/page-detail-client.tsx`, the autosave/commit
    state machine.
-6. `apps/agent/src/extractor.ts` `write_chunks` + `reconcile_entities` steps,
+6. `server/api/src/agent/extractor.ts` `write_chunks` + `reconcile_entities` steps,
    how a page reaches the brain.

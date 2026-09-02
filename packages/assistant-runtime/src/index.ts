@@ -4,7 +4,7 @@
  * the low-level tool loop). Sits here, not in agent-runtime, because a turn
  * needs @mantle/heartbeats + @mantle/content and heartbeats already depends on
  * agent-runtime (so agent-runtime can't depend back on it). Imported by the web
- * route today and the durable apps/api runner next.
+ * route today and the durable server/api runner next.
  */
 
 export {

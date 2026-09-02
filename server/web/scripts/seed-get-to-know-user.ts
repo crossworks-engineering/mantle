@@ -257,7 +257,7 @@ async function main() {
   // P6: the heartbeat-continuity tools (heartbeat_complete/snooze/update_state)
   // are no longer granted onto the agent — they're injected at runtime as a
   // per-turn affordance when an active heartbeat exists on the surface (see
-  // server/web/lib/assistant.ts + apps/agent/src/main.ts). Nothing to seed here.
+  // server/web/lib/assistant.ts + server/api/src/main.ts). Nothing to seed here.
   await upsertSkill();
   await upsertHeartbeat(agentSlug);
   console.log('[seed] done — single welcome-invitation fire scheduled ~6h from now.');

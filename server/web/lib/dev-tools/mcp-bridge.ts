@@ -1,17 +1,17 @@
 /**
- * Stdio bridge to the Mantle MCP server (apps/mcp) for the API Console.
+ * Stdio bridge to the Mantle MCP server (server/mcp) for the API Console.
  *
  * The console lists and invokes MCP tools against the REAL server — the
  * same process Claude Desktop talks to — so what you see here is exactly
  * what an MCP client gets, with zero catalog drift.
  *
  * Lifecycle: lazy singleton. First request spawns `tsx src/server.ts` in
- * apps/mcp and completes the MCP handshake (~1–2s, it opens its own DB
+ * server/mcp and completes the MCP handshake (~1–2s, it opens its own DB
  * pool); subsequent requests reuse the connection. After 5 idle minutes
  * the child is torn down. Cached on globalThis so Next dev HMR doesn't
  * leak orphan processes.
  *
- * Threat model matches apps/mcp's own: stdio only, child inherits this
+ * Threat model matches server/mcp's own: stdio only, child inherits this
  * process's env (DB creds), and every route using the bridge sits behind
  * requireOwner(). Nothing new is exposed on the network.
  */
@@ -45,8 +45,8 @@ type BridgeGlobal = {
 const g = globalThis as typeof globalThis & { __mantleMcpBridge?: BridgeGlobal };
 const state: BridgeGlobal = (g.__mantleMcpBridge ??= { bridge: null, idleTimer: null });
 
-/** Locate apps/mcp from wherever the web server happens to run.
- *  Dev runs with cwd=apps/web; a container may run from the repo root. */
+/** Locate server/mcp from wherever the web server happens to run.
+ *  Dev runs with cwd=server/web; a container may run from the repo root. */
 function resolveMcpDir(): string {
   const configured = env('MANTLE_MCP_DIR');
   if (configured) return configured;

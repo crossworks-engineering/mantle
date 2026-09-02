@@ -29,11 +29,11 @@ API Console (build + test request)
 
 | Group | Source | Executed via |
 |---|---|---|
-| Built-in API | static catalog (`apps/web/lib/dev-tools/catalog.ts`) | browser fetch (session cookie) or server proxy |
-| Built-in MCP | live `tools/list` from apps/mcp over stdio | `/api/dev-tools/mcp` bridge |
+| Built-in API | static catalog (`server/web/lib/dev-tools/`) | browser fetch (session cookie) or server proxy |
+| Built-in MCP | live `tools/list` from server/mcp over stdio | `/api/dev-tools/mcp` bridge |
 | Agent tools | `tools` table (`/api/tools`) | `/api/dev-tools/execute-tool` → `dispatchTool` |
 
-The MCP group spawns the actual `apps/mcp` server on first use (the
+The MCP group spawns the actual `server/mcp` server on first use (the
 same process Claude Desktop talks to), so the listing can never drift
 from reality. The child idles out after 5 minutes.
 
@@ -119,7 +119,7 @@ confirmation.
   `dispatchTool`, so a console test exercises exactly what an agent
   call would.
 - `/api/dev-tools/mcp`, GET lists / POST calls tools on the spawned
-  MCP server (`apps/web/lib/dev-tools/mcp-bridge.ts`; override the
+  MCP server (`server/web/lib/dev-tools/mcp-bridge.ts`; override the
   location with `MANTLE_MCP_DIR` if your layout is exotic).
 
 Security posture: every route sits behind `requireOwner()`. The proxy

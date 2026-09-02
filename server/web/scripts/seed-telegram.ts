@@ -6,7 +6,7 @@
  * Mantle DB. Re-running updates rather than duplicates.
  *
  * Usage:
- *   cd apps/web && node --env-file=./.env.local --import tsx \
+ *   cd server/web && node --env-file=./.env.local --import tsx \
  *     scripts/seed-telegram.ts [--legacy-state-dir=PATH]
  *
  * Required env: DATABASE_URL, MANTLE_MASTER_KEY, ALLOWED_USER_ID.

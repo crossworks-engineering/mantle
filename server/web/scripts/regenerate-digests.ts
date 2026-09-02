@@ -2,7 +2,7 @@
  * One-off repair for conversation-digest notes whose summary was
  * clobbered by the extractor.
  *
- * The bug (now fixed in apps/agent): the summarizer wrote the digest to
+ * The bug (now fixed in server/api): the summarizer wrote the digest to
  * data.summary with no data.content and no embedding, so the extractor
  * re-ran, found no body, summarised the *title*, and overwrote
  * data.summary with a useless paraphrase. The real digest was lost from

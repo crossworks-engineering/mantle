@@ -27,7 +27,7 @@ have drifted.
 
 ### 2a. Extractor prompt injection → durable fact plant + retire (CRITICAL)
 
-- [`apps/agent/src/extractor.ts:1509`](../apps/agent/src/extractor.ts),
+- [`server/api/src/agent/extractor.ts`](../server/api/src/agent/extractor.ts),
   `userPayload` interpolates the raw body (`Title: …\nBody:\n${body}`) with
   **no delimiters and no "content is untrusted" instruction**
   (`DEFAULT_EXTRACTOR_PROMPT` at `:121` never mentions it).
@@ -49,7 +49,7 @@ have drifted.
 
 ### 2b. Reflector → unreviewed persistent injection into the system prompt (HIGH)
 
-- [`apps/agent/src/reflector.ts`](../apps/agent/src/reflector.ts) feeds raw
+- [`server/api/src/agent/reflector.ts`](../server/api/src/agent/reflector.ts) feeds raw
   dialog (including text pasted from untrusted documents, and inbound
   Telegram from any *paired* chat, `fromName` shows non-owner senders
   exist) to a haiku-class model and **appends its output directly to
@@ -82,7 +82,7 @@ have drifted.
 ### 2e. Inconsistent confirm-gating on destructive tools (HIGH)
 
 - `event_delete` / `task_delete` ride the **default** responder tool groups
-  ([`apps/web/lib/system-manifest/manifest.ts:198,204`](../apps/web/lib/system-manifest/manifest.ts))
+  ([`server/web/lib/system-manifest/manifest.ts:198,204`](../server/web/lib/system-manifest/manifest.ts))
   with `requiresConfirm` defaulting false
   ([`packages/tools/src/seed.ts`](../packages/tools/src/seed.ts), "confirm
   with the user" lives only in description prose).
@@ -127,7 +127,7 @@ sketches plus interactions worth honoring:
 7. **`*_delete` tools:** `requiresConfirm: true` across the board (matching
    `page_delete`). Watch the manifest drift-test +
    `checkSystemIntegrity`, defaults live in the system manifest, so the
-   change lands in [`manifest.ts`](../apps/web/lib/system-manifest/manifest.ts)
+   change lands in [`manifest.ts`](../server/web/lib/system-manifest/manifest.ts)
    + seeds, and `applyManifest` gap-fill semantics decide how existing
    installs pick it up (read [`docs/system-integrity.md`](./system-integrity.md)
    FIRST, overwrite vs gap-fill matters here).
@@ -154,7 +154,7 @@ as one coherent provenance PR (migration + extractor + ranker), then 8-9.
 - Integrity: a `/debug/integrity` check for facts with `origin='external'`
   that superseded a `user`-tier fact (should be structurally impossible
   after the gate; the check proves it stays that way).
-- The recall eval (`pnpm -C apps/web eval:recall`) is the regression gate
+- The recall eval (`pnpm -C server/web eval:recall`) is the regression gate
   for the retrieval-discount change.
 
 ## 5. What is already fixed: do NOT redo

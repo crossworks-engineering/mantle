@@ -136,9 +136,9 @@ The chat-shaped workers each do one `adapter.chat()` call inside a trace `step`.
 
 | Worker | File | Note |
 |---|---|---|
-| Extractor | [`extractor.ts`](../apps/agent/src/extractor.ts) | `chatComplete(adapter, apiKey, model, …)` → `chatComplete(ownerId, routes, …)`. `classifyAndApplyFact` dropped its `adapter`/`apiKey` params and resolves routes from the worker it already holds. |
-| Summarizer ×2 | [`summarizer.ts`](../apps/agent/src/summarizer.ts) | Telegram + web paths, identical swap. |
-| Reflector | [`reflector.ts`](../apps/agent/src/reflector.ts) | Same. |
+| Extractor | [`extractor.ts`](../server/api/src/agent/extractor.ts) | `chatComplete(adapter, apiKey, model, …)` → `chatComplete(ownerId, routes, …)`. `classifyAndApplyFact` dropped its `adapter`/`apiKey` params and resolves routes from the worker it already holds. |
+| Summarizer ×2 | [`summarizer.ts`](../server/api/src/agent/summarizer.ts) | Telegram + web paths, identical swap. |
+| Reflector | [`reflector.ts`](../server/api/src/agent/reflector.ts) | Same. |
 
 Each logs when it answers via the backup (`[summarizer] summarized via backup route (…)`), and `recordChatUsage` is given `result.model || routes.primary.model` so the trace + cost dashboard attribute usage to the model that actually served.
 
@@ -188,8 +188,8 @@ The trace step name/input and `recordChatUsage` follow `active`, so `/traces` sh
 runToolLoop({ adapter, apiKey, model, backup: await resolveBackupAdapter(ownerId, agent), … })
 ```
 
-- Responder, [`apps/agent/src/main.ts`](../apps/agent/src/main.ts)
-- Web assistant, [`apps/web/lib/assistant.ts`](../apps/web/lib/assistant.ts)
+- Responder, [`server/api/src/main.ts`](../server/api/src/main.ts)
+- Web assistant, [`server/web/lib/assistant.ts`](../server/web/lib/assistant.ts)
 - Heartbeat, [`packages/heartbeats/src/fire.ts`](../packages/heartbeats/src/fire.ts) (the backup is resolved in the enclosing async scope, since the `runToolLoop` call sits inside a non-async `withHeartbeatContext` callback)
 - `invoke_agent`, [`packages/agent-runtime/src/invoke-agent.ts`](../packages/agent-runtime/src/invoke-agent.ts)
 
@@ -221,7 +221,7 @@ This is why the two features share a shape but not a constraint, and why the cha
 
 - [`chat-failover.test.ts`](../packages/agent-runtime/src/chat-failover.test.ts) (7), `chatWithFailover` (primary success / 5xx→backup / 4xx→rethrow / no-backup→rethrow, asserting the backup's *different* model served), `resolveChatRoutes` mapping (enabled / disabled / incomplete), `isChatFailover` classification (429/5xx/network yes; 400/401 no). Partial-mocks `@mantle/voice` (override `getChatAdapter`, keep the real `classifyChatError`) so the transient/permanent decision is exercised for real.
 - [`tool-loop.test.ts`](../packages/agent-runtime/src/tool-loop.test.ts) (+3), route-down→backup, 4xx→rethrow-backup-untouched, and the **sticky** case: a primary that always throws + a backup scripted for a tool-call iteration then a final answer; asserts the primary was attempted **exactly once** while the backup served **both** iterations.
-- [`extractor-chat.test.ts`](../apps/agent/src/extractor-chat.test.ts), migrated to the new `chatComplete(ownerId, routes, …)` signature.
+- [`extractor-chat.test.ts`](../server/api/src/agent/extractor-chat.test.ts), migrated to the new `chatComplete(ownerId, routes, …)` signature.
 
 49 `agent-runtime` tests green; monorepo typecheck clean throughout.
 
@@ -231,7 +231,7 @@ This is why the two features share a shape but not a constraint, and why the cha
 
 The backup route + per-route host are fully configurable from the UI, no SQL needed.
 
-- **API zod**: the backup fields (`backupProvider/backupModel/backupApiKeyId/backupEnabled`) and the per-route host fields (`baseUrl/viaTailnet/backupBaseUrl/backupViaTailnet`, migration 0063) are on the agents create/update zod ([`route.ts`](../apps/web/app/api/agents/route.ts) + `[id]/route.ts`) and the ai-workers action parse (`parseBackupFromForm`).
+- **API zod**: the backup fields (`backupProvider/backupModel/backupApiKeyId/backupEnabled`) and the per-route host fields (`baseUrl/viaTailnet/backupBaseUrl/backupViaTailnet`, migration 0063) are on the agents create/update zod ([`route.ts`](../server/web/app/api/agents/route.ts) + `[id]/route.ts`) and the ai-workers action parse (`parseBackupFromForm`).
 - **agents-client.tsx + worker-form.tsx**: a "Backup route" section (provider/model/key + enable switch), a **"Make backup primary"** swap (exchanges the primary↔backup form values *including* host + tailnet flag, so a route moves whole), and a `RouteHostFields` control (base-URL input + "Reach via Tailscale" switch) shown only when a route's provider is `local`. The worker form gates the backup section to chat-shaped kinds; the agents form shows it for all conversational agents.
 
 Shipped `5220834` (chat backup UI) + `ba0aa91` (per-route host UI). Pure config ergonomics, no new runtime behaviour.

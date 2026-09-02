@@ -68,9 +68,9 @@ Returns `ok:false` (not a guess) when the fetch fails, blocked host, timeout,
 
 ## 3. "Reader": the agent
 
-Defined in the [system manifest](../apps/web/lib/system-manifest/manifest.ts)
-(prompt in [`prompts.ts`](../apps/web/lib/system-manifest/prompts.ts)); seed it
-onto an existing brain with `pnpm -C apps/web seed:reader`.
+Defined in the [system manifest](../server/web/lib/system-manifest/manifest.ts)
+(prompt in [`prompts.ts`](../server/web/lib/system-manifest/prompts.ts)); seed it
+onto an existing brain with `pnpm -C server/web seed:reader`.
 
 | Field | Value |
 |---|---|
@@ -126,11 +126,11 @@ Toolsmith would inherit too, not a Reader-only fork.
    through it; `web_fetch` itself needs no key).
 2. A reachable **Tika** sidecar (`TIKA_URL`, default `http://127.0.0.1:9998`)
    for clean HTML→text, the crude regex fallback covers it being down.
-3. `pnpm -C apps/web seed:reader` **and** `pnpm -C apps/web seed:tool-groups`
+3. `pnpm -C server/web seed:reader` **and** `pnpm -C server/web seed:tool-groups`
    (the latter syncs the new `web-read` group's membership onto an existing
    brain). Fresh brains and the version-bump boot reconcile pick it up
    automatically.
-4. **Restart `apps/agent`** so the loop sees the new agent.
+4. **Restart `server/api`** so the loop sees the new agent.
 
 Then ask Saskia to read a page and watch `/traces`: her `responder_turn` with an
 `invoke_agent` step, and the Reader's child trace running `web_fetch`.
@@ -144,7 +144,7 @@ Then ask Saskia to read a page and watch `/traces`: her `responder_turn` with an
 | `web_fetch` primitive | [`packages/tools/src/builtins-toolsmith.ts`](../packages/tools/src/builtins-toolsmith.ts) |
 | HTML→text (Tika) | [`packages/files/src/tika.ts`](../packages/files/src/tika.ts) |
 | SSRF guard | [`packages/tools/src/ssrf-guard.ts`](../packages/tools/src/ssrf-guard.ts) |
-| Agent + `web-read` group | [`apps/web/lib/system-manifest/manifest.ts`](../apps/web/lib/system-manifest/manifest.ts) |
-| Reader prompt | [`apps/web/lib/system-manifest/prompts.ts`](../apps/web/lib/system-manifest/prompts.ts) |
-| Seed wrapper | [`apps/web/scripts/seed-reader.ts`](../apps/web/scripts/seed-reader.ts) |
+| Agent + `web-read` group | [`server/web/lib/system-manifest/manifest.ts`](../server/web/lib/system-manifest/manifest.ts) |
+| Reader prompt | [`server/web/lib/system-manifest/prompts.ts`](../server/web/lib/system-manifest/prompts.ts) |
+| Seed wrapper | [`server/web/scripts/seed-agent.ts`](../server/web/scripts/seed-agent.ts) |
 | Delegation bridge | [`packages/agent-runtime/src/invoke-agent.ts`](../packages/agent-runtime/src/invoke-agent.ts) |

@@ -57,7 +57,7 @@ no source tree needed on the VPS.
    --wait`. The one-shot `migrate` service runs pending DB migrations first
    (gated), then web/api/workers recreate on the new image.
 4. **manifest reconcile** (automatic, in the web image). On boot the web server
-   runs `reconcileManifestOnBoot` (apps/web `instrumentation.ts`): once per
+   runs `reconcileManifestOnBoot` (server/web `instrumentation.ts`): once per
    APP_VERSION, on an already-provisioned brain, it syncs new seeded HTTP tools,
    new skills, and **tool-GROUP membership** to the manifest, and unions the
    persona's default groups onto enabled responders. So a release that adds a tool
@@ -161,7 +161,7 @@ Then smoke-test the surface the release actually changed in the browser (and
   `docker-compose.yml`) also need `docker compose up -d --wait
   --remove-orphans`, otherwise a renamed service's old container keeps running
   under its former name (the updater passes `--remove-orphans` already; both
-  production boxes hit this on the v0.79.0 split, apps/agent → apps/api).
+  production boxes hit this on the v0.79.0 split, server/api → server/api).
 - **telegram poller**: leave `worker_telegram` RUNNING (`restart: unless-stopped`).
   The dev/prod bot split (2026-06-02) means prod polls only `saskianewbot` and dev
   only `saskiadevbot`, disjoint tokens, no 409. If you ever re-share a token across

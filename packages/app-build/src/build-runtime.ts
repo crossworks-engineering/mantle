@@ -126,7 +126,7 @@ export type RuntimeManifest = {
 
 /**
  * Build the shared runtime into `outDir` and return the manifest. The caller is
- * responsible for where `outDir` lives (apps/web/public/app-runtime) and for the
+ * responsible for where `outDir` lives (server/web/public/app-runtime) and for the
  * public URL prefix (`/app-runtime/`).
  */
 export async function buildRuntime(

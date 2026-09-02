@@ -1,7 +1,7 @@
 /**
  * Cross-process runner contract — the small set of constants + types that BOTH
  * sides of the durable assistant turn must agree on:
- *   - the apps/api runner, which registers + executes the workflow, and
+ *   - the server/api runner, which registers + executes the workflow, and
  *   - any enqueuer (the Next.js route via DBOSClient).
  *
  * DBOS is deliberately NOT imported here so @mantle/assistant-runtime stays
@@ -23,11 +23,11 @@ export const TEAM_TURN_WORKFLOW = 'teamTurnWorkflow';
 export const FORUM_TURN_WORKFLOW = 'forumTurnWorkflow';
 
 /** The shared runner queue. Its concurrency cap (set where the queue is
- *  registered, in apps/api) bounds total in-flight runs across processes — the
+ *  registered, in server/api) bounds total in-flight runs across processes — the
  *  LLM-provider backpressure valve. */
 export const RUNNER_QUEUE = 'mantle';
 
-/** Dedicated PARTITIONED queue for forum turns (registered in apps/api with
+/** Dedicated PARTITIONED queue for forum turns (registered in server/api with
  *  `{ concurrency: 1, partitionQueue: true }`). Enqueue with
  *  `queuePartitionKey = topicId` ⇒ at most one forum turn runs per topic at a
  *  time (the serializer that replaces the in-workflow spin-lock), while

@@ -33,14 +33,14 @@ cloud box reach the model running in my house."
 | Piece | Where | Note |
 |---|---|---|
 | `tailscale` compose service | [`docker-compose.yml`](../docker-compose.yml) | userspace, **HTTP** forward-proxy on `:1055`. **Always-up, unauthenticated** (no `tailnet` profile anymore) so the app can log it in from the UI. Image pinned `v1.98.4`, `TS_AUTH_ONCE=true`, socket-exists healthcheck. |
-| Auth-key vault + UI activation | migration `0064` `tailscale_config` (singleton, sealed key) · [`lib/tailscale-config.ts`](../apps/web/lib/tailscale-config.ts) · [`/settings/network`](../apps/web/app/\(app\)/settings/network/network-client.tsx) **Activate** card | **Paste the auth key once → Activate/Deactivate from the UI** (see §UI-activation). The app drives tailscaled login over the socket. |
-| Activation transport | [`lib/tailscale.ts`](../apps/web/lib/tailscale.ts) `tailnetUp`/`tailnetDown` | POST `/localapi/v0/start` (ipn.Options `AuthKey`+`WantRunning`+`Hostname`) / `/localapi/v0/logout`. Needs the socket mounted **RW** into web. |
+| Auth-key vault + UI activation | migration `0064` `tailscale_config` (singleton, sealed key) · [`lib/tailscale-config.ts`](../server/web/lib/tailscale-config.ts) · [`/settings/network`](../jackdaw/app/(app)/settings/network/network-client.tsx) **Activate** card | **Paste the auth key once → Activate/Deactivate from the UI** (see §UI-activation). The app drives tailscaled login over the socket. |
+| Activation transport | [`lib/tailscale.ts`](../server/web/lib/tailscale.ts) `tailnetUp`/`tailnetDown` | POST `/localapi/v0/start` (ipn.Options `AuthKey`+`WantRunning`+`Hostname`) / `/localapi/v0/logout`. Needs the socket mounted **RW** into web. |
 | `local` chat adapter | [`local-chat.ts`](../packages/voice/src/adapters/local-chat.ts) | OpenAI-compat; honours per-route `baseUrl` + `viaTailnet`. `getChatAdapter('local')`. |
 | Proxy dispatch | [`tailnet.ts`](../packages/voice/src/adapters/tailnet.ts) | `tailnetFetch` via undici `ProxyAgent`; **inert by default** (no proxy → direct fetch). `undici` is lazy-`require`d so the `@mantle/voice` barrel stays browser-safe. |
 | Per-route host columns | migration `0063` | `base_url` + `via_tailnet` (+ backup pair) on `agents` + `ai_workers`, threaded through `resolveChatRoutes` → `ChatOptions`. |
-| Operator UI | [`/settings/network`](../apps/web/app/\(app\)/settings/network/page.tsx) | the Activate card (above) + connection tile + reachable-devices list; a `RouteHostFields` base-URL input (peer `<datalist>`) + "Reach via Tailscale" switch on the agents/ai-workers route forms. |
-| Status reader | [`lib/tailscale.ts`](../apps/web/lib/tailscale.ts) | reads the tailscaled **LocalAPI** (`/localapi/v0/status`) over a shared unix socket; never throws (degrades to "tailnet not running"). Also drives the dashboard **Tailnet** vitals pill. |
-| Onboarding | [`/settings/network/connect`](../apps/web/app/\(app\)/settings/network/connect/page.tsx) | platform-tabbed (Linux/macOS/Windows) "Connect a device" guide. |
+| Operator UI | [`/settings/network`](../jackdaw/app/(app)/settings/network/page.tsx) | the Activate card (above) + connection tile + reachable-devices list; a `RouteHostFields` base-URL input (peer `<datalist>`) + "Reach via Tailscale" switch on the agents/ai-workers route forms. |
+| Status reader | [`lib/tailscale.ts`](../server/web/lib/tailscale.ts) | reads the tailscaled **LocalAPI** (`/localapi/v0/status`) over a shared unix socket; never throws (degrades to "tailnet not running"). Also drives the dashboard **Tailnet** vitals pill. |
+| Onboarding | [`/settings/network/connect`](../jackdaw/app/(app)/settings/network/connect/page.tsx) | platform-tabbed (Linux/macOS/Windows) "Connect a device" guide. |
 
 **Decisions, updated:**
 1. **HTTP forward-proxy, not SOCKS5** (§8 left this open): `TS_OUTBOUND_HTTP_PROXY_LISTEN`; the Node `undici` fetch path uses the HTTP proxy. SOCKS5 is still available via `TS_SOCKS5_SERVER` if ever needed.

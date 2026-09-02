@@ -101,7 +101,7 @@ brain (dev box, or bring one up):
   error. Confirm `@server/*` is banned in jackdaw.
 
 ### C. Repo hygiene (both sides)
-- mantle: zero tracked files under client/, packages/web-ui, e2e, brand;
+- mantle: zero tracked files under client/, jackdaw/packages/web-ui, e2e, brand;
   no non-comment `@mantle/web-ui` or `@server/` references; Dockerfile,
   release.yml, bump-version.mjs, merge-branch.sh, eslint, vitest configs all
   pruned coherently; `pnpm verify` green.
@@ -109,7 +109,7 @@ brain (dev box, or bring one up):
   history spot-checks (`git log --follow` on a few moved files);
   transpilePackages lists both name sets; app-runtime prebuild runs via tsx.
 - Cross-repo docs: grep both repos' docs/ for paths that no longer exist
-  (packages/web-ui/..., client/web/... in mantle docs; packages/share-ui/...,
+  (jackdaw/packages/web-ui/..., jackdaw/... in mantle docs; packages/share-ui/...,
   server/... in jackdaw docs). db-less-dev.md moved to jackdaw — confirm
   nothing in mantle still points at the deleted copy.
 
@@ -132,7 +132,7 @@ brain (dev box, or bring one up):
 Adversarial sweep for anything the split sessions may have missed: files that
 reference moved modules through unusual paths (raw strings, dynamic imports,
 scripts, compose commands, .github workflows, docs code fences), server code
-that silently depended on client/web's public/ assets, tsconfig path aliases
+that silently depended on jackdaw's public/ assets, tsconfig path aliases
 in either repo that resolve outside the repo, and any test that became
 vacuous (asserts against a list that is now empty, scans a directory that no
 longer exists but swallows ENOENT).

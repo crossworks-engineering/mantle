@@ -11,7 +11,7 @@ motivated it. Lives at [`server/web/scripts/eval-recall.ts`](../server/web/scrip
 
 > **The gold set is yours, and it is local-only.** A case pins node ids from ONE
 > brain, so a shared set names its author's real pages and resolves to nothing on
-> anyone else's. `server/web/scripts/eval/recall-cases.json` is **gitignored and
+> anyone else's. the eval case file next to `server/web/scripts/eval-recall.ts` is **gitignored and
 > not shipped** — write your own before the first run (see _Adding a case_). The
 > repo carried one until 2026-08-21; it leaked the owner's bank, a company
 > expense figure and their full name into a public repo, which is exactly the
@@ -124,7 +124,7 @@ says otherwise, and re-run this eval to confirm.
 
 Three changes to `loadConversationContext` ([conversation.ts](../packages/agent-runtime/src/conversation.ts)), all in the one chokepoint both surfaces share:
 
-1. **Window widened 3 → 5.** A 3-hit window dropped genuinely relevant near-misses below the prompt. The eval's `prod` (what the responder actually sees) went **R@5 92%→100%, MRR 0.88→0.90** (now at the vector ceiling); the gold node reaches the prompt in **12/12** cases (was 11/12). Probed cause: for "when does my licence disc renew", the user's vehicle page ranked #4 (outside the old cap) beside the actual licence PDF (#3) and a related note (#1), all now included. The settings-form default and existing agent rows persisted `3` explicitly, so the code default never reached them; [`scripts/widen-content-hits.ts`](../server/web/scripts/widen-content-hits.ts) (`pnpm -C server/web widen:content-hits --apply`, dry-run by default) bumps existing rows, **run once per env (dev + prod)**.
+1. **Window widened 3 → 5.** A 3-hit window dropped genuinely relevant near-misses below the prompt. The eval's `prod` (what the responder actually sees) went **R@5 92%→100%, MRR 0.88→0.90** (now at the vector ceiling); the gold node reaches the prompt in **12/12** cases (was 11/12). Probed cause: for "when does my licence disc renew", the user's vehicle page ranked #4 (outside the old cap) beside the actual licence PDF (#3) and a related note (#1), all now included. The settings-form default and existing agent rows persisted `3` explicitly, so the code default never reached them; [`server/web/scripts/widen-content-hits.ts`](../server/web/scripts/widen-content-hits.ts) (`pnpm -C server/web widen:content-hits --apply`, dry-run by default) bumps existing rows, **run once per env (dev + prod)**.
 
 2. **System-docs hygiene.** Content hits now exclude `origin='system'` nodes (Mantle's own ~57 docs), a reference corpus, not personal memory. Verified: the "memory/brain architecture" query that used to surface memory.md now returns the user's own doc with 0 system-origin leaks. (Doesn't move the node-recall gold set; the gold cases are personal.)
 

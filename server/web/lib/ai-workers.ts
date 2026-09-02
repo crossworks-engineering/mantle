@@ -31,8 +31,8 @@ import type { AiWorkerDTO } from '@mantle/client-types';
 import { slugify } from '@mantle/client-types/slugify';
 import { poolModelIssue } from '@mantle/client-types/model-pools';
 
-// Resolution helpers live in @mantle/db so apps/agent can use them
-// without depending on apps/web. Re-exported here for convenience.
+// Resolution helpers live in @mantle/db so server/api can use them
+// without depending on server/web. Re-exported here for convenience.
 export { getDefaultWorker, bumpWorkerUsage } from '@mantle/db';
 
 /**

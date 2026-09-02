@@ -1,6 +1,6 @@
 /**
  * Re-embed every stored vector for one owner with a chosen model. The same
- * logic that powers `apps/web/scripts/re-embed.ts` (CLI) and the
+ * logic that powers `server/web/scripts/re-embed.ts` (CLI) and the
  * `rebuildEmbeddingIndexAction` server action behind the workers form's
  * "Rebuild Index" button.
  *

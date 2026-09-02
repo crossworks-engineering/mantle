@@ -5,9 +5,9 @@
 > brain like every other content type: summarized, embedded, chunked,
 > searchable, citable, shareable, embeddable in pages.
 >
-> Companion docs: [`draw-plan.md`](./draw-plan.md) (the original plan and its
-> rationale), [`draw-render-fallback-plan.md`](./draw-render-fallback-plan.md)
-> (the snapshot/render architecture), [`draw-audit-findings.md`](./draw-audit-findings.md)
+> Companion docs: [`draw-plan.md`](_archive/draw-plan.md) (the original plan and its
+> rationale), [`draw-render-fallback-plan.md`](_archive/draw-render-fallback-plan.md)
+> (the snapshot/render architecture), [`draw-audit-findings.md`](_archive/draw-audit-findings.md)
 > (the security audit that shaped the share surface), [`pages.md`](./pages.md)
 > (the sibling workspace whose patterns Draw mirrors).
 
@@ -142,7 +142,7 @@ finds the page.
 
 The editor's UI is styled entirely by CSS custom properties (the package's
 `theme.scss`), and
-[`client/web/components/draw/draw-theme.css`](../client/web/components/draw/draw-theme.css)
+[`jackdaw/components/draw/draw-theme.css`](../jackdaw/components/draw/draw-theme.css)
 re-points the chrome-level ones at the app's tokens: islands, menus, dialogs
 and the sidebar on `--popover`, hovers on `--accent`, a `--primary`-derived
 brand ramp via oklab `color-mix`, and `--ui-font` on the user's interface
@@ -174,7 +174,7 @@ depend on which theme its author had open at commit.
 The cost was that the editor inverted and every other surface didn't, which
 reads as "my drawing came back in the wrong theme". So the in-app surfaces
 apply the same filter at VIEW time
-([`client/web/components/draw/snapshot-theme.ts`](../client/web/components/draw/snapshot-theme.ts)):
+([`jackdaw/components/draw/snapshot-theme.ts`](../jackdaw/components/draw/snapshot-theme.ts)):
 the `/draw` list and detail previews, and drawings embedded in a page. Nothing
 stored or exported changes, and the share surface, `/print` and both exports are
 deliberately excluded: they leave the brain, where there is no app theme to
@@ -219,7 +219,7 @@ Upstream's **`viewModeEnabled`** is the missing piece, and
 `ExcalidrawCanvas` already took a `viewMode` prop for it. A toggle in the
 preview header swaps the snapshot for the real canvas in view mode: pan and
 zoom, no editing UI, no draft, nothing written
-([`client/web/components/draw/draw-viewer.tsx`](../client/web/components/draw/draw-viewer.tsx)).
+([`jackdaw/components/draw/draw-viewer.tsx`](../jackdaw/components/draw/draw-viewer.tsx)).
 
 Three properties worth keeping:
 

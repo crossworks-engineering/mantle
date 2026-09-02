@@ -303,7 +303,7 @@ async function checkPgBoss(): Promise<SanityCheck> {
       detail: `The “pgboss” schema is missing — background jobs (email, extraction, ingest) crash on startup. Created by the migrate one-shot / up.sh's pgboss:init.`,
       fix: {
         summary: `Run the migrate/provision step for this stack.`,
-        command: `docker compose run --rm migrate   # (prod compose)  ·  or: pnpm -C apps/web pgboss:init`,
+        command: `docker compose run --rm migrate   # (prod compose)  ·  or: pnpm -C server/web pgboss:init`,
       },
     };
   }

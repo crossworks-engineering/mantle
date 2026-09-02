@@ -32,7 +32,7 @@ pnpm verify   # typecheck (29 packages) + lint + format:check + vitest
 ```
 
 That is the gate for every wave below. CI (`build-check.yml`) runs the same four
-steps plus `pnpm -C apps/web build`, so anything that passes locally passes CI.
+steps plus `pnpm -C server/web build`, so anything that passes locally passes CI.
 
 ## Rules of the road
 
@@ -41,7 +41,7 @@ steps plus `pnpm -C apps/web build`, so anything that passes locally passes CI.
    line is too big.
 2. **Never batch a major with anything else.** One major per commit, so a
    regression is a `git revert`, not an archaeology dig.
-3. **`pnpm verify` + `pnpm -C apps/web build` green before every commit.** No
+3. **`pnpm verify` + `pnpm -C server/web build` green before every commit.** No
    exceptions, no "I'll fix the types after".
 4. **UI-touching waves get a real look**: `pnpm dev:fe` against the workstation
    stack, not just a passing build.
@@ -88,7 +88,7 @@ removed. Commits: `5bdfd251` (1a) · `0bbb83e1` (prettier churn) · `16313bd7`
 (1b) · `fe90c621` (1c).
 
 Gates at the end of the wave: `pnpm verify` green (2565 tests) **and** a full
-`pnpm -C apps/web build` green.
+`pnpm -C server/web build` green.
 
 Two things worth carrying forward:
 
@@ -121,7 +121,7 @@ Each of these touches 0–3 files. Cheap, independent, high confidence.
 | `nodemailer` + `@types/nodemailer` | 6 → 9 | 1 | **Send a real email.** Three majors on the outbound path. Check whether v9 ships its own types and drop `@types/nodemailer` if so. |
 | `pdf-parse` 1→2, `pdfjs-dist` 5→6 | | 2 | PDF ingest + the password-protected path. `pdf-password.ts` dynamically imports `pdfjs-dist/legacy/build/pdf.mjs`, **that subpath may have moved in v6**; verify before assuming. |
 | `esbuild` | 0.24 → 0.28 | 2 | Mini-app bundling (`packages/app-build`). Has an `allowBuilds` entry in `pnpm-workspace.yaml`. Build + publish an app, load it in the sandbox. |
-| `@napi-rs/canvas` | 0.1 → 1.0 | 0 direct | Pinned `~0.1.100` deliberately. `next.config.ts` externalizes it *by name* (including per-platform `@napi-rs/canvas-<os>-<arch>`) for the webpack production build, **read that block before bumping**, and prove `pnpm -C apps/web build` still works, not just dev. |
+| `@napi-rs/canvas` | 0.1 → 1.0 | 0 direct | Pinned `~0.1.100` deliberately. `next.config.ts` externalizes it *by name* (including per-platform `@napi-rs/canvas-<os>-<arch>`) for the webpack production build, **read that block before bumping**, and prove `pnpm -C server/web build` still works, not just dev. |
 | `@types/libsodium-wrappers` | deprecated |, | No newer version exists. Check whether `libsodium-wrappers` now ships its own types; if so delete, else leave and document why. |
 
 ### Wave 2 status: ✅ done, with two caveats (2026-07-22)
@@ -149,7 +149,7 @@ not see.** Both were in-range bumps whose transitive native deps moved:
   alongside 5.7.284). pdfjs compares API and Worker version strings *exactly*
   and its worker config is process-global, so two copies in one process break
   whichever loads second.
-- The same bump moved its `@napi-rs/canvas` to 1.0.2 while `apps/web` stayed
+- The same bump moved its `@napi-rs/canvas` to 1.0.2 while `server/web` stayed
   pinned at `~0.1.100`. That pin exists so next.config.ts's webpack
   externalization *resolves* at runtime, so the mismatch would have handed a
   0.1.x native binding to a library built for 1.0.x.
@@ -292,7 +292,7 @@ move between majors. Risk is *test-only*, but a broken suite blinds every later
 wave, so it must land clean.
 
 **`zod` 3 → 4**: 141 files. Almost all of it is `z.object({...}).parse(body)` in
-`apps/web/app/api/**` route handlers: mechanical, and typecheck-guided. The one
+`server/web/app/api/**` route handlers: mechanical, and typecheck-guided. The one
 genuinely risky site is **`packages/mcp-core/src/build-server.ts`**, where zod
 shapes become JSON Schema for MCP tool definitions, a silent shape change there
 degrades every tool the assistant sees. Diff the generated tool schemas before
@@ -316,7 +316,7 @@ remain.
 dragged Next 16 into this wave, turned out to be **dead weight**:
 `eslint.config.mjs` uses `@next/eslint-plugin-next` directly and never
 references it, there are no legacy `.eslintrc` files, and CI runs the root
-`eslint .`. Removed it, plus `apps/web`'s unused `lint: "next lint"` script
+`eslint .`. Removed it, plus `server/web`'s unused `lint: "next lint"` script
 (`next lint` is itself gone in Next 16) and its stray eslint 9 devDep.
 
 eslint 10 promotes two rules into `recommended`, and both found real things,
@@ -392,7 +392,7 @@ the peer requirement is satisfied. Surfaces to check: `next.config.ts` (it carri
 a hand-written webpack externals block for `@napi-rs/canvas`), route handlers,
 middleware, the `(app)` route group, and the public `/s/[token]` surface outside
 it. Detached mode (`pnpm dev:fe`) must still work, that's a documented
-constraint in `apps/web/CLAUDE.md`.
+constraint in `server/web/CLAUDE.md`.
 
 Do this **after** Wave 4 so zod/drizzle churn isn't tangled with framework churn.
 
@@ -452,7 +452,7 @@ Two things to know for later:
 
 Two majors on the job queue. This is the only item on the list that can lose data.
 
-- **30+ touchpoints** across `apps/api`, `apps/web/workers`, `packages/runs`,
+- **30+ touchpoints** across `server/api`, `server/web/workers`, `packages/runs`,
   `packages/email`, `packages/telegram`, `packages/microsoft`.
 - **It owns and migrates its own `pgboss` schema on boot.** Once a box starts on
   v12 the schema is migrated; rolling back the image does *not* roll back the

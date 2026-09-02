@@ -62,8 +62,8 @@ the researcher uses `search_nodes` / the recall tools instead.
 
 ## 3. "Researcher": the agent
 
-Seeded by [`apps/web/scripts/seed-researcher.ts`](../apps/web/scripts/seed-researcher.ts)
-(`pnpm -C apps/web seed:researcher`):
+Seeded by [`server/web/scripts/seed-agent.ts`](../server/web/scripts/seed-agent.ts)
+(`pnpm -C server/web seed:researcher`):
 
 | Field | Value |
 |---|---|
@@ -124,8 +124,8 @@ attributed to the researcher (not double-counted into Saskia's turn).
 
 1. An `openrouter` API key at `/settings/keys` (covers chat, embeddings, *and*
    Sonar, all routed through OpenRouter).
-2. `pnpm -C apps/web seed:researcher`, creates the agent + wires delegation.
-3. **Restart `apps/agent`** so `web_search` registers in the running process.
+2. `pnpm -C server/web seed:researcher`, creates the agent + wires delegation.
+3. **Restart `server/api`** so `web_search` registers in the running process.
 
 Then ask Saskia anything that needs the live web and watch `/traces`, her
 `responder_turn` with an `invoke_agent` step, and the researcher's child trace
@@ -140,7 +140,7 @@ running `web_search`.
 | `web_search` + citation parsing | [`packages/tools/src/builtins-research.ts`](../packages/tools/src/builtins-research.ts) |
 | Citation-parse tests | [`packages/tools/src/builtins-research.test.ts`](../packages/tools/src/builtins-research.test.ts) |
 | `note_create` (Saskia's save) | [`packages/tools/src/builtins-notes.ts`](../packages/tools/src/builtins-notes.ts) |
-| Seed the agent + delegation | [`apps/web/scripts/seed-researcher.ts`](../apps/web/scripts/seed-researcher.ts) |
+| Seed the agent + delegation | [`server/web/scripts/seed-agent.ts`](../server/web/scripts/seed-agent.ts) |
 | Cost attribution helper | [`packages/tracing/src/llm-usage.ts`](../packages/tracing/src/llm-usage.ts) |
 | Delegation bridge | [`packages/agent-runtime/src/invoke-agent.ts`](../packages/agent-runtime/src/invoke-agent.ts) |
 

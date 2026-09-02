@@ -1,14 +1,14 @@
 /**
  * @mantle/turn-stream — the server-side transport for live turn events (status,
  * tool activity, reasoning, token deltas) flowing from the durable runner
- * (apps/api) to the browser's SSE socket (apps/web).
+ * (server/api) to the browser's SSE socket (server/web).
  *
  * The cross-client event SHAPE lives in `@mantle/client-types` (`TurnEvent`,
  * zero-runtime). This package owns the SERVER half: the Postgres `NOTIFY`
  * channel, the schema-version constant the producer stamps, the publisher, and
  * the short-TTL replay buffer (`turn_stream_buffer`) + the merge/dedup helper
  * that powers `Last-Event-ID` resume. The subscribe half is the web realtime
- * bridge (`apps/web/lib/realtime.ts`); the SSE route drives the replay.
+ * bridge (`server/web/lib/realtime.ts`); the SSE route drives the replay.
  *
  * Deliberately low in the dependency graph (only `@mantle/db` +
  * `@mantle/client-types`) so the eventual producer — the tool-loop in

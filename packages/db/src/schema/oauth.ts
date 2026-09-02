@@ -8,7 +8,7 @@ import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
  * connector registers (Dynamic Client Registration, RFC 7591), the owner signs
  * in + consents (authorize), and the client exchanges a PKCE-protected code for
  * an access token (token). All three tables below back that flow. See the plan
- * (~/.claude/plans/sharded-honking-wilkinson.md) and apps/web/lib/mcp-oauth.ts.
+ * (~/.claude/plans/sharded-honking-wilkinson.md) and server/web/lib/mcp-oauth.ts.
  *
  * Secrets at rest: authorization codes and access/refresh tokens are stored ONLY
  * as their SHA-256 hash (same treatment as inbound peer tokens, see

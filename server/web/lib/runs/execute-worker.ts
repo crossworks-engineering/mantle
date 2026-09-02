@@ -4,7 +4,7 @@
  * under the per-run concurrency cap, run-row lock serializing cap decisions);
  * the TURN itself — route resolution incl. the `'inherit'` sentinel, the
  * agent tool-loop, mechanical evidence, spill, completion — moved to the
- * durable DBOS runner (`apps/api/src/workflows/runs-worker-turn.ts`), where
+ * durable DBOS runner (`server/api/src/workflows/runs-worker-turn.ts`), where
  * every LLM call and tool dispatch is a journaled step and a crash mid-turn
  * resumes instead of re-running wholesale.
  *

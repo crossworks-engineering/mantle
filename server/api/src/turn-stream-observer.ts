@@ -11,7 +11,7 @@
  * come in later phases — the observer already receives `end` events; it just
  * ignores them for now.
  *
- * Lives in apps/api because that's where the turn executes. Installed once at
+ * Lives in server/api because that's where the turn executes. Installed once at
  * boot; a no-op for every trace without a `turnId` (background work pays
  * nothing — the gate is in the tracing layer).
  */

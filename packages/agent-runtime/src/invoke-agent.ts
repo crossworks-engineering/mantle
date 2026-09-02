@@ -1,7 +1,7 @@
 /**
  * Runtime implementation of the `invoke_agent` builtin's bridge target.
  *
- * Both `apps/agent` (Telegram responder) and `apps/web` (/assistant)
+ * Both `server/api` (Telegram responder) and `server/web` (/assistant)
  * call `registerAgentInvoker(invokeAgent)` at boot, so the
  * `invoke_agent` builtin in @mantle/tools can synchronously hand a
  * one-shot prompt to a different agent and get back its final text.

@@ -17,8 +17,8 @@ import { loadProfilePreferences, isStreamThoughtsEnabled } from '@mantle/content
  * (the NOTIFY envelope's owner must match the authenticated session, so a
  * `turnId` guessed from another owner yields nothing).
  *
- * **Cross-process by necessity:** the turn executes in apps/api (the DBOS
- * runner), which publishes deltas via Postgres `NOTIFY`; this handler (apps/web,
+ * **Cross-process by necessity:** the turn executes in server/api (the DBOS
+ * runner), which publishes deltas via Postgres `NOTIFY`; this handler (server/web,
  * a different process) LISTENs through the realtime bridge and relays them.
  *
  * **Flagged:** 404s until `MANTLE_TURN_STREAMING` is set. No producer is wired

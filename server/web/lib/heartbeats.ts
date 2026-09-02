@@ -5,7 +5,7 @@
  * time comes, the configured agent runs the configured skill with
  * the heartbeat's accumulated state on the configured surface.
  * Heartbeat lifecycle (active → paused / completed / cancelled) is
- * driven by the tick loop in apps/agent (or the operator via the
+ * driven by the tick loop in server/api (or the operator via the
  * pause/resume buttons here).
  *
  * Gate fields (min_idle_minutes, quiet_hours, cooldown_minutes,

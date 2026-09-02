@@ -477,7 +477,7 @@ function cmpNum(a: number | undefined, b: number | undefined, dir: 1 | -1): numb
 
 /**
  * Filter + sort + paginate a fetched catalog. Kept here (not in the client) so
- * the /models page does its list shaping server-side per the apps/web list
+ * the /models page does its list shaping server-side per the server/web list
  * convention (URL-driven SSR, no client-filtering of a loaded list). The source
  * list is a single cached provider fetch, so this operates in memory. `kinds`
  * is the distinct type set over the FULL list (for the type filter options).

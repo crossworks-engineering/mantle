@@ -5,7 +5,7 @@
  * browser bundle. The server-only data layer lives in `./runners.ts`.
  *
  * Everything here mirrors DBOS's WorkflowStatus / StepInfo (the system-DB
- * execution journal); see apps/api/src/runs.ts for the original apps/api-side
+ * execution journal); see server/api/src/runs.ts for the original server/api-side
  * read layer this parallels.
  */
 
@@ -42,7 +42,7 @@ export type RunnerRun = {
   name: string;
   status: string;
   queue?: string;
-  /** Which apps/api process executed it (helps when scaled out). */
+  /** Which server/api process executed it (helps when scaled out). */
   executorId?: string;
   appVersion?: string;
   /** How many times DBOS has tried to recover this run after a crash. */

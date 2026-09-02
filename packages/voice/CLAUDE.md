@@ -3,7 +3,7 @@
 **Before adding/modifying a provider or capability adapter, read [`docs/adding-a-provider.md`](../../docs/adding-a-provider.md).**
 Five-step cookbook with per-capability templates, the OpenAI-compat-vs-native decision tree, and the audit-caught silent-drop patterns to avoid.
 
-For the conceptual deep-dive: [`docs/phase-3-retrospective.md`](../../docs/phase-3-retrospective.md) Part 1.
+For the conceptual deep-dive: [`docs/_archive/phase-3-retrospective.md`](../../docs/_archive/phase-3-retrospective.md) Part 1.
 
 Non-negotiables when touching this directory:
 

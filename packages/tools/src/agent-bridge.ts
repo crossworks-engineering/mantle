@@ -7,7 +7,7 @@
  * depend on the runtime in return. So we declare the surface here and
  * let the runtime register an implementation at boot:
  *
- *   // apps/agent/src/main.ts
+ *   // server/api/src/main.ts
  *   import { registerAgentInvoker } from '@mantle/tools';
  *   import { invokeAgent } from '@mantle/agent-runtime';
  *   registerAgentInvoker(invokeAgent);

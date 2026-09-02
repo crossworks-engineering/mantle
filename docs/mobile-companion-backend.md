@@ -23,10 +23,10 @@ so each route works unchanged from web and mobile.
 
 - `packages/db/src/schema/mobile-tokens.ts` + migration `0090_…`'s predecessor
   `0089_mobile_tokens.sql`, `mobile_tokens` table (revocable, expiry).
-- `apps/web/lib/auth.ts`, `buildMobileToken` / `verifyMobileToken` /
+- `server/web/lib/auth.ts`, `buildMobileToken` / `verifyMobileToken` /
   `mobileTokenJti` / `getBearerUser`; `getSessionUser()` falls back to
   `Authorization: Bearer`.
-- `apps/web/middleware.ts`, accepts a valid mobile bearer (stateless verify),
+- `jackdaw/middleware.ts`, accepts a valid mobile bearer (stateless verify),
   401s a malformed one (wrapped in try/catch).
 - Routes: `POST /api/auth/mobile-login` `{email, password, deviceName}` →
   `{token, expiresIn}`; `POST /api/auth/mobile-logout` (revokes by `jti`).
@@ -54,7 +54,7 @@ so each route works unchanged from web and mobile.
   `0090_assistant_read_cursors.sql`, `assistant_read_cursors(owner_id, agent_id,
   last_read_at)` (composite PK, FK → agents). Mantle had **no** read/unread concept
   before this.
-- `apps/web/lib/assistant-inbox.ts`, `getReadCursors`, `markAssistantRead`
+- `server/web/lib/assistant-inbox.ts`, `getReadCursors`, `markAssistantRead`
   (upsert), `assistantConversations` (per chat-capable agent: latest message
   preview + `unreadCount` = outbound messages newer than the cursor; sorted by
   recency).
@@ -156,7 +156,7 @@ endpoint; it rides on `POST /api/assistant/turn` (JSON `location` key, or a
 `location` form field on multipart). The server stores it on the inbound message,
 makes the agent location-aware, and lazily reverse-geocodes (Mapbox) into a cached
 `location` node. Full mobile integration contract (fields, Flutter mapping,
-permissions, verify steps): **[`handover-companion-location.md`](./handover-companion-location.md)**.
+permissions, verify steps): **[`handover-companion-location.md`](_archive/handover-companion-location.md)**.
 Shipped + deployed in v0.27.0.
 
 ## Navigation: routes + inline maps (next release)
@@ -167,7 +167,7 @@ turn-by-turn). **No new endpoint and no app changes**: the map comes back as an
 ordinary **image artifact** on the existing chat-turn response, which the
 companion already renders. The companion keeps sending location exactly as before.
 Full contract + how it works server-side:
-**[`handover-navigation.md`](./handover-navigation.md)**. Dormant until a `mapbox`
+**[`handover-navigation.md`](_archive/handover-navigation.md)**. Dormant until a `mapbox`
 key is added; lands in the next release.
 
 ## Companion v1.4–1.6: streaming + knowledge surfaces (2026-07)
@@ -217,9 +217,9 @@ The one backend addition of the v1.7–v1.11 companion cycle: an owner-facing
 HTTP twin of the `search_nodes` / `search_chunks` MCP tools, so the app can
 offer a real search screen without routing queries through a chat turn.
 
-- **Route:** `apps/web/app/api/search/route.ts`, gated by `getOwnerOr401`
+- **Route:** `server/web/app/api/search/route.ts`, gated by `getOwnerOr401`
   (mobile bearer works unchanged). Param parsing is pure and unit-tested in
-  `apps/web/lib/search-query.ts`.
+  `packages/client-types/src/search-query.ts`.
 - **Params:** `q` (required, ≤500 chars) · `mode=nodes|chunks` (default
   `nodes`) · `type` (node-type filter; same enum the `search_nodes` tool
   advertises) · `branch` (ltree prefix, regex-validated so the `::ltree`
@@ -245,7 +245,7 @@ offer a real search screen without routing queries through a chat turn.
 
 ## The frontend/server split (v0.200.0–v0.202.0) — what it means here
 
-`apps/*` became `server/*`, the owner UI was carved into `client/web`, and the
+`apps/*` became `server/*`, the owner UI was carved into `jackdaw`, and the
 routes moved off Next onto Hono. **The companion's contract is unchanged**, and
 that is deliberate rather than lucky: the mobile bearer was the mechanism the
 split was designed around (`frontend-backend-split.md` §Auth). Specifically:
@@ -270,7 +270,7 @@ split was designed around (`frontend-backend-split.md` §Auth). Specifically:
 server on `MANTLE_SITE_ADDRESS` and the owner UI on `MANTLE_CLIENT_SITE_ADDRESS`
 (`app.<domain>`). **The companion must point at the SERVER address** — the
 client origin carries no `/api` at all. The setup screen detects a client origin
-and recovers the right one: `client/web` serves `/env.js` (public) advertising
+and recovers the right one: `jackdaw` serves `/env.js` (public) advertising
 `serverOrigin`, so the app names the brain instead of just failing.
 
 A **single-host** install — one hostname path-routing `/api` to the server and

@@ -12,7 +12,7 @@ Both routes are legitimate. Read "Which route" below before picking.
 ## Current state
 
 **No AI SDK package is installed.** The pilot adapter
-(`packages/voice/src/adapters/anthropic-chat-aisdk.ts`, a complete unwired
+(`packages/voice/src/adapters/anthropic-chat.ts` (the AI-SDK variant was retired), a complete unwired
 `ChatDispatcher` on `@ai-sdk/anthropic`) was **removed on 2026-08-04**, along
 with the `ai` and `@ai-sdk/anthropic` deps, once it had produced its findings.
 Recover it with `git show <commit>^:packages/voice/src/adapters/anthropic-chat-aisdk.ts`

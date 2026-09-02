@@ -9,7 +9,7 @@
  *   pnpm extract:backfill --limit=100            # cap total per run
  *   pnpm extract:backfill --rate=2               # seconds between notifies
  *
- * The agent (apps/agent) must be running — it's the LISTENer that picks
+ * The agent (server/api) must be running — it's the LISTENer that picks
  * up each notify and runs the extractor. This script just feeds the queue.
  *
  * Idempotent: nodes that already have data.summary + embedding are

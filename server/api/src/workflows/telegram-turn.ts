@@ -28,7 +28,7 @@ import { RUNNER_QUEUE } from '@mantle/assistant-runtime';
 import { handleTelegramMessage } from '../agent/runtime';
 import { errorMessage } from '@mantle/std';
 
-/** DBOS workflow name the runner registers under. Internal to apps/api — the
+/** DBOS workflow name the runner registers under. Internal to server/api — the
  *  only enqueuer is this process's own LISTEN handler + boot drain, so unlike
  *  the assistant turn it needs no cross-package contract. */
 export const TELEGRAM_TURN_WORKFLOW = 'telegramTurnWorkflow';

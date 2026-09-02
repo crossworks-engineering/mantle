@@ -165,7 +165,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     cwd: 'server/web',
     extraFlags: ['--types=<list>', '--since=<date>', '--limit=<n>', '--rate=<seconds>'],
     notes:
-      'Indirect chat + embedding spend via the extractor; requires the agent (apps/api) to be running. No dry-run flag — it prints the candidate count before firing.',
+      'Indirect chat + embedding spend via the extractor; requires the agent (server/api) to be running. No dry-run flag — it prints the candidate count before firing.',
   },
   {
     slug: 'draws-re-render',

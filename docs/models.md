@@ -21,11 +21,11 @@ supported provider so you can compare pricing/context/capabilities in one place.
 
 | Concern | Where |
 |---|---|
-| Per-provider fetch + parse + cache | [`apps/web/lib/model-explorer.ts`](../apps/web/lib/model-explorer.ts) |
-| API route (`GET /api/models?provider=&refresh=1`) | [`apps/web/app/api/models/route.ts`](../apps/web/app/api/models/route.ts) |
-| Server page (`?provider=` → SSR fetch) | [`apps/web/app/(app)/models/page.tsx`](../apps/web/app/(app)/models/page.tsx) |
-| Master-detail UI + raw-JSON pane | [`apps/web/app/(app)/models/models-client.tsx`](../apps/web/app/(app)/models/models-client.tsx) |
-| Nav entry (Review group) | [`apps/web/components/layout/sidebar-nav.tsx`](../apps/web/components/layout/sidebar-nav.tsx) |
+| Per-provider fetch + parse + cache | [`server/web/lib/model-explorer.ts`](../server/web/lib/model-explorer.ts) |
+| API route (`GET /api/models?provider=&refresh=1`) | [`server/web/app/api/models/route.ts`](../server/web/app/api/models/route.ts) |
+| Server page (`?provider=` → SSR fetch) | [`jackdaw/app/(app)/models/page.tsx`](../jackdaw/app/(app)/models/page.tsx) |
+| Master-detail UI + raw-JSON pane | [`jackdaw/app/(app)/models/models-client.tsx`](../jackdaw/app/(app)/models/models-client.tsx) |
+| Nav entry (Review group) | [`jackdaw/components/layout/sidebar-nav.tsx`](../jackdaw/components/layout/sidebar-nav.tsx) |
 | Provider catalog (ids = `api_keys.service`) | [`packages/voice/src/providers.ts`](../packages/voice/src/providers.ts) |
 
 ## Per-provider coverage
@@ -60,4 +60,4 @@ columns are best-effort and the raw pane always shows everything.
 - **Security:** the route is owner-scoped (`requireOwner`); stored API keys are
   resolved server-side and never reach the client.
 - Adding a provider with a list API is one entry in `FETCHERS` + a pure parser
-  (unit-tested in [`apps/web/lib/model-explorer.test.ts`](../apps/web/lib/model-explorer.test.ts)).
+  (unit-tested in [`server/web/lib/model-explorer.test.ts`](../server/web/lib/model-explorer.test.ts)).

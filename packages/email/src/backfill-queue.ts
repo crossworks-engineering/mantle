@@ -3,7 +3,7 @@
  *
  * Adding a contact email/domain should pull that sender's recent history into
  * the brain (mirrors the old approve→backfill). The work runs in the email-sync
- * worker (`apps/web/workers/email-sync.ts`); this is just the publisher, shared
+ * worker (`server/web/workers/email-sync.ts`); this is just the publisher, shared
  * by every caller that adds a contact entry: the web contacts API, the
  * discover-senders page, and the `contact_*` agent builtins. Keeping it here
  * (next to `backfillMatch`, with `@mantle/db` already available) means one

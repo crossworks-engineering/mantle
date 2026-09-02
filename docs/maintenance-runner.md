@@ -7,7 +7,7 @@ worker + `maintenance_runs` unified history, v0.153.0).
 
 ## Why
 
-The repo accumulated ~22 operational scripts under `apps/web/scripts/` (plus one
+The repo accumulated ~22 operational scripts under `server/web/scripts/` (plus one
 in `packages/email`), each with its own pnpm alias, its own flag conventions
 (`--apply` vs `--go` vs `--dry-run` vs `--dry`), and no shared answer to the
 questions that actually matter before running one:
@@ -31,13 +31,13 @@ backfills kept only for reference.
 ## Design
 
 One source of truth, multiple consumers, the same shape as the system
-manifest (`apps/web/lib/system-manifest/`):
+manifest (`server/web/lib/system-manifest/`):
 
 ```
-apps/web/lib/maintenance/registry.ts     ← the registry (data)
+server/web/lib/maintenance/registry.ts     ← the registry (data)
         │
-        ├─ Phase 1: apps/web/scripts/maintain.ts   (CLI: pnpm maintain)
-        ├─ Phase 2: apps/web/workers/maintenance.ts (pg-boss cron sweeps)
+        ├─ Phase 1: server/web/scripts/maintain.ts   (CLI: pnpm maintain)
+        ├─ Phase 2: server/web/workers/maintenance.ts (pg-boss cron sweeps)
         └─ Phase 3: /debug/integrity Maintenance tab (UI + run history)
 ```
 
@@ -115,7 +115,7 @@ streams a run.
 
 ## Phase 2: scheduled sweeps ✅
 
-- `apps/web/workers/maintenance.ts`, the worker idiom exactly (`tsx`
+- `server/web/workers/maintenance.ts`, the worker idiom exactly (`tsx`
   entrypoint + `waitForOwner` + pg-boss): queue `mantle.maintenance.sweep`,
   `boss.schedule('30 3 * * *', …, { tz: 'UTC' })` (nightly, off-peak). Wired into
   root `pnpm dev` (`maint`) and as `worker_maintenance` in

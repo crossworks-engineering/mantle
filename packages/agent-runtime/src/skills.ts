@@ -2,7 +2,7 @@
  * Skill-composition helpers usable from any process (the agent runner,
  * the Next request handler, future cron workers). Pure logic — no DB
  * imports beyond what's already wired into the runtime. The CRUD lib
- * stays in apps/web for now.
+ * stays in server/web for now.
  */
 
 import { and, eq, inArray } from 'drizzle-orm';

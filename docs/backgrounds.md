@@ -27,12 +27,12 @@ a default would silently switch it back on.
 
 | Concern | Module |
 | --- | --- |
-| Which styles qualify | `packages/web-ui/src/avatar.ts` (`BACKGROUND_STYLES`) |
-| Rendering one at panel size | `packages/web-ui/src/backdrop.ts` |
-| Areas, defaults, wire format | `packages/web-ui/src/backgrounds.ts` |
-| Per-area presets + the seed | `packages/web-ui/src/area-backdrop.tsx` |
-| Live state | `packages/web-ui/src/background-provider.tsx` |
-| The picker | `client/web/components/appearance/background-gallery.tsx` |
+| Which styles qualify | `jackdaw/packages/web-ui/src/avatar.ts` (`BACKGROUND_STYLES`) |
+| Rendering one at panel size | `jackdaw/packages/web-ui/src/backdrop.ts` |
+| Areas, defaults, wire format | `jackdaw/packages/web-ui/src/backgrounds.ts` |
+| Per-area presets + the seed | `jackdaw/packages/web-ui/src/area-backdrop.tsx` |
+| Live state | `jackdaw/packages/web-ui/src/background-provider.tsx` |
+| The picker | `jackdaw/components/appearance/background-gallery.tsx` |
 
 Storage and delivery mirror the colour theme and the avatar style exactly: a
 brain-level preference (`backgrounds`, on the anchor owner's row), written by

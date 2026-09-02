@@ -7,7 +7,7 @@
  * and cosine-ranks. Net effect: every digest was invisible to recall, and the
  * few that DID carry vectors were clobber-era ones embedded from garbage
  * paraphrases. The summarizer now embeds at insert time
- * (apps/agent/src/summarizer.ts); this script heals everything that predates
+ * (server/api/src/summarizer.ts); this script heals everything that predates
  * that fix, plus any digest whose insert-time embed failed (embedder down).
  *
  * Re-embeds ALL digests, not just NULL ones — that also replaces the

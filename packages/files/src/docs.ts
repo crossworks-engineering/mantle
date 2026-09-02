@@ -82,8 +82,8 @@ export function effectiveBrainDepth(nodeType: string, rawDepth: unknown): DocBra
  *                            `<docsRoot>/guide`. PORTABLE — the right shape for
  *                            repo-shipped content baked into the image. (Note:
  *                            do NOT resolve relative paths against cwd — every
- *                            Mantle process runs with cwd `apps/web`, so a bare
- *                            relative path would land under apps/web, not docs.)
+ *                            Mantle process runs with cwd `server/web`, so a bare
+ *                            relative path would land under server/web, not docs.)
  *   - absolute `root_path` → used as-is, for an external dir (e.g. an Obsidian
  *                            vault). Machine-specific by definition; not portable.
  */

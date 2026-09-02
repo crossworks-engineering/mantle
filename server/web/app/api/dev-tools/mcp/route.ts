@@ -1,6 +1,6 @@
 /**
  * API Console ↔ MCP bridge. GET lists the live tool catalog from the
- * spawned apps/mcp server; POST invokes one tool. Owner-gated — this is
+ * spawned server/mcp server; POST invokes one tool. Owner-gated — this is
  * the same data surface the MCP server already exposes over stdio.
  */
 

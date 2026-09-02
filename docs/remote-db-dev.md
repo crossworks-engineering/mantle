@@ -50,7 +50,7 @@ prod redeploy** if the tailnet endpoints stop responding. Remove the exposure wi
 1. Install Tailscale (macOS: `brew install --cask tailscale && open -a Tailscale`,
    then sign in with the **same account** as the deployment) and confirm
    `tailscale status` lists the prod node.
-2. Point `apps/web/.env.local` at the MagicDNS name, using the *remote* creds
+2. Point `server/web/.env.local` at the MagicDNS name, using the *remote* creds
    (from the server's `.env`: `POSTGRES_PASSWORD`, `S3_SECRET_KEY`):
    ```sh
    DATABASE_URL=postgres://postgres:<REMOTE_POSTGRES_PASSWORD>@mantle.taildc9091.ts.net:5432/postgres
@@ -104,9 +104,9 @@ Config knobs (env overrides; defaults match the reference deployment):
 ## Running the dev server
 
 ```sh
-pnpm -C apps/web dev      # web (next dev) against the remote DB
+pnpm -C server/web dev      # web (next dev) against the remote DB
 # … other services as needed, each run directly:
-#   pnpm -C apps/web worker:dev   pnpm -C apps/agent dev   pnpm -C apps/mcp dev
+#   pnpm -C server/web worker:dev   pnpm -C server/api dev   pnpm -C server/mcp dev
 ```
 
 **Don't use root `pnpm dev` / `pnpm start` in this mode.** Their `predev` hook

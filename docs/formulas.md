@@ -206,7 +206,7 @@ formula itself.
 Set `edition` too. Equation numbers move between editions, so a numbered
 citation to an editionless standard is not a citation.
 
-## 7. The owner UI: `client/web/app/(app)/formulas/`
+## 7. The owner UI: `jackdaw/app/(app)/formulas/`
 
 Master-detail, `?id=` selection, with `standard` and `tag` filters driven from
 the URL. The detail pane renders the spec plus **every finding the backend
@@ -228,7 +228,7 @@ the _source_ that is not the author's to fix.
 
 YAML is a first-class view rather than an export (criteria prose and notes are
 multi-line English, which JSON makes unreadable). The parser lives in
-`client/web` so `@mantle/content` stays parser-free. Templates cover blank /
+`jackdaw` so `@mantle/content` stays parser-free. Templates cover blank /
 single / piecewise / lookup / full model, plus an **annotated showcase** whose
 comments carry what no form label conveys.
 

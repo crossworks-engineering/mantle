@@ -23,8 +23,8 @@ Companion docs:
   and the standing `checkSystemIntegrity` checker (`/debug/integrity` → System
   config + onboarding's Check step). Read before adding a specialist/skill/tool.
 - [`frontend-backend-split.md`](./frontend-backend-split.md) +
-  [`fe-be-split-session-handover.md`](./fe-be-split-session-handover.md), the
-  **client/server split**: `apps/web` became a pure client that talks to the
+  [`fe-be-split-session-handover.md`](_archive/fe-be-split-session-handover.md), the
+  **client/server split**: `server/web` became a pure client that talks to the
   backend only over HTTP `/api/**` (no `@mantle/db` in the browser bundle),
   client data-fetching via TanStack Query, bearer-auth + CORS for detached
   clients, and DB-less local dev. The first is the design/Phase-2 plan; the
@@ -36,7 +36,7 @@ Companion docs:
   client-agnostic event contract (`TurnEvent`) that web AND the Flutter companion
   both consume. The durability-vs-liveness split (the DBOS journal never carries
   tokens), the Postgres-`NOTIFY` bus, Stop-mid-flight, and `Last-Event-ID` replay.
-  Session record: [`live-turn-streaming-handover.md`](./live-turn-streaming-handover.md).
+  Session record: [`live-turn-streaming-handover.md`](_archive/live-turn-streaming-handover.md).
 - [`files.md`](./files.md), the host-mirrored filesystem layer:
   folders + files on disk under `MANTLE_FILES_ROOT`, the editor, the
   ingestion handoff, and the MCP tools.
@@ -142,19 +142,19 @@ flowchart LR
     CC[/"Claude Desktop<br/>/ Claude Code"/]:::ext
 
     %% Web
-    Web["apps/web<br/>Next.js 15 (Turbopack)<br/>middleware (HMAC cookie gate)<br/>/inbox /assistant /files<br/>/notes /journal /pages /tables<br/>/tasks /events /contacts<br/>/secrets /traces /debug /pending"]:::proc
+    Web["server/web<br/>Next.js 15 (Turbopack)<br/>middleware (HMAC cookie gate)<br/>/inbox /assistant /files<br/>/notes /journal /pages /tables<br/>/tasks /events /contacts<br/>/secrets /traces /debug /pending"]:::proc
     Browser -- HTTPS --> Web
 
     %% MCP
-    MCPp["apps/mcp<br/>stdio JSON-RPC<br/>~30 tools"]:::proc
+    MCPp["server/mcp<br/>stdio JSON-RPC<br/>~30 tools"]:::proc
     CC -- stdio --> MCPp
 
     %% Background workers
-    EmailW["apps/web/workers/email-sync.ts<br/>(pg-boss)"]:::proc
-    TgW["apps/web/workers/telegram-poll.ts"]:::proc
-    FilesW["apps/web/workers/files-watch.ts<br/>(chokidar)"]:::proc
-    EvW["apps/web/workers/events-reminders.ts<br/>(30s poll)"]:::proc
-    Agent["apps/agent/src/main.ts<br/>responder + extractor +<br/>summarizer + reflector<br/>(LISTEN-driven)"]:::proc
+    EmailW["server/web/workers/email-sync.ts<br/>(pg-boss)"]:::proc
+    TgW["server/web/workers/telegram-poll.ts"]:::proc
+    FilesW["server/web/workers/files-watch.ts<br/>(chokidar)"]:::proc
+    EvW["server/web/workers/events-reminders.ts<br/>(30s poll)"]:::proc
+    Agent["server/api/src/main.ts<br/>responder + extractor +<br/>summarizer + reflector<br/>(LISTEN-driven)"]:::proc
 
     IMAP --> EmailW
     Phone -- "Bot API" --> TgW
@@ -200,31 +200,31 @@ processes orchestrated by `concurrently`).
 `api`, `mcp`, `worker`, `tg`, `files`, `docs`, and `events`. Plus Postgres and
 MinIO from docker-compose. That's it.
 
-> **`apps/agent` is gone (absorbed into `apps/api`, v0.64.0).** The old `agent`
+> **`server/api` is gone (absorbed into `server/api`, v0.64.0).** The old `agent`
 > lane, the Telegram responder, extractor, summarizer, reflector, and heartbeat
-> loops, now lives inside the dedicated `apps/api` runner, where the Telegram
+> loops, now lives inside the dedicated `server/api` runner, where the Telegram
 > turn runs as a **durable DBOS workflow** (see [§3a](#3a-durable-runners-the-febe-split-and-live-turn-streaming)).
-> Several sections below still cite `apps/agent/src/main.ts`; those files moved
-> to `apps/api/src/agent/` but the behaviour they describe is unchanged.
+> Several sections below still cite `server/api/src/main.ts`; those files moved
+> to `server/api/src/agent/` but the behaviour they describe is unchanged.
 
 | Process            | What it does                                                                  |
 |--------------------|-------------------------------------------------------------------------------|
 | `postgres` (Docker)| Source of truth. Holds every row. Healthchecked, restart on failure.          |
 | `minio` (Docker)   | Object store for attachment bytes. Healthchecked.                             |
 | `web`              | Next.js dev server (Turbopack). Serves the UI **and every `/api/**` route** (incl. SSE): but is now a **pure client/API host**: the browser bundle fetches its data over `/api` and no longer imports `@mantle/db` (see [§3a](#3a-durable-runners-the-febe-split-and-live-turn-streaming)). Hosts the `/assistant` chat surface, which **enqueues** the turn onto the `api` runner (POST `/api/assistant/turn` returns `202` immediately) and renders the live stream. |
-| `api`              | **The durable runner** (`apps/api/src/main.ts`). Runs assistant + Telegram turns and all background agent work (extractor, summarizer, reflector, heartbeats) as **durable [DBOS](https://docs.dbos.dev/) workflows** journaled to a Postgres system DB. No HTTP surface of its own; it's reached by enqueue (web) and reaches clients by publishing turn events over the Postgres `NOTIFY` bus. Absorbed the old `apps/agent` (v0.64.0). |
-| `mcp`              | MCP server (`apps/mcp/src/server.ts`). Speaks stdio JSON-RPC to Claude Code.  |
-| `worker` (email)   | `apps/web/workers/email-sync.ts`. pg-boss queue consumer, runs IMAP syncs.    |
-| `tg`               | `apps/web/workers/telegram-poll.ts`. Long-polls Telegram for new DMs.         |
-| `files`            | `apps/web/workers/files-watch.ts`. chokidar on `MANTLE_FILES_ROOT`; mirrors external edits (vim, Syncthing, host `cp`) back into the DB. Loop-safe via `syncFileFromDisk`, which never re-writes bytes. |
-| `events`           | `apps/web/workers/events-reminders.ts`. Polls every 30s for events whose `remind_at` has passed and `reminder_sent_at` is null; sends a Telegram DM via `@mantle/telegram`. A **recurring** event (`data.recur` = daily/weekly/monthly/yearly, optional `data.recur_until`) rolls its single row forward to the next occurrence and re-arms instead of marking sent, `rollForwardRecurrence` in `@mantle/content/events`. The tick also hosts two piggybacked housekeeping jobs: the tool-result spill sweep (`maybeSweep`, §9m) and the **scheduled-backup check** (`maybeRunScheduledBackups`, [`backups.md`](./backups.md), configured at /settings/backups). |
-| `docs`             | `apps/web/workers/docs-sync.ts`. Mirrors the `docs/` collection into the brain as `documentation` nodes (the disk-watcher counterpart for docs). |
+| `api`              | **The durable runner** (`server/api/src/main.ts`). Runs assistant + Telegram turns and all background agent work (extractor, summarizer, reflector, heartbeats) as **durable [DBOS](https://docs.dbos.dev/) workflows** journaled to a Postgres system DB. No HTTP surface of its own; it's reached by enqueue (web) and reaches clients by publishing turn events over the Postgres `NOTIFY` bus. Absorbed the old `server/api` (v0.64.0). |
+| `mcp`              | MCP server (`server/mcp/src/server.ts`). Speaks stdio JSON-RPC to Claude Code.  |
+| `worker` (email)   | `server/web/workers/email-sync.ts`. pg-boss queue consumer, runs IMAP syncs.    |
+| `tg`               | `server/web/workers/telegram-poll.ts`. Long-polls Telegram for new DMs.         |
+| `files`            | `server/web/workers/files-watch.ts`. chokidar on `MANTLE_FILES_ROOT`; mirrors external edits (vim, Syncthing, host `cp`) back into the DB. Loop-safe via `syncFileFromDisk`, which never re-writes bytes. |
+| `events`           | `server/web/workers/events-reminders.ts`. Polls every 30s for events whose `remind_at` has passed and `reminder_sent_at` is null; sends a Telegram DM via `@mantle/telegram`. A **recurring** event (`data.recur` = daily/weekly/monthly/yearly, optional `data.recur_until`) rolls its single row forward to the next occurrence and re-arms instead of marking sent, `rollForwardRecurrence` in `@mantle/content/events`. The tick also hosts two piggybacked housekeeping jobs: the tool-result spill sweep (`maybeSweep`, §9m) and the **scheduled-backup check** (`maybeRunScheduledBackups`, [`backups.md`](./backups.md), configured at /settings/backups). |
+| `docs`             | `server/web/workers/docs-sync.ts`. Mirrors the `docs/` collection into the brain as `documentation` nodes (the disk-watcher counterpart for docs). |
 
 > The Telegram responder loop is **no longer a `pnpm dev` lane of its own**: it
 > moved into the `api` runner (above). It still LISTENs on
 > `telegram_message_inserted` and replies via the adapter framework, sharing
 > prompt-build + LLM helpers with the web `/assistant` through `@mantle/agent-runtime`;
-> it just runs durably inside `apps/api` now.
+> it just runs durably inside `server/api` now.
 
 The workers live under `server/web/workers/` (not in their own app) because they
 share `.env.local` and `@mantle/*` imports with the web, and `pnpm dev` runs
@@ -250,26 +250,26 @@ became **durable** (runs on a dedicated process, survives a crash), then the web
 app became a **pure client** (no DB in the browser), and finally the turn became
 **live** (you watch it happen). Deep dives:
 [`frontend-backend-split.md`](./frontend-backend-split.md) +
-[`fe-be-split-session-handover.md`](./fe-be-split-session-handover.md) (the split)
+[`fe-be-split-session-handover.md`](_archive/fe-be-split-session-handover.md) (the split)
 and [`live-turn-streaming.md`](./live-turn-streaming.md) (streaming).
 
-### 3a.1 Durable runners: `apps/api` + DBOS
+### 3a.1 Durable runners: `server/api` + DBOS
 
 The problem: LLM/agent work used to run **in the web request**. Navigate away,
 reload, or restart the web process mid-turn and the work died with the request.
 
-The fix: a dedicated, always-on Node service (**`apps/api`**) runs each turn as
+The fix: a dedicated, always-on Node service (**`server/api`**) runs each turn as
 a **durable [DBOS](https://docs.dbos.dev/) workflow**. DBOS journals a workflow's
 steps to a Postgres **system database** (`mantle_dbos_sys`, provisioned by the
 one-shot `migrate` service); on a crash or restart it **replays from the journal**
 and resumes from the last completed step rather than re-running the whole turn.
 Per-step idempotency is proven by a crash-recovery harness
-([`apps/api/src/crash-test.ts`](../apps/api/src/crash-test.ts)).
+([`server/api/src/crash-test.ts`](../server/api/src/crash-test.ts)).
 
 How it's wired (the cross-process contract):
 
 - **`@mantle/assistant-runtime`** holds the turn-execution code (lifted out of
-  `apps/web/lib/assistant.ts`) so any process can run a turn: `runAssistantTurn`,
+  `server/web/lib/assistant.ts`) so any process can run a turn: `runAssistantTurn`,
   `resolveAssistantAgent`, and the runner **contract**
   ([`contract.ts`](../packages/assistant-runtime/src/contract.ts):
   `ASSISTANT_TURN_WORKFLOW`, `RUNNER_QUEUE`, `AssistantTurnInput`,
@@ -277,25 +277,25 @@ How it's wired (the cross-process contract):
 - **`@mantle/tracing` durable seam** ([`durable.ts`](../packages/tracing/src/durable.ts))
 , an AsyncLocalStorage-injected executor that turns existing `step()` boundaries
   into durable journal points **when a workflow is active**, and is an inert
-  passthrough otherwise. So the same tracing code is durable inside `apps/api` and
+  passthrough otherwise. So the same tracing code is durable inside `server/api` and
   free outside it.
 - **The web route enqueues; the runner executes.** `POST /api/assistant/turn`
   enqueues the workflow via a cached **`DBOSClient`**
-  ([`apps/web/lib/dbos-client.ts`](../apps/web/lib/dbos-client.ts)). `apps/api` has
+  ([`server/web/lib/dbos-client.ts`](../server/web/lib/dbos-client.ts)). `server/api` has
   **no HTTP surface**: it's reached by enqueue and reaches clients back over the
   Postgres `NOTIFY` bus (§3a.3).
-- **`apps/agent` was absorbed** (v0.64.0): the Telegram responder loop is now a
-  durable workflow inside `apps/api`, and the extractor/summarizer/reflector/
+- **`server/api` was absorbed** (v0.64.0): the Telegram responder loop is now a
+  durable workflow inside `server/api`, and the extractor/summarizer/reflector/
   heartbeat runners moved with it. One runner for all background agent work.
 
 Schema: migration **0105** added durable turn state (`status pending|complete|failed`
 + `error`) to `assistant_messages`, the row the runner owns from turn-start, which
 is also what makes liveness reconnection clean (§3a.3).
 
-### 3a.2 The FE/BE split: `apps/web` is now a pure client
+### 3a.2 The FE/BE split: `server/web` is now a pure client
 
 The goal: a **desktop (Electron) client** that reuses the same UI, and **DB-less
-local dev**. The blocker was that `apps/web` was a *full-stack* app; it
+local dev**. The blocker was that `server/web` was a *full-stack* app; it
 server-rendered against the database in-process (React Server Components + Server
 Actions), so even "just the UI" needed DB credentials and there was no client
 bundle a shell could load. The split makes the browser bundle **talk to the
@@ -309,7 +309,7 @@ What changed:
   **[TanStack Query](https://tanstack.com/query)** fetches against `/api`. Server
   actions were removed; mutations go through endpoints. The conversion recipe is
   [`client-data-fetching.md`](./client-data-fetching.md).
-- **`apiFetch` / `apiSend` / `apiEventStream`** ([`apps/web/lib/api-fetch.ts`](../apps/web/lib/api-fetch.ts))
+- **`apiFetch` / `apiSend` / `apiEventStream`** ([`jackdaw/lib/api-fetch.ts`](../jackdaw/lib/api-fetch.ts))
   are the client transport: they inject the API base-URL + bearer token, bounce to
   `/login` on 401, and (for SSE) carry the bearer + reconnect with backoff, so the
   same components work same-origin in the browser **and** detached in Electron / a
@@ -349,11 +349,11 @@ The moving parts:
   `tool-start` / `tool-end` / `reasoning-delta` / `text-delta` / `done` / `error`.
   Web React and Dart both subscribe; `seq` is the resume cursor.
 - **Transport = Postgres `LISTEN/NOTIFY`, not an in-process bus.** This is the
-  crux: the turn runs in **`apps/api`** but the browser's SSE socket is held by
-  **`apps/web`**: always two processes. So the producer
+  crux: the turn runs in **`server/api`** but the browser's SSE socket is held by
+  **`server/web`**: always two processes. So the producer
   (`publishTurnEvent` in **`@mantle/turn-stream`**, called from the runner via
   `pg_notify`) and the consumer (`subscribeTurnStream` in
-  [`apps/web/lib/realtime.ts`](../apps/web/lib/realtime.ts), behind the bearer SSE
+  [`server/web/lib/realtime.ts`](../server/web/lib/realtime.ts), behind the bearer SSE
   route `GET /api/assistant/turn/[turnId]/stream`) are bridged by a Postgres
   channel from day one. `NOTIFY` caps payloads at ~8 KB, so long output streams as
   many small `text-delta`s, never one blob.
@@ -464,7 +464,7 @@ bytes always land at the same key, so dedup is automatic. The PutObject path
 calls HeadObject first, if the key exists, the upload is short-circuited and
 `deduped: true` is returned.
 
-Attachment downloads go through `apps/web/app/api/attachments/[id]/route.ts`,
+Attachment downloads go through `server/web/app/api/attachments/[id]/route.ts`,
 which **streams** the bytes through Next rather than 302-redirecting to a
 presigned MinIO URL. This is deliberate: the MinIO endpoint
 (`127.0.0.1:9000` in dev, an internal docker hostname in prod) is generally
@@ -527,22 +527,22 @@ HNSW on embedding) live in the raw SQL migrations under
 
 One user, one row in `auth.users`. Auth is a **bespoke signed-cookie session**:
 
-- `apps/web/lib/auth.ts`, the Node-runtime side. `loginWithPassword()`
+- `server/web/lib/auth.ts`, the Node-runtime side. `loginWithPassword()`
   compares a bcryptjs hash. `buildSessionCookie()` produces
   `<payload>.<sig>` where `payload = base64url(JSON({uid, exp}))` and
   `sig = base64url(HMAC-SHA256(SESSION_SECRET, payload))`. Signed cookies
   are stateless, to invalidate everything in one shot, rotate
   `SESSION_SECRET`.
-- `apps/web/middleware.ts`, the Edge-runtime gate. Same verify logic
+- `jackdaw/middleware.ts`, the Edge-runtime gate. Same verify logic
   rewritten in Web Crypto (Edge can't use `node:crypto`). Redirects any
   non-public path without a valid cookie to `/login`.
-- `apps/web/lib/auth-constants.ts`, `SESSION_COOKIE_NAME` and
+- `server/web/lib/auth-constants.ts`, `SESSION_COOKIE_NAME` and
   `PUBLIC_PATHS`, the only constants both files share without drift.
-- `apps/web/app/api/auth/{login,logout,change-password}/route.ts`,
+- `server/web/app/api/auth/{login,logout,change-password}/route.ts`,
   Zod-validated, single-purpose endpoints. Login sets HttpOnly + Secure
   (in prod) + SameSite=Lax cookies with 1-year `maxAge`.
 
-`requireOwner()` is the page-level gate (`apps/web/lib/auth.ts:84`):
+`requireOwner()` is the page-level gate (`server/web/lib/auth.ts:84`):
 redirects to `/login` if there's no session, returns `{id, email}` otherwise.
 Every protected page calls it at the top of its server component.
 
@@ -572,7 +572,7 @@ the message lands as a `nodes` row of type `email` and the `node_ingested`
 pg_notify trigger fires the extractor, same path as notes and files. The
 gate is computed live per sync by `loadContactGate`
 (`packages/content/src/contact-gate.ts`); the worker
-(`apps/web/workers/email-sync.ts`) runs three pg-boss queues (scheduler
+(`server/web/workers/email-sync.ts`) runs three pg-boss queues (scheduler
 every 2 min, per-account sync, per-contact-entry 90-day backfill on add).
 *(The old per-sender curation layer (`email_senders`/`/settings/senders`)
 was retired in migration 0074; discovery of new senders now lives in the
@@ -626,7 +626,7 @@ via SendGrid, GitHub via SES) classify correctly. Full detail in
 
 Flow:
 
-1. **Long-poll worker.** `apps/web/workers/telegram-poll.ts` spawns one
+1. **Long-poll worker.** `server/web/workers/telegram-poll.ts` spawns one
    `bot.api.getUpdates` loop per enabled `telegram_accounts` row. ~25s
    long-poll timeout, exponential backoff on errors, advances
    `last_update_offset` after each batch. It reconciles the enabled-account
@@ -690,7 +690,7 @@ outbound is gated to allowlisted chats only.
 > not the old per-chat `summarizeChat`. `telegram_messages` stays for dedup,
 > delivery, file_ids, and the `type=telegram_message` brain node.
 
-`apps/agent/src/main.ts` is the event-driven reply loop. As of migration
+`server/api/src/main.ts` is the event-driven reply loop. As of migration
 0011/0012 (May 2026) the agent is **DB-driven, multi-turn, and emits
 prompt-caching markers.**
 
@@ -698,7 +698,7 @@ prompt-caching markers.**
 inbound DM
   → telegram-poll worker INSERTs into telegram_messages (direction='inbound')
   → trigger pg_notify('telegram_message_inserted', new.id::text)   (inbound only)
-  → apps/agent's LISTEN connection wakes up
+  → server/api's LISTEN connection wakes up
   → resolve responder agent  (per-chat override → bot's owning responder → global priority)
   → recordTurn(channel='telegram', inbound) into the unified stream   ← unified
   → loadConversationContext(per-agent, all channels)   ← unified (was telegram_messages per-chat)
@@ -743,7 +743,7 @@ Key properties:
   `digest_node_id` on `telegram_messages` plus a separate `summarize_due`
   pg_notify channel that fires on every insert. A summarizer agent (role
   `summarizer`, default model `anthropic/claude-haiku-4.5`) listens on
-  that channel inside `apps/agent`, debounces 2s, and rolls the oldest
+  that channel inside `server/api`, debounces 2s, and rolls the oldest
   `memory_config.summarize_batch ?? 20` undigested turns into one `note`
   node tagged `conversation-digest` whenever the undigested count for a
   chat crosses `memory_config.summarize_threshold ?? 30`. The responder
@@ -800,7 +800,7 @@ as the triage agent's tool result.
 
 The bridge between `@mantle/tools` (where the builtin lives) and
 `@mantle/agent-runtime` (where `runToolLoop` lives) is a registered
-callback, `apps/agent/src/main.ts` and `apps/web/lib/assistant.ts`
+callback, `server/api/src/main.ts` and `server/web/lib/assistant.ts`
 each call `registerAgentInvoker(invokeAgent)` at module load, so the
 builtin can call back into the runtime without an import cycle.
 
@@ -846,7 +846,7 @@ twin of Remy: Saskia delegates an open-web question to `researcher`
 owner's OpenRouter key) and returns a cited synthesis. Saskia decides
 whether to keep it via `note_create` (then the extractor indexes it).
 Both targets are wired into the responder's `delegate_to` by their seed
-scripts (`pnpm -C apps/web seed:remy` / `seed:researcher`). Full detail
+scripts (`pnpm -C server/web seed:remy` / `seed:researcher`). Full detail
 in [`replay.md`](./replay.md).
 
 **Shipped delegation target, "Pages" (document authoring + editing).**
@@ -865,7 +865,7 @@ in its tool list, only `page_update_draft` + the block tools; its
 persona carries a HARD RULE preserving every word verbatim with a
 pre-flight word-count check; the editor's existing draft/commit
 machinery is the off-ramp if the model misbehaves. Seed:
-`pnpm -C apps/web seed:pages`. Model: `anthropic/claude-sonnet-5`,
+`pnpm -C server/web seed:pages`. Model: `anthropic/claude-sonnet-5`,
 `max_tokens: 32000`.
 
 **Hybrid routing (2026-07-18 delegation review).** Production traces
@@ -1069,7 +1069,7 @@ OpenAI TTS for ElevenLabs) is a worker-row edit, not a code change.
 ```
 inbound voice msg
     │
-    ├─→ apps/agent handleMessage
+    ├─→ server/api handleMessage
     │     │
     │     ├─ detect voice attachment (kind='voice' file_id)
     │     ├─ resolve default STT worker (kind='stt')
@@ -1142,7 +1142,7 @@ providers (OpenAI, xAI, Google, Hugging Face). See
 > **Unified conversation stream (2026-06-03), read [`conversation.md`](./conversation.md).**
 > `/assistant` is the **web doorway onto the same per-(owner, agent) store every
 > channel writes**, not a web-only surface. Two consequences: (1)
-> `apps/web/lib/assistant.ts` persists/loads via the shared `recordTurn` /
+> `server/web/lib/assistant.ts` persists/loads via the shared `recordTurn` /
 > `loadConversationContext` (`@mantle/agent-runtime`), so the responder here reads
 > facts + digests + last-N turns **across all channels** (it gained per-agent
 > digests + the 0.85/0.6 retrieval cutoffs in the migration); (2) the window
@@ -1232,7 +1232,7 @@ from passive to proactive: a `heartbeats` row schedules a
 schedule, carries persistent `state jsonb` across fires, and
 self-terminates via the `heartbeat_complete` tool.
 
-The fire loop lives in `apps/agent/src/main.ts` as a per-minute
+The fire loop lives in `server/api/src/main.ts` as a per-minute
 `setInterval` (same backoff pattern as the reflector). Each tick:
 
 1. SELECT active heartbeats where `next_fire_at <= now()`
@@ -1277,8 +1277,8 @@ the operator to grant the three mutation tools manually. The tools
 self-protect via `resolveTargetHeartbeat`, so granting them is
 safe; they're inert in unrelated turns.
 
-**Runtime affordance hygiene**: both responders (apps/agent +
-apps/web) drop the `HEARTBEAT_RESPONDER_TOOLS` set
+**Runtime affordance hygiene**: both responders (server/api +
+server/web) drop the `HEARTBEAT_RESPONDER_TOOLS` set
 (`heartbeat_update_state` / `_complete` / `_snooze`) from the
 per-turn tool list when `hasActiveHeartbeatsOnSurface()` returns
 false. The grant in `tool_slugs` is unchanged; the model never
@@ -1351,7 +1351,7 @@ Two corollaries:
   delete-then-rebuilds, duplicates can't accrue, so instead of a recurring
   `dedupe:edges` job (which would *mask* a regression), the dashboard's
   **Memory-index** card shows a live duplicate count (`graphIntegrity()` in
-  `apps/web/lib/dashboard.ts`): green when clean, amber with the one-shot
+  `server/web/lib/dashboard.ts`): green when clean, amber with the one-shot
   `pnpm dedupe:edges --apply` remedy if a regression ever surfaces. A monitor,
   not a fixer, see [`agent-overhaul-2026-05.md` §2e](./_archive/agent-overhaul-2026-05.md).
 
@@ -1421,7 +1421,7 @@ data takes over once the fetch lands, and the TTL-gated calls keep it fresh.
   `live`/`fallback` provenance in the tooltip.
 - **`/settings/agents` → Model field**: a searchable combobox over the full
   live OpenRouter catalog (see §9l′) plus a context-window readout for the
-  typed slug. Both served by [`/api/model-context`](../apps/web/app/api/model-context/route.ts)
+  typed slug. Both served by [`/api/model-context`](../server/web/app/api/model-context/route.ts)
   (the same cached map), "unknown for this slug" flags a typo'd id.
 - **`/settings/ai-workers` → Model field**: the same combobox, fed by the
   adapter's `discoverModels()` for the chosen provider, with this catalog's
@@ -1443,8 +1443,8 @@ slug, that's the same source the code reads.
 
 ## 9l′. Model picker UI: searchable combobox over the live catalog
 
-Source: [`apps/web/components/ui/model-select.tsx`](../apps/web/components/ui/model-select.tsx)
-+ [`model-select-utils.ts`](../apps/web/components/ui/model-select-utils.ts).
+Source: [`jackdaw/components/ui/model-select.tsx`](../jackdaw/components/ui/model-select.tsx)
++ [`model-select-utils.ts`](../jackdaw/components/ui/model-select-utils.ts).
 
 **The shape.** A cmdk-backed Popover + Command composition (no new
 dependency, shadcn's existing primitives) used identically on
@@ -1494,7 +1494,7 @@ trigger native validation, so the server is the gate.
 list if the catalog refresh fails, and an empty-state message when the
 search produces no matches.
 
-**Test surface** ([`model-select.test.ts`](../apps/web/components/ui/model-select.test.ts)).
+**Test surface** ([`model-select.test.ts`](../jackdaw/components/ui/model-select.test.ts)).
 The JSX is exercised live; the pure helpers (sort, formatContext,
 formatPriceCompact) are pulled into a sibling `model-select-utils.ts` so
 vitest can cover the formatting + sort invariants without dragging the
@@ -1647,13 +1647,13 @@ at write time, no join needed) so the `/debug` "Duplicates suppressed
 fire in the window; a populated list answers "which model is
 misbehaving?" at a glance, operator-actionable, not just absence-of-
 symptom. See `duplicateSuppressionStats` in
-[`apps/web/lib/metrics.ts`](../apps/web/lib/metrics.ts) and the
+[`server/web/lib/metrics.ts`](../server/web/lib/metrics.ts) and the
 `duplicate_in_response` disposition in
 [`observability.md §6`](./observability.md#6-disposition-catalog--why-something-skipped).
 
 ## 10. The MCP server
 
-`apps/mcp/src/server.ts`, ~340 LOC. Exposes Claude's tools over stdio
+`server/mcp/src/server.ts`, ~340 LOC. Exposes Claude's tools over stdio
 (JSON-RPC) so Claude Code can attach at session startup. Tools:
 
 | Tool                          | Purpose                                                                |
@@ -1694,7 +1694,7 @@ Stdio is the **only transport, period**: an earlier version of this doc
 claimed an HTTP+SSE code path behind `MCP_HTTP_PORT`, but no such code
 exists in `server.ts` (verified 2026-06-11). Networked MCP (Streamable
 HTTP + bearer auth + a compose profile) is specced as Workstream A of
-[`handover-embodied-companion.md`](./handover-embodied-companion.md).
+[`handover-embodied-companion.md`](_archive/handover-embodied-companion.md).
 
 ---
 
@@ -1737,7 +1737,7 @@ mantle/
 │   │   └── components/  # shadcn-style UI primitives (client data-fetching)
 │   ├── api/             # The durable runner — DBOS workflows (assistant + Telegram
 │   │                    # turns, extractor/summarizer/reflector/heartbeats). No HTTP.
-│   │                    # Absorbed the old apps/agent (v0.64.0).
+│   │                    # Absorbed the old server/api (v0.64.0).
 │   └── mcp/             # MCP server (stdio transport)
 ├── packages/
 │   ├── db/              # Drizzle schema + raw SQL migrations + client
@@ -1778,13 +1778,13 @@ Why this split:
 - **`packages/*` are pure libraries.** No process boundaries, no network,
   no side effects beyond IO they're asked to perform. Anything imported
   from multiple apps lives here.
-- **Workers live in `apps/web/workers/`** not their own package because
+- **Workers live in `server/web/workers/`** not their own package because
   they share `.env.local` discovery and `@mantle/*` imports with the web
   process. Moving them to `apps/worker/` is a 5-line change when the
   Dockerfile story lands.
 
-Workspace package boundaries are real, `apps/web` imports `@mantle/db`
-the same way `apps/mcp` does. Anything labeled `@mantle/*` is a workspace
+Workspace package boundaries are real, `server/web` imports `@mantle/db`
+the same way `server/mcp` does. Anything labeled `@mantle/*` is a workspace
 package; `pnpm-workspace.yaml` declares them.
 
 ---
@@ -1794,14 +1794,14 @@ package; `pnpm-workspace.yaml` declares them.
 `pnpm start` (`scripts/up.sh`) is the one command:
 
 1. Verifies Docker is running. Bails with a clear message if not.
-2. Verifies `apps/web/.env.local` exists. Bails with the env vars you need
+2. Verifies `server/web/.env.local` exists. Bails with the env vars you need
    to fill in.
 3. `docker compose -f docker-compose.dev.yml up -d --wait`, postgres +
    minio + tika, health-checked.
 4. Reads `S3_ACCESS_KEY` / `S3_SECRET_KEY` from `.env.local`, runs `mc mb`
    to ensure the `mantle` bucket exists. Idempotent.
 5. `pnpm -C packages/db migrate`, applies any new Drizzle migrations.
-6. `pnpm -C apps/web pgboss:init`, creates the `pgboss` schema deterministically
+6. `pnpm -C server/web pgboss:init`, creates the `pgboss` schema deterministically
    so workers don't race on the first start.
 7. `exec pnpm dev`, `concurrently` starts all eight lanes (`web`, `api`, `mcp`,
    `worker`, `tg`, `files`, `docs`, `events`). A `predev` preflight hook checks
@@ -1868,7 +1868,7 @@ commit between 0008 and 0009.
 **Adding a new node type?**
 - Add to the enum in `packages/db/src/schema/nodes.ts`.
 - Emit a `0010_node_type_x.sql` migration with `ALTER TYPE ... ADD VALUE`.
-- Add to the MCP server's `search` tool enum (`apps/mcp/src/server.ts:62`).
+- Add to the MCP server's `search` tool enum (`server/mcp/src/server.ts:62`).
 
 ---
 
@@ -1878,7 +1878,7 @@ commit between 0008 and 0009.
 
 - `${MANTLE_DATA_DIR:-./data}/postgres` bind mount, Postgres cluster files.
 - `${MANTLE_DATA_DIR:-./data}/minio` bind mount, object bytes.
-- `apps/web/.env.local`, secrets (DATABASE_URL, SESSION_SECRET,
+- `server/web/.env.local`, secrets (DATABASE_URL, SESSION_SECRET,
   MANTLE_MASTER_KEY, S3 creds, ALLOWED_USER_ID, OPENAI_API_KEY).
 
 (Named Docker volumes until v0.103; both composes now bind-mount everything
@@ -1945,7 +1945,7 @@ was fixed, accepted, or deliberately left (and why).
   migrations before any app service starts, so the compose stack is no
   longer a degraded stub. Still unexercised end-to-end on real hardware:
   first-deploy runbook + HTTPS-only cookie verification + Caddy reverse
-  proxy config. (`apps/mcp` stays out of compose, stdio-only, would
+  proxy config. (`server/mcp` stays out of compose, stdio-only, would
   crash-loop as a daemon until the HTTP transport lands.)
 - **Backups are built in** (2026-06-10, [`backups.md`](./backups.md)):
   scheduled `pg_dump` + rotation to a local folder, configured at
@@ -1954,16 +1954,16 @@ was fixed, accepted, or deliberately left (and why).
   onto a scratch stack.
 - **No HSTS, no Content-Security-Policy** on web responses. Acceptable
   on localhost; must land before public exposure.
-- **Attachment proxy** in `apps/web/app/api/attachments/[id]/route.ts`
+- **Attachment proxy** in `server/web/app/api/attachments/[id]/route.ts`
   streams bytes through Next. Fine functionally; in prod a CDN or
   direct presigned-MinIO would scale better.
-- **Next-externalized packages must be declared in `apps/web`.** A
+- **Next-externalized packages must be declared in `server/web`.** A
   dep that Next keeps external (its `serverExternalPackages` default
   list, e.g. `@aws-sdk/client-s3`, pulled in transitively via
   `@mantle/storage`) must be resolvable *from the app dir*. Under
   pnpm's isolated layout a transitive dep isn't, so Next errors
   "Package … can't be external". Fix: list it directly in
-  `apps/web/package.json` (it dedupes to the workspace version). Watch
+  `server/web/package.json` (it dedupes to the workspace version). Watch
   for this whenever a workspace package adds such a dep.
 
 **Telegram surface**
@@ -2050,7 +2050,7 @@ was fixed, accepted, or deliberately left (and why).
   with commit shas. The architecture deep-dive + engineering
   retrospective (call-site inventory, message-grammar walkthrough,
   audit findings, cost math, known sharp edges) lives in
-  [`docs/phase-3-retrospective.md`](./_archive/phase-3-retrospective.md).
+  [`docs/_archive/phase-3-retrospective.md`](./_archive/phase-3-retrospective.md).
 - **Embedding is fully adapter-routed** as of the Stage 1 push
   (5dc3984). `@mantle/embeddings` dispatches through
   `getEmbeddingAdapter(provider)`, five adapters (openrouter, openai,
@@ -2064,8 +2064,8 @@ was fixed, accepted, or deliberately left (and why).
 If you only read four files, read these in order:
 
 1. `packages/db/src/schema/nodes.ts`, the central abstraction.
-2. `apps/mcp/src/server.ts`, the tools Claude actually uses.
+2. `server/mcp/src/server.ts`, the tools Claude actually uses.
 3. `packages/email/src/sync.ts`, the longest end-to-end pipeline.
-4. `apps/web/lib/auth.ts`, the security boundary.
+4. `server/web/lib/auth.ts`, the security boundary.
 
 Then `git log --oneline` for the rest.

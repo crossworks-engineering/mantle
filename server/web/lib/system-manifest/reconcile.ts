@@ -9,7 +9,7 @@
  * reaches an existing brain (we hit this shipping 0.28.0: route_map/mapbox_directions
  * were added to the `location` group but the live group stayed stale).
  *
- * This runs from apps/web/instrumentation.ts on web-server boot (carried IN the
+ * This runs from server/web/instrumentation.ts on web-server boot (carried IN the
  * image, so a stale compose file can't skip it), and brings an already-provisioned
  * brain in line with the manifest, once per version:
  *   1. seedToolCapabilities(overwrite) — sync HTTP tools + tool-group MEMBERSHIP

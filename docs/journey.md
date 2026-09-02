@@ -120,7 +120,7 @@ The live view reflects reality, not stale rows:
   rate-limit, …), the generated reply is **still persisted**
   (`telegram_messages.delivered = false`, null `telegram_message_id`) rather
   than discarded, so a paid-for reply is never silently lost, and the turn
-  still surfaces here as a failure (`apps/agent/src/main.ts`).
+  still surfaces here as a failure (`server/api/src/main.ts`).
 
 ---
 
@@ -131,11 +131,11 @@ When the brain dance changes, update this doc alongside:
 | Concern | File |
 |---|---|
 | Trace kinds | `packages/tracing/src/store.ts` (`TraceKind`) |
-| Ingest source tags | callers of `recordIngest()` (e.g. `apps/web/app/api/{assistant/turn,files,notes}/…`, `apps/agent/src/main.ts`) |
-| The `node_ingested` → extractor cascade | `apps/agent/src/extractor.ts` |
+| Ingest source tags | callers of `recordIngest()` (e.g. `server/web/app/api/{assistant/turn,files,notes}/…`, `server/api/src/main.ts`) |
+| The `node_ingested` → extractor cascade | `server/api/src/agent/extractor.ts` |
 | Node types | `packages/db/src/schema/nodes.ts` (`node_type` enum) |
 | The 6 layers | [`memory.md`](./memory.md) |
-| Action → label/category/icon mapping | `apps/web/lib/journey-format.ts` (`deriveAction`), covered by `journey-format.test.ts` |
-| Journey data layer | `apps/web/lib/journey.ts` (`listActivity`, `getJourney`, `loadLanded`, `getLiveActivity`, `reapAbandonedTraces`) |
+| Action → label/category/icon mapping | `packages/client-types/src/journey-format.ts` (`deriveAction`), covered by `journey-format.test.ts` |
+| Journey data layer | `server/web/lib/journey.ts` (`listActivity`, `getJourney`, `loadLanded`, `getLiveActivity`, `reapAbandonedTraces`) |
 | Live activity feed | `/api/activity` → `components/journey/{use-live-activity,active-now,action-icon}` + `components/layout/live-column.tsx` |
-| Journey screens | `apps/web/app/(app)/debug/journey/*` |
+| Journey screens | `jackdaw/app/(app)/debug/journey/*` |

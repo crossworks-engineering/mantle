@@ -10,7 +10,7 @@
  * Kept as a separate entry point (`@mantle/files/rasterize`) with the heavy dep
  * behind a dynamic import, so it's only loaded when a textless PDF actually
  * shows up — mirroring how `./pdf` keeps pdf-parse off the hot path, and
- * keeping the native dep out of the Next.js (apps/web) module graph.
+ * keeping the native dep out of the Next.js (server/web) module graph.
  */
 
 /** Default page cap — bounds rasterization memory + per-page vision spend.

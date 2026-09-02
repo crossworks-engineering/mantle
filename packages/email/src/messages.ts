@@ -1,7 +1,7 @@
 /**
  * Message data layer — owner-scoped reads/writes for the inbox.
  *
- * Lifted out of `apps/web` (the inbox page + email row actions) so the inbox is
+ * Lifted out of `server/web` (the inbox page + email row actions) so the inbox is
  * reachable over HTTP and renderable by any client. Ownership is always enforced
  * through the account join, so a stolen email UUID — even from another account —
  * can't surface or mutate another owner's mail.

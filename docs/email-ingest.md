@@ -42,7 +42,7 @@ contacts list on each sync (§2).
 
 ## 2. The worker: pg-boss queues + scheduler
 
-`apps/web/workers/email-sync.ts` is a separate Node process during `pnpm dev`.
+`server/web/workers/email-sync.ts` is a separate Node process during `pnpm dev`.
 Three queues, all in the `pgboss` Postgres schema (jobs survive restarts):
 
 | Queue | Cadence | What it does |
@@ -97,7 +97,7 @@ ingestOne(account, provider, message, rules)
               └─▶ pg_notify('node_ingested', node.id)
                       │
                       ▼
-              extractor (apps/agent/src/extractor.ts) — summary + embedding + facts
+              extractor (server/api/src/extractor.ts) — summary + embedding + facts
 ```
 
 `ensureBranchPath` (also in `sync.ts`) lazily creates the `inbox.<slug>.…`
@@ -240,7 +240,7 @@ brain immediately rather than waiting for the forward cursor.
   present (every entry on create; only the new ones on update).
 - Each caller enqueues a backfill for those entries via `enqueueBackfills`
   (§2): the web contacts API
-  ([`app/api/contacts`](../apps/web/app/(app)/../api/contacts/route.ts)), the
+  ([`app/api/contacts`](../jackdaw/app/(app)/../api/contacts/route.ts)), the
   `contact_create`/`contact_update` agent builtins
   ([`builtins-contacts.ts`](../packages/tools/src/builtins-contacts.ts)), and
   the discover page's "Add as contact" action.
@@ -284,7 +284,7 @@ Identical to the file / note path:
 1. `db.transaction` commits `nodes` (type `email`) + `emails` + `email_attachments`.
 2. AFTER INSERT trigger from migration 0018 fires `pg_notify('node_ingested', node.id)`.
 3. The agent's `node_ingested` listener enqueues the node on the durable
-   `mantle.extract` pg-boss queue (`apps/agent/src/extract-queue.ts`); a
+   `mantle.extract` pg-boss queue (`server/api/src/agent/extract-queue.ts`); a
    concurrency-capped worker runs `extractNode`, read body (joins `emails` for
    subject + `body_text`; `bodyHtml` is ignored) → LLM summary + entities +
    embedding → fact extraction → entity reconciliation.
@@ -374,7 +374,7 @@ calls `classifyDelivery(...)` and stamps `RawMessage.deliveryKind`.
 ## 11. Discovering senders: `/settings/discover`
 
 With no sender table, how do you find someone new worth adding? A **live-peek
-discovery view** ([`apps/web/app/(app)/settings/discover`](../apps/web/app/(app)/settings/discover/page.tsx)):
+discovery view** ([`jackdaw/app/(app)/settings/discover`](../jackdaw/app/(app)/settings/discover/page.tsx)):
 
 - The server action `recentUnknownSenders()` calls `peekRecentSenders(account,
   imap, …)` ([`peek.ts`](../packages/email/src/peek.ts)) for each enabled IMAP
@@ -410,8 +410,8 @@ the dropped tables; `sync_runs` inserts omit the dropped column), so the code
 can land before the migration runs. Run it per environment:
 `pnpm -C packages/db migrate`.
 
-**Cutover cleanup, `pnpm -C apps/web purge:noncontact`**
-([`scripts/purge-noncontact-emails.ts`](../apps/web/scripts/purge-noncontact-emails.ts)).
+**Cutover cleanup, `pnpm -C server/web purge:noncontact`**
+([`server/web/scripts/purge-noncontact-emails.ts`](../server/web/scripts/purge-noncontact-emails.ts)).
 Mail already ingested under the old approve-list stays in the brain until you
 purge it. The script (dry-run default, mirrors `backfill:email-salience`
 ergonomics):
@@ -497,7 +497,7 @@ If you only read a few files in the email-ingest layer, read in this order:
 1. [`packages/email/src/sync.ts`](../packages/email/src/sync.ts), `syncAccount` (the gate + ingest loop), `ingestOne` (dedup + race handling), `backfillMatch`.
 2. [`packages/content/src/contact-gate.ts`](../packages/content/src/contact-gate.ts), `loadContactGate`; the address/domain/own-account matching.
 3. [`packages/email/src/providers/imap.ts`](../packages/email/src/providers/imap.ts), IMAP fetch options, `normalizeHeader`, the providerMsgId encoding, `listRecent`.
-4. [`apps/web/workers/email-sync.ts`](../apps/web/workers/email-sync.ts), the pg-boss queue wiring.
+4. [`server/web/workers/email-sync.ts`](../server/web/workers/email-sync.ts), the pg-boss queue wiring.
 5. [`packages/email/src/backfill-queue.ts`](../packages/email/src/backfill-queue.ts), the shared backfill enqueuer.
 
 And for classification: [`packages/email/src/classify.ts`](../packages/email/src/classify.ts).

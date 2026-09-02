@@ -1,6 +1,6 @@
 /**
  * Federation peer tools — Saskia's OUTBOUND half. Where the federation HTTP
- * API (apps/web/app/api/federation) lets another Mantle read FROM us, these
+ * API (server/web/app/api/federation) lets another Mantle read FROM us, these
  * let us read FROM a peer. The resolve + sign + fetch logic lives in
  * @mantle/content's peers-client (shared with the MCP server); these are thin
  * wrappers that surface it as agent tools. Saskia only ever sees what the peer

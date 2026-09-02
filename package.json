@@ -60,7 +60,8 @@
     "db:tunnel": "bash scripts/prod-db-tunnel.sh up",
     "db:tunnel:down": "bash scripts/prod-db-tunnel.sh down",
     "tailscale:serve": "bash scripts/prod-tailscale-serve.sh up",
-    "tailscale:serve:status": "bash scripts/prod-tailscale-serve.sh status"
+    "tailscale:serve:status": "bash scripts/prod-tailscale-serve.sh status",
+    "docs:check": "node scripts/docs-check.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

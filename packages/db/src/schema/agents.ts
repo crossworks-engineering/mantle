@@ -158,7 +158,7 @@ export type AgentParams = {
    *  ChatOptions.maxRetries by the tool loop; honored by withChatRetry for
    *  direct-provider adapters (OpenRouter retries via its own SDK). */
   max_retries?: number;
-  /** Voice-reply config. Used by `apps/agent` when an inbound message
+  /** Voice-reply config. Used by `server/api` when an inbound message
    *  came in as a Telegram voice note: the agent's reply gets piped
    *  through OpenAI TTS and sent as `sendVoice` instead of plain text.
    *  All fields optional — sensible defaults applied at the call site

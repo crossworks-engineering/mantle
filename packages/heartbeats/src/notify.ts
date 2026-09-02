@@ -9,7 +9,7 @@
  *
  * Fix: lib code that writes a heartbeat row with a relevant change
  * (insert; resume-from-paused; status change to active) fires
- * pg_notify('heartbeat_due', <ownerId>). apps/agent LISTENs and
+ * pg_notify('heartbeat_due', <ownerId>). server/api LISTENs and
  * runs tickHeartbeats(ownerId) on each notification — same code
  * path as the 60s setInterval, just kicked early.
  *
@@ -29,7 +29,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
 
-/** The Postgres channel apps/agent LISTENs on. Exported so the
+/** The Postgres channel server/api LISTENs on. Exported so the
  *  listener and the notifiers reference the same string — typo
  *  protection. */
 export const HEARTBEAT_DUE_CHANNEL = 'heartbeat_due';

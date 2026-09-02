@@ -69,10 +69,10 @@ Individual processes have their own aliases: `dev:web`, `dev:api`, `dev:mcp`,
 `dev:client`, `dev:worker`, `dev:telegram`, `dev:files`, `dev:docs`,
 `dev:events`.
 
-### `pnpm dev:fe` → `scripts/dev-frontend.sh`
+### `pnpm dev:fe` → the jackdaw dev server
 
-Frontend-only development: runs `client/web` against a **deployed** brain, no
-Docker, no Postgres, no workers. Reads `client/web/.env.detached.local` for
+Frontend-only development: runs `jackdaw` against a **deployed** brain, no
+Docker, no Postgres, no workers. Reads `jackdaw/.env.detached.local` for
 `MANTLE_REMOTE`, migrates the pre-carve `server/web/.env.detached.local` if it
 finds one, and execs `next dev` with `MANTLE_SERVER_ORIGIN` pointed at the
 remote. Extra args pass through (`pnpm dev:fe --port 3001`).
@@ -596,9 +596,9 @@ because they're wired into `predev` / `prebuild` / `pretypecheck`.
 
 | Script                                        | Emits                                                                                                                                                                       | Wired into                                                                                            |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `server/web/scripts/gen-route-manifest.ts`    | `server/route-manifest.gen.ts` from the `app/**/route.ts` tree, the bridge from Next's file-per-route convention to Hono                                                    | `predev`, `build`, `pretypecheck`                                                                     |
+| `server/web/scripts/gen-route-manifest.ts`    | `server/web/server/route-manifest.gen.ts` from the `app/**/route.ts` tree, the bridge from Next's file-per-route convention to Hono                                                    | `predev`, `build`, `pretypecheck`                                                                     |
 | `server/web/scripts/build-share-runtime.ts`   | `public/share-runtime/`, CSS + JS for the server-rendered `/s` share pages and `/print`                                                                                     | `predev`, `build`                                                                                     |
-| `packages/app-build/scripts/build-runtime.ts` | the shared mini-app runtime into each app's `public/app-runtime/`                                                                                                           | `predev`/`prebuild` in both `server/web` and `client/web`                                             |
+| `packages/app-build/scripts/build-runtime.ts` | the shared mini-app runtime into each app's `public/app-runtime/`                                                                                                           | `predev`/`prebuild` in both `server/web` and `jackdaw`                                             |
 | `packages/share-ui/themes/generate.mjs`       | `styles/themes.css` + the picker registry from `seeds.mjs`                                                                                                                  | `pnpm themes:build`; `--check` fails on drift (CI), `--report` prints per-token ΔE against a baseline |
 | `scripts/generate-notices.mjs`                | `THIRD-PARTY-NOTICES.md` from the production dependency tree, with verbatim license texts                                                                                   | `pnpm licenses:notices`, re-run after any dependency change                                           |
 | `scripts/readme-stats.mjs`                    | the **By the numbers** block in `README.md` (between the `<!-- stats:start -->` markers), LOC, test cases, migrations, manifest counts, commit cadence, the LOC-by-area pie | `pnpm readme:stats`; auto-run by `version:bump`, so every `release:` commit carries fresh numbers     |
@@ -613,7 +613,7 @@ because they're wired into `predev` / `prebuild` / `pretypecheck`.
 ### `pnpm version:bump <patch|minor|major|x.y.z>` → `scripts/bump-version.mjs`
 
 The root `package.json` `version` is the single source of truth;
-`server/web` and `client/web` are kept in lockstep so they never drift.
+`server/web` and `jackdaw` are kept in lockstep so they never drift.
 `patch`/`minor`/`major` operate on the numeric core and **drop** any
 pre-release tag, pass it back explicitly (`0.20.0-alpha`) to keep it.
 

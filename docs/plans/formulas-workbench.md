@@ -31,7 +31,7 @@ formulas.
 | Storage | `nodes` row, `type='formula'`, spec in `nodes.data.spec`, no sidecar; FTS over `data`; extractor summary + 768-dim embedding via `formulaToText` |
 | Agent tools | `builtins-formulas.ts`: list/get/evaluate/create/update/delete; groups `formulas` (no delete), `formulas-admin` (delete), `calculator`, persona already holds `formulas` + `calculator` |
 | API | `GET/POST /api/formulas`, `GET/PATCH/DELETE /api/formulas/[id]`, `POST …/evaluate` |
-| UI | Read-only master-detail + evaluator (`client/web/app/(app)/formulas/`) |
+| UI | Read-only master-detail + evaluator (`jackdaw/app/(app)/formulas/`) |
 
 **Storage verdict: keep it.** Specs are a few KB of JSON; `nodes.data` +
 generated `search_tsv` + the extractor pipeline is the right shape. Do NOT add a
@@ -95,9 +95,9 @@ formula compute, and what must I supply?"* without reading the whole spec.
    list→get→evaluate ladder plus the skill is the contract; two id namespaces
    invite ambiguity.
 
-## Phase 2: Owner UI: finish the reader, build the author (`client/web`)
+## Phase 2: Owner UI: finish the reader, build the author (`jackdaw`)
 
-Follow `docs/ui-style-guide.md` + `server/web/CLAUDE.md` non-negotiables
+Follow `jackdaw/docs/ui-style-guide.md` + `server/web/CLAUDE.md` non-negotiables
 (shadcn, theme tokens, Dialog/AlertDialog/useToast, `<SubmitButton>`,
 URL-driven list state, `min-h-0`).
 
@@ -128,7 +128,7 @@ URL-driven list state, `min-h-0`).
     `unverified` toggle + justification), Piecewise (case builder), Lookups
     (editable row grid + key-domain editor, live coverage readout),
     Classifications (rating ↔ criteria prose), Notes.
-  - **Source view**: YAML editor (client-side `yaml` dep in `client/web`
+  - **Source view**: YAML editor (client-side `yaml` dep in `jackdaw`
     only) with parse errors inline. Round-trips with the form.
 - **Live validation rail**: on every change run `parseFormulaSpec` +
   `checkLookupCoverage` + `checkDimensions` client-side (all three are pure and
@@ -250,9 +250,9 @@ write what, how", and together they exercise every part of the model.
 
 1. Unit: `pnpm exec vitest run packages/content` (signature, bank, presenter
    helpers) + `server/web/lib/system-manifest/`.
-2. `pnpm --filter` typecheck on `client/web`, `server/web`,
+2. `pnpm --filter` typecheck on `jackdaw`, `server/web`,
    `@mantle/content`, `@mantle/tools`; `pnpm verify` before any push.
-3. Browser: `pnpm dev:fe` (client/web against the test box) for the owner UI;
+3. Browser: `pnpm dev:fe` (jackdaw against the test box) for the owner UI;
    the `/s` presenter + public evaluate need a full local stack or a deployed
    brain, check the running-instance rules in the recall skill first.
 4. Tool descriptions changed in Phase 1/4 must pass `description-lint.test.ts`

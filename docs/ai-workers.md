@@ -313,11 +313,11 @@ outbound both route through workers:
 
 ```
 1. User sends Telegram voice note
-2. apps/web/workers/telegram-poll.ts ingests via Telegram getUpdates
+2. server/web/workers/telegram-poll.ts ingests via Telegram getUpdates
 3. INSERT telegram_messages row with text='(voice message)' and
    attachments=[{kind: 'voice', file_id: '...'}]
 4. pg_notify('telegram_message_inserted') fires
-5. apps/agent/src/main.ts handleMessage receives it:
+5. server/api/src/main.ts handleMessage receives it:
    a. Atomic claim (processed=true) prevents duplicate replies
    b. Detect voice attachment
    c. Open trace, open transcribe_voice step
@@ -581,7 +581,7 @@ so PDFs keep working out of the box; the dedicated worker is purely additive.
 - **Live turn** (`extractAttachmentForTurn`, web `/assistant` + Telegram):
   `parse_document` (cheap text) → on empty, native PDF → rasterize. A new
   `extract_document` trace step makes it visible in `/traces`.
-- **Indexer** (`apps/agent/src/extractor.ts` `ocrIngestPdfNode`): same
+- **Indexer** (`server/api/src/agent/extractor.ts` `ocrIngestPdfNode`): same
   native-first → rasterize chain for the durable `data.text`. Native results are
   flagged `native_pdf: true` (not `ocr`, which means page-OCR).
 
@@ -913,7 +913,7 @@ encapsulates:
 The `/models` page's OpenRouter view fetches both
 `/v1/models` and `/v1/embeddings/models` in parallel via
 `Promise.allSettled` (so a flake on one doesn't blank the page) and
-concatenates, [`apps/web/lib/model-explorer.ts`](../apps/web/lib/model-explorer.ts).
+concatenates, [`server/web/lib/model-explorer.ts`](../server/web/lib/model-explorer.ts).
 
 Heuristic gotcha worth knowing: 13 of OR's 25 embedding models lack
 `embed` in their slug (sentence-transformers, GTE, E5, BGE, MiniLM,
@@ -942,7 +942,7 @@ destructive-banner explanation, switching to a non-768 model needs a
 schema migration on every vector column, which isn't a button.
 
 > **⚠ Known gap (2026-05-31):** the form's guard (`COLUMN_DIMS` /
-> `KNOWN_DIMS` in [`worker-form.tsx`](../apps/web/app/(app)/settings/ai-workers/worker-form.tsx))
+> `KNOWN_DIMS` in [`worker-form.tsx`](../jackdaw/app/(app)/settings/ai-workers/worker-form.tsx))
 > and the per-agent embedding dropdown still hardcode **1536**, not 768,
 > they were not flipped during the 0060 migration. Until fixed, the guard
 > is inverted: it blocks the live 768 model and permits the old 1536 ones.
@@ -989,10 +989,10 @@ blank. The resolver picks it up everywhere.
 
 Background note for when we revisit the worker form. The `Max tokens`
 input on chat-shaped workers (reflector / extractor / summarizer)
-defaults to **1500** ([worker-form.tsx:1699](../apps/web/app/(app)/settings/ai-workers/worker-form.tsx#L1699));
-the vision worker defaults to **2000** ([worker-form.tsx:1328](../apps/web/app/(app)/settings/ai-workers/worker-form.tsx#L1328)).
+defaults to **1500** ([worker-form.tsx:1699](../jackdaw/app/(app)/settings/ai-workers/worker-form.tsx));
+the vision worker defaults to **2000** ([worker-form.tsx:1328](../jackdaw/app/(app)/settings/ai-workers/worker-form.tsx)).
 The agents form is different: empty placeholder `(provider default)`,
-no number ([agents-client.tsx:1435](../apps/web/app/(app)/settings/agents/agents-client.tsx#L1435)).
+no number ([agents-client.tsx:1435](../jackdaw/app/(app)/settings/agents/agents-client.tsx)).
 
 **Key insight: 1500 is not load-bearing.** It's a UI placeholder, not
 a runtime constant. Nothing in the codebase branches on it:
@@ -1286,7 +1286,7 @@ If you're reading the code, the canonical files to start with are:
 
 1. `packages/db/src/schema/ai-workers.ts`, schema + param types
 2. `packages/db/src/ai-workers-resolve.ts`, `getDefaultWorker`,
-   `bumpWorkerUsage` (shared between apps/web and apps/agent)
+   `bumpWorkerUsage` (shared between server/web and server/api)
 3. `packages/voice/src/providers.ts`, provider catalogue
 4. `packages/voice/src/adapters/types.ts`, dispatcher interfaces
 5. `packages/voice/src/adapters/registry.ts`, registry + lookups
@@ -1295,9 +1295,9 @@ If you're reading the code, the canonical files to start with are:
    non-trivial translation (system field, max_tokens required)
 8. `packages/voice/src/adapters/elevenlabs-tts.ts`, adapter with
    live voice discovery
-9. `apps/web/app/(app)/settings/ai-workers/worker-form.tsx`, UI
+9. `jackdaw/app/(app)/settings/ai-workers/worker-form.tsx`, UI
    that ties it all together; reactive provider/model/voice dropdowns
-10. `apps/agent/src/main.ts` (search for `getSttAdapter` /
+10. `server/api/src/main.ts` (search for `getSttAdapter` /
     `getTtsAdapter`), runtime integration for voice in/out
 11. `packages/embeddings/src/index.ts`, `resolveEmbeddingModel`,
     `embed`, `embedBatch`, `clearEmbeddingModelCache`. The resolver
@@ -1316,7 +1316,7 @@ If you're reading the code, the canonical files to start with are:
 §7 has the final stage list with commit shas. For the post-Phase-3
 architecture deep-dive + engineering retrospective (audit findings,
 cost math, known sharp edges, reusable patterns), see
-[`docs/phase-3-retrospective.md`](./_archive/phase-3-retrospective.md).**
+[`docs/_archive/phase-3-retrospective.md`](./_archive/phase-3-retrospective.md).**
 
 **What's outstanding.** The chat-shaped workers (reflector / extractor /
 summarizer) and all agents (responder / assistant / custom) still
@@ -1343,15 +1343,15 @@ embedding provider.
 
 Five sub-pieces, mergeable in order. Each is independently shippable.
 
-**3a. Migrate `apps/agent/src/extractor.ts` to the chat adapter registry**
+**3a. Migrate `server/api/src/agent/extractor.ts` to the chat adapter registry**
 (~50 LOC). The simplest piece. Replace `new OpenRouter({apiKey})` with
 `getChatAdapter(worker.provider).chat({...})`. The chat dispatchers
 already exist (xai-chat, huggingface-chat, anthropic-chat, google-chat
 in `packages/voice/src/adapters/`), they just aren't called from
 production. The extractor's chat call is a single turn, no tool
 loop, so the call-site change is mechanical. Same for
-[`apps/agent/src/summarizer.ts`](../apps/agent/src/summarizer.ts) and
-[`apps/agent/src/reflector.ts`](../apps/agent/src/reflector.ts), same
+[`server/api/src/agent/summarizer.ts`](../server/api/src/agent/summarizer.ts) and
+[`server/api/src/agent/reflector.ts`](../server/api/src/agent/reflector.ts), same
 shape, same fix.
 
 **3b. Tool loop refactor** (~400-500 LOC, the hard piece).
@@ -1378,9 +1378,9 @@ runtime supports direct providers, the form unlocks the dropdown.
 
 **3d. Unclamp the workers + agents forms** (~50 LOC). Remove the
 `RUNTIME_OR_ONLY_KINDS` set in
-[`apps/web/app/(app)/settings/ai-workers/worker-form.tsx`](../apps/web/app/(app)/settings/ai-workers/worker-form.tsx).
+[`jackdaw/app/(app)/settings/ai-workers/worker-form.tsx`](../jackdaw/app/(app)/settings/ai-workers/worker-form.tsx).
 Remove the `service === 'openrouter'` filter in
-[`apps/web/app/(app)/settings/agents/agents-client.tsx`](../apps/web/app/(app)/settings/agents/agents-client.tsx).
+[`jackdaw/app/(app)/settings/agents/agents-client.tsx`](../jackdaw/app/(app)/settings/agents/agents-client.tsx).
 The KeyValidityHint and capability filters take over from there,
 they already work for the other kinds.
 

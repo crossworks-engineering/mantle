@@ -1029,7 +1029,7 @@ export type ProfilePreferences = {
    *  Read via projectColorTheme, never raw. */
   colorTheme?: string;
   /** Selectable header WORDMARK font key (Settings → Appearance → Fonts). The
-   *  font LIST lives in the web app (apps/web/lib/display-fonts.ts); the server
+   *  font LIST lives in the web app (server/web/lib/display-fonts.ts); the server
    *  stores any well-formed slug and the client falls back to the default for
    *  keys it doesn't know, so trimming the library never strands the preference.
    *  Unset ⇒ the default wordmark face (Bricolage Grotesque). Read via
@@ -1108,7 +1108,7 @@ export type ProfilePreferences = {
    *  of the always-on guards (self-grant block, no-lower-via-update, SSRF). */
   toolsmithRequireApproval?: boolean;
   /** APP_VERSION the boot-time manifest reconcile last synced this brain to.
-   *  The reconcile (apps/web instrumentation → reconcileManifestOnBoot) runs once
+   *  The reconcile (server/web instrumentation → reconcileManifestOnBoot) runs once
    *  per version on a deployed/updated instance, so a self-hoster who only pulls a
    *  new image still gets new tools/skills/group-membership without running seed
    *  scripts. Equal to APP_VERSION ⇒ already reconciled, skip. */

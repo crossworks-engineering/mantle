@@ -11,14 +11,14 @@
  * LLM round-trip completes. Same risk for a manual "fire now"
  * landing while tick is mid-fire.
  *
- * Pattern mirrors `inflight` in apps/agent/src/main.ts — a
+ * Pattern mirrors `inflight` in server/api/src/main.ts — a
  * `Map<lockKey, Promise>`. Lookups are O(1); the map only ever
  * holds active fires (typically 0, occasionally a handful).
  *
  * The lock is **per process**. Multiple agent processes pointing
  * at the same DB would still race — at that scale we'd switch to
  * a Postgres advisory lock. Single-process is the only deployment
- * shape today (apps/agent runs as a singleton).
+ * shape today (server/api runs as a singleton).
  */
 
 const FIRES_INFLIGHT = new Map<string, Promise<unknown>>();

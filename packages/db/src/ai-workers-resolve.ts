@@ -1,11 +1,11 @@
 /**
  * Resolution helpers for ai_workers. Lives in @mantle/db so both
- * `apps/web` (UI/CRUD) and `apps/agent` (runtime workers) can call
+ * `server/web` (UI/CRUD) and `server/api` (runtime workers) can call
  * them — neither needs the other's package.
  *
  * Just two functions: pick the right worker for a (owner, kind), and
  * bump telemetry after it runs. Everything else (create/update/delete)
- * lives in apps/web/lib/ai-workers.ts since only the UI needs it.
+ * lives in server/web/lib/ai-workers.ts since only the UI needs it.
  */
 
 import { and, desc, eq, sql } from 'drizzle-orm';

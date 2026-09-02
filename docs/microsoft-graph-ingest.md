@@ -103,14 +103,14 @@ Mantle already has a battle-tested ingestion pipeline. The back half is
 
 ```
 fetch → dedup/gate → insert as `node` → pg_notify('node_ingested') →
-  extractor (apps/agent) → summary + 768-dim embedding + entity facts → graph
+  extractor (server/api) → summary + 768-dim embedding + entity facts → graph
 ```
 
 Once Graph bytes land as a `node` (file) or an `emails` row, search, RAG,
 entity extraction, and the knowledge graph all work unchanged. So the work is
 entirely in the **front half**: OAuth, the Graph client, and per-surface sync
 cursors. The email connector
-([packages/email](../packages/email), [apps/web/workers/email-sync.ts](../apps/web/workers/email-sync.ts))
+([packages/email](../packages/email), [server/web/workers/email-sync.ts](../server/web/workers/email-sync.ts))
 is the structural template for everything except OAuth.
 
 ## The one genuine gap: OAuth2
@@ -123,7 +123,7 @@ effort piece and it is net-new. Everything else is "copy the email connector."
 
 Note: [packages/db/src/schema/emails.ts:24](../packages/db/src/schema/emails.ts)
 still carries `email_provider = ['gmail','microsoft','imap']` and
-[apps/web/workers/email-sync.ts:42](../apps/web/workers/email-sync.ts) explicitly
+[server/web/workers/email-sync.ts:42](../server/web/workers/email-sync.ts) explicitly
 throws on `microsoft`, "we shipped OAuth then ripped it out." This design puts
 it back, properly, as a shared foundation rather than email-only.
 
@@ -281,8 +281,8 @@ re-running refreshes display metadata without touching `enabled`/`delta_link`
 
 ### Sync workers (delta queries)
 
-New worker `apps/web/workers/microsoft-sync.ts`, structured exactly like
-[email-sync.ts](../apps/web/workers/email-sync.ts):
+New worker `server/web/workers/microsoft-sync.ts`, structured exactly like
+[email-sync.ts](../server/web/workers/email-sync.ts):
 
 - **Scheduler** (`*/2 * * * *` pg-boss cron) fans out one sync job per enabled
   `ms_accounts` row, `singletonKey: ms:sync:<accountId>`.

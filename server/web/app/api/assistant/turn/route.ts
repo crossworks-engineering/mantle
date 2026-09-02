@@ -390,8 +390,8 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
     };
     const input: AssistantTurnInput = { ownerId: user.id, text: userText, options };
 
-    // Run the turn on the dedicated apps/api runner: enqueue the durable
-    // workflow, then await its result. The work EXECUTES in apps/api (off this
+    // Run the turn on the dedicated server/api runner: enqueue the durable
+    // workflow, then await its result. The work EXECUTES in server/api (off this
     // request, journaled by DBOS), so it survives a web-process restart and a
     // client disconnect — if this await is abandoned (the user navigates away),
     // the workflow still completes and persists, and the client reconciles via
@@ -410,7 +410,7 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
     // Non-blocking delivery. When live streaming is on AND the client minted a
     // turn id (the idempotency-key — both the workflow id and the live-stream
     // correlation id), return 202 immediately with just that id. The turn keeps
-    // running in apps/api; the client types the reply out off the live stream and
+    // running in server/api; the client types the reply out off the live stream and
     // reconciles to the durable row on `done`/`error`. This frees the request
     // from holding a minutes-long connection and lets a turn truly survive
     // navigation/backgrounding. The durable outbound row (inserted 'pending' by

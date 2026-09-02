@@ -17,7 +17,7 @@ describe('tableDbRoot default', () => {
 
   it('falls back to a single monorepo-root .table-dbs, not a per-app cwd', () => {
     // The old default was path.join(process.cwd(), '.table-dbs'), which made
-    // web (cwd apps/web) and api (cwd apps/api) disagree → TableFileMissing 500.
+    // web (cwd server/web) and api (cwd server/api) disagree → TableFileMissing 500.
     delete process.env.TABLE_DB_DIR;
     const root = tableDbRoot();
     expect(path.isAbsolute(root)).toBe(true);

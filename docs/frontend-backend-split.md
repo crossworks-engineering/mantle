@@ -1,11 +1,11 @@
 # Frontend / Backend Split: Status & Phase 2 Handover
 
 > ✅ **DONE & MERGED (v0.66.x, PR #1).** Both phases shipped: Phase 1 (durable
-> runners) and Phase 2 (the FE/BE separation, `apps/web` is now a pure client,
+> runners) and Phase 2 (the FE/BE separation, `server/web` is now a pure client,
 > no `@mantle/db` in the browser bundle). This file is preserved as the **design
 > + plan**; for what actually shipped and what remains (mostly Electron-scoped),
 > read the completion record
-> [`fe-be-split-session-handover.md`](./fe-be-split-session-handover.md). A
+> [`fe-be-split-session-handover.md`](_archive/fe-be-split-session-handover.md). A
 > current, condensed summary lives in
 > [`architecture.md` §3a](./architecture.md#3a-durable-runners-the-febe-split-and-live-turn-streaming).
 
@@ -25,7 +25,7 @@ Two originating goals, neither yet delivered by Phase 1:
 2. **DB-less local development**: stop needing direct Postgres access (over
    Tailscale) just to run the frontend.
 
-The blocker for both is the same: **`apps/web` is not a frontend, it's a
+The blocker for both is the same: **`server/web` is not a frontend, it's a
 full-stack app.** It server-renders against the database in-process (React
 Server Components + Server Actions), so even "just the UI" needs DB credentials,
 and there is no client bundle an Electron shell could load and point at an API.
@@ -39,13 +39,13 @@ split.
 
 ## 2. What Phase 1 delivered (the starting point for Phase 2)
 
-- **`apps/api`**: a dedicated, always-on Node service running durable LLM/agent
+- **`server/api`**: a dedicated, always-on Node service running durable LLM/agent
   work as **DBOS** workflows (journaled to a `mantle_dbos_sys` Postgres database).
   Assistant turns now execute here, off the web request, and survive web-process
   restarts. Per-step idempotency is proven (crash-recovery test:
-  `apps/api/src/crash-test.ts`).
+  `server/api/src/crash-test.ts`).
 - **`@mantle/assistant-runtime`**: the turn-execution package (lifted out of
-  `apps/web/lib/assistant.ts`), importable by any process. Holds `runAssistantTurn`,
+  `server/web/lib/assistant.ts`), importable by any process. Holds `runAssistantTurn`,
   `resolveAssistantAgent`, and the cross-process runner **contract**
   (`contract.ts`: `ASSISTANT_TURN_WORKFLOW`, `RUNNER_QUEUE`, `AssistantTurnInput`,
   `AssistantTurnRunResult`, `resolveSystemDatabaseUrl`).
@@ -54,13 +54,13 @@ split.
   workflow is active; inert (passthrough) otherwise.
 - **The web route `/api/assistant/turn`** now enqueues the workflow via
   `DBOSClient` and awaits the result, relaying the **same response shape**: so
-  the chat UI was unchanged. (`apps/web/lib/dbos-client.ts` = cached client.)
+  the chat UI was unchanged. (`server/web/lib/dbos-client.ts` = cached client.)
 - Compose has an `api` service; the `migrate` one-shot provisions the DBOS system
   DB.
 
 Net effect for Phase 2: **all business logic is in reusable packages**, there is
 a **proven durable backend**, and there is **precedent** for non-Next consumers
-of the same logic (`apps/api`, `apps/mcp`, `apps/agent`). What's missing is the
+of the same logic (`server/api`, `server/mcp`, `server/api`). What's missing is the
 HTTP boundary as a *contract* and a frontend that consumes it.
 
 ---
@@ -71,7 +71,7 @@ HTTP boundary as a *contract* and a frontend that consumes it.
 > Phase 2 task 0 is to **re-inventory** (commands given in §6). Treat these as
 > order-of-magnitude.
 
-**`apps/web` (Next.js 15, App Router):**
+**`server/web` (Next.js 15, App Router):**
 - ~**72 server pages** (`app/**/page.tsx`): most `await` data functions
   *in-process* during render (RSC). This is the core coupling.
 - ~**20 server actions** (`actions.ts`, `'use server'`): mutate the DB in-process
@@ -92,7 +92,7 @@ pages/tables/contacts/journal/peers), `@mantle/search`, `@mantle/files`,
 `@mantle/email`, `@mantle/microsoft`, `@mantle/calendar`, `@mantle/heartbeats`,
 `@mantle/tracing`, `@mantle/api-keys`, `@mantle/storage`, `@mantle/embeddings`.
 
-**Auth (`apps/web/lib/auth.ts`, `auth-constants.ts`):**
+**Auth (`server/web/lib/auth.ts`, `auth-constants.ts`):**
 - Stateless HMAC **session cookie** `mantle_session` (`{uid, exp}` payload).
 - **Mobile bearer tokens** already exist (`getBearerUser`, `buildMobileToken`,
   `Authorization: Bearer …`), the companion app uses them. **This is the auth
@@ -108,9 +108,9 @@ reconciles via `syncLatest`.
 `api`, `agent`, `worker_*`, `migrate`, `caddy`, infra). Adding/extracting a
 service is cheap (same image, different command).
 
-**Other API-shaped consumers (proof the seam works):** `apps/mcp` (stdio MCP
-exposing the same package functions), `apps/agent` (Telegram responder, slated
-to be absorbed into `apps/api`, see §7 "Step 6").
+**Other API-shaped consumers (proof the seam works):** `server/mcp` (stdio MCP
+exposing the same package functions), `server/api` (Telegram responder, slated
+to be absorbed into `server/api`, see §7 "Step 6").
 
 ---
 
@@ -120,7 +120,7 @@ to be absorbed into `apps/api`, see §7 "Step 6").
 ┌─────────────────────────┐         HTTP (bearer auth, CORS)        ┌──────────────────────────┐
 │  Client (one bundle)     │  ───────────────────────────────────▶  │  Backend                  │
 │  - Web (browser)         │   GET/POST /api/*  + SSE /api/realtime  │  - HTTP API (the contract)│
-│  - Electron (desktop)    │  ◀───────────────────────────────────  │  - apps/api durable runner│
+│  - Electron (desktop)    │  ◀───────────────────────────────────  │  - server/api durable runner│
 │  client-side data fetch  │              JSON / events              │  - workers                │
 │  (React Query/SWR)       │                                         │  - owns @mantle/db        │
 └─────────────────────────┘                                         └──────────────────────────┘
@@ -154,7 +154,7 @@ single-tenant assumption.
 2. **HTTP surface: keep in Next vs standalone service.** Phase 1 chose
    "runners-first, keep HTTP in Next." For Phase 2, the cheapest correct move is
    to **treat `app/api/**` as the formal contract** and *not* immediately extract
-   a separate HTTP service, extraction (e.g. a Hono app in `apps/api`) can come
+   a separate HTTP service, extraction (e.g. a Hono app in `server/api`) can come
    later once the frontend is fully client-side. Decide based on whether Electron
    talks to a *deployed* web (fine) or needs the API decoupled from the Next
    server (then extract).
@@ -178,15 +178,15 @@ single-tenant assumption.
 **Task 0, Re-inventory (do first; the §3 numbers are stale).**
 ```bash
 # server pages
-find apps/web/app -name 'page.tsx' | wc -l
+find server/web/app -name 'page.tsx' | wc -l
 # server actions
-grep -rl "'use server'" apps/web/app | wc -l
+grep -rl "'use server'" server/web/app | wc -l
 # API routes
-find apps/web/app/api -name 'route.ts' | wc -l
+find server/web/app/api -name 'route.ts' | wc -l
 # direct DB access OUTSIDE api routes + lib (the holes to close)
-grep -rl "@mantle/db" apps/web/app --include='*.tsx' --include='*.ts' | grep -v '/api/'
+grep -rl "@mantle/db" server/web/app --include='*.tsx' --include='*.ts' | grep -v '/api/'
 # revalidatePath call sites (the cache-invalidation migration)
-grep -rn "revalidatePath" apps/web/app | wc -l
+grep -rn "revalidatePath" server/web/app | wc -l
 ```
 Produce a living checklist: every page/component/server-action that touches the
 DB without an endpoint = an **API gap** to close.
@@ -220,9 +220,9 @@ Electron priority (the screens the desktop app needs first).
 API base URL + bearer token, and consumes SSE over HTTP. Realtime already works
 over HTTP once Task 2 makes SSE bearer-auth'd.
 
-**Task 6, (carryover) Absorb `apps/agent` into `apps/api`.** Telegram +
-heartbeat/reflector/extract runners move into `apps/api`, the Telegram loop
-becomes a durable workflow, and `apps/agent` is deleted. This is a Phase 1
+**Task 6, (carryover) Absorb `server/api` into `server/api`.** Telegram +
+heartbeat/reflector/extract runners move into `server/api`, the Telegram loop
+becomes a durable workflow, and `server/api` is deleted. This is a Phase 1
 remainder; do it whenever convenient (independent of the FE work). Compose: drop
 the `agent` service, the `api` service already exists.
 
@@ -247,25 +247,25 @@ the `agent` service, the `api` service already exists.
   bearer + CORS is the path.
 - **Don't regress Phase 1:** the chat's durable-runner path
   (`/api/assistant/turn` → DBOS) and the `{inbound, outbound, reply, artifacts}`
-  response contract must stay intact. The runner (`apps/api`) must be running for
+  response contract must stay intact. The runner (`server/api`) must be running for
   the assistant to work; it's in `pnpm dev` and compose.
 
 ---
 
 ## 8. Reference points (where to look)
 
-- Auth + bearer tokens: `apps/web/lib/auth.ts`, `apps/web/lib/auth-constants.ts`.
-- API route conventions: any `apps/web/app/api/**/route.ts` (Zod → package fn →
+- Auth + bearer tokens: `server/web/lib/auth.ts`, `server/web/lib/auth-constants.ts`.
+- API route conventions: any `server/web/app/api/**/route.ts` (Zod → package fn →
   JSON); `requireOwner()`.
 - List/detail screen reference (URL-driven SSR, the conversion template):
-  `apps/web/app/(app)/pages/`.
-- Realtime client + SSE: `apps/web/components/realtime/use-realtime.ts`,
-  `apps/web/app/api/realtime/route.ts`, `apps/web/app/api/assistant/stream/route.ts`.
+  `jackdaw/app/(app)/pages/`.
+- Realtime client + SSE: `jackdaw/components/realtime/use-realtime.ts`,
+  `server/web/app/api/realtime/route.ts`, `server/web/app/api/assistant/stream/route.ts`.
 - The durable-runner contract (model for any future cross-process API):
-  `packages/assistant-runtime/src/contract.ts`, `apps/web/lib/dbos-client.ts`.
+  `packages/assistant-runtime/src/contract.ts`, `server/web/lib/dbos-client.ts`.
 - Deploy topology: `docker-compose.yml` (one image, many commands).
-- UI conventions (must-read before any UI work): `apps/web/CLAUDE.md`,
-  `docs/ui-style-guide.md`.
+- UI conventions (must-read before any UI work): `server/web/CLAUDE.md`,
+  `jackdaw/docs/ui-style-guide.md`.
 
 ---
 
@@ -274,7 +274,7 @@ the `agent` service, the `api` service already exists.
 - An Electron build loads the Mantle UI, authenticates with a bearer token, and
   is fully functional against a remote API, no bundled Next server, no DB access.
 - Local frontend dev runs with **no Postgres credentials**, against a remote API.
-- No `apps/web` page/component/server-action imports `@mantle/db` (the grep in
+- No `server/web` page/component/server-action imports `@mantle/db` (the grep in
   Task 0 returns empty for non-API code), and `revalidatePath` is gone.
 - The Phase 1 durable assistant path still works unchanged.
 
@@ -282,7 +282,7 @@ the `agent` service, the `api` service already exists.
 
 ## 10. The v0.200 member carve (T1–T5): /team, /hub, /team-admin
 
-The v0.200 "true split" (P0–P5) carved the owner UI into `client/web` but
+The v0.200 "true split" (P0–P5) carved the owner UI into `jackdaw` but
 froze the team-member surfaces server-side (locked decision 4): members
 authenticated with cookies, and cookies don't cross origins. The member carve
 (T1–T5, v0.201) finished the job:
@@ -339,7 +339,7 @@ authenticated with cookies, and cookies don't cross origins. The member carve
   inline reader) accept the bearer (`resolveShareVisitorFromRequest`) and get
   the `/api/**` CORS treatment, and ONLY they.
 - **`/team-admin` rehomed under the owner bearer**: per-tab
-  `GET /api/team-admin/*` routes + a client page in `client/web`; the old
+  `GET /api/team-admin/*` routes + a client page in `jackdaw`; the old
   render side effects (mark thread/topic read) became explicit POSTs.
 - **What stays server-side, by design**: `/s/[token]` (anonymous shares, SEO),
   `/print` (the PDF loop), the share brokers, and page rendering
@@ -360,7 +360,7 @@ the full Next.js runtime (App Router, RSC, the Edge middleware sandbox, `next
 build`) to serve JSON and a couple of static pages was pure weight. So `server/web`
 now runs a **Hono app under `@hono/node-server`, executed by `tsx`**: the same
 runtime `server/api` and the workers have always used. Next.js is **gone** from
-`server/web`. `client/web` stays a Next.js app, untouched.
+`server/web`. `jackdaw` stays a Next.js app, untouched.
 
 **Architecture (all under `server/web/server/`):**
 
@@ -379,14 +379,14 @@ runtime `server/api` and the workers have always used. Next.js is **gone** from
   keeps the cookie set/delete API) plus ambient `cookies()`/`headers()` read
   shims. This is the seam that let the route files keep their exact shape, the
   handler signature and helper calls are unchanged behind the compat layer.
-- **`route-loader.ts` + `scripts/gen-route-manifest.ts`**: the `app/**/route.ts`
+- **`route-loader.ts` + `server/web/scripts/gen-route-manifest.ts`**: the `app/**/route.ts`
   file convention is preserved. A generated, precedence-sorted manifest (288
   routes) lazily imports each handler and adapts the Next handler signature onto
   Hono (including catch-all `[[...x]]`-optional vs `[...x]`-required semantics).
 - **Render surfaces are hand-rolled, no Next renderer.** `/s/[token]`
   server-renders through `react-dom/server` with three client **islands**
   (app-presenter, table-presenter, team-token-prompt) bundled by
-  `scripts/build-share-runtime.ts` into `public/share-runtime/` (a Tailwind v4
+  `server/web/scripts/build-share-runtime.ts` into `public/share-runtime/` (a Tailwind v4
   CLI compile of `globals.css`, an esbuild islands bundle, and KaTeX css+fonts).
   `/print/pages/[id]` is a plain HTML template wrapped around `renderPageDoc`,
   no React at all. `/login`, `/hub`, `/team/*` are Hono redirect stubs.
@@ -397,7 +397,7 @@ vars**. The Docker server image drops the compile step (`build` is asset
 generation only, app-runtime, route manifest, share-runtime); `CMD` is
 `pnpm -C server/web start` (tsx). e2e is green in **both** topologies (29
 passed / 0 failed), with SSE client-abort, 8 MB multipart upload, and share-asset
-`Range` all verified live under the node server. `client/web` is untouched.
+`Range` all verified live under the node server. `jackdaw` is untouched.
 
 **Gotcha, the tsx tsconfig `include`.** `tsx` applies the **cwd tsconfig only
 to files its `include` matches**. `server/web`'s app imports `.tsx` from

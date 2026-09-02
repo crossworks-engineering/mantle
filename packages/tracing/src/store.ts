@@ -192,7 +192,7 @@ export function allocateTurnSeq(turnId: string): number {
 // ─── Per-turn abort registry (stop a streamed turn mid-flight) ───────────────
 //
 // A turn's LLM streaming call needs to be cancellable across the process
-// boundary: the user hits Stop in `apps/web`, which NOTIFYs `apps/api`, which
+// boundary: the user hits Stop in `server/web`, which NOTIFYs `server/api`, which
 // must abort the in-flight generation. The runner registers an AbortController
 // per turn (keyed by the streamId/turnId); the cancel listener calls `abortTurn`
 // and the chat dispatcher threads the signal into the adapter via
@@ -241,7 +241,7 @@ let stepObserver: StepObserver | null = null;
 
 /**
  * Register a single global step observer (or clear it with null). The runner
- * (apps/api) installs one to publish live turn events; every other process
+ * (server/api) installs one to publish live turn events; every other process
  * leaves it unset and pays nothing. Generic by design — tracing only ever hands
  * back the step's identity + the trace's `turnId`/`ownerId`.
  */
@@ -651,7 +651,7 @@ export async function step<T>(
     let errMsg: string | null = null;
     try {
       // Route the actual work through the durable executor when a workflow has
-      // one active (apps/api): this exact boundary becomes a journaled step, so
+      // one active (server/api): this exact boundary becomes a journaled step, so
       // a crash-resume returns the recorded result instead of re-running the
       // LLM call / tool dispatch. Inert (pure passthrough) otherwise. The trace
       // bookkeeping around it stays best-effort and engine-agnostic.

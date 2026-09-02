@@ -24,11 +24,11 @@ clear-cut one is fixed in this branch.
 | C1 (HIGH)        | `pnpm verify` red at v0.230.48: prettier failure in `packages/content/src/invariants.test.ts` (introduced by dfefe0bb)                                                                                                                            | reformatted; verify's format gate green again                                                                                                                                                                 |
 | B1/D1 (MED)      | `invariants.test.ts` did NOT pin the default compose service set: gating `postgres` behind a profile passed silently, the exact hazard the P4 docs claim the test guards                                                                          | two new assertions: the 22-name profile-less default set of `docker-compose.yml` is pinned, and `docker-compose.core.yml`'s gate set is pinned to tika/browser + the six channel workers. Both proven to trip |
 | E2 (MED)         | Dockerfile deps stage missing `content-core`, `share-ui`, `voice-client` manifests; its own sync-check comment failed and cited dead trees                                                                                                        | three COPY lines added; check command fixed; sync check passes                                                                                                                                                |
-| E3 (LOW)         | `scripts/fonts-import.mjs` wrote into the deleted `client/web` (hard ENOENT on next real run)                                                                                                                                                     | `APPS = ['server/web']`, comment updated                                                                                                                                                                      |
+| E3 (LOW)         | `scripts/fonts-import.mjs` wrote into the deleted `jackdaw` (hard ENOENT on next real run)                                                                                                                                                     | `APPS = ['server/web']`, comment updated                                                                                                                                                                      |
 | E4 (LOW)         | `pnpm-workspace.yaml` carried literal `electron: set this to true or false` placeholder junk from the cut commit                                                                                                                                  | deleted                                                                                                                                                                                                       |
 | D2/D3 (COSMETIC) | updater.sh + install.sh comments still claimed client/server tag lockstep                                                                                                                                                                         | rewritten to describe the MANTLE_CLIENT_IMAGE_TAG stream                                                                                                                                                      |
 | D4 (COSMETIC)    | `MANTLE_CLIENT_IMAGE_TAG` documented nowhere operator-facing                                                                                                                                                                                      | added to `.env.prod.example` + `docs/deploy.md` update snippet                                                                                                                                                |
-| C5 (COSMETIC)    | `docs/themes.md`/`docs/scripts.md` pointed at `packages/web-ui` for the theme generator (it lives in `packages/share-ui`); `docs/versioning.md` claimed the bump touches deleted client manifests; two live links to the deleted `db-less-dev.md` | paths corrected; links now point at the jackdaw copy                                                                                                                                                          |
+| C5 (COSMETIC)    | `docs/themes.md`/`docs/scripts.md` pointed at `jackdaw/packages/web-ui` for the theme generator (it lives in `packages/share-ui`); `docs/versioning.md` claimed the bump touches deleted client manifests; two live links to the deleted `db-less-dev.md` | paths corrected; links now point at the jackdaw copy                                                                                                                                                          |
 
 ## A. Runtime truth: verified live (the split's untested half)
 
@@ -183,7 +183,7 @@ themes.css header still say web-ui (fixing the header means regenerating
 themes.css; bundle with the next theme change); Dockerfile electron
 comments; `docs/desktop.md` runnable command on a moved tree; ~70
 dead-path mentions across 16 mantle feature docs (suggest one "now lives
-in jackdaw" pass); `docs/ui-style-guide.md` duplicated byte-identical in
+in jackdaw" pass); `jackdaw/docs/ui-style-guide.md` duplicated byte-identical in
 both repos (pick an owner).
 
 ## Known-open items: confirmed still the only gaps
@@ -191,9 +191,9 @@ both repos (pick an owner).
 All seven from the handover re-verified, nothing new behind them:
 P3 client-side handshake; jackdaw tooling (no bump/merge/CI-verify;
 sharpened: `docs/db-less-dev.md` in jackdaw instructs `pnpm dev:fe` +
-`scripts/dev-frontend.sh`, neither of which exists in either repo now;
+the jackdaw dev server, neither of which exists in either repo now;
 the working detached invocation is `MANTLE_SERVER_ORIGIN=<brain> pnpm -C
-client/web dev`); the mantle-side fonts↔registry test (data currently
+jackdaw dev`); the mantle-side fonts↔registry test (data currently
 in parity, above); publish-contract header comment; P4 live-box
 validation (RSS vs 4 GB); jackdaw's inert eslint/vitest blocks; the
 `~/Projects/jackdaw` clone now exists (this audit created it).

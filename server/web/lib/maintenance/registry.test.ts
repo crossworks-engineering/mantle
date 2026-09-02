@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { MAINTENANCE_TASKS, getTask, isFreeCost, isLiveRun } from './registry';
 import { SWEEPS } from './sweeps';
 
-// apps/web/lib/maintenance → repo root is four levels up.
+// server/web/lib/maintenance → repo root is four levels up.
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..', '..');
 
 describe('maintenance registry', () => {

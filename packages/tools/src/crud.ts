@@ -4,7 +4,7 @@
  * live in code). User-defined tools (http/shell) flow through these
  * helpers.
  *
- * Lives in the package (not apps/web) because three surfaces share it:
+ * Lives in the package (not server/web) because three surfaces share it:
  * the web /api/tools routes, the Toolsmith agent's api_tool_* builtins,
  * and the MCP server's api_tool_* tools for Claude Code/Desktop.
  */

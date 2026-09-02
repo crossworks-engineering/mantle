@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { CORE_AUTO_GRANT_GROUP_SLUGS, computeFloorGroupAdditions } from './core-tools';
 
 /**
- * The boot self-heal floor (apps/agent ensureCoreToolsOnConversationalAgents).
+ * The boot self-heal floor (server/api ensureCoreToolsOnConversationalAgents).
  * These pin two things the audit flagged (docs/audit-brief-tools-skills.md R5):
  *   1. the floor is SUFFICIENT to stand up a correct persona — it must confer
  *      `invoke_agent` (else the integrity persona check fails) and `memory-core`

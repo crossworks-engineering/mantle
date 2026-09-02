@@ -20,7 +20,7 @@
  *   tsx scripts/relations-backfill.ts --go --types=note,contact
  *   tsx scripts/relations-backfill.ts --go --limit=100 --rate=2
  *
- * The agent (apps/agent) must be running — it's the LISTENer that extracts.
+ * The agent (server/api) must be running — it's the LISTENer that extracts.
  */
 import postgres from 'postgres';
 import { env } from '@mantle/config';

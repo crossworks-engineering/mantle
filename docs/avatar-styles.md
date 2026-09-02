@@ -6,7 +6,7 @@ separately licensed by their designers**, and this file is the credit list
 those licences ask for.
 
 This matters because the repo is public and ships these styles. The registry in
-[`packages/web-ui/src/avatar.ts`](../packages/web-ui/src/avatar.ts) carries each
+[`jackdaw/packages/web-ui/src/avatar.ts`](../jackdaw/packages/web-ui/src/avatar.ts) carries each
 style's creator and licence, `avatar.test.ts` checks that table against the
 installed package (so a version bump cannot silently restate a licence), and the
 style picker in Settings → Appearance shows the credit at the point of choice.

@@ -1,7 +1,7 @@
 /**
  * ProseMirror-JSON → email-safe HTML renderer. This is a FOURTH representation
  * of the page schema (alongside the TipTap editor, `markdownToDoc`, and the
- * public-page `renderPageDoc` in apps/web). Email needs its own renderer because
+ * public-page `renderPageDoc` in server/web). Email needs its own renderer because
  * email clients are hostile to modern CSS:
  *
  *   - No external/`<head>` stylesheet survives reliably → every style is INLINE.

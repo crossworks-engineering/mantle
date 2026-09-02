@@ -82,7 +82,7 @@ definition; the edit is stamped and survives re-sync.
 | Surface | Path | Who pays for the LLM |
 |---|---|---|
 | Main assistant delegation | "add a weather API" (anywhere, incl. the /dev-tools Assist button) → invoke_agent | the agent's OpenRouter key |
-| **Claude Code / Desktop over MCP** | the same tool set registered on apps/mcp | **the user's Claude subscription** |
+| **Claude Code / Desktop over MCP** | the same tool set registered on server/mcp | **the user's Claude subscription** |
 
 (The old third way, the API Console's own docked panel invoking Toolsmith
 directly, was removed in v0.206: no surface pre-selects a specialist anymore;
@@ -91,7 +91,7 @@ the responder keeps its context and delegates.)
 The MCP row is the power-user path: every `api_tool_*` / `api_docs_*` /
 `api_skill_set` / `tool_group_*` / `agent_*` / `web_fetch` / `api_key_refs` tool is
 registered on the MCP server straight from the same `TOOLSMITH_TOOLS`
-definitions (apps/mcp/src/server.ts registers the array through a
+definitions (server/mcp/src/server.ts registers the array through a
 JSON-Schema→zod bridge, so the surfaces cannot drift). A Claude Code
 session connected to Mantle's MCP server can run the whole
 read-docs → author → test → grant loop with no Mantle-side LLM spend.
@@ -148,11 +148,11 @@ client browse and test the registry.
 
 ## 3. Seeding + configuration
 
-Manifest-driven like every specialist (apps/web/lib/system-manifest):
+Manifest-driven like every specialist (server/web/lib/system-manifest):
 
 - **New installs**: onboarding's `applyManifest` provisions the agent,
   the `toolsmith` tool group, and the builtin rows automatically.
-- **Existing installs**: `ALLOWED_USER_ID=<uuid> pnpm -C apps/web seed:toolsmith`
+- **Existing installs**: `ALLOWED_USER_ID=<uuid> pnpm -C server/web seed:toolsmith`
   (overwrite mode, re-applies the canonical prompt/model/grants).
 - Model: `anthropic/claude-sonnet-4.6` via OpenRouter by default,
   `TOOLSMITH_MODEL` env to override at seed time, or edit the agent in

@@ -8,7 +8,7 @@ the prerequisite for an external (Electron / DB-less) client.
 Source of truth grep (re-run to verify progress; should shrink to 0 real holes):
 
 ```bash
-grep -rl "@mantle/db" apps/web/app --include='*.tsx' --include='*.ts' | grep -v '/api/' | sort
+grep -rl "@mantle/db" server/web/app --include='*.tsx' --include='*.ts' | grep -v '/api/' | sort
 ```
 
 Audited at commit `fe27dbe` (2026-06-26). Raw grep returns **27 non-API files**,
