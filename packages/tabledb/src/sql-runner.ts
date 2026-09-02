@@ -2,6 +2,7 @@ import { Worker } from 'node:worker_threads';
 
 import { openTableFile } from './sqlite';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 /**
  * table_sql — read-only SQL over one workbook file (plan §3.4). Layered:
@@ -127,7 +128,10 @@ export async function runTableSql(
       resolve(r);
     };
     worker.once('message', (m: WorkerReply) => settle(m));
-    worker.once('error', (err) => settle({ ok: false, error: err.message }));
+    // @types/node 26 stopped asserting the 'error' payload is an Error —
+    // EventEmitter can carry anything, and a worker that threw a non-Error
+    // would have crashed this very handler on `.message`. Narrow it properly.
+    worker.once('error', (err: unknown) => settle({ ok: false, error: errorMessage(err) }));
     worker.once('exit', (code) => {
       if (code !== 0) settle({ ok: false, error: `worker exited with code ${code}` });
     });
