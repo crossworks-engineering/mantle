@@ -179,6 +179,8 @@ Then smoke-test the surface the release actually changed in the browser (and
   `{$MANTLE_MAX_BODY_SIZE:1GB}` and JSON access logging on stdout). Both are
   defaults, no `.env` change needed; set `MANTLE_MAX_BODY_SIZE` / `MANTLE_MAX_UPLOAD_MB`
   only to tune. Boxes on the same-origin shape copy `Caddyfile.same-origin`.
+  **v0.232.124+** adds the `infra/caddy/conf.d/` drop-in import and mount: keep
+  box-local routes there, not in the Caddyfile, so a roll cannot wipe them.
 - **migrations are forward-only**: the pre-roll `db-dump` is the only way back.
 
 ## Rollback

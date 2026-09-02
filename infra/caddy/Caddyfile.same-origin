@@ -23,6 +23,14 @@
 		format json
 	}
 
+	# Box-local drop-ins: extra routes such as the PCMS MCP bridge on a client
+	# box, or a customer vhost's paths. One file per concern in
+	# infra/caddy/conf.d/*.caddy, imported HERE so the shipped Caddyfile is
+	# never edited on a box and a release roll cannot wipe a route. Caddy
+	# orders handle blocks by path length, so a drop-in `handle /x/*` wins over
+	# the catch-all below wherever it lands. A missing or empty folder is fine.
+	import /etc/caddy/conf.d/*.caddy
+
 	# Server-owned paths: the API plane, the share + print render surfaces,
 	# the generated runtime bundles those surfaces load, and the MCP OAuth
 	# discovery docs. Everything else (owner UI, /login, /hub, /team*,

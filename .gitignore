@@ -128,3 +128,6 @@ server/web/public/share-runtime/
 # repo. Build your own with docs/recall-eval.md.
 server/web/scripts/eval/recall-cases.json
 __pycache__/
+
+# Box-local Caddy drop-ins (routes a deployment adds; never part of a release)
+infra/caddy/conf.d/*.caddy

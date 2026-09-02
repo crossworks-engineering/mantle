@@ -749,6 +749,11 @@ services:
       MANTLE_MAX_BODY_SIZE: ${MANTLE_MAX_BODY_SIZE:-1GB}
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Box-local Caddy drop-ins (*.caddy), imported inside the site block by the
+      # shipped Caddyfile. Routes a box needs beyond the release (a client's MCP
+      # bridge, say) live here and survive every roll; the Caddyfile itself is
+      # never hand-edited. Tracked README only; *.caddy files are gitignored.
+      - ./infra/caddy/conf.d:/etc/caddy/conf.d:ro
       - ${MANTLE_DATA_DIR:-./data}/caddy/data:/data
       - ${MANTLE_DATA_DIR:-./data}/caddy/config:/config
 

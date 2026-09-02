@@ -25,11 +25,11 @@ Companion: [`docker-compose.yml`](../docker-compose.yml) header comments,
 
 ## 0. Topology
 
-| | Where | How |
-|---|---|---|
-| **Dev** | your Mac | `docker-compose.dev.yml` (infra only) + `pnpm dev` (hot reload), separate dev DB |
-| **Build** | your Mac | `scripts/docker-build-push.sh` → Docker Hub |
-| **Prod** | Contabo VPS | `docker compose pull && up -d` (no build on the VPS) |
+|           | Where       | How                                                                              |
+| --------- | ----------- | -------------------------------------------------------------------------------- |
+| **Dev**   | your Mac    | `docker-compose.dev.yml` (infra only) + `pnpm dev` (hot reload), separate dev DB |
+| **Build** | your Mac    | `scripts/docker-build-push.sh` → Docker Hub                                      |
+| **Prod**  | Contabo VPS | `docker compose pull && up -d` (no build on the VPS)                             |
 
 Persistent data is **bind-mounted** under `MANTLE_DATA_DIR` (default `./data`):
 `postgres/`, `minio/`, `files/`. The Ollama model cache + Tailscale identity stay
@@ -50,12 +50,12 @@ box is not steady state; it's two specific events:
    Correct on any CPU since the sub-batched local adapter (v0.20.58), just
    slower on fewer cores. No GPU is needed at personal scale.
 
-| Profile | vCPU | RAM | Disk | Notes |
-|---|---|---|---|---|
-| **Minimum** (registry-pull deploys) | 2 | 4 GB | 40 GB | Steady state fits with room for embedding spikes; add 2 GB swap as insurance. Ingest is slower, never wrong. |
-| **Brain-core** (`install.sh --core`, online embeddings) | 2 | 4 GB | 40 GB | The small headless shape for dedicated memory cores: sheds the channel workers + doc helpers (~14 instead of ~22 services; `--helpers` re-adds tika + the PDF browser). See docs/self-hosting.md "Brain-core shape". |
-| **Recommended** (build-on-VPS, only if you build your own image on the box; see §2) | 4 | 8 GB | 80 GB | Headroom for `next build`; each build leaves ~3–6 GB of Docker build cache, run `docker builder prune` after deploy bursts (a 5×-in-a-day burst once accumulated 35 GB). |
-| **Reference** (author's prod) | 6 | 12 GB | 96 GB | Comfortable; ~27 GB disk in use including images, brain data itself is tiny (~170 MB at ~700 nodes). |
+| Profile                                                                             | vCPU | RAM   | Disk  | Notes                                                                                                                                                                                                                |
+| ----------------------------------------------------------------------------------- | ---- | ----- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Minimum** (registry-pull deploys)                                                 | 2    | 4 GB  | 40 GB | Steady state fits with room for embedding spikes; add 2 GB swap as insurance. Ingest is slower, never wrong.                                                                                                         |
+| **Brain-core** (`install.sh --core`, online embeddings)                             | 2    | 4 GB  | 40 GB | The small headless shape for dedicated memory cores: sheds the channel workers + doc helpers (~14 instead of ~22 services; `--helpers` re-adds tika + the PDF browser). See docs/self-hosting.md "Brain-core shape". |
+| **Recommended** (build-on-VPS, only if you build your own image on the box; see §2) | 4    | 8 GB  | 80 GB | Headroom for `next build`; each build leaves ~3–6 GB of Docker build cache, run `docker builder prune` after deploy bursts (a 5×-in-a-day burst once accumulated 35 GB).                                             |
+| **Reference** (author's prod)                                                       | 6    | 12 GB | 96 GB | Comfortable; ~27 GB disk in use including images, brain data itself is tiny (~170 MB at ~700 nodes).                                                                                                                 |
 
 Disk grows with: email/attachment volume (MinIO + Postgres), the nightly
 backup rotation (~40 MB × keep-count at a ~700-node brain), and, dominantly
@@ -100,8 +100,15 @@ automatic HTTPS, before first boot:
 
 Certs persist in the `caddy_data` volume, don't wipe it, or you risk LE rate limits.
 
-Since **v0.202.0** the front door also routes to the *client* app (the split
+Since **v0.202.0** the front door also routes to the _client_ app (the split
 shipped two images). Two shapes, both driven by the same Caddy:
+
+- **Box-local routes go in `infra/caddy/conf.d/*.caddy`, never in the
+  Caddyfile.** Both shipped Caddyfiles import that folder inside the site
+  block and compose mounts it read-only. A route a box needs beyond the release
+  (a client's MCP bridge behind a public path, say) is one drop-in file there,
+  and it survives every roll; `docker restart mantle_caddy` applies it. See
+  [`infra/caddy/conf.d/README.md`](../infra/caddy/conf.d/README.md).
 
 - **Same-origin**: one domain, path-routed. `/api/*`, `/s/*`, `/print/*` and
   the runtime bundles go to the server app; everything else (owner UI,
@@ -127,13 +134,14 @@ Upgrading an existing box into either shape:
 > **⚠️ Architecture must match the VPS.** A Docker image is arch-specific. An
 > Apple-Silicon Mac builds **arm64**; most VPSes (incl. Contabo) are **amd64**,
 > and an arm64 image won't run there (`exec format error`). Three options:
+>
 > - **Build natively on the VPS** (simplest for a first deploy + frequent
 >   updates, no emulation, no registry pull): `rsync` the source to the VPS and
 >   run `docker compose build web` there. The image is local, so no `docker login`
 >   / pull needed. This is how the Contabo deploy was done, see
 >   [`handoff-deploy-contabo-2026-06-01.md`](./_archive/handoff-deploy-contabo-2026-06-01.md).
 > - **Cross-build for amd64 on the Mac**: `docker buildx build --platform
->   linux/amd64 -t <ns>/mantle:<tag> --push .` (runs amd64 under QEMU, slow).
+linux/amd64 -t <ns>/mantle:<tag> --push .` (runs amd64 under QEMU, slow).
 > - **Multi-arch**: `--platform linux/amd64,linux/arm64` (slowest; one tag runs
 >   anywhere). Only worth it if you pull on both arches.
 >
@@ -327,7 +335,7 @@ It now refreshes on the same trust model as compose, canonical embedded at
 with three differences that follow from it being the running program:
 
 - **It swaps last, then re-execs.** A shell cannot safely rewrite the script
-  it is executing, so the swap is the final act of a *successful* update, after
+  it is executing, so the swap is the final act of a _successful_ update, after
   `status.json` and `stack.json` are final. The re-exec goes through the
   stack-dir mount, never `/updater.sh`: that entrypoint mount is pinned to the
   pre-swap **inode** and would silently re-enter the copy just replaced.
@@ -336,7 +344,7 @@ with three differences that follow from it being the running program:
   current copy and says so in update.log.
 - **No `compose-adopt.sh` equivalent, by design.** Compose has a supported
   box-local dialect; this script takes all box-specific input from the
-  environment and has none, so on a box with no baseline every difference *is*
+  environment and has none, so on a box with no baseline every difference _is_
   staleness. It adopts itself (previous copy kept as `updater.sh.prev`) and
   seeds `updater.sh.release` the first time it can prove the box copy pristine.
   From then on a hand-edited script is detected and **refused**, and shown on
