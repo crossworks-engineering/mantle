@@ -47,7 +47,7 @@
     "tz-lookup": "^6.1.25"
   },
   "devDependencies": {
-    "@types/node": "^22.20.1",
+    "@types/node": "^26.4.0",
     "typescript": "^5.7.2"
   }
 }
