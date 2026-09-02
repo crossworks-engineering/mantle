@@ -13,7 +13,7 @@
     "./node-comments": "./src/node-comments.ts",
     "./events": "./src/events.ts",
     "./journal": "./src/journal.ts",
-    "./peers": "./src/peers.ts",
+    "./peers": "./src/peers/index.ts",
     "./peers-crypto": "./src/peers-crypto.ts",
     "./pages": "./src/pages/index.ts",
     "./app-broker": "./src/app-broker.ts",
