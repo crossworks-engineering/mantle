@@ -306,6 +306,21 @@ describe('readComposeStatus: operator-scripts state', () => {
     ).toEqual({ state: 'in-sync', refresh: 'current' });
   });
 
+  it("dev's real shape: scripts present, ZERO baselines — stale, not modified", async () => {
+    // The v0.232.140 regression, reproduced from the live box. The updater
+    // hashed six 'name:' lines with empty values whenever no .release file
+    // existed, which is a valid non-empty digest — so the reader's
+    // "baseline exists?" test passed and the box reported 'modified',
+    // demanding a human for something refresh_scripts fixes by itself.
+    // scripts_sha_of now returns EMPTY when not one file in the set exists.
+    expect(
+      await scriptsFor({
+        scripts_sha: setSha((n) => `#!/bin/sh\n# ${n} v1\n`),
+        scripts_baseline_sha: '', // <- what an un-adopted box must now report
+      }),
+    ).toEqual({ state: 'stale', refresh: null });
+  });
+
   it('reads stale with NO baseline — the refresh adopts it, no human needed', async () => {
     // This is the jason-prod state that started all of this: a box that never
     // adopted, running a compose-adopt.sh three releases behind. It must not

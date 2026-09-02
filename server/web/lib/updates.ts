@@ -291,7 +291,10 @@ async function scriptsCanonicalSha(dir: string): Promise<string | null> {
       }
     }
     // No script at all = a pre-v0.232.137 image; report 'unknown', not a
-    // hash of six blanks that every box would fail to match.
+    // hash of six blanks that every box would fail to match. The updater's
+    // scripts_sha_of applies the same rule, and it is load-bearing on the
+    // BASELINE side: emptiness is how a pre-adoption box ("stale, self-heals")
+    // is told apart from a hand-edited one ("modified, needs a human").
     sha = sawAny
       ? createHash('sha256')
           .update(lines.map((l) => `${l}\n`).join(''))

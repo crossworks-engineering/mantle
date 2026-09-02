@@ -114,6 +114,20 @@ scripts_sha_of() {
   # file (sha256sum fails, cut gets empty input), so absence would vanish from
   # the digest and a half-installed box could hash identical to a complete one.
   # 'name:' with an empty hash keeps it visible, and pins the order too.
+  #
+  # NOTHING present at all is different in KIND, and must read as empty rather
+  # than as "the hash of six blanks". The reader (server/web/lib/updates.ts)
+  # distinguishes "no baseline yet — the refresh adopts it, nobody need act"
+  # from "a baseline exists and disagrees — somebody hand-edited a script" by
+  # testing the baseline digest for emptiness. A six-blanks hash is a perfectly
+  # valid non-empty string, so a pre-adoption box (dev, v0.232.140: zero
+  # scripts/*.release) reported 'modified' and demanded attention it did not
+  # need — the exact case the row exists to show correctly.
+  any=""
+  for n in $SCRIPT_NAMES; do
+    [ -f "$STACK/$SCRIPTS_REL/$n$1" ] && { any=1; break; }
+  done
+  [ -z "$any" ] && return 0
   for n in $SCRIPT_NAMES; do
     printf '%s:%s\n' "$n" "$(sha_of "$STACK/$SCRIPTS_REL/$n$1")"
   done | sha256sum | cut -d' ' -f1

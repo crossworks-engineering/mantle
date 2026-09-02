@@ -108,3 +108,48 @@ describe('operator-scripts fingerprint: shell and TypeScript agree', () => {
       expect(app, `${n} missing from RELEASE_SCRIPT_NAMES`).toContain(`'${n}'`);
   });
 });
+
+describe('an absent SET hashes to empty, not to a hash of blanks', () => {
+  /**
+   * The distinction the drift row is built on: an EMPTY baseline digest means
+   * "never adopted — refresh_scripts installs it unaided, nobody act", while a
+   * non-empty one that disagrees means "somebody hand-edited a script".
+   *
+   * Shipped in v0.232.140 without this: six `name:` lines with empty hashes
+   * still produce a perfectly valid digest, so dev — which has ZERO
+   * scripts/*.release — reported 'modified' and demanded attention it did not
+   * need. Caught on the live box within the hour, fixed here.
+   */
+  it('shell prints nothing when not one file in the set exists', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mantle-scripts-'));
+    try {
+      expect(shellSha(dir)).toBe('');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('one present file is enough to produce a digest', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mantle-scripts-'));
+    try {
+      writeFileSync(join(dir, 'sanity.sh'), '#!/bin/sh\necho hi\n');
+      const sha = shellSha(dir);
+      expect(sha).not.toBe('');
+      expect(sha).toMatch(/^[0-9a-f]{64}$/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('an absent set and a complete set never collide', () => {
+    const empty = mkdtempSync(join(tmpdir(), 'mantle-scripts-'));
+    const full = mkdtempSync(join(tmpdir(), 'mantle-scripts-'));
+    try {
+      for (const n of NAMES) writeFileSync(join(full, n), `#!/bin/sh\necho ${n}\n`);
+      expect(shellSha(empty)).not.toBe(shellSha(full));
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+      rmSync(full, { recursive: true, force: true });
+    }
+  });
+});
