@@ -62,6 +62,7 @@ import {
   runWithImageFallback,
 } from '@mantle/runtime/assistant';
 import { registerAgentInvoker, seedBuiltinTools } from '@mantle/tools';
+import { startTicker } from './ticker';
 import {
   HEARTBEAT_DUE_CHANNEL,
   registerHeartbeatTools,
@@ -959,30 +960,12 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   // on each failure up to 1h, and reset on the first success.
   const REFLECTOR_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
   const REFLECTOR_BACKOFF_CAP_MS = 60 * 60 * 1000;
-  let reflectBackoffMs = 0;
-  let reflectSkipUntil = 0;
-  setInterval(() => {
-    if (Date.now() < reflectSkipUntil) return;
-    reflect(owner)
-      .then(() => {
-        if (reflectBackoffMs > 0) {
-          console.log('[agent] reflector recovered; clearing backoff');
-        }
-        reflectBackoffMs = 0;
-        reflectSkipUntil = 0;
-      })
-      .catch((err) => {
-        reflectBackoffMs = Math.min(
-          REFLECTOR_BACKOFF_CAP_MS,
-          reflectBackoffMs === 0 ? REFLECTOR_INTERVAL_MS : reflectBackoffMs * 2,
-        );
-        reflectSkipUntil = Date.now() + reflectBackoffMs;
-        console.error(
-          `[agent] reflect error (next try in ${Math.round(reflectBackoffMs / 1000)}s):`,
-          err instanceof Error ? err.message : err,
-        );
-      });
-  }, REFLECTOR_INTERVAL_MS);
+  startTicker({
+    name: 'reflector',
+    everyMs: REFLECTOR_INTERVAL_MS,
+    backoffCapMs: REFLECTOR_BACKOFF_CAP_MS,
+    run: () => reflect(owner),
+  });
   console.log(
     `[agent] reflector tick every ${REFLECTOR_INTERVAL_MS / 1000}s (with failure backoff up to 1h)`,
   );
@@ -993,33 +976,22 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   // tight-loop the loop. See packages/heartbeats/src/tick.ts.
   const HEARTBEAT_TICK_MS = 60 * 1000;
   const HEARTBEAT_BACKOFF_CAP_MS = 30 * 60 * 1000;
-  let hbBackoffMs = 0;
-  let hbSkipUntil = 0;
-  setInterval(() => {
-    if (Date.now() < hbSkipUntil) return;
-    tickHeartbeats(owner)
-      .then((report) => {
-        if (hbBackoffMs > 0) console.log('[agent] heartbeat tick recovered; clearing backoff');
-        hbBackoffMs = 0;
-        hbSkipUntil = 0;
-        if (report.considered > 0) {
-          console.log(
-            `[agent] heartbeat tick: considered=${report.considered} fired=${report.fired} skipped=${report.skipped} errored=${report.errored}`,
-          );
-        }
-      })
-      .catch((err) => {
-        hbBackoffMs = Math.min(
-          HEARTBEAT_BACKOFF_CAP_MS,
-          hbBackoffMs === 0 ? HEARTBEAT_TICK_MS : hbBackoffMs * 2,
+  // The counts line is reported through onSuccess, which receives THIS tick's
+  // report — so the ticker keeps owning the backoff and this keeps owning what
+  // a heartbeat pass has to say, with no shared variable between them.
+  startTicker({
+    name: 'heartbeat tick',
+    everyMs: HEARTBEAT_TICK_MS,
+    backoffCapMs: HEARTBEAT_BACKOFF_CAP_MS,
+    run: () => tickHeartbeats(owner),
+    onSuccess: (report) => {
+      if (report.considered > 0) {
+        console.log(
+          `[agent] heartbeat tick: considered=${report.considered} fired=${report.fired} skipped=${report.skipped} errored=${report.errored}`,
         );
-        hbSkipUntil = Date.now() + hbBackoffMs;
-        console.error(
-          `[agent] heartbeat tick error (next try in ${Math.round(hbBackoffMs / 1000)}s):`,
-          err instanceof Error ? err.message : err,
-        );
-      });
-  }, HEARTBEAT_TICK_MS);
+      }
+    },
+  });
   console.log(
     `[agent] heartbeat tick every ${HEARTBEAT_TICK_MS / 1000}s (with failure backoff up to 30min)`,
   );
@@ -1029,14 +1001,11 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   // extraction), so a missed file self-heals in minutes instead of waiting for
   // a restart's boot-drain. Loop-safe + bounded (see sweepMissedExtractions).
   const SWEEP_INTERVAL_MS = Number(env('MANTLE_EXTRACT_SWEEP_MS')) || 120 * 1000;
-  setInterval(() => {
-    sweepMissedExtractions(owner).catch((err) =>
-      console.error(
-        '[agent] extract sweep error (will retry next tick):',
-        err instanceof Error ? err.message : err,
-      ),
-    );
-  }, SWEEP_INTERVAL_MS);
+  startTicker({
+    name: 'extract sweep',
+    everyMs: SWEEP_INTERVAL_MS,
+    run: () => sweepMissedExtractions(owner),
+  });
   console.log(`[agent] extract sweep every ${SWEEP_INTERVAL_MS / 1000}s (missed-event safety net)`);
 
   // Tables v2 migration sweep (plan §9): convert the long tail of legacy
@@ -1046,14 +1015,13 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   // this catches the rest. No-op once storage_path is set everywhere.
   const TABLE_MIGRATE_SWEEP_MS = Number(env('MANTLE_TABLE_MIGRATE_SWEEP_MS')) || 5 * 60 * 1000;
   const TABLE_MIGRATE_BATCH = 5;
-  setInterval(() => {
-    sweepLegacyTables(TABLE_MIGRATE_BATCH).catch((err) =>
-      console.error(
-        '[agent] table migration sweep error (will retry next tick):',
-        err instanceof Error ? err.message : err,
-      ),
-    );
-  }, TABLE_MIGRATE_SWEEP_MS);
+  startTicker({
+    name: 'table migration sweep',
+    everyMs: TABLE_MIGRATE_SWEEP_MS,
+    run: async () => {
+      await sweepLegacyTables(TABLE_MIGRATE_BATCH);
+    },
+  });
   console.log(
     `[agent] table migration sweep every ${TABLE_MIGRATE_SWEEP_MS / 1000}s (${TABLE_MIGRATE_BATCH}/tick)`,
   );
