@@ -18,7 +18,7 @@
     "./pages": "./src/pages/index.ts",
     "./app-broker": "./src/app-broker.ts",
     "./app-table-exports": "./src/app-table-exports.ts",
-    "./tables": "./src/tables.ts",
+    "./tables": "./src/tables/index.ts",
     "./table-to-text": "./src/table-to-text.ts",
     "./table-storage": "./src/table-storage.ts",
     "./formula-to-text": "./src/formula-to-text.ts",
