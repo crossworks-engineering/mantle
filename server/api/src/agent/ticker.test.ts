@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { registerLogSink } from '@mantle/tracing';
 import { startTicker } from './ticker';
 
 /**
@@ -19,6 +20,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  registerLogSink(null);
 });
 
 /** Advance timers and let the promise chain inside the tick settle. */
@@ -139,7 +141,7 @@ describe('startTicker', () => {
       fail = false;
       await advance(2000); // t=4000 runs and succeeds
       expect(run).toHaveBeenCalledTimes(3);
-      expect(logger.log).toHaveBeenCalledWith('[agent] reflector recovered; clearing backoff');
+      expect(logger.log).toHaveBeenCalledWith('reflector recovered; clearing backoff');
 
       // Backoff cleared: ticks resume at the plain interval.
       const before = run.mock.calls.length;
@@ -164,7 +166,7 @@ describe('startTicker', () => {
       });
       await advance(60_000);
       expect(logger.error).toHaveBeenCalledWith(
-        '[agent] heartbeat tick error (next try in 60s):',
+        'heartbeat tick error (next try in 60s):',
         'db down',
       );
     });
@@ -180,7 +182,7 @@ describe('startTicker', () => {
       await advance(5000);
       expect(run).toHaveBeenCalledTimes(5);
       expect(logger.error).toHaveBeenCalledWith(
-        '[agent] extract sweep error (will retry next tick):',
+        'extract sweep error (will retry next tick):',
         'boom',
       );
     });
@@ -198,6 +200,29 @@ describe('startTicker', () => {
     expect(run).toHaveBeenCalledTimes(2);
   });
 
+  /**
+   * The cases above inject a logger and therefore see UNPREFIXED messages.
+   * That is deliberate — the ticker builds the message, the scoped logger owns
+   * the `[agent] ` prefix — but it means none of them pins the line an operator
+   * actually reads. This one does, through the real default path.
+   */
+  it('emits the [agent] prefix through the default logger', async () => {
+    const sink = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    registerLogSink(sink);
+    startTicker({
+      name: 'extract sweep',
+      everyMs: 1000,
+      run: async () => {
+        throw new Error('boom');
+      },
+    });
+    await advance(1000);
+    expect(sink.error).toHaveBeenCalledWith(
+      '[agent] extract sweep error (will retry next tick):',
+      'boom',
+    );
+  });
+
   it('passes a non-Error rejection through as-is', async () => {
     startTicker({
       name: 't',
@@ -208,9 +233,6 @@ describe('startTicker', () => {
       logger,
     });
     await advance(1000);
-    expect(logger.error).toHaveBeenCalledWith(
-      '[agent] t error (will retry next tick):',
-      'a bare string',
-    );
+    expect(logger.error).toHaveBeenCalledWith('t error (will retry next tick):', 'a bare string');
   });
 });

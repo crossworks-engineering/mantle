@@ -22,6 +22,8 @@
  * matter, that is its own change with its own reasoning.
  */
 
+import { log } from '@mantle/tracing';
+
 export type Ticker = {
   /** Stop the timer. Idempotent. An in-flight `run` is not cancelled — it
    *  settles on its own, exactly as it did before. */
@@ -51,9 +53,13 @@ export type TickerOpts<T> = {
   logger?: { log: (msg: string) => void; error: (msg: string, err: unknown) => void };
 };
 
+// Messages here are built WITHOUT a prefix; the scoped logger adds `[agent] `,
+// so a tick's lines read exactly as they did as console calls and now reach
+// DBOS.logger in the runner along with everything else.
+const scoped = log('agent');
 const defaultLogger = {
-  log: (msg: string) => console.log(msg),
-  error: (msg: string, err: unknown) => console.error(msg, err),
+  log: (msg: string) => scoped.info(msg),
+  error: (msg: string, err: unknown) => scoped.error(msg, err),
 };
 
 /** The message half of an error, matching what the four call sites logged. */
@@ -73,14 +79,14 @@ export function startTicker<T>(opts: TickerOpts<T>): Ticker {
     if (Date.now() < skipUntil) return;
     run()
       .then((result) => {
-        if (backoffMs > 0) logger.log(`[agent] ${name} recovered; clearing backoff`);
+        if (backoffMs > 0) logger.log(`${name} recovered; clearing backoff`);
         backoffMs = 0;
         skipUntil = 0;
         onSuccess?.(result);
       })
       .catch((err: unknown) => {
         if (backoffCapMs === undefined) {
-          logger.error(`[agent] ${name} error (will retry next tick):`, reasonOf(err));
+          logger.error(`${name} error (will retry next tick):`, reasonOf(err));
           return;
         }
         // First failure waits one interval; every one after that doubles,
@@ -88,7 +94,7 @@ export function startTicker<T>(opts: TickerOpts<T>): Ticker {
         backoffMs = Math.min(backoffCapMs, backoffMs === 0 ? everyMs : backoffMs * 2);
         skipUntil = Date.now() + backoffMs;
         logger.error(
-          `[agent] ${name} error (next try in ${Math.round(backoffMs / 1000)}s):`,
+          `${name} error (next try in ${Math.round(backoffMs / 1000)}s):`,
           reasonOf(err),
         );
       });

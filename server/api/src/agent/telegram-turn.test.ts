@@ -256,6 +256,11 @@ vi.mock('@mantle/tracing', () => ({
   registerTurnAbort: vi.fn(() => null),
   unregisterTurnAbort: vi.fn(),
   currentTrace: vi.fn(() => null),
+  // The scoped logger. Silent here: the assembly under test logs freely and
+  // these cases assert on traces and outbound messages, not on log lines.
+  log: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  registerLogSink: vi.fn(),
+  hasLogSink: vi.fn(() => false),
 }));
 
 // ── Remaining collaborators ───────────────────────────────────────────────

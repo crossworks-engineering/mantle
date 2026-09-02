@@ -16,6 +16,7 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import { registerRecallEmbedder, startProcessHeartbeat } from '@mantle/content';
 import { embedBatch } from '@mantle/embeddings';
 import { runTableStorageProbes } from '@mantle/tabledb';
+import { registerLogSink } from '@mantle/tracing';
 import { configureDBOS, RUNNER_QUEUE, runnerConcurrency, runsTurnConcurrency } from './config';
 import { assertEnvShape } from '@mantle/config';
 import { FORUM_QUEUE } from '@mantle/runtime/assistant';
@@ -37,6 +38,17 @@ assertEnvShape();
 // silently stops finding them; the bridge throws so that shows up in the log.
 // recall-embed-registration.test.ts pins this call in all three entrypoints.
 registerRecallEmbedder(embedBatch);
+
+// Route every `log(scope)` line through DBOS's logger. Inside a workflow that
+// stamps the workflow id and step onto the line, which is the context you
+// actually want when a durable turn goes wrong; outside one it is still the
+// runner's structured logger. Processes that register nothing keep console,
+// which is what a script or the web tier wants.
+//
+// Registered here rather than inside the agent runtime because it is a
+// PROCESS-wide choice: packages/tracing is imported by the workers and the
+// packages too, and they should all land in the same place.
+registerLogSink(DBOS.logger);
 import './workflows/assistant-turn';
 import './workflows/team-turn';
 import './workflows/forum-turn';

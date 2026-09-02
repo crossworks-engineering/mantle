@@ -63,6 +63,7 @@ import {
 } from '@mantle/runtime/assistant';
 import { registerAgentInvoker, seedBuiltinTools } from '@mantle/tools';
 import { startTicker } from './ticker';
+import { log } from '@mantle/tracing';
 import {
   HEARTBEAT_DUE_CHANNEL,
   registerHeartbeatTools,
@@ -108,11 +109,16 @@ import { errorMessage } from '@mantle/std';
 // to thread the owner through the workflow input. Seeded from the env so a
 // direct call (the test harness, a one-off script) works without a boot;
 // startAgentRuntime overwrites it with the resolved owner.
+/** Scoped logger. Emits `[agent] …` exactly as the console calls it
+ *  replaced did, and routes through the sink server/api registers at boot
+ *  (DBOS.logger), so a line written inside a workflow carries its id. */
+const logger = log('agent');
+
 let runtimeOwner: string | undefined = env('ALLOWED_USER_ID');
 const DATABASE_URL = env('DATABASE_URL');
 
 if (!DATABASE_URL) {
-  console.error('[agent] DATABASE_URL must be set');
+  logger.error('DATABASE_URL must be set');
   process.exit(1);
 }
 
@@ -282,8 +288,8 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
   // record about "the system was misconfigured."
   const agent = await resolveResponderAgent(ownerId, row.responderAgentId, row.channelAgentId);
   if (!agent) {
-    console.error(
-      `[agent] no enabled responder agent — skipping ${messageId}. Create one at /settings/agents.`,
+    logger.error(
+      `no enabled responder agent — skipping ${messageId}. Create one at /settings/agents.`,
     );
     return;
   }
@@ -292,8 +298,8 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
   // source of truth the worker pre-flights + the dispatch path use.
   const keyCheck = await resolveChatKey(ownerId, agent);
   if (!keyCheck.ok) {
-    console.error(
-      `[agent] responder agent '${agent.slug}' ${keyCheck.detail} — skipping. Edit it at /settings/agents.`,
+    logger.error(
+      `responder agent '${agent.slug}' ${keyCheck.detail} — skipping. Edit it at /settings/agents.`,
     );
     return;
   }
@@ -445,8 +451,8 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
             // record_inbound row deserializes createdAt to an ISO string.
             before: new Date(convInbound.createdAt),
           }).then((ctx) => {
-            console.log(
-              `[agent] → ${row.fromName ?? 'unknown'} via ${chatAdapter.adapterName}:${agent.model} (${row.text.length}c, ${ctx.history.length} turns, ${ctx.digests.length} digests, ${ctx.facts.length} facts, ${ctx.contentHits.length} content)`,
+            logger.info(
+              `→ ${row.fromName ?? 'unknown'} via ${chatAdapter.adapterName}:${agent.model} (${row.text.length}c, ${ctx.history.length} turns, ${ctx.digests.length} digests, ${ctx.facts.length} facts, ${ctx.contentHits.length} content)`,
             );
             return ctx;
           }));
@@ -520,25 +526,25 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         // empty twice (b3 — the old Telegram copy went silent instead), so
         // this guard is now defensive only.
         if (!outcome.reply) {
-          console.error('[agent] empty reply from model — not sending');
+          logger.error('empty reply from model — not sending');
           return;
         }
         const { reply, requestedVoice } = parseVoiceMarker(outcome.reply);
         if (!reply) {
           // She emitted ONLY the marker — treat as empty reply.
-          console.error('[agent] reply was only the [VOICE] marker; not sending');
+          logger.error('reply was only the [VOICE] marker; not sending');
           return;
         }
         if (loopOutcome.toolCalls.length > 0) {
-          console.log(
-            `[agent] tool loop: ${loopOutcome.iterations} round(s), ` +
+          logger.info(
+            `tool loop: ${loopOutcome.iterations} round(s), ` +
               `tool calls: ${loopOutcome.toolCalls.map((c) => c.slug).join(', ')}`,
           );
         }
 
         const account = await accountById(row.accountId);
         if (!account) {
-          console.error('[agent] no enabled telegram account for chat', row.telegramChatId);
+          logger.error('no enabled telegram account for chat', row.telegramChatId);
           return;
         }
 
@@ -574,9 +580,9 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
           .catch(() => {});
 
         if (delivery.delivered) {
-          console.log(`[agent] ✓ replied (${reply.length}c)`);
+          logger.info(`✓ replied (${reply.length}c)`);
         } else {
-          console.warn(`[agent] reply saved but Telegram send failed: ${delivery.sendError}`);
+          logger.warn(`reply saved but Telegram send failed: ${delivery.sendError}`);
           // The reply is already persisted above (undelivered); fail the trace
           // here so the delivery failure surfaces without losing the reply.
           throw new Error(
@@ -586,7 +592,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
       },
     );
   } catch (err) {
-    console.error('[agent] handle failed:', errorMessage(err));
+    logger.error('handle failed:', errorMessage(err));
   } finally {
     stopTyping();
     release();
@@ -620,7 +626,7 @@ async function drainPending(
     ? healed.length
     : ((healed as { count?: number }).count ?? 0);
   if (healedCount > 0) {
-    console.log(`[agent] drain: healed ${healedCount} previously-replied message(s)`);
+    logger.info(`drain: healed ${healedCount} previously-replied message(s)`);
   }
 
   // Now the genuinely-pending set: unprocessed, inbound, no reply yet.
@@ -630,10 +636,10 @@ async function drainPending(
     .where(and(eq(telegramMessages.processed, false), eq(telegramMessages.direction, 'inbound')))
     .orderBy(asc(telegramMessages.sentAt));
   if (rows.length === 0) {
-    console.log('[agent] drain: queue empty');
+    logger.info('drain: queue empty');
     return;
   }
-  console.log(`[agent] drain: ${rows.length} pending message(s)`);
+  logger.info(`drain: ${rows.length} pending message(s)`);
   // Enqueue durable workflows (idempotent on message id) rather than running
   // inline; the queue's concurrency cap throttles the backlog.
   for (const r of rows) {
@@ -675,7 +681,7 @@ async function drainUnextractedNodes(ownerId: string): Promise<void> {
     .where(conds);
   const total = countRows[0]?.total ?? 0;
   if (!total) {
-    console.log('[agent] drain extractor: queue empty');
+    logger.info('drain extractor: queue empty');
     return;
   }
   const rows = await db
@@ -685,12 +691,12 @@ async function drainUnextractedNodes(ownerId: string): Promise<void> {
     .orderBy(asc(nodes.createdAt))
     .limit(limit);
   if (total > rows.length) {
-    console.warn(
-      `[agent] drain extractor: ${total} unextracted node(s) in last ${windowHours}h; queueing the oldest ${rows.length} (capped by MANTLE_EXTRACT_DRAIN_LIMIT=${limit} to avoid an extraction cost burst — re-run or raise the cap to catch up).`,
+    logger.warn(
+      `drain extractor: ${total} unextracted node(s) in last ${windowHours}h; queueing the oldest ${rows.length} (capped by MANTLE_EXTRACT_DRAIN_LIMIT=${limit} to avoid an extraction cost burst — re-run or raise the cap to catch up).`,
     );
   } else {
-    console.log(
-      `[agent] drain extractor: queueing ${rows.length} unextracted node(s) from last ${windowHours}h`,
+    logger.info(
+      `drain extractor: queueing ${rows.length} unextracted node(s) from last ${windowHours}h`,
     );
   }
   for (const r of rows) await enqueueExtract(r.id);
@@ -731,8 +737,8 @@ async function sweepMissedExtractions(ownerId: string): Promise<void> {
     .orderBy(asc(nodes.createdAt))
     .limit(limit);
   if (rows.length === 0) return;
-  console.log(
-    `[agent] extract sweep: re-queueing ${rows.length} node(s) with no extractor_run (missed node_ingested)`,
+  logger.info(
+    `extract sweep: re-queueing ${rows.length} node(s) with no extractor_run (missed node_ingested)`,
   );
   for (const r of rows) await enqueueExtract(r.id);
 }
@@ -752,14 +758,11 @@ async function assertEmbeddingModelConsistency(ownerId: string): Promise<void> {
     const backup = config.backup
       ? ` · backup via ${config.backup.provider}${config.backup.label ? ` (${config.backup.label})` : ''}`
       : ' · no backup';
-    console.log(
-      `[agent] embedder: ${config.model} @ ${config.dimensions}d via ${config.primary.provider}${backup}`,
+    logger.info(
+      `embedder: ${config.model} @ ${config.dimensions}d via ${config.primary.provider}${backup}`,
     );
   } catch (err) {
-    console.error(
-      '[agent] embedding config check failed:',
-      err instanceof Error ? err.message : err,
-    );
+    logger.error('embedding config check failed:', err instanceof Error ? err.message : err);
   }
 }
 
@@ -791,9 +794,7 @@ function runSummarize(ownerId: string, agentId: string): void {
   }
   summarizeInflight.add(agentId);
   summarizeAgentConversation(ownerId, agentId)
-    .catch((err) =>
-      console.error('[agent] summarize error:', err instanceof Error ? err.message : err),
-    )
+    .catch((err) => logger.error('summarize error:', err instanceof Error ? err.message : err))
     .finally(() => {
       summarizeInflight.delete(agentId);
       if (summarizeRerun.delete(agentId)) runSummarize(ownerId, agentId);
@@ -863,7 +864,7 @@ export interface AgentRuntimeOptions {
 
 export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   const pg = postgres(DATABASE_URL!, { max: 2 });
-  console.log('[agent] starting — config from agents table');
+  logger.info('starting — config from agents table');
 
   // Resolve the owner before any owner-scoped work. On a fresh install this
   // blocks until the first account is created in the web app (signup), then
@@ -876,9 +877,9 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   // packages/tools/src/builtins.ts propagate without manual DB work.
   try {
     const seedResult = await seedBuiltinTools(owner);
-    console.log(`[agent] tools: ${seedResult.inserted} inserted, ${seedResult.updated} updated`);
+    logger.info(`tools: ${seedResult.inserted} inserted, ${seedResult.updated} updated`);
   } catch (err) {
-    console.error('[agent] tool seed failed:', err instanceof Error ? err.message : err);
+    logger.error('tool seed failed:', err instanceof Error ? err.message : err);
   }
 
   // Grant the core capability FLOOR (persona self-edit + task CRUD etc., as
@@ -887,10 +888,10 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   try {
     const granted = await ensureCoreToolsOnConversationalAgents(owner);
     if (granted.length > 0) {
-      console.log(`[agent] core tools granted to: ${granted.join(', ')}`);
+      logger.info(`core tools granted to: ${granted.join(', ')}`);
     }
   } catch (err) {
-    console.error('[agent] core tool grant failed:', err instanceof Error ? err.message : err);
+    logger.error('core tool grant failed:', err instanceof Error ? err.message : err);
   }
 
   await pg.listen('telegram_message_inserted', (payload: string) => {
@@ -901,13 +902,10 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
     opts
       .enqueueTelegramTurn(payload)
       .catch((err) =>
-        console.error(
-          '[agent] enqueue telegram turn error:',
-          err instanceof Error ? err.message : err,
-        ),
+        logger.error('enqueue telegram turn error:', err instanceof Error ? err.message : err),
       );
   });
-  console.log('[agent] LISTENing on telegram_message_inserted');
+  logger.info('LISTENing on telegram_message_inserted');
 
   // summarize_due now carries an AGENT id (migration 0072: AFTER INSERT on
   // assistant_messages, every channel), so one handler drives summarization
@@ -917,7 +915,7 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
     if (!payload) return;
     scheduleSummarize(owner, payload);
   });
-  console.log('[agent] LISTENing on summarize_due (per-agent)');
+  logger.info('LISTENing on summarize_due (per-agent)');
 
   // Durable, concurrency-capped extractor queue. Must start BEFORE the
   // node_ingested listener (so enqueues land) and before the boot drain below.
@@ -926,10 +924,10 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   await pg.listen('node_ingested', (payload: string) => {
     if (!payload) return;
     enqueueExtract(payload).catch((err) =>
-      console.error('[agent] enqueue extract error:', err instanceof Error ? err.message : err),
+      logger.error('enqueue extract error:', err instanceof Error ? err.message : err),
     );
   });
-  console.log('[agent] LISTENing on node_ingested');
+  logger.info('LISTENing on node_ingested');
 
   // NEW-7: low-latency heartbeat wake. createHeartbeat + force-fire
   // paths fire pg_notify('heartbeat_due', ownerId). When we get one,
@@ -946,10 +944,10 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
     // The payload is the owner id. In single-user mode that's
     // always the owner; we still pass it through for cleanliness.
     tickHeartbeats(payload).catch((err) =>
-      console.error(`[agent] heartbeat_due wake error:`, err instanceof Error ? err.message : err),
+      logger.error(`heartbeat_due wake error:`, err instanceof Error ? err.message : err),
     );
   });
-  console.log(`[agent] LISTENing on ${HEARTBEAT_DUE_CHANNEL}`);
+  logger.info(`LISTENing on ${HEARTBEAT_DUE_CHANNEL}`);
 
   // Reflector: slow background pass every REFLECTOR_INTERVAL_MS that
   // checks for new outbound activity and appends to persona_notes when
@@ -966,8 +964,8 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
     backoffCapMs: REFLECTOR_BACKOFF_CAP_MS,
     run: () => reflect(owner),
   });
-  console.log(
-    `[agent] reflector tick every ${REFLECTOR_INTERVAL_MS / 1000}s (with failure backoff up to 1h)`,
+  logger.info(
+    `reflector tick every ${REFLECTOR_INTERVAL_MS / 1000}s (with failure backoff up to 1h)`,
   );
 
   // Heartbeat tick: every minute, look for active heartbeats whose
@@ -986,14 +984,14 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
     run: () => tickHeartbeats(owner),
     onSuccess: (report) => {
       if (report.considered > 0) {
-        console.log(
-          `[agent] heartbeat tick: considered=${report.considered} fired=${report.fired} skipped=${report.skipped} errored=${report.errored}`,
+        logger.info(
+          `heartbeat tick: considered=${report.considered} fired=${report.fired} skipped=${report.skipped} errored=${report.errored}`,
         );
       }
     },
   });
-  console.log(
-    `[agent] heartbeat tick every ${HEARTBEAT_TICK_MS / 1000}s (with failure backoff up to 30min)`,
+  logger.info(
+    `heartbeat tick every ${HEARTBEAT_TICK_MS / 1000}s (with failure backoff up to 30min)`,
   );
 
   // Extract sweep: periodically re-queue any node that never got an
@@ -1006,7 +1004,7 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
     everyMs: SWEEP_INTERVAL_MS,
     run: () => sweepMissedExtractions(owner),
   });
-  console.log(`[agent] extract sweep every ${SWEEP_INTERVAL_MS / 1000}s (missed-event safety net)`);
+  logger.info(`extract sweep every ${SWEEP_INTERVAL_MS / 1000}s (missed-event safety net)`);
 
   // Tables v2 migration sweep (plan §9): convert the long tail of legacy
   // JSONB tables to sqlite files, a few per tick, each under the same
@@ -1022,8 +1020,8 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
       await sweepLegacyTables(TABLE_MIGRATE_BATCH);
     },
   });
-  console.log(
-    `[agent] table migration sweep every ${TABLE_MIGRATE_SWEEP_MS / 1000}s (${TABLE_MIGRATE_BATCH}/tick)`,
+  logger.info(
+    `table migration sweep every ${TABLE_MIGRATE_SWEEP_MS / 1000}s (${TABLE_MIGRATE_BATCH}/tick)`,
   );
 
   await assertEmbeddingModelConsistency(owner);
@@ -1042,6 +1040,6 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
  * DBOS.shutdown(). Idempotent via stopExtractQueue.
  */
 export async function stopAgentRuntime(): Promise<void> {
-  console.log('[agent] stopping extract queue');
+  logger.info('stopping extract queue');
   await stopExtractQueue();
 }

@@ -64,3 +64,5 @@ export {
   type ContextSource,
   type LiveModelInfo,
 } from './model-context';
+
+export { log, registerLogSink, hasLogSink, type LogSink, type ScopedLogger } from './log';
