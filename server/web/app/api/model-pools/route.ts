@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { and, asc, eq } from 'drizzle-orm';
 import { db, curatedModels } from '@mantle/db';
 import { getOwnerOr401 } from '@/lib/auth';
-import { MODEL_POOLS, MODEL_POOL_IDS } from '@/lib/model-pools';
+import { MODEL_POOLS, MODEL_POOL_IDS, poolModelIssue } from '@/lib/model-pools';
 
 export async function GET() {
   const user = await getOwnerOr401();
@@ -52,6 +52,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
   const b = parsed.data;
+  // Does the model actually do the pool's job? "Read images" and "Image
+  // generation" both accept images, so an image GENERATOR reads like a
+  // perfect vision model on inputs alone — the catalog's output modalities
+  // are what separate them. Fail-open: an unloaded catalog or a non-
+  // OpenRouter route allows the save (see catalogModalities).
+  const orRoute = b.routes.find((r) => r.provider === 'openrouter');
+  if (orRoute) {
+    const { refreshModelCatalog, catalogModalities } = await import('@mantle/tracing');
+    await refreshModelCatalog();
+    const issue = poolModelIssue(b.pool, catalogModalities(orRoute.model));
+    if (issue) {
+      return NextResponse.json(
+        { error: `'${b.name}' does not fit this pool: ${issue}` },
+        { status: 400 },
+      );
+    }
+  }
   // Append at the end of the pool.
   const inPool = await db
     .select({ position: curatedModels.position })

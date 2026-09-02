@@ -22,7 +22,7 @@
 
 import { and, asc, eq } from 'drizzle-orm';
 import { db, curatedModels, type CuratedPricing, type CuratedRoute } from '@mantle/db';
-import { MODEL_POOLS, MODEL_POOL_IDS } from '@mantle/client-types/model-pools';
+import { MODEL_POOLS, MODEL_POOL_IDS, poolModelIssue } from '@mantle/client-types/model-pools';
 import { OPENAI_TTS_MODELS, OPENAI_STT_MODELS } from '@mantle/voice-client/catalog';
 import { GOOGLE_TTS_MODELS, GOOGLE_STT_MODELS } from '@mantle/voice-client/catalogs/google';
 import {
@@ -66,6 +66,10 @@ function needKey(): string {
   return 'no openrouter API key configured — the Data API needs one; add it at /settings/keys';
 }
 
+function strList(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+}
+
 function num(v: unknown): number {
   const n = typeof v === 'string' ? Number(v) : typeof v === 'number' ? v : NaN;
   return Number.isFinite(n) ? n : 0;
@@ -84,6 +88,12 @@ type CatalogModel = {
   outputPerM: number | null;
   contextTokens: number | null;
   modality: string | null;
+  /** `architecture.input_modalities` — what the model ACCEPTS. */
+  inputModalities: string[];
+  /** `architecture.output_modalities` — what it PRODUCES. The half that
+   *  separates an image READER from an image GENERATOR (both accept images);
+   *  `poolModelIssue` uses it to keep a generator out of a text-out pool. */
+  outputModalities: string[];
   created: number | null;
 };
 
@@ -102,6 +112,8 @@ export function voiceCatalogSupplement(): CatalogModel[] {
     outputPerM: null,
     contextTokens: null,
     modality: 'audio',
+    inputModalities: [],
+    outputModalities: [],
     created: null,
   };
   const out: CatalogModel[] = [];
@@ -161,6 +173,8 @@ async function loadCatalog(): Promise<
       outputPerM: perM(pricing.completion),
       contextTokens: typeof m.context_length === 'number' ? m.context_length : null,
       modality: typeof arch.modality === 'string' ? arch.modality : null,
+      inputModalities: strList(arch.input_modalities),
+      outputModalities: strList(arch.output_modalities),
       created: typeof m.created === 'number' ? m.created : null,
     });
   }
@@ -323,7 +337,7 @@ const model_catalog: BuiltinToolDef = {
   slug: 'model_catalog',
   name: 'Model catalog with pricing',
   description:
-    "Look up models with pricing: OpenRouter's public catalog (slug, live input/output $ per 1M, context, modality) PLUS Mantle's wired voice catalogs (grok-voice, whisper/gpt-4o transcribe, ElevenLabs, Deepgram, Gemini voices) which OpenRouter's list omits. THE source for slugs and pricing snapshots when writing entries with `model_pool_set` — each row's `provider` is the route to record. Voice rows have `kind` tts/stt and NULL pricing (billed per character/minute, not per token — leave the snapshot empty, never invent a rate). `q` searches name/slug; `ids` fetches exact slugs. Keyless; cached ~5 minutes.",
+    "Look up models with pricing: OpenRouter's public catalog (slug, live input/output $ per 1M, context, modality, plus `inputModalities`/`outputModalities` — the output side is what separates an image READER from an image GENERATOR) PLUS Mantle's wired voice catalogs (grok-voice, whisper/gpt-4o transcribe, ElevenLabs, Deepgram, Gemini voices) which OpenRouter's list omits. THE source for slugs and pricing snapshots when writing entries with `model_pool_set` — each row's `provider` is the route to record. Voice rows have `kind` tts/stt and NULL pricing (billed per character/minute, not per token — leave the snapshot empty, never invent a rate). `q` searches name/slug; `ids` fetches exact slugs. Keyless; cached ~5 minutes.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -414,11 +428,34 @@ const model_pool_list: BuiltinToolDef = {
   },
 };
 
+/**
+ * Catalog-checked pool fit: does this entry's OpenRouter route actually do
+ * what the pool needs? The reason this exists is the "Read images" trap — an
+ * image GENERATOR (Nano Banana Pro, GPT Image) accepts images just like a
+ * reader does, so a curator picking on names alone lands one in the vision
+ * pool, where it bills image-generation tokens and returns a picture the
+ * vision worker cannot parse. The catalog's `output_modalities` settles it.
+ *
+ * Fail-open: only a LOADED catalog that positively contradicts the pool
+ * rejects. No OpenRouter route, an unknown slug, or an unreachable catalog
+ * all return null — an outage must never block curation.
+ */
+async function poolFitIssue(pool: string, routes: CuratedRoute[]): Promise<string | null> {
+  const route = routes.find((r) => r.provider === 'openrouter');
+  if (!route) return null;
+  const res = await loadCatalog();
+  if (!res.ok) return null;
+  const slug = route.model.trim().toLowerCase();
+  const hit = res.models.find((m) => m.id.toLowerCase() === slug);
+  if (!hit) return null;
+  return poolModelIssue(pool, { input: hit.inputModalities, output: hit.outputModalities });
+}
+
 const model_pool_set: BuiltinToolDef = {
   slug: 'model_pool_set',
   name: 'Add or update a curated pool entry',
   description:
-    "Upsert one model into a curated pool (matched by pool + name; existing entries are updated in place). `routes` is the model's slug per provider — always include the `openrouter` route, plus the direct-provider slug when it differs (e.g. anthropic 'claude-sonnet-5'). Copy `pricing` from `model_catalog` — it is a snapshot that keeps the $100 comparison working on direct-connected brains. Curation only: this changes the shortlist at /models/pools, never what any agent or worker actually runs.",
+    "Upsert one model into a curated pool (matched by pool + name; existing entries are updated in place). `routes` is the model's slug per provider — always include the `openrouter` route, plus the direct-provider slug when it differs (e.g. anthropic 'claude-sonnet-5'). Copy `pricing` from `model_catalog` — it is a snapshot that keeps the $100 comparison working on direct-connected brains. Checked against the live catalog and REFUSED when the model cannot do the pool's job: read `outputModalities` first — one that outputs images is a GENERATOR, never a reader (the Read-images pool wants a capable text-out model that accepts pictures). Curation only: this changes the shortlist at /models/pools, never what any agent or worker runs.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -477,6 +514,8 @@ const model_pool_set: BuiltinToolDef = {
           "routes must contain at least one {provider, model} — e.g. {provider:'openrouter', model:'anthropic/claude-sonnet-5'}",
       };
     }
+    const misfit = await poolFitIssue(pool, routes);
+    if (misfit) return { ok: false, error: `${name} does not belong in '${pool}': ${misfit}` };
     const inP = typeof input.input_per_m === 'number' ? input.input_per_m : null;
     const outP = typeof input.output_per_m === 'number' ? input.output_per_m : null;
     const pricing: CuratedPricing | null =

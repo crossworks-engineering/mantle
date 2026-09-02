@@ -35,10 +35,42 @@ curation-time snapshot so brains connected directly to a provider can still
 render cost comparisons. Pool vocabulary: `packages/client-types/src/model-pools.ts`
 (drift-tripwire test against the worker-kind enum).
 
+## Pool fit: readers vs generators
+
+Every pool declares a `modality` contract (`packages/client-types/src/model-pools.ts`),
+and `poolModelIssue(pool, modalities)` checks a candidate against it.
+
+The reason it exists: **"Read images" and "Image generation" both accept image
+input**, so the input side alone cannot tell them apart. On 2026-09-02 the
+shipped vision pool carried Nano Banana Pro
+(`google/gemini-3-pro-image`, `text+image->text+image`) — a generator. It
+would have billed image-generation tokens and returned a picture where the
+vision worker parses text. OpenRouter's `architecture.output_modalities` is
+the decider: **an image reader is just a capable text-out model that accepts
+pictures.**
+
+Four write paths now check it, all fail-open (an unloaded or unreachable
+catalog allows the write; only positive catalog evidence rejects):
+
+| Path | File |
+| --- | --- |
+| `model_pool_set` (the Curator) | `packages/tools/src/builtins-curation.ts` |
+| `POST /api/model-pools` (hand-add) | `server/web/app/api/model-pools/route.ts` |
+| AI-worker save | `server/web/lib/ai-workers.ts` (`openRouterModelIssue`) |
+| Vision model dropdown | `packages/voice/src/adapters/openrouter-vision.ts` |
+
+`model_catalog` now returns `inputModalities` / `outputModalities` so the
+Curator sees the evidence rather than guessing from the model's NAME, which
+is how the bad entry got in. OpenRouter's meta-routers (`openrouter/auto*`)
+are exempt on the worker path — their modalities are the union over
+everything they might route to.
+
 ## The repo-shipped template
 
 `packages/client-types/src/model-pools-data.ts` (GENERATED — re-export from a
-curated brain via `GET /api/model-pools/export`, don't hand-edit) is the
+curated brain via `GET /api/model-pools/export`, don't hand-edit; the one
+exception on record is the 2026-09-02 removal of the generator from the
+vision pool, noted in the file header) is the
 canonical shipped list. Two consumers:
 
 - **Seeding**: `applyManifest` step 7 (`server/web/lib/model-pools-seed.ts`)

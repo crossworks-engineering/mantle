@@ -6,6 +6,11 @@
  * at curation time). Do NOT hand-edit entries here: curate at /models/pools
  * (by hand or via the Curator) and re-export with GET /api/model-pools/export.
  *
+ * One hand-correction on 2026-09-02: the vision ("Read images") pool carried
+ * Nano Banana Pro (`google/gemini-3-pro-image`), which is an image GENERATOR
+ * (`text+image->text+image`). It is out, and `poolModelIssue` in
+ * ./model-pools.ts now rejects that class of entry on every write path.
+ *
  * Seeded into `curated_models` for owners who have no curated entries yet
  * (fresh installs at onboarding; empty existing brains on upgrade). Owners who
  * have curated ANYTHING are never touched — their pools are their judgment.
@@ -2138,27 +2143,6 @@ export const CURATED_MODEL_POOLS: readonly CuratedTemplateEntry[] = [
   {
     pool: 'vision',
     position: 1,
-    name: 'Gemini 3 Pro Image (Nano Banana Pro)',
-    vendor: 'Google',
-    routes: [
-      {
-        provider: 'openrouter',
-        model: 'google/gemini-3-pro-image',
-      },
-    ],
-    pricing: {
-      source: 'openrouter',
-      currency: 'USD',
-      inputPerM: 2,
-      capturedAt: '2026-08-22T15:31:39.522Z',
-      outputPerM: 12,
-    },
-    rating: 5,
-    note: 'purpose-built image model, flagship OCR/extraction quality, can also edit/generate images; 131K context',
-  },
-  {
-    pool: 'vision',
-    position: 2,
     name: 'Claude Sonnet 5',
     vendor: 'Anthropic',
     routes: [
@@ -2183,7 +2167,7 @@ export const CURATED_MODEL_POOLS: readonly CuratedTemplateEntry[] = [
   },
   {
     pool: 'vision',
-    position: 3,
+    position: 2,
     name: 'Qwen3 VL 235B A22B Instruct',
     vendor: 'Alibaba/Qwen',
     routes: [
@@ -2204,7 +2188,7 @@ export const CURATED_MODEL_POOLS: readonly CuratedTemplateEntry[] = [
   },
   {
     pool: 'vision',
-    position: 4,
+    position: 3,
     name: 'Qwen3 VL 30B A3B Instruct',
     vendor: 'Alibaba/Qwen',
     routes: [
@@ -2225,7 +2209,7 @@ export const CURATED_MODEL_POOLS: readonly CuratedTemplateEntry[] = [
   },
   {
     pool: 'vision',
-    position: 5,
+    position: 4,
     name: 'Nemotron Nano 12B V2 VL (free)',
     vendor: 'NVIDIA',
     routes: [

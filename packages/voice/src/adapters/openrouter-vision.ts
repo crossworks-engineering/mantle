@@ -97,7 +97,7 @@ type OrListModelsResponse = {
     context_length?: number;
     top_provider?: { context_length?: number };
     pricing?: { prompt?: string; completion?: string };
-    architecture?: { input_modalities?: string[] };
+    architecture?: { input_modalities?: string[]; output_modalities?: string[] };
   }>;
 };
 
@@ -105,6 +105,25 @@ function perMillion(v: unknown): number | undefined {
   if (v == null) return undefined;
   const n = typeof v === 'number' ? v : Number(v);
   return Number.isFinite(n) ? Math.round(n * 1_000_000 * 10_000) / 10_000 : undefined;
+}
+
+/**
+ * An image READER accepts pictures and answers in TEXT. Filtering on image
+ * INPUT alone (what this did until 2026-09-02) also matched every image
+ * GENERATOR — Nano Banana Pro, GPT Image and friends all take an image in —
+ * so the vision dropdown offered generators, which bill image-generation
+ * tokens and return a picture this adapter's text parser reads as empty.
+ * The output side is the decider; routers (`openrouter/auto`) advertise the
+ * union of everything they might route to, so they are excluded too.
+ */
+function isImageReader(
+  arch: { input_modalities?: string[]; output_modalities?: string[] } | undefined,
+): boolean {
+  const inputs = arch?.input_modalities ?? [];
+  const outputs = arch?.output_modalities ?? [];
+  if (!inputs.includes('image')) return false;
+  if (outputs.length === 0) return true; // no output info — trust the input side
+  return outputs.includes('text') && !outputs.includes('image');
 }
 
 export const openrouterVisionAdapter: VisionDispatcher = {
@@ -182,7 +201,7 @@ export const openrouterVisionAdapter: VisionDispatcher = {
       }
       const parsed = (await res.json()) as OrListModelsResponse;
       const vision: VisionModelInfo[] = (parsed.data ?? [])
-        .filter((m) => (m.architecture?.input_modalities ?? []).includes('image'))
+        .filter((m) => isImageReader(m.architecture))
         .map((m) => ({
           id: m.id,
           label: m.name || m.id,

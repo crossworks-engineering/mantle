@@ -29,6 +29,7 @@ import {
 } from '@mantle/db';
 import type { AiWorkerDTO } from '@mantle/client-types';
 import { slugify } from '@mantle/client-types/slugify';
+import { poolModelIssue } from '@mantle/client-types/model-pools';
 
 // Resolution helpers live in @mantle/db so apps/agent can use them
 // without depending on apps/web. Re-exported here for convenience.
@@ -284,6 +285,10 @@ const CHAT_CATALOG_KINDS = new Set([
  * outage must never lock an operator out of their own config); only a
  * loaded catalog that positively lacks the id rejects. `~`-prefixed
  * auto-updating aliases are real catalog entries and pass.
+ *
+ * Two checks: the id must EXIST, and it must do the kind's job — see the
+ * modality note below, which is what keeps an image generator off a vision
+ * worker.
  */
 export async function openRouterModelIssue(opts: {
   kind: string;
@@ -292,13 +297,33 @@ export async function openRouterModelIssue(opts: {
 }): Promise<string | null> {
   if (opts.provider !== 'openrouter' || !opts.model) return null;
   if (!CHAT_CATALOG_KINDS.has(opts.kind)) return null;
-  const { refreshModelCatalog, catalogHasModel, catalogSuggestions } =
+  const { refreshModelCatalog, catalogHasModel, catalogModalities, catalogSuggestions } =
     await import('@mantle/tracing');
   await refreshModelCatalog();
-  if (catalogHasModel(opts.model) !== false) return null;
-  const suggestions = catalogSuggestions(opts.model);
-  return (
-    `Model '${opts.model}' is not in OpenRouter's catalog — a worker saved with it fails silently at call time.` +
-    (suggestions.length ? ` Did you mean: ${suggestions.join(', ')}?` : '')
-  );
+  if (catalogHasModel(opts.model) === false) {
+    const suggestions = catalogSuggestions(opts.model);
+    return (
+      `Model '${opts.model}' is not in OpenRouter's catalog — a worker saved with it fails silently at call time.` +
+      (suggestions.length ? ` Did you mean: ${suggestions.join(', ')}?` : '')
+    );
+  }
+  // Second failure mode, same silence: an id that EXISTS but does the wrong
+  // job. Image generators (google/gemini-3-pro-image, openai/gpt-5-image)
+  // accept image input exactly like a vision model does, so they pass every
+  // input-side check — then bill image-generation tokens and hand back a
+  // picture where the worker expected text. Only `output_modalities` catches
+  // it. Every kind in CHAT_CATALOG_KINDS is also a curated-pool id, so the
+  // pool's own modality contract is the check. Routers are exempt: their
+  // modalities are the UNION over everything they might route to, which says
+  // nothing about the model that actually answers.
+  if (!isRouterSlug(opts.model)) {
+    const issue = poolModelIssue(opts.kind, catalogModalities(opts.model));
+    if (issue) return `Model '${opts.model}' does not fit a ${opts.kind} worker: ${issue}`;
+  }
+  return null;
+}
+
+/** OpenRouter's meta-routers (`openrouter/auto`, `…/auto-beta`). */
+function isRouterSlug(model: string): boolean {
+  return /^openrouter\/auto/i.test(model.trim());
 }

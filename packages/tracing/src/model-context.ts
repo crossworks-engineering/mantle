@@ -59,6 +59,13 @@ export type LiveModelInfo = {
   contextLength: number;
   /** Whether the model accepts image input (architecture.input_modalities). */
   vision: boolean;
+  /** Whether the model PRODUCES images (architecture.output_modalities). An
+   *  image generator accepts images too, so `vision` alone cannot tell a
+   *  reader from a generator — this is the half that can. */
+  imageOutput: boolean;
+  /** Raw catalog modalities, for pool/worker fit checks. */
+  inputModalities: string[];
+  outputModalities: string[];
   /** USD per 1M input/prompt tokens, when OpenRouter returns pricing. 0 is a
    *  legitimate value (free routes); undefined means "the provider didn't
    *  return a pricing field" and the UI should render "pricing unavailable"
@@ -80,7 +87,10 @@ type OpenRouterModel = {
   id?: string;
   context_length?: number | null;
   top_provider?: { context_length?: number | null } | null;
-  architecture?: { input_modalities?: string[] | null } | null;
+  architecture?: {
+    input_modalities?: string[] | null;
+    output_modalities?: string[] | null;
+  } | null;
   /** OpenRouter encodes pricing as **strings in USD per single token** —
    *  e.g. `"0.0000025"` for $2.50 per 1M. Multiply by 1e6 for the per-million
    *  view the UI shows. Other fields (`request`, `image`, `web_search`, …)
@@ -123,10 +133,24 @@ export function parseCatalog(models: OpenRouterModel[]): Record<string, LiveMode
       typeof top === 'number' && top > 0 ? top : typeof base === 'number' && base > 0 ? base : 0;
     if (ctx <= 0) continue;
     const mods = m.architecture?.input_modalities;
-    const vision = Array.isArray(mods) && mods.includes('image');
+    const outMods = m.architecture?.output_modalities;
+    const inputModalities = Array.isArray(mods) ? mods.filter((x) => typeof x === 'string') : [];
+    const outputModalities = Array.isArray(outMods)
+      ? outMods.filter((x) => typeof x === 'string')
+      : [];
+    const vision = inputModalities.includes('image');
+    const imageOutput = outputModalities.includes('image');
     const inputPricePerM = parsePerMillion(m.pricing?.prompt);
     const outputPricePerM = parsePerMillion(m.pricing?.completion);
-    out[id] = { contextLength: ctx, vision, inputPricePerM, outputPricePerM };
+    out[id] = {
+      contextLength: ctx,
+      vision,
+      imageOutput,
+      inputModalities,
+      outputModalities,
+      inputPricePerM,
+      outputPricePerM,
+    };
   }
   return out;
 }
@@ -323,6 +347,18 @@ export function maxImageBytesFor(modelSlug: string | null | undefined): number {
 export function catalogHasModel(id: string): boolean | null {
   if (!liveModelIds) return null;
   return liveModelIds.has(id.trim().toLowerCase());
+}
+
+/**
+ * The live catalog's modalities for a slug, or null when the catalog never
+ * loaded or does not list it. Three-valued for the same reason
+ * {@link catalogHasModel} is: callers gate CONFIG SAVES with it, so UNKNOWN
+ * must read as "allow".
+ */
+export function catalogModalities(id: string): { input: string[]; output: string[] } | null {
+  const hit = liveModels?.[id.trim().toLowerCase()];
+  if (!hit) return null;
+  return { input: hit.inputModalities, output: hit.outputModalities };
 }
 
 /**
