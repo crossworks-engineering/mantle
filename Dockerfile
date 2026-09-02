@@ -134,7 +134,7 @@ RUN maturin build --release --interpreter python3.12 --out /wheels
 # boundary; never link or bind it into anything. --disable-werror because
 # newer GCCs flag warnings 0.13.3 predates; the python base satisfies
 # configure's interpreter check.
-FROM python:3.12-slim AS libredwg-build
+FROM python:3.14-slim AS libredwg-build
 RUN apt-get update \
   && apt-get install -y --no-install-recommends gcc make libc6-dev xz-utils \
   && rm -rf /var/lib/apt/lists/*
@@ -156,7 +156,7 @@ RUN ./configure --disable-shared --disable-bindings --disable-docs --disable-wer
 # yt-dlp is baked in for offline boots, then refreshed from PyPI at start and
 # daily by the entrypoint (see entrypoint.sh for why "always latest" is a hard
 # requirement for this one dependency).
-FROM python:3.12-slim AS media
+FROM python:3.14-slim AS media
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg \
   && rm -rf /var/lib/apt/lists/*
