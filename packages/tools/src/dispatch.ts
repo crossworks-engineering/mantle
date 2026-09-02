@@ -10,7 +10,7 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { db, toolGroups, tools, type Tool, type ToolHandler } from '@mantle/db';
+import { db, toolGroups, type Tool, type ToolHandler } from '@mantle/db';
 import { getApiKey } from '@mantle/api-keys';
 import { getBuiltin, getBuiltinHandler } from './registry';
 import { checkToolPreconditions } from './preconditions';
