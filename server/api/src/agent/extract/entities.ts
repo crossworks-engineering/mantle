@@ -5,6 +5,7 @@
  * unchanged; the sequencer in ../extractor.ts calls into here.
  */
 
+import { aliasToAdd, findOrgVariant } from './rules';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, entities, entityEdges, nodes, pages, type Entity } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
@@ -74,13 +75,11 @@ async function reconcileEntity(
     // Falls through to the embedding match below, which carries the same guard.
     if (!isLikelyDifferentPerson(mention, existing)) {
       // Looks like a match — register the new spelling as an alias.
-      if (
-        !existing.aliases.includes(trimmed) &&
-        existing.name.toLowerCase() !== trimmed.toLowerCase()
-      ) {
+      const alias = aliasToAdd(existing, trimmed);
+      if (alias) {
         await db
           .update(entities)
-          .set({ aliases: [...existing.aliases, trimmed], updatedAt: new Date() })
+          .set({ aliases: [...existing.aliases, alias], updatedAt: new Date() })
           .where(eq(entities.id, existing.id));
       }
       return { entity: existing, created: false };
@@ -106,13 +105,11 @@ async function reconcileEntity(
       // "Alex Carter" are close enough to merge by default, which is wrong
       // for distinct people sharing a surname.
       if (!isLikelyDifferentPerson(mention, existing)) {
-        if (
-          !existing.aliases.includes(trimmed) &&
-          existing.name.toLowerCase() !== trimmed.toLowerCase()
-        ) {
+        const alias = aliasToAdd(existing, trimmed);
+        if (alias) {
           await db
             .update(entities)
-            .set({ aliases: [...existing.aliases, trimmed], updatedAt: new Date() })
+            .set({ aliases: [...existing.aliases, alias], updatedAt: new Date() })
             .where(eq(entities.id, existing.id));
         }
         return { entity: existing, created: false };
@@ -128,15 +125,12 @@ async function reconcileEntity(
   // legal-form variant resolves to the canonical instead of fragmenting the
   // graph. Folds the variant in as an alias for instant future matches.
   if (mention.kind === 'org') {
-    const norm = normaliseOrgName(trimmed);
-    if (norm) {
+    if (normaliseOrgName(trimmed)) {
       const orgs = await db
         .select()
         .from(entities)
         .where(and(eq(entities.ownerId, ownerId), eq(entities.kind, 'org')));
-      const hit = orgs.find(
-        (o) => normaliseOrgName(o.name) === norm && o.name.toLowerCase() !== trimmed.toLowerCase(),
-      );
+      const hit = findOrgVariant(orgs, trimmed, normaliseOrgName);
       if (hit) {
         if (!hit.aliases.includes(trimmed)) {
           await db

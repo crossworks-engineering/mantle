@@ -5,6 +5,7 @@
  * unchanged; the sequencer in ../extractor.ts calls into here.
  */
 
+import { parseClassifierDecision, resolveCostCap } from './rules';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db, facts, nodes, type AiWorker, type ExtractorParams } from '@mantle/db';
 
@@ -19,30 +20,6 @@ const CLASSIFIER_NEIGHBOURS = 3;
 
 /** Similarity threshold for "this candidate fact looks like an existing one." */
 const FACT_DEDUP_THRESHOLD = 0.3; // cosine distance; lower = more similar
-
-type ClassifierDecision = {
-  decision: 'ADD' | 'UPDATE' | 'DELETE' | 'NOOP';
-  target_index: number | null;
-  reason?: string;
-};
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function parseClassifierDecision(raw: string): ClassifierDecision {
-  const cleaned = raw
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/```\s*$/i, '')
-    .trim();
-  try {
-    const parsed = JSON.parse(cleaned) as ClassifierDecision;
-    if (!['ADD', 'UPDATE', 'DELETE', 'NOOP'].includes(parsed.decision)) {
-      return { decision: 'ADD', target_index: null };
-    }
-    return parsed;
-  } catch {
-    return { decision: 'ADD', target_index: null };
-  }
-}
 
 async function classifyAndApplyFact(
   ownerId: string,
@@ -202,8 +179,7 @@ export async function processFacts(
   // llm_extract step has already spent money by the time we get here,
   // `spent >= 0` is always true — so every fact gets dropped at #0. A 0
   // means "unlimited", not "zero budget".
-  const rawCostCap = params.extract_cost_cap_micro_usd;
-  const costCap = typeof rawCostCap === 'number' && rawCostCap > 0 ? rawCostCap : null;
+  const costCap = resolveCostCap(params.extract_cost_cap_micro_usd);
 
   const tally = await step(
     {

@@ -5,6 +5,7 @@
  * unchanged; the sequencer in ../extractor.ts calls into here.
  */
 
+import { planFileVersionSupersede } from './rules';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { step } from '@mantle/tracing';
@@ -68,58 +69,32 @@ export async function supersedeFileVersions(
       const family = siblings
         .filter((s) => fileFamilyKey(s.title) === familyKey)
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      const [newest, ...older] = family;
-      // Manual marks outrank this heuristic: a sibling explicitly superseded
-      // ('corrected') or replaced by a page ('migrated') keeps that mark — the
-      // step manages only its own 'version' marks and pristine rows. Ownership
-      // keys on the REASON, not the edge: a bare manual mark ("this is
-      // outdated", no successor pointer) has superseded_by null but must not
-      // be touched either.
-      const heuristicOwned = (s: (typeof family)[number]) =>
-        s.supersededReason === null || s.supersededReason === 'version';
-      // If the newest sibling was itself MANUALLY superseded (e.g. marked
-      // 'corrected' — with or without a pointer — because the new export was
-      // garbage), the heuristic stands down entirely — appointing it family
-      // head would write edges INTO a retired node and could close a cycle.
-      const headId = newest && heuristicOwned(newest) ? newest.id : null;
-      const demote = headId
-        ? older.filter(
-            (s) =>
-              heuristicOwned(s) &&
-              (s.salience > SUPERSEDED_FILE_SALIENCE || s.supersededBy !== headId),
-          )
-        : [];
-      if (demote.length > 0 && headId) {
+      // The rules (manual marks outrank the heuristic; only heuristic-owned
+      // siblings are demoted; the head is restored when a prior pass or a
+      // rename left a mark on it) live in rules.ts as planFileVersionSupersede,
+      // where they are unit-tested. This step only applies the plan.
+      const plan = planFileVersionSupersede(family, SUPERSEDED_FILE_SALIENCE);
+      if (plan.headId && plan.demoteIds.length > 0) {
         await db
           .update(nodes)
           .set({
             salience: SUPERSEDED_FILE_SALIENCE,
-            supersededBy: headId,
+            supersededBy: plan.headId,
             supersededReason: 'version',
           })
-          .where(
-            inArray(
-              nodes.id,
-              demote.map((s) => s.id),
-            ),
-          );
+          .where(inArray(nodes.id, plan.demoteIds));
       }
-      // Restore the head whenever a prior pass (or stale family membership —
-      // e.g. a rename moved a version-marked node into this family as newest)
-      // left a heuristic-owned demotion or edge on it. Clearing the head's own
-      // outgoing edge in the same pass keeps the family acyclic: siblings now
-      // point at it, so it must not point back into the chain.
-      if (headId && newest && (newest.salience < 1 || newest.supersededBy !== null)) {
+      if (plan.headId && plan.restoreHead) {
         await db
           .update(nodes)
           .set({ salience: 1, supersededBy: null, supersededReason: null })
-          .where(eq(nodes.id, headId));
+          .where(eq(nodes.id, plan.headId));
       }
       h.setOutput({
         family: familyKey,
         versions: family.length,
-        demoted: demote.length,
-        newest: newest?.title ?? null,
+        demoted: plan.demoteIds.length,
+        newest: family[0]?.title ?? null,
       });
     },
   );
