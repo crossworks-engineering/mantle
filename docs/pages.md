@@ -60,7 +60,9 @@ pages (sidecar, packages/db/src/schema/pages.ts)
 callouts/columns/mentions, so JSON is the source of truth and `doc_text`
 (via `docToText`) is the derived plaintext the brain consumes.
 
-CRUD lives in [`packages/content/src/pages.ts`](../packages/content/src/pages.ts),
+CRUD lives in [`packages/content/src/pages/`](../packages/content/src/pages),
+split by seam (`read`, `tree`, `draft`, `structure`, `embed`) behind a curated
+`index.ts`,
 mirroring `notes.ts`. Migrations: `0037` (enum value), `0038` (sidecar), `0039`
 (draft columns).
 
@@ -83,7 +85,7 @@ and was being re-run on every editing pause. Drafts make typing cheap and
 durable; commits make indexing deliberate. A 30-minute editing session is now
 **one** extractor run, not dozens.
 
-- Code: `saveDraft()` / `commitPage()` in `packages/content/src/pages.ts`.
+- Code: `saveDraft()` / `commitPage()` in `packages/content/src/pages/draft.ts`.
 - API: `PUT /api/pages/[id]/draft`, `POST /api/pages/[id]/commit`.
 - **Agents can finish a draft too** (v0.206+): `commitPageDraft(ownerId, id)`
   is the agent-shaped commit, `commitPage` takes the doc to publish because
@@ -573,7 +575,7 @@ heading_block_id })` (in the `pages` group), and a **drag-handle
 ## 9. Reading the code
 
 1. `packages/db/src/schema/pages.ts` + `content-chunks.ts`, the storage.
-2. `packages/content/src/pages.ts`, CRUD + draft/commit.
+2. `packages/content/src/pages/`, CRUD (`read.ts`, `tree.ts`) + draft/commit (`draft.ts`).
 3. `packages/content/src/doc-to-text.ts` + `chunk.ts`, the brain serializers.
 4. `jackdaw/components/page-editor/extensions.ts`, the editor schema; follow
    imports for each feature.

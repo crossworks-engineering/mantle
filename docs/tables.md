@@ -23,7 +23,7 @@ search, draft/commit, delegation, and brain-indexing machinery.
 | Addressing | `block-ids.ts` (UUID per block) | native stable `tab.id` / `column.id` / `row.id` |
 | Pure ops | `block-edit.ts` / `block-list.ts` | `table-model.ts` (doc) + `packages/tabledb` ops (file) |
 | Derived text | `doc-to-text.ts` | L1 profile + schema chunks (`packages/tabledb/src/profile.ts`, `schema.ts`) |
-| CRUD + draft/commit | `packages/content/src/pages.ts` | `packages/content/src/tables.ts` + `table-storage.ts` |
+| CRUD + draft/commit | `packages/content/src/pages/` (`read`/`tree`/`draft`) | `packages/content/src/tables/` (`read`/`write`/`draft`) + `table-storage.ts` |
 | Builtin tools | `builtins-pages.ts` (`page_*`) | `builtins-tables.ts` (`table_*`) |
 | Specialist agent | `Pages` + `rich_writing` | `Ledger` + `table_authoring` |
 | UI | `/pages` + TipTap | `/tables` + TanStack grid + workbook tab bar |

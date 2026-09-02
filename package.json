@@ -33,7 +33,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "pnpm -r typecheck && pnpm lint && pnpm format:check && vitest run",
+    "verify": "pnpm -r typecheck && pnpm lint && pnpm format:check && pnpm docs:check && vitest run",
     "status": "node scripts/status.mjs",
     "db:migrate": "pnpm -C packages/db migrate",
     "db:studio": "pnpm -C packages/db studio",
