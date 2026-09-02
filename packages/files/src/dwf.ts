@@ -372,12 +372,18 @@ async function parseDwfStructuredUncached(bytes: Buffer): Promise<DwfParsed> {
  */
 /** Render resolution for sidecar sheet rasters — a PER-BOX dial via the
  *  `DWF_RENDER_DPI` env (clamped to the sidecar's 50–600 range; default 300).
- *  ezdwf's dpi acts on an internal figure, so on a real A1 plot 300 ≈ 1500 px
- *  and 600 ≈ 3000 px. Tune to the box's VISION worker: tile-reading models
- *  (Gemini) genuinely consume ~3000 px, so a drawing-heavy box pairs
- *  DWF_RENDER_DPI=600 with a strong tiled reader; Claude-vision boxes gain
- *  nothing past ~1500 px (provider downscale). Higher dpi ≈ 4× bytes and
- *  vision tokens per sheet — a cost dial as much as a quality one. */
+ *
+ *  Since v0.232.141 the sidecar renders each sheet on a FIXED 33-inch page
+ *  (`RENDER_PAGE_INCHES`) rather than ezdwf's own small figure, so this dial
+ *  no longer sets the pixel count on its own: the sidecar clamps the
+ *  effective dpi to whatever keeps the output under its 30 MP cap, which
+ *  lands around 165 dpi ≈ 5400 px on the long edge. Anything above that
+ *  saturates — the value is a ceiling now, not a multiplier. The page size,
+ *  not the dpi, is what made small text legible: ezdwf floors every stroke at
+ *  0.5 POINTS, and on its default page that floor was ~5× a real pen width,
+ *  so line numbers and title-block dates filled in solid. Tune DOWN (150 ≈
+ *  4950 px) on a box whose vision worker downscales anyway — pixels are
+ *  vision tokens. */
 function renderDpi(): number {
   const raw = Number(env('DWF_RENDER_DPI'));
   if (!Number.isFinite(raw) || raw <= 0) return 300;

@@ -39,7 +39,9 @@ Routes (bearer auth on everything except /healthz):
                        sheets:[{name,index,png_base64}]} — per-sheet rasters
                        of an Autodesk DWF plot set, rendered by ezdwf (MIT)
                        in a group-killed child process (--dwf-render mode of
-                       this same file). `skipped` counts sheets that errored;
+                       this same file) onto a fixed 33-inch page, which is
+                       what keeps small text legible. `skipped` counts sheets
+                       that errored OR rendered blank;
                        `capped` says a sheet-count or payload cap bit; the
                        CAD-visual half of this sidecar's single purpose:
                        extracting viewable media from formats the app process
@@ -109,6 +111,24 @@ TIMEOUT_DWF_RENDER = 120
 # is the ezdwg-fallback worst case); 240s covers files an order of magnitude
 # bigger plus the fallback retry inside one child.
 TIMEOUT_DWG_RENDER = 240
+
+# ── CAD render page ──────────────────────────────────────────────────────
+# BOTH CAD renderers (ezdxf for DWG/DXF, ezdwf for DWF) floor every stroke at
+# a minimum width in POINTS — 1/72 inch of the FIGURE. So the page size, not
+# the dpi, sets how heavy a line looks relative to the drawing: dpi adds
+# pixels to the same picture, and a bold blob at 600 dpi is a sharper bold
+# blob. On the libraries' small default pages a real hairline came out around
+# 5x too heavy and small text (line numbers, title-block dates, general notes)
+# filled in solid and unreadable — the whole reason a drawing goes to a vision
+# model. 33 inches on the long edge (about A0) puts the floor back under a
+# real pen width. SQUARE so the same page serves landscape and portrait
+# sheets alike; `bbox_inches="tight"` then crops it to the drawing's own
+# aspect, so nothing is paid for the unused half.
+RENDER_PAGE_INCHES = 33.0
+# White paper, no padding, cropped to the ink. `facecolor` is explicit
+# because a figure saved with a transparent ground reads as black-on-black in
+# half the viewers that later open it.
+SAVEFIG_OPTS = {"facecolor": "white", "bbox_inches": "tight", "pad_inches": 0.0}
 
 JSON_BODY_CAP = 64 * 1024  # JSON endpoints only; /extract-audio streams.
 # Optional operator-supplied cookies (YouTube's datacenter-IP bot check).
@@ -962,6 +982,57 @@ class Handler(BaseHTTPRequestHandler):
             )
 
 
+def cad_page_inches(layout) -> tuple[float, float]:
+    """Figure size for a DXF layout: the drawing's own aspect, with its long
+    edge at RENDER_PAGE_INCHES. Falls back to a square when the extents cannot
+    be read — a rendered drawing with wasted margin beats no drawing."""
+    ratio = 1.0
+    try:
+        from ezdxf import bbox  # noqa: PLC0415 — child-only import
+
+        ext = bbox.extents(layout, fast=True)
+        if ext.has_data and ext.size.x > 0 and ext.size.y > 0:
+            ratio = ext.size.y / ext.size.x
+    except Exception:
+        ratio = 1.0
+    # Clamp the extreme shapes: a strip drawing must not produce a 1-inch edge
+    # (its stroke floor would swamp the picture) or a 300-inch one.
+    ratio = min(max(ratio, 0.2), 5.0)
+    if ratio <= 1.0:
+        return (RENDER_PAGE_INCHES, RENDER_PAGE_INCHES * ratio)
+    return (RENDER_PAGE_INCHES / ratio, RENDER_PAGE_INCHES)
+
+
+def png_is_blank(path: str) -> bool:
+    """True when a saved render carries essentially no ink.
+
+    A renderer that paints nothing does not raise: matplotlib saves an empty
+    canvas exactly like a full one, so "success" alone never meant the drawing
+    is actually IN the image. This is the only cheap check that can tell the
+    difference, and a blank page is worse than no page — it looks like content
+    to every surface downstream and answers no question.
+
+    Measured on a thumbnail, so a 30 MP render costs a fixed fraction of a
+    second. The threshold is deliberately far from both observed extremes: a
+    real P&ID renders 8-14% ink, and the blank one that started this had a
+    single non-white pixel out of three million (0.00003%). A probe that
+    cannot run returns False — never fail a good render on a broken probe.
+    """
+    try:
+        from PIL import Image  # noqa: PLC0415 — probe-only import
+
+        with Image.open(path) as im:
+            grey = im.convert("L")
+            grey.thumbnail((1000, 1000))
+            hist = grey.histogram()
+    except Exception:
+        return False
+    total = sum(hist)
+    if total == 0:
+        return True
+    return sum(hist[:250]) / total < 0.0005
+
+
 def dwf_render_worker(src: str, outdir: str, dpi: int, max_sheets: int) -> int:
     """`--dwf-render` child entry: raster every 2D sheet of `src` into
     `outdir` and write `index.json` describing what happened. Runs in its own
@@ -970,9 +1041,14 @@ def dwf_render_worker(src: str, outdir: str, dpi: int, max_sheets: int) -> int:
 
       - files and fallback names are keyed to the sheet's TRUE index in the
         set, so a failed sheet shifts nothing and no path is ever reused;
-      - the output is pixel-capped: when paper size × dpi would exceed
+      - the sheet is drawn on OUR page (RENDER_PAGE_INCHES), not ezdwf's own
+        small figure — the stroke floor is a width in points, so the page is
+        what decides legibility (see the constant);
+      - the output is pixel-capped: when page × dpi would exceed
         MAX_RENDER_PIXELS the dpi is scaled down for that sheet instead of
         allocating an unbounded canvas;
+      - a sheet that renders BLANK is counted as skipped, never stored (a
+        white rectangle reads as content to everything downstream);
       - matplotlib figures are closed after every sheet (harmless if ezdwf
         uses the OO API, load-bearing if it goes through pyplot's registry).
 
@@ -1009,17 +1085,42 @@ def dwf_render_worker(src: str, outdir: str, dpi: int, max_sheets: int) -> int:
         fname = f"sheet-{i}.png"
         path = os.path.join(outdir, fname)
         try:
-            sheet.save_plot(path, dpi=dpi)
-            # The pixel guard measures the ACTUAL output. ezdwf's dpi acts on
-            # an internal figure size, not the paper size (300 dpi yields
-            # ~1500 px on a real A1 plot), so any paper-size × dpi prediction
-            # is off by an unknown factor — render, measure, and re-render
-            # once at a scaled dpi only when the real file is oversized.
+            # Our own page rather than sheet.save_plot()'s: that helper builds
+            # a small figure (~5in wide), and ezdwf floors every stroke at 0.5
+            # POINTS, so on that page a hairline landed ~5x too fat and small
+            # text went solid. Proved it is the floor and not the resolution:
+            # rendering the same sheet with linewidth_scale 1.0, 0.35 and 0.2
+            # gave BYTE-IDENTICAL output — every stroke already sits on the
+            # floor, so scaling them cannot thin anything. RENDER_PAGE_INCHES
+            # is the fix; `plot(ax=...)` is ezdwf's supported seam for it.
+            #
+            # Colour is KEPT (no monochrome=True): the page alone restores
+            # legibility, and on a circuitised P&ID colour can carry meaning.
+            fig = plt.figure(figsize=(RENDER_PAGE_INCHES, RENDER_PAGE_INCHES))
+            ax = fig.add_axes([0, 0, 1, 1])
+            ax.set_axis_off()
+            ezdwf.plot(sheet, ax=ax)
+            # Fixed page ⇒ the pixel cap is a dpi ceiling. Conservative (it
+            # assumes the whole square; the tight bbox crops to the sheet's
+            # aspect), with the MEASURED guard below as the real backstop.
+            eff_dpi = min(dpi, max(50, int((max_pixels / (RENDER_PAGE_INCHES**2)) ** 0.5)))
+            fig.savefig(path, dpi=eff_dpi, **SAVEFIG_OPTS)
             pixels = png_pixels(path)
             if pixels is not None and pixels > max_pixels:
-                eff_dpi = max(50, int(dpi * (max_pixels / pixels) ** 0.5))
-                sheet.save_plot(path, dpi=eff_dpi)
+                fig.savefig(
+                    path,
+                    dpi=max(50, int(eff_dpi * (max_pixels / pixels) ** 0.5)),
+                    **SAVEFIG_OPTS,
+                )
+            # A sheet that paints nothing is a skip, not a white rectangle
+            # stored as if it were the drawing (see png_is_blank).
+            if png_is_blank(path):
+                raise ValueError("blank render")
         except Exception:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
             index["skipped"] += 1
             continue
         finally:
@@ -1067,6 +1168,7 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
     import matplotlib.pyplot as plt  # noqa: PLC0415
     from ezdxf.addons.drawing import Frontend, RenderContext  # noqa: PLC0415
     from ezdxf.addons.drawing.matplotlib import MatplotlibBackend  # noqa: PLC0415
+    from ezdxf.addons.drawing.properties import LayoutProperties  # noqa: PLC0415
 
     max_pixels = 30_000_000
     max_texts = 20_000
@@ -1196,20 +1298,50 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
 
     def render_png(document) -> str | None:
         """Raster `document`'s model space to model.png. Returns None on
-        success, the error string on failure (with any partial PNG removed)."""
+        success, the error string on failure (with any partial PNG removed).
+
+        A BLANK output counts as a failure. Nothing here raises when a drawing
+        paints nothing — matplotlib saves an empty canvas as happily as a full
+        one — so without the ink probe the worker reported success, the app
+        stored a white rectangle, and the only clue was its byte size."""
         try:
-            fig = plt.figure(figsize=(16, 10))
+            msp_layout = document.modelspace()
+            # Page shaped to the DRAWING, long edge pinned to the page size.
+            # A square page would work — equal aspect centres the drawing in it
+            # — but a landscape P&ID would then carry ~35% white margin into
+            # every vision call. `bbox.extents(fast=True)` is ~0.6s on a 9.7k
+            # entity drawing and uses cached bounding boxes; any failure falls
+            # back to the square, which is wasteful but never wrong.
+            fig = plt.figure(figsize=cad_page_inches(msp_layout))
             ax = fig.add_axes([0, 0, 1, 1])
             ax.set_axis_off()
-            Frontend(RenderContext(document), MatplotlibBackend(ax)).draw_layout(
-                document.modelspace(), finalize=True
-            )
-            # figsize is fixed (16×10in = 160 in²), so the output-pixel cap maps
-            # straight to a dpi ceiling — clamp BEFORE the first savefig instead
-            # of paying a ~230 MB over-budget render only to redo it smaller. The
-            # measured guard below stays as the backstop for a layout change.
-            eff_dpi = min(dpi, max(50, int((max_pixels / 160) ** 0.5)))
-            fig.savefig(png, dpi=eff_dpi)
+            # ACI colour 7 has NO fixed colour: ezdxf resolves it against the
+            # layout BACKGROUND, and the default layout is dark, so 7 comes out
+            # WHITE — invisible on matplotlib's white page. Overriding the
+            # RenderContext's own properties does not help either: draw_layout()
+            # rebuilds them from the layout unless they are passed in, which
+            # silently discards the override. Drawings whose entities carry
+            # explicit colours rendered fine and hid this for weeks; a drawing
+            # that is all colour 7 rendered ENTIRELY BLANK (NATREF 2026-09-02:
+            # 9681 entities, exactly one non-white pixel in the output).
+            lp = LayoutProperties.from_layout(msp_layout)
+            lp.set_colors("#FFFFFF")  # white page ⇒ colour 7 resolves to black
+            # `adjust_figure=False` keeps the page we asked for: the backend
+            # otherwise rescales the figure to the drawing's aspect, which on
+            # the old 16×10 page left ~7×4.8in. Page size is what decides
+            # stroke weight — ezdxf floors every stroke at a width in POINTS,
+            # so a small page makes hairlines ~5× too heavy and fills small
+            # text in solid. dpi cannot fix that; only a bigger page can.
+            Frontend(
+                RenderContext(document), MatplotlibBackend(ax, adjust_figure=False)
+            ).draw_layout(msp_layout, finalize=True, layout_properties=lp)
+            # The page is fixed, so the output-pixel cap maps straight to a dpi
+            # ceiling — clamp BEFORE the first savefig instead of paying an
+            # over-budget render only to redo it smaller. Conservative: it
+            # assumes the full square page, while the tight bbox below crops to
+            # the drawing's own aspect. The measured guard stays as backstop.
+            eff_dpi = min(dpi, max(50, int((max_pixels / (RENDER_PAGE_INCHES**2)) ** 0.5)))
+            fig.savefig(png, dpi=eff_dpi, **SAVEFIG_OPTS)
             with open(png, "rb") as f:
                 head = f.read(24)
             if head[:8] == b"\x89PNG\r\n\x1a\n":
@@ -1218,9 +1350,19 @@ def dwg_render_worker(src: str, outdir: str, dpi: int) -> int:
                     # Nested guard: a failed DOWNSCALE must not delete the good
                     # first render — only a genuinely unusable output is removed.
                     try:
-                        fig.savefig(png, dpi=max(50, int(eff_dpi * (max_pixels / pixels) ** 0.5)))
+                        fig.savefig(
+                            png,
+                            dpi=max(50, int(eff_dpi * (max_pixels / pixels) ** 0.5)),
+                            **SAVEFIG_OPTS,
+                        )
                     except Exception:
                         pass  # keep the over-budget-but-valid first PNG
+            if png_is_blank(png):
+                try:
+                    os.unlink(png)
+                except OSError:
+                    pass
+                return "the render produced a blank image (no ink on the page)"
             return None
         except Exception as err:
             try:
