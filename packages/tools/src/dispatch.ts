@@ -28,28 +28,13 @@ import { mcpCallRemoteTool } from './mcp-client';
 import { isMcpManagedSecretService } from './mcp-oauth';
 import { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
+import { registerToolDispatcher } from './dispatch-bridge';
+
+// Same-package callers that must not import this module (it imports the
+// registry, which imports every builtin) reach dispatchTool through the bridge.
+import { resolveTool, resolveTools } from './resolve';
+export { resolveTool, resolveTools };
 import { errorMessage } from '@mantle/std';
-
-/** Look up a tool by slug for a given owner. Returns null if missing/disabled. */
-export async function resolveTool(ownerId: string, slug: string): Promise<Tool | null> {
-  const [row] = await db
-    .select()
-    .from(tools)
-    .where(and(eq(tools.ownerId, ownerId), eq(tools.slug, slug), eq(tools.enabled, true)))
-    .limit(1);
-  return row ?? null;
-}
-
-/** Resolve a batch of slugs at once. Skips missing/disabled silently. */
-export async function resolveTools(ownerId: string, slugs: string[]): Promise<Tool[]> {
-  if (slugs.length === 0) return [];
-  const rows = await db
-    .select()
-    .from(tools)
-    .where(and(eq(tools.ownerId, ownerId), eq(tools.enabled, true)));
-  const want = new Set(slugs);
-  return rows.filter((r) => want.has(r.slug));
-}
 
 const HTTP_TIMEOUT_MS_DEFAULT = 15_000;
 
@@ -393,3 +378,4 @@ async function dispatchHttp(
     return { ok: false, error: scrub(msg) };
   }
 }
+registerToolDispatcher(dispatchTool);

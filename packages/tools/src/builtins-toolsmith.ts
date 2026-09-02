@@ -31,7 +31,7 @@ import { listApiKeys } from '@mantle/api-keys';
 import { appUrl, loadProfilePreferences } from '@mantle/content';
 import { parseTikaBytes } from '@mantle/files';
 import { createTool, deleteTool, listToolsForOwner, updateTool } from './crud';
-import { dispatchTool } from './dispatch';
+import { dispatchViaBridge as dispatchTool } from './dispatch-bridge';
 import { notifyPendingCreated } from './pending-notify';
 import { collectParamNames, collectSecretRefs, refKey, type HttpHandler } from './http-template';
 import {

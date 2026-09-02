@@ -41,7 +41,7 @@ import {
 } from '@mantle/content/app-table-exports';
 import { putContent } from '@mantle/storage';
 import { recordIngest } from '@mantle/tracing';
-import { resolveTool } from './dispatch';
+import { resolveTool } from './resolve';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';

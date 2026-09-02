@@ -41,7 +41,7 @@ import {
   type AskHumanFormQuestion,
 } from '@mantle/client-types';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
-import { resolveTools } from './dispatch';
+import { resolveTools } from './resolve';
 import { notFound } from './errors';
 
 /** Tools that may never run as queue items: the run tools themselves (no
