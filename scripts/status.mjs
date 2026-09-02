@@ -29,7 +29,9 @@
 // The same file's `peers` entry lists the OTHER dev machines to ask about
 // stranded work — also hostnames, also never committed.
 // ─────────────────────────────────────────────────────────────────────────────
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
+const execFileAsync = promisify(execFile);
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -214,7 +216,10 @@ async function probePeer({ label, ssh, path }) {
 async function probeStack({ label, ssh }) {
   if (!ssh) return null;
   try {
-    const out = execFileSync(
+    // Async on purpose: a synchronous ssh here blocks the event loop while the
+    // /api/version fetches are in flight, and their 8 s timeouts fire on an
+    // idle loop, so every box read "unreachable" the first time this ran.
+    const { stdout: out } = await execFileAsync(
       'ssh',
       [
         '-o',
@@ -224,7 +229,7 @@ async function probeStack({ label, ssh }) {
         ssh,
         'docker exec mantle_web cat /signal/stack.json 2>/dev/null',
       ],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 25000 },
+      { encoding: 'utf8', timeout: 25000 },
     );
     const j = JSON.parse(out);
     const state = (sha, base, refresh) => {
