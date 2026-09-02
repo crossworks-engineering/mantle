@@ -110,21 +110,38 @@ fi
 # Front door (v0.232.126+): the Caddyfile and its shapes are release-owned
 # like compose. Seed the baselines so the updater can refresh them from the
 # next roll on; a box's own routes belong in infra/caddy/conf.d/ (untouched).
+#
+# ORDER MATTERS: shapes first, Caddyfile last, and nothing at all unless the
+# shapes folder is writable. The Caddyfile imports the shape by name, so a
+# Caddyfile installed without its shape crash-loops caddy and takes the site
+# down (dev, 2026-09-02: the roll had created infra/caddy/shapes root-owned
+# as a bind-mount side effect, an unprivileged adopt wrote the Caddyfile,
+# then failed on the shape). Refuse loudly instead.
 if [ -s "$TMP/Caddyfile" ]; then
-  mkdir -p "$STACK/infra/caddy/shapes" "$STACK/infra/caddy/conf.d"
+  mkdir -p "$STACK/infra/caddy/shapes" "$STACK/infra/caddy/conf.d" 2>/dev/null || true
+  if [ ! -w "$STACK/infra/caddy/shapes" ] || [ ! -w "$STACK/infra/caddy" ]; then
+    echo "✘ infra/caddy or infra/caddy/shapes is not writable by $(id -un)." >&2
+    echo "  Re-run with sudo (the folder is usually root-owned after a roll created it)." >&2
+    echo "  The Caddyfile was NOT touched: an unsatisfied shape import would crash-loop caddy." >&2
+    exit 1
+  fi
+  shapes_ok=1
+  for f in "$TMP"/shapes/*.caddy; do
+    [ -f "$f" ] || { shapes_ok=0; break; }
+    b=$(basename "$f")
+    cp "$f" "$STACK/infra/caddy/shapes/$b.release" && cp "$f" "$STACK/infra/caddy/shapes/$b" || shapes_ok=0
+  done
+  if [ "$shapes_ok" != 1 ] || [ ! -s "$STACK/infra/caddy/shapes/same-origin.caddy" ]; then
+    echo "✘ could not install the routing shapes; leaving the Caddyfile as it is." >&2
+    exit 1
+  fi
   if [ -f "$STACK/infra/caddy/Caddyfile" ] && ! cmp -s "$STACK/infra/caddy/Caddyfile" "$TMP/Caddyfile"; then
     cp "$STACK/infra/caddy/Caddyfile" "$STACK/infra/caddy/Caddyfile.pre-adopt.$TS"
     echo "  (previous Caddyfile kept as infra/caddy/Caddyfile.pre-adopt.$TS; box routes go in conf.d/)"
   fi
   cp "$TMP/Caddyfile" "$STACK/infra/caddy/Caddyfile.release"
   cp "$TMP/Caddyfile" "$STACK/infra/caddy/Caddyfile"
-  for f in "$TMP"/shapes/*.caddy; do
-    [ -f "$f" ] || continue
-    b=$(basename "$f")
-    cp "$f" "$STACK/infra/caddy/shapes/$b.release"
-    cp "$f" "$STACK/infra/caddy/shapes/$b"
-  done
-  echo "✔ Caddyfile + shapes canonical installed (baselines seeded)"
+  echo "✔ shapes + Caddyfile canonical installed (baselines seeded)"
   echo "  recreate the front door: docker compose up -d --no-deps --force-recreate caddy"
 fi
 echo "  converge with: docker compose up -d --remove-orphans"

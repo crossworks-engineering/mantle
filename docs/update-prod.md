@@ -187,7 +187,9 @@ Then smoke-test the surface the release actually changed in the browser (and
   the hand copy above is history from the NEXT roll on. The roll that brings
   v0.232.126 still runs the OLD updater (self-refresh lag), so on that one
   roll do the copy by hand or run `scripts/compose-adopt.sh --apply` in the
-  stack dir afterwards (seeds the baselines too), then
+  stack dir afterwards (seeds the baselines too; run it with sudo, the roll
+  creates `infra/caddy/shapes` root-owned and the script refuses to touch the
+  Caddyfile when it cannot write the shapes), then
   `docker compose up -d --no-deps --force-recreate caddy`. The shape is
   `MANTLE_CADDY_SHAPE` in `.env` (default same-origin, what every box runs);
   `Caddyfile.same-origin` no longer exists.
