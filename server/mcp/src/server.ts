@@ -23,7 +23,17 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { authUsers, db, resolveSingleOwnerId } from '@mantle/db';
 import { buildMantleMcpServer } from '@mantle/mcp-core';
+import { registerRecallEmbedder } from '@mantle/content';
+import { embedBatch } from '@mantle/embeddings';
 import { eq } from 'drizzle-orm';
+
+// Recall's embedder. @mantle/content is storage and does not depend on the
+// adapter layer, so each process injects one at boot (see
+// packages/content/src/embed-bridge.ts). stdio reaches page writes through the
+// same page tools the other transports use, so a map committed from Claude
+// Desktop must embed its prompts too.
+// recall-embed-registration.test.ts pins this call in all three entrypoints.
+registerRecallEmbedder(embedBatch);
 
 // Resolve the owner: ALLOWED_USER_ID when set (validated as a UUID inside
 // resolveSingleOwnerId), else the sole auth.users row — so a self-hosted setup

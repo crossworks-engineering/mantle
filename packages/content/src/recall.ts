@@ -24,6 +24,7 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { db, notifyNodeIngested, recallMaps, recallNodes } from '@mantle/db';
+import { getRecallEmbedder } from './embed-bridge';
 import {
   RECALL_MAX_MAP_NODES,
   RECALL_PROMPT_TAG,
@@ -426,7 +427,10 @@ async function hasCompiledRows(ownerId: string, ids: string[]): Promise<boolean>
 
 /** Embed prompt rows whose vector is missing. Fire-and-forget from the write
  *  hooks; also safe to call from a sweep (none exists yet — S3 wires one).
- *  Dynamic import so the adapter registry stays out of module load. */
+ *  The embedder is injected at boot (see embed-bridge.ts), so this package
+ *  never reaches up into the adapter layer. Throws when the process forgot to
+ *  register one — deliberately loud, because the caller is fire-and-forget and
+ *  a silent zero here is invisible until recall_match stops finding prompts. */
 export async function embedPendingRecallPrompts(ownerId: string): Promise<number> {
   const pending = await db
     .select({
@@ -446,7 +450,7 @@ export async function embedPendingRecallPrompts(ownerId: string): Promise<number
     .limit(50);
   if (pending.length === 0) return 0;
 
-  const { embedBatch } = await import('@mantle/embeddings');
+  const embedBatch = getRecallEmbedder();
   const texts = pending.map((p) => `${p.title}\n${p.useWhen}\n${p.bodyMd}`.slice(0, 6000));
   const vectors = await embedBatch(ownerId, texts);
   let done = 0;

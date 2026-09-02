@@ -49,6 +49,8 @@ export {
   isRecallTreePage,
   type RecallCompileResult,
 } from './recall';
+
+export { registerRecallEmbedder, hasRecallEmbedder, type RecallEmbedder } from './embed-bridge';
 export {
   resolveExport,
   EXPORT_MIME,

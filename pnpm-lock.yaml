@@ -193,9 +193,6 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
-      '@mantle/embeddings':
-        specifier: workspace:*
-        version: link:../embeddings
       '@mantle/files':
         specifier: workspace:*
         version: link:../files
@@ -1024,9 +1021,15 @@ importers:
 
   server/mcp:
     dependencies:
+      '@mantle/content':
+        specifier: workspace:*
+        version: link:../../packages/content
       '@mantle/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@mantle/embeddings':
+        specifier: workspace:*
+        version: link:../../packages/embeddings
       '@mantle/mcp-core':
         specifier: workspace:*
         version: link:../../packages/mcp-core

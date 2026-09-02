@@ -32,6 +32,22 @@ try {
 process.env.NEXT_PUBLIC_GIT_SHA ??= process.env.MANTLE_GIT_SHA ?? '';
 process.env.NEXT_PUBLIC_BUILD_TIME ??= process.env.MANTLE_BUILD_TIME ?? '';
 
+// Recall's embedder, injected before anything can serve a request.
+// @mantle/content is storage and does not depend on the adapter layer, so the
+// process that owns the adapters registers one at boot (see
+// packages/content/src/embed-bridge.ts). This is the entrypoint that matters
+// most for Recall: the maps are authored in the editor, and a commit here is
+// what compiles them. Without the registration a map still compiles but its
+// prompt rows keep a null embedding, so recall_match silently returns nothing
+// — the bridge throws so it lands in the log instead.
+//
+// AWAITED, not top-level `import`: env files must load before @mantle/embeddings
+// initialises, exactly like the two imports below.
+// recall-embed-registration.test.ts pins this call in all three entrypoints.
+const { registerRecallEmbedder } = await import('@mantle/content');
+const { embedBatch } = await import('@mantle/embeddings');
+registerRecallEmbedder(embedBatch);
+
 const { serve } = await import('@hono/node-server');
 const { createApp } = await import('./app');
 

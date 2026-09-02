@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mantle/content": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/embeddings": "workspace:*",
     "@mantle/mcp-core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "drizzle-orm": "^0.45.2"

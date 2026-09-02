@@ -13,7 +13,8 @@
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { startProcessHeartbeat } from '@mantle/content';
+import { registerRecallEmbedder, startProcessHeartbeat } from '@mantle/content';
+import { embedBatch } from '@mantle/embeddings';
 import { runTableStorageProbes } from '@mantle/tabledb';
 import { configureDBOS, RUNNER_QUEUE, runnerConcurrency, runsTurnConcurrency } from './config';
 import { assertEnvShape } from '@mantle/config';
@@ -28,6 +29,14 @@ import { startTurnCancelListener, stopTurnCancelListener } from './turn-cancel';
 import './workflows/ping';
 
 assertEnvShape();
+
+// Recall's embedder. @mantle/content is storage and does not depend on the
+// adapter layer, so the process that owns the adapters injects one at boot
+// (packages/content/src/embed-bridge.ts). Without this, a page write that
+// compiles a Recall map leaves its prompt rows un-embedded and recall_match
+// silently stops finding them; the bridge throws so that shows up in the log.
+// recall-embed-registration.test.ts pins this call in all three entrypoints.
+registerRecallEmbedder(embedBatch);
 import './workflows/assistant-turn';
 import './workflows/team-turn';
 import './workflows/forum-turn';
