@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { explainDwgImageMiss, extractDwgImages, parseDwg, parseDwgToGrids, sniffDwg } from './dwg';
+import {
+  dwgRenderDpi,
+  explainDwgImageMiss,
+  extractDwgImages,
+  parseDwg,
+  parseDwgToGrids,
+  sniffDwg,
+} from './dwg';
 import { parseDocumentBytes } from './parse';
 
 /** Synthesized header-only fixture — never real drawing bytes (public repo).
@@ -284,5 +291,35 @@ describe('render retry provenance (render_converter)', () => {
       vi.unstubAllGlobals();
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe('dwgRenderDpi', () => {
+  // The compose anchor is `DWG_RENDER_DPI: ${DWG_RENDER_DPI:-}`, so an unset
+  // dial arrives as the EMPTY STRING — and Number('') is 0, which is finite.
+  // Treating that as 50 (the clamp floor) rendered every DWG on every default
+  // box at 800×500, small enough that the image gate dropped it outright.
+  it('falls back to 300 for unset, empty and non-numeric values', () => {
+    vi.stubEnv('DWG_RENDER_DPI', '');
+    expect(dwgRenderDpi()).toBe(300);
+    vi.stubEnv('DWG_RENDER_DPI', '   ');
+    expect(dwgRenderDpi()).toBe(300);
+    vi.stubEnv('DWG_RENDER_DPI', 'high');
+    expect(dwgRenderDpi()).toBe(300);
+    vi.stubEnv('DWG_RENDER_DPI', '0');
+    expect(dwgRenderDpi()).toBe(300);
+    vi.stubEnv('DWG_RENDER_DPI', '-100');
+    expect(dwgRenderDpi()).toBe(300);
+    vi.unstubAllEnvs();
+  });
+
+  it('honours a real value and clamps it to the sidecar range', () => {
+    vi.stubEnv('DWG_RENDER_DPI', '600');
+    expect(dwgRenderDpi()).toBe(600);
+    vi.stubEnv('DWG_RENDER_DPI', '20');
+    expect(dwgRenderDpi()).toBe(50);
+    vi.stubEnv('DWG_RENDER_DPI', '5000');
+    expect(dwgRenderDpi()).toBe(600);
+    vi.unstubAllEnvs();
   });
 });

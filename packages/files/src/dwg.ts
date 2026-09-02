@@ -92,10 +92,20 @@ const DIGEST_LABEL_CHARS = 12_000;
 const MAX_TEXT_ROWS = 20_000;
 
 /** Env dial for render sharpness, mirroring DWF_RENDER_DPI (docs there).
- *  One dial for DWG and DXF — same sidecar route, same rasteriser. */
+ *  One dial for DWG and DXF — same sidecar route, same rasteriser.
+ *
+ *  `raw <= 0` is UNSET, not "smallest allowed". The compose env anchor passes
+ *  `DWG_RENDER_DPI: ${DWG_RENDER_DPI:-}`, so an operator who never sets the
+ *  dial hands this function the EMPTY STRING — and `Number('')` is 0, which is
+ *  finite. Without the `<= 0` arm (the guard ./dwf.ts has always had) that 0
+ *  clamped up to the 50 floor instead of falling back to 300, and every DWG on
+ *  every default box rendered at 50 dpi: an 800×500 smudge of a P&ID, small
+ *  enough (~1 KB) that the embedded-image gate then dropped it as
+ *  `too_few_bytes` and the drawing got no picture at all. Found on NATREF
+ *  2026-09-02 — a 563 KB P&ID rendered 1003 bytes at 50 dpi, 15 KB at 300. */
 export function dwgRenderDpi(): number {
   const raw = Number(env('DWG_RENDER_DPI'));
-  if (!Number.isFinite(raw)) return 300;
+  if (!Number.isFinite(raw) || raw <= 0) return 300;
   return Math.max(50, Math.min(600, Math.round(raw)));
 }
 
