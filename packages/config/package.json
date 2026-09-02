@@ -1,5 +1,5 @@
 {
-  "name": "@mantle/runs",
+  "name": "@mantle/config",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -11,15 +11,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "@mantle/config": "workspace:*",
-    "@mantle/db": "workspace:*",
-    "drizzle-orm": "^0.45.2",
-    "pg-boss": "^12.26.1"
-  },
   "devDependencies": {
     "@types/node": "^22.20.1",
-    "postgres": "^3.4.5",
     "typescript": "^5.7.2"
   }
 }

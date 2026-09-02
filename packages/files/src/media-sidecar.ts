@@ -1,3 +1,4 @@
+import { env } from '@mantle/config';
 /**
  * Client for the media sidecar (infra/media-sidecar) — yt-dlp + ffmpeg behind
  * a narrow bearer-authed HTTP interface, compose profile `media`.
@@ -65,8 +66,8 @@ const T_EXTRACT = 600_000 + BACKSTOP_MS;
 const T_VIDEO = 1_500_000 + BACKSTOP_MS;
 
 function config(): { url: string; token: string } | null {
-  const url = process.env.MEDIA_SIDECAR_URL;
-  const token = process.env.MEDIA_SIDECAR_TOKEN;
+  const url = env('MEDIA_SIDECAR_URL');
+  const token = env('MEDIA_SIDECAR_TOKEN');
   if (!url || !token) return null;
   return { url: url.replace(/\/$/, ''), token };
 }

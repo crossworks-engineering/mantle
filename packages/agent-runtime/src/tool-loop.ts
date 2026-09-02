@@ -65,6 +65,7 @@ import { isChatFailover } from './chat-failover';
 import type { ChatMessage } from './messages';
 import { fenceRetrieved } from './messages';
 import { parseToolArgs } from './tool-args';
+import { env } from '@mantle/config';
 
 const DEFAULT_MAX_ITERATIONS = 6;
 
@@ -184,9 +185,9 @@ const NO_PROGRESS_LIMIT = 5; // identical call returned the identical result N t
 export type ToolValidationMode = 'off' | 'warn' | 'enforce';
 
 export function resolveToolValidationMode(
-  env: string | undefined = process.env.MANTLE_TOOL_VALIDATION,
+  value: string | undefined = env('MANTLE_TOOL_VALIDATION'),
 ): ToolValidationMode {
-  const raw = (env ?? '').trim().toLowerCase();
+  const raw = (value ?? '').trim().toLowerCase();
   return raw === 'off' || raw === 'enforce' ? raw : 'warn';
 }
 

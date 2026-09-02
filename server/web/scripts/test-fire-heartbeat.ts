@@ -21,8 +21,9 @@ import { db, heartbeats } from '@mantle/db';
 import { forceFire, registerHeartbeatTools } from '@mantle/heartbeats';
 import { registerAgentInvoker } from '@mantle/tools';
 import { invokeAgent } from '@mantle/agent-runtime';
+import { env } from '@mantle/config';
 
-const USER_ID = process.env.ALLOWED_USER_ID;
+const USER_ID = env('ALLOWED_USER_ID');
 if (!USER_ID) {
   console.error('ALLOWED_USER_ID env var required');
   process.exit(1);

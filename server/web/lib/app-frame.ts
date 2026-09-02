@@ -14,6 +14,7 @@ import { loadProfilePreferences } from '@mantle/content';
 import { resolveSingleOwnerId } from '@mantle/db';
 import { requestOrigin } from '@/lib/auth-constants';
 import type { Readable } from 'node:stream';
+import { env } from '@mantle/config';
 
 /** The shared-runtime import map, read once from the generated public/ asset
  *  (cwd is server/web in dev and in the image — same relative convention as
@@ -95,7 +96,7 @@ export async function renderAppFrame(
     colorTheme: url.searchParams.get('ct'),
     viewport: url.searchParams.get('vp') === '1',
     neatSpec,
-    neatLicense: process.env.NEXT_PUBLIC_NEAT_LICENSE_KEY ?? null,
+    neatLicense: env('MANTLE_NEAT_LICENSE_KEY') ?? null,
   });
   return new NextResponse(html, {
     status: 200,

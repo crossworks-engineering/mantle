@@ -16,6 +16,7 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import { startProcessHeartbeat } from '@mantle/content';
 import { runTableStorageProbes } from '@mantle/tabledb';
 import { configureDBOS, RUNNER_QUEUE, runnerConcurrency, runsTurnConcurrency } from './config';
+import { assertEnvShape } from '@mantle/config';
 import { FORUM_QUEUE } from '@mantle/assistant-runtime';
 import { RUNS_TURN_QUEUE } from '@mantle/runs';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
@@ -25,12 +26,15 @@ import { startTurnCancelListener, stopTurnCancelListener } from './turn-cancel';
 // Import workflow modules for their registration side-effects (registerWorkflow
 // runs at import, before launch).
 import './workflows/ping';
+
+assertEnvShape();
 import './workflows/assistant-turn';
 import './workflows/team-turn';
 import './workflows/forum-turn';
 import './workflows/runs-worker-turn';
 import './workflows/runs-resume-turn';
 import { enqueueTelegramTurn } from './workflows/telegram-turn';
+import { env } from '@mantle/config';
 
 async function main(): Promise<void> {
   // Liveness: the api runner exposes no HTTP port (the DBOS admin server is off
@@ -55,14 +59,14 @@ async function main(): Promise<void> {
   // Dual-mount tripwire: tool handlers run in THIS process too, so the
   // table-dbs volume must be writable here, not just in web (a tag-only
   // update that missed the compose refresh fails exactly this way).
-  if (process.env.TABLE_DB_DIR) {
+  if (env('TABLE_DB_DIR')) {
     void import('node:fs/promises').then(async (fsp) => {
       try {
-        await fsp.mkdir(process.env.TABLE_DB_DIR!, { recursive: true });
-        await fsp.access(process.env.TABLE_DB_DIR!, 2 /* W_OK */);
+        await fsp.mkdir(env('TABLE_DB_DIR')!, { recursive: true });
+        await fsp.access(env('TABLE_DB_DIR')!, 2 /* W_OK */);
       } catch {
         console.error(
-          `[api] TABLE_DB_DIR (${process.env.TABLE_DB_DIR}) is not writable in the api container — ` +
+          `[api] TABLE_DB_DIR (${env('TABLE_DB_DIR')}) is not writable in the api container — ` +
             `agent table edits will fail. Refresh docker-compose.yml (table-dbs must be mounted into web AND api).`,
         );
       }

@@ -15,13 +15,14 @@
 import postgres from 'postgres';
 import { abortTurn } from '@mantle/tracing';
 import { TURN_CANCEL_CHANNEL, type TurnCancelEnvelope } from '@mantle/turn-stream';
+import { env } from '@mantle/config';
 
 let sql: ReturnType<typeof postgres> | null = null;
 
 /** Start LISTENing for turn-cancel requests. Idempotent; returns once live. */
 export async function startTurnCancelListener(): Promise<void> {
   if (sql) return;
-  const url = process.env.DATABASE_URL;
+  const url = env('DATABASE_URL');
   if (!url) throw new Error('DATABASE_URL must be set');
   sql = postgres(url, { max: 1, prepare: false });
   await sql.listen(TURN_CANCEL_CHANNEL, (payload) => {

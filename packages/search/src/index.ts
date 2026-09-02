@@ -2,6 +2,7 @@ import { db, nodes, type Node } from '@mantle/db';
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { withHnswPool } from './hnsw';
 import { grantUnionFilter, pgArrayLiteral } from './pg';
+import { env } from '@mantle/config';
 
 export { withHnswPool } from './hnsw';
 export { grantUnionFilter, pgArrayLiteral } from './pg';
@@ -98,7 +99,7 @@ const RRF_K = 60;
 /** Salience down-weight strength: effective distance = cosine + λ·(1 − salience),
  *  so bulk/marketing mail can't crowd out real content. Non-email nodes are 1.0
  *  (no change). Keep in sync with @mantle/agent-runtime; tunable via env. */
-const SALIENCE_LAMBDA = Number(process.env.MANTLE_SALIENCE_LAMBDA ?? 0.15);
+const SALIENCE_LAMBDA = Number(env('MANTLE_SALIENCE_LAMBDA') ?? 0.15);
 
 /**
  * Node search. Two modes:

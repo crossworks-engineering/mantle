@@ -21,15 +21,16 @@
  */
 
 import postgres from 'postgres';
+import { env } from '@mantle/config';
 
-const DATABASE_URL = process.env.DATABASE_URL;
+const DATABASE_URL = env('DATABASE_URL');
 if (!DATABASE_URL) {
   console.error('traces-reap: DATABASE_URL must be set');
   process.exit(1);
 }
 
 const apply = process.argv.slice(2).includes('--apply');
-const ABANDON_AFTER_MIN = (Number(process.env.MANTLE_EXTRACT_EXPIRE_MIN) || 60) + 15;
+const ABANDON_AFTER_MIN = (Number(env('MANTLE_EXTRACT_EXPIRE_MIN')) || 60) + 15;
 
 async function main() {
   const sql = postgres(DATABASE_URL!, { max: 1 });

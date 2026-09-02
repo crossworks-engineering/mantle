@@ -167,7 +167,7 @@ const TEXT_STORE_MAX_CHARS = 1_000_000;
  *  Set to 1 to disable version demotion entirely. */
 const SUPERSEDED_FILE_SALIENCE = Math.min(
   1,
-  Math.max(0, Number(process.env.MANTLE_SUPERSEDED_FILE_SALIENCE ?? 0.5)),
+  Math.max(0, Number(env('MANTLE_SUPERSEDED_FILE_SALIENCE') ?? 0.5)),
 );
 
 /** Top-K near-neighbours considered when classifying a candidate fact. */
@@ -261,6 +261,7 @@ import {
   type ExtractedFact,
   type ExtractorOutput,
 } from './extractor-parse';
+import { env } from '@mantle/config';
 
 /** A resolved entity mention (name + kind) as produced by the parser and
  *  threaded through the index + reconciliation stages. */
@@ -449,7 +450,7 @@ const AUTO_TABLE_EXTS = new Set(['xlsx', 'xls', 'csv', 'xml', 'dwf', 'dwg', 'dxf
  *  into a burst of extractor runs from one upload. Beyond this we create the
  *  leading tables and log the rest as skipped (the source file stays fully
  *  searchable). An explicit `table_from_file` is user-initiated, not capped. */
-const MAX_AUTO_TABLE_TABLES = Number(process.env.MANTLE_MAX_AUTO_TABLE_TABLES) || 20;
+const MAX_AUTO_TABLE_TABLES = Number(env('MANTLE_MAX_AUTO_TABLE_TABLES')) || 20;
 
 /**
  * On ingest, turn a spreadsheet file node into typed Table(s) — one per

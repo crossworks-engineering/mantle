@@ -8,6 +8,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { generateInstanceToken } from '@/lib/push/tokens';
 import { registerInstance } from '@/lib/push/relay-client';
 import { deleteAllSubscriptions, getPushInstance, savePushInstance } from '@/lib/push/store';
+import { env } from '@mantle/config';
 
 const DEFAULT_RELAY_URL = 'https://push.crossworks.network';
 
@@ -16,7 +17,7 @@ export async function POST() {
   if (owner instanceof NextResponse) return owner;
 
   const existing = await getPushInstance();
-  const relayUrl = existing?.relayUrl ?? process.env.MANTLE_PUSH_RELAY_URL ?? DEFAULT_RELAY_URL;
+  const relayUrl = existing?.relayUrl ?? env('MANTLE_PUSH_RELAY_URL') ?? DEFAULT_RELAY_URL;
   const instanceToken = generateInstanceToken();
   try {
     const { instanceId } = await registerInstance(relayUrl, instanceToken);

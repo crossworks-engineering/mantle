@@ -27,6 +27,7 @@ import {
   verifyMobileToken,
   verifySessionCookie,
 } from './tokens';
+import { env } from '@mantle/config';
 
 /**
  * Fresh install? (empty `auth.users`). Drives the login screen's
@@ -155,11 +156,11 @@ async function getBearerUser(): Promise<SessionUser | null> {
  */
 function detachedDevUser(): SessionUser | null {
   if (!isDetachedDev()) return null;
-  const token = process.env.NEXT_PUBLIC_MANTLE_API_TOKEN?.trim();
+  const token = env('MANTLE_API_TOKEN')?.trim();
   if (!token) return null;
   const claims = decodeUnverifiedClaims(token);
   if (!claims || typeof claims.uid !== 'string') return null;
-  const email = process.env.MANTLE_DEV_EMAIL?.trim() || 'dev@localhost';
+  const email = env('MANTLE_DEV_EMAIL')?.trim() || 'dev@localhost';
   return {
     id: claims.uid,
     email,

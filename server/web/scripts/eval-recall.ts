@@ -41,6 +41,7 @@ import { db, agents, nodes, type Agent } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import { searchNodes, searchChunks } from '@mantle/search';
 import { loadConversationContext } from '@mantle/agent-runtime';
+import { env } from '@mantle/config';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // `fts` = legacy FTS-only searchNodes (the pre-(b) baseline, kept as a reference
@@ -272,7 +273,7 @@ function pct(x: number): string {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const ownerId = process.env.ALLOWED_USER_ID;
+  const ownerId = env('ALLOWED_USER_ID');
   if (!ownerId) {
     console.error('eval-recall: ALLOWED_USER_ID must be set');
     process.exit(1);
@@ -370,7 +371,7 @@ async function main() {
   if (avoidCases.length) {
     const prodPolluted = avoidCases.filter((r) => r.prodJunk).length;
     const searchPolluted = avoidCases.filter((r) => r.searchJunk).length;
-    const lam = process.env.MANTLE_SALIENCE_LAMBDA ?? '0.15';
+    const lam = env('MANTLE_SALIENCE_LAMBDA') ?? '0.15';
     console.log(
       `  pollution (λ=${lam}): bulk/marketing reached the prompt in ${prodPolluted}/${avoidCases.length} avoid-cases (prod), ` +
         `${searchPolluted}/${avoidCases.length} (search). Lower is better.`,

@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mantle/config": "workspace:*",
     "@mantle/voice-client": "workspace:*",
     "@openrouter/sdk": "^1.2.7",
     "undici": "^8.10.0"

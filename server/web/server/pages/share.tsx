@@ -13,6 +13,7 @@ import { FolderPresenter, loadFolderListing } from '@/components/share/folder-pr
 import { FormulaPresenter } from '@mantle/share-ui/formula-presenter';
 import { DrawPresenter } from '@mantle/share-ui/draw-presenter';
 import { htmlPage, islandDiv, shareShell } from './template';
+import { env } from '@mantle/config';
 
 /**
  * The public /s/[token] share surface — the port of app/s/[token]/page.tsx.
@@ -67,7 +68,7 @@ async function renderShare(c: Context): Promise<Response> {
   const shareMeta = {
     defaultMode,
     neat: neatBackground,
-    neatLicense: process.env.NEXT_PUBLIC_NEAT_LICENSE_KEY,
+    neatLicense: env('MANTLE_NEAT_LICENSE_KEY'),
     readerChrome: true,
   };
 

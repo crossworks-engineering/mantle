@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { db, pendingToolCalls } from '@mantle/db';
 import { notifyPendingCreated } from '@mantle/tools';
 import { getOwnerOr401 } from '@/lib/auth';
+import { env } from '@mantle/config';
 
 const Body = z.object({
   // A real, enabled tool so the approve path can actually dispatch it.
@@ -30,7 +31,7 @@ const Body = z.object({
 });
 
 export async function POST(req: Request) {
-  if (process.env.NODE_ENV === 'production') {
+  if (env('NODE_ENV') === 'production') {
     return NextResponse.json({ error: 'not available in production' }, { status: 404 });
   }
   const user = await getOwnerOr401();

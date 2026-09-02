@@ -36,12 +36,13 @@ import {
 } from './openai-compat';
 import { scrubThinkBlocks } from './think-scrubber';
 import { tailnetFetch } from './tailnet';
+import { env } from '@mantle/config';
 
 const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
 
 /** Resolved per-call so a config change takes effect without a restart. */
 function baseUrl(override?: string): string {
-  return (override || process.env.MANTLE_LOCAL_CHAT_URL || DEFAULT_BASE_URL).replace(/\/+$/, '');
+  return (override || env('MANTLE_LOCAL_CHAT_URL') || DEFAULT_BASE_URL).replace(/\/+$/, '');
 }
 
 async function localChat(opts: ChatOptions): Promise<ChatResult> {

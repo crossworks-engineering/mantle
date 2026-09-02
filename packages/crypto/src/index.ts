@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { env } from '@mantle/config';
 
 /**
  * AES-256-GCM at-rest encryption for Mantle's sealed columns
@@ -28,8 +29,7 @@ const TAG_BYTES = 16;
 const KEY_VERSION_V1 = 1;
 const KEY_VERSION_V2 = 2;
 /** What `seal()` writes today. Flipped from 1 → 2 during a rotation. */
-const CURRENT_VERSION = (process.env.MANTLE_MASTER_KEY_NEXT ? KEY_VERSION_V2 : KEY_VERSION_V1) as
-  1 | 2;
+const CURRENT_VERSION = (env('MANTLE_MASTER_KEY_NEXT') ? KEY_VERSION_V2 : KEY_VERSION_V1) as 1 | 2;
 
 export interface SealedSecret {
   /** Single buffer suitable for a `bytea` column. */
@@ -49,9 +49,9 @@ function parseB64Key(b64: string, label: string): Buffer {
 /** The key `seal()` uses for new ciphertext. During rotation that's
  *  the NEW key; in steady state it's MANTLE_MASTER_KEY. */
 function currentKey(): Buffer {
-  const next = process.env.MANTLE_MASTER_KEY_NEXT;
+  const next = env('MANTLE_MASTER_KEY_NEXT');
   if (next) return parseB64Key(next, 'MANTLE_MASTER_KEY_NEXT');
-  const b64 = process.env.MANTLE_MASTER_KEY;
+  const b64 = env('MANTLE_MASTER_KEY');
   if (!b64) throw new Error('MANTLE_MASTER_KEY is not set');
   return parseB64Key(b64, 'MANTLE_MASTER_KEY');
 }
@@ -59,8 +59,8 @@ function currentKey(): Buffer {
 /** Key resolver for `open()`. Returns the key bound to a given version
  *  byte, or null if we don't have it configured (caller throws). */
 function keyForVersion(version: number): Buffer | null {
-  const cur = process.env.MANTLE_MASTER_KEY;
-  const next = process.env.MANTLE_MASTER_KEY_NEXT;
+  const cur = env('MANTLE_MASTER_KEY');
+  const next = env('MANTLE_MASTER_KEY_NEXT');
   if (version === KEY_VERSION_V1) {
     // v1 is whichever key holds the not-yet-rotated ciphertext. During
     // rotation that's MANTLE_MASTER_KEY (the old one); in steady state

@@ -29,13 +29,14 @@ import { stageLabelForStep, type StageLabel } from '@mantle/assistant-runtime';
 import { publishTurnEvent, TURN_EVENT_SCHEMA_VERSION } from '@mantle/turn-stream';
 import type { TurnEvent } from '@mantle/client-types';
 import { isTurnNarrationEnabled, narrateStatus } from './turn-narration';
+import { env } from '@mantle/config';
 
 /** Token streaming (Phase 3): installing the delta observer is what makes the
  *  tool-loop stream (`isTurnStreaming()`). On by default, on its own flag so it
  *  can be turned off independently of the status stream; set
  *  `MANTLE_TURN_TOKENS=0` to disable just the live reply typing. */
 export function isTurnTokenStreamingEnabled(): boolean {
-  const v = process.env.MANTLE_TURN_TOKENS?.trim().toLowerCase();
+  const v = env('MANTLE_TURN_TOKENS')?.trim().toLowerCase();
   return v !== '0' && v !== 'false' && v !== 'off' && v !== 'no';
 }
 

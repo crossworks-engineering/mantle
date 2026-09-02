@@ -13,13 +13,14 @@
     "build:runtime": "node scripts/build-runtime.ts ../../server/web"
   },
   "dependencies": {
+    "@mantle/config": "workspace:*",
+    "@mantle/share-ui": "workspace:*",
     "@tailwindcss/oxide": "^4.3.3",
     "esbuild": "^0.28.1",
-    "tailwindcss": "^4.3.3",
     "lucide-react": "^1.25.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "@mantle/share-ui": "workspace:*"
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

@@ -9,6 +9,7 @@ import { runTableStorageProbes } from '@mantle/tabledb';
 
 import { readUpdaterStatus, updaterAvailable } from '../updates';
 import type { SanityCheck, SanityReport } from '@mantle/client-types/types/sanity';
+import { env } from '@mantle/config';
 
 /**
  * System sanity checks — the CONFIG-correctness counterpart to lib/system-health
@@ -20,7 +21,7 @@ import type { SanityCheck, SanityReport } from '@mantle/client-types/types/sanit
  * Read-only: no check mutates infra. See ./types for the why.
  */
 
-const SIGNAL_DIR = process.env.MANTLE_UPDATE_SIGNAL_DIR ?? '/signal';
+const SIGNAL_DIR = env('MANTLE_UPDATE_SIGNAL_DIR') ?? '/signal';
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -121,8 +122,8 @@ async function checkUpdater(): Promise<SanityCheck> {
 function checkSecrets(): SanityCheck {
   const base = { key: 'env.secrets', label: 'Required secrets', category: 'Environment' as const };
   const missing: string[] = [];
-  const masterKey = process.env.MANTLE_MASTER_KEY ?? '';
-  const sessionSecret = process.env.SESSION_SECRET ?? '';
+  const masterKey = env('MANTLE_MASTER_KEY') ?? '';
+  const sessionSecret = env('SESSION_SECRET') ?? '';
   if (!masterKey) missing.push('MANTLE_MASTER_KEY');
   if (!sessionSecret) missing.push('SESSION_SECRET');
   if (missing.length > 0) {
@@ -195,7 +196,7 @@ async function checkFilesRoot(): Promise<SanityCheck> {
 
 function checkPublicUrl(): SanityCheck {
   const base = { key: 'env.public_url', label: 'Public URL', category: 'Environment' as const };
-  const url = process.env.MANTLE_PUBLIC_URL ?? '';
+  const url = env('MANTLE_PUBLIC_URL') ?? '';
   const isLocal = !url || /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(url);
   if (isLocal) {
     return {
@@ -232,7 +233,7 @@ async function checkEmbedder(userId: string): Promise<SanityCheck> {
   }
   const baseUrl = (
     cfg.primary.baseUrl ||
-    process.env.MANTLE_LOCAL_EMBEDDING_URL ||
+    env('MANTLE_LOCAL_EMBEDDING_URL') ||
     DEFAULT_LOCAL_EMBED_URL
   ).replace(/\/+$/, '');
   try {
@@ -325,7 +326,7 @@ async function checkTableStorageDir(): Promise<SanityCheck> {
   const { db: dbc, sql: sqlc } = await import('@mantle/db');
   const root = tableDbRoot();
 
-  if (!process.env.TABLE_DB_DIR) {
+  if (!env('TABLE_DB_DIR')) {
     return {
       ...base,
       status: 'warn',

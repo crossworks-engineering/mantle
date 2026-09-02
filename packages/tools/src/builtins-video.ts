@@ -57,6 +57,7 @@ import {
   parseVtt,
   transcriptWordCount,
 } from './video-transcript';
+import { envDynamic } from '@mantle/config';
 
 // ─── caps ──────────────────────────────────────────────────────────
 // The STT duration cap deliberately does NOT inherit the voice path's 180 s
@@ -65,7 +66,7 @@ import {
 // 3600 s at 32 kbps mono ≈ 14.4 MB, inside both Google's 20 MB inline cap
 // and Whisper's 25 MB file cap.
 function intEnv(name: string, dflt: number): number {
-  const v = Number(process.env[name]);
+  const v = Number(envDynamic(name));
   return Number.isFinite(v) && v > 0 ? Math.floor(v) : dflt;
 }
 const MAX_STT_DURATION_S = () => intEnv('MEDIA_MAX_STT_DURATION_S', 3600);

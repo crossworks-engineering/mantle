@@ -1,6 +1,8 @@
 import http from 'node:http';
 import type { TailnetStatus, TailnetUnavailable, TailnetResult } from '@mantle/client-types';
 import type { TailnetPeer } from '@mantle/client-types';
+import { env } from '@mantle/config';
+
 export type { TailnetPeer };
 export type { TailnetStatus, TailnetUnavailable, TailnetResult };
 
@@ -24,7 +26,7 @@ export type { TailnetStatus, TailnetUnavailable, TailnetResult };
  */
 
 function sockPath(): string {
-  return process.env.MANTLE_TAILSCALE_SOCK?.trim() || '/var/run/tailscale/tailscaled.sock';
+  return env('MANTLE_TAILSCALE_SOCK')?.trim() || '/var/run/tailscale/tailscaled.sock';
 }
 
 /** Raw shape of the bits of `/localapi/v0/status` we consume. */

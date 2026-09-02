@@ -14,6 +14,7 @@
   "dependencies": {
     "@mantle/agent-runtime": "workspace:*",
     "@mantle/api-keys": "workspace:*",
+    "@mantle/config": "workspace:*",
     "@mantle/content": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/heartbeats": "workspace:*",

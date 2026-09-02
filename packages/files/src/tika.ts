@@ -1,3 +1,4 @@
+import { env } from '@mantle/config';
 /**
  * Apache Tika client — the third-tier document parser.
  *
@@ -41,8 +42,8 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_PARTIAL_BODY_BYTES = 5_000_000;
 
 function tikaUrl(): string {
-  const env = process.env.TIKA_URL?.trim();
-  return (env && env.length > 0 ? env : DEFAULT_TIKA_URL).replace(/\/$/, '');
+  const configured = env('TIKA_URL')?.trim();
+  return (configured && configured.length > 0 ? configured : DEFAULT_TIKA_URL).replace(/\/$/, '');
 }
 
 /**

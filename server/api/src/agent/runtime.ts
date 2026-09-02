@@ -106,13 +106,14 @@ import { enqueueExtract, startExtractQueue, stopExtractQueue } from './extract-q
 import { reflect } from './reflector.js';
 import { CONVERSATIONAL_ROLES, pickFallbackResponder } from './agent-select.js';
 import { computeFloorGroupAdditions } from './core-tools.js';
+import { env } from '@mantle/config';
 
 // Resolved at the top of main() via waitForOwner() — either ALLOWED_USER_ID (when
 // set) or the sole auth.users row. Left `undefined` until then so a fresh install
 // can boot with an empty DB and the worker idles until the first signup, instead
 // of exiting. Every consumer below runs after main() has resolved it.
-let USER_ID: string | undefined = process.env.ALLOWED_USER_ID;
-const DATABASE_URL = process.env.DATABASE_URL;
+let USER_ID: string | undefined = env('ALLOWED_USER_ID');
+const DATABASE_URL = env('DATABASE_URL');
 
 if (!DATABASE_URL) {
   console.error('[agent] DATABASE_URL must be set');
@@ -1235,8 +1236,8 @@ async function drainPending(
  * there.
  */
 async function drainUnextractedNodes(): Promise<void> {
-  const windowHours = Number(process.env.MANTLE_EXTRACT_DRAIN_WINDOW_HOURS) || 168;
-  const limit = Number(process.env.MANTLE_EXTRACT_DRAIN_LIMIT) || 1000;
+  const windowHours = Number(env('MANTLE_EXTRACT_DRAIN_WINDOW_HOURS')) || 168;
+  const limit = Number(env('MANTLE_EXTRACT_DRAIN_LIMIT')) || 1000;
   const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
   const conds = and(
     eq(nodes.ownerId, USER_ID!),
@@ -1288,8 +1289,8 @@ async function drainUnextractedNodes(): Promise<void> {
  * sweeps rather than a burst. Quiet unless it actually re-queues something.
  */
 async function sweepMissedExtractions(): Promise<void> {
-  const windowHours = Number(process.env.MANTLE_EXTRACT_DRAIN_WINDOW_HOURS) || 168;
-  const limit = Number(process.env.MANTLE_EXTRACT_SWEEP_LIMIT) || 200;
+  const windowHours = Number(env('MANTLE_EXTRACT_DRAIN_WINDOW_HOURS')) || 168;
+  const limit = Number(env('MANTLE_EXTRACT_SWEEP_LIMIT')) || 200;
   const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
   const rows = await db
     .select({ id: nodes.id })
@@ -1603,7 +1604,7 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   // extractor_run (a node_ingested notify lost to a dropped listener / wedged
   // extraction), so a missed file self-heals in minutes instead of waiting for
   // a restart's boot-drain. Loop-safe + bounded (see sweepMissedExtractions).
-  const SWEEP_INTERVAL_MS = Number(process.env.MANTLE_EXTRACT_SWEEP_MS) || 120 * 1000;
+  const SWEEP_INTERVAL_MS = Number(env('MANTLE_EXTRACT_SWEEP_MS')) || 120 * 1000;
   setInterval(() => {
     sweepMissedExtractions().catch((err) =>
       console.error(
@@ -1619,7 +1620,7 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   // registry lock every writer takes (so a sweep step can never fork against
   // a concurrent edit). Lazy migration (first op/commit) handles hot tables;
   // this catches the rest. No-op once storage_path is set everywhere.
-  const TABLE_MIGRATE_SWEEP_MS = Number(process.env.MANTLE_TABLE_MIGRATE_SWEEP_MS) || 5 * 60 * 1000;
+  const TABLE_MIGRATE_SWEEP_MS = Number(env('MANTLE_TABLE_MIGRATE_SWEEP_MS')) || 5 * 60 * 1000;
   const TABLE_MIGRATE_BATCH = 5;
   setInterval(() => {
     sweepLegacyTables(TABLE_MIGRATE_BATCH).catch((err) =>

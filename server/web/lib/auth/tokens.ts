@@ -17,6 +17,7 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { SESSION_COOKIE_NAME } from '../auth-constants';
+import { env } from '@mantle/config';
 
 /** The `k` claim: mobile bearer, asset token, team visitor, team chat, app frame. */
 type TokenKind = 'm' | 'a' | 't' | 'c' | 'f';
@@ -31,7 +32,7 @@ type SignedClaims = Record<string, unknown> & { exp: number };
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 
 function secret(): Buffer {
-  const s = process.env.SESSION_SECRET;
+  const s = env('SESSION_SECRET');
   if (!s || s.length < 32) {
     throw new Error('SESSION_SECRET must be set (>=32 chars). Run `openssl rand -base64 48`.');
   }

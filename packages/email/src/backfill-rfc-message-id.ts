@@ -33,6 +33,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { ImapFlow } from 'imapflow';
 import { emails, emailAccounts, type EmailAccount } from '@mantle/db';
 import { decodeMsgId, normalizeRfcMessageId, unsealImapPassword } from './providers/imap';
+import { env } from '@mantle/config';
 
 interface BackfillRow {
   id: string;
@@ -196,7 +197,7 @@ async function backfillAccount(
 }
 
 async function main(): Promise<void> {
-  const url = process.env.DATABASE_URL;
+  const url = env('DATABASE_URL');
   if (!url) throw new Error('DATABASE_URL must be set');
   const conn = postgres(url, { max: 4, prepare: false });
   const db = drizzle(conn);

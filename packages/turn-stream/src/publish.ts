@@ -2,6 +2,7 @@ import { lt, sql } from 'drizzle-orm';
 import { db, turnStreamBuffer } from '@mantle/db';
 import type { TurnEvent } from '@mantle/client-types';
 import { TURN_STREAM_CHANNEL, TURN_CANCEL_CHANNEL } from './channel';
+import { env } from '@mantle/config';
 
 /**
  * Buffering is gated on the SAME master flag as the SSE route + the non-blocking
@@ -13,7 +14,7 @@ import { TURN_STREAM_CHANNEL, TURN_CANCEL_CHANNEL } from './channel';
  * below stays unconditional — harmless when no consumer is subscribed.)
  */
 function isBufferingEnabled(): boolean {
-  const v = process.env.MANTLE_TURN_STREAMING?.trim().toLowerCase();
+  const v = env('MANTLE_TURN_STREAMING')?.trim().toLowerCase();
   return v !== '0' && v !== 'false' && v !== 'off' && v !== 'no';
 }
 

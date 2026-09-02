@@ -7,6 +7,7 @@ import {
 } from '../../lib/auth-constants';
 import { runWithRequestContext } from '../request-context';
 import { tokenKind, verifySignedToken } from './token-verify';
+import { env } from '@mantle/config';
 
 /**
  * The session/CORS gate — a faithful port of the old Next Edge middleware.ts.
@@ -70,7 +71,7 @@ const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
 // is refused on the credential-minting surfaces (/api/auth*, /api/team/auth,
 // /api/team/sso) — those need an explicit allowlist entry.
 function corsOrigins(): string[] {
-  return (process.env.MANTLE_API_CORS_ORIGINS ?? '')
+  return (env('MANTLE_API_CORS_ORIGINS') ?? '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
@@ -148,7 +149,7 @@ export function gate(): MiddlewareHandler {
     const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'));
     if (isPublic) return proceed();
 
-    const secret = process.env.SESSION_SECRET;
+    const secret = env('SESSION_SECRET');
     if (!secret || secret.length < 32) {
       // Misconfig: log server-side, return a generic 500. Never put config
       // details in the URL/body — operator sees the reason in stderr.

@@ -30,12 +30,13 @@
 import { db, apiKeys, channels, emailAccounts, secrets } from '@mantle/db';
 import { currentSealVersion, open, seal, sealedKeyVersion } from '@mantle/crypto';
 import { eq } from 'drizzle-orm';
+import { env } from '@mantle/config';
 
 async function assertReady(): Promise<void> {
-  if (!process.env.MANTLE_MASTER_KEY) {
+  if (!env('MANTLE_MASTER_KEY')) {
     throw new Error('MANTLE_MASTER_KEY (the OLD key) must be set during rotation');
   }
-  if (!process.env.MANTLE_MASTER_KEY_NEXT) {
+  if (!env('MANTLE_MASTER_KEY_NEXT')) {
     throw new Error(
       'MANTLE_MASTER_KEY_NEXT must be set to a fresh 32-byte base64 key before running rotation',
     );

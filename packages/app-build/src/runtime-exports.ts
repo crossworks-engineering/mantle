@@ -24,12 +24,13 @@
 import { readFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { env } from '@mantle/config';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 /** In order of trust: explicit override, package-relative, cwd convention. */
 export function manifestCandidates(): string[] {
-  const override = process.env.MANTLE_APP_RUNTIME_MANIFEST;
+  const override = env('MANTLE_APP_RUNTIME_MANIFEST');
   return [
     ...(override ? [override] : []),
     // packages/app-build/src → <root>/server/web/public/app-runtime/manifest.json

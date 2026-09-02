@@ -136,6 +136,7 @@ import {
   ensureTableDoc,
 } from '@mantle/content';
 import { and, asc, eq } from 'drizzle-orm';
+import { env } from '@mantle/config';
 
 /** Mutating Toolsmith tools — gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
  *  ON). Module-scope (env is process-stable) so the gate is evaluated once, not
@@ -153,9 +154,7 @@ const TOOLSMITH_WRITE_SLUGS = new Set([
   'api_docs_set',
   'api_skill_set',
 ]);
-const toolsmithWriteEnabled = !/^(0|false|off|no)$/i.test(
-  process.env.MANTLE_MCP_TOOLSMITH_WRITE ?? '',
-);
+const toolsmithWriteEnabled = !/^(0|false|off|no)$/i.test(env('MANTLE_MCP_TOOLSMITH_WRITE') ?? '');
 if (!toolsmithWriteEnabled) {
   console.error(
     '[mantle-mcp] MANTLE_MCP_TOOLSMITH_WRITE is off — exposing Toolsmith read-only ' +
@@ -179,7 +178,7 @@ export function registerMantleTools(
   const transport = opts.transport ?? 'http';
   // Explicit env wins in both directions: =1 opts a network surface in, =0 opts
   // a local one out. Unset means stdio yes, HTTP no.
-  const terminalEnv = process.env.MANTLE_MCP_TERMINAL ?? '';
+  const terminalEnv = env('MANTLE_MCP_TERMINAL') ?? '';
   const exposeTerminal = /^(1|true|on|yes)$/i.test(terminalEnv)
     ? true
     : /^(0|false|off|no)$/i.test(terminalEnv)

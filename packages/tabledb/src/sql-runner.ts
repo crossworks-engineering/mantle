@@ -1,6 +1,7 @@
 import { Worker } from 'node:worker_threads';
 
 import { openTableFile } from './sqlite';
+import { env } from '@mantle/config';
 
 /**
  * table_sql — read-only SQL over one workbook file (plan §3.4). Layered:
@@ -25,7 +26,7 @@ export const SQL_ROW_CAP_DEFAULT = 200;
 export const SQL_ROW_CAP_MAX = 1000;
 
 function timeoutMs(): number {
-  const raw = Number(process.env.TABLE_SQL_TIMEOUT_MS ?? '');
+  const raw = Number(env('TABLE_SQL_TIMEOUT_MS') ?? '');
   return Number.isFinite(raw) && raw > 0 ? raw : 5_000;
 }
 

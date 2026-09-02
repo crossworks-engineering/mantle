@@ -24,6 +24,8 @@ import type {
   ComposeState,
   ReleaseInfo,
 } from '@mantle/client-types';
+import { env } from '@mantle/config';
+
 export type { UpdaterPhase, UpdaterScriptState, ComposeState, ReleaseInfo };
 export type { ComposeStatus, UpdateCheck, UpdaterStatus };
 
@@ -39,8 +41,7 @@ export const CLIENT_RELEASES_URL = `https://github.com/${CLIENT_RELEASES_REPO}/r
  *  (Dockerfile → /app/release/client-tag, from client-pair.tag at the repo
  *  root); the updater sidecar reads the same file from the TARGET image when
  *  it rolls. Null in dev checkouts without the file and on pre-pair images. */
-const RELEASE_CLIENT_TAG_PATH =
-  process.env.MANTLE_RELEASE_CLIENT_TAG_PATH ?? '/app/release/client-tag';
+const RELEASE_CLIENT_TAG_PATH = env('MANTLE_RELEASE_CLIENT_TAG_PATH') ?? '/app/release/client-tag';
 let pairedTagCache: string | null | undefined;
 async function pairedClientTag(): Promise<string | null> {
   if (pairedTagCache !== undefined) return pairedTagCache;
@@ -66,7 +67,7 @@ async function pairedClientTag(): Promise<string | null> {
   return null;
 }
 
-const SIGNAL_DIR = process.env.MANTLE_UPDATE_SIGNAL_DIR ?? '/signal';
+const SIGNAL_DIR = env('MANTLE_UPDATE_SIGNAL_DIR') ?? '/signal';
 /** How long a POSITIVE result (a newer release exists) stays cached. Once true
  *  it stays true until the box updates, so re-checking often buys nothing. */
 const CHECK_TTL_MS = 6 * 60 * 60 * 1000;
@@ -230,10 +231,10 @@ export async function readUpdaterStatus(): Promise<UpdaterStatus | null> {
 // auto-refresh can't run. See infra/updater/updater.sh + docs/deploy.md.
 
 const RELEASE_COMPOSE_PATH =
-  process.env.MANTLE_RELEASE_COMPOSE_PATH ?? '/app/release/docker-compose.yml';
+  env('MANTLE_RELEASE_COMPOSE_PATH') ?? '/app/release/docker-compose.yml';
 const RELEASE_CLIENT_COMPOSE_PATH =
-  process.env.MANTLE_RELEASE_CLIENT_COMPOSE_PATH ?? '/app/release/docker-compose.client.yml';
-const RELEASE_UPDATER_PATH = process.env.MANTLE_RELEASE_UPDATER_PATH ?? '/app/release/updater.sh';
+  env('MANTLE_RELEASE_CLIENT_COMPOSE_PATH') ?? '/app/release/docker-compose.client.yml';
+const RELEASE_UPDATER_PATH = env('MANTLE_RELEASE_UPDATER_PATH') ?? '/app/release/updater.sh';
 
 /** Canonical-compose hashes are constant for the life of the build. */
 const canonicalShaCache = new Map<string, string | null>();

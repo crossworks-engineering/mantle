@@ -22,6 +22,7 @@
  */
 
 import { writeFile } from 'node:fs/promises';
+import { env } from '@mantle/config';
 
 const DEFAULT_HEARTBEAT_FILE = '/tmp/mantle-heartbeat';
 
@@ -33,7 +34,7 @@ export const HEARTBEAT_INTERVAL_MS = 30_000;
  *  /tmp, which exists and is writable in every image and is NOT a shared mount,
  *  so two containers can never collide on it). */
 export function heartbeatFilePath(): string {
-  return (process.env.MANTLE_HEARTBEAT_FILE ?? '').trim() || DEFAULT_HEARTBEAT_FILE;
+  return (env('MANTLE_HEARTBEAT_FILE') ?? '').trim() || DEFAULT_HEARTBEAT_FILE;
 }
 
 async function touchHeartbeat(file: string): Promise<void> {

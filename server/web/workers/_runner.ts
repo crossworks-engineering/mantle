@@ -23,6 +23,7 @@
  */
 import { PgBoss } from 'pg-boss';
 import { startProcessHeartbeat } from '@mantle/content';
+import { env } from '@mantle/config';
 
 /** How long pg-boss may take to finish in-flight jobs. */
 const BOSS_STOP_TIMEOUT_MS = 10_000;
@@ -38,7 +39,7 @@ const EXIT_DEADLINE_MS = 15_000;
 export type Teardown = () => void | Promise<void>;
 
 function databaseUrl(): string {
-  const url = process.env.DATABASE_URL;
+  const url = env('DATABASE_URL');
   if (!url) throw new Error('DATABASE_URL must be set');
   return url;
 }

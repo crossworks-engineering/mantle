@@ -13,6 +13,7 @@
 
 import { fileURLToPath } from 'node:url';
 import { applyManifest } from '../lib/system-manifest/seed';
+import { env } from '@mantle/config';
 
 export async function seedAgents(ownerId: string, slugs: string[]): Promise<void> {
   await applyManifest(ownerId, { only: slugs, mode: 'overwrite' });
@@ -20,7 +21,7 @@ export async function seedAgents(ownerId: string, slugs: string[]): Promise<void
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const ownerId = process.env.ALLOWED_USER_ID;
+  const ownerId = env('ALLOWED_USER_ID');
   const slugs = process.argv.slice(2).filter(Boolean);
   if (!ownerId) {
     console.error('ALLOWED_USER_ID env var required');

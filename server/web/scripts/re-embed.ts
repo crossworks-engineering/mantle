@@ -34,14 +34,15 @@
 
 import postgres from 'postgres';
 import { DEFAULT_EMBEDDING_MODEL, runReembed, type ReembedOpts } from '@mantle/embeddings';
+import { env } from '@mantle/config';
 
-const USER_ID = process.env.ALLOWED_USER_ID;
+const USER_ID = env('ALLOWED_USER_ID');
 if (!USER_ID) {
   console.error('re-embed: ALLOWED_USER_ID must be set');
   process.exit(1);
 }
 
-const DATABASE_URL = process.env.DATABASE_URL;
+const DATABASE_URL = env('DATABASE_URL');
 if (!DATABASE_URL) {
   console.error('re-embed: DATABASE_URL must be set');
   process.exit(1);

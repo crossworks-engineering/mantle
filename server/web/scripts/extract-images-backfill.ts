@@ -50,8 +50,9 @@
  */
 
 import postgres from 'postgres';
+import { env } from '@mantle/config';
 
-const DATABASE_URL = process.env.DATABASE_URL;
+const DATABASE_URL = env('DATABASE_URL');
 if (!DATABASE_URL) {
   console.error('extract-images-backfill: DATABASE_URL must be set');
   process.exit(1);

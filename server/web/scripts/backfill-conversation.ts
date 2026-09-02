@@ -47,8 +47,9 @@ import {
   type ConversationExternalRef,
   type TelegramAttachment,
 } from '@mantle/db';
+import { env } from '@mantle/config';
 
-const OWNER_ID = process.env.ALLOWED_USER_ID;
+const OWNER_ID = env('ALLOWED_USER_ID');
 const SUMMARIZE_TRIGGER = 'assistant_messages_summarize_due_trg';
 
 type AgentRef = { id: string; slug: string };

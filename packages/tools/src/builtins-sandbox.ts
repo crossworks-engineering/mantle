@@ -45,6 +45,7 @@ import { db, toolGroups, type ToolGroupIntegration } from '@mantle/db';
 import { randomUUID } from 'node:crypto';
 import { notFound } from './errors';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import { env } from '@mantle/config';
 
 const DEFAULT_TIMEOUT_S = 120;
 const MAX_TIMEOUT_S = 1800;
@@ -61,8 +62,8 @@ async function sandboxd(
   path: string,
   body?: unknown,
 ): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
-  const base = process.env.SANDBOXD_URL;
-  const token = process.env.SANDBOXD_TOKEN;
+  const base = env('SANDBOXD_URL');
+  const token = env('SANDBOXD_TOKEN');
   if (!base || !token) return { ok: false, error: NOT_ENABLED };
   let res: Response;
   try {
@@ -92,8 +93,8 @@ async function sandboxdUpload(
   path: string,
   bytes: Buffer,
 ): Promise<{ ok: true; data: Record<string, unknown> } | { ok: false; error: string }> {
-  const base = process.env.SANDBOXD_URL;
-  const token = process.env.SANDBOXD_TOKEN;
+  const base = env('SANDBOXD_URL');
+  const token = env('SANDBOXD_TOKEN');
   if (!base || !token) return { ok: false, error: NOT_ENABLED };
   let res: Response;
   try {
@@ -120,8 +121,8 @@ async function sandboxdBinary(
   path: string,
   body: unknown,
 ): Promise<{ ok: true; bytes: Buffer } | { ok: false; error: string }> {
-  const base = process.env.SANDBOXD_URL;
-  const token = process.env.SANDBOXD_TOKEN;
+  const base = env('SANDBOXD_URL');
+  const token = env('SANDBOXD_TOKEN');
   if (!base || !token) return { ok: false, error: NOT_ENABLED };
   let res: Response;
   try {
@@ -245,7 +246,7 @@ const sandbox_create: BuiltinToolDef = {
     const image =
       typeof input.image === 'string' && input.image
         ? input.image
-        : process.env.SANDBOX_DEFAULT_IMAGE || 'titanwest/mantle-sandbox:24.04-v2';
+        : env('SANDBOX_DEFAULT_IMAGE') || 'titanwest/mantle-sandbox:24.04-v2';
     // Map the folder node to the path it occupies under the Files root, and
     // send only that RELATIVE part: sandboxd joins it onto the box's own
     // host-absolute root, which is the only path the docker daemon can resolve.
@@ -804,10 +805,10 @@ const sandbox_publish: BuiltinToolDef = {
     // Vault the proxy token under a stable ref so the authored tools' auth
     // template resolves through the normal secret machinery (the token is
     // stripped by the proxy before reaching the sandbox service).
-    const token = process.env.SANDBOXD_TOKEN!;
+    const token = env('SANDBOXD_TOKEN')!;
     await setApiKey(ctx.ownerId, 'sandboxd', 'proxy', token);
 
-    const baseUrl = `${process.env.SANDBOXD_URL}/svc/${row.id}/${port}`;
+    const baseUrl = `${env('SANDBOXD_URL')}/svc/${row.id}/${port}`;
     const integration: ToolGroupIntegration = {
       service: `sandbox-${row.name}`,
       baseUrl,

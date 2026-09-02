@@ -22,13 +22,14 @@
  */
 
 import { runPinnedModelDrift } from '../lib/maintenance/pinned-model-drift-run';
+import { env } from '@mantle/config';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const asJson = args.includes('--json');
   const showAll = args.includes('--all');
 
-  if (!process.env.DATABASE_URL) {
+  if (!env('DATABASE_URL')) {
     console.error('pinned-model-drift: DATABASE_URL must be set');
     process.exit(1);
   }

@@ -56,6 +56,8 @@ import { resolveWorkerRoute } from './worker-route';
 import { resolveEffectivePersona } from './persona';
 import { seedCuratedModelPools } from '../model-pools-seed';
 import type { AdoptKind } from '@mantle/client-types';
+import { envDynamic } from '@mantle/config';
+
 export type { AdoptKind };
 
 export type ApplyMode = 'gap-fill' | 'overwrite';
@@ -278,7 +280,7 @@ async function upsertAgent(
   apiKeyId: string,
   mode: ApplyMode,
 ): Promise<void> {
-  const model = (def.envModelVar ? process.env[def.envModelVar] : undefined) || def.model;
+  const model = (def.envModelVar ? envDynamic(def.envModelVar) : undefined) || def.model;
   // P6: manifest agents are authored as pure tool GROUPS — the runtime effective
   // set is the union of the granted groups' tools. (The `agents.tool_slugs`
   // column was dropped in migration 0083.)
@@ -623,7 +625,7 @@ async function adoptSpecialist(ownerId: string, def: ManifestAgent): Promise<voi
     await applyManifest(ownerId, { only: [def.slug], mode: 'gap-fill' });
     return;
   }
-  const model = (def.envModelVar ? process.env[def.envModelVar] : undefined) || def.model;
+  const model = (def.envModelVar ? envDynamic(def.envModelVar) : undefined) || def.model;
   await db
     .update(agents)
     .set({

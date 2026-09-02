@@ -19,14 +19,15 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, apiKeys, type AgentMemoryConfig } from '@mantle/db';
 import { seedBuiltinTools } from '@mantle/tools';
+import { env } from '@mantle/config';
 
-const USER_ID = process.env.ALLOWED_USER_ID;
+const USER_ID = env('ALLOWED_USER_ID');
 if (!USER_ID) {
   console.error('ALLOWED_USER_ID env var required');
   process.exit(1);
 }
 
-const MODEL = process.env.DOCS_MODEL || 'anthropic/claude-sonnet-5';
+const MODEL = env('DOCS_MODEL') || 'anthropic/claude-sonnet-5';
 
 // P6: capability is granted as tool GROUPS. Docs reads the brain — `memory-core`
 // covers search_nodes / search_chunks / node_read (its needed read tools) plus

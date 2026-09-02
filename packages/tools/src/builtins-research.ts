@@ -32,6 +32,7 @@ import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import { captureLlmUsage } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { str } from './coerce';
+import { env } from '@mantle/config';
 
 function strOpt(v: unknown): string | undefined {
   return typeof v === 'string' && v.length > 0 ? v : undefined;
@@ -40,7 +41,7 @@ function strOpt(v: unknown): string | undefined {
 /** Last-resort model when NO search worker is configured (fresh brain before the
  *  0087 backfill / onboarding provision runs). The worker is the real source of
  *  truth; this just keeps web_search functional rather than erroring. */
-const FALLBACK_SEARCH_MODEL = process.env.MANTLE_WEB_SEARCH_MODEL || 'perplexity/sonar-pro';
+const FALLBACK_SEARCH_MODEL = env('MANTLE_WEB_SEARCH_MODEL') || 'perplexity/sonar-pro';
 
 /** An OpenRouter key for this owner — prefers the 'default' label, falls back
  *  to any openrouter key on file. */

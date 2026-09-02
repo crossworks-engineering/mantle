@@ -35,6 +35,7 @@ import {
 } from '@mantle/db';
 import type { DocBrainDepth, DocCollection } from '@mantle/db';
 import { dashToLtree, ltreeToDash } from './slug';
+import { env } from '@mantle/config';
 
 /** The single ltree label that roots the documentation subtree. */
 export const DOCS_ROOT_LABEL = 'documentation';
@@ -49,15 +50,15 @@ let warnedUnset = false;
  *  caveat as `filesRoot()`: the cwd-relative default resolves differently per
  *  process, so set an absolute path in .env.local / compose. */
 export function docsRoot(): string {
-  const env = process.env.MANTLE_DOCS_ROOT?.trim();
-  if (!env && !warnedUnset) {
+  const configured = env('MANTLE_DOCS_ROOT')?.trim();
+  if (!configured && !warnedUnset) {
     warnedUnset = true;
     console.warn(
       '[docs] MANTLE_DOCS_ROOT is not set — falling back to the cwd-relative ' +
         `'${DEFAULT_DOCS_ROOT}'. Set an absolute path shared by every process.`,
     );
   }
-  return path.resolve(env || DEFAULT_DOCS_ROOT);
+  return path.resolve(configured || DEFAULT_DOCS_ROOT);
 }
 
 /**

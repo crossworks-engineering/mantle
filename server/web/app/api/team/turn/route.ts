@@ -43,6 +43,7 @@ import {
 import { db, nodes, type ConversationAttachment } from '@mantle/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { recordIngest } from '@mantle/tracing';
+import { env } from '@mantle/config';
 
 // Same shared ceiling as the assistant turn route — a plain-language message,
 // because the raw zod default is what team members would see beside the box.
@@ -65,7 +66,7 @@ const TEAM_UPLOADS_SLUG = 'team-uploads';
 // and (b) leaves the forum as the SINGLE spend path, so the shared daily cap
 // can't be exceeded by splitting turns across two surfaces. Set
 // TEAM_CHAT_POST_ENABLED=1 to reopen (e.g. to reactivate the MS Teams seam).
-const TEAM_CHAT_POST_ENABLED = process.env.TEAM_CHAT_POST_ENABLED === '1';
+const TEAM_CHAT_POST_ENABLED = env('TEAM_CHAT_POST_ENABLED') === '1';
 
 export async function POST(req: Request): Promise<NextResponse> {
   const caller = await resolveTeamChatCaller(req);

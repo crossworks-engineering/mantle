@@ -1,5 +1,6 @@
 import type { Context, Hono } from 'hono';
 import { escapeHtml } from './template';
+import { env } from '@mantle/config';
 
 /**
  * Redirect stubs for the surfaces that moved to the CLIENT app with the split
@@ -11,7 +12,7 @@ import { escapeHtml } from './template';
  */
 
 function clientOrigin(): string {
-  return (process.env.MANTLE_CLIENT_ORIGIN ?? '').replace(/\/+$/, '');
+  return (env('MANTLE_CLIENT_ORIGIN') ?? '').replace(/\/+$/, '');
 }
 
 /** Both args are static literals today, but escape anyway so a future caller

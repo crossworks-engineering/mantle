@@ -41,6 +41,8 @@ import { snapshotAllTableDatabases } from './table-storage';
 import { snapshotAllAppDatabases } from './app-broker';
 import type { BackupConfig, BackupFile, BackupStatus } from '@mantle/client-types';
 import type { BackupFrequency } from '@mantle/client-types';
+import { env } from '@mantle/config';
+
 export type { BackupFrequency };
 export type { BackupConfig, BackupFile, BackupStatus };
 
@@ -57,7 +59,7 @@ export const DEFAULT_BACKUP_CONFIG: BackupConfig = {
 export function resolveBackupDir(cfg?: Pick<BackupConfig, 'location'> | null): string {
   const raw =
     (cfg?.location ?? '').trim() ||
-    (process.env.MANTLE_BACKUP_DIR ?? '').trim() ||
+    (env('MANTLE_BACKUP_DIR') ?? '').trim() ||
     path.join(process.cwd(), 'data', 'backups');
   const expanded = raw.startsWith('~') ? path.join(os.homedir(), raw.slice(1)) : raw;
   return path.resolve(expanded);
@@ -267,7 +269,7 @@ async function writeBackupStatus(userId: string, status: BackupStatus): Promise<
  *  highest version is the only always-safe pick.
  *  Null when nothing runs — the caller turns that into an actionable error. */
 async function resolvePgDump(): Promise<string | null> {
-  const explicit = (process.env.MANTLE_PG_DUMP ?? '').trim();
+  const explicit = (env('MANTLE_PG_DUMP') ?? '').trim();
   if (explicit) return explicit;
   const candidates = [
     // The newest pgdg client comes BEFORE the bare PATH name on purpose: a
@@ -360,7 +362,7 @@ async function runBackupInner(
     return status;
   };
 
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = env('DATABASE_URL');
   if (!databaseUrl) return fail('DATABASE_URL is not set in this process');
 
   const cfg = await loadBackupConfig(userId);

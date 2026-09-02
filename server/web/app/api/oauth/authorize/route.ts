@@ -18,6 +18,7 @@ import { NextResponse } from '@/server/http-compat';
 import { getSessionUser } from '@/lib/auth';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
+import { env } from '@mantle/config';
 
 type AuthorizeParams = {
   clientId: string;
@@ -63,7 +64,7 @@ function htmlError(message: string, status = 400): Response {
 /** Bind the consent form to (user, client, redirect, challenge) so only a POST
  *  originating from the page we rendered to THIS signed-in user is honoured. */
 function consentToken(userId: string, p: AuthorizeParams): string {
-  const secret = process.env.SESSION_SECRET ?? '';
+  const secret = env('SESSION_SECRET') ?? '';
   return createHmac('sha256', secret)
     .update(`${userId}:${p.clientId}:${p.redirectUri}:${p.codeChallenge}`)
     .digest('base64url');

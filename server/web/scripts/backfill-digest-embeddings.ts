@@ -27,8 +27,9 @@
 import { db, nodes } from '@mantle/db';
 import { digestEmbedText, embedBatch } from '@mantle/embeddings';
 import { and, eq, sql } from 'drizzle-orm';
+import { env } from '@mantle/config';
 
-const OWNER_ID = process.env.ALLOWED_USER_ID;
+const OWNER_ID = env('ALLOWED_USER_ID');
 if (!OWNER_ID) {
   console.error('backfill-digest-embeddings: ALLOWED_USER_ID must be set');
   process.exit(1);

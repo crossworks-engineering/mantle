@@ -6,6 +6,7 @@ import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 import { RUNS_CHANGED_CHANNEL, RUNS_CHANGED_TYPE } from '@mantle/runs';
 import { TURN_STREAM_CHANNEL, type TurnStreamEnvelope } from '@mantle/turn-stream';
 import type { TurnEvent } from '@mantle/client-types';
+import { env } from '@mantle/config';
 
 /**
  * Realtime bridge (server-only). A single app-wide Postgres LISTENer on the
@@ -68,7 +69,7 @@ async function ensureListening(): Promise<void> {
   if (bridge.stop) return;
   if (bridge.starting) return bridge.starting;
   bridge.starting = (async () => {
-    const url = process.env.DATABASE_URL;
+    const url = env('DATABASE_URL');
     if (!url) throw new Error('DATABASE_URL must be set');
     // Dedicated single connection — a LISTEN monopolises its connection, so
     // keep it off the shared query pool.

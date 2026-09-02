@@ -33,6 +33,7 @@ import {
 } from '@mantle/db';
 import { resolveChatKey, resolveChatRoutes, chatWithFailover } from '@mantle/agent-runtime';
 import { setTurnSuggestionHook, type TurnSuggestionContext } from '@mantle/assistant-runtime';
+import { env } from '@mantle/config';
 
 const SUGGESTION_PROMPT = `You propose the user's next message in a conversation with an AI assistant. Given the user's last message and the assistant's reply, propose ONE short follow-up question the user would plausibly ask next, in the user's FIRST PERSON voice, under 15 words, specific to the reply's content (dig deeper, apply it, or ask the natural next step). No preamble, no quotes, no list. Reply with ONLY the question.`;
 
@@ -47,7 +48,7 @@ export function isTurnSuggestionsEnabled(): boolean {
   // On unless explicitly disabled (0/false/off/no). Unset → on. The real
   // default-off lives per agent (params.suggest_follow_up); this is the
   // operator's fleet-wide kill switch.
-  const v = process.env.MANTLE_TURN_SUGGESTIONS?.trim().toLowerCase();
+  const v = env('MANTLE_TURN_SUGGESTIONS')?.trim().toLowerCase();
   return v !== '0' && v !== 'false' && v !== 'off' && v !== 'no';
 }
 

@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@mantle/api-keys": "workspace:*",
+    "@mantle/config": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/tracing": "workspace:*",
     "@mantle/voice": "workspace:*",

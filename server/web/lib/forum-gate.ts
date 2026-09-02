@@ -6,9 +6,10 @@
  * conversation from chat to forum must not double the budget.
  */
 import { countForumMemberPostsSince, countTeamInboundSince } from '@mantle/content';
+import { env } from '@mantle/config';
 
 export const FORUM_DAILY_CAP = (() => {
-  const n = Number(process.env.TEAM_CHAT_DAILY_TURNS);
+  const n = Number(env('TEAM_CHAT_DAILY_TURNS'));
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 100;
 })();
 
@@ -16,7 +17,7 @@ export const FORUM_DAILY_CAP = (() => {
  *  the turn cap — bytes and turns exhaust different resources (disk vs
  *  wallet). Env TEAM_UPLOAD_DAILY_BYTES, default 100 MB. */
 export const UPLOAD_DAILY_BYTES = (() => {
-  const n = Number(process.env.TEAM_UPLOAD_DAILY_BYTES);
+  const n = Number(env('TEAM_UPLOAD_DAILY_BYTES'));
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 100 * 1024 * 1024;
 })();
 

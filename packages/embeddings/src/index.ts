@@ -33,6 +33,7 @@ import { currentTrace, step } from '@mantle/tracing';
 // embedding ones (openrouter / openai / google / mistral / cohere) come
 // online as a side effect of touching this module. Don't tree-shake.
 import { getEmbeddingAdapter, type EmbedInput } from '@mantle/voice';
+import { env } from '@mantle/config';
 
 export type { EmbedInput };
 export {
@@ -72,7 +73,7 @@ const FALLBACK_MODEL = 'embeddinggemma:latest';
  * insert against the `vector(768)` columns. Paired with the `local` provider
  * default in {@link resolveEmbeddingConfig}.
  */
-export const DEFAULT_EMBEDDING_MODEL = process.env.MANTLE_EMBEDDING_MODEL?.trim() || FALLBACK_MODEL;
+export const DEFAULT_EMBEDDING_MODEL = env('MANTLE_EMBEDDING_MODEL')?.trim() || FALLBACK_MODEL;
 export const EMBEDDING_DIMS = 768;
 
 /**

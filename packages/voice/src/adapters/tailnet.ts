@@ -1,3 +1,4 @@
+import { env } from '@mantle/config';
 /**
  * Tailnet proxy dispatch — routes a model call to a host on your Tailscale
  * tailnet (a box behind NAT, e.g. a home GPU) through the bundled Tailscale
@@ -35,7 +36,7 @@ let _undiciFetch: UndiciFetch | undefined;
 
 function proxyAgent(): UndiciProxyAgent | null {
   if (_agent !== undefined) return _agent;
-  const url = process.env.MANTLE_TAILNET_PROXY_URL?.trim();
+  const url = env('MANTLE_TAILNET_PROXY_URL')?.trim();
   if (!url) {
     _agent = null;
     return _agent;
@@ -49,7 +50,7 @@ function proxyAgent(): UndiciProxyAgent | null {
 
 /** True when a tailnet proxy is configured (the `tailnet` compose profile is on). */
 export function tailnetProxyConfigured(): boolean {
-  return !!process.env.MANTLE_TAILNET_PROXY_URL?.trim();
+  return !!env('MANTLE_TAILNET_PROXY_URL')?.trim();
 }
 
 /**

@@ -1,3 +1,4 @@
+import { env } from '@mantle/config';
 /**
  * Tiny in-memory rate limiter — fixed window per key.
  *
@@ -27,7 +28,7 @@ const buckets = new Map<string, Bucket>();
  * toggle would make limiter behavior ambient state.
  */
 const SCALE = (() => {
-  const raw = Number(process.env.MANTLE_RATE_LIMIT_SCALE ?? '1');
+  const raw = Number(env('MANTLE_RATE_LIMIT_SCALE') ?? '1');
   return Number.isFinite(raw) && raw >= 1 ? raw : 1;
 })();
 
@@ -99,7 +100,7 @@ export function clientIp(req: Request): string {
       .map((s) => s.trim())
       .filter(Boolean);
     if (parts.length) {
-      const hops = Math.max(1, Number(process.env.MANTLE_TRUSTED_PROXIES) || 1);
+      const hops = Math.max(1, Number(env('MANTLE_TRUSTED_PROXIES')) || 1);
       return parts[Math.max(0, parts.length - hops)]!;
     }
   }

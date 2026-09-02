@@ -15,6 +15,7 @@ import { db, sql, getDefaultWorker, type AiWorkerKind } from '@mantle/db';
 import { mediaSidecarHealth, tikaIsUp } from '@mantle/files';
 
 import type { Capability, Capabilities } from '@mantle/client-types/types/integrity';
+import { env } from '@mantle/config';
 
 async function workerCap(
   ownerId: string,
@@ -48,7 +49,7 @@ async function embeddingCap(ownerId: string): Promise<Capability> {
   if (provider !== 'local') return { available: true, detail: `${model} · ${provider}` };
   const base = (
     row.base_url ||
-    process.env.MANTLE_LOCAL_EMBEDDING_URL ||
+    env('MANTLE_LOCAL_EMBEDDING_URL') ||
     'http://localhost:11434/v1'
   ).replace(/\/+$/, '');
   try {

@@ -10,6 +10,7 @@ import type {
   RunHistoryEntry,
   RunState,
 } from '@mantle/client-types/types/maintenance';
+import { envDynamic } from '@mantle/config';
 
 // Registry overview + current/last run. Read-only; runs start via ./run.
 
@@ -27,7 +28,7 @@ export async function GET() {
     schedulable: t.schedulable,
     supportsDryRun: Boolean(t.applyFlag || t.dryRunFlag),
     uiRunnable: !t.positionalArgs?.length,
-    missingEnv: (t.requiresEnv ?? []).filter((k) => !process.env[k]),
+    missingEnv: (t.requiresEnv ?? []).filter((k) => !envDynamic(k)),
     notes: t.notes,
   }));
 

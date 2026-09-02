@@ -1,6 +1,7 @@
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema/index';
+import { env } from '@mantle/config';
 
 declare global {
   var __mantleSql: ReturnType<typeof postgres> | undefined;
@@ -23,7 +24,7 @@ declare global {
  */
 function getDb(): PostgresJsDatabase<typeof schema> {
   if (globalThis.__mantleDb) return globalThis.__mantleDb;
-  const url = process.env.DATABASE_URL;
+  const url = env('DATABASE_URL');
   if (!url) throw new Error('DATABASE_URL must be set');
   const sql = globalThis.__mantleSql ?? postgres(url, { max: 10, prepare: false });
   globalThis.__mantleSql = sql;

@@ -49,6 +49,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mantle/client-types": "workspace:*",
+    "@mantle/config": "workspace:*",
+    "@mantle/content-core": "workspace:*",
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/embeddings": "workspace:*",
@@ -60,9 +63,7 @@
     "exceljs": "^4.4.0",
     "marked": "^18.0.7",
     "mathjs": "15.2.0",
-    "tz-lookup": "^6.1.25",
-    "@mantle/content-core": "workspace:*",
-    "@mantle/client-types": "workspace:*"
+    "tz-lookup": "^6.1.25"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

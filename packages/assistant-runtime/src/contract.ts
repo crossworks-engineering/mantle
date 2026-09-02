@@ -10,6 +10,7 @@
 
 import type { ToolArtifact } from '@mantle/tools';
 import type { RunAssistantTurnOptions } from './run-turn';
+import { env } from '@mantle/config';
 
 /** DBOS workflow name the runner registers under and enqueuers target. */
 export const ASSISTANT_TURN_WORKFLOW = 'assistantTurnWorkflow';
@@ -102,9 +103,9 @@ export type ForumTurnRunResult = {
  * they always point at the SAME system DB.
  */
 export function resolveSystemDatabaseUrl(): string {
-  const explicit = process.env.DBOS_SYSTEM_DATABASE_URL;
+  const explicit = env('DBOS_SYSTEM_DATABASE_URL');
   if (explicit) return explicit;
-  const appUrl = process.env.DATABASE_URL;
+  const appUrl = env('DATABASE_URL');
   if (!appUrl) {
     throw new Error('DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set to reach the runner');
   }

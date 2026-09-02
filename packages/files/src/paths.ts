@@ -10,6 +10,7 @@
 
 import path from 'node:path';
 import { ltreeToDash } from './slug';
+import { env } from '@mantle/config';
 
 /** The single ltree label that marks the host-filesystem root branch. */
 export const FILES_ROOT_LABEL = 'files';
@@ -28,8 +29,8 @@ let warnedUnset = false;
  *  Warn loudly once so this never happens silently again; production should
  *  always set an absolute MANTLE_FILES_ROOT shared by every process. */
 export function filesRoot(): string {
-  const env = process.env.MANTLE_FILES_ROOT?.trim();
-  if (!env && !warnedUnset) {
+  const configured = env('MANTLE_FILES_ROOT')?.trim();
+  if (!configured && !warnedUnset) {
     warnedUnset = true;
     console.warn(
       '[files] MANTLE_FILES_ROOT is not set — falling back to the cwd-relative ' +
@@ -37,7 +38,7 @@ export function filesRoot(): string {
         'by one are invisible to the others. Set an absolute path in .env.local.',
     );
   }
-  return path.resolve(env || DEFAULT_ROOT);
+  return path.resolve(configured || DEFAULT_ROOT);
 }
 
 /**

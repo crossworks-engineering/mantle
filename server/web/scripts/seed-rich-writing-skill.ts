@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { db, agents } from '@mantle/db';
 import { applyManifest } from '../lib/system-manifest/seed';
+import { env } from '@mantle/config';
 
 const SKILL_SLUG = 'rich_writing';
 
@@ -51,12 +52,12 @@ async function attachToAgent(ownerId: string, agentSlug: string): Promise<void> 
 export async function seedRichWritingSkill(ownerId: string): Promise<void> {
   await applyManifest(ownerId, { onlySkills: ['rich_writing'], mode: 'overwrite' });
   console.log('[seed] rich_writing seeded via manifest.');
-  const AGENT_SLUG_OVERRIDE = process.env.AGENT_SLUG;
+  const AGENT_SLUG_OVERRIDE = env('AGENT_SLUG');
   if (AGENT_SLUG_OVERRIDE) await attachToAgent(ownerId, AGENT_SLUG_OVERRIDE);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const ownerId = process.env.ALLOWED_USER_ID;
+  const ownerId = env('ALLOWED_USER_ID');
   if (!ownerId) {
     console.error('ALLOWED_USER_ID env var required');
     process.exit(1);

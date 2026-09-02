@@ -79,6 +79,7 @@
     "@mantle/assistant-runtime": "workspace:*",
     "@mantle/calendar": "workspace:*",
     "@mantle/client-types": "workspace:*",
+    "@mantle/config": "workspace:*",
     "@mantle/content": "workspace:*",
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",

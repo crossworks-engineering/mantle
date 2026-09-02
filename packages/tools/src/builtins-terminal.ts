@@ -29,6 +29,7 @@
 
 import { sanitizedEnv } from './sanitized-env';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import { env } from '@mantle/config';
 
 const DEFAULT_TIMEOUT_S = 120;
 const MAX_TIMEOUT_S = 1800;
@@ -39,7 +40,7 @@ const MAX_BUFFER = 16 * 1024 * 1024; // raw capture ceiling before truncation
  *  (the running stack's repo root). Override per call via the `cwd` arg. */
 function resolveCwd(override?: unknown): string {
   if (typeof override === 'string' && override.trim()) return override;
-  return process.env.MANTLE_TERMINAL_CWD || process.cwd();
+  return env('MANTLE_TERMINAL_CWD') || process.cwd();
 }
 
 function truncate(s: string): { text: string; truncated: boolean } {

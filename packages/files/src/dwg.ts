@@ -33,6 +33,7 @@ import { createHash } from 'node:crypto';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
 import { mediaDwgRender, mediaSidecarEnabled, type DwgRender } from './media-sidecar';
 import type { ParsedSheet } from './sheet-to-grid';
+import { env } from '@mantle/config';
 
 /** True when the bytes open with a DWG version magic (`AC1012`…`AC1032`). */
 export function sniffDwg(bytes: Buffer): boolean {
@@ -93,7 +94,7 @@ const MAX_TEXT_ROWS = 20_000;
 /** Env dial for render sharpness, mirroring DWF_RENDER_DPI (docs there).
  *  One dial for DWG and DXF — same sidecar route, same rasteriser. */
 export function dwgRenderDpi(): number {
-  const raw = Number(process.env.DWG_RENDER_DPI);
+  const raw = Number(env('DWG_RENDER_DPI'));
   if (!Number.isFinite(raw)) return 300;
   return Math.max(50, Math.min(600, Math.round(raw)));
 }

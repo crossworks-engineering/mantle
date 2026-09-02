@@ -21,13 +21,14 @@
  */
 
 import { runPoolFit } from '../lib/maintenance/pool-fit-run';
+import { env } from '@mantle/config';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const asJson = args.includes('--json');
   const showAll = args.includes('--all');
 
-  if (!process.env.DATABASE_URL) {
+  if (!env('DATABASE_URL')) {
     console.error('pool-fit: DATABASE_URL must be set');
     process.exit(1);
   }

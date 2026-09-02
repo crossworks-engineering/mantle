@@ -17,6 +17,7 @@
     "init-scratch": "tsx src/init-scratch.ts"
   },
   "dependencies": {
+    "@mantle/config": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.5"
   },

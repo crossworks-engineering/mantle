@@ -40,11 +40,12 @@ import {
 } from '@mantle/files';
 import { waitForOwner } from '@mantle/db';
 import { runWorker } from './_runner';
+import { env } from '@mantle/config';
 
 // Resolved at startup via waitForOwner — ALLOWED_USER_ID when set, else the sole
 // auth.users row. Left undefined until then so a fresh install boots and idles
 // until the first signup instead of exiting.
-let USER_ID: string | undefined = process.env.ALLOWED_USER_ID;
+let USER_ID: string | undefined = env('ALLOWED_USER_ID');
 
 /** Extensions the watcher cares about. Keep in sync with the UI's
  *  uploader. Everything else is ignored to avoid noise from editor

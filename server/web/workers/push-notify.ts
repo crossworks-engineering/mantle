@@ -18,6 +18,7 @@ import postgres from 'postgres';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 import { pushApproval, pushOutbound } from '../lib/push/notify';
 import { runWorker } from './_runner';
+import { env } from '@mantle/config';
 
 interface ConversationChange {
   ownerId: string;
@@ -63,9 +64,9 @@ async function handlePending(ownerId: string): Promise<void> {
 // This worker is a pure LISTEN loop with no business tick, so the runner's
 // heartbeat measures event-loop liveness — exactly the health signal we want.
 runWorker('push-notify', async () => {
-  const url = process.env.DATABASE_URL!;
+  const url = env('DATABASE_URL')!;
   // Needed to decrypt the instance token at rest (@mantle/crypto).
-  if (!process.env.MANTLE_MASTER_KEY) throw new Error('MANTLE_MASTER_KEY must be set');
+  if (!env('MANTLE_MASTER_KEY')) throw new Error('MANTLE_MASTER_KEY must be set');
 
   console.log('[push-notify] listening on conversation_changed + pending_changed');
   const sql = postgres(url, { max: 1, prepare: false });

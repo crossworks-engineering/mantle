@@ -46,6 +46,7 @@ import { db, agents, type Agent, type RunItemRow } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { renderAuditSection, renderPanelSection } from '@mantle/runs';
 import { getChatAdapter, type ChatToolDefinition } from '@mantle/voice';
+import { env } from '@mantle/config';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -283,7 +284,7 @@ async function main() {
   const onlyCase = arg('--case=');
   const jsonOnly = argv.includes('--json');
 
-  const ownerId = process.env.ALLOWED_USER_ID;
+  const ownerId = env('ALLOWED_USER_ID');
   if (!ownerId) {
     console.error('eval-runs: ALLOWED_USER_ID must be set');
     process.exit(1);

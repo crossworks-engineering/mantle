@@ -15,6 +15,8 @@
     "backfill:rfc-msg-id": "tsx --env-file-if-exists=../../server/web/.env.local src/backfill-rfc-message-id.ts"
   },
   "dependencies": {
+    "@mantle/client-types": "workspace:*",
+    "@mantle/config": "workspace:*",
     "@mantle/content": "workspace:*",
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
@@ -25,8 +27,7 @@
     "mailparser": "^3.9.14",
     "nodemailer": "^9.0.3",
     "pg-boss": "^12.26.1",
-    "sanitize-html": "^2.17.6",
-    "@mantle/client-types": "workspace:*"
+    "sanitize-html": "^2.17.6"
   },
   "devDependencies": {
     "@types/mailparser": "^3.4.5",

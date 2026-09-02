@@ -24,6 +24,7 @@ import {
   type MaintenanceTask,
   type TaskKind,
 } from '../lib/maintenance/registry';
+import { env, envDynamic } from '@mantle/config';
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..', '..');
 
@@ -140,7 +141,7 @@ async function run(slug: string, rawArgs: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const missingEnv = (t.requiresEnv ?? []).filter((k) => !process.env[k]);
+  const missingEnv = (t.requiresEnv ?? []).filter((k) => !envDynamic(k));
   if (missingEnv.length) {
     console.error(`maintain: "${slug}" needs env var(s) not set: ${missingEnv.join(', ')}`);
     process.exit(1);
@@ -180,7 +181,7 @@ async function run(slug: string, rawArgs: string[]): Promise<void> {
 
 /** Lazy so `list`/`info` never touch the DB and a DB-less env still works. */
 async function loadHistory(): Promise<typeof import('../lib/maintenance/history') | null> {
-  if (!process.env.DATABASE_URL) return null;
+  if (!env('DATABASE_URL')) return null;
   try {
     return await import('../lib/maintenance/history');
   } catch {

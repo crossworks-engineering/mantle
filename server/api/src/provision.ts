@@ -12,11 +12,12 @@
  */
 
 import postgres from 'postgres';
+import { env } from '@mantle/config';
 
 function systemDbUrl(): string {
-  const explicit = process.env.DBOS_SYSTEM_DATABASE_URL;
+  const explicit = env('DBOS_SYSTEM_DATABASE_URL');
   if (explicit) return explicit;
-  const app = process.env.DATABASE_URL;
+  const app = env('DATABASE_URL');
   if (!app) throw new Error('DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set');
   const u = new URL(app);
   u.pathname = '/mantle_dbos_sys';

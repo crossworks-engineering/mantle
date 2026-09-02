@@ -25,8 +25,9 @@ import { db, nodes, telegramMessages, getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { buildChatMessages, flattenChatMessagesForAdapter } from '@mantle/agent-runtime';
 import { getChatAdapter } from '@mantle/voice';
+import { env } from '@mantle/config';
 
-const OWNER_ID = process.env.ALLOWED_USER_ID;
+const OWNER_ID = env('ALLOWED_USER_ID');
 
 const REGEN_PROMPT = `You are a memory compressor for an ongoing Telegram conversation. You will be given a chronological transcript of a chat between the user and an AI assistant, each line prefixed by its turn number.
 

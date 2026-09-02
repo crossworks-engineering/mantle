@@ -59,12 +59,13 @@ import {
   PERSONA_TOOL_GROUP_SLUGS,
 } from './manifest';
 import { convergeManifestSkills, missingPersonaGroups } from './reconcile-util';
+import { env } from '@mantle/config';
 
 let ranThisProcess = false;
 
 /** Single-owner system: prefer the configured id, else the sole auth.users row. */
 async function resolveOwnerId(): Promise<string | null> {
-  const fromEnv = process.env.ALLOWED_USER_ID?.trim();
+  const fromEnv = env('ALLOWED_USER_ID')?.trim();
   if (fromEnv) return fromEnv;
   // Multi-admin (actor/anchor split, v0.111) leaves several rows in auth.users
   // on a fully-provisioned brain, but ALL content still hangs off ONE anchor
@@ -294,8 +295,8 @@ export async function reconcileManifestOnBoot(): Promise<void> {
   // Production update mechanism only — in dev you run `pnpm seed:*` by hand, and
   // dev may point at the prod DB (the tailnet workflow), which we must not mutate
   // on a `pnpm dev` boot.
-  if (process.env.NODE_ENV !== 'production') return;
-  if (process.env.MANTLE_DISABLE_BOOT_RECONCILE === '1') {
+  if (env('NODE_ENV') !== 'production') return;
+  if (env('MANTLE_DISABLE_BOOT_RECONCILE') === '1') {
     console.log('[reconcile] disabled via MANTLE_DISABLE_BOOT_RECONCILE');
     return;
   }

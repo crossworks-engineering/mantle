@@ -1,5 +1,6 @@
 import puppeteer from 'puppeteer-core';
 import { printOrigin } from './render-pdf';
+import { env } from '@mantle/config';
 
 /**
  * Regenerate a draw's SVG snapshot in the browser sidecar.
@@ -45,7 +46,7 @@ export type DrawRenderResult = {
  * Throws DrawRendererUnavailableError when the sidecar itself is unusable.
  */
 export async function renderDrawSvg(nodeId: string, cookie: string): Promise<DrawRenderResult> {
-  const endpoint = process.env.BROWSER_WS_ENDPOINT;
+  const endpoint = env('BROWSER_WS_ENDPOINT');
   if (!endpoint) throw new DrawRendererUnavailableError('BROWSER_WS_ENDPOINT is not set');
 
   let browser;

@@ -14,6 +14,8 @@ import { seal } from '@mantle/crypto';
 import { probeImapConnection, unsealImapPassword } from './providers/imap';
 import { probeSmtpConnection } from './send';
 import type { AccountFoldersResult } from '@mantle/client-types';
+import { env } from '@mantle/config';
+
 export type { AccountFoldersResult };
 
 /** Immediate-rescan queue — must match the email-sync worker's queue name. */
@@ -22,7 +24,7 @@ const SYNC_QUEUE = 'mantle.email.sync';
 let _boss: PgBoss | undefined;
 async function boss(): Promise<PgBoss> {
   if (_boss) return _boss;
-  const url = process.env.DATABASE_URL;
+  const url = env('DATABASE_URL');
   if (!url) throw new Error('DATABASE_URL must be set');
   _boss = new PgBoss({ connectionString: url, schema: 'pgboss' });
   await _boss.start();

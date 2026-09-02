@@ -17,6 +17,7 @@ import { storageType } from './doc-types';
 import { createFtsShadow, ftsColumns, ftsTableName } from './fts';
 import { dedupe, physicalName, quoteIdent, viewLabel, viewNameForTab } from './names';
 import { openTableFile, sqlQuote, type SqliteDb } from './sqlite';
+import { env } from '@mantle/config';
 
 /**
  * Workbook-file engine (Tables v2 P1). The file IS the workbook: one Table
@@ -47,7 +48,7 @@ export const MATERIALIZE_MAX = 10_000;
 /** Import safety ceiling (signed off 2026-07-15: EXPLICIT error, no auto-raise,
  *  never a silent partial import). Env-tunable per box. */
 export function importMaxRows(): number {
-  const raw = Number(process.env.TABLE_IMPORT_MAX_ROWS ?? '');
+  const raw = Number(env('TABLE_IMPORT_MAX_ROWS') ?? '');
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2_000_000;
 }
 

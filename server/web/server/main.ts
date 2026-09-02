@@ -10,9 +10,11 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnvFiles } from './env';
+import { assertEnvShape } from '@mantle/config';
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 loadEnvFiles(webRoot);
+assertEnvShape();
 
 // Build identity. Next used to inline NEXT_PUBLIC_* at compile time; under tsx
 // the shared @mantle/client-types/version module reads the same vars at import — so
@@ -37,12 +39,7 @@ const { createApp } = await import('./app');
 // system manifest on every image update. Fire-and-forget — never delays or
 // blocks request serving; the reconcile self-guards (production-only,
 // provisioned-only, once per version, best-effort).
-if (!process.env.MANTLE_PUBLIC_URL && process.env.NEXT_PUBLIC_APP_URL) {
-  console.warn(
-    '[boot] MANTLE_PUBLIC_URL is unset — falling back to NEXT_PUBLIC_APP_URL for ' +
-      'server-side URLs (shares, Microsoft OAuth redirect). Set MANTLE_PUBLIC_URL.',
-  );
-}
+// (MANTLE_PUBLIC_URL / NEXT_PUBLIC_APP_URL fallback: @mantle/config warns once.)
 void import('../lib/system-manifest/reconcile')
   .then(({ reconcileManifestOnBoot }) => reconcileManifestOnBoot())
   .catch((err) => console.error('[boot] manifest reconcile failed:', err));

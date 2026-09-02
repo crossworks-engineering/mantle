@@ -24,8 +24,9 @@
 
 import { db, nodes, emails } from '@mantle/db';
 import { and, eq, sql } from 'drizzle-orm';
+import { env } from '@mantle/config';
 
-const OWNER_ID = process.env.ALLOWED_USER_ID;
+const OWNER_ID = env('ALLOWED_USER_ID');
 if (!OWNER_ID) {
   console.error('backfill-email-salience: ALLOWED_USER_ID must be set');
   process.exit(1);

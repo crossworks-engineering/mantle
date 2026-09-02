@@ -23,8 +23,9 @@
  * The agent (apps/agent) must be running — it's the LISTENer that extracts.
  */
 import postgres from 'postgres';
+import { env } from '@mantle/config';
 
-const DATABASE_URL = process.env.DATABASE_URL;
+const DATABASE_URL = env('DATABASE_URL');
 if (!DATABASE_URL) {
   console.error('relations-backfill: DATABASE_URL must be set');
   process.exit(1);

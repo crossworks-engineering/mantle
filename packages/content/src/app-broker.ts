@@ -18,6 +18,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, appDatabases } from '@mantle/db';
+import { env } from '@mantle/config';
 
 /** Root dir for per-app SQLite files. A dedicated volume in prod (see compose);
  *  one file per app: <root>/<owner>/<app>.sqlite. When APP_DB_DIR is unset
@@ -28,8 +29,8 @@ import { db, nodes, appDatabases } from '@mantle/db';
 let cachedRoot: string | undefined;
 function appDbRoot(): string {
   if (cachedRoot) return cachedRoot;
-  const env = process.env.APP_DB_DIR;
-  if (env) return (cachedRoot = env);
+  const configured = env('APP_DB_DIR');
+  if (configured) return (cachedRoot = configured);
   let dir: string;
   try {
     dir = path.dirname(fileURLToPath(import.meta.url));

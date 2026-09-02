@@ -14,9 +14,10 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
+import { env } from '@mantle/config';
 
 async function main() {
-  const url = process.env.DATABASE_URL;
+  const url = env('DATABASE_URL');
   if (!url) throw new Error('DATABASE_URL must be set');
   const initDir = join(dirname(fileURLToPath(import.meta.url)), '../../../infra/postgres/init');
   const files = readdirSync(initDir)

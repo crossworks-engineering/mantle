@@ -9,6 +9,8 @@ import { randomBytes } from 'node:crypto';
 import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db, nodes, shares, type Share } from '@mantle/db';
 import type { ShareMode } from '@mantle/client-types';
+import { env } from '@mantle/config';
+
 export type { ShareMode };
 
 /** Node types that may be shared publicly. Sensitive types are excluded.
@@ -123,7 +125,7 @@ let warnedNoPublicUrl = false;
  *  reaches the process that does the writing — the agent runtime is not the web
  *  server — so warn here too, once, where the wrong URL is actually minted. */
 export function publicBaseUrl(): string {
-  const configured = process.env.MANTLE_PUBLIC_URL ?? process.env.NEXT_PUBLIC_APP_URL;
+  const configured = env('MANTLE_PUBLIC_URL');
   if (!configured && !warnedNoPublicUrl) {
     warnedNoPublicUrl = true;
     console.warn(

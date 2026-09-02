@@ -18,10 +18,11 @@ import { mintTicket } from '../lib/push/ticket';
 import { registerInstance, relayNotify } from '../lib/push/relay-client';
 import { deleteAllSubscriptions, insertSubscription, savePushInstance } from '../lib/push/store';
 import { pushOutbound } from '../lib/push/notify';
+import { env } from '@mantle/config';
 
-const OWNER = process.env.VERIFY_OWNER_ID ?? 'bc505da9-c323-43c7-bafb-6c06a2d443de';
-const AGENT_SLUG = process.env.VERIFY_AGENT_SLUG ?? 'assistant';
-const RELAY = process.env.MANTLE_PUSH_RELAY_URL ?? 'https://push.crossworks.network';
+const OWNER = env('VERIFY_OWNER_ID') ?? 'bc505da9-c323-43c7-bafb-6c06a2d443de';
+const AGENT_SLUG = env('VERIFY_AGENT_SLUG') ?? 'assistant';
+const RELAY = env('MANTLE_PUSH_RELAY_URL') ?? 'https://push.crossworks.network';
 
 let passed = 0;
 function ok(cond: boolean, msg: string): asserts cond {

@@ -15,6 +15,7 @@
     "@mantle/api-keys": "workspace:*",
     "@mantle/app-build": "workspace:*",
     "@mantle/client-types": "workspace:*",
+    "@mantle/config": "workspace:*",
     "@mantle/content": "workspace:*",
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",

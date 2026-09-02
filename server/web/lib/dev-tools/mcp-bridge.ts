@@ -20,6 +20,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { env } from '@mantle/config';
 
 const IDLE_SHUTDOWN_MS = 5 * 60 * 1000;
 
@@ -46,7 +47,8 @@ const state: BridgeGlobal = (g.__mantleMcpBridge ??= { bridge: null, idleTimer: 
 /** Locate apps/mcp from wherever the web server happens to run.
  *  Dev runs with cwd=apps/web; a container may run from the repo root. */
 function resolveMcpDir(): string {
-  if (process.env.MANTLE_MCP_DIR) return process.env.MANTLE_MCP_DIR;
+  const configured = env('MANTLE_MCP_DIR');
+  if (configured) return configured;
   const candidates = [
     path.resolve(process.cwd(), '../mcp'),
     path.resolve(process.cwd(), 'apps/mcp'),

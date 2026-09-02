@@ -29,8 +29,9 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, emailAttachments, emails, nodes } from '@mantle/db';
 import { loadContactGate } from '@mantle/content';
+import { env } from '@mantle/config';
 
-const OWNER_ID = process.env.ALLOWED_USER_ID;
+const OWNER_ID = env('ALLOWED_USER_ID');
 if (!OWNER_ID) {
   console.error('purge-noncontact-emails: ALLOWED_USER_ID must be set');
   process.exit(1);

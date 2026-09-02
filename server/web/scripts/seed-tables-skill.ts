@@ -22,6 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { db, agents } from '@mantle/db';
 import { applyManifest } from '../lib/system-manifest/seed';
+import { env } from '@mantle/config';
 
 const SKILL_SLUG = 'table_authoring';
 
@@ -52,12 +53,12 @@ async function attachToAgent(ownerId: string, agentSlug: string): Promise<void> 
 export async function seedTablesSkill(ownerId: string): Promise<void> {
   await applyManifest(ownerId, { onlySkills: ['table_authoring'], mode: 'overwrite' });
   console.log('[seed] table_authoring seeded via manifest.');
-  const ATTACH_AGENT = process.env.ATTACH_AGENT;
+  const ATTACH_AGENT = env('ATTACH_AGENT');
   if (ATTACH_AGENT) await attachToAgent(ownerId, ATTACH_AGENT);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const ownerId = process.env.ALLOWED_USER_ID;
+  const ownerId = env('ALLOWED_USER_ID');
   if (!ownerId) {
     console.error('ALLOWED_USER_ID env var required');
     process.exit(1);

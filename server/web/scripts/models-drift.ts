@@ -25,11 +25,12 @@
  */
 
 import { runModelsDrift } from '../lib/maintenance/models-drift';
+import { env } from '@mantle/config';
 
 async function main(): Promise<void> {
   const asJson = process.argv.includes('--json');
 
-  if (!process.env.DATABASE_URL) {
+  if (!env('DATABASE_URL')) {
     console.error('models-drift: DATABASE_URL must be set');
     process.exit(1);
   }

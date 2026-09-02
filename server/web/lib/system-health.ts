@@ -11,6 +11,8 @@ import { getTailnetStatus } from './tailscale';
 import { browserHealth } from './render-pdf';
 import type { SystemHealth } from '@mantle/client-types';
 import type { DiskInfo } from '@mantle/client-types';
+import { env } from '@mantle/config';
+
 export type { DiskInfo };
 export type { SystemHealth };
 
@@ -120,7 +122,7 @@ async function embedderHealth(userId: string): Promise<SystemHealth['embedder']>
   }
   const base = (
     cfg.primary.baseUrl ||
-    process.env.MANTLE_LOCAL_EMBEDDING_URL ||
+    env('MANTLE_LOCAL_EMBEDDING_URL') ||
     DEFAULT_LOCAL_EMBED_URL
   ).replace(/\/+$/, '');
   try {
@@ -246,7 +248,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
 
   return {
     ts: new Date().toISOString(),
-    scope: process.env.NODE_ENV === 'production' ? 'container' : 'host',
+    scope: env('NODE_ENV') === 'production' ? 'container' : 'host',
     host: {
       cpuLoadPct: load ? load.currentLoad : null,
       mem: memInfo,

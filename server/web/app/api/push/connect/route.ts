@@ -10,6 +10,7 @@ import { generateInstanceToken } from '@/lib/push/tokens';
 import { mintTicket } from '@/lib/push/ticket';
 import { registerInstance } from '@/lib/push/relay-client';
 import { getPushInstance, savePushInstance } from '@/lib/push/store';
+import { env } from '@mantle/config';
 
 const DEFAULT_RELAY_URL = 'https://push.crossworks.network';
 
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
   // Lazily register this install with the relay (TOFU) the first time.
   let instance = await getPushInstance();
   if (!instance) {
-    const relayUrl = process.env.MANTLE_PUSH_RELAY_URL ?? DEFAULT_RELAY_URL;
+    const relayUrl = env('MANTLE_PUSH_RELAY_URL') ?? DEFAULT_RELAY_URL;
     const instanceToken = generateInstanceToken();
     try {
       const { instanceId } = await registerInstance(relayUrl, instanceToken);

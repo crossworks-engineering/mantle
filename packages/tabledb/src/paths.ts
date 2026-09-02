@@ -1,6 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { env } from '@mantle/config';
 
 /**
  * Storage layout: one sqlite workbook file per Table node —
@@ -46,7 +47,7 @@ function defaultTableDbRoot(): string {
 }
 
 export function tableDbRoot(): string {
-  return process.env.TABLE_DB_DIR ?? defaultTableDbRoot();
+  return env('TABLE_DB_DIR') ?? defaultTableDbRoot();
 }
 
 /** Ids come from our own DB (UUIDs), but never trust them as path segments. */

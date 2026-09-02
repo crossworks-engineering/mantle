@@ -17,9 +17,10 @@ import { contentChunks, db, nodes } from '@mantle/db';
 import { withHnswPool } from './hnsw';
 import { grantUnionFilter, pgArrayLiteral } from './pg';
 import { applyRescueFloor, fuseRrf } from './rrf';
+import { env } from '@mantle/config';
 
 /** Salience down-weight strength (see @mantle/search index). Tunable via env. */
-const SALIENCE_LAMBDA = Number(process.env.MANTLE_SALIENCE_LAMBDA ?? 0.15);
+const SALIENCE_LAMBDA = Number(env('MANTLE_SALIENCE_LAMBDA') ?? 0.15);
 
 export type ChunkHit = {
   nodeId: string;

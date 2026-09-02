@@ -58,6 +58,7 @@
 import JSZip from 'jszip';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
 import type { ParsedSheet } from './sheet-to-grid';
+import { env } from '@mantle/config';
 
 /** True when the bytes carry the classic DWF magic (`(DWF Vnn.nn)`). */
 export function sniffDwf(bytes: Buffer): boolean {
@@ -377,7 +378,7 @@ async function parseDwfStructuredUncached(bytes: Buffer): Promise<DwfParsed> {
  *  nothing past ~1500 px (provider downscale). Higher dpi ≈ 4× bytes and
  *  vision tokens per sheet — a cost dial as much as a quality one. */
 function renderDpi(): number {
-  const raw = Number(process.env.DWF_RENDER_DPI);
+  const raw = Number(env('DWF_RENDER_DPI'));
   if (!Number.isFinite(raw) || raw <= 0) return 300;
   return Math.min(600, Math.max(50, Math.round(raw)));
 }

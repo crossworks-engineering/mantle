@@ -15,6 +15,7 @@
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { resolveSystemDatabaseUrl, RUNNER_QUEUE } from '@mantle/assistant-runtime';
+import { env } from '@mantle/config';
 
 // The system-DB resolver + queue name are the shared cross-process contract
 // (the web enqueuer uses the same), so they live in @mantle/assistant-runtime.
@@ -27,15 +28,15 @@ export { resolveSystemDatabaseUrl, RUNNER_QUEUE };
  *  default :3001 port collision with the web dev server. Opt in for ad-hoc use
  *  with MANTLE_RUNNER_ADMIN_PORT=<n>. */
 function adminServerConfig(): { runAdminServer: boolean; adminPort?: number } {
-  const port = Number(process.env.MANTLE_RUNNER_ADMIN_PORT);
+  const port = Number(env('MANTLE_RUNNER_ADMIN_PORT'));
   if (Number.isFinite(port) && port > 0) return { runAdminServer: true, adminPort: port };
   return { runAdminServer: false };
 }
 
 /** Apply DBOS config. Call once, before DBOS.launch(). */
 export function configureDBOS(): void {
-  const tracesEndpoint = process.env.OTLP_TRACES_ENDPOINT;
-  const logsEndpoint = process.env.OTLP_LOGS_ENDPOINT;
+  const tracesEndpoint = env('OTLP_TRACES_ENDPOINT');
+  const logsEndpoint = env('OTLP_LOGS_ENDPOINT');
   DBOS.setConfig({
     name: 'mantle-api',
     systemDatabaseUrl: resolveSystemDatabaseUrl(),
@@ -47,7 +48,7 @@ export function configureDBOS(): void {
     ...(logsEndpoint ? { otlpLogsEndpoints: [logsEndpoint] } : {}),
     // OTel-standard attribute naming so spans interop with any collector.
     otelAttributeFormat: 'semconv',
-    logLevel: process.env.DBOS_LOG_LEVEL ?? 'info',
+    logLevel: env('DBOS_LOG_LEVEL') ?? 'info',
     // Pin a STABLE application version. DBOS only auto-recovers in-flight
     // workflows within the same applicationVersion; left as the default (a code
     // hash) a deploy would strand any turn that was mid-flight. A constant means
@@ -56,7 +57,7 @@ export function configureDBOS(): void {
     // workflow's STEP SEQUENCE, replaying an old in-flight turn could diverge —
     // bump MANTLE_RUNNER_VERSION at that release to force a clean version
     // boundary (old in-flight turns then won't auto-recover; they'd be re-sent).
-    applicationVersion: process.env.MANTLE_RUNNER_VERSION || 'mantle-runner-1',
+    applicationVersion: env('MANTLE_RUNNER_VERSION') || 'mantle-runner-1',
     ...adminServerConfig(),
   });
 }
@@ -65,7 +66,7 @@ export function configureDBOS(): void {
  *  across every apps/api process (the LLM-provider backpressure valve).
  *  Override with MANTLE_RUNNER_CONCURRENCY. */
 export function runnerConcurrency(): number {
-  const raw = Number(process.env.MANTLE_RUNNER_CONCURRENCY);
+  const raw = Number(env('MANTLE_RUNNER_CONCURRENCY'));
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 8;
 }
 
@@ -76,6 +77,6 @@ export function runnerConcurrency(): number {
  *  low by default — background work should trickle, not flood the LLM route.
  *  Override with MANTLE_RUNS_TURN_CONCURRENCY. */
 export function runsTurnConcurrency(): number {
-  const raw = Number(process.env.MANTLE_RUNS_TURN_CONCURRENCY);
+  const raw = Number(env('MANTLE_RUNS_TURN_CONCURRENCY'));
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 2;
 }

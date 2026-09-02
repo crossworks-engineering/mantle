@@ -18,11 +18,12 @@
  */
 
 import type { DocChunk } from './chunk';
+import { env } from '@mantle/config';
 
 const SHEET_MARKER_RE = /^# Sheet: (.+)$/;
 
 /** Data rows sampled into a sheet's profile chunk (after the header row). */
-const PROFILE_SAMPLE_ROWS = Number(process.env.MANTLE_SHEET_PROFILE_ROWS ?? 8);
+const PROFILE_SAMPLE_ROWS = Number(env('MANTLE_SHEET_PROFILE_ROWS') ?? 8);
 /** Hard cap per profile chunk — matches chunkDocText's default budget. */
 const PROFILE_MAX_CHARS = 2750;
 

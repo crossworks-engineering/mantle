@@ -25,6 +25,7 @@ import { checkSystemIntegrity } from '@/lib/system-manifest';
 import { isOnboarded, markOnboarded } from '@/lib/onboarding';
 import { listAiWorkers } from '@/lib/ai-workers';
 import { getAgentBySlug } from '@/lib/agents';
+import { env } from '@mantle/config';
 
 /**
  * Onboarding wizard backend — the first-run flow's reads (GET) + every step's
@@ -92,7 +93,7 @@ export async function GET() {
  */
 async function checkDomain(browserHost: string | null): Promise<SanityCheck> {
   const label = 'Domain & HTTPS';
-  const configured = (process.env.MANTLE_PUBLIC_URL ?? '').trim().replace(/\/+$/, '');
+  const configured = (env('MANTLE_PUBLIC_URL') ?? '').trim().replace(/\/+$/, '');
   if (!configured || /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(configured)) {
     return {
       label,
@@ -240,7 +241,7 @@ async function runInfraChecks(browserHost: string | null): Promise<SanityCheck[]
 
   // Required secrets — the stack refuses to start without them under compose,
   // but a hand-rolled env can miss one and break key sealing silently.
-  const secretsOk = !!process.env.MANTLE_MASTER_KEY && !!process.env.SESSION_SECRET;
+  const secretsOk = !!env('MANTLE_MASTER_KEY') && !!env('SESSION_SECRET');
   checks.push(
     secretsOk
       ? { label: 'Required secrets', ok: true, detail: 'MANTLE_MASTER_KEY + SESSION_SECRET set' }

@@ -24,6 +24,7 @@ import { channels, db, telegramAccounts, type Channel, type TelegramAccount } fr
 import { pollOnce, evictBot, type PollHandlers } from '@mantle/telegram';
 import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/tools';
 import { runWorker } from './_runner';
+import { env } from '@mantle/config';
 
 const CHANNEL_REFRESH_MS = 60_000;
 const BACKOFF_BASE_MS = 1_000;
@@ -94,7 +95,7 @@ const approvalHandlers: PollHandlers = {
 };
 
 runWorker('channel-poll', async () => {
-  if (!process.env.MANTLE_MASTER_KEY) throw new Error('MANTLE_MASTER_KEY must be set');
+  if (!env('MANTLE_MASTER_KEY')) throw new Error('MANTLE_MASTER_KEY must be set');
 
   await refreshChannels();
   const interval = setInterval(refreshChannels, CHANNEL_REFRESH_MS);

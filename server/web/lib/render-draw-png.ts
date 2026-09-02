@@ -1,6 +1,7 @@
 import puppeteer from 'puppeteer-core';
 import { printOrigin } from './render-pdf';
 import { DrawRendererUnavailableError } from './render-draw-svg';
+import { env } from '@mantle/config';
 
 /**
  * Rasterize a draw's committed SVG snapshot to PNG in the browser sidecar.
@@ -51,7 +52,7 @@ export type DrawPng = {
  * a caller can tell a missing drawing from a missing browser.
  */
 export async function renderDrawPng(nodeId: string, cookie: string): Promise<DrawPng | null> {
-  const endpoint = process.env.BROWSER_WS_ENDPOINT;
+  const endpoint = env('BROWSER_WS_ENDPOINT');
   if (!endpoint) throw new DrawRendererUnavailableError('BROWSER_WS_ENDPOINT is not set');
 
   let browser;

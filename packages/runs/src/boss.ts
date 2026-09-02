@@ -19,6 +19,7 @@ import { PgBoss } from 'pg-boss';
 import type { PostCommitAction } from './engine';
 import { notifyPendingCreated } from './notify';
 import { RUN_RESUME_QUEUE, RUN_TOOL_QUEUE, RUN_WORKER_QUEUE } from './queues';
+import { env } from '@mantle/config';
 
 let bossPromise: Promise<PgBoss> | null = null;
 
@@ -33,7 +34,7 @@ export async function ensureRunQueues(boss: PgBoss): Promise<void> {
 async function getSendBoss(): Promise<PgBoss> {
   if (!bossPromise) {
     bossPromise = (async () => {
-      const url = process.env.DATABASE_URL;
+      const url = env('DATABASE_URL');
       if (!url) throw new Error('enqueueRunActions: DATABASE_URL must be set');
       const boss = new PgBoss({ connectionString: url, schema: 'pgboss' });
       boss.on('error', (err) => console.error('[runs] pg-boss (send):', err));

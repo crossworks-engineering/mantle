@@ -132,6 +132,38 @@ export default tseslint.config(
     rules: { 'mantle/pair-fill-foreground': 'error', 'mantle/use-ink-for-text': 'error' },
   },
   {
+    // Environment reads go through @mantle/config (typed names, legacy-alias
+    // fallbacks, one inventory — see packages/config/src/index.ts). Bare
+    // `process.env` as a whole object (spawning a child with the inherited
+    // env) is fine; member reads are not. Excepted: the config package itself,
+    // packages/client-types (published to the frontend, where NEXT_PUBLIC_* is
+    // a build-time contract), server/sandboxd (standalone image, own config
+    // block), the dotenv loader and the boot file that bridges MANTLE_* into
+    // the client-types names, plus tests and scripts.
+    files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}'],
+    ignores: [
+      'packages/config/**',
+      'packages/client-types/**',
+      'server/sandboxd/**',
+      'server/web/server/env.ts',
+      'server/web/server/main.ts',
+      '**/*.test.ts',
+      '**/*.test.tsx',
+      '**/scripts/**',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "MemberExpression[object.type='MemberExpression'][object.object.name='process'][object.property.name='env']",
+          message:
+            'Read environment through @mantle/config (env, envInt, envFlag, envDynamic), not process.env.X.',
+        },
+      ],
+    },
+  },
+  {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.
     files: ['**/*.test.ts', '**/*.test.tsx', 'scripts/**', '**/scripts/**'],
     rules: {

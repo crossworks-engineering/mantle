@@ -40,9 +40,10 @@
  */
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
+import { env } from '@mantle/config';
 
 async function main() {
-  const url = process.env.DATABASE_URL;
+  const url = env('DATABASE_URL');
   if (!url) throw new Error('DATABASE_URL must be set');
   const sql = postgres(url, { max: 1, prepare: false });
   console.log('Applying migrations to', url.replace(/:[^@]+@/, ':***@'));

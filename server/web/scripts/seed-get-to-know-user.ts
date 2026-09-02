@@ -21,10 +21,11 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { db, agents, heartbeats, skills } from '@mantle/db';
 import { computeNextFireAt } from '@mantle/heartbeats';
+import { env } from '@mantle/config';
 
-const USER_ID = process.env.ALLOWED_USER_ID;
-const TG_CHAT_ID = process.env.TG_CHAT_ID;
-const AGENT_SLUG_OVERRIDE = process.env.AGENT_SLUG;
+const USER_ID = env('ALLOWED_USER_ID');
+const TG_CHAT_ID = env('TG_CHAT_ID');
+const AGENT_SLUG_OVERRIDE = env('AGENT_SLUG');
 
 if (!USER_ID) {
   console.error('ALLOWED_USER_ID env var required');
