@@ -104,6 +104,7 @@ import {
   buildToolsForModel,
   clampThinkingBudget,
   resolveMaxTokens,
+  resolveToolValidationMode,
 } from './tool-loop';
 import type {
   ChatDispatcher,
@@ -1666,7 +1667,39 @@ describe('runToolLoop — central arg validation', () => {
     };
   }
 
-  it('warn mode (default): applies safe repairs before dispatch', async () => {
+  it('resolveToolValidationMode defaults to enforce, and honours the two opt-outs', () => {
+    // Pinned because the default changed (v0.232.150): it was 'warn' while the
+    // fleet's violation rate was being measured. An unset env must now enforce.
+    delete process.env.MANTLE_TOOL_VALIDATION;
+    expect(resolveToolValidationMode()).toBe('enforce');
+    expect(resolveToolValidationMode('')).toBe('enforce');
+    expect(resolveToolValidationMode('nonsense')).toBe('enforce');
+    expect(resolveToolValidationMode('warn')).toBe('warn');
+    expect(resolveToolValidationMode('WARN')).toBe('warn');
+    expect(resolveToolValidationMode('off')).toBe('off');
+  });
+
+  it('enforce mode (default): a violation blocks dispatch with a teaching error', async () => {
+    const tool = fakeTool({ slug: 'search_nodes', inputSchema: SEARCH_SCHEMA as never });
+    const { adapter } = makeFakeAdapter([
+      searchCall('{"limit":999}'), // q missing + limit out of range
+      { type: 'text', text: 'done' },
+    ]);
+    await runToolLoop({
+      adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [tool],
+    });
+    // Nothing reached the handler: the whole point of the flip.
+    expect(dispatchToolCalls).toEqual([]);
+  });
+
+  it('warn mode: applies safe repairs before dispatch', async () => {
+    process.env.MANTLE_TOOL_VALIDATION = 'warn';
     const tool = fakeTool({ slug: 'search_nodes', inputSchema: SEARCH_SCHEMA as never });
     const { adapter } = makeFakeAdapter([
       searchCall('{"q":"foo","limit":"25"}'),
@@ -1685,7 +1718,8 @@ describe('runToolLoop — central arg validation', () => {
     expect(dispatchToolCalls).toEqual([{ slug: 'search_nodes', input: { q: 'foo', limit: 25 } }]);
   });
 
-  it('warn mode (default): violations do NOT block dispatch', async () => {
+  it('warn mode: violations do NOT block dispatch', async () => {
+    process.env.MANTLE_TOOL_VALIDATION = 'warn';
     const tool = fakeTool({ slug: 'search_nodes', inputSchema: SEARCH_SCHEMA as never });
     const { adapter } = makeFakeAdapter([
       searchCall('{"limit":999}'), // q missing + limit out of range

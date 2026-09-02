@@ -118,16 +118,31 @@ export function resolveMaxTokens(
 // BEFORE dispatch (see @mantle/tools validate-args.ts). Safe repairs
 // (string→number, scalar→array-wrap, …) are applied in 'warn' and 'enforce';
 // schema violations block dispatch with a teaching error only in 'enforce'.
-// 'warn' is the default so a fleet-wide rollout starts as pure telemetry —
-// trace_steps.meta.arg_validation shows exactly what WOULD be rejected —
-// and 'enforce' is flipped per box once the violation rate is understood.
+//
+// 'warn' was the default from v0.119.0 so the rollout began as pure telemetry:
+// trace_steps.meta.arg_validation recorded exactly what WOULD be rejected,
+// and enforcement waited until the violation rate was known. It now is,
+// measured 2026-09-02 against the live boxes rather than estimated:
+//
+//   jason-prod  19,709 trace steps over 2026-06-06..2026-09-02  →  1 event
+//   dev          ~19k steps over its retained window            →  0 events
+//
+// That single event was an unknown key (`pricing` on model_pool_set) — a
+// model inventing a parameter, which in 'warn' was dropped silently and in
+// 'enforce' comes back as a teaching error the model can act on. There were
+// no repairs and no schema violations at all in three months, which says the
+// tool schemas and the models already agree.
+//
+// So the default is 'enforce'. A box that wants the old behaviour sets
+// MANTLE_TOOL_VALIDATION=warn (or 'off'); no redeploy needed, and /debug's
+// tool-validation route reports the mode a process is actually running in.
 export type ToolValidationMode = 'off' | 'warn' | 'enforce';
 
 export function resolveToolValidationMode(
   value: string | undefined = env('MANTLE_TOOL_VALIDATION'),
 ): ToolValidationMode {
   const raw = (value ?? '').trim().toLowerCase();
-  return raw === 'off' || raw === 'enforce' ? raw : 'warn';
+  return raw === 'off' || raw === 'warn' ? raw : 'enforce';
 }
 
 // ── Deterministic tool-outcome summary ──
