@@ -3,6 +3,9 @@
 Box-local routes that must survive a release roll. The shipped Caddyfile
 imports `/etc/caddy/conf.d/*.caddy` INSIDE its site block, and compose mounts
 this folder there read-only. One file per concern, named for what it serves.
+The Caddyfile and the routing shapes next door are release-owned and
+refreshed by the updater; this folder is the one place a roll never touches
+(see `../README.md`).
 
 Why: the Caddyfile is release-owned. Editing it on a box worked until the next
 release replaced it, and the route was gone. A drop-in is never touched by a

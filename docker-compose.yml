@@ -747,8 +747,15 @@ services:
       # Request-body ceiling at the front door (Caddy size, e.g. 1GB, 800MB).
       # Backstop above the app's own streamed upload cap (MANTLE_MAX_UPLOAD_MB).
       MANTLE_MAX_BODY_SIZE: ${MANTLE_MAX_BODY_SIZE:-1GB}
+      # Routing shape, picks infra/caddy/shapes/<shape>.caddy: same-origin (one
+      # domain, path-routed; the default and what every fleet box runs) or
+      # split (owner UI on its own vhost). See infra/caddy/README.md.
+      MANTLE_CADDY_SHAPE: ${MANTLE_CADDY_SHAPE:-same-origin}
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Release-owned routing shapes, imported by the Caddyfile per
+      # MANTLE_CADDY_SHAPE. Refreshed by the updater like compose.
+      - ./infra/caddy/shapes:/etc/caddy/shapes:ro
       # Box-local Caddy drop-ins (*.caddy), imported inside the site block by the
       # shipped Caddyfile. Routes a box needs beyond the release (a client's MCP
       # bridge, say) live here and survive every roll; the Caddyfile itself is

@@ -2100,6 +2100,11 @@ export type ComposeStatus = {
    *  stack, reported ok, and skipped the client stack with no error anywhere.
    *  'unknown' on any box still running that script — it reports no sha. */
   updater: { state: UpdaterScriptState; refresh: string | null };
+  /** The front door (v0.232.126+): infra/caddy/Caddyfile is release-owned and
+   *  refreshed by the updater like compose. 'unknown' on a box whose updater
+   *  predates the field. A 'modified' Caddyfile means release-level front-door
+   *  changes are not arriving there; box routes belong in conf.d/. */
+  caddy: { state: ComposeState; refresh: string | null };
   checkedAt: string | null;
 };
 

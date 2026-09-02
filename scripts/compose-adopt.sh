@@ -50,6 +50,8 @@ docker cp "$CID:/app/release/docker-compose.yml" "$TMP/canonical.yml" 2>/dev/nul
 docker cp "$CID:/app/release/docker-compose.client.yml" "$TMP/canonical.client.yml" 2>/dev/null || true
 # v0.231+ ships the brain-core override too (docker-compose.core.yml).
 docker cp "$CID:/app/release/docker-compose.core.yml" "$TMP/canonical.core.yml" 2>/dev/null || true
+docker cp "$CID:/app/release/Caddyfile" "$TMP/Caddyfile" 2>/dev/null || true
+mkdir -p "$TMP/shapes"; docker cp "$CID:/app/release/caddy-shapes/." "$TMP/shapes" 2>/dev/null || true
 docker rm "$CID" >/dev/null
 [ -s "$TMP/canonical.yml" ] || {
   echo "✘ $IMG ships no embedded canonical (image is older than v0.142)" >&2
@@ -104,6 +106,26 @@ if [ -s "$TMP/canonical.core.yml" ]; then
   cp "$TMP/canonical.core.yml" "$STACK/docker-compose.core.yml.tmp"
   mv "$STACK/docker-compose.core.yml.tmp" "$STACK/docker-compose.core.yml"
   echo "✔ core compose override installed"
+fi
+# Front door (v0.232.126+): the Caddyfile and its shapes are release-owned
+# like compose. Seed the baselines so the updater can refresh them from the
+# next roll on; a box's own routes belong in infra/caddy/conf.d/ (untouched).
+if [ -s "$TMP/Caddyfile" ]; then
+  mkdir -p "$STACK/infra/caddy/shapes" "$STACK/infra/caddy/conf.d"
+  if [ -f "$STACK/infra/caddy/Caddyfile" ] && ! cmp -s "$STACK/infra/caddy/Caddyfile" "$TMP/Caddyfile"; then
+    cp "$STACK/infra/caddy/Caddyfile" "$STACK/infra/caddy/Caddyfile.pre-adopt.$TS"
+    echo "  (previous Caddyfile kept as infra/caddy/Caddyfile.pre-adopt.$TS; box routes go in conf.d/)"
+  fi
+  cp "$TMP/Caddyfile" "$STACK/infra/caddy/Caddyfile.release"
+  cp "$TMP/Caddyfile" "$STACK/infra/caddy/Caddyfile"
+  for f in "$TMP"/shapes/*.caddy; do
+    [ -f "$f" ] || continue
+    b=$(basename "$f")
+    cp "$f" "$STACK/infra/caddy/shapes/$b.release"
+    cp "$f" "$STACK/infra/caddy/shapes/$b"
+  done
+  echo "✔ Caddyfile + shapes canonical installed (baselines seeded)"
+  echo "  recreate the front door: docker compose up -d --no-deps --force-recreate caddy"
 fi
 echo "  converge with: docker compose up -d --remove-orphans"
 echo "  (client stack: docker compose -f docker-compose.client.yml --project-directory . up -d)"

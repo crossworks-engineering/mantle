@@ -7,7 +7,7 @@ No checkout, no build, no hand-edited env.
 This is the **standard way to run Mantle**. The companion docs serve other
 audiences: [`getting-started.md`](./getting-started.md) is the developer
 checkout, [`deploy.md`](./deploy.md) is the operator reference for building
-*your own* image and migrating data between machines, and
+_your own_ image and migrating data between machines, and
 [`update-prod.md`](./update-prod.md) is the maintainer's registry-pull update loop.
 
 ## Requirements
@@ -213,7 +213,7 @@ API over HTTP and needs an absolute address), then bring up **both** stacks
 and the front door:
 
 ```bash
-cp infra/caddy/Caddyfile.same-origin infra/caddy/Caddyfile
+# front door shape: MANTLE_CADDY_SHAPE in .env, default same-origin (no copy needed)
 docker compose up -d --wait
 docker compose -f docker-compose.client.yml --project-directory . up -d --wait
 docker compose up -d --force-recreate caddy   # now that client-web exists
@@ -239,7 +239,7 @@ matching deploy bundle.
 >   adoption, start order, Caddy).
 > - **PostgreSQL 17 → 18.** A new major refuses to start on an old major's
 >   data directory. Follow [`postgres-18-upgrade.md`](./postgres-18-upgrade.md)
->, and note its warning about scheduled backups needing v0.202.1+.
+>   , and note its warning about scheduled backups needing v0.202.1+.
 >
 > Do them on separate days, verifying in between.
 
@@ -359,8 +359,8 @@ only named volumes are a tailscale socket and Caddy's certificate cache.
 
 **`--purge` additionally deletes the data directory and `.env`.** That is the
 brain itself, plus `MANTLE_MASTER_KEY`, and without that key the API keys and
-mailbox passwords in your vault cannot be decrypted, *including from a backup
-taken later*. It asks you to type `PURGE` rather than press `y`, and `--dry-run`
+mailbox passwords in your vault cannot be decrypted, _including from a backup
+taken later_. It asks you to type `PURGE` rather than press `y`, and `--dry-run`
 prints the blast radius (paths, sizes, container counts) without touching
 anything. `--images` also drops the pulled images, freeing ~4 GB.
 
@@ -436,13 +436,13 @@ Requirements (the installer sets all of this up):
   page degrades to showing the two CLI commands.
 
 Compose-file changes (a new service/mount in a release) still need the
-release bundle swap described above, the sidecar updates *images*, not the
+release bundle swap described above, the sidecar updates _images_, not the
 compose file itself; release notes call it out when it applies.
 
 ## What's deliberately NOT here
 
 - **Multi-tenancy.** Mantle is one brain per install. It takes more than one
-  **login** (Settings → Logins): a second way *in*, not a second world: every
+  **login** (Settings → Logins): a second way _in_, not a second world: every
   login is a peer with identical access to the same brain, the same data and
   the same settings, distinguished only by the audit trail. Anyone who needs
   their own content gets their own stack.

@@ -1,0 +1,20 @@
+# Shape: same-origin. ONE domain serves both apps, path-routed.
+# Imported inside the main site block of infra/caddy/Caddyfile when
+# MANTLE_CADDY_SHAPE=same-origin (the default). Release-owned; do not edit on
+# a box (routes a box needs go in conf.d/).
+#
+# Server-owned paths: the API plane, the share + print render surfaces, the
+# generated runtime bundles those surfaces load, and the MCP OAuth discovery
+# docs. Everything else (owner UI, /login, /hub, /team*, /env.js, /_next/*,
+# fonts) falls through to the client app; both publics ship identical
+# font/runtime assets, so either could serve them and the client is the
+# natural default. Env for this shape: MANTLE_SERVER_ORIGIN=https://<domain>
+# (the client app needs an absolute origin for its server-side appearance
+# fetch). MANTLE_CLIENT_SITE_ADDRESS and MANTLE_API_CORS_ORIGINS stay unset.
+@server path /api /api/* /s /s/* /print /print/* /share-runtime/* /app-runtime/* /.well-known/oauth-authorization-server /.well-known/oauth-protected-resource
+handle @server {
+	reverse_proxy web:3000
+}
+handle {
+	reverse_proxy client-web:3000
+}

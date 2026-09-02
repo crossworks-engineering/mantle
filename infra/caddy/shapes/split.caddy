@@ -1,0 +1,12 @@
+# Shape: split origins. The server app owns the whole main domain; the owner
+# UI is served by the second site block in infra/caddy/Caddyfile on
+# MANTLE_CLIENT_SITE_ADDRESS (app.<domain>). Imported inside the main site
+# block when MANTLE_CADDY_SHAPE=split. Needs the extra DNS record plus
+# MANTLE_API_CORS_ORIGINS on the server. Release-owned; do not edit on a box.
+#
+# Caddy adds X-Forwarded-{For,Proto,Host} so the app can build correct
+# absolute URLs and set secure cookies behind TLS. Wrapped in a handle so a
+# conf.d drop-in's more specific handle still wins.
+handle {
+	reverse_proxy web:3000
+}

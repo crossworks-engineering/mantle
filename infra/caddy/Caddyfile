@@ -1,14 +1,37 @@
-# Mantle reverse proxy + automatic HTTPS.
+# Mantle front door: ONE release-owned Caddyfile for every box.
 #
-# The site address comes from the MANTLE_SITE_ADDRESS env var (set in .env):
-#   - a hostname  (e.g. mantle.example.com) → Caddy provisions + renews a
-#                  Let's Encrypt certificate automatically. Point a DNS A/AAAA
-#                  record at the VPS first, and open ports 80 + 443.
-#   - ":80"        (the default) → plain HTTP, for local testing without a domain.
+# Nothing in this file is box-specific. Two things vary per deployment and
+# both come from the environment, never from editing this file on a box:
 #
-# Caddy reaches the app over the internal docker network at web:3000 — the web
-# container no longer publishes a public port. ACME state lives in the caddy_data
-# volume (persist it, or you'll hit Let's Encrypt rate limits on redeploys).
+#   MANTLE_SITE_ADDRESS   the address Caddy serves. A hostname gets automatic
+#                         HTTPS (Let's Encrypt; point DNS at the box, open 80
+#                         + 443 first); ":80" (the default) is plain HTTP for
+#                         local testing. A comma-separated list routes and
+#                         certificates every name.
+#   MANTLE_CADDY_SHAPE    how the two apps share the front door:
+#                           same-origin  (default) one domain, path-routed.
+#                                        /api, /s, /print and the runtime
+#                                        bundles go to the server app, all
+#                                        else to the owner UI. No extra DNS,
+#                                        no CORS. Every fleet box runs this.
+#                           split        the server app owns the whole domain
+#                                        and the owner UI lives on its own
+#                                        vhost (MANTLE_CLIENT_SITE_ADDRESS,
+#                                        the second site block below). Needs
+#                                        the DNS record + MANTLE_API_CORS_ORIGINS.
+#                         The shape is a file under infra/caddy/shapes/,
+#                         imported into the site block below.
+#
+# Box-local routes (a client's MCP bridge behind a public path, say) go in
+# infra/caddy/conf.d/*.caddy, imported below; they survive every roll. See
+# infra/caddy/README.md. The updater refreshes THIS file and the shapes from
+# the release image when the box copy is pristine, exactly like compose; a
+# hand-edited copy is left alone and reported as drift.
+#
+# Caddy reaches the apps over the internal docker network (web:3000,
+# client-web:3000); no app publishes a public port. ACME state lives under
+# the caddy data bind mount (persist it, or you'll hit Let's Encrypt rate
+# limits on redeploys).
 {$MANTLE_SITE_ADDRESS::80} {
 	encode zstd gzip
 
@@ -23,17 +46,16 @@
 
 	# Box-local drop-ins: extra routes such as the PCMS MCP bridge on a client
 	# box, or a customer vhost's paths. One file per concern in
-	# infra/caddy/conf.d/*.caddy, imported HERE so the shipped Caddyfile is
-	# never edited on a box and a release roll cannot wipe a route. Caddy
-	# orders handle blocks by path length, so a drop-in `handle /x/*` wins over
-	# the catch-all below wherever it lands. A missing or empty folder is fine.
+	# infra/caddy/conf.d/*.caddy, imported HERE so this file is never edited
+	# on a box and a release roll cannot wipe a route. Caddy orders handle
+	# blocks by path length, so a drop-in `handle /x/*` wins over the shape's
+	# catch-all wherever it lands. A missing or empty folder is fine.
 	import /etc/caddy/conf.d/*.caddy
 
-	# Forward to the Next.js app. Caddy adds X-Forwarded-{For,Proto,Host} so the
-	# app can build correct absolute URLs + set secure cookies behind TLS.
-	reverse_proxy web:3000
+	# The routing shape (see the header). One of infra/caddy/shapes/*.caddy.
+	import /etc/caddy/shapes/{$MANTLE_CADDY_SHAPE:same-origin}.caddy
 
-	# Body cap. {$MANTLE_MAX_BODY_SIZE:1GB}: must stay ABOVE the app's streamed
+	# Body cap. {$MANTLE_MAX_BODY_SIZE:1GB} must stay ABOVE the app's streamed
 	# upload cap (MANTLE_MAX_UPLOAD_MB, default 512) plus multipart framing;
 	# the app refuses oversize files itself with a proper 413, this is the
 	# backstop. Raise both together.
@@ -42,11 +64,11 @@
 	}
 }
 
-# The owner-UI (client) vhost — v0.200.0 split. Point app.<domain> DNS here and
-# set MANTLE_CLIENT_SITE_ADDRESS in .env; the client stack's client-web joins
-# this stack's network (see docker-compose.client.yml). Defaults to :8080 so a
-# server-only box (no client stack, var unset) doesn't ACME-thrash a hostname
-# it doesn't serve — the port listens, gets no traffic, and costs nothing.
+# The owner-UI vhost of the SPLIT shape. Inert under same-origin: the address
+# defaults to :8080, which listens inside the container, is not published, and
+# gets no traffic, so a same-origin or server-only box never ACME-thrashes a
+# hostname it doesn't serve. Under split, set MANTLE_CLIENT_SITE_ADDRESS to
+# app.<domain> and point DNS at the box.
 {$MANTLE_CLIENT_SITE_ADDRESS::8080} {
 	encode zstd gzip
 	reverse_proxy client-web:3000
@@ -54,11 +76,3 @@
 		max_size {$MANTLE_MAX_BODY_SIZE:1GB}
 	}
 }
-
-# NOTE: this is the generic, single-site front door shipped to every install.
-# The author's prod also co-locates a "Mantle Push" relay on a second site block
-# (push.crossworks.network). That stays OUT of the public Caddyfile on purpose:
-# its hostname points at the author's own box, so on any other install Caddy
-# would endlessly fail to obtain a cert for a domain it doesn't control —
-# log spam plus a real Let's Encrypt rate-limit risk on that zone. Operators who
-# run the push relay add their own site block via a private overlay Caddyfile.

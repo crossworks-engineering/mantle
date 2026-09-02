@@ -236,6 +236,7 @@ const RELEASE_COMPOSE_PATH =
 const RELEASE_CLIENT_COMPOSE_PATH =
   env('MANTLE_RELEASE_CLIENT_COMPOSE_PATH') ?? '/app/release/docker-compose.client.yml';
 const RELEASE_UPDATER_PATH = env('MANTLE_RELEASE_UPDATER_PATH') ?? '/app/release/updater.sh';
+const RELEASE_CADDYFILE_PATH = env('MANTLE_RELEASE_CADDYFILE_PATH') ?? '/app/release/Caddyfile';
 
 /** Canonical-compose hashes are constant for the life of the build. */
 const canonicalShaCache = new Map<string, string | null>();
@@ -283,14 +284,16 @@ export async function readComposeStatus(): Promise<ComposeStatus> {
     refresh: null,
     client: { state: 'unknown' as const, refresh: null },
     updater: { state: 'unknown' as const, refresh: null },
+    caddy: { state: 'unknown' as const, refresh: null },
     checkedAt: null,
   };
   try {
-    const [raw, canonical, clientCanonical, updaterCanonical] = await Promise.all([
+    const [raw, canonical, clientCanonical, updaterCanonical, caddyCanonical] = await Promise.all([
       fs.readFile(path.join(SIGNAL_DIR, 'stack.json'), 'utf8'),
       canonicalSha(RELEASE_COMPOSE_PATH),
       canonicalSha(RELEASE_CLIENT_COMPOSE_PATH),
       canonicalSha(RELEASE_UPDATER_PATH),
+      canonicalSha(RELEASE_CADDYFILE_PATH),
     ]);
     const j = JSON.parse(raw) as Record<string, unknown>;
     const str = (k: string) => (typeof j[k] === 'string' ? (j[k] as string) : '');
@@ -311,7 +314,13 @@ export async function readComposeStatus(): Promise<ComposeStatus> {
       state: classifyUpdater(str('updater_sha'), str('updater_baseline_sha'), updaterCanonical),
       refresh: str('updater_refresh') || null,
     };
-    return { state, refresh, client, updater, checkedAt };
+    // Front door (v0.232.126+): the Caddyfile is release-owned like compose.
+    // An older updater reports no caddy fields at all, which reads 'unknown'.
+    const caddy = {
+      state: classify(str('caddy_sha'), str('caddy_baseline_sha'), caddyCanonical),
+      refresh: str('caddy_refresh') || null,
+    };
+    return { state, refresh, client, updater, caddy, checkedAt };
   } catch {
     return none;
   }

@@ -187,3 +187,67 @@ describe('readComposeStatus — updater script state', () => {
     expect(await stateFor({})).toBe('unknown');
   });
 });
+
+/**
+ * The front door joined the release-owned set in v0.232.126. Same classify()
+ * as compose, so the interesting cases are the field's ABSENCE (an older
+ * updater) and a hand-edited Caddyfile, the exact thing that used to be
+ * invisible.
+ */
+describe('readComposeStatus: Caddyfile state', () => {
+  const CANONICAL =
+    '{$MANTLE_SITE_ADDRESS::80} {\n\timport /etc/caddy/shapes/same-origin.caddy\n}\n';
+  const sha = (s: string) => createHash('sha256').update(s).digest('hex');
+  let dir: string;
+
+  async function caddyFor(fields: Record<string, string>) {
+    writeFileSync(
+      join(dir, 'stack.json'),
+      JSON.stringify({ compose_sha: '', baseline_sha: '', ...fields }),
+    );
+    vi.resetModules();
+    const { readComposeStatus } = await import('./updates');
+    return (await readComposeStatus()).caddy;
+  }
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mantle-updates-caddy-'));
+    writeFileSync(join(dir, 'Caddyfile'), CANONICAL);
+    vi.stubEnv('MANTLE_UPDATE_SIGNAL_DIR', dir);
+    vi.stubEnv('MANTLE_RELEASE_CADDYFILE_PATH', join(dir, 'Caddyfile'));
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('is unknown when an older updater reports no caddy fields', async () => {
+    expect(await caddyFor({})).toEqual({ state: 'unknown', refresh: null });
+  });
+
+  it("reads in-sync when the box Caddyfile is this release's", async () => {
+    expect(
+      await caddyFor({
+        caddy_sha: sha(CANONICAL),
+        caddy_baseline_sha: sha(CANONICAL),
+        caddy_refresh: 'current',
+      }),
+    ).toEqual({ state: 'in-sync', refresh: 'current' });
+  });
+
+  it('reads modified when the box Caddyfile was hand-edited', async () => {
+    expect(
+      await caddyFor({
+        caddy_sha: sha('hand edit'),
+        caddy_baseline_sha: sha('old release'),
+        caddy_refresh: 'modified',
+      }),
+    ).toEqual({ state: 'modified', refresh: 'modified' });
+  });
+
+  it('reads stale when the box still carries the previous release', async () => {
+    expect(
+      await caddyFor({ caddy_sha: sha('old release'), caddy_baseline_sha: sha('old release') }),
+    ).toEqual({ state: 'stale', refresh: null });
+  });
+});

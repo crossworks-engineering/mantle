@@ -88,12 +88,15 @@ cur_phase() {
 REFRESH=none          # last server-compose refresh outcome (stack.json)
 CLIENT_REFRESH=none   # last client-compose refresh outcome (stack.json)
 CORE_REFRESH=none     # last core-override refresh outcome (stack.json)
+CADDY_REFRESH=none    # last Caddyfile + shapes refresh outcome (stack.json)
 UPDATER_REFRESH=none  # last updater-script refresh outcome (stack.json)
 
 # This script's own path INSIDE the container, reached through the stack-dir
 # mount rather than the /updater.sh entrypoint mount. The distinction is load-
 # bearing — see refresh_updater().
 UPDATER_REL=infra/updater/updater.sh
+CADDY_REL=infra/caddy/Caddyfile
+CADDY_SHAPES_REL=infra/caddy/shapes
 
 sha_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
@@ -102,7 +105,7 @@ sha_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 # that cannot self-refresh (modified copy, extraction failure) otherwise
 # reports a perfectly healthy update while silently running old logic.
 write_stack_info() {
-  printf '{"compose_sha":"%s","baseline_sha":"%s","client_compose_sha":"%s","client_baseline_sha":"%s","core_compose_sha":"%s","core_baseline_sha":"%s","updater_sha":"%s","updater_baseline_sha":"%s","refresh":"%s","client_refresh":"%s","core_refresh":"%s","updater_refresh":"%s","checked_at":"%s"}\n' \
+  printf '{"compose_sha":"%s","baseline_sha":"%s","client_compose_sha":"%s","client_baseline_sha":"%s","core_compose_sha":"%s","core_baseline_sha":"%s","updater_sha":"%s","updater_baseline_sha":"%s","caddy_sha":"%s","caddy_baseline_sha":"%s","refresh":"%s","client_refresh":"%s","core_refresh":"%s","updater_refresh":"%s","caddy_refresh":"%s","checked_at":"%s"}\n' \
     "$(sha_of "$STACK/docker-compose.yml")" \
     "$(sha_of "$STACK/docker-compose.yml.release")" \
     "$(sha_of "$STACK/docker-compose.client.yml")" \
@@ -111,7 +114,9 @@ write_stack_info() {
     "$(sha_of "$STACK/docker-compose.core.yml.release")" \
     "$(sha_of "$STACK/$UPDATER_REL")" \
     "$(sha_of "$STACK/$UPDATER_REL.release")" \
-    "$REFRESH" "$CLIENT_REFRESH" "$CORE_REFRESH" "$UPDATER_REFRESH" "$(now)" > "$SIG/stack.json.tmp" \
+    "$(sha_of "$STACK/$CADDY_REL")" \
+    "$(sha_of "$STACK/$CADDY_REL.release")" \
+    "$REFRESH" "$CLIENT_REFRESH" "$CORE_REFRESH" "$UPDATER_REFRESH" "$CADDY_REFRESH" "$(now)" > "$SIG/stack.json.tmp" \
     && mv "$SIG/stack.json.tmp" "$SIG/stack.json"
 }
 
@@ -186,6 +191,88 @@ refresh_compose() {
   else
     CORE_REFRESH=absent
   fi
+}
+
+# ── front door: Caddyfile + shapes are release-owned too ─────────────────────
+# Same pristine-vs-baseline rule as compose, same image, same roll. A box copy
+# that matches its .release baseline is swapped for the target release's; a
+# hand-edited copy is left alone and reported (routes a box needs belong in
+# infra/caddy/conf.d/, which this never touches). Shape files that do not
+# exist on the box yet are installed outright: they are new in v0.232.126 and
+# the Caddyfile imports them, so a missing shape would be a broken front door.
+# Any refreshed file means caddy must be RECREATED (a bind mount keeps the old
+# inode); the roll below does that when CADDY_REFRESH says so.
+
+# refresh_file <box-file> <release-path> <adopt-if-absent>: like refresh_one
+# but for any release-owned file; the third arg installs a file the box does
+# not have yet (echoes 'adopted').
+refresh_file() {
+  file="$1"; rel="$2"; adopt="$3"
+  incoming="$STACK/.release-incoming.tmp"
+  rm -f "$incoming"
+  cid=$(docker create "$IMG" 2>> "$SIG/update.log") || { echo extract-failed; return; }
+  docker cp "$cid:$rel" "$incoming" >> "$SIG/update.log" 2>&1
+  docker rm "$cid" > /dev/null 2>&1
+  if [ ! -s "$incoming" ]; then
+    rm -f "$incoming"; echo unavailable; return
+  fi
+  if [ ! -f "$STACK/$file" ]; then
+    if [ "$adopt" = yes ] && mkdir -p "$(dirname "$STACK/$file")" \
+      && cp "$incoming" "$STACK/$file.release" && mv "$incoming" "$STACK/$file"; then
+      echo adopted
+    else
+      rm -f "$incoming"; echo absent
+    fi
+    return
+  fi
+  if cmp -s "$STACK/$file" "$incoming"; then
+    # Already this release's copy: make sure the baseline says so.
+    [ -f "$STACK/$file.release" ] || cp "$incoming" "$STACK/$file.release"
+    rm -f "$incoming"; echo current; return
+  fi
+  if [ ! -f "$STACK/$file.release" ]; then
+    rm -f "$incoming"; echo no-baseline; return
+  fi
+  if cmp -s "$STACK/$file" "$STACK/$file.release"; then
+    if cp "$STACK/$file" "$STACK/$file.prev" \
+      && cp "$incoming" "$STACK/$file.release.tmp" \
+      && mv "$STACK/$file.release.tmp" "$STACK/$file.release" \
+      && mv "$incoming" "$STACK/$file"; then
+      echo refreshed
+    else
+      rm -f "$incoming" "$STACK/$file.release.tmp"; echo write-failed
+    fi
+  else
+    rm -f "$incoming"; echo modified
+  fi
+}
+
+# refresh_caddy: Caddyfile + every shipped shape. Sets CADDY_REFRESH to the
+# Caddyfile's outcome, or 'refreshed' when only a shape changed (either way
+# caddy needs a recreate). Requires IMG (set by refresh_compose).
+refresh_caddy() {
+  CADDY_REFRESH=$(refresh_file "$CADDY_REL" /app/release/Caddyfile no)
+  case "$CADDY_REFRESH" in
+    refreshed) echo "[updater] Caddyfile refreshed to the $1 canonical" | tee -a "$SIG/update.log" ;;
+    current) : ;;
+    unavailable) echo "[updater] Caddyfile refresh skipped: image ships no /app/release/Caddyfile" | tee -a "$SIG/update.log" ;;
+    no-baseline) echo "[updater] ⚠ CADDYFILE NOT REFRESHED: no baseline (pre-adoption box)." \
+         "Run scripts/compose-adopt.sh --apply once from the stack dir, then recreate caddy. Continuing on the EXISTING Caddyfile." | tee -a "$SIG/update.log" ;;
+    modified) echo "[updater] ⚠ CADDYFILE NOT REFRESHED: $CADDY_REL has LOCAL EDITS." \
+         "Move box routes to infra/caddy/conf.d/*.caddy, then re-run scripts/compose-adopt.sh --apply." \
+         "Release-level front-door changes are MISSING on this box." | tee -a "$SIG/update.log" ;;
+    *) echo "[updater] ⚠ Caddyfile refresh: $CADDY_REFRESH" | tee -a "$SIG/update.log" ;;
+  esac
+  for shape in same-origin split; do
+    r=$(refresh_file "$CADDY_SHAPES_REL/$shape.caddy" "/app/release/caddy-shapes/$shape.caddy" yes)
+    case "$r" in
+      refreshed|adopted)
+        echo "[updater] caddy shape $shape $r" | tee -a "$SIG/update.log"
+        [ "$CADDY_REFRESH" = current ] && CADDY_REFRESH=refreshed ;;
+      current) : ;;
+      *) echo "[updater] ⚠ caddy shape $shape: $r" | tee -a "$SIG/update.log" ;;
+    esac
+  done
 }
 
 # ── release pair: which owner-UI tag rides with a server roll ────────────────
@@ -446,6 +533,9 @@ while true; do
     # healthchecks — take effect in the SAME roll as its image. (Phase is
     # already 'pulling' — claimed above the .env rewrite.)
     refresh_compose "$TARGET"
+    # Front door too (same image, same roll): a release that changes the
+    # Caddyfile or a shape lands with its image, no hand copy per box.
+    [ "$REFRESH" = pull-failed ] || refresh_caddy "$TARGET"
     if docker compose --project-directory "$STACK" pull >> "$SIG/update.log" 2>&1; then
       write_status rolling "$TARGET" "$STARTED" "" null ""
       # Recreate every service EXCEPT this updater. A bare `up -d` would recreate
@@ -482,7 +572,13 @@ while true; do
         # health-start. Non-fatal — the stack is already rolled, and a caddy
         # that failed to converge is still the OLD, working caddy.
         if [ "$HAS_CADDY" -gt 0 ]; then
-          if ! docker compose --project-directory "$STACK" up -d --no-deps caddy >> "$SIG/update.log" 2>&1; then
+          # A refreshed Caddyfile/shape is a bind-mount CONTENT change, which
+          # compose does not see: force the recreate so caddy reads the new
+          # inode. Unchanged files keep the cheap no-op path.
+          CADDY_FORCE=""
+          case "$CADDY_REFRESH" in refreshed|adopted) CADDY_FORCE="--force-recreate" ;; esac
+          # shellcheck disable=SC2086  # an empty CADDY_FORCE must vanish, not quote to ""
+          if ! docker compose --project-directory "$STACK" up -d --no-deps $CADDY_FORCE caddy >> "$SIG/update.log" 2>&1; then
             echo "[updater] ⚠ caddy did not converge — the previous caddy is still serving; see update.log" | tee -a "$SIG/update.log"
           fi
         fi

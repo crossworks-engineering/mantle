@@ -181,6 +181,16 @@ Then smoke-test the surface the release actually changed in the browser (and
   only to tune. Boxes on the same-origin shape copy `Caddyfile.same-origin`.
   **v0.232.124+** adds the `infra/caddy/conf.d/` drop-in import and mount: keep
   box-local routes there, not in the Caddyfile, so a roll cannot wipe them.
+  **v0.232.126+** makes the Caddyfile release-owned: the updater refreshes
+  `infra/caddy/Caddyfile` and `infra/caddy/shapes/*.caddy` from the target
+  image (pristine-vs-baseline, like compose) and recreates caddy itself, so
+  the hand copy above is history from the NEXT roll on. The roll that brings
+  v0.232.126 still runs the OLD updater (self-refresh lag), so on that one
+  roll do the copy by hand or run `scripts/compose-adopt.sh --apply` in the
+  stack dir afterwards (seeds the baselines too), then
+  `docker compose up -d --no-deps --force-recreate caddy`. The shape is
+  `MANTLE_CADDY_SHAPE` in `.env` (default same-origin, what every box runs);
+  `Caddyfile.same-origin` no longer exists.
 - **migrations are forward-only**: the pre-roll `db-dump` is the only way back.
 
 ## Rollback

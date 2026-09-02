@@ -101,24 +101,32 @@ automatic HTTPS, before first boot:
 Certs persist in the `caddy_data` volume, don't wipe it, or you risk LE rate limits.
 
 Since **v0.202.0** the front door also routes to the _client_ app (the split
-shipped two images). Two shapes, both driven by the same Caddy:
+shipped two images), and since **v0.232.126** the Caddyfile is ONE
+release-owned file for every box, refreshed by the updater like compose. Full
+detail: [`infra/caddy/README.md`](../infra/caddy/README.md).
 
+- **Shape by env, not by file.** `MANTLE_CADDY_SHAPE` in `.env` picks
+  `infra/caddy/shapes/<shape>.caddy`, imported inside the site block:
+  - **same-origin** (the default, what every fleet box runs): one domain,
+    path-routed. `/api/*`, `/s/*`, `/print/*` and the runtime bundles go to
+    the server app; everything else (owner UI, `/login`, `/team`, `/hub`)
+    goes to the client app. No extra DNS, no CORS. `MANTLE_SITE_ADDRESS` may
+    hold a comma-separated list of hostnames, all of them get routed and
+    certificated.
+  - **split**: `<domain>` + `app.<domain>`, the Caddyfile's second vhost.
+    Needs the extra DNS record, plus `MANTLE_CLIENT_SITE_ADDRESS` and
+    `MANTLE_API_CORS_ORIGINS`.
 - **Box-local routes go in `infra/caddy/conf.d/*.caddy`, never in the
-  Caddyfile.** Both shipped Caddyfiles import that folder inside the site
-  block and compose mounts it read-only. A route a box needs beyond the release
-  (a client's MCP bridge behind a public path, say) is one drop-in file there,
+  Caddyfile.** The Caddyfile imports that folder inside the site block and
+  compose mounts it read-only. A route a box needs beyond the release (a
+  client's MCP bridge behind a public path, say) is one drop-in file there,
   and it survives every roll; `docker restart mantle_caddy` applies it. See
   [`infra/caddy/conf.d/README.md`](../infra/caddy/conf.d/README.md).
-
-- **Same-origin**: one domain, path-routed. `/api/*`, `/s/*`, `/print/*` and
-  the runtime bundles go to the server app; everything else (owner UI,
-  `/login`, `/team`, `/hub`) goes to the client app. No extra DNS, no CORS.
-  Ship [`infra/caddy/Caddyfile.same-origin`](../infra/caddy/Caddyfile.same-origin)
-  as your `Caddyfile`. `MANTLE_SITE_ADDRESS` may hold a comma-separated list
-  of hostnames, all of them get routed and certificated.
-- **Split origins**: `<domain>` + `app.<domain>`, using the default
-  Caddyfile's second vhost. Needs the extra DNS record, plus
-  `MANTLE_CLIENT_SITE_ADDRESS` and `MANTLE_API_CORS_ORIGINS`.
+- **Refresh + drift.** On a roll the updater swaps in the release's Caddyfile
+  and shapes when the box copies match their `.release` baselines, then
+  recreates caddy. A hand-edited copy is left alone and reported on
+  `/settings/updates` and by `pnpm status`. Seed the baselines once on an
+  existing box with `scripts/compose-adopt.sh --apply` from the stack dir.
 
 Upgrading an existing box into either shape:
 [`upgrading-to-v0.202.md`](./upgrading-to-v0.202.md).

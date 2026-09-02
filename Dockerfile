@@ -242,6 +242,7 @@ COPY docker-compose.yml /app/release/docker-compose.yml
 COPY docker-compose.client.yml /app/release/docker-compose.client.yml
 COPY docker-compose.core.yml /app/release/docker-compose.core.yml
 COPY infra/caddy/Caddyfile /app/release/Caddyfile
+COPY infra/caddy/shapes /app/release/caddy-shapes
 COPY infra/updater/updater.sh /app/release/updater.sh
 # The jackdaw client tag this server release was tested against (the "release
 # pair"). The updater reads it from the TARGET image during a roll and moves

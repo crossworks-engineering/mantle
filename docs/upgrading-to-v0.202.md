@@ -1,5 +1,13 @@
 # Upgrading to v0.202.0: the server/client split
 
+> **Since v0.232.126** the Caddyfile is one release-owned file for every box
+> and the shape is `MANTLE_CADDY_SHAPE` in `.env` (default `same-origin`);
+> `Caddyfile.same-origin` no longer exists. Where this page says to copy it,
+> read: set the env var, run `scripts/compose-adopt.sh --apply` (seeds the
+> Caddyfile, shapes and baselines from the image), then
+> `docker compose up -d --no-deps --force-recreate caddy`. See
+> [`infra/caddy/README.md`](../infra/caddy/README.md).
+
 This is the largest single upgrade a Mantle box has taken: one release moves
 the fleet from the single-image era (≤ v0.160.x) onto the **split topology**
 (v0.200 → v0.202 land together). Read the whole document before touching a
@@ -8,16 +16,16 @@ at the bottom restores the previous release in minutes.
 
 ## What changes in one view
 
-| Area | Before (≤ v0.160.x) | After (v0.202.0) |
-| --- | --- | --- |
-| Images | one `mantle` image | **two**: `mantle-server` (API, agent, workers, migrate, render surfaces) + `mantle-client` (zero-secret owner UI) |
-| Owner UI | `https://<domain>` | `https://app.<domain>` (new vhost, same box) |
-| Server web tier | Next.js (`next start`) | **Hono + tsx**: Next.js fully removed from the server tier; the ~288 API routes are unchanged behind a compat seam |
-| Runtime | Node 24 (Debian 12 bookworm) | **Node 26.5** (Debian 13 trixie, V8 14.6) |
-| `pg_dump` in the image | PostgreSQL 17 client | **PostgreSQL 18 client** (see the backups note; this fixes a real bug) |
-| Team surfaces | `/team`, `/hub` on the main origin | served by the client app at `app.<domain>/team` + `/hub` (old URLs redirect) |
-| Appearance | localStorage-cached per browser | server-rendered from the brain's profile, theme + fonts follow the brain, not the browser |
-| Boot | multi-minute `next build` baked into the image | no compile: `tsx` at boot (~3 s) |
+| Area                   | Before (≤ v0.160.x)                            | After (v0.202.0)                                                                                                   |
+| ---------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Images                 | one `mantle` image                             | **two**: `mantle-server` (API, agent, workers, migrate, render surfaces) + `mantle-client` (zero-secret owner UI)  |
+| Owner UI               | `https://<domain>`                             | `https://app.<domain>` (new vhost, same box)                                                                       |
+| Server web tier        | Next.js (`next start`)                         | **Hono + tsx**: Next.js fully removed from the server tier; the ~288 API routes are unchanged behind a compat seam |
+| Runtime                | Node 24 (Debian 12 bookworm)                   | **Node 26.5** (Debian 13 trixie, V8 14.6)                                                                          |
+| `pg_dump` in the image | PostgreSQL 17 client                           | **PostgreSQL 18 client** (see the backups note; this fixes a real bug)                                             |
+| Team surfaces          | `/team`, `/hub` on the main origin             | served by the client app at `app.<domain>/team` + `/hub` (old URLs redirect)                                       |
+| Appearance             | localStorage-cached per browser                | server-rendered from the brain's profile, theme + fonts follow the brain, not the browser                          |
+| Boot                   | multi-minute `next build` baked into the image | no compile: `tsx` at boot (~3 s)                                                                                   |
 
 **What does NOT change:** the HTTP contract (same routes, same port 3000, same
 `/api/health`), the database schema pace (migrations run as always via the
@@ -40,11 +48,10 @@ server-owned paths (`/api/*`, `/s/*`, `/print/*`, the runtime bundles, the
 OAuth discovery docs) to the server app and everything else to the client
 app on ONE domain. No new DNS record, no CORS config, cookies are plainly
 same-origin, and existing member team cookies keep working, since the
-origin never changes. Use
-[`infra/caddy/Caddyfile.same-origin`](../infra/caddy/Caddyfile.same-origin):
+origin never changes. It is the default shape:
 
 ```sh
-cp infra/caddy/Caddyfile.same-origin infra/caddy/Caddyfile
+grep -q '^MANTLE_CADDY_SHAPE=' .env || echo 'MANTLE_CADDY_SHAPE=same-origin' >> .env
 ```
 
 Env for this shape: `MANTLE_SERVER_ORIGIN=https://<domain>` (the client's
@@ -87,14 +94,14 @@ origin isolation).
    them up before you start.
    ```sh
    scp scripts/compose-adopt.sh                <box>:<stack>/scripts/
-   scp infra/caddy/Caddyfile.same-origin       <box>:/tmp/
+   # (the Caddyfile and shapes come from the image via compose-adopt.sh)
    ```
    If `scripts/` or `infra/` is root-owned (it is on some boxes), stage in
    `/tmp` and `sudo cp` into place.
 4. **Compose baseline**: if the box predates v0.142 (no
    `docker-compose.yml.release`), update once to any ≥ v0.142 tag first so
    `compose-adopt.sh` has an embedded canonical to extract.
-5. **DNS** *(split shape only)*: create `app.<domain>` → the same IP as
+5. **DNS** _(split shape only)_: create `app.<domain>` → the same IP as
    `<domain>`, and let it propagate before step 6; Caddy can't obtain the
    certificate until it resolves. Same-origin needs no DNS change at all.
 
@@ -145,8 +152,8 @@ docker compose -f docker-compose.client.yml --project-directory . up -d --wait
 # 6. Caddy LAST — compose-adopt handles COMPOSE FILES ONLY, so the box's
 #    Caddyfile is still the pre-split one and knows nothing about the client
 #    app. Install the shape you chose, then recreate:
-cp infra/caddy/Caddyfile.same-origin infra/caddy/Caddyfile   # or your split vhost
-docker compose up -d --force-recreate caddy
+scripts/compose-adopt.sh --apply      # also seeds the Caddyfile + shapes
+docker compose up -d --no-deps --force-recreate caddy
 ```
 
 Recreating Caddy is a ~2 second blip on the public origin; everything else
@@ -162,13 +169,13 @@ docker logs mantle_caddy 2>&1 | grep "automatic TLS"
 One domain, split by path, no CORS, no second certificate, and existing
 member cookies keep working because the origin never changes:
 
-| Path | Served by |
-| --- | --- |
-| `/api/*` | server app (Hono) |
-| `/s/*`, `/print/*` | server app, the server-rendered share + print surfaces |
-| `/share-runtime/*`, `/app-runtime/*` | server app, bundles those surfaces load |
-| `/.well-known/oauth-*` | server app, MCP connector discovery |
-| **everything else** | client app, owner UI, `/login`, `/team`, `/hub`, `/env.js`, `/_next/*` |
+| Path                                 | Served by                                                              |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| `/api/*`                             | server app (Hono)                                                      |
+| `/s/*`, `/print/*`                   | server app, the server-rendered share + print surfaces                 |
+| `/share-runtime/*`, `/app-runtime/*` | server app, bundles those surfaces load                                |
+| `/.well-known/oauth-*`               | server app, MCP connector discovery                                    |
+| **everything else**                  | client app, owner UI, `/login`, `/team`, `/hub`, `/env.js`, `/_next/*` |
 
 **Split shape on v0.202.1 needs one extra thing:** the canonical compose
 does not forward the vhost variable to the Caddy container, so

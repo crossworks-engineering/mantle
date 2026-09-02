@@ -933,13 +933,18 @@ if [[ $SKIP_UP -eq 1 ]]; then hd "Done (--skip-up)"; inf "Config written; stack 
 # ── 3b. front door: route BOTH apps on one domain ────────────────────────────
 # Since v0.200 Mantle is two images — the server (API + share/print surfaces)
 # and the zero-secret owner UI. A fresh install uses the SAME-ORIGIN shape:
-# one domain, path-routed, no second DNS record and no CORS. The shipped
-# default Caddyfile expects a separate app.<domain> vhost, so swap it.
-if [[ -f "$STACK_DIR/infra/caddy/Caddyfile.same-origin" ]]; then
-  cp "$STACK_DIR/infra/caddy/Caddyfile.same-origin" "$STACK_DIR/infra/caddy/Caddyfile"
-  ok "Front door configured (same-origin: one domain serves both apps)"
+# one domain, path-routed, no second DNS record and no CORS. The Caddyfile is
+# release-owned and identical on every box; the shape is a switch in .env
+# (infra/caddy/shapes/<shape>.caddy, see infra/caddy/README.md).
+if grep -q '^MANTLE_CADDY_SHAPE=' "$ENV_FILE" 2>/dev/null; then
+  ok "Front door shape already set ($(sed -n 's/^MANTLE_CADDY_SHAPE=//p' "$ENV_FILE" | head -1))"
 else
-  warn "infra/caddy/Caddyfile.same-origin missing — the front door may not route the owner UI. Re-download the deploy bundle."
+  printf '\n# Front door routing shape: same-origin (one domain, path-routed) or split\n# (owner UI on app.<domain>). See infra/caddy/README.md.\nMANTLE_CADDY_SHAPE=same-origin\n' >> "$ENV_FILE"
+  ok "Front door configured (same-origin: one domain serves both apps)"
+fi
+mkdir -p "$STACK_DIR/infra/caddy/conf.d" "$STACK_DIR/infra/caddy/shapes" 2>/dev/null || true
+if [[ ! -f "$STACK_DIR/infra/caddy/shapes/same-origin.caddy" ]]; then
+  warn "infra/caddy/shapes/ is missing: the front door will not route. Re-download the deploy bundle."
 fi
 
 # ── 3c. review ───────────────────────────────────────────────────────────────

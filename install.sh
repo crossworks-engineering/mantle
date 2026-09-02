@@ -112,10 +112,19 @@ cp docker-compose.client.yml docker-compose.client.yml.release
 cp docker-compose.core.yml docker-compose.core.yml.release
 fetch .env.prod.example                  .env.prod.example
 fetch infra/caddy/Caddyfile              infra/caddy/Caddyfile
-# The same-origin front door (one domain path-routed to BOTH apps). This is
-# what scripts/install.sh installs by default — without it a fresh box serves
-# the server app only and the visitor can never reach signup.
-fetch infra/caddy/Caddyfile.same-origin  infra/caddy/Caddyfile.same-origin
+# The front door is ONE release-owned Caddyfile; the routing shape is a file
+# it imports per MANTLE_CADDY_SHAPE (scripts/install.sh writes same-origin,
+# one domain path-routed to BOTH apps: without a shape a fresh box routes
+# nothing and the visitor can never reach signup). conf.d/ holds box-local
+# drop-ins a roll never touches. Baselines seeded like compose, so the
+# updater refreshes the front door from the next release on.
+fetch infra/caddy/shapes/same-origin.caddy infra/caddy/shapes/same-origin.caddy
+fetch infra/caddy/shapes/split.caddy       infra/caddy/shapes/split.caddy
+fetch infra/caddy/README.md                infra/caddy/README.md
+fetch infra/caddy/conf.d/README.md         infra/caddy/conf.d/README.md
+cp infra/caddy/Caddyfile infra/caddy/Caddyfile.release
+cp infra/caddy/shapes/same-origin.caddy infra/caddy/shapes/same-origin.caddy.release
+cp infra/caddy/shapes/split.caddy infra/caddy/shapes/split.caddy.release
 fetch infra/postgres/init/01-extensions.sql  infra/postgres/init/01-extensions.sql
 fetch infra/postgres/init/02-auth-schema.sql infra/postgres/init/02-auth-schema.sql
 # The updater sidecar's entrypoint script. Compose bind-mounts it at
