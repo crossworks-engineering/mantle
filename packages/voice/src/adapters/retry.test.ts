@@ -227,3 +227,79 @@ describe('withChatRetry', () => {
     expect(wrapped.staticCatalog?.()).toEqual([]);
   });
 });
+
+// ─── chatStream (2026-09-02: live turns prefer the stream path) ──────────────
+
+describe('withChatRetry chatStream', () => {
+  type Stream = NonNullable<ChatDispatcher['chatStream']>;
+  function streamingFrom(chatStream: Stream): ChatDispatcher {
+    return { ...dispatcherFrom(async () => RESULT), chatStream };
+  }
+  function wrapStream(chatStream: Stream): ChatDispatcher {
+    return withChatRetry(streamingFrom(chatStream), { baseDelayMs: 0, maxDelayMs: 0 });
+  }
+  const transient = () => new ChatHttpError({ provider: 'anthropic', status: 503 });
+
+  it('retries a transient failure that happens before any delta reached the sink', async () => {
+    let calls = 0;
+    const a = wrapStream(async (_o, onDelta) => {
+      calls += 1;
+      if (calls === 1) throw transient();
+      onDelta({ type: 'text', text: 'ok' });
+      return RESULT;
+    });
+    const deltas: unknown[] = [];
+    await expect(a.chatStream!(OPTS, (d) => deltas.push(d))).resolves.toEqual(RESULT);
+    expect(calls).toBe(2);
+    expect(deltas).toEqual([{ type: 'text', text: 'ok' }]);
+  });
+
+  it('retries a connect timeout (TimeoutError) before the first delta', async () => {
+    let calls = 0;
+    const a = wrapStream(async () => {
+      calls += 1;
+      if (calls === 1) throw new DOMException('connect timed out', 'TimeoutError');
+      return RESULT;
+    });
+    await expect(a.chatStream!(OPTS, () => {})).resolves.toEqual(RESULT);
+    expect(calls).toBe(2);
+  });
+
+  it('does NOT replay a stream that already emitted a delta (idle timeout mid-stream)', async () => {
+    let calls = 0;
+    const a = wrapStream(async (_o, onDelta) => {
+      calls += 1;
+      onDelta({ type: 'text', text: 'partial' });
+      throw new DOMException('chat stream idle', 'TimeoutError');
+    });
+    await expect(a.chatStream!(OPTS, () => {})).rejects.toMatchObject({ name: 'TimeoutError' });
+    expect(calls).toBe(1);
+  });
+
+  it('does not retry when the caller-supplied signal is aborted (user Stop)', async () => {
+    const ctrl = new AbortController();
+    let calls = 0;
+    const a = wrapStream(async () => {
+      calls += 1;
+      ctrl.abort();
+      throw new DOMException('aborted', 'AbortError');
+    });
+    await expect(a.chatStream!({ ...OPTS, signal: ctrl.signal }, () => {})).rejects.toBeTruthy();
+    expect(calls).toBe(1);
+  });
+
+  it('throws after exhausting retries', async () => {
+    let calls = 0;
+    const a = wrapStream(async () => {
+      calls += 1;
+      throw transient();
+    });
+    await expect(a.chatStream!(OPTS, () => {})).rejects.toBeInstanceOf(ChatHttpError);
+    expect(calls).toBe(1 + DEFAULT_MAX_RETRIES);
+  });
+
+  it('leaves chatStream undefined when the adapter has none', () => {
+    const a = withChatRetry(dispatcherFrom(async () => RESULT));
+    expect(a.chatStream).toBeUndefined();
+  });
+});

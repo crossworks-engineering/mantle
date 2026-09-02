@@ -19,7 +19,7 @@
  * OpenRouter is intentionally NOT wrapped — its SDK already retries, and
  * double-wrapping would compound attempt counts. See registry.getChatAdapter.
  */
-import type { ChatDispatcher, ChatOptions, ChatResult } from './types';
+import type { ChatDispatcher, ChatOptions, ChatResult, ChatStreamSink } from './types';
 
 /** Default attempts AFTER the first try (so 2 ⇒ up to 3 total calls). */
 export const DEFAULT_MAX_RETRIES = 2;
@@ -152,42 +152,86 @@ export interface ChatRetryConfig {
   maxDelayMs?: number;
 }
 
+/** One attempt loop shared by the one-shot and streaming wrappers. `run` is
+ *  called per attempt; `mayRetry` lets the streaming path veto a replay once
+ *  output has already reached the user. */
+async function attemptWithRetry<T>(
+  adapter: ChatDispatcher,
+  opts: ChatOptions,
+  config: ChatRetryConfig,
+  run: () => Promise<T>,
+  mayRetry: () => boolean,
+): Promise<T> {
+  const base = config.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
+  const max = config.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
+  const maxRetries = opts.maxRetries ?? config.maxRetries ?? DEFAULT_MAX_RETRIES;
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await run();
+    } catch (err) {
+      // A caller-aborted signal (user Stop) is not transient: every retry
+      // would abort identically after a pointless backoff sleep. Surface it
+      // immediately — the tool loop / run-turn recognise the stop.
+      if (opts.signal?.aborted) throw err;
+      if (!mayRetry()) throw err;
+      const { retry, retryAfterMs } = classifyChatError(err);
+      if (!retry || attempt >= maxRetries) throw err;
+      attempt += 1;
+      const delay =
+        retryAfterMs != null
+          ? Math.min(retryAfterMs, RETRY_AFTER_CAP_MS)
+          : Math.round(Math.random() * Math.min(max, base * 2 ** (attempt - 1)));
+      console.warn(
+        `[chat-retry] ${adapter.adapterName} ${opts.model}: ${describeError(err)} — retry ${attempt}/${maxRetries} in ${delay}ms`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 /**
- * Wrap a ChatDispatcher with retry/backoff on its `chat` call. Per-call
- * `opts.maxRetries` overrides the config default; 0 disables. All other
- * dispatcher members (providerId, adapterName, discoverModels, staticCatalog)
- * are preserved unchanged.
+ * Wrap a ChatDispatcher with retry/backoff on its `chat` AND `chatStream`
+ * calls. Per-call `opts.maxRetries` overrides the config default; 0 disables.
+ * All other dispatcher members (providerId, adapterName, discoverModels,
+ * staticCatalog) are preserved unchanged.
+ *
+ * Streaming is retried only while nothing has reached the user yet: a 429, a
+ * 5xx, a network blip or a connect timeout before the first delta re-sends the
+ * request exactly like the one-shot path. Once a delta has been emitted the
+ * error surfaces as-is — replaying would repeat text the client already
+ * rendered, and the adapters already return the partial on a user Stop.
+ * (Before 2026-09-02 only `chat` was wrapped; the tool loop prefers
+ * `chatStream` whenever a turn is live, so live turns had no retry at all.)
  */
 export function withChatRetry(
   adapter: ChatDispatcher,
   config: ChatRetryConfig = {},
 ): ChatDispatcher {
-  const base = config.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
-  const max = config.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
-  const chat = async (opts: ChatOptions): Promise<ChatResult> => {
-    const maxRetries = opts.maxRetries ?? config.maxRetries ?? DEFAULT_MAX_RETRIES;
-    let attempt = 0;
-    for (;;) {
-      try {
-        return await adapter.chat(opts);
-      } catch (err) {
-        // A caller-aborted signal (user Stop) is not transient: every retry
-        // would abort identically after a pointless backoff sleep. Surface it
-        // immediately — the tool loop / run-turn recognise the stop.
-        if (opts.signal?.aborted) throw err;
-        const { retry, retryAfterMs } = classifyChatError(err);
-        if (!retry || attempt >= maxRetries) throw err;
-        attempt += 1;
-        const delay =
-          retryAfterMs != null
-            ? Math.min(retryAfterMs, RETRY_AFTER_CAP_MS)
-            : Math.round(Math.random() * Math.min(max, base * 2 ** (attempt - 1)));
-        console.warn(
-          `[chat-retry] ${adapter.adapterName} ${opts.model}: ${describeError(err)} — retry ${attempt}/${maxRetries} in ${delay}ms`,
+  const chat = (opts: ChatOptions): Promise<ChatResult> =>
+    attemptWithRetry(
+      adapter,
+      opts,
+      config,
+      () => adapter.chat(opts),
+      () => true,
+    );
+  const inner = adapter.chatStream?.bind(adapter);
+  const chatStream = inner
+    ? (opts: ChatOptions, onDelta: ChatStreamSink): Promise<ChatResult> => {
+        let emitted = false;
+        const sink: ChatStreamSink = (delta) => {
+          emitted = true;
+          onDelta(delta);
+        };
+        return attemptWithRetry(
+          adapter,
+          opts,
+          config,
+          () => inner(opts, sink),
+          () => !emitted,
         );
-        await new Promise((resolve) => setTimeout(resolve, delay));
       }
-    }
-  };
-  return { ...adapter, chat };
+    : undefined;
+  return { ...adapter, chat, ...(chatStream ? { chatStream } : {}) };
 }

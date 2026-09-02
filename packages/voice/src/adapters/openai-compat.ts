@@ -30,7 +30,7 @@ import type {
   ChatToolCall,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
-import { readSSE, safeDelta } from './sse';
+import { STREAM_IDLE_TIMEOUT_MS, readSSE, safeDelta, streamAbort } from './sse';
 import { StreamingThinkScrubber } from './think-scrubber';
 
 // ─── Wire types ──────────────────────────────────────────────────────────────
@@ -324,13 +324,15 @@ export async function streamOpenAICompatChat(
   // Stopped before we even sent — don't spend the request.
   if (opts.signal?.aborted) return { text: '', model: opts.model };
 
+  const abort = streamAbort(opts.signal);
   const doFetch = cfg.fetchImpl ?? fetch;
   const res = await doFetch(cfg.url, {
     method: 'POST',
     headers: cfg.headers,
     body: JSON.stringify(body),
-    ...(opts.signal ? { signal: opts.signal } : {}),
+    signal: abort.signal,
   });
+  abort.connected();
   if (!res.ok || !res.body) {
     const errBody = await res.text().catch(() => '');
     throw new ChatHttpError({
@@ -353,7 +355,9 @@ export async function streamOpenAICompatChat(
   const scrubber = new StreamingThinkScrubber();
 
   try {
-    for await (const payload of readSSE(res.body, opts.signal)) {
+    for await (const payload of readSSE(res.body, opts.signal, {
+      idleMs: STREAM_IDLE_TIMEOUT_MS,
+    })) {
       if (opts.signal?.aborted) break;
       if (payload === '[DONE]') break;
       let chunk: OpenAICompatStreamChunk;

@@ -34,7 +34,7 @@ import type {
   ThinkingEffort,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
-import { chatAbortSignal, readSSE, safeDelta } from './sse';
+import { STREAM_IDLE_TIMEOUT_MS, chatAbortSignal, readSSE, safeDelta, streamAbort } from './sse';
 import { wantGuardedThinking } from './thinking-guard';
 
 /** Models that REJECT `output_config.effort` outright. Sending it 400s the
@@ -865,6 +865,7 @@ async function anthropicChatStream(
   const body = { ...buildAnthropicBody(opts), stream: true };
   if (opts.signal?.aborted) return { text: '', model: opts.model };
 
+  const abort = streamAbort(opts.signal);
   const res = await fetch(`${ANTHROPIC_BASE_URL}/v1/messages`, {
     method: 'POST',
     headers: {
@@ -873,8 +874,9 @@ async function anthropicChatStream(
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
-    ...(opts.signal ? { signal: opts.signal } : {}),
+    signal: abort.signal,
   });
+  abort.connected();
   if (!res.ok || !res.body) {
     const errBody = await res.text().catch(() => '');
     throw new ChatHttpError({
@@ -912,7 +914,9 @@ async function anthropicChatStream(
   >();
 
   try {
-    for await (const payload of readSSE(res.body, opts.signal)) {
+    for await (const payload of readSSE(res.body, opts.signal, {
+      idleMs: STREAM_IDLE_TIMEOUT_MS,
+    })) {
       if (opts.signal?.aborted) break;
       let ev: AnthropicStreamEvent;
       try {

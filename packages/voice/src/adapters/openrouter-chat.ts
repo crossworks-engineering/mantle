@@ -29,6 +29,7 @@
  */
 
 import { OpenRouter } from '@openrouter/sdk';
+import { STREAM_IDLE_TIMEOUT_MS, streamAbort, withIdleTimeout } from './sse';
 import { openrouterClientMeta } from '../openrouter-meta';
 import { OpenRouterError } from '@openrouter/sdk/models/errors';
 import type {
@@ -768,6 +769,7 @@ async function openrouterChatStream(
   if (opts.signal?.aborted) {
     return { text: '', model: opts.model };
   }
+  const abort = streamAbort(opts.signal);
   let sent: AsyncIterable<OrStreamChunk>;
   try {
     sent = (await client.chat.send(
@@ -776,12 +778,13 @@ async function openrouterChatStream(
       },
       // Thread the cancellation signal into the underlying fetch so a Stop aborts
       // the HTTP stream — halting upstream token generation, not just our reading.
-      ...(opts.signal ? [{ signal: opts.signal }] : []),
+      { signal: abort.signal },
     )) as unknown as AsyncIterable<OrStreamChunk>;
   } catch (err) {
     if (opts.signal?.aborted) return { text: '', model: opts.model };
     throw enrichOpenRouterError(err, opts.model, Date.now() - startedAt);
   }
+  abort.connected();
 
   let text = '';
   let rawFinish: string | null | undefined;
@@ -799,7 +802,7 @@ async function openrouterChatStream(
   const reasoningDetails = new ReasoningDetailsAccumulator();
 
   try {
-    for await (const chunk of sent) {
+    for await (const chunk of withIdleTimeout(sent, STREAM_IDLE_TIMEOUT_MS, abort.abortIdle)) {
       // User hit Stop — stop reading and keep whatever streamed so far. Breaking
       // the iterator also closes the underlying stream (belt to the fetch signal).
       if (opts.signal?.aborted) break;
