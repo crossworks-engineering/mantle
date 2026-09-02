@@ -9,7 +9,7 @@ positioning refresh, and a live prod health trace. Read top-to-bottom once; the
 ## Where things stand
 
 - **v0.23.0 is live**: image on Docker Hub (`titanwest/mantle:v0.23.0` + `:latest`,
-  multi-arch), GitHub Release cut, and **production rolled** (`jason.crossworks.network`,
+  multi-arch), GitHub Release cut, and **production rolled** (the prod host,
   `/api/version` → `0.23.0`, gitSha `b3a50cd`). No DB migrations in this release.
 - **`main` is one commit ahead of the v0.23.0 tag**: `6e8cf36`
   *fix(persona): responder delegates page authoring to Pages*. This is **applied

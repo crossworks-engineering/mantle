@@ -29,6 +29,7 @@
  */
 
 import { OpenRouter } from '@openrouter/sdk';
+import { openrouterClientMeta } from '../openrouter-meta';
 import { OpenRouterError } from '@openrouter/sdk/models/errors';
 import type {
   ChatCacheControl,
@@ -464,10 +465,7 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
   const client = new OpenRouter({
     apiKey: opts.apiKey,
     // Identifiers OR shows on its dashboard for traffic attribution.
-    // Kept consistent with the existing direct-SDK call sites in
-    // apps/agent so OR sees the same fingerprint pre- and post-migration.
-    httpReferer: 'https://mantle.crossworks.network',
-    appTitle: 'Mantle',
+    ...openrouterClientMeta(),
   });
 
   const messages = buildMessages(opts.messages, opts.cacheControl);
@@ -737,8 +735,7 @@ async function openrouterChatStream(
 
   const client = new OpenRouter({
     apiKey: opts.apiKey,
-    httpReferer: 'https://mantle.crossworks.network',
-    appTitle: 'Mantle',
+    ...openrouterClientMeta(),
   });
 
   const messages = buildMessages(opts.messages, opts.cacheControl);

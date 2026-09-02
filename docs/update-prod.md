@@ -16,8 +16,8 @@ no source tree needed on the VPS.
 > the right arch directly. deploy.md §5 (registry-pull) is the authoritative
 > model; this file is the box-specific runbook.
 
-> **Box:** `ssh mantle-prod` (`cwe@jason.crossworks.network`), install dir
-> `~/mantle`, serves https://jason.crossworks.network. Its `.env` pins
+> **Box:** `ssh mantle-prod` (`<user>@<prod-host>`), install dir
+> `~/mantle`, serves `https://<prod-host>`. Its `.env` pins
 > `MANTLE_IMAGE_NAMESPACE=titanwest` + `MANTLE_IMAGE_TAG=<exact version tag>`
 > (e.g. `v0.210.0`, NOT `:latest`; bump it as part of every update, step 2
 > below). See deploy.md §0 for the full topology.
@@ -114,7 +114,7 @@ ssh mantle-prod 'for c in mantle_web mantle_api mantle_client_web; do printf "%-
 ssh mantle-prod 'docker exec mantle_web node -p "require(\"/app/package.json\").version"'   # == the shipped vX.Y.Z
 ssh mantle-prod 'docker logs mantle_migrate 2>&1 | tail'                    # migration applied (or no-op)
 ssh mantle-prod 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from nodes"'  # unchanged
-curl -sI https://jason.crossworks.network | head -3                         # 307 → /login, valid cert
+curl -sI https://<prod-host> | head -3                         # 307 → /login, valid cert
 ssh mantle-prod 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from pg_stat_activity"'  # flat ~20, not climbing
 ```
 Then smoke-test the surface the release actually changed in the browser (and

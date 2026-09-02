@@ -18,6 +18,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import { OpenRouter } from '@openrouter/sdk';
+import { openrouterClientMeta } from '@mantle/voice';
 import {
   apiKeys,
   db,
@@ -150,8 +151,7 @@ async function runWebSearch(
 
   const client = new OpenRouter({
     apiKey,
-    httpReferer: 'https://mantle.crossworks.network',
-    appTitle: 'Mantle',
+    ...openrouterClientMeta(),
   });
 
   try {

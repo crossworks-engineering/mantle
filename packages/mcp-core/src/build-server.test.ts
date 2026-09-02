@@ -1,5 +1,5 @@
 /**
- * MCP wrapper tests for `respond_as_agent` — the thin boundary in front of
+ * MCP wrapper tests for `ask_responder` — the thin boundary in front of
  * runSimulatedResponderTurn (which has its own unit tests in
  * @mantle/assistant-runtime). Pins the wrapper's own responsibilities: the
  * caller-held-history input caps (reject over-cap rather than silently
@@ -64,13 +64,13 @@ beforeEach(() => {
   };
 });
 
-describe('respond_as_agent MCP tool', () => {
+describe('ask_responder MCP tool', () => {
   it('is registered on the surface', () => {
-    expect(handlerFor('respond_as_agent')).toBeTypeOf('function');
+    expect(handlerFor('ask_responder')).toBeTypeOf('function');
   });
 
   it('rejects an over-long message without calling the engine', async () => {
-    const handler = handlerFor('respond_as_agent');
+    const handler = handlerFor('ask_responder');
     const res = await handler({ message: 'x'.repeat(8001) });
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toMatch(/max 8000/);
@@ -79,7 +79,7 @@ describe('respond_as_agent MCP tool', () => {
   });
 
   it('rejects an over-cap history (too many turns) without calling the engine', async () => {
-    const handler = handlerFor('respond_as_agent');
+    const handler = handlerFor('ask_responder');
     const history = Array.from({ length: 41 }, (_, i) => ({
       role: (i % 2 === 0 ? 'user' : 'assistant') as 'user' | 'assistant',
       content: 'x',
@@ -92,7 +92,7 @@ describe('respond_as_agent MCP tool', () => {
   });
 
   it('rejects an over-long history entry without calling the engine', async () => {
-    const handler = handlerFor('respond_as_agent');
+    const handler = handlerFor('ask_responder');
     const history = [{ role: 'user' as const, content: 'x'.repeat(8001) }];
     const res = await handler({ message: 'hi', history });
     expect(res.isError).toBe(true);
@@ -100,7 +100,7 @@ describe('respond_as_agent MCP tool', () => {
   });
 
   it('returns the reply + clipped tool_calls on the happy path', async () => {
-    const handler = handlerFor('respond_as_agent');
+    const handler = handlerFor('ask_responder');
     const res = await handler({ message: 'hi' });
     expect(res.isError).toBeUndefined();
     const out = parseReply(res);
@@ -114,7 +114,7 @@ describe('respond_as_agent MCP tool', () => {
   });
 
   it('omits tool_calls when include_tool_calls is false', async () => {
-    const handler = handlerFor('respond_as_agent');
+    const handler = handlerFor('ask_responder');
     const res = await handler({ message: 'hi', include_tool_calls: false });
     const out = parseReply(res);
     expect(out.tool_calls).toBeUndefined();
@@ -127,7 +127,7 @@ describe('respond_as_agent MCP tool', () => {
     h.simResult.toolCalls = [
       { slug: 'page_update', argsJson: 'A'.repeat(900), durationMs: 3, status: 'ok', error: null },
     ];
-    const handler = handlerFor('respond_as_agent');
+    const handler = handlerFor('ask_responder');
     const out = parseReply(await handler({ message: 'hi' }));
     const args = out.tool_calls[0].args as string;
     expect(args.endsWith('…')).toBe(true);
@@ -135,7 +135,7 @@ describe('respond_as_agent MCP tool', () => {
   });
 
   it('forwards message + options to the engine', async () => {
-    const handler = handlerFor('respond_as_agent');
+    const handler = handlerFor('ask_responder');
     await handler({
       message: 'do it',
       agent_slug: 'planner',
@@ -158,7 +158,7 @@ describe('respond_as_agent MCP tool', () => {
     (runSimulatedResponderTurn as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('No enabled assistant agent'),
     );
-    const handler = handlerFor('respond_as_agent');
+    const handler = handlerFor('ask_responder');
     const res = await handler({ message: 'hi' });
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toMatch(/No enabled assistant agent/);

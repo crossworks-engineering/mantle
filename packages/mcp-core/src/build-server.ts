@@ -1208,7 +1208,7 @@ export function registerMantleTools(
     { id: z.string() },
     async ({ id }) => {
       const row = await getPage(ownerId, id);
-      if (!row) return { content: [{ type: 'text', text: 'not found' }] };
+      if (!row) return { content: [{ type: 'text', text: 'not found' }], isError: true };
       return jsonReply(row);
     },
   );
@@ -1258,7 +1258,7 @@ export function registerMantleTools(
     { id: z.string(), offset: z.number().optional(), limit: z.number().optional() },
     async ({ id, offset, limit }) => {
       const row = await getTable(ownerId, id);
-      if (!row) return { content: [{ type: 'text', text: 'not found' }] };
+      if (!row) return { content: [{ type: 'text', text: 'not found' }], isError: true };
       const doc = ensureTableDoc(row.data);
       const listed = listRows(doc, { offset: offset ?? 0, limit: limit ?? 100 });
       const out = {
@@ -1281,7 +1281,7 @@ export function registerMantleTools(
     { table_id: z.string(), offset: z.number().optional(), limit: z.number().optional() },
     async ({ table_id, offset, limit }) => {
       const row = await getTable(ownerId, table_id);
-      if (!row) return { content: [{ type: 'text', text: 'not found' }] };
+      if (!row) return { content: [{ type: 'text', text: 'not found' }], isError: true };
       const listed = listRows(ensureTableDoc(row.data), {
         offset: offset ?? 0,
         limit: limit ?? 50,
@@ -1606,19 +1606,6 @@ export function registerMantleTools(
       '`ask_as_responder`.',
     ASK_RESPONDER_SCHEMA,
     async (a) => askResponder({ ...a, toolName: 'ask_responder' }),
-  );
-
-  // Deprecated alias. The old name read as "respond AS the agent", which is
-  // what `ask_as_responder` does — this tool gets a response FROM the agent.
-  // Kept for one release so pinned MCP clients don't break on upgrade.
-  server.tool(
-    'respond_as_agent',
-    'DEPRECATED — renamed to `ask_responder`; use that instead. Identical behaviour, kept ' +
-      'for one release so existing clients keep working. The old name was backwards: this ' +
-      'gets a response FROM a responder, it does not let you respond AS one (that is ' +
-      '`ask_as_responder`).',
-    ASK_RESPONDER_SCHEMA,
-    async (a) => askResponder({ ...a, toolName: 'respond_as_agent' }),
   );
 
   server.tool(

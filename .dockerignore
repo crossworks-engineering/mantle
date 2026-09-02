@@ -28,5 +28,13 @@ README.md
 # Generated at image build (pnpm build) — never ship a dev checkout copy
 server/web/public/share-runtime/
 server/web/public/app-runtime/
-client/web/public/app-runtime/
 server/web/server/route-manifest.gen.ts
+
+# Not needed at runtime (2026-09-02 audit): tests, CI, brand sources, the
+# 1.7 MB notices file, archived docs. `docs/` itself stays (see NOTE above).
+**/*.test.ts
+**/*.test.tsx
+.github
+brand
+THIRD-PARTY-NOTICES.md
+docs/_archive

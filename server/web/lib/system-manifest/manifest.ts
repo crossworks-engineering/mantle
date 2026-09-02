@@ -539,7 +539,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     name: 'Notes',
     description:
       'Create/edit/list/read notes + import a file or page as a note. note_update covers the ' +
-      'recurring append-to-a-log flow (NATREF 2026-07-18 gap); note_delete stays out — deliberate.',
+      'recurring append-to-a-log flow (client-site gap, 2026-07-18); note_delete stays out — deliberate.',
     toolSlugs: [
       'note_create',
       'note_update',
@@ -1225,7 +1225,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     params: { temperature: 0.3, max_tokens: 16000 },
     // Grid work is tool-call heavy the same way page work is: a data load is a
     // read + N row writes, and the flat defaults (40/turn, 15/tool) cut it
-    // short (NATREF 2026-07-28 — a 101-row append needed 6 delegation retries
+    // short (client site, 2026-07-28 — a 101-row append needed 6 delegation retries
     // and wasted 128 capped calls). table_rows_add is the primary fix; these
     // caps are the belt-and-braces so a legitimately call-heavy edit still
     // fits in one turn. Mirrors the Pages budget; runtime hard-caps at 200/100.

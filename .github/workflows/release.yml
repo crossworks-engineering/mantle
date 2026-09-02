@@ -47,6 +47,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Verify gate (the 2026-09-02 audit finding): nothing here waited for
+      # build-check, so a tag could ship images that never passed a test.
+      # tag-release.sh pushes main and the tag in ONE push, which means
+      # build-check and this workflow START TOGETHER; waiting on it would race
+      # its cancel-in-progress rule under back-to-back releases. So the guard
+      # runs the same hermetic gate itself: typecheck + lint + format + tests.
+      # (The production build is exercised by the Docker build below.)
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Lint + format
+        run: pnpm lint && pnpm format:check
+
+      - name: Test
+        run: pnpm test
+
       - name: Assert tag matches the checked-out version
         run: |
           want="${GITHUB_REF_NAME#v}"

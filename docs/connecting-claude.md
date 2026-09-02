@@ -159,7 +159,7 @@ inside the box. Two exceptions, both named below.
 | Federation | `peer_list`, `peer_query`, `peer_search_chunks`, `peer_node_get` |
 | Owner state | `update_persona`, `set_timezone`, `secret_create`, `node_share`, `node_unshare`, `process_extraction`, `brain_capacity` |
 | Models | `model_catalog`, `model_pool_*`, `openrouter_*`, `recall_eval` |
-| Responder | `ask_responder`, `ask_as_responder`, `respond_as_agent`, `invoke_agent` |
+| Responder | `ask_responder`, `ask_as_responder`, `invoke_agent` |
 | Location | `location_save`, `location_nearby`, `location_distance`, `route_map` |
 
 ### The two that are not on it
@@ -205,10 +205,9 @@ yourself and resend it in `history` on each call. Omit `agent_slug` for the
 default responder; pass `max_iterations` to cap the loop, or
 `include_tool_calls: false` to drop the per-call trail from the reply.
 
-> Renamed from `respond_as_agent`. The old name read as "respond *as* the
-> agent", which is what `ask_as_responder` does — this tool gets a response
-> *from* one. `respond_as_agent` still works as a deprecated alias for one
-> release.
+> Renamed from `respond_as_agent` in v0.232.24 (the old name read as "respond *as*
+> the agent", which is what `ask_as_responder` does; this tool gets a response
+> *from* one). The deprecated alias was removed in v0.232.114.
 
 ##### `read_only`: the flag to use for a canary
 
