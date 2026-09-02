@@ -36,6 +36,16 @@ import './workflows/runs-resume-turn';
 import { enqueueTelegramTurn } from './workflows/telegram-turn';
 import { env } from '@mantle/config';
 
+// Backstop: every LISTEN handler and setInterval above already routes its
+// errors through .catch() (the reflector + heartbeat ticks even back off),
+// but a rejection that slips past should log and keep the process alive rather
+// than crash-loop on a transient PostgresError (e.g. Postgres restarted and
+// briefly dropped connections). Docker would bounce us anyway; staying up is
+// strictly better — the listeners auto-resubscribe and the next tick recovers.
+process.on('unhandledRejection', (reason) => {
+  console.error('[agent] unhandledRejection (kept alive):', reason);
+});
+
 async function main(): Promise<void> {
   // Liveness: the api runner exposes no HTTP port (the DBOS admin server is off
   // by default — see config.ts), so its container healthcheck reads a heartbeat

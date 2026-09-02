@@ -37,42 +37,18 @@ import {
   telegramAccounts,
   waitForOwner,
   type Agent,
-  type ConversationAttachment,
-  type TelegramAccount,
 } from '@mantle/db';
-import {
-  accountById,
-  downloadTelegramFile,
-  sendChatAction,
-  sendMessage,
-  sendVoice,
-} from '@mantle/telegram';
+import { accountById } from '@mantle/telegram';
 import { loadProfilePreferences, noteInboundChannel } from '@mantle/content';
-import { stripInlineMediaImages } from '@mantle/content/markdown-refs';
+
 import { sweepLegacyTables } from '@mantle/content/table-storage';
-import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
-import { getApiKey, getApiKeyById } from '@mantle/api-keys';
-import {
-  composeAudioTagInstructions,
-  getChatAdapter,
-  getSttAdapter,
-  getTtsAdapter,
-  stripAudioTags,
-} from '@mantle/voice';
-import {
-  bumpWorkerUsage as bumpAiWorkerUsage,
-  getDefaultWorker,
-  getAgentTtsWorker,
-  type SttParams,
-  type TelegramAttachment,
-  type TtsParams,
-} from '@mantle/db';
+
+import { getChatAdapter } from '@mantle/voice';
+import { getAgentTtsWorker } from '@mantle/db';
 import { resolveEmbeddingConfig } from '@mantle/embeddings';
-import { recordIngest, runDurableStep, startTrace, step } from '@mantle/tracing';
+import { runDurableStep, startTrace, step } from '@mantle/tracing';
 import {
   buildChatMessages,
-  buildAttachmentContextText,
-  extractAttachmentForTurn,
   invokeAgent,
   loadConversationContext,
   recordTurn,
@@ -82,7 +58,6 @@ import {
 } from '@mantle/agent-runtime';
 import {
   assembleResponderTurn,
-  decideImageRouting,
   runResponderLoop,
   runWithImageFallback,
 } from '@mantle/assistant-runtime';
@@ -106,14 +81,27 @@ import { enqueueExtract, startExtractQueue, stopExtractQueue } from './extract-q
 import { reflect } from './reflector.js';
 import { CONVERSATIONAL_ROLES, pickFallbackResponder } from './agent-select.js';
 import { computeFloorGroupAdditions } from './core-tools.js';
+import { ingestTelegramAttachment } from './telegram/ingest-attachment';
+import { audioTagInstructionsFor, transcribeInboundVoice } from './telegram/voice';
+import { buildResponderInput } from './telegram/responder-input';
+import { deliverReply } from './telegram/deliver';
+import { persistOutbound } from './telegram/persist';
+import {
+  parseVoiceMarker,
+  sendApology,
+  startTyping,
+  toConversationAttachments,
+} from './telegram/helpers';
+import type { AttachmentContext, FileAttachment, InboundRow } from './telegram/types';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 
-// Resolved at the top of main() via waitForOwner() — either ALLOWED_USER_ID (when
-// set) or the sole auth.users row. Left `undefined` until then so a fresh install
-// can boot with an empty DB and the worker idles until the first signup, instead
-// of exiting. Every consumer below runs after main() has resolved it.
-let USER_ID: string | undefined = env('ALLOWED_USER_ID');
+// The owner id is resolved ONCE in startAgentRuntime (waitForOwner: either
+// ALLOWED_USER_ID or the sole auth.users row) and handed to every stage
+// explicitly. `runtimeOwner` is the one slot the durable Telegram workflow
+// reads, because DBOS invokes handleTelegramMessage(messageId) without a way
+// to thread the owner through the workflow input.
+let runtimeOwner: string | undefined;
 const DATABASE_URL = env('DATABASE_URL');
 
 if (!DATABASE_URL) {
@@ -123,23 +111,6 @@ if (!DATABASE_URL) {
 
 /** Per-chat in-flight tracker. Prevents two replies racing for the same chat. */
 const inflight = new Map<string, Promise<void>>();
-
-/** Native Telegram "typing…" keep-alive. Telegram clears a chat action
- *  after ~5s, so we re-send every 4s until the returned stop() is called.
- *  Best-effort: send failures are swallowed so they never break a turn. */
-function startTyping(account: TelegramAccount, chatId: string): () => void {
-  let stopped = false;
-  const poke = () => {
-    if (stopped) return;
-    void sendChatAction(account, chatId, 'typing').catch(() => {});
-  };
-  poke();
-  const timer = setInterval(poke, 4000);
-  return () => {
-    stopped = true;
-    clearInterval(timer);
-  };
-}
 
 /** Fetch the active agent for an inbound chat message.
  *
@@ -180,51 +151,6 @@ async function resolveResponderAgent(
   return pickFallbackResponder(candidates);
 }
 
-/** Telegram fills a media message's text with a placeholder like "(photo)" or
- *  "(document: report.pdf)" when there's no real caption. Treat those as empty
- *  so they don't become the user's "question". */
-function telegramCaption(text: string | null | undefined): string {
-  const t = (text ?? '').trim();
-  if (!t || /^\((photo|document|voice message|audio|video|video_note|sticker)\b/i.test(t))
-    return '';
-  return t;
-}
-
-/** Map a Telegram message's attachments to the unified conversation-stream
- *  shape so a turn renders its media in /assistant (Phase 5). `fileNodeId` is
- *  the ingested file node (photos/documents get one), surfaced so a future
- *  render can re-fetch the original. Stickers are dropped (no conversational
- *  value). Bytes are never stored — only the transport file_id + node id. */
-function toConversationAttachments(
-  atts: TelegramAttachment[] | null | undefined,
-  fileNodeId?: string | null,
-): ConversationAttachment[] {
-  const KIND: Record<string, ConversationAttachment['kind'] | undefined> = {
-    photo: 'image',
-    document: 'document',
-    voice: 'voice',
-    audio: 'audio',
-    video: 'video',
-    video_note: 'video',
-    sticker: undefined,
-  };
-  const out: ConversationAttachment[] = [];
-  for (const a of atts ?? []) {
-    const kind = KIND[a.kind];
-    if (!kind) continue;
-    out.push({
-      kind,
-      ...(a.mime ? { mime: a.mime } : {}),
-      ...(a.name ? { caption: a.name } : {}),
-      ...(a.file_id ? { fileId: a.file_id } : {}),
-      ...(fileNodeId && (a.kind === 'photo' || a.kind === 'document')
-        ? { nodeId: fileNodeId }
-        : {}),
-    });
-  }
-  return out;
-}
-
 /**
  * Run one Telegram responder turn for an inbound message. Exported so the
  * durable runner (server/api/src/workflows/telegram-turn.ts) can execute it as a
@@ -236,7 +162,7 @@ function toConversationAttachments(
  * a workflow (e.g. a direct call), step()/runDurableStep are pure passthrough.
  */
 export async function handleTelegramMessage(messageId: string): Promise<void> {
-  const [row] = await db
+  const [selected] = await db
     .select({
       id: telegramMessages.id,
       processed: telegramMessages.processed,
@@ -261,7 +187,8 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     .where(eq(telegramMessages.id, messageId))
     .limit(1);
 
-  if (!row) return;
+  if (!selected) return;
+  const row: InboundRow = selected;
   if (row.processed) return;
   // Defensive — the trigger only fires for inbound but a manual INSERT could
   // get past it. We never reply to our own outbound row.
@@ -273,24 +200,16 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
   // pipeline sees real text. `wasVoice` flips the reply path to
   // sendVoice as well — voice-in → voice-out, configurable per agent.
   const voiceAttachment = (row.attachments ?? []).find(
-    (a): a is TelegramAttachment & { file_id: string } =>
-      a.kind === 'voice' && typeof a.file_id === 'string',
+    (a): a is FileAttachment => a.kind === 'voice' && typeof a.file_id === 'string',
   );
-  let wasVoice = false;
-  let voiceFileId: string | null = null;
-  if (voiceAttachment) {
-    wasVoice = true;
-    voiceFileId = voiceAttachment.file_id;
-  }
+  const wasVoice = !!voiceAttachment;
+  const voiceFileId: string | null = voiceAttachment?.file_id ?? null;
 
   // Attachment branch — a photo OR a document. Save the bytes to /files, then
-  // FALL THROUGH to the responder so Saskia can answer about it (parity with
-  // the web /assistant). The bytes land as a real file node; the extractor
-  // owns durable metadata; the responder gets the inline (question-aware)
-  // extraction folded into its turn with the node id surfaced. The reply gets
-  // its own responder_turn trace.
+  // FALL THROUGH to the responder so it can answer about it (parity with the
+  // web /assistant). See telegram/ingest-attachment.ts.
   const fileAttachment = (row.attachments ?? []).find(
-    (a): a is TelegramAttachment & { file_id: string } =>
+    (a): a is FileAttachment =>
       (a.kind === 'photo' || a.kind === 'document') && typeof a.file_id === 'string',
   );
 
@@ -327,165 +246,26 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
   });
   if (!claimed) return;
 
+  // The owner is resolved once at boot (startAgentRuntime); every stage below
+  // receives it explicitly rather than reading the module-level slot.
+  const ownerId = runtimeOwner;
+  if (!ownerId) {
+    throw new Error(
+      '[agent] handleTelegramMessage ran before startAgentRuntime resolved the owner',
+    );
+  }
+
   // Ingest the attachment (if any) into a file node + inline extraction BEFORE
   // the responder runs. The save fires the extractor (durable metadata); this
   // inline pass is for the live reply only.
-  let attachmentContext: {
-    kind: 'image' | 'file';
-    transcript: string;
-    note: string | null;
-    nodeId: string | null;
-    bytes: Buffer;
-    mimeType: string;
-    filename: string | null;
-  } | null = null;
+  let attachmentContext: AttachmentContext | null = null;
   if (fileAttachment) {
-    const isPhoto = fileAttachment.kind === 'photo';
-    const caption = telegramCaption(row.text);
-    attachmentContext = await startTrace(
-      {
-        kind: isPhoto ? 'photo_ingest' : 'content_ingest',
-        ownerId: USER_ID!,
-        subjectId: row.id,
-        subjectKind: 'telegram_message',
-        data: {
-          telegramChatId: row.telegramChatId,
-          fileId: fileAttachment.file_id,
-          attachmentKind: fileAttachment.kind,
-        },
-      },
-      async () => {
-        const account = await accountById(row.accountId);
-        if (!account) {
-          console.error('[agent] no telegram account for attachment download', row.telegramChatId);
-          return null;
-        }
-        let downloaded: Awaited<ReturnType<typeof downloadTelegramFile>>;
-        try {
-          downloaded = await step(
-            { name: 'download_file', kind: 'compute', input: { fileId: fileAttachment.file_id } },
-            async (h) => {
-              const file = await downloadTelegramFile(account, fileAttachment.file_id);
-              h.setMeta({ bytes: file.bytes.length, mime: file.mimeType });
-              return file;
-            },
-          );
-        } catch (err) {
-          // Transient download failure (network / Telegram 5xx). Return null
-          // so the caller can apologise instead of crashing the turn.
-          console.error(
-            '[agent] telegram attachment download failed:',
-            err instanceof Error ? err.message : err,
-          );
-          return null;
-        }
-
-        // Documents declare their own name + mime; photos have neither, so
-        // derive from the caption + detected mime.
-        const mimeType = fileAttachment.mime || downloaded.mimeType;
-        const ext = (mimeType.split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '') || 'bin';
-        const baseName =
-          fileAttachment.name?.trim() ||
-          `${
-            (caption || (isPhoto ? 'photo' : 'file'))
-              .toLowerCase()
-              .replace(/[^\w-]+/g, '-')
-              .slice(0, 60)
-              .replace(/^-+|-+$/g, '') || (isPhoto ? 'photo' : 'file')
-          }.${ext}`;
-
-        // Save the bytes as a real file node first — even if extraction fails
-        // we want the file persisted + searchable in /files.
-        let nodeId: string | null = null;
-        try {
-          const parentPath = await ensureDatedUploadFolder({
-            ownerId: USER_ID!,
-            topSlug: 'telegram-uploads',
-            topDescription: 'Files sent to Saskia on Telegram. Auto-created.',
-          });
-          const filename = `${Date.now()}-${baseName}`;
-          const saved = await step({ name: 'persist_file', kind: 'db_write' }, async (h) => {
-            const file = await upsertFile({
-              ownerId: USER_ID!,
-              parentPath,
-              filename,
-              bytes: downloaded.bytes,
-              overwrite: false,
-            });
-            h.setMeta({ nodeId: file.id, filename, bytes: file.sizeBytes });
-            return file;
-          });
-          nodeId = saved.id;
-          void recordIngest({
-            source: 'telegram_upload',
-            ownerId: USER_ID!,
-            nodeId: saved.id,
-            summary: `${isPhoto ? 'Image' : 'File'} received via Telegram: ${filename}`,
-            payload: {
-              chatId: row.telegramChatId,
-              telegramMessageId: row.telegramMessageId,
-              filename,
-              mimeType,
-              sizeBytes: saved.sizeBytes,
-            },
-          });
-        } catch (err) {
-          console.error(
-            '[agent] telegram attachment save failed:',
-            err instanceof Error ? err.message : err,
-          );
-        }
-
-        // Inline extraction for THIS turn's reply (question-aware vision for
-        // images, doc parse for files) via the shared helper. Durable metadata
-        // is the extractor's job, fired by the save above.
-        const extract = await step(
-          {
-            name: 'extract_attachment',
-            kind: 'llm_call',
-            input: {
-              mime: mimeType,
-              bytes: downloaded.bytes.length,
-              hasQuestion: caption.length > 0,
-            },
-          },
-          async (h) => {
-            const r = await extractAttachmentForTurn({
-              ownerId: USER_ID!,
-              bytes: downloaded.bytes,
-              mimeType,
-              filename: baseName,
-              question: caption || undefined,
-            });
-            h.setMeta({ attachmentKind: r.kind, note: r.note, textLength: r.text.length });
-            return r;
-          },
-        );
-
-        return {
-          kind: extract.kind === 'image' ? ('image' as const) : ('file' as const),
-          transcript: extract.text,
-          note: extract.note,
-          nodeId,
-          bytes: downloaded.bytes,
-          mimeType,
-          filename: baseName,
-        };
-      },
-    );
+    attachmentContext = await ingestTelegramAttachment({ ownerId, row, fileAttachment });
     // Couldn't fetch / ingest the attachment (no account, or a transient
     // download failure). The row is already claimed so we won't retry — at
     // least tell the user instead of going silent.
     if (!attachmentContext) {
-      const account = await accountById(row.accountId).catch(() => null);
-      if (account) {
-        await sendMessage(
-          account,
-          row.telegramChatId,
-          "Sorry — I couldn't fetch that file. Could you send it again?",
-          { replyTo: row.telegramMessageId ?? undefined },
-        ).catch(() => {});
-      }
+      await sendApology(row, "Sorry — I couldn't fetch that file. Could you send it again?");
       return;
     }
   }
@@ -493,7 +273,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
   // Resolve the responder + key BEFORE opening a trace. Failure modes here
   // (no agent, no key) don't generate traces — there's nothing useful to
   // record about "the system was misconfigured."
-  const agent = await resolveResponderAgent(USER_ID!, row.responderAgentId, row.channelAgentId);
+  const agent = await resolveResponderAgent(ownerId, row.responderAgentId, row.channelAgentId);
   if (!agent) {
     console.error(
       `[agent] no enabled responder agent — skipping ${messageId}. Create one at /settings/agents.`,
@@ -503,7 +283,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
   // Resolve the responder's chat key via the shared resolver (keyless `local`
   // → 'local' sentinel; cloud → pinned/service key, else skip). Same single
   // source of truth the worker pre-flights + the dispatch path use.
-  const keyCheck = await resolveChatKey(USER_ID!, agent);
+  const keyCheck = await resolveChatKey(ownerId, agent);
   if (!keyCheck.ok) {
     console.error(
       `[agent] responder agent '${agent.slug}' ${keyCheck.detail} — skipping. Edit it at /settings/agents.`,
@@ -532,7 +312,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
     await startTrace(
       {
         kind: 'responder_turn',
-        ownerId: USER_ID!,
+        ownerId,
         subjectId: row.id,
         subjectKind: 'telegram_message',
         agentId: agent.id,
@@ -545,123 +325,18 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         },
       },
       async () => {
-        // ── 0. Transcribe voice (if any) BEFORE anything downstream
-        // reads `row.text`. Failure here downgrades the turn to a
-        // graceful text apology rather than crashing the trace.
+        // ── 0. Transcribe voice (if any) BEFORE anything downstream reads
+        // `row.text`. Failure downgrades the turn to a text apology rather
+        // than crashing the trace. See telegram/voice.ts.
         if (voiceFileId) {
-          const transcript = await step(
-            {
-              name: 'transcribe_voice',
-              kind: 'compute',
-              input: { fileId: voiceFileId },
-            },
-            async (h) => {
-              // Look up the configured STT worker. If one exists with an
-              // api_key, use its provider + model + params. Otherwise
-              // fall back to the bare 'service=openai' key for backwards-
-              // compat with older setups that haven't migrated to
-              // ai_workers yet (treats it as an OpenAI/Whisper call).
-              const sttWorker = await getDefaultWorker(USER_ID!, 'stt');
-              let apiKey: string | null;
-              let providerId = 'openai';
-              let model = 'whisper-1';
-              let language: string | undefined;
-              let maxDuration = 180;
-              if (sttWorker?.apiKeyId) {
-                apiKey = await getApiKeyById(sttWorker.apiKeyId);
-                providerId = sttWorker.provider;
-                model = sttWorker.model;
-                const sttParams = (sttWorker.params ?? {}) as SttParams;
-                language = sttParams.language;
-                maxDuration = sttParams.max_duration_seconds ?? 180;
-              } else {
-                apiKey = await getApiKey(USER_ID!, 'openai');
-              }
-              if (!apiKey) {
-                h.setMeta({ error: 'no openai api_key configured' });
-                throw new Error(
-                  'voice received but no OpenAI api_key configured. Either add an STT worker at /settings/ai-workers or add a bare openai key at /settings/api-keys.',
-                );
-              }
-              const adapter = getSttAdapter(providerId);
-              if (!adapter) {
-                h.setMeta({ error: `no STT adapter for '${providerId}'` });
-                throw new Error(
-                  `STT provider '${providerId}' is not yet wired. Currently supported: openai. ` +
-                    'Switch the STT worker to a wired provider at /settings/ai-workers.',
-                );
-              }
-              const account = await accountById(row.accountId);
-              if (!account) {
-                throw new Error('no telegram account available for voice download');
-              }
-              const downloaded = await downloadTelegramFile(account, voiceFileId!);
-              h.setMeta({
-                bytes: downloaded.bytes.length,
-                worker_slug: sttWorker?.slug ?? null,
-                adapter: adapter.adapterName,
-              });
-              const result = await adapter.transcribe(downloaded.bytes, {
-                apiKey,
-                mimeType: downloaded.mimeType,
-                model,
-                language,
-                maxDurationSeconds: maxDuration,
-              });
-              if (sttWorker) void bumpAiWorkerUsage(sttWorker.id);
-              h.setOutput({
-                model: result.model,
-                language: result.language,
-                durationSeconds: result.durationSeconds,
-                chars: result.text.length,
-              });
-              return result;
-            },
-          ).catch((err) => {
-            console.error(
-              '[agent] voice transcription failed:',
-              err instanceof Error ? err.message : err,
+          const ok = await transcribeInboundVoice({ ownerId, row, voiceFileId });
+          if (!ok) {
+            await sendApology(
+              row,
+              "Sorry love — I couldn't pick up that voice clip. Could you try again, or type it out?",
             );
-            return null;
-          });
-
-          if (!transcript || !transcript.text) {
-            // Soft-fail: send Saskia a text apology, stay coherent.
-            const account = await accountById(row.accountId);
-            if (account) {
-              await sendMessage(
-                account,
-                row.telegramChatId,
-                "Sorry love — I couldn't pick up that voice clip. Could you try again, or type it out?",
-                { replyTo: row.telegramMessageId ?? undefined },
-              );
-            }
             return;
           }
-
-          // Replace the placeholder text with the transcript so the
-          // rest of the pipeline (load_context, history, embeddings,
-          // extractor) sees real words. We update both the in-memory
-          // row and the DB row so the assistant timeline and digest
-          // generator find the actual content later.
-          row.text = transcript.text;
-          await db
-            .update(telegramMessages)
-            .set({
-              text: transcript.text,
-              attachments: (row.attachments ?? []).map((a) =>
-                a.kind === 'voice'
-                  ? {
-                      ...a,
-                      transcript: transcript.text,
-                      transcript_model: transcript.model,
-                      transcript_language: transcript.language,
-                      duration_seconds: transcript.durationSeconds,
-                    }
-                  : a,
-              ),
-            })
-            .where(eq(telegramMessages.id, row.id));
         }
 
         // Record the inbound turn into the unified per-(owner, agent)
@@ -675,7 +350,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         // insert a duplicate inbound conversation row.
         const convInbound = await runDurableStep('record_inbound', () =>
           recordTurn({
-            ownerId: USER_ID!,
+            ownerId,
             agentId: agent.id,
             direction: 'inbound',
             text: row.text,
@@ -694,40 +369,17 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         // Telegram is reminder-capable, so messaging a bot makes Telegram the
         // reminder destination (until the user next messages from the app).
         // Best-effort — must never break the inbound. See reminder-delivery-routing.md.
-        void noteInboundChannel(USER_ID!, 'telegram');
+        void noteInboundChannel(ownerId, 'telegram');
 
-        // Tell Saskia which speech tags her configured TTS will honour:
-        // inline cues (ElevenLabs v3 [laughs]/[sighs]; OpenAI none) AND
-        // wrapping styles (xAI Grok <whisper>…</whisper>/<soft>/<slow>).
-        // Looked up once per turn so the prompt stays current if the TTS
-        // worker is swapped between turns. Empty paragraph if no TTS
-        // worker, no tags-capable model, or no adapter — concat is a no-op.
-        let audioTagInstructions = '';
-        try {
-          const ttsWorkerForTags = await getAgentTtsWorker(USER_ID!, agent.ttsWorkerId);
-          if (ttsWorkerForTags) {
-            const ttsAdapterForTags = getTtsAdapter(ttsWorkerForTags.provider);
-            const tags = ttsAdapterForTags?.supportedAudioTags?.(ttsWorkerForTags.model) ?? [];
-            const wrappingTags =
-              ttsAdapterForTags?.supportedWrappingTags?.(ttsWorkerForTags.model) ?? [];
-            audioTagInstructions = composeAudioTagInstructions(tags, wrappingTags);
-          }
-        } catch (err) {
-          // Tag-injection is best-effort decoration. A DB blip here
-          // shouldn't kill the turn.
-          console.error(
-            '[agent] audio-tag prompt injection skipped:',
-            err instanceof Error ? err.message : err,
-          );
-        }
         // Shared responder-turn assembly (audit #5c): identity + skills
-        // prompt (+ the audio-tag suffix above), volatile context (time line
-        // + open-heartbeat awareness), tool allowlist + heartbeat affordance,
+        // prompt (+ the audio-tag suffix), volatile context (time line +
+        // open-heartbeat awareness), tool allowlist + heartbeat affordance,
         // thinking budget, per-agent loop overrides. Same strings, same
         // gating as the web /assistant path — one implementation, no drift.
-        const prefs = await loadProfilePreferences(USER_ID!);
+        const audioTagInstructions = await audioTagInstructionsFor(ownerId, agent);
+        const prefs = await loadProfilePreferences(ownerId);
         const assembled = await assembleResponderTurn({
-          ownerId: USER_ID!,
+          ownerId,
           agent,
           prefs,
           logPrefix: '[agent]',
@@ -751,47 +403,14 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
           },
         );
 
-        // Attachment → responder input (transcript-default, shared with web
-        // via decideImageRouting): prefer the inline-extracted text folded
-        // into the turn; for an IMAGE with no transcript, fall back to
-        // inlining the raw pixels when the model is vision-capable and within
-        // its size limit. The node id is surfaced either way so Saskia can
-        // re-read it (extract_from_image / file_read) on a follow-up.
-        // `responderUserText` is the text-only form — also the retry fallback
-        // if the responder chokes on the raw picture (parity with web, b2).
-        let responderUserText = row.text;
-        let imagePrimaryText = row.text;
-        let userImage: UserImage | undefined;
-        let canSeeImage = false;
-        if (attachmentContext) {
-          const caption = telegramCaption(row.text);
-          const baseText =
-            caption ||
-            (attachmentContext.kind === 'image'
-              ? "Here's an image — tell me what you see."
-              : "I've attached a file — take a look and tell me what's in it.");
-          canSeeImage = decideImageRouting({
-            model: agent.model,
-            hasImage: attachmentContext.kind === 'image',
-            imageBytes: attachmentContext.bytes.length,
-            hasTranscript: attachmentContext.transcript.trim().length > 0,
-            logPrefix: '[agent]',
-          });
-          responderUserText = buildAttachmentContextText(baseText, {
-            kind: attachmentContext.kind,
-            transcript: attachmentContext.transcript,
-            note: attachmentContext.note,
-            nodeId: attachmentContext.nodeId,
-            filename: attachmentContext.filename,
-          });
-          if (canSeeImage) {
-            userImage = {
-              base64: attachmentContext.bytes.toString('base64'),
-              mimeType: attachmentContext.mimeType,
-            };
-            imagePrimaryText = baseText;
-          }
-        }
+        // What the responder is asked (transcript-default; raw pixels only
+        // when the model can see and there is no transcript). See
+        // telegram/responder-input.ts.
+        const input = buildResponderInput({
+          rowText: row.text,
+          model: agent.model,
+          attachmentContext,
+        });
 
         // Resolve the chat adapter for this agent's provider. The
         // agents table grew a `provider` column in migration 0048
@@ -810,7 +429,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         let ctxPromise: Promise<ConversationContext> | null = null;
         const loadContext = () =>
           (ctxPromise ??= loadConversationContext({
-            ownerId: USER_ID!,
+            ownerId,
             agent,
             inboundText: row.text,
             // Exclude the inbound we just recorded; only look before it.
@@ -832,7 +451,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         // responder_turn trace; delivery + persistence below stay Telegram's.
         const runCore = (image: UserImage | undefined, userText: string) =>
           runResponderLoop({
-            ownerId: USER_ID!,
+            ownerId,
             agent,
             adapter: chatAdapter,
             apiKey,
@@ -884,33 +503,20 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         // (the web path traces per-attempt); the retry shows up as a second
         // load_context (memoized) + build_messages step pair.
         const outcome = await runWithImageFallback({
-          canSeeImage,
+          canSeeImage: input.canSeeImage,
           logPrefix: '[agent]',
-          withImage: () => runCore(userImage, imagePrimaryText),
-          textOnly: () => runCore(undefined, responderUserText),
+          withImage: () => runCore(input.userImage, input.imagePrimaryText),
+          textOnly: () => runCore(undefined, input.responderUserText),
         });
         const loopOutcome = outcome.loop;
         // The core substitutes the shared fallback when the model returns
         // empty twice (b3 — the old Telegram copy went silent instead), so
         // this guard is now defensive only.
-        const rawReply = outcome.reply;
-        if (!rawReply) {
+        if (!outcome.reply) {
           console.error('[agent] empty reply from model — not sending');
           return;
         }
-        // Opt-in voice signal: Saskia (or any responder) can prefix her
-        // reply with a `[VOICE]` token to force TTS-out even when the
-        // user typed in. The token is stripped before send + persist so
-        // it never reaches the user or the timeline. Match is permissive
-        // (case-insensitive, optional whitespace) because LLMs love to
-        // capitalise inconsistently. The marker has to be the FIRST
-        // non-whitespace content — we don't want to scan mid-reply and
-        // accidentally trigger on a quoted phrase.
-        const voiceMarkerMatch = rawReply.match(/^\s*\[voice\]\s*/i);
-        const requestedVoice = voiceMarkerMatch !== null;
-        const reply = requestedVoice
-          ? rawReply.slice(voiceMarkerMatch![0].length).trim()
-          : rawReply;
+        const { reply, requestedVoice } = parseVoiceMarker(outcome.reply);
         if (!reply) {
           // She emitted ONLY the marker — treat as empty reply.
           console.error('[agent] reply was only the [VOICE] marker; not sending');
@@ -933,212 +539,21 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         // ai_workers row. If none exists or its key is missing, we
         // fall through to text rather than crash the reply.
         // `wasVoice` (user voice-messaged) OR `requestedVoice` (LLM
-        // emitted `[VOICE]` marker) opt in. There's no longer a
-        // per-agent `params.voice.enabled` toggle — enable/disable
-        // happens by enabling/disabling the TTS worker row.
+        // emitted `[VOICE]` marker) opt in. Enable/disable happens by
+        // enabling/disabling the TTS worker row. Per-agent voice: the TTS
+        // worker this agent pins (agent.ttsWorkerId), else the owner's default.
         const replyAsVoice = wasVoice || requestedVoice;
-        // Per-agent voice: use the TTS worker this agent pins (agent.ttsWorkerId),
-        // else the owner's default TTS worker. getAgentTtsWorker handles the
-        // unset / disabled / deleted cases by falling back to the default.
-        const ttsWorker = replyAsVoice
-          ? await getAgentTtsWorker(USER_ID!, agent.ttsWorkerId)
-          : null;
+        const ttsWorker = replyAsVoice ? await getAgentTtsWorker(ownerId, agent.ttsWorkerId) : null;
 
-        // Generate-then-send, but never lose the reply: if the send throws, the
-        // send_telegram step still records the error and we persist the reply
-        // below (flagged undelivered) so it stays recoverable, then fail the
-        // trace so it surfaces in "Needs attention".
-        let telegramMessageIds: number[] = [];
-        let delivered = false;
-        let sendError: string | null = null;
-        try {
-          telegramMessageIds = await step(
-            {
-              name: 'send_telegram',
-              kind: 'send',
-              input: { mode: replyAsVoice ? 'voice' : 'text' },
-            },
-            async (h) => {
-              if (replyAsVoice && ttsWorker?.apiKeyId) {
-                // Synthesise inside the same step so cost + meta roll up
-                // here. We catch and fall through to text on failure so
-                // a transient OpenAI hiccup doesn't drop the reply.
-                try {
-                  const ttsApiKey = await getApiKeyById(ttsWorker.apiKeyId);
-                  if (!ttsApiKey) {
-                    throw new Error(`tts worker '${ttsWorker.slug}' api key not found`);
-                  }
-                  // Resolve the provider-specific adapter. If the worker
-                  // is configured for a provider we haven't wired yet
-                  // (e.g. elevenlabs before its adapter ships), refuse
-                  // here rather than guessing — better an explicit
-                  // error in the trace than a silently mangled call.
-                  const ttsAdapter = getTtsAdapter(ttsWorker.provider);
-                  if (!ttsAdapter) {
-                    throw new Error(
-                      `no TTS adapter for provider '${ttsWorker.provider}' — switch the worker to a wired provider (openai)`,
-                    );
-                  }
-                  const ttsParams = (ttsWorker.params ?? {}) as TtsParams;
-                  const synth = await ttsAdapter.synthesize({
-                    apiKey: ttsApiKey,
-                    text: reply,
-                    // Cast through unknown — voice is a free-form string
-                    // at the storage layer (xAI / ElevenLabs accept
-                    // custom voice ids like '69smp8rm'), but
-                    // SynthesizeOptions.voice is typed as the OpenAI
-                    // union. Adapter does per-provider validation.
-                    voice: (ttsParams.voice ?? 'nova') as never,
-                    // Worker.model wins; ttsParams.model is a redundant
-                    // alias on the OpenAI side but other providers may
-                    // split voice from model — keep both lookups.
-                    model: ttsWorker.model || ttsParams.model || 'gpt-4o-mini-tts',
-                    speed: ttsParams.speed ?? 1.0,
-                    format: 'opus', // Telegram-native — sendVoice bubble
-                    // Style instructions only land on gpt-4o-mini-tts;
-                    // older models ignore the field silently, so it's
-                    // safe to forward unconditionally.
-                    instructions: ttsParams.instructions,
-                    // Language hint — drives accent on xAI custom
-                    // voices (e.g. setting 'fr' to keep a French clone's
-                    // accent regardless of input text). Other providers
-                    // ignore.
-                    language: ttsParams.language,
-                  });
-                  const voiceMessageId = await sendVoice(account, row.telegramChatId, synth.bytes, {
-                    replyTo: row.telegramMessageId ?? undefined,
-                  });
-                  void bumpAiWorkerUsage(ttsWorker.id);
-                  h.setMeta({
-                    mode: 'voice',
-                    voice: synth.voice,
-                    ttsModel: synth.model,
-                    adapter: ttsAdapter.adapterName,
-                    workerSlug: ttsWorker.slug,
-                    audioBytes: synth.bytes.length,
-                    replyLength: reply.length,
-                  });
-                  return [voiceMessageId];
-                } catch (err) {
-                  console.error(
-                    '[agent] tts failed, falling back to text:',
-                    err instanceof Error ? err.message : err,
-                  );
-                  h.setMeta({ ttsFallback: true });
-                  // Fall through to text path below.
-                }
-              }
-              // Strip any audio tags Saskia emitted — they only make
-              // sense in a voice context. If the reply ends up here
-              // (text-out, or TTS fallback after failure), bracketed
-              // tags would otherwise appear as literal text.
-              const { text: taggedReply, stripped } = stripAudioTags(reply);
-              // Inline `![alt](media:<file-id>)` markers place a stored picture
-              // in the WEB chat (RichText resolves them). Telegram sends plain
-              // text with no parse_mode, so a marker would arrive as literal
-              // `![…](media:…)` gibberish. Strip them, leaving any alt text
-              // behind. A picture reaches Telegram only via `show_image`'s
-              // sendPhoto, which is what the visual_answers skill tells her.
-              const { text: textReply, stripped: mediaStripped } =
-                stripInlineMediaImages(taggedReply);
-              const ids = await sendMessage(account, row.telegramChatId, textReply, {
-                replyTo: row.telegramMessageId ?? undefined,
-              });
-              h.setMeta({
-                mode: 'text',
-                chunks: ids.length,
-                replyLength: textReply.length,
-                ...(stripped > 0 ? { audioTagsStripped: stripped } : {}),
-                ...(mediaStripped > 0 ? { inlineImagesStripped: mediaStripped } : {}),
-              });
-              return ids;
-            },
-          );
-          delivered = true;
-        } catch (err) {
-          // The send_telegram step already recorded the error; capture it and
-          // fall through to persist so the generated reply isn't lost.
-          sendError = errorMessage(err);
-        }
-
-        await step({ name: 'persist_outbound', kind: 'db_write' }, async (h) => {
-          const now = new Date();
-          const titleStem = reply.slice(0, 120);
-          // Delivered → one row per sent chunk (with its Telegram id). Failed →
-          // a single row with a null id, flagged undelivered (recoverable).
-          const targets: (number | null)[] = delivered ? telegramMessageIds : [null];
-          for (const tgMsgId of targets) {
-            const [node] = await db
-              .insert(nodes)
-              .values({
-                ownerId: USER_ID!,
-                type: 'telegram_message',
-                title: titleStem,
-                path: account.branchPath,
-                data: {
-                  direction: 'outbound',
-                  model: agent.model,
-                  agent: agent.slug,
-                  replyToTelegramMessageId: row.telegramMessageId,
-                  delivered,
-                },
-                tags: ['telegram', 'outbound'],
-              })
-              .returning({ id: nodes.id });
-            if (!node) throw new Error('failed to create outbound node');
-
-            await db.insert(telegramMessages).values({
-              nodeId: node.id,
-              accountId: row.accountId,
-              chatId: row.chatPk,
-              telegramMessageId: tgMsgId == null ? null : String(tgMsgId),
-              text: reply,
-              sentAt: now,
-              direction: 'outbound',
-              agentId: agent.id,
-              modelUsed: agent.model,
-              replyToId: row.id,
-              delivered,
-              processed: true,
-              processedAt: now,
-            });
-          }
-
-          // Mirror the outbound into the unified per-agent stream ONCE (the
-          // full reply text — the per-chunk telegram_messages rows above are
-          // the transport record). channel='telegram'; external_ref points at
-          // the first sent chunk for reply threading. See docs/conversation.md.
-          // The thought trail (b4, prefs-gated) + tool-outcome ledger (b5)
-          // land on the row's data jsonb — the same keys the web path
-          // persists via updateAssistantMessageOutcome, so /assistant renders
-          // Telegram turns' records identically.
-          await recordTurn({
-            ownerId: USER_ID!,
-            agentId: agent.id,
-            direction: 'outbound',
-            text: reply,
-            channel: 'telegram',
-            model: agent.model,
-            externalRef: {
-              accountId: row.accountId,
-              chatId: row.telegramChatId,
-              ...(delivered && telegramMessageIds[0] != null
-                ? { messageId: String(telegramMessageIds[0]) }
-                : {}),
-            },
-            ...(outcome.persistedThoughts.length > 0 || outcome.toolStats
-              ? {
-                  data: {
-                    ...(outcome.persistedThoughts.length > 0
-                      ? { thoughts: outcome.persistedThoughts }
-                      : {}),
-                    ...(outcome.toolStats ? { toolStats: outcome.toolStats } : {}),
-                  },
-                }
-              : {}),
-          });
-          h.setMeta({ rows: targets.length, delivered, ...(sendError ? { sendError } : {}) });
+        const delivery = await deliverReply({
+          ownerId,
+          account,
+          row,
+          reply,
+          replyAsVoice,
+          ttsWorker,
         });
+        await persistOutbound({ ownerId, row, account, agent, reply, delivery, outcome });
 
         // Bump agent usage outside the trace's hot path — best-effort.
         void db
@@ -1151,19 +566,20 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
           .where(eq(agents.id, agent.id))
           .catch(() => {});
 
-        if (delivered) {
+        if (delivery.delivered) {
           console.log(`[agent] ✓ replied (${reply.length}c)`);
         } else {
-          console.warn(`[agent] reply saved but Telegram send failed: ${sendError}`);
+          console.warn(`[agent] reply saved but Telegram send failed: ${delivery.sendError}`);
           // The reply is already persisted above (undelivered); fail the trace
           // here so the delivery failure surfaces without losing the reply.
-          throw new Error(`reply generated + saved but Telegram send failed: ${sendError}`);
+          throw new Error(
+            `reply generated + saved but Telegram send failed: ${delivery.sendError}`,
+          );
         }
       },
     );
   } catch (err) {
-    const msg = errorMessage(err);
-    console.error('[agent] handle failed:', msg);
+    console.error('[agent] handle failed:', errorMessage(err));
   } finally {
     stopTyping();
     release();
@@ -1236,12 +652,12 @@ async function drainPending(
  * cap to catch up. The extractor's own per-agent / per-type guards take it from
  * there.
  */
-async function drainUnextractedNodes(): Promise<void> {
+async function drainUnextractedNodes(ownerId: string): Promise<void> {
   const windowHours = Number(env('MANTLE_EXTRACT_DRAIN_WINDOW_HOURS')) || 168;
   const limit = Number(env('MANTLE_EXTRACT_DRAIN_LIMIT')) || 1000;
   const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
   const conds = and(
-    eq(nodes.ownerId, USER_ID!),
+    eq(nodes.ownerId, ownerId),
     ne(nodes.type, 'branch'),
     gte(nodes.createdAt, since),
     isNull(nodes.embedding),
@@ -1289,7 +705,7 @@ async function drainUnextractedNodes(): Promise<void> {
  * run and drops out for good. Capped so a large miss catches up over a few
  * sweeps rather than a burst. Quiet unless it actually re-queues something.
  */
-async function sweepMissedExtractions(): Promise<void> {
+async function sweepMissedExtractions(ownerId: string): Promise<void> {
   const windowHours = Number(env('MANTLE_EXTRACT_DRAIN_WINDOW_HOURS')) || 168;
   const limit = Number(env('MANTLE_EXTRACT_SWEEP_LIMIT')) || 200;
   const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
@@ -1298,7 +714,7 @@ async function sweepMissedExtractions(): Promise<void> {
     .from(nodes)
     .where(
       and(
-        eq(nodes.ownerId, USER_ID!),
+        eq(nodes.ownerId, ownerId),
         ne(nodes.type, 'branch'),
         gte(nodes.createdAt, since),
         isNull(nodes.embedding),
@@ -1323,9 +739,9 @@ async function sweepMissedExtractions(): Promise<void> {
  * is caught live by `/settings/embedding`'s per-route dim probe, not re-probed
  * here at boot (that would add a network call to every start).
  */
-async function assertEmbeddingModelConsistency(): Promise<void> {
+async function assertEmbeddingModelConsistency(ownerId: string): Promise<void> {
   try {
-    const config = await resolveEmbeddingConfig(USER_ID!);
+    const config = await resolveEmbeddingConfig(ownerId);
     const backup = config.backup
       ? ` · backup via ${config.backup.provider}${config.backup.label ? ` (${config.backup.label})` : ''}`
       : ' · no backup';
@@ -1361,30 +777,30 @@ let summarizeTimer: NodeJS.Timeout | null = null;
 const summarizeInflight = new Set<string>();
 const summarizeRerun = new Set<string>();
 
-function runSummarize(agentId: string): void {
+function runSummarize(ownerId: string, agentId: string): void {
   if (summarizeInflight.has(agentId)) {
     summarizeRerun.add(agentId);
     return;
   }
   summarizeInflight.add(agentId);
-  summarizeAgentConversation(USER_ID!, agentId)
+  summarizeAgentConversation(ownerId, agentId)
     .catch((err) =>
       console.error('[agent] summarize error:', err instanceof Error ? err.message : err),
     )
     .finally(() => {
       summarizeInflight.delete(agentId);
-      if (summarizeRerun.delete(agentId)) runSummarize(agentId);
+      if (summarizeRerun.delete(agentId)) runSummarize(ownerId, agentId);
     });
 }
 
-function scheduleSummarize(agentId: string): void {
+function scheduleSummarize(ownerId: string, agentId: string): void {
   summarizePending.add(agentId);
   if (summarizeTimer) return;
   summarizeTimer = setTimeout(() => {
     summarizeTimer = null;
     const batch = [...summarizePending];
     summarizePending.clear();
-    for (const id of batch) runSummarize(id);
+    for (const id of batch) runSummarize(ownerId, id);
   }, SUMMARIZE_DEBOUNCE_MS);
 }
 
@@ -1445,13 +861,14 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   // Resolve the owner before any owner-scoped work. On a fresh install this
   // blocks until the first account is created in the web app (signup), then
   // proceeds — no ALLOWED_USER_ID env edit, no restart.
-  USER_ID = await waitForOwner({ label: 'agent' });
+  const owner = await waitForOwner({ label: 'agent' });
+  runtimeOwner = owner;
 
   // Seed / refresh built-in tool definitions for this owner. Idempotent —
   // updates name/description/schema on each boot so registry edits in
   // packages/tools/src/builtins.ts propagate without manual DB work.
   try {
-    const seedResult = await seedBuiltinTools(USER_ID!);
+    const seedResult = await seedBuiltinTools(owner);
     console.log(`[agent] tools: ${seedResult.inserted} inserted, ${seedResult.updated} updated`);
   } catch (err) {
     console.error('[agent] tool seed failed:', err instanceof Error ? err.message : err);
@@ -1461,7 +878,7 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   // tool GROUPS) to the conversational agents so "be more professional" / "add
   // a task" work without manual /settings/tools setup. Idempotent (P6).
   try {
-    const granted = await ensureCoreToolsOnConversationalAgents(USER_ID!);
+    const granted = await ensureCoreToolsOnConversationalAgents(owner);
     if (granted.length > 0) {
       console.log(`[agent] core tools granted to: ${granted.join(', ')}`);
     }
@@ -1491,13 +908,13 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   // channel is no longer listened on.
   await pg.listen('summarize_due', (payload: string) => {
     if (!payload) return;
-    scheduleSummarize(payload);
+    scheduleSummarize(owner, payload);
   });
   console.log('[agent] LISTENing on summarize_due (per-agent)');
 
   // Durable, concurrency-capped extractor queue. Must start BEFORE the
   // node_ingested listener (so enqueues land) and before the boot drain below.
-  await startExtractQueue(DATABASE_URL!, USER_ID!);
+  await startExtractQueue(DATABASE_URL!, owner);
 
   await pg.listen('node_ingested', (payload: string) => {
     if (!payload) return;
@@ -1509,7 +926,7 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
 
   // NEW-7: low-latency heartbeat wake. createHeartbeat + force-fire
   // paths fire pg_notify('heartbeat_due', ownerId). When we get one,
-  // call tickHeartbeats(USER_ID) immediately — same code path as the
+  // call tickHeartbeats(owner) immediately — same code path as the
   // 60s setInterval, just kicked early so an operator's "Create
   // heartbeat" click reflects in the trace within a couple seconds.
   //
@@ -1520,7 +937,7 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   await pg.listen(HEARTBEAT_DUE_CHANNEL, (payload: string) => {
     if (!payload) return;
     // The payload is the owner id. In single-user mode that's
-    // always USER_ID; we still pass it through for cleanliness.
+    // always the owner; we still pass it through for cleanliness.
     tickHeartbeats(payload).catch((err) =>
       console.error(`[agent] heartbeat_due wake error:`, err instanceof Error ? err.message : err),
     );
@@ -1540,7 +957,7 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   let reflectSkipUntil = 0;
   setInterval(() => {
     if (Date.now() < reflectSkipUntil) return;
-    reflect(USER_ID!)
+    reflect(owner)
       .then(() => {
         if (reflectBackoffMs > 0) {
           console.log('[agent] reflector recovered; clearing backoff');
@@ -1574,7 +991,7 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   let hbSkipUntil = 0;
   setInterval(() => {
     if (Date.now() < hbSkipUntil) return;
-    tickHeartbeats(USER_ID!)
+    tickHeartbeats(owner)
       .then((report) => {
         if (hbBackoffMs > 0) console.log('[agent] heartbeat tick recovered; clearing backoff');
         hbBackoffMs = 0;
@@ -1607,7 +1024,7 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
   // a restart's boot-drain. Loop-safe + bounded (see sweepMissedExtractions).
   const SWEEP_INTERVAL_MS = Number(env('MANTLE_EXTRACT_SWEEP_MS')) || 120 * 1000;
   setInterval(() => {
-    sweepMissedExtractions().catch((err) =>
+    sweepMissedExtractions(owner).catch((err) =>
       console.error(
         '[agent] extract sweep error (will retry next tick):',
         err instanceof Error ? err.message : err,
@@ -1635,24 +1052,14 @@ export async function startAgentRuntime(opts: AgentRuntimeOptions) {
     `[agent] table migration sweep every ${TABLE_MIGRATE_SWEEP_MS / 1000}s (${TABLE_MIGRATE_BATCH}/tick)`,
   );
 
-  await assertEmbeddingModelConsistency();
+  await assertEmbeddingModelConsistency(owner);
   await drainPending(opts.enqueueTelegramTurn);
-  await drainUnextractedNodes();
+  await drainUnextractedNodes(owner);
 
   // Listeners + timers are now live; return so the host process (server/api)
   // stays alive via DBOS. Graceful extractor-queue shutdown is wired through
   // stopAgentRuntime() below, called from server/api's signal handler.
 }
-
-// Backstop: every LISTEN handler and setInterval above already routes its
-// errors through .catch() (the reflector + heartbeat ticks even back off),
-// but a rejection that slips past should log and keep the process alive rather
-// than crash-loop on a transient PostgresError (e.g. Postgres restarted and
-// briefly dropped connections). Docker would bounce us anyway; staying up is
-// strictly better — the listeners auto-resubscribe and the next tick recovers.
-process.on('unhandledRejection', (reason) => {
-  console.error('[agent] unhandledRejection (kept alive):', reason);
-});
 
 /**
  * Graceful stop for the absorbed agent runtime — drains the extractor queue so
