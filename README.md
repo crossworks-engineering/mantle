@@ -244,7 +244,7 @@ provably stale, never a number someone typed once.
 ![tests](https://img.shields.io/badge/tests-3%2C795%2B%20declared-99424f?logo=vitest&logoColor=white)
 ![migrations](https://img.shields.io/badge/migrations-155-336791?logo=postgresql&logoColor=white)
 ![built-in tools](https://img.shields.io/badge/built--in%20tools-228-6b4fbb)
-![docs](https://img.shields.io/badge/docs-125%20guides-4c8eda)
+![docs](https://img.shields.io/badge/docs-93%20guides-4c8eda)
 ![releases](https://img.shields.io/badge/releases-263-blue)
 
 **Code & tests** — the suite runs on every push, DB-less, in CI. Test counts below are cases *declared*; parameterised tables (`it.each`) expand to more at run time, so the executed total is higher than the number shown.
@@ -254,9 +254,9 @@ provably stale, never a number someone typed once.
 | 📐 &nbsp;TypeScript (excl. tests) | **193,652** lines in 1,190 files |
 | 🧪 &nbsp;Test suite | **3,795+** cases declared in 336 files |
 | ⚖️ &nbsp;Test weight | 54,806 lines — 1 for every 3.5 of source |
-| 🗂️ &nbsp;Tracked files | 2,411 |
+| 🗂️ &nbsp;Tracked files | 2,413 |
 | 🐘 &nbsp;SQL migrations | 155, replayed in order on every boot |
-| 📚 &nbsp;Docs | 125 engineering docs, 79 user-guide pages, 224 changelog entries (57,384 lines) |
+| 📚 &nbsp;Docs | 93 engineering docs, 79 user-guide pages, 224 changelog entries (57,416 lines) |
 | 🐳 &nbsp;Compose services | 26 (core + opt-in profiles) |
 
 **What a fresh brain ships with** — declared once in the [system manifest](./server/web/lib/system-manifest/), checked by CI and by a live integrity audit.
@@ -270,7 +270,7 @@ provably stale, never a number someone typed once.
 | 💾 &nbsp;Datastores | **1** (Postgres — vectors, graph, FTS, queues, realtime, auth) |
 | 🧊 &nbsp;Idle footprint | ~2.5 GB RAM, whole stack |
 
-**Velocity** — v0.232.119, 2,866 commits and 263 releases since 2026-05-14 (111 days, ~25.8 commits/day).
+**Velocity** — v0.232.120, 2,868 commits and 263 releases since 2026-05-14 (111 days, ~25.8 commits/day).
 
 ```
 commits/week, last 16 weeks   ▃▇▆▄▂▂█▄▃▅▇▆▃▄▄▃   peak 360
