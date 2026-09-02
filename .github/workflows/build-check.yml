@@ -12,9 +12,14 @@
 #   - push to main — re-validate the merge result (the automated "merge then
 #     build" safety net; deploy is still a separate manual tag)
 #
-# Hermetic — no Postgres/MinIO needed: `next build` runs DB-less (same as the
-# Dockerfile image build), and the vitest suite is designed to pass without
-# infra (e.g. resolver.test.ts deletes DATABASE_URL on purpose).
+# Mostly hermetic: `next build` runs DB-less (same as the Dockerfile image
+# build), and the vitest suite passes without infra (e.g. resolver.test.ts
+# deletes DATABASE_URL on purpose). Since 2026-09-02 the job ALSO brings up a
+# throwaway Postgres (pgvector/pg18, same image family as compose), replays
+# every migration 0000→latest into it, and runs the DB-gated suites against
+# it: the schema-drift check (packages/db) and the runs engine. DATABASE_URL
+# itself is NOT exported to the test step — only the *_TEST_DATABASE_URL vars
+# — so the tests that assert DB-less behaviour keep meaning what they say.
 #
 # Note: this does NOT build or push the Docker image — that's release.yml, which
 # fires on a version tag. This is purely a pre-merge correctness gate.
@@ -37,6 +42,20 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      CI_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
 
@@ -66,7 +85,21 @@ jobs:
       - name: Format check
         run: pnpm format:check
 
+      # Replay every migration from scratch. This is the only place the full
+      # 0000→latest path runs (boxes only ever apply the increment), so a
+      # migration that cannot replay, or is missing from the journal, fails
+      # here rather than on a fresh install.
+      - name: Init + migrate the throwaway database
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: |
+          pnpm -C packages/db init-scratch
+          pnpm -C packages/db migrate
+
       - name: Test
+        env:
+          MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm test
 
       # The real edge/webpack gate. Runs without a DB, same as the image build.

@@ -13,7 +13,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "migrate": "tsx --env-file-if-exists=../../server/web/.env.local src/migrate.ts",
-    "studio": "node --env-file-if-exists=../../server/web/.env.local --import tsx node_modules/drizzle-kit/bin.cjs studio"
+    "studio": "node --env-file-if-exists=../../server/web/.env.local --import tsx node_modules/drizzle-kit/bin.cjs studio",
+    "init-scratch": "tsx src/init-scratch.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
