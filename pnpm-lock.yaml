@@ -236,6 +236,9 @@ importers:
 
   packages/content-core:
     dependencies:
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
       marked:
         specifier: ^18.0.7
         version: 18.0.7

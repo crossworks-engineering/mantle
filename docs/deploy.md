@@ -77,7 +77,16 @@ cp .env.prod.example .env
 #   ALLOWED_USER_ID      IMPORT ONLY: the uuid of your existing auth.users row
 #                        (same as dev). Leave BLANK for a fresh deploy — you sign
 #                        up in the app and the runtime resolves the sole user.
-#   POSTGRES_PASSWORD, S3_SECRET_KEY, MANTLE_PUBLIC_URL
+#   POSTGRES_PASSWORD, S3_ACCESS_KEY, S3_SECRET_KEY   ← REQUIRED since
+#                        v0.232.139: compose declares them `:?`, so it refuses
+#                        to start rather than silently falling back to the
+#                        published defaults (postgres / minio / minio12345).
+#                        On a box whose data dir was ALREADY initialised with
+#                        those defaults, set them to exactly those values —
+#                        a new password will not authenticate against a data
+#                        dir that baked the old one in at initdb.
+#                        scripts/install.sh does this for you either way.
+#   MANTLE_PUBLIC_URL
 #   MANTLE_STACK_DIR     host-absolute path of THIS dir (MANTLE_STACK_DIR=$(pwd -P));
 #                        required for the in-app updater (Settings → Updates)
 #   MANTLE_IMAGE_NAMESPACE=<your docker hub user>

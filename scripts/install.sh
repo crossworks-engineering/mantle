@@ -704,7 +704,15 @@ if [[ -n "$(getval POSTGRES_PASSWORD)" ]]; then
 elif [[ ! -d "$DATA_DIR/postgres" && ! -d "$STACK_DIR/data/postgres" ]]; then
   ensure POSTGRES_PASSWORD "gen_hex 16"   # fresh box → strong generated password
 else
-  warn "POSTGRES_PASSWORD not set but a postgres data dir exists — leaving it on the compose default (matches how the DB was initialised)."
+  # Write the default EXPLICITLY rather than leaving the line out. The value is
+  # identical either way — compose resolved ${POSTGRES_PASSWORD:-postgres} to
+  # exactly this — but an absent line is indistinguishable from a misconfigured
+  # box, and compose now REQUIRES the var (:?) so no box can silently run on a
+  # default nobody chose. Generating a NEW one here would still break auth
+  # against a data dir that baked the old one in at initdb, which is why this
+  # branch exists at all.
+  upsert POSTGRES_PASSWORD postgres
+  warn "POSTGRES_PASSWORD was unset with an existing postgres data dir — pinned to the compose default it was initialised with. Rotate it deliberately (ALTER USER + this line) if you want a strong one."
 fi
 # Same fresh-only rule for the object-store credentials (MinIO bakes its root
 # user/password in at first start, exactly like postgres).
@@ -715,7 +723,11 @@ elif [[ ! -d "$DATA_DIR/minio" && ! -d "$STACK_DIR/data/minio" ]]; then
   ensure S3_ACCESS_KEY   "gen_hex 12"
   ensure S3_SECRET_KEY   "gen_hex 24"
 else
-  warn "S3 keys not set but a minio data dir exists — leaving them on the compose defaults (matches how the object store was initialised)."
+  # Same reasoning as POSTGRES_PASSWORD above: pin the defaults MinIO baked in
+  # at first start, so the required-var check has something to read.
+  upsert S3_ACCESS_KEY minio
+  upsert S3_SECRET_KEY minio12345
+  warn "S3 keys were unset with an existing minio data dir — pinned to the compose defaults they were initialised with. Rotate them deliberately if you want strong ones."
 fi
 upsert MANTLE_SITE_ADDRESS "$SITE_ADDRESS"
 # Which interface the front door listens on. 127.0.0.1 for a "this machine
