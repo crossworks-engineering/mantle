@@ -282,6 +282,12 @@ const teamShareColumns = {
   // head of the published plaintext rendering. NULL for non-page types (left
   // join misses) and for pages with no committed text.
   docTextHead: sql<string | null>`LEFT(${pages.docText}, ${DOC_TEXT_HEAD_CHARS})`,
+  // An app's description is the one the OWNER typed at creation, and it lives
+  // in apps.manifest — not in nodes.data where every other type's summary is
+  // read from. Without this the /team app cards had no line under the title at
+  // all: `data.summary` is only ever written by the extractor, and apps are not
+  // extracted. NULL for every other type (left join misses).
+  appDescription: sql<string | null>`${apps.manifest} ->> 'description'`,
 } as const;
 
 /** Reduce the head of a page's doc_text to a one-liner excerpt: markdown
@@ -321,11 +327,17 @@ function mapTeamShareRow(r: {
   parentId: string | null;
   tags: string[] | null;
   docTextHead: string | null;
+  appDescription: string | null;
 }): TeamVisibleShare {
+  // The app description leads because it is AUTHORED — the owner wrote it to
+  // say what the app is for — where the other two are derived: an extractor's
+  // summary, then the head of the page text. It is null for every non-app row,
+  // so the existing order is untouched everywhere else.
   const summary =
-    typeof r.data?.summary === 'string' && r.data.summary.trim() !== ''
+    r.appDescription?.trim() ||
+    (typeof r.data?.summary === 'string' && r.data.summary.trim() !== ''
       ? (r.data.summary as string)
-      : excerptFromDocText(r.docTextHead);
+      : excerptFromDocText(r.docTextHead));
   return {
     token: r.token,
     nodeId: r.nodeId,
@@ -362,6 +374,7 @@ export async function listTeamVisibleShares(
     .from(shares)
     .innerJoin(nodes, eq(shares.nodeId, nodes.id))
     .leftJoin(pages, eq(pages.nodeId, nodes.id))
+    .leftJoin(apps, eq(apps.nodeId, nodes.id))
     .where(teamShareVisiblePredicate(ownerId, nodeType))
     .orderBy(sql`${shares.createdAt} DESC`);
   return rows.map(mapTeamShareRow);
@@ -413,6 +426,7 @@ export async function pageTeamVisibleShares(
       .from(shares)
       .innerJoin(nodes, eq(shares.nodeId, nodes.id))
       .leftJoin(pages, eq(pages.nodeId, nodes.id))
+      .leftJoin(apps, eq(apps.nodeId, nodes.id))
       .where(where)
       .orderBy(orderBy)
       .limit(limit)
