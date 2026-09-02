@@ -14,8 +14,8 @@
  *
  * Lossy by design; pure, no DB.
  */
-import type { FormulaSpec, FormulaValue, SpecLookup } from './formula-spec';
-import { signatureLine, signatureOf } from './formula-signature';
+import type { FormulaSpec, FormulaValue, SpecLookup } from '@mantle/content-core/formula-spec';
+import { signatureLine, signatureOf } from '@mantle/content-core/formula-signature';
 
 function cell(v: FormulaValue | undefined): string {
   if (v === null || v === undefined) return '';

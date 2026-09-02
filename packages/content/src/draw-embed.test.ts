@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { markdownToDoc } from './markdown-to-doc';
-import { docToMarkdown } from './doc-to-markdown';
+import { markdownToDoc } from '@mantle/content-core/markdown';
+import { docToMarkdown } from '@mantle/content-core/doc-to-markdown';
 
 describe('embedded drawings round-trip', () => {
   it('markdown → doc → markdown keeps the draw reference', () => {

@@ -16,6 +16,7 @@
     "@mantle/client-types": "workspace:*",
     "@mantle/config": "workspace:*",
     "@mantle/content": "workspace:*",
+    "@mantle/content-core": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",

@@ -52,7 +52,7 @@ import {
   type CellValue,
   type Column,
   type TableDoc,
-} from './table-model';
+} from '@mantle/content-core/table-model';
 
 export type RenderXlsxOptions = {
   /** Worksheet name; defaults to 'Sheet1'. Excel caps sheet names at 31 chars

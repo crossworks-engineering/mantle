@@ -22,7 +22,7 @@
  */
 import { and, eq, ilike, or, sql } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
-import { parseFormulaSpec, type FormulaSpec } from './formula-spec';
+import { parseFormulaSpec, type FormulaSpec } from '@mantle/content-core/formula-spec';
 
 export const FORMULA_ROOT_LABEL = 'formulas';
 

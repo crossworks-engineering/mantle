@@ -46,7 +46,7 @@ import {
   emptyTableDoc,
   type TableDoc,
   type WorkbookDoc,
-} from './table-model';
+} from '@mantle/content-core/table-model';
 import {
   buildTableDataText,
   draftAbsFor,

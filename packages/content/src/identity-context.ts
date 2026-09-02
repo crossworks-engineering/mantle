@@ -18,10 +18,10 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { KINDS, kindLabel, legacyCategoryToKind } from './journal-options';
+import { KINDS, kindLabel, legacyCategoryToKind } from '@mantle/content-core/journal-options';
 import { journalSortSql } from './journal';
 import { loadProfilePreferences } from './profile-preferences';
-import { purposeArchetypeLabel } from './onboarding-questions';
+import { purposeArchetypeLabel } from '@mantle/content-core/onboarding-questions';
 
 /** Hard caps so the blocks can never balloon, however many entries exist. */
 const MAX_PER_GROUP = 6;

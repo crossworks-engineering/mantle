@@ -578,6 +578,9 @@ importers:
       '@mantle/content':
         specifier: workspace:*
         version: link:../content
+      '@mantle/content-core':
+        specifier: workspace:*
+        version: link:../content-core
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
@@ -788,6 +791,9 @@ importers:
       '@mantle/content':
         specifier: workspace:*
         version: link:../content
+      '@mantle/content-core':
+        specifier: workspace:*
+        version: link:../content-core
       '@mantle/crypto':
         specifier: workspace:*
         version: link:../crypto
@@ -951,6 +957,9 @@ importers:
       '@mantle/content':
         specifier: workspace:*
         version: link:../../packages/content
+      '@mantle/content-core':
+        specifier: workspace:*
+        version: link:../../packages/content-core
       '@mantle/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -1076,6 +1085,9 @@ importers:
       '@mantle/content':
         specifier: workspace:*
         version: link:../../packages/content
+      '@mantle/content-core':
+        specifier: workspace:*
+        version: link:../../packages/content-core
       '@mantle/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto

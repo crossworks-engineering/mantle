@@ -25,7 +25,7 @@ import { importMaxRows } from '@mantle/tabledb';
 import { getApp } from './apps';
 import { appDbReadQuery } from './app-broker';
 import { createTable, saveTableDraft, commitTable } from './tables';
-import { tableDocFromGrid, type TableAppLink } from './table-model';
+import { tableDocFromGrid, type TableAppLink } from '@mantle/content-core/table-model';
 import { errorMessage } from '@mantle/std';
 
 /** Same shape the seed path accepts: a plain identifier, never sqlite_*. */

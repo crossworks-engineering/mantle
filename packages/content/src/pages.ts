@@ -34,11 +34,15 @@ import {
   recallAfterPageMove,
   recallAfterPageWrite,
 } from './recall';
-import { ensureBlockIds, repairTableRows } from './block-ids';
+import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import { childPagePath } from './page-path';
 import { insertAfterBlock, type PMBlockNode } from './block-edit';
 import { buildMentionParagraph, type MentionRef } from './mention-refs';
-import { splitDocByHeading, extractSection, type SplitLevel } from './page-split';
+import {
+  splitDocByHeading,
+  extractSection,
+  type SplitLevel,
+} from '@mantle/content-core/page-split';
 import type { PageWidth, PageRow } from '@mantle/client-types';
 import type { PageVisibility } from '@mantle/client-types';
 import type { PageSort, Backlink } from '@mantle/client-types';

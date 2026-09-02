@@ -14,7 +14,7 @@ import {
 import { sendMessage, sendVoice } from '@mantle/telegram';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getTtsAdapter, stripAudioTags } from '@mantle/voice';
-import { stripInlineMediaImages } from '@mantle/content/markdown-refs';
+import { stripInlineMediaImages } from '@mantle/content-core/markdown-refs';
 import { step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 import type { InboundRow } from './types';

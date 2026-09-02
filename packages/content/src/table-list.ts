@@ -10,7 +10,12 @@
  * (if genuinely needed) goes through `table_get`, which spills to the
  * read_result store. Pure, no DB.
  */
-import { applyView, resolveCell, type ColumnType, type TableDoc } from './table-model';
+import {
+  applyView,
+  resolveCell,
+  type ColumnType,
+  type TableDoc,
+} from '@mantle/content-core/table-model';
 import { formatCellText } from './table-to-text';
 
 export type RowListColumn = { id: string; name: string; type: ColumnType };

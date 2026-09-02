@@ -140,7 +140,7 @@ export {
   type SplitLevel,
   type SplitResult,
   type ExtractResult,
-} from './page-split';
+} from '@mantle/content-core/page-split';
 export {
   DRAWS_ROOT_LABEL,
   EMPTY_SCENE,
@@ -210,7 +210,11 @@ export {
   type CreateAppInput,
   type UpdateAppInput,
 } from './apps';
-export { computeDiffOverlay, type DiffOverlay, type RemovedGhost } from './page-diff';
+export {
+  computeDiffOverlay,
+  type DiffOverlay,
+  type RemovedGhost,
+} from '@mantle/content-core/page-diff';
 
 export {
   SANDBOX_NAME_RE,
@@ -377,7 +381,7 @@ export {
   type SortSpec,
   type Filter,
   type FilterOp,
-} from './table-model';
+} from '@mantle/content-core/table-model';
 
 export {
   evalFormula,
@@ -385,7 +389,7 @@ export {
   refsIn,
   type RefResolver,
   type EvalValue,
-} from './table-formula';
+} from '@mantle/content-core/table-formula';
 
 export { tableToText, tableToCsv, formatCellText } from './table-to-text';
 
@@ -400,9 +404,14 @@ export {
   type SpecLookup,
   type SpecClassification,
   type CoverageGap,
-} from './formula-spec';
+} from '@mantle/content-core/formula-spec';
 
-export { evaluateSpec, parseInputText, type EvalResult, type TraceStep } from './formula-eval';
+export {
+  evaluateSpec,
+  parseInputText,
+  type EvalResult,
+  type TraceStep,
+} from '@mantle/content-core/formula-eval';
 
 export {
   signatureOf,
@@ -412,7 +421,7 @@ export {
   type SignatureInput,
   type SignatureInputKind,
   type SignatureBranch,
-} from './formula-signature';
+} from '@mantle/content-core/formula-signature';
 
 export { formulaToText } from './formula-to-text';
 
@@ -422,11 +431,15 @@ export {
   SEED_TAG,
   type SeedFormula,
   type SeedExample,
-} from './formula-seed';
+} from '@mantle/content-core/formula-seed';
 
 export { calculate, type CalcResult, type CalcOptions } from './calculate';
 
-export { checkDimensions, normaliseUnit, type DimensionIssue } from './formula-dimensions';
+export {
+  checkDimensions,
+  normaliseUnit,
+  type DimensionIssue,
+} from '@mantle/content-core/formula-dimensions';
 
 export {
   FORMULA_ROOT_LABEL,
@@ -454,8 +467,8 @@ export {
   type ListRowsOptions,
 } from './table-list';
 
-export { markdownToDoc } from './markdown-to-doc';
-export { docToMarkdown } from './doc-to-markdown';
+export { markdownToDoc } from '@mantle/content-core/markdown';
+export { docToMarkdown } from '@mantle/content-core/doc-to-markdown';
 
 export {
   RECALL_TAG,
@@ -472,9 +485,18 @@ export {
   type RecallCompileResult,
 } from './recall';
 
-export { ensureBlockIds, repairTableRows, allBlocksHaveIds, BLOCK_NODE_TYPES } from './block-ids';
+export {
+  ensureBlockIds,
+  repairTableRows,
+  allBlocksHaveIds,
+  BLOCK_NODE_TYPES,
+} from '@mantle/content-core/block-ids';
 
-export { listBlocks, type BlockListEntry, type ListBlocksOptions } from './block-list';
+export {
+  listBlocks,
+  type BlockListEntry,
+  type ListBlocksOptions,
+} from '@mantle/content-core/block-list';
 
 export {
   findBlock,
@@ -489,7 +511,7 @@ export {
   type WrapContainer,
 } from './block-edit';
 
-export { diffBlocks, type BlockDiff, type BlockChange } from './block-diff';
+export { diffBlocks, type BlockDiff, type BlockChange } from '@mantle/content-core/block-diff';
 
 export { referencedFileIds, referencedDrawIds } from './doc-assets';
 
@@ -864,7 +886,7 @@ export {
   type KindKey,
   type JournalLane,
   type GapStatus,
-} from './journal-options';
+} from '@mantle/content-core/journal-options';
 
 export {
   JOURNAL_ROOT_LABEL,
@@ -924,7 +946,7 @@ export {
   purposeArchetypeLabel,
   deriveDisplayName,
   type PurposeArchetype,
-} from './onboarding-questions';
+} from '@mantle/content-core/onboarding-questions';
 
 export {
   PERSONA_PRESETS,
@@ -934,6 +956,6 @@ export {
   type PersonaGender,
   type PersonaPresetKey,
   type PersonaPreset,
-} from './persona-bank';
+} from '@mantle/content-core/persona-bank';
 
 export { getOwnedNode } from './nodes';

@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { shareModeOf } from '@mantle/content';
-import { buildPageToc } from '@mantle/content/page-toc';
+import { buildPageToc } from '@mantle/content-core/page-toc';
 import type { ShareViewPayload } from '@mantle/share-ui/view-payload';
 import { resolveActiveShareByToken, loadShareView, recordShareView } from '@/lib/shares';
 import { resolveShareVisitorFromRequest } from '@/lib/team-gate';

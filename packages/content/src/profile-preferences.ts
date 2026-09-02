@@ -311,9 +311,9 @@ export {
   THINKING_TIERS,
   thinkingEffortForBudget,
   type ThinkingEffort,
-} from './thinking-tiers';
+} from '@mantle/content-core/thinking-tiers';
 // Also imported (not just re-exported) because resolveThinkingEffort below uses them.
-import { thinkingEffortForBudget, type ThinkingEffort } from './thinking-tiers';
+import { thinkingEffortForBudget, type ThinkingEffort } from '@mantle/content-core/thinking-tiers';
 import type { ProfilePreferences } from '@mantle/client-types';
 import type {
   ReminderChannel,

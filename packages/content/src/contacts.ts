@@ -35,7 +35,7 @@ import {
   type ContactRow,
   type CreateContactInput,
   type UpdateContactInput,
-} from './contacts-format';
+} from '@mantle/content-core/contacts-format';
 import { teamStatusByContact, teamStatusFor, type TeamStatus } from './team-tokens';
 
 export const CONTACTS_ROOT_LABEL = 'contacts';
@@ -65,7 +65,7 @@ export {
   type CreateContactInput,
   type EmailEntryKind,
   type UpdateContactInput,
-} from './contacts-format';
+} from '@mantle/content-core/contacts-format';
 
 // ─── row + CRUD ────────────────────────────────────────────────────────────
 

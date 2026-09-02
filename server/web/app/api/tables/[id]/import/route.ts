@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getTable, saveTableDraft } from '@/lib/tables';
 import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
-import { tableDocFromGrid } from '@mantle/content/table-model';
+import { tableDocFromGrid } from '@mantle/content-core/table-model';
 import { errorMessage } from '@mantle/std';
 
 /**

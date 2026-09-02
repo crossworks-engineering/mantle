@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseFormulaSpec } from './formula-spec';
+import { parseFormulaSpec } from '@mantle/content-core/formula-spec';
 import { formulaToText } from './formula-to-text';
 
 const parsed = parseFormulaSpec({

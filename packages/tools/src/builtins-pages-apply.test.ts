@@ -16,9 +16,9 @@ vi.mock('@mantle/content', async () => {
   const blockEdit = await vi.importActual<typeof import('../../content/src/block-edit')>(
     '../../content/src/block-edit',
   );
-  const { ensureBlockIds } = await vi.importActual<typeof import('../../content/src/block-ids')>(
-    '../../content/src/block-ids',
-  );
+  const { ensureBlockIds } = await vi.importActual<
+    typeof import('../../content-core/src/block-ids')
+  >('../../content-core/src/block-ids');
   return {
     ...blockEdit,
     // Minimal deterministic markdown → PM doc: '## ' makes a heading,
@@ -50,7 +50,7 @@ vi.mock('@mantle/content', async () => {
 vi.mock('@mantle/files', () => ({ fileById: vi.fn(), readFileById: vi.fn() }));
 vi.mock('@mantle/tracing', () => ({ recordIngest: vi.fn() }));
 
-import { ensureBlockIds } from '../../content/src/block-ids';
+import { ensureBlockIds } from '../../content-core/src/block-ids';
 import { getPage, saveDraft } from '@mantle/content';
 import { PAGE_TOOLS } from './builtins-pages';
 import type { ToolHandlerContext } from './types';

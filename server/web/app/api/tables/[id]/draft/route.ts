@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { saveTableDraft } from '@/lib/tables';
-import type { TableDoc } from '@mantle/content/table-model';
+import type { TableDoc } from '@mantle/content-core/table-model';
 
 const Body = z.object({
   data: z.record(z.string(), z.unknown()),

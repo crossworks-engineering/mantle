@@ -1,4 +1,4 @@
-import { buildPageToc } from '@mantle/content/page-toc';
+import { buildPageToc } from '@mantle/content-core/page-toc';
 import { renderPageDoc } from '@/lib/render-page-doc';
 import { PageOutline } from '@mantle/share-ui/page-outline';
 

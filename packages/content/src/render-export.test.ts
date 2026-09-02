@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
 import { renderDocx } from './render-docx';
 import { renderXlsx, renderXlsxWorkbook } from './render-xlsx';
-import { markdownToDoc } from './markdown-to-doc';
-import { tableDocFromGrid } from './table-model';
+import { markdownToDoc } from '@mantle/content-core/markdown';
+import { tableDocFromGrid } from '@mantle/content-core/table-model';
 
 const PK = Buffer.from('PK'); // OOXML files are zip archives
 

@@ -31,7 +31,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { markdownRefs, type MarkdownRef } from '@mantle/content/markdown-refs';
+import { markdownRefs, type MarkdownRef } from '@mantle/content-core/markdown-refs';
 import { notFound } from './errors';
 import type { ToolHandlerResult, ToolPrecondition } from './types';
 import { UUID_RE } from '@mantle/std';

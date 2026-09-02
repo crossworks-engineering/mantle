@@ -16,7 +16,7 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { db, emailAccounts, nodes } from '@mantle/db';
-import { partitionEmailEntries } from './contacts-format';
+import { partitionEmailEntries } from '@mantle/content-core/contacts-format';
 
 function domainOf(addr: string): string {
   const at = addr.lastIndexOf('@');

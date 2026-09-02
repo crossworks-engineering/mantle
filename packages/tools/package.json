@@ -17,6 +17,7 @@
     "@mantle/client-types": "workspace:*",
     "@mantle/config": "workspace:*",
     "@mantle/content": "workspace:*",
+    "@mantle/content-core": "workspace:*",
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/email": "workspace:*",

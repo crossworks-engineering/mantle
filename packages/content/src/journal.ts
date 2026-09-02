@@ -26,7 +26,7 @@
  */
 import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
-import { legacyCategoryToKind, normalizeEntryDate } from './journal-options';
+import { legacyCategoryToKind, normalizeEntryDate } from '@mantle/content-core/journal-options';
 
 export const JOURNAL_ROOT_LABEL = 'journal';
 
@@ -46,7 +46,7 @@ export {
   type KindKey,
   type JournalLane,
   type GapStatus,
-} from './journal-options';
+} from '@mantle/content-core/journal-options';
 import type { JournalRow } from '@mantle/client-types';
 export type { JournalRow };
 

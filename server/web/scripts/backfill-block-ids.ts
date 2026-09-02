@@ -19,7 +19,7 @@
 
 import { eq } from 'drizzle-orm';
 import { db, nodes, pages } from '@mantle/db';
-import { ensureBlockIds } from '@mantle/content/block-ids';
+import { ensureBlockIds } from '@mantle/content-core/block-ids';
 
 const DRY = process.argv.includes('--dry');
 

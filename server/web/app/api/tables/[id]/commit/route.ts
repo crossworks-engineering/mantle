@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { commitTable, tableToText } from '@/lib/tables';
-import type { TableDoc } from '@mantle/content/table-model';
+import type { TableDoc } from '@mantle/content-core/table-model';
 import { recordIngest } from '@mantle/tracing';
 
 // `data` is the LEGACY whole-doc shape (pre-P3 clients / small tables). The

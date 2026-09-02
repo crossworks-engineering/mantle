@@ -22,7 +22,7 @@ import {
   type WorkbookTabRef,
 } from '@mantle/tabledb';
 
-import { ensureTableDoc, type TableDoc } from './table-model';
+import { ensureTableDoc, type TableDoc } from '@mantle/content-core/table-model';
 import { tableToText } from './table-to-text';
 import { errorMessage } from '@mantle/std';
 

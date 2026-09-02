@@ -15,7 +15,7 @@
  * lookup. Telegram is unaffected: `show_image` sent its photo during the tool
  * call, long before a turn is finalized.
  */
-import { inlineMediaImageIds } from '@mantle/content/markdown-refs';
+import { inlineMediaImageIds } from '@mantle/content-core/markdown-refs';
 import type { ConversationAttachment } from '@mantle/db';
 import type { ToolArtifact } from '@mantle/tools';
 
