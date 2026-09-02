@@ -363,6 +363,41 @@ with three differences that follow from it being the running program:
 silent, the whole point being that "the update succeeded" was never, on its
 own, evidence that it did everything.
 
+### The operator scripts (v0.232.137)
+
+`scripts/{db-dump,db-restore,install,sanity,compose-adopt,uninstall}.sh` are
+release-owned too. Until v0.232.137 nothing refreshed them, so a box ran the
+copies `install.sh` fetched the day it was built — forever.
+
+That is not a tidiness point. jason-prod's `compose-adopt.sh` was the
+2026-07-25 copy, three releases behind. Running `--apply` installed the current
+compose, which binds `./infra/caddy/shapes` and `./infra/caddy/conf.d`, while
+the script knew about neither: it created no directory and wrote no Caddyfile
+baseline. The next `docker compose up -d` would have had Docker create both
+paths as **root-owned** directories inside a `cwe`-owned tree, with the front
+door still on the stale Caddyfile — the exact drift the adopt was run to end.
+Caught by hand before the converge; every box installed before v0.232.126 has
+the same stale script waiting.
+
+The image ships them at `/app/release/scripts`, and `refresh_scripts()` swaps
+them in on each roll under the usual pristine-vs-baseline rule. **One
+difference from every other release-owned file: a missing baseline ADOPTS
+instead of reporting.** For compose and the Caddyfile a no-baseline box is left
+alone, because its copy may carry box-local routes worth more than the refresh.
+That reasoning does not transfer to tooling: `conf.d/` and
+`docker-compose.override.yml` exist so box-local behaviour never lives in a
+release-owned file, and the pre-adoption state here is not neutral but
+provably harmful. Refusing would leave the fleet stale exactly as it is,
+waiting on a per-box manual step — the thing that never happens. The previous
+copy is kept as `<name>.pre-adopt.<utc>`, so an operator edit is recoverable,
+and the source is the image the box already runs. Once a baseline exists, a
+hand-edited script is detected and **refused** like any other.
+
+`stack.json` gains `scripts_sha` / `scripts_baseline_sha` / `scripts_refresh`
+(one fingerprint over the whole set). The Dockerfile, `release.yml`'s deploy
+bundle, `install.sh` and the updater must all name the same six scripts;
+`server/web/lib/release-scripts.test.ts` fails CI if they drift apart.
+
 **Availability note:** caddy is deliberately held out of the main `up` and
 converged separately with `--no-deps`. It declares
 `depends_on: web {service_healthy}`, right for first boot, brutal mid-update,

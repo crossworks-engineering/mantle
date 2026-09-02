@@ -131,7 +131,7 @@ strategy throughout: **reuse libraries, write only what they don't provide.**
 | Image / file embeds                                        | ,                                                     | custom `image` + `fileEmbed` nodes; upload via the files pipeline; slash + drag/paste                                                                                                                                                             |
 
 **Agent authoring:** an agent can now create/update pages too, `markdownToDoc`
-([`packages/content/src/markdown-to-doc.ts`](../packages/content/src/markdown-to-doc.ts))
+([`packages/content-core/src/markdown-to-doc.ts`](../packages/content-core/src/markdown-to-doc.ts))
 converts a rich-markdown dialect into this schema's JSON, and the `page_*` tools
 wrap the CRUD. See [`rich-writing.md`](./rich-writing.md). `markdownToDoc` also
 imports Notion's `<aside>…</aside>` callout export as real aside blocks
@@ -405,7 +405,7 @@ cache + `extract_cost_cap_micro_usd`.
   to `draft_doc`; user reviews + commits via the existing toolbar.
 - **Editor visual diff (Phase 3a Pass 2)**: ✅ **built.** A "Review" mode in
   the editor paints exactly what Commit will publish vs the live page:
-  - `computeDiffOverlay` ([`page-diff.ts`](../packages/content/src/page-diff.ts))
+  - `computeDiffOverlay` ([`page-diff.ts`](../packages/content-core/src/page-diff.ts))
     turns (committed `doc`, draft) into the sets to paint, added (top-most),
     changed (deepest, so a changed inner block borders, not its shell), and
     TOP-LEVEL removed blocks with the text + anchor to ghost them. Pure +
@@ -522,7 +522,7 @@ preserve_intro?: boolean })`. Walks the doc, every Hx heading becomes
     a child page's title, content until the next Hx becomes the child's
     body. Original page becomes a TOC of `childPage` blocks. Server-side,
     deterministic, byte-faithful (blocks redistributed, never rewritten,
-    same object refs; see [`page-split.ts`](../packages/content/src/page-split.ts)).
+    same object refs; see [`page-split.ts`](../packages/content-core/src/page-split.ts)).
     The pure splitter is `splitDocByHeading`; `splitPage` (pages.ts) wraps
     it: children via `createPage` (the `nodes` insert fires the extractor →
     each child indexed independently), parent TOC written to **`draft_doc`
@@ -535,7 +535,7 @@ preserve_intro?: boolean })`. Walks the doc, every Hx heading becomes
 
   - **4c (Promote-to-sub-page**) ✅ **built.** The surgical cousin of 4b:
     lift ONE section into a sub-page. Pure core `extractSection`
-    ([`page-split.ts`](../packages/content/src/page-split.ts)) finds the
+    ([`page-split.ts`](../packages/content-core/src/page-split.ts)) finds the
     top-level heading by block id, takes everything from it until the next
     heading of **equal-or-higher level** (an h2 section ends at the next h2
     or h1), and returns the section body + the surrounding `before`/`after`

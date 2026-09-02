@@ -73,7 +73,7 @@ first + last  →  company  →  email  →  formatted cell  →  "Untitled cont
 
 ### 1b. Cell number normalisation
 
-Pure helpers in [`contacts-format.ts`](../packages/content/src/contacts-format.ts):
+Pure helpers in [`contacts-format.ts`](../packages/content-core/src/contacts-format.ts):
 
 - **`normalizeCountryCode`**: accepts `+27`, `27`, `00 27`; rejects leading
   zeros (ITU-T E.164: country codes are non-zero) and codes longer than 4
@@ -280,7 +280,7 @@ split is the intentional shape.
 
 | Concern | File |
 |---|---|
-| Pure shape + format helpers (browser-safe leaf) | [`packages/content/src/contacts-format.ts`](../packages/content/src/contacts-format.ts) |
+| Pure shape + format helpers (browser-safe leaf) | [`packages/content-core/src/contacts-format.ts`](../packages/content-core/src/contacts-format.ts) |
 | DB CRUD + activity bumper | [`packages/content/src/contacts.ts`](../packages/content/src/contacts.ts) |
 | Pure-helper tests | [`packages/content/src/contacts.test.ts`](../packages/content/src/contacts.test.ts) |
 | Saskia's tools | [`packages/tools/src/builtins-contacts.ts`](../packages/tools/src/builtins-contacts.ts) |

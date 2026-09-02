@@ -32,7 +32,7 @@ search, draft/commit, delegation, and brain-indexing machinery.
 
 ## 1. The data model
 
-`packages/content/src/table-model.ts` is the doc-shaped heart: a pure, DB-free,
+`packages/content-core/src/table-model.ts` is the doc-shaped heart: a pure, DB-free,
 **browser-safe leaf** (Web Crypto, no `node:crypto`) so the API, the agent
 tools, and the client grid all share one implementation.
 

@@ -5,7 +5,7 @@
 > deep and correct, do not redesign it. The work is: finish the UI, wire the
 > authoring path, make sharing first-class, seed a mathematician specialist via
 > the manifest, and ship a formula bank + skill so agents can call formulas in
-> chat. Read `docs/formulas.md` and `packages/content/src/formula-spec.ts`'s
+> chat. Read `docs/formulas.md` and `packages/content-core/src/formula-spec.ts`'s
 > header comment before touching anything, the design decisions there
 > (lookups-as-rows, loud failure, case-sensitive symbols, `latex` display-only,
 > one expression language) are settled and load-bearing.
@@ -24,7 +24,7 @@ formulas.
 
 | Layer | State |
 |---|---|
-| Spec + validator | `packages/content/src/formula-spec.ts`, 4-part model, all-errors-at-once validation |
+| Spec + validator | `packages/content-core/src/formula-spec.ts`, 4-part model, all-errors-at-once validation |
 | Evaluation | `formula-eval.ts`, pure, loud, case-sensitive, full derivation trace |
 | Dimensional check | `formula-dimensions.ts` (mathjs), `unit` is a constraint |
 | Coverage check | `checkLookupCoverage`, enumerated key domains vs rows |

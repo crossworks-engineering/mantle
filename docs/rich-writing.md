@@ -119,7 +119,7 @@ The `/assistant` page is a **document canvas**, not a chat transcript
 ## 5. Page authoring tools
 
 Saskia can create/update/delete real Pages from the same dialect. The bridge is
-`markdownToDoc` ([`packages/content/src/markdown-to-doc.ts`](../packages/content/src/markdown-to-doc.ts)),
+`markdownToDoc` ([`packages/content-core/src/markdown-to-doc.ts`](../packages/content-core/src/markdown-to-doc.ts)),
 the inverse of `docToText`, which converts the dialect to the ProseMirror JSON
 pages store (`pages.doc`). The builtins live in
 [`packages/tools/src/builtins-pages.ts`](../packages/tools/src/builtins-pages.ts):

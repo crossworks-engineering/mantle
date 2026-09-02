@@ -133,7 +133,7 @@ allows(fromAddr) = exact.has(addr)            // jason@schoeman.me
   not a firehose. `gate.isEmpty` drives the `/inbox` "add a contact" nudge.
 
 The address/domain split is a pure helper, `partitionEmailEntries`, in
-[`contacts-format.ts`](../packages/content/src/contacts-format.ts) (browser-safe,
+[`contacts-format.ts`](../packages/content-core/src/contacts-format.ts) (browser-safe,
 unit-tested). The same function feeds the outbound send allowlist, see §6 for
 the deliberate asymmetry.
 

@@ -89,6 +89,7 @@ REFRESH=none          # last server-compose refresh outcome (stack.json)
 CLIENT_REFRESH=none   # last client-compose refresh outcome (stack.json)
 CORE_REFRESH=none     # last core-override refresh outcome (stack.json)
 CADDY_REFRESH=none    # last Caddyfile + shapes refresh outcome (stack.json)
+SCRIPTS_REFRESH=none  # last operator-scripts refresh outcome (stack.json)
 UPDATER_REFRESH=none  # last updater-script refresh outcome (stack.json)
 
 # This script's own path INSIDE the container, reached through the stack-dir
@@ -97,15 +98,28 @@ UPDATER_REFRESH=none  # last updater-script refresh outcome (stack.json)
 UPDATER_REL=infra/updater/updater.sh
 CADDY_REL=infra/caddy/Caddyfile
 CADDY_SHAPES_REL=infra/caddy/shapes
+SCRIPTS_REL=scripts
+# The operator scripts the image ships at /app/release/scripts. MUST match the
+# list release.yml puts in the deploy bundle and install.sh fetches — a script
+# in one and not the others is a box that has it stale or not at all.
+SCRIPT_NAMES='db-dump.sh db-restore.sh install.sh sanity.sh compose-adopt.sh uninstall.sh'
 
 sha_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
+
+# One fingerprint over the whole operator-script set (suffix '' for the live
+# copies, '.release' for the baselines) so /settings/updates can show "scripts
+# match / drifted" as a single row instead of six.
+scripts_sha_of() {
+  for n in $SCRIPT_NAMES; do sha_of "$STACK/$SCRIPTS_REL/$n$1"; done \
+    | sha256sum | cut -d' ' -f1
+}
 
 # Compose + updater-script fingerprints for the web app's drift check
 # (best-effort). The updater sha is what makes a stale SCRIPT visible: a box
 # that cannot self-refresh (modified copy, extraction failure) otherwise
 # reports a perfectly healthy update while silently running old logic.
 write_stack_info() {
-  printf '{"compose_sha":"%s","baseline_sha":"%s","client_compose_sha":"%s","client_baseline_sha":"%s","core_compose_sha":"%s","core_baseline_sha":"%s","updater_sha":"%s","updater_baseline_sha":"%s","caddy_sha":"%s","caddy_baseline_sha":"%s","refresh":"%s","client_refresh":"%s","core_refresh":"%s","updater_refresh":"%s","caddy_refresh":"%s","checked_at":"%s"}\n' \
+  printf '{"compose_sha":"%s","baseline_sha":"%s","client_compose_sha":"%s","client_baseline_sha":"%s","core_compose_sha":"%s","core_baseline_sha":"%s","updater_sha":"%s","updater_baseline_sha":"%s","caddy_sha":"%s","caddy_baseline_sha":"%s","scripts_sha":"%s","scripts_baseline_sha":"%s","refresh":"%s","client_refresh":"%s","core_refresh":"%s","updater_refresh":"%s","caddy_refresh":"%s","scripts_refresh":"%s","checked_at":"%s"}\n' \
     "$(sha_of "$STACK/docker-compose.yml")" \
     "$(sha_of "$STACK/docker-compose.yml.release")" \
     "$(sha_of "$STACK/docker-compose.client.yml")" \
@@ -116,7 +130,9 @@ write_stack_info() {
     "$(sha_of "$STACK/$UPDATER_REL.release")" \
     "$(sha_of "$STACK/$CADDY_REL")" \
     "$(sha_of "$STACK/$CADDY_REL.release")" \
-    "$REFRESH" "$CLIENT_REFRESH" "$CORE_REFRESH" "$UPDATER_REFRESH" "$CADDY_REFRESH" "$(now)" > "$SIG/stack.json.tmp" \
+    "$(scripts_sha_of '')" \
+    "$(scripts_sha_of .release)" \
+    "$REFRESH" "$CLIENT_REFRESH" "$CORE_REFRESH" "$UPDATER_REFRESH" "$CADDY_REFRESH" "$SCRIPTS_REFRESH" "$(now)" > "$SIG/stack.json.tmp" \
     && mv "$SIG/stack.json.tmp" "$SIG/stack.json"
 }
 
@@ -273,6 +289,88 @@ refresh_caddy() {
       *) echo "[updater] ⚠ caddy shape $shape: $r" | tee -a "$SIG/update.log" ;;
     esac
   done
+}
+
+# ── operator scripts: release-owned too ──────────────────────────────────────
+# db-dump, db-restore, sanity, compose-adopt, uninstall and the install.sh
+# configurator. Nothing refreshed these before v0.232.137, so a box ran the
+# copies install.sh fetched on the day it was built, forever. jason-prod paid
+# for it: a 2026-07-25 compose-adopt.sh applied a compose that binds
+# infra/caddy/{shapes,conf.d} while knowing nothing about either, so neither
+# directory was created and no Caddyfile baseline was written — the next
+# `up -d` would have had Docker create both as root-owned strays inside a
+# cwe-owned tree, with the front door still on the stale Caddyfile.
+#
+# ONE difference from every other release-owned file: a missing baseline
+# ADOPTS instead of reporting. For compose and the Caddyfile a no-baseline box
+# is left alone because its copy may carry box-local routes worth more than the
+# refresh. That reasoning does not transfer here. These are release TOOLING —
+# conf.d and docker-compose.override.yml exist so box-local behaviour never
+# lives in a release-owned file — and the pre-adoption state is not neutral, it
+# is provably harmful. Refusing would leave the whole fleet stale exactly as it
+# is today, waiting on a manual step per box that is the thing that never
+# happens. The previous copy is kept as <name>.pre-adopt.<utc> so an operator
+# edit is recoverable, and the source is the image this box already runs.
+refresh_scripts() {
+  rsd="$STACK/.release-scripts.tmp"
+  rm -rf "$rsd"
+  cid=$(docker create "$IMG" 2>> "$SIG/update.log") || { SCRIPTS_REFRESH=extract-failed; return; }
+  # One extraction for the whole set: six docker cp round-trips per roll is
+  # six container filesystems mounted for no reason.
+  docker cp "$cid:/app/release/scripts" "$rsd" >> "$SIG/update.log" 2>&1
+  docker rm "$cid" > /dev/null 2>&1
+  if [ ! -d "$rsd" ]; then
+    rm -rf "$rsd"
+    SCRIPTS_REFRESH=unavailable
+    echo "[updater] operator scripts: image ships no /app/release/scripts (pre-v0.232.137)" \
+      | tee -a "$SIG/update.log"
+    return
+  fi
+
+  changed=0; kept=0; missing=0
+  mkdir -p "$STACK/$SCRIPTS_REL"
+  for n in $SCRIPT_NAMES; do
+    src="$rsd/$n"
+    dst="$STACK/$SCRIPTS_REL/$n"
+    [ -f "$src" ] || { missing=$((missing + 1)); continue; }
+    if [ -f "$dst" ] && cmp -s "$dst" "$src"; then
+      # Already this release's copy — make sure the baseline agrees, so the
+      # NEXT release takes the pristine path rather than adopting again.
+      [ -f "$dst.release" ] || cp "$src" "$dst.release"
+      continue
+    fi
+    if [ -f "$dst" ] && [ -f "$dst.release" ] && ! cmp -s "$dst" "$dst.release"; then
+      # Hand-edited against a baseline that proves it: never overwrite.
+      kept=$((kept + 1))
+      echo "[updater] ⚠ scripts/$n NOT REFRESHED: local edits. Release-level" \
+        "changes to it are MISSING on this box." | tee -a "$SIG/update.log"
+      continue
+    fi
+    [ -f "$dst" ] && cp "$dst" "$dst.pre-adopt.$(date -u +%Y%m%d-%H%M%S)"
+    if cp "$src" "$dst.tmp" && mv "$dst.tmp" "$dst" && cp "$src" "$dst.release"; then
+      # docker cp carries the mode, plain cp does not reliably — and a
+      # non-executable db-restore.sh is a script an operator finds at 3am.
+      chmod +x "$dst"
+      changed=$((changed + 1))
+    else
+      rm -f "$dst.tmp"
+      kept=$((kept + 1))
+      echo "[updater] ⚠ scripts/$n: write failed" | tee -a "$SIG/update.log"
+    fi
+  done
+  rm -rf "$rsd"
+
+  [ "$missing" -gt 0 ] && echo "[updater] ⚠ $missing operator script(s) absent from the image" \
+    | tee -a "$SIG/update.log"
+  if [ "$changed" -gt 0 ]; then
+    SCRIPTS_REFRESH=refreshed
+    echo "[updater] operator scripts refreshed to the $1 canonical ($changed changed)" \
+      | tee -a "$SIG/update.log"
+  elif [ "$kept" -gt 0 ]; then
+    SCRIPTS_REFRESH=modified
+  else
+    SCRIPTS_REFRESH=current
+  fi
 }
 
 # ── release pair: which owner-UI tag rides with a server roll ────────────────
@@ -536,6 +634,10 @@ while true; do
     # Front door too (same image, same roll): a release that changes the
     # Caddyfile or a shape lands with its image, no hand copy per box.
     [ "$REFRESH" = pull-failed ] || refresh_caddy "$TARGET"
+    # Operator tooling rides the same roll. It does not affect THIS update —
+    # the scripts are run by hand — but it is what stops the next one being
+    # applied by a compose-adopt three releases behind the compose it installs.
+    [ "$REFRESH" = pull-failed ] || refresh_scripts "$TARGET"
     if docker compose --project-directory "$STACK" pull >> "$SIG/update.log" 2>&1; then
       write_status rolling "$TARGET" "$STARTED" "" null ""
       # Recreate every service EXCEPT this updater. A bare `up -d` would recreate

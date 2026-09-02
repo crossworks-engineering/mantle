@@ -242,6 +242,22 @@ COPY docker-compose.core.yml /app/release/docker-compose.core.yml
 COPY infra/caddy/Caddyfile /app/release/Caddyfile
 COPY infra/caddy/shapes /app/release/caddy-shapes
 COPY infra/updater/updater.sh /app/release/updater.sh
+# The OPERATOR scripts a box runs by hand (db-dump, db-restore, sanity,
+# compose-adopt, uninstall) and the configurator install.sh delegates to.
+# Release-owned like compose and the Caddyfile since v0.232.137: until then a
+# box ran whatever install.sh fetched the day it was built, FOREVER, because
+# nothing refreshed scripts/. That is not theoretical — jason-prod's
+# compose-adopt.sh was three releases stale, so `--apply` installed a compose
+# binding infra/caddy/{shapes,conf.d} while knowing nothing about either, and
+# the next `up -d` would have had Docker create both as root-owned strays with
+# the front door still on the old Caddyfile. See infra/updater/updater.sh
+# (refresh_scripts) + docs/deploy.md.
+COPY scripts/db-dump.sh /app/release/scripts/db-dump.sh
+COPY scripts/db-restore.sh /app/release/scripts/db-restore.sh
+COPY scripts/install.sh /app/release/scripts/install.sh
+COPY scripts/sanity.sh /app/release/scripts/sanity.sh
+COPY scripts/compose-adopt.sh /app/release/scripts/compose-adopt.sh
+COPY scripts/uninstall.sh /app/release/scripts/uninstall.sh
 # The jackdaw client tag this server release was tested against (the "release
 # pair"). The updater reads it from the TARGET image during a roll and moves
 # the client stack to it — the client image versions on its own stream since

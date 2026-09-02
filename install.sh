@@ -144,6 +144,15 @@ fetch scripts/compose-adopt.sh           scripts/compose-adopt.sh
 # is the one that takes the data directory with it.
 fetch scripts/uninstall.sh               scripts/uninstall.sh
 chmod +x scripts/db-dump.sh scripts/db-restore.sh scripts/install.sh scripts/sanity.sh scripts/compose-adopt.sh scripts/uninstall.sh
+# Baselines for the operator scripts, same contract as compose and the
+# Caddyfile: the updater refreshes each one only while it stays byte-identical
+# to its baseline. Seeded here so a fresh box self-refreshes its tooling from
+# the very next release — before this existed a box ran the scripts it was
+# installed with forever, and a stale compose-adopt.sh installed a compose it
+# did not understand (see infra/updater/updater.sh, refresh_scripts).
+for s in db-dump.sh db-restore.sh install.sh sanity.sh compose-adopt.sh uninstall.sh; do
+  cp "scripts/$s" "scripts/$s.release"
+done
 fi
 ok "deploy bundle fetched"
 

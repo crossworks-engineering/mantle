@@ -188,7 +188,7 @@ wizard's Set-up step (`ProvisionResult.seededSpecialists`).
 
 ---
 
-## 5. The personality bank (`packages/content/src/persona-bank.ts`)
+## 5. The personality bank (`packages/content-core/src/persona-bank.ts`)
 
 Browser-safe presets derived from Saskia's real persona, **Warm** (the
 default), **Professional**, **Playful**, **Concise**: each available
@@ -200,7 +200,7 @@ as the agent editor.
 
 ---
 
-## 6. The purpose step (`packages/content/src/onboarding-questions.ts`)
+## 6. The purpose step (`packages/content-core/src/onboarding-questions.ts`)
 
 Onboarding captures **what the brain is for**, not a personal interview. The user
 picks a `PURPOSE_ARCHETYPE` (e.g. personal / analytics / research / robotics /
@@ -217,8 +217,8 @@ on the Welcome step (`preferences.displayName`).
 
 - **New:** `server/web/app/api/auth/signup/route.ts`, `server/web/lib/onboarding.ts`,
   `server/web/lib/onboarding-provision.ts`, `jackdaw/app/onboarding/*`,
-  `packages/db/src/resolve-owner.ts`, `packages/content/src/persona-bank.ts`,
-  `packages/content/src/onboarding-questions.ts` (+ tests).
+  `packages/db/src/resolve-owner.ts`, `packages/content-core/src/persona-bank.ts`,
+  `packages/content-core/src/onboarding-questions.ts` (+ tests).
 - **Modified:** `server/web/app/login/*` (first-run mode), `jackdaw/app/(app)/layout.tsx`
   (server-side onboarding gate), the `server/api` agent runtime +
   `server/web/workers/{files-watch,docs-sync}.ts` + `server/mcp/src/server.ts`
