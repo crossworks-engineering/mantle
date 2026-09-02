@@ -1,3 +1,4 @@
+import { maxStreamedUploadBytes } from '@mantle/files';
 import { NextResponse } from '@/server/http-compat';
 import { countPending } from '@mantle/tools';
 import { loadPreferencesFor, logoVersion } from '@mantle/content';
@@ -59,6 +60,9 @@ export async function GET() {
     avatarPhotoVersion,
     pendingApprovals,
     assetToken,
+    // The streamed upload cap, so the uploader can refuse an oversized file
+    // before sending a byte and say the real number in the message.
+    maxUploadBytes: maxStreamedUploadBytes(),
     // Who this browser is signed in AS, for the rail's profile row. The ACTOR,
     // not the anchor account: additional logins are ways into the one brain
     // rather than tenants, and the actor is what the audit trail records — so

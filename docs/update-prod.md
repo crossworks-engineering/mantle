@@ -9,7 +9,7 @@ How to ship the latest tagged release to the Contabo prod box. Prod runs the
 **CI-built multi-arch image** and updates by **pulling** it, no build, no rsync,
 no source tree needed on the VPS.
 
-> **Why this changed.** The old loop built the image *on the VPS* because the Mac
+> **Why this changed.** The old loop built the image _on the VPS_ because the Mac
 > builds **arm64** and the VPS runs **amd64**. That's retired: the
 > [`release.yml`](../.github/workflows/release.yml) workflow now builds amd64 +
 > arm64 in CI and pushes a single **multi-arch manifest**, so the amd64 VPS pulls
@@ -41,7 +41,7 @@ no source tree needed on the VPS.
 
 1. **tag & push** (Mac). `pnpm version:bump <patch|minor|major>` (by change
    extent), commit the `release: vX.Y.Z`, `git tag vX.Y.Z`, `git push origin main
-   vX.Y.Z`. The **tag push is the publish trigger**: nothing ships until it lands.
+vX.Y.Z`. The **tag push is the publish trigger**: nothing ships until it lands.
    `client-pair.tag` at the repo root names the jackdaw client tag this release
    is tested with — the updater rolls the owner UI to it. When a new jackdaw
    release should reach the fleet, bump this file and cut a (patch) mantle
@@ -54,7 +54,7 @@ no source tree needed on the VPS.
    notes + a `mantle-deploy-vX.Y.Z.tar.gz` bundle (compose, `.env.prod.example`,
    `infra/`, db scripts). ~5–6 min.
 3. **VPS pull + roll**: `db-dump` → `docker compose pull` → `docker compose up -d
-   --wait`. The one-shot `migrate` service runs pending DB migrations first
+--wait`. The one-shot `migrate` service runs pending DB migrations first
    (gated), then web/api/workers recreate on the new image.
 4. **manifest reconcile** (automatic, in the web image). On boot the web server
    runs `reconcileManifestOnBoot` (server/web `instrumentation.ts`): once per
@@ -117,6 +117,7 @@ ssh mantle-prod 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "sele
 curl -sI https://<prod-host> | head -3                         # 307 → /login, valid cert
 ssh mantle-prod 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from pg_stat_activity"'  # flat ~20, not climbing
 ```
+
 Then smoke-test the surface the release actually changed in the browser (and
 `/debug` System vitals for stack health).
 
@@ -127,7 +128,7 @@ Then smoke-test the surface the release actually changed in the browser (and
   owner UI) is driven by `docker-compose.client.yml`, which the default project
   never loads. A plain `docker compose pull && up -d` leaves `mantle_client_web`
   on the OLD image, silently: every container reports healthy, `/api/version`
-  reports the new version (that's the *server*), and only the UI is stale. Hit
+  reports the new version (that's the _server_), and only the UI is stale. Hit
   on the v0.203.0 roll, where the release's two fixes were both client-side, so
   the roll would have shipped nothing a user could see. Always run step 3b, and
   verify with `docker ps` that `mantle_client_web` shows the new tag, the
@@ -159,7 +160,7 @@ Then smoke-test the surface the release actually changed in the browser (and
   never in the canonical file.
 - **Topology-change releases** (a renamed / added / removed service in
   `docker-compose.yml`) also need `docker compose up -d --wait
-  --remove-orphans`, otherwise a renamed service's old container keeps running
+--remove-orphans`, otherwise a renamed service's old container keeps running
   under its former name (the updater passes `--remove-orphans` already; both
   production boxes hit this on the v0.79.0 split, server/api → server/api).
 - **telegram poller**: leave `worker_telegram` RUNNING (`restart: unless-stopped`).
@@ -174,6 +175,10 @@ Then smoke-test the surface the release actually changed in the browser (and
   new inode while Docker keeps serving the original, so `caddy reload` reports
   `config is unchanged`. `docker compose up -d` won't recreate caddy on a
   mount-content change, restart it explicitly (re-resolves the path → new inode).
+  Releases that changed the Caddyfile: **v0.232.122+** (body cap moved to
+  `{$MANTLE_MAX_BODY_SIZE:1GB}` and JSON access logging on stdout). Both are
+  defaults, no `.env` change needed; set `MANTLE_MAX_BODY_SIZE` / `MANTLE_MAX_UPLOAD_MB`
+  only to tune. Boxes on the same-origin shape copy `Caddyfile.same-origin`.
 - **migrations are forward-only**: the pre-roll `db-dump` is the only way back.
 
 ## Rollback

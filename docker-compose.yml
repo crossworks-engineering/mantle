@@ -255,6 +255,10 @@ x-app-env: &app-env
   # would key on a spoofable hop.
   MANTLE_TRUSTED_PROXIES: ${MANTLE_TRUSTED_PROXIES:-}
   MANTLE_FILES_ROOT: /data/files
+  # Cap for the streamed /files uploader (POST /api/files/files), in MB. Bytes
+  # spool to disk as they arrive, so this is a disk/UX number, not a memory
+  # one. Keep it under the proxy's MANTLE_MAX_BODY_SIZE (default 1GB).
+  MANTLE_MAX_UPLOAD_MB: ${MANTLE_MAX_UPLOAD_MB:-512}
   # Per-app SQLite databases for the /apps mini-app builder. One file per app
   # (<root>/<owner>/<app>.sqlite, see packages/content/src/app-broker.ts). MUST be
   # on a persistent host bind-mount — without this the SQLite files land in the
@@ -740,6 +744,9 @@ services:
       # every box (found on the first production roll). Unset ⇒ :8080, which
       # serves nothing and costs nothing on a server-only box.
       MANTLE_CLIENT_SITE_ADDRESS: ${MANTLE_CLIENT_SITE_ADDRESS:-:8080}
+      # Request-body ceiling at the front door (Caddy size, e.g. 1GB, 800MB).
+      # Backstop above the app's own streamed upload cap (MANTLE_MAX_UPLOAD_MB).
+      MANTLE_MAX_BODY_SIZE: ${MANTLE_MAX_BODY_SIZE:-1GB}
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ${MANTLE_DATA_DIR:-./data}/caddy/data:/data

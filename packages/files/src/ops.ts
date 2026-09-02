@@ -19,6 +19,7 @@
  *     don't need a disk round-trip.
  */
 
+import { promises as fsp } from 'node:fs';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   dashToLtree,
@@ -41,6 +42,8 @@ import {
   TEXT_EXTS,
   writeFile as writeFileOnDisk,
   deleteFile as deleteFileOnDisk,
+  adoptSpooled,
+  type SpooledUpload,
 } from './index';
 import { derivedCountsOf, type DerivedCounts } from './derived-counts';
 import { deleteThumbnailsFor } from './thumbnail';
@@ -546,7 +549,12 @@ export async function upsertFile(args: {
   ownerId: string;
   parentPath: string;
   filename: string;
-  bytes: Buffer;
+  /** The file's bytes, for callers that already hold them (MCP base64, chat
+   *  attachments, generated images). Exactly one of `bytes` / `spooled`. */
+  bytes?: Buffer;
+  /** A streamed upload already on disk (see `spoolUpload`): adopted by rename,
+   *  so a 500 MB file costs no memory here. The web uploader's path. */
+  spooled?: SpooledUpload;
   overwrite?: boolean;
   /** Display title, when it should differ from the filename.
    *
@@ -615,12 +623,25 @@ export async function upsertFile(args: {
   // adopt it by overwriting, so a re-upload self-heals instead of being stuck
   // forever on "already exists" with nothing in the UI to delete.
   const effectiveOverwrite = args.overwrite || !existing;
-  const written = await writeFileOnDisk(args.parentPath, filename, args.bytes, {
-    overwrite: effectiveOverwrite,
-  });
+  if (!args.bytes && !args.spooled) {
+    throw new Error('upsertFile: bytes or spooled required');
+  }
+  const written = args.spooled
+    ? await adoptSpooled(args.parentPath, filename, args.spooled, {
+        overwrite: effectiveOverwrite,
+      })
+    : await writeFileOnDisk(args.parentPath, filename, args.bytes!, {
+        overwrite: effectiveOverwrite,
+      });
 
+  // Small text files are cached in the node for the editor / responder. A
+  // spooled upload is read back from disk for that: never more than 1 MB.
   const content =
-    isText && args.bytes.byteLength <= TEXT_BYTE_CAP ? args.bytes.toString('utf8') : null;
+    isText && written.size <= TEXT_BYTE_CAP
+      ? args.bytes
+        ? args.bytes.toString('utf8')
+        : (await fsp.readFile(written.path)).toString('utf8')
+      : null;
 
   const newData: Record<string, unknown> = {
     ...(args.data ?? {}),

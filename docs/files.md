@@ -299,3 +299,30 @@ recommended path for renames.
   20-char guard and get skipped.
 - **Concurrent writes**: two simultaneous saves on the same file
   race at the disk layer. Single-user system, fine for now.
+
+## Upload limits
+
+Two caps, because there are two transports (`packages/files/src/limits.ts`):
+
+| path                                                           | cap                                           | why                                                                                                                                                                                             |
+| -------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/files/files` multipart (the web uploader)           | **512 MB** by default, `MANTLE_MAX_UPLOAD_MB` | Streamed. The body spools to disk as it arrives (`spoolUpload`, hashed and counted per chunk), then is adopted into the folder by rename. Memory stays flat; the cap is a disk/patience number. |
+| MCP `file_upload`, chat attachments, forum uploads, Drive sync | **64 MB**, fixed (`MAX_UPLOAD_BYTES`)         | Buffered. The whole file sits in memory (base64 inflates 4/3 on the wire) and Office formats unzip many times over inside Tika.                                                                 |
+
+The reverse proxy has its own ceiling, `MANTLE_MAX_BODY_SIZE` (default `1GB`,
+Caddyfile `request_body max_size`). It must stay above the streamed cap plus
+multipart framing; raise both together. The app refuses an oversized file
+itself: on the declared `Content-Length` before reading a byte where the client
+sends one, otherwise at the cap mid-stream, either way with HTTP 413 and the
+limit in the body (`maxUploadBytes`). `/api/shell` carries the same number so a
+client can refuse the file before sending anything.
+
+Half-written spool files (`<files root>/.upload-spool/*.part`) are residue from
+a process that died mid-upload; the route sweeps anything older than two hours
+on each upload, and the disk-sync watcher ignores dot-prefixed paths so a
+`.part` never becomes a node.
+
+History: the 100 MB proxy cap and the 64 MB buffered cap were the walls a
+250 MB SQL Server backup hit on 2026-09-02, spinning for half an hour with no
+error and no progress because the buffered route could only answer after the
+last byte.

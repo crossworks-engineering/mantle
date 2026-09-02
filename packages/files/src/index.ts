@@ -40,7 +40,7 @@ export {
   type MediaBytes,
 } from './media-sidecar';
 
-export { MAX_UPLOAD_BYTES } from './limits';
+export { MAX_UPLOAD_BYTES, maxStreamedUploadBytes } from './limits';
 
 export {
   filesRoot,
@@ -70,6 +70,13 @@ export {
   renameFile,
   renameFolder,
   removeFolder,
+  spoolUpload,
+  discardSpooled,
+  adoptSpooled,
+  sweepSpool,
+  spoolDir,
+  UploadTooLargeError,
+  type SpooledUpload,
 } from './disk';
 
 export {

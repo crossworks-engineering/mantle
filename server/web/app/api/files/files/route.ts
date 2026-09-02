@@ -2,8 +2,18 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
-import { MAX_UPLOAD_BYTES, MEDIA_EXTS, extOf } from '@mantle/files';
+import {
+  MEDIA_EXTS,
+  UploadTooLargeError,
+  diskPathForFile,
+  discardSpooled,
+  extOf,
+  maxStreamedUploadBytes,
+  sweepSpool,
+} from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
+import { promises as fs } from 'node:fs';
+import { readMultipartUpload, type ParsedUpload } from '@/lib/upload-stream';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -33,7 +43,8 @@ export async function GET(req: Request) {
 
 /**
  * Accepts either:
- *   1. multipart/form-data with fields `parentPath`, `file` (binary)
+ *   1. multipart/form-data with fields `parentPath`, `file` (binary):
+ *      STREAMED to disk, capped by MANTLE_MAX_UPLOAD_MB (default 512)
  *   2. application/json with `{ parentPath, filename, content }` for
  *      text-file creation (markdown / txt / json from the editor)
  */
@@ -45,37 +56,60 @@ export async function POST(req: Request) {
 
   try {
     if (contentType.includes('multipart/form-data')) {
-      const form = await req.formData();
-      const parentPath = String(form.get('parentPath') ?? '');
-      const file = form.get('file');
-      if (!parentPath || !(file instanceof File)) {
-        return NextResponse.json({ error: 'parentPath and file required' }, { status: 400 });
-      }
-      if (file.size === 0) {
-        return NextResponse.json({ error: 'empty file' }, { status: 400 });
-      }
-      if (file.size > MAX_UPLOAD_BYTES) {
-        // A rejected video deserves a pointer to the path that DOES work —
-        // media is meant to enter by link (video_ingest), not by upload.
-        const mediaHint = MEDIA_EXTS.has(extOf(file.name))
-          ? ' For video, ask the assistant to ingest the link instead.'
-          : '';
+      // Streamed: the body spools to disk as it arrives (see lib/upload-stream),
+      // so the cap here is a disk/UX number, not a memory one: the old
+      // `req.formData()` path buffered the whole file (and a copy) before it
+      // could even say "too large".
+      void sweepSpool();
+      const maxBytes = maxStreamedUploadBytes();
+      let parsed: ParsedUpload;
+      try {
+        parsed = await readMultipartUpload(req, { maxBytes });
+      } catch (err) {
+        if (err instanceof UploadTooLargeError) {
+          // A rejected video deserves a pointer to the path that DOES work:
+          // media is meant to enter by link (video_ingest), not by upload.
+          const mediaHint =
+            err.filename && MEDIA_EXTS.has(extOf(err.filename))
+              ? ' For video, ask the assistant to ingest the link instead.'
+              : '';
+          return NextResponse.json(
+            { error: `${err.message}.${mediaHint}`, maxUploadBytes: maxBytes },
+            { status: 413 },
+          );
+        }
         return NextResponse.json(
-          { error: `file too large (>${MAX_UPLOAD_BYTES / 1024 / 1024} MB).${mediaHint}` },
-          { status: 413 },
+          { error: err instanceof Error ? err.message : 'malformed upload' },
+          { status: 400 },
         );
       }
-      const buf = Buffer.from(await file.arrayBuffer());
-      const row = await upsertFile({
-        ownerId: user.id,
-        parentPath,
-        filename: file.name,
-        bytes: buf,
-      });
+      const parentPath = parsed.fields.parentPath ?? '';
+      const upload = parsed.file;
+      if (!parentPath || !upload) {
+        if (upload) await discardSpooled(upload.spooled);
+        return NextResponse.json({ error: 'parentPath and file required' }, { status: 400 });
+      }
+      if (upload.spooled.size === 0) {
+        await discardSpooled(upload.spooled);
+        return NextResponse.json({ error: 'empty file' }, { status: 400 });
+      }
+      let row;
+      try {
+        row = await upsertFile({
+          ownerId: user.id,
+          parentPath,
+          filename: upload.filename,
+          spooled: upload.spooled,
+        });
+      } finally {
+        // No-op once adopted (the rename moved it); the safety net for every
+        // failure between spool and adoption (parent missing, bad name, …).
+        await discardSpooled(upload.spooled);
+      }
       // Record the ingest event so the node-biography view has a
       // "what came in" anchor. Truncated content snippet (first ~2KB)
       // gets attached as a step so the biography page can show what
-      // was actually uploaded without re-reading from disk.
+      // was actually uploaded without re-reading the whole file.
       void recordIngest({
         source: 'file_upload',
         ownerId: user.id,
@@ -88,7 +122,7 @@ export async function POST(req: Request) {
           sizeBytes: row.sizeBytes,
           via: 'web_multipart',
         },
-        snippet: tryUtf8Snippet(buf),
+        snippet: await tryUtf8SnippetFromDisk(parentPath, row.filename),
       });
       return NextResponse.json({ file: row });
     }
@@ -151,6 +185,24 @@ export async function POST(req: Request) {
  * Capped at 2KB before printability check so we don't decode a 25MB
  * PDF just to throw it away.
  */
+async function tryUtf8SnippetFromDisk(
+  parentPath: string,
+  filename: string,
+): Promise<string | undefined> {
+  const p = diskPathForFile(parentPath, filename);
+  if (!p) return undefined;
+  let fh: fs.FileHandle | undefined;
+  try {
+    fh = await fs.open(p, 'r');
+    const { bytesRead, buffer } = await fh.read(Buffer.alloc(2048), 0, 2048, 0);
+    return tryUtf8Snippet(buffer.subarray(0, bytesRead));
+  } catch {
+    return undefined;
+  } finally {
+    await fh?.close();
+  }
+}
+
 function tryUtf8Snippet(buf: Buffer): string | undefined {
   const sample = buf.subarray(0, 2048);
   const text = sample.toString('utf8');

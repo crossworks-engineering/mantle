@@ -14,6 +14,15 @@
 {$MANTLE_SITE_ADDRESS::80} {
 	encode zstd gzip
 
+	# Access log: JSON on stdout, so `docker logs mantle_caddy` answers "did
+	# that request even arrive, and how did it end?". Credentials are redacted
+	# by default. Without this an upload that died at the proxy left no trace
+	# anywhere: a 250 MB upload spun for half an hour with nothing to read.
+	log {
+		output stdout
+		format json
+	}
+
 	# Server-owned paths: the API plane, the share + print render surfaces,
 	# the generated runtime bundles those surfaces load, and the MCP OAuth
 	# discovery docs. Everything else (owner UI, /login, /hub, /team*,
@@ -29,6 +38,6 @@
 	}
 
 	request_body {
-		max_size 100MB
+		max_size {$MANTLE_MAX_BODY_SIZE:1GB}
 	}
 }

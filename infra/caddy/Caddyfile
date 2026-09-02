@@ -12,13 +12,25 @@
 {$MANTLE_SITE_ADDRESS::80} {
 	encode zstd gzip
 
+	# Access log: JSON on stdout, so `docker logs mantle_caddy` answers "did
+	# that request even arrive, and how did it end?". Credentials are redacted
+	# by default. Without this an upload that died at the proxy left no trace
+	# anywhere: a 250 MB upload spun for half an hour with nothing to read.
+	log {
+		output stdout
+		format json
+	}
+
 	# Forward to the Next.js app. Caddy adds X-Forwarded-{For,Proto,Host} so the
 	# app can build correct absolute URLs + set secure cookies behind TLS.
 	reverse_proxy web:3000
 
-	# Generous body limit for file/photo uploads through the proxy.
+	# Body cap. {$MANTLE_MAX_BODY_SIZE:1GB}: must stay ABOVE the app's streamed
+	# upload cap (MANTLE_MAX_UPLOAD_MB, default 512) plus multipart framing;
+	# the app refuses oversize files itself with a proper 413, this is the
+	# backstop. Raise both together.
 	request_body {
-		max_size 100MB
+		max_size {$MANTLE_MAX_BODY_SIZE:1GB}
 	}
 }
 
@@ -31,7 +43,7 @@
 	encode zstd gzip
 	reverse_proxy client-web:3000
 	request_body {
-		max_size 100MB
+		max_size {$MANTLE_MAX_BODY_SIZE:1GB}
 	}
 }
 
