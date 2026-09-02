@@ -243,6 +243,10 @@ async function probeStack({ label, ssh }) {
       compose: `${state(j.compose_sha, j.baseline_sha, j.refresh)}/${j.refresh ?? '-'}`,
       caddy: `${state(j.caddy_sha, j.caddy_baseline_sha, j.caddy_refresh)}/${j.caddy_refresh ?? '-'}`,
       updater: `${state(j.updater_sha, j.updater_baseline_sha, j.updater_refresh)}/${j.updater_refresh ?? '-'}`,
+      // Operator scripts (v0.232.137+). A box on an older updater reports no
+      // scripts_* fields, which reads 'unknown' — correct: it is exactly the
+      // box that cannot refresh its own tooling.
+      scripts: `${state(j.scripts_sha, j.scripts_baseline_sha, j.scripts_refresh)}/${j.scripts_refresh ?? '-'}`,
     };
   } catch {
     return { label, error: 'stack unreadable' };
@@ -366,12 +370,15 @@ if (!hosts.length && !NO_FLEET) {
     const st = stackByLabel.get(f.label);
     if (st?.error) console.log(`  ${pad('', 14)} stack: ${st.error}`);
     else if (st) {
-      const flag = [st.compose, st.caddy, st.updater].some((v) => v.startsWith('MODIFIED'))
+      const flag = [st.compose, st.caddy, st.updater, st.scripts].some((v) =>
+        v?.startsWith('MODIFIED'),
+      )
         ? '  ⚠ drift'
         : '';
       console.log(
         `  ${pad('', 14)} compose ${st.compose} · caddy ${st.caddy} · updater ${st.updater}${flag}`,
       );
+      console.log(`  ${pad('', 14)} scripts ${st.scripts ?? 'unknown/-'}`);
     }
   }
   const versions = [...new Set(fleet.filter((f) => f.version).map((f) => f.version))];

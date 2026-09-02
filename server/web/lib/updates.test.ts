@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -249,5 +249,87 @@ describe('readComposeStatus: Caddyfile state', () => {
     expect(
       await caddyFor({ caddy_sha: sha('old release'), caddy_baseline_sha: sha('old release') }),
     ).toEqual({ state: 'stale', refresh: null });
+  });
+});
+
+describe('readComposeStatus: operator-scripts state', () => {
+  const NAMES = [
+    'db-dump.sh',
+    'db-restore.sh',
+    'install.sh',
+    'sanity.sh',
+    'compose-adopt.sh',
+    'uninstall.sh',
+  ];
+  const sha = (s: string) => createHash('sha256').update(s).digest('hex');
+  /** The set fingerprint, exactly as the updater's scripts_sha_of builds it. */
+  const setSha = (body: (n: string) => string | null) =>
+    sha(
+      NAMES.map((n) => {
+        const b = body(n);
+        return `${n}:${b === null ? '' : sha(b)}\n`;
+      }).join(''),
+    );
+  const release = (n: string) => `#!/bin/sh\n# ${n} v2\n`;
+  let dir: string;
+
+  async function scriptsFor(fields: Record<string, string>) {
+    writeFileSync(
+      join(dir, 'stack.json'),
+      JSON.stringify({ compose_sha: '', baseline_sha: '', ...fields }),
+    );
+    vi.resetModules();
+    const { readComposeStatus } = await import('./updates');
+    return (await readComposeStatus()).scripts;
+  }
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'mantle-updates-scripts-'));
+    mkdirSync(join(dir, 'release-scripts'), { recursive: true });
+    for (const n of NAMES) writeFileSync(join(dir, 'release-scripts', n), release(n));
+    vi.stubEnv('MANTLE_UPDATE_SIGNAL_DIR', dir);
+    vi.stubEnv('MANTLE_RELEASE_SCRIPTS_DIR', join(dir, 'release-scripts'));
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('is unknown when an older updater reports no scripts fields', async () => {
+    expect(await scriptsFor({})).toEqual({ state: 'unknown', refresh: null });
+  });
+
+  it("reads in-sync when the box carries this release's scripts", async () => {
+    const s = setSha(release);
+    expect(
+      await scriptsFor({ scripts_sha: s, scripts_baseline_sha: s, scripts_refresh: 'current' }),
+    ).toEqual({ state: 'in-sync', refresh: 'current' });
+  });
+
+  it('reads stale with NO baseline — the refresh adopts it, no human needed', async () => {
+    // This is the jason-prod state that started all of this: a box that never
+    // adopted, running a compose-adopt.sh three releases behind. It must not
+    // read as something an operator has to go and fix by hand.
+    const old = setSha((n) => `#!/bin/sh\n# ${n} v1\n`);
+    expect(await scriptsFor({ scripts_sha: old, scripts_baseline_sha: '' })).toEqual({
+      state: 'stale',
+      refresh: null,
+    });
+  });
+
+  it('reads modified when a baseline exists and the box copy disagrees', async () => {
+    expect(
+      await scriptsFor({
+        scripts_sha: setSha((n) => `#!/bin/sh\n# ${n} HAND EDIT\n`),
+        scripts_baseline_sha: setSha((n) => `#!/bin/sh\n# ${n} v1\n`),
+        scripts_refresh: 'modified',
+      }),
+    ).toEqual({ state: 'modified', refresh: 'modified' });
+  });
+
+  it('a MISSING script is visible in the digest, not silently dropped', async () => {
+    const complete = setSha(release);
+    const missingOne = setSha((n) => (n === 'sanity.sh' ? null : release(n)));
+    expect(missingOne).not.toBe(complete);
   });
 });

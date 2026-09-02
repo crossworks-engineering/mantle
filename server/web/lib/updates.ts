@@ -237,6 +237,19 @@ const RELEASE_CLIENT_COMPOSE_PATH =
   env('MANTLE_RELEASE_CLIENT_COMPOSE_PATH') ?? '/app/release/docker-compose.client.yml';
 const RELEASE_UPDATER_PATH = env('MANTLE_RELEASE_UPDATER_PATH') ?? '/app/release/updater.sh';
 const RELEASE_CADDYFILE_PATH = env('MANTLE_RELEASE_CADDYFILE_PATH') ?? '/app/release/Caddyfile';
+const RELEASE_SCRIPTS_DIR = env('MANTLE_RELEASE_SCRIPTS_DIR') ?? '/app/release/scripts';
+
+/** The operator scripts, in the order the updater hashes them. MUST match
+ *  SCRIPT_NAMES in infra/updater/updater.sh — the two fingerprints are
+ *  compared, so a different order or set makes every box read as drifted. */
+const RELEASE_SCRIPT_NAMES = [
+  'db-dump.sh',
+  'db-restore.sh',
+  'install.sh',
+  'sanity.sh',
+  'compose-adopt.sh',
+  'uninstall.sh',
+] as const;
 
 /** Canonical-compose hashes are constant for the life of the build. */
 const canonicalShaCache = new Map<string, string | null>();
@@ -252,6 +265,42 @@ async function canonicalSha(path_: string): Promise<string | null> {
     sha = null; // dev / pre-embed image
   }
   canonicalShaCache.set(path_, sha);
+  return sha;
+}
+
+/** Reproduce the updater's `scripts_sha_of`: sha256 over `name:<sha256 hex>`
+ *  lines in SCRIPT_NAMES order, one per line. The name tag is what keeps a
+ *  MISSING script visible — an untagged digest would drop it entirely, so a
+ *  half-installed box could hash identical to a complete one. Two
+ *  implementations of one hash is itself the risk, so
+ *  release-scripts-sha.test.ts runs the REAL shell function against this. */
+async function scriptsCanonicalSha(dir: string): Promise<string | null> {
+  const hit = canonicalShaCache.get(dir);
+  if (hit !== undefined) return hit;
+  let sha: string | null;
+  try {
+    const lines: string[] = [];
+    let sawAny = false;
+    for (const name of RELEASE_SCRIPT_NAMES) {
+      try {
+        const buf = await fs.readFile(path.join(dir, name));
+        lines.push(`${name}:${createHash('sha256').update(buf).digest('hex')}`);
+        sawAny = true;
+      } catch {
+        lines.push(`${name}:`); // absent, and the digest says so
+      }
+    }
+    // No script at all = a pre-v0.232.137 image; report 'unknown', not a
+    // hash of six blanks that every box would fail to match.
+    sha = sawAny
+      ? createHash('sha256')
+          .update(lines.map((l) => `${l}\n`).join(''))
+          .digest('hex')
+      : null;
+  } catch {
+    sha = null;
+  }
+  canonicalShaCache.set(dir, sha);
   return sha;
 }
 
@@ -285,16 +334,19 @@ export async function readComposeStatus(): Promise<ComposeStatus> {
     client: { state: 'unknown' as const, refresh: null },
     updater: { state: 'unknown' as const, refresh: null },
     caddy: { state: 'unknown' as const, refresh: null },
+    scripts: { state: 'unknown' as const, refresh: null },
     checkedAt: null,
   };
   try {
-    const [raw, canonical, clientCanonical, updaterCanonical, caddyCanonical] = await Promise.all([
-      fs.readFile(path.join(SIGNAL_DIR, 'stack.json'), 'utf8'),
-      canonicalSha(RELEASE_COMPOSE_PATH),
-      canonicalSha(RELEASE_CLIENT_COMPOSE_PATH),
-      canonicalSha(RELEASE_UPDATER_PATH),
-      canonicalSha(RELEASE_CADDYFILE_PATH),
-    ]);
+    const [raw, canonical, clientCanonical, updaterCanonical, caddyCanonical, scriptsCanonical] =
+      await Promise.all([
+        fs.readFile(path.join(SIGNAL_DIR, 'stack.json'), 'utf8'),
+        canonicalSha(RELEASE_COMPOSE_PATH),
+        canonicalSha(RELEASE_CLIENT_COMPOSE_PATH),
+        canonicalSha(RELEASE_UPDATER_PATH),
+        canonicalSha(RELEASE_CADDYFILE_PATH),
+        scriptsCanonicalSha(RELEASE_SCRIPTS_DIR),
+      ]);
     const j = JSON.parse(raw) as Record<string, unknown>;
     const str = (k: string) => (typeof j[k] === 'string' ? (j[k] as string) : '');
     const refresh = str('refresh') || null;
@@ -320,7 +372,14 @@ export async function readComposeStatus(): Promise<ComposeStatus> {
       state: classify(str('caddy_sha'), str('caddy_baseline_sha'), caddyCanonical),
       refresh: str('caddy_refresh') || null,
     };
-    return { state, refresh, client, updater, caddy, checkedAt };
+    // Operator scripts (v0.232.137+). classifyUpdater, not classify: the
+    // refresh ADOPTS a box with no baseline, so 'no-baseline' would be a
+    // state no human ever has to act on.
+    const scripts = {
+      state: classifyUpdater(str('scripts_sha'), str('scripts_baseline_sha'), scriptsCanonical),
+      refresh: str('scripts_refresh') || null,
+    };
+    return { state, refresh, client, updater, caddy, scripts, checkedAt };
   } catch {
     return none;
   }

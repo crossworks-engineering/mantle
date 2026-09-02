@@ -490,6 +490,16 @@ export type ComposeStatus = {
    *  predates the field. A 'modified' Caddyfile means release-level front-door
    *  changes are not arriving there; box routes belong in conf.d/. */
   caddy: { state: ComposeState; refresh: string | null };
+  /** The operator scripts (v0.232.137+): db-dump, db-restore, sanity,
+   *  compose-adopt, uninstall and the install.sh configurator, fingerprinted
+   *  as ONE set. Nothing refreshed these before, so a box ran the copies it
+   *  was installed with forever — jason-prod applied a compose binding
+   *  infra/caddy/{shapes,conf.d} with a compose-adopt.sh that knew about
+   *  neither. Classified like the updater script rather than like compose: an
+   *  absent baseline reads 'stale' because the refresh adopts it by itself,
+   *  and only a baseline that EXISTS and disagrees ('modified') needs a
+   *  human. 'unknown' on a box whose updater predates the field. */
+  scripts: { state: UpdaterScriptState; refresh: string | null };
   checkedAt: string | null;
 };
 

@@ -110,8 +110,13 @@ sha_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 # copies, '.release' for the baselines) so /settings/updates can show "scripts
 # match / drifted" as a single row instead of six.
 scripts_sha_of() {
-  for n in $SCRIPT_NAMES; do sha_of "$STACK/$SCRIPTS_REL/$n$1"; done \
-    | sha256sum | cut -d' ' -f1
+  # NAME-tagged, one line each: a bare `sha_of` prints NOTHING for a missing
+  # file (sha256sum fails, cut gets empty input), so absence would vanish from
+  # the digest and a half-installed box could hash identical to a complete one.
+  # 'name:' with an empty hash keeps it visible, and pins the order too.
+  for n in $SCRIPT_NAMES; do
+    printf '%s:%s\n' "$n" "$(sha_of "$STACK/$SCRIPTS_REL/$n$1")"
+  done | sha256sum | cut -d' ' -f1
 }
 
 # Compose + updater-script fingerprints for the web app's drift check
