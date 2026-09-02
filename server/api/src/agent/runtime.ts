@@ -100,8 +100,10 @@ import { errorMessage } from '@mantle/std';
 // ALLOWED_USER_ID or the sole auth.users row) and handed to every stage
 // explicitly. `runtimeOwner` is the one slot the durable Telegram workflow
 // reads, because DBOS invokes handleTelegramMessage(messageId) without a way
-// to thread the owner through the workflow input.
-let runtimeOwner: string | undefined;
+// to thread the owner through the workflow input. Seeded from the env so a
+// direct call (the test harness, a one-off script) works without a boot;
+// startAgentRuntime overwrites it with the resolved owner.
+let runtimeOwner: string | undefined = env('ALLOWED_USER_ID');
 const DATABASE_URL = env('DATABASE_URL');
 
 if (!DATABASE_URL) {
