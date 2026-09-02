@@ -1,7 +1,7 @@
 /**
  * MCP wrapper tests for `ask_responder` — the thin boundary in front of
  * runSimulatedResponderTurn (which has its own unit tests in
- * @mantle/assistant-runtime). Pins the wrapper's own responsibilities: the
+ * @mantle/runtime/assistant). Pins the wrapper's own responsibilities: the
  * caller-held-history input caps (reject over-cap rather than silently
  * truncate), the include_tool_calls projection, and the arg-clipping — none of
  * which live in the engine.
@@ -18,7 +18,7 @@ const h = vi.hoisted(() => ({
   simCalls: [] as any[],
 }));
 
-vi.mock('@mantle/assistant-runtime', () => ({
+vi.mock('@mantle/runtime/assistant', () => ({
   runSimulatedResponderTurn: vi.fn(async (_owner: string, opts: unknown) => {
     h.simCalls.push(opts);
     return h.simResult;
@@ -74,7 +74,7 @@ describe('ask_responder MCP tool', () => {
     const res = await handler({ message: 'x'.repeat(8001) });
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toMatch(/max 8000/);
-    const { runSimulatedResponderTurn } = await import('@mantle/assistant-runtime');
+    const { runSimulatedResponderTurn } = await import('@mantle/runtime/assistant');
     expect(runSimulatedResponderTurn).not.toHaveBeenCalled();
   });
 
@@ -87,7 +87,7 @@ describe('ask_responder MCP tool', () => {
     const res = await handler({ message: 'hi', history });
     expect(res.isError).toBe(true);
     expect(res.content[0]!.text).toMatch(/max 40/);
-    const { runSimulatedResponderTurn } = await import('@mantle/assistant-runtime');
+    const { runSimulatedResponderTurn } = await import('@mantle/runtime/assistant');
     expect(runSimulatedResponderTurn).not.toHaveBeenCalled();
   });
 
@@ -154,7 +154,7 @@ describe('ask_responder MCP tool', () => {
   });
 
   it('surfaces an engine error as an isError reply', async () => {
-    const { runSimulatedResponderTurn } = await import('@mantle/assistant-runtime');
+    const { runSimulatedResponderTurn } = await import('@mantle/runtime/assistant');
     (runSimulatedResponderTurn as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('No enabled assistant agent'),
     );

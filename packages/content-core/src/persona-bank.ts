@@ -207,7 +207,7 @@ const BUILDERS: Record<PersonaPresetKey, (opts: BuildOpts) => string> = {
 /**
  * The token a built prompt carries in place of the assistant's name.
  *
- * MIRRORS `AGENT_NAME_TOKEN` in `@mantle/agent-runtime/skills`, which is what
+ * MIRRORS `AGENT_NAME_TOKEN` in `@mantle/runtime/agent/skills`, which is what
  * resolves it on every turn. Duplicated rather than imported because this file
  * is a browser-safe leaf and agent-runtime depends on THIS package — importing
  * back would be a cycle. `persona-bank-token.test.ts` in agent-runtime is the

@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { publishTurnCancel } from '@mantle/turn-stream';
 import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
-import { markTurnSuperseded } from '@mantle/agent-runtime';
+import { markTurnSuperseded } from '@mantle/runtime/agent';
 import { UUID_RE } from '@mantle/std';
 
 /**

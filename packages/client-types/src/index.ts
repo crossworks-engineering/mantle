@@ -759,7 +759,7 @@ export const ASK_HUMAN_FORM_LIMITS = {
 } as const;
 
 // ── Row/DTO shapes moved from the server packages (jackdaw split P0) ─────────
-// Sources: @mantle/content, @mantle/email, @mantle/microsoft, @mantle/agent-runtime
+// Sources: @mantle/content, @mantle/email, @mantle/microsoft, @mantle/runtime/agent
 // re-export these names, so server code keeps its original import paths.
 
 export type TaskRow = {
@@ -1803,7 +1803,7 @@ export type DuplicateEdgeStats = {
 
 /** One responder turn: the question, the retrieval snapshot the turn's
  *  'load_context' trace step persisted (null for pre-instrumentation turns),
- *  and the outbound reply. See ContextSnapshot in @mantle/agent-runtime. */
+ *  and the outbound reply. See ContextSnapshot in @mantle/runtime/agent. */
 /** Mirrors @mantle/tracing `ContextSource`. */
 export type ContextSource = 'live' | 'fallback' | 'unknown';
 

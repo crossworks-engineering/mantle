@@ -23,7 +23,7 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { db, nodes, telegramMessages, getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
-import { buildChatMessages, flattenChatMessagesForAdapter } from '@mantle/agent-runtime';
+import { buildChatMessages, flattenChatMessagesForAdapter } from '@mantle/runtime/agent';
 import { getChatAdapter } from '@mantle/voice';
 import { env } from '@mantle/config';
 

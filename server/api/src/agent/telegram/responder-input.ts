@@ -9,8 +9,8 @@
  * fallback if the responder chokes on the raw picture (parity with web, b2).
  * Split out of runtime.ts on 2026-09-02 (audit, bloat B2).
  */
-import { buildAttachmentContextText, type UserImage } from '@mantle/agent-runtime';
-import { decideImageRouting } from '@mantle/assistant-runtime';
+import { buildAttachmentContextText, type UserImage } from '@mantle/runtime/agent';
+import { decideImageRouting } from '@mantle/runtime/assistant';
 import { telegramCaption } from './helpers';
 import type { AttachmentContext } from './types';
 

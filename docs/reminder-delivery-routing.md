@@ -82,7 +82,7 @@ agent-initiated messages later.
 | Reminder formatting | [events-reminders.ts:99-121](../server/web/workers/events-reminders.ts) `formatReminder()` | |
 | Due query | [events.ts:357](../packages/content/src/events.ts) `listDueReminders()` | `remind_at <= now()`, `reminder_sent_at is null` |
 | Channel enum | [assistant-messages.ts:10](../packages/db/src/schema/assistant-messages.ts) | `'web' \| 'telegram' \| 'whatsapp'`, no `mobile` |
-| Turn recording | [conversation.ts:183-215](../packages/agent-runtime/src/conversation.ts) `recordTurn()` | `channel` defaults to `'web'` |
+| Turn recording | [conversation.ts:183-215](../packages/runtime/src/agent/conversation.ts) `recordTurn()` | `channel` defaults to `'web'` |
 | Web/mobile inbound | [assistant.ts:235-243](../server/web/lib/assistant.ts) | hardcodes `channel: 'web'` for both |
 | Mobile auth | [auth.ts `getBearerUser`/`getSessionUser`](../server/web/lib/auth.ts) | bearer vs cookie, but auth method is never surfaced to the turn |
 | Profile prefs | [profile-preferences.ts:23](../packages/content/src/profile-preferences.ts) | `ProfilePreferences`; `reminderAgentSlug` precedent (no UI) |
@@ -119,7 +119,7 @@ the core conversation layer).
   unset ⇒ treated as `'telegram'`. Add the validated getter/setter, mirroring
   `reminderAgentSlug`.
 - Auto-update at a single choke point: in `recordTurn()`
-  ([conversation.ts:183](../packages/agent-runtime/src/conversation.ts)), when
+  ([conversation.ts:183](../packages/runtime/src/agent/conversation.ts)), when
   `direction === 'inbound'` and `channel ∈ {telegram, mobile}`, write it to the
   owner's profile. One place covers web/mobile (assistant.ts) and Telegram
   (agent `main.ts`) inbound paths. (Check the agent-runtime → content import
@@ -164,7 +164,7 @@ semantics (where the reminder genuinely is a message in the thread).
   `0095_drop_push_quiet_hours.sql`; cleaned `PushPreferences`/`getPushPrefs`
   ([store.ts](../server/web/lib/push/store.ts)) and the sanitizer (+ test).
 - **Heartbeat quiet hours are untouched**: that's a separate, unrelated feature
-  (`HeartbeatQuietHours`, `packages/heartbeats`).
+  (`HeartbeatQuietHours`, `packages/runtime/src/heartbeats`).
 - Still to remove (under E): the companion app's quiet-hours UI. Harmless until
   then, the sanitizer now silently drops any `quiet_*` fields the app sends.
 

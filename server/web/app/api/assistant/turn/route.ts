@@ -32,14 +32,14 @@ import {
   type AssistantTurnInput,
   type AssistantTurnRunResult,
   type RunAssistantTurnOptions,
-} from '@mantle/assistant-runtime';
+} from '@mantle/runtime/assistant';
 import {
   sanitizeLocationPing,
   loadProfilePreferences,
   isStreamThoughtsEnabled,
   type LocationPing,
 } from '@mantle/content';
-import { extractAttachmentForTurn } from '@mantle/agent-runtime';
+import { extractAttachmentForTurn } from '@mantle/runtime/agent';
 import {
   ensureDatedUploadFolder,
   extOf,

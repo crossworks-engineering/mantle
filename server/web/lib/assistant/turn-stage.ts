@@ -14,7 +14,7 @@
  * on — thinking, searching, delegating — and fall back to plain dots otherwise.
  */
 import { db, traces, traceSteps, agents, and, eq, gt, desc, sql } from '@mantle/db';
-import { stageLabelForStep as sharedStageLabel } from '@mantle/assistant-runtime';
+import { stageLabelForStep as sharedStageLabel } from '@mantle/runtime/assistant';
 
 /** Only surface a turn's OWN stage while it started recently — guards against a
  *  zombie trace left `status='running'` (a past failure mode) showing a stale
@@ -36,7 +36,7 @@ const DELEGATION_WINDOW_MS = 15 * 60 * 1000;
  *  per-surface assist-stage reader). */
 const CHILD_ACTIVITY_WINDOW_MS = 5 * 60 * 1000;
 
-/** Poll-facing wrapper over the shared labeler (`@mantle/assistant-runtime`),
+/** Poll-facing wrapper over the shared labeler (`@mantle/runtime/assistant`),
  *  reduced to the display string — the poll has no use for the `kind` bucket.
  *  Passes the step's input so the poll enriches with args ("…for “Acme
  *  SLA”") exactly like the live stream pushes. Returns null for names we don't

@@ -1,4 +1,4 @@
-# @mantle/heartbeats
+# @mantle/runtime
 
 Proactive agent loop: scheduled, stateful **skill→agent→surface**
 triggers that let an agent act *without being prompted*.
@@ -52,7 +52,7 @@ import {
   withHeartbeatContext,     // ALS for the firing heartbeat
   currentHeartbeat,         // read inside a tool handler
   MAX_HEARTBEAT_DEPTH,      // cap for chained heartbeat_fire
-} from '@mantle/heartbeats';
+} from '@mantle/runtime';
 ```
 
 ## Testing
@@ -82,8 +82,8 @@ The DB-touching parts (`fire.ts` orchestration, `tick.ts` queries) are exercised
 ## Dependency direction
 
 ```
-@mantle/heartbeats
-  ├─ depends on: @mantle/agent-runtime, @mantle/tools, @mantle/tracing,
+@mantle/runtime
+  ├─ depends on: @mantle/runtime, @mantle/tools, @mantle/tracing,
   │              @mantle/api-keys, @mantle/content, @mantle/telegram,
   │              @mantle/db
   └─ depended on by: apps/agent, apps/web

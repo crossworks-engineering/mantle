@@ -14,11 +14,11 @@
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { resolveSystemDatabaseUrl, RUNNER_QUEUE } from '@mantle/assistant-runtime';
+import { resolveSystemDatabaseUrl, RUNNER_QUEUE } from '@mantle/runtime/assistant';
 import { env } from '@mantle/config';
 
 // The system-DB resolver + queue name are the shared cross-process contract
-// (the web enqueuer uses the same), so they live in @mantle/assistant-runtime.
+// (the web enqueuer uses the same), so they live in @mantle/runtime/assistant.
 // Re-exported here so the rest of server/api keeps importing them from './config'.
 export { resolveSystemDatabaseUrl, RUNNER_QUEUE };
 

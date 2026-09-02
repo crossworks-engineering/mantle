@@ -9,7 +9,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { extOf, ensureExtractedImagesFolder, upsertFile } from '@mantle/files';
 import { startTrace, step } from '@mantle/tracing';
-import { runDocumentWorker, runVisionWorker } from '@mantle/agent-runtime';
+import { runDocumentWorker, runVisionWorker } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
 import { cleanText } from './text';
 import { loadFileBytes } from './file-bytes';

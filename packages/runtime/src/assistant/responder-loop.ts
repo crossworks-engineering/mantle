@@ -27,7 +27,7 @@ import {
   type ConversationContext,
   type ToolLoopArgs,
   type ToolLoopResult,
-} from '@mantle/agent-runtime';
+} from '../agent';
 import {
   isPersistThoughtsEnabled,
   isStreamThoughtsEnabled,

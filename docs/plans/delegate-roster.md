@@ -98,7 +98,7 @@ model sees (`invoke_agent`'s dynamic enum) is slugs only.
 
 ## Verify + land
 
-`pnpm vitest run packages/tools packages/agent-runtime server/web/lib/system-manifest`,
+`pnpm vitest run packages/tools packages/runtime/src/agent server/web/lib/system-manifest`,
 package typechecks (`tools`, `web`), then `scripts/merge-branch.sh` per the
 repo workflow. Do NOT push or roll boxes — Jason triggers that. Write the
 result back to the dev brain per the mantle-status skill (roadmap task,

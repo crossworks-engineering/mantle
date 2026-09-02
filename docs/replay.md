@@ -126,7 +126,7 @@ with no tools and no loop; `agents` are reasoners with `tool_slugs` and a tool
 loop. Replay needs the loop, call `find_window`, call `replay_window`, reason,
 maybe re-pull, so Remy is an **`agents` row**. And it has to be: `invoke_agent`
 only ever resolves targets from the `agents` table
-([`invoke-agent.ts:66`](../packages/agent-runtime/src/invoke-agent.ts) does
+([`invoke-agent.ts:66`](../packages/runtime/src/agent/invoke-agent.ts) does
 `.from(agents)`), pulling `toolSlugs` / `skillSlugs` / `memoryConfig.delegate_to`
 , columns an `ai_worker` doesn't have.
 
@@ -227,7 +227,7 @@ exact discussion and the conclusion"* and watch `/traces`.
 | Helper unit tests | [`packages/tools/src/builtins-replay.test.ts`](../packages/tools/src/builtins-replay.test.ts) |
 | Registered into the catalog | [`packages/tools/src/builtins.ts`](../packages/tools/src/builtins.ts) (`RECALL_TOOLS`) |
 | Seed Remy + wire delegation | [`server/web/scripts/seed-agent.ts`](../server/web/scripts/seed-agent.ts) |
-| Delegation bridge (targets `agents`) | [`packages/agent-runtime/src/invoke-agent.ts`](../packages/agent-runtime/src/invoke-agent.ts) |
+| Delegation bridge (targets `agents`) | [`packages/runtime/src/agent/invoke-agent.ts`](../packages/runtime/src/agent/invoke-agent.ts) |
 | Depth guard | [`packages/tools/src/invoke-agent-guards.ts`](../packages/tools/src/invoke-agent-guards.ts) |
 | Digest writer (the routing directory) | [`server/api/src/agent/summarizer.ts`](../server/api/src/agent/summarizer.ts) |
 | Message archive schema | [`telegram.ts`](../packages/db/src/schema/telegram.ts), [`assistant-messages.ts`](../packages/db/src/schema/assistant-messages.ts) |

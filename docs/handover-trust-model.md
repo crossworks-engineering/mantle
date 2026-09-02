@@ -45,7 +45,7 @@ have drifted.
   trail). Deleting the malicious email does not purge the planted belief.
 - Read-side blast radius: top-K facts are rendered into every turn's prompt
   as load-bearing context (`renderPersonaBlock`-adjacent facts block in
-  [`packages/agent-runtime/src/messages.ts`](../packages/agent-runtime/src/messages.ts)).
+  [`packages/runtime/src/agent/messages.ts`](../packages/runtime/src/agent/messages.ts)).
 
 ### 2b. Reflector → unreviewed persistent injection into the system prompt (HIGH)
 
@@ -118,7 +118,7 @@ sketches plus interactions worth honoring:
    to ≤0.7; default `external`-origin to lower still; drop below the
    prompt's own 0.6 floor. (Mirror `sanitiseRelation`.)
 5. **Retrieval discount.** Blend origin into the fact ranker in
-   [`packages/agent-runtime/src/conversation.ts`](../packages/agent-runtime/src/conversation.ts)
+   [`packages/runtime/src/agent/conversation.ts`](../packages/runtime/src/agent/conversation.ts)
    the same way salience works for content, a down-weight, never a filter.
 6. **`run_terminal`:** flip `requiresConfirm: true` by default, and pass a
    scrubbed env (`MANTLE_MASTER_KEY`, `MANTLE_MASTER_KEY_NEXT`,

@@ -7,7 +7,7 @@
 
 import { getDefaultWorker, nodes, type AiWorker, type ExtractorParams } from '@mantle/db';
 import { step } from '@mantle/tracing';
-import { chatWithFailover, recordChatUsage, type ChatRoutes } from '@mantle/agent-runtime';
+import { chatWithFailover, recordChatUsage, type ChatRoutes } from '@mantle/runtime/agent';
 import { type ChatResult } from '@mantle/voice';
 import { parseExtractorOutput, type ExtractorOutput } from '../extractor-parse';
 import { DEFAULT_EXTRACTOR_PROMPT } from './prompts';

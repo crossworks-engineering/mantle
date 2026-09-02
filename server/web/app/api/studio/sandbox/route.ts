@@ -4,7 +4,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { getAgent } from '@/lib/agents';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getChatAdapter } from '@mantle/voice';
-import { resolveAgentSkills, composeSystemPromptWithSkills } from '@mantle/agent-runtime';
+import { resolveAgentSkills, composeSystemPromptWithSkills } from '@mantle/runtime/agent';
 import { loadProfilePreferences } from '@mantle/content';
 
 /**

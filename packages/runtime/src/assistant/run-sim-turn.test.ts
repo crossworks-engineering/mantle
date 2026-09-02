@@ -55,7 +55,7 @@ vi.mock('@mantle/tracing', () => ({
   currentTrace: vi.fn(() => ({ id: 'trace-abc' })),
 }));
 
-vi.mock('@mantle/agent-runtime', () => ({
+vi.mock('../agent', () => ({
   loadConversationContext: vi.fn(async () => ({
     personaNotes: [],
     facts: [],

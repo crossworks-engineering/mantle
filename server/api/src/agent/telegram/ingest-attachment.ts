@@ -9,7 +9,7 @@
 import { accountById, downloadTelegramFile } from '@mantle/telegram';
 import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
 import { recordIngest, startTrace, step } from '@mantle/tracing';
-import { extractAttachmentForTurn } from '@mantle/agent-runtime';
+import { extractAttachmentForTurn } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
 import { telegramCaption } from './helpers';
 import type { AttachmentContext, FileAttachment, InboundRow } from './types';

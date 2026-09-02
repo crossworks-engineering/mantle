@@ -24,7 +24,7 @@ import {
   type VisionModelInfo,
 } from '@mantle/voice';
 import { embed, resolveEmbeddingModel, runReembed, type ReembedResult } from '@mantle/embeddings';
-import { chatWithFailover, resolveChatRoutes } from '@mantle/agent-runtime';
+import { chatWithFailover, resolveChatRoutes } from '@mantle/runtime/agent';
 import { getAiWorker } from '@/lib/ai-workers';
 import { errorMessage } from '@mantle/std';
 

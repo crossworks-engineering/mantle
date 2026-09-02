@@ -142,7 +142,7 @@ running `web_search`.
 | `note_create` (Saskia's save) | [`packages/tools/src/builtins-notes.ts`](../packages/tools/src/builtins-notes.ts) |
 | Seed the agent + delegation | [`server/web/scripts/seed-agent.ts`](../server/web/scripts/seed-agent.ts) |
 | Cost attribution helper | [`packages/tracing/src/llm-usage.ts`](../packages/tracing/src/llm-usage.ts) |
-| Delegation bridge | [`packages/agent-runtime/src/invoke-agent.ts`](../packages/agent-runtime/src/invoke-agent.ts) |
+| Delegation bridge | [`packages/runtime/src/agent/invoke-agent.ts`](../packages/runtime/src/agent/invoke-agent.ts) |
 
 ---
 

@@ -48,10 +48,8 @@ COPY server/api/package.json server/api/package.json
 COPY server/mcp/package.json server/mcp/package.json
 COPY server/sandboxd/package.json server/sandboxd/package.json
 COPY server/web/package.json server/web/package.json
-COPY packages/agent-runtime/package.json packages/agent-runtime/package.json
 COPY packages/api-keys/package.json packages/api-keys/package.json
 COPY packages/app-build/package.json packages/app-build/package.json
-COPY packages/assistant-runtime/package.json packages/assistant-runtime/package.json
 COPY packages/calendar/package.json packages/calendar/package.json
 COPY packages/client-types/package.json packages/client-types/package.json
 COPY packages/content/package.json packages/content/package.json
@@ -61,11 +59,11 @@ COPY packages/db/package.json packages/db/package.json
 COPY packages/email/package.json packages/email/package.json
 COPY packages/embeddings/package.json packages/embeddings/package.json
 COPY packages/files/package.json packages/files/package.json
-COPY packages/heartbeats/package.json packages/heartbeats/package.json
 COPY packages/mcp-core/package.json packages/mcp-core/package.json
 COPY packages/microsoft/package.json packages/microsoft/package.json
 COPY packages/rules/package.json packages/rules/package.json
 COPY packages/runs/package.json packages/runs/package.json
+COPY packages/runtime/package.json packages/runtime/package.json
 COPY packages/search/package.json packages/search/package.json
 COPY packages/share-ui/package.json packages/share-ui/package.json
 COPY packages/storage/package.json packages/storage/package.json

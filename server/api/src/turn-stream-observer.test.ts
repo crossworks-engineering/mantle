@@ -59,7 +59,7 @@ vi.mock('./turn-narration', () => ({
   narrateStatus: (_ownerId: string, label: string) => h.narrate(label),
 }));
 
-vi.mock('@mantle/assistant-runtime', () => ({
+vi.mock('@mantle/runtime/assistant', () => ({
   stageLabelForStep: (name: string) =>
     name === 'load_context' ? null : { kind: 'brain', label: `Searching “${name}”…` },
 }));

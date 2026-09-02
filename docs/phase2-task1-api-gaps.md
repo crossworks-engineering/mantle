@@ -60,7 +60,7 @@ Account responses are credential-redacted (`redactAccount` strips `imapConfigEnc
 - [x] `app/(app)/settings/heartbeats/actions.ts`, *server action* → `getHeartbeatRow` (new, full row for `forceFire`) + shape-type re-exports
 - Endpoints: `GET /api/heartbeats`, `GET /api/heartbeats/[id]`. **Follow-up:** HTTP
   mutation parity (`POST/PATCH/DELETE`), deferred; needs a Zod schema for the
-  schedule/surface union (none exists in `@mantle/heartbeats` yet). The settings
+  schedule/surface union (none exists in `@mantle/runtime` yet). The settings
   mutations are db-free server actions, so the hole itself is closed.
 
 ### C. Microsoft: 1 hole ✅ DONE (v0.60.2)

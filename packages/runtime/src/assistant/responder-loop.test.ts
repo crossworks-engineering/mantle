@@ -9,7 +9,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Agent } from '@mantle/db';
-import type { ConversationContext } from '@mantle/agent-runtime';
+import type { ConversationContext } from '../agent';
 import type { AssembledResponderTurn } from './assemble-turn';
 
 const h = vi.hoisted(() => ({
@@ -19,7 +19,7 @@ const h = vi.hoisted(() => ({
   thoughtsOn: false,
 }));
 
-vi.mock('@mantle/agent-runtime', () => ({
+vi.mock('../agent', () => ({
   runToolLoop: vi.fn(async (args: any) => {
     h.loopCalls.push(args);
     return h.loopResult;

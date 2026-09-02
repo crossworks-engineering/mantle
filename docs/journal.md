@@ -131,7 +131,7 @@ knob (migration-free jsonb; default on for the persona, **off** for the team
 responder — owner-internal context never reaches an external member).
 
 **Injection seam.** `assembleResponderTurn`
-(`packages/assistant-runtime/src/assemble-turn.ts`) prepends identity +
+(`packages/runtime/src/assistant/assemble-turn.ts`) prepends identity +
 working notes before the persona/skills prompt, inside cache breakpoint 1.
 Team turns pass `includeIdentity: false`, which gates BOTH blocks.
 

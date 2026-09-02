@@ -12,7 +12,7 @@
  *
  * Deliberately low in the dependency graph (only `@mantle/db` +
  * `@mantle/client-types`) so the eventual producer — the tool-loop in
- * `@mantle/agent-runtime` — can import it without an import cycle.
+ * `@mantle/runtime/agent` — can import it without an import cycle.
  */
 
 export { TURN_EVENT_SCHEMA_VERSION, TURN_STREAM_CHANNEL, TURN_CANCEL_CHANNEL } from './channel';

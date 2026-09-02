@@ -33,7 +33,7 @@ import {
   type AiWorkerKind,
 } from '@mantle/db';
 import { seedBuiltinTools, createTool, updateTool } from '@mantle/tools';
-import { computeNextFireAt } from '@mantle/heartbeats';
+import { computeNextFireAt } from '@mantle/runtime/heartbeats';
 import { createAiWorker, updateAiWorker, listAiWorkers } from '@/lib/ai-workers';
 import {
   MANIFEST_AGENTS,

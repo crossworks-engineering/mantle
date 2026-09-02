@@ -24,7 +24,7 @@
  * derivable from the item row for observability.
  */
 import { DBOSClient, Error as DBOSErrors } from '@dbos-inc/dbos-sdk';
-import { resolveSystemDatabaseUrl } from '@mantle/assistant-runtime';
+import { resolveSystemDatabaseUrl } from '@mantle/runtime/assistant';
 import {
   RUNS_RESUME_TURN_WORKFLOW,
   RUNS_TURN_QUEUE,

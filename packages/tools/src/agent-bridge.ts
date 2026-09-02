@@ -1,6 +1,6 @@
 /**
  * One-way bridge that lets the `invoke_agent` builtin (defined here in
- * `@mantle/tools`) call back into `@mantle/agent-runtime` without
+ * `@mantle/tools`) call back into `@mantle/runtime/agent` without
  * creating an import cycle.
  *
  * The runtime already depends on tools (for dispatch); tools must not
@@ -9,7 +9,7 @@
  *
  *   // server/api/src/main.ts
  *   import { registerAgentInvoker } from '@mantle/tools';
- *   import { invokeAgent } from '@mantle/agent-runtime';
+ *   import { invokeAgent } from '@mantle/runtime/agent';
  *   registerAgentInvoker(invokeAgent);
  *
  * Until that registration happens, `invoke_agent` returns a clear error

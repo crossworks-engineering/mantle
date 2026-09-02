@@ -18,9 +18,9 @@
 
 import { and, eq } from 'drizzle-orm';
 import { db, heartbeats } from '@mantle/db';
-import { forceFire, registerHeartbeatTools } from '@mantle/heartbeats';
+import { forceFire, registerHeartbeatTools } from '@mantle/runtime/heartbeats';
 import { registerAgentInvoker } from '@mantle/tools';
-import { invokeAgent } from '@mantle/agent-runtime';
+import { invokeAgent } from '@mantle/runtime/agent';
 import { env } from '@mantle/config';
 
 const USER_ID = env('ALLOWED_USER_ID');

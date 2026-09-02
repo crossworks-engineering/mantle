@@ -25,7 +25,7 @@
  */
 import { eq, sql } from 'drizzle-orm';
 import { db, runItems } from '@mantle/db';
-import { registerHeartbeatTools } from '@mantle/heartbeats';
+import { registerHeartbeatTools } from '@mantle/runtime/heartbeats';
 import {
   enqueueRunActionsSafe,
   ensureRunQueues,
@@ -45,7 +45,7 @@ const SWEEP_CRON = '* * * * *'; // every minute — the sweep is the immune syst
 
 // Run-item tool handlers execute in THIS process via dispatchTool; builtins
 // register at @mantle/tools import (transitively via execute-item). The
-// heartbeat-control builtins live in @mantle/heartbeats and need an explicit
+// heartbeat-control builtins live in @mantle/runtime/heartbeats and need an explicit
 // registration, same as the web/agent processes.
 registerHeartbeatTools();
 

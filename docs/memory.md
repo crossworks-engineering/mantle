@@ -10,7 +10,7 @@ reference for the memory layer; companion to
 > rebuilt: hybrid ranking, bulk-email salience, kind-aware recency, auto-chunk
 > passages, entity-graph expansion, always-injected preferences, and zero-LLM
 > query enrichment, all in the shared
-> [`loadConversationContext`](../packages/agent-runtime/src/conversation.ts). See
+> [`loadConversationContext`](../packages/runtime/src/agent/conversation.ts). See
 > [§7](#7-the-retrieval-order-in-the-prompt) for the as-built assembly and
 > [`recall-eval.md`](./recall-eval.md) for the measured before/after of each step.
 
@@ -134,7 +134,7 @@ flowchart TD
 
 When the user sends a message (Telegram or web `/assistant`), the
 responder agent reads from every memory layer, then runs the tool
-loop. Same code in both surfaces, `@mantle/agent-runtime` is shared.
+loop. Same code in both surfaces, `@mantle/runtime` is shared.
 
 ```mermaid
 flowchart TD
@@ -158,7 +158,7 @@ flowchart TD
     RESP -- "vector + ltree search on facts" --> L4["Layer 4<br/>profile facts"]:::layer
     RESP -- "vector + ltree search on nodes" --> L5["Layer 5<br/>content_index"]:::layer
 
-    L1 --> ASSY["buildChatMessages<br/>(@mantle/agent-runtime)"]:::agent
+    L1 --> ASSY["buildChatMessages<br/>(@mantle/runtime)"]:::agent
     L2 --> ASSY
     L3 --> ASSY
     L4 --> ASSY
@@ -750,7 +750,7 @@ memory, and tool loops:
 | Role | Status | Default model | What it does |
 |---|---|---|---|
 | `responder` | ✓ Live | `anthropic/claude-sonnet-5` | The user-facing chat agent (Saskia for Telegram). Reads from every layer, composes replies. Heavy reasoning. Supports voice in/out via the TTS/STT workers below. |
-| `assistant` | ✓ Live | `anthropic/claude-sonnet-5` | The web-chat counterpart at `/assistant`. Same code path as `responder` via `@mantle/agent-runtime`; same memory, different transport. Falls back to `responder` if no `assistant` row exists. |
+| `assistant` | ✓ Live | `anthropic/claude-sonnet-5` | The web-chat counterpart at `/assistant`. Same code path as `responder` via `@mantle/runtime`; same memory, different transport. Falls back to `responder` if no `assistant` row exists. |
 | `custom` | ✓ Live | Whatever you pick | Catch-all for anything else, e.g. `invoke_agent` delegation targets (specialists Saskia hands off to). |
 
 **One-shot AI workers** (table: `ai_workers`, UI: `/settings/ai-workers`,
@@ -974,7 +974,7 @@ Visual map of who writes what, who reads what:
 ## 7. The retrieval order in the prompt
 
 > **As-built, June 2026.** This assembly lives in one place,
-> [`loadConversationContext`](../packages/agent-runtime/src/conversation.ts), shared
+> [`loadConversationContext`](../packages/runtime/src/agent/conversation.ts), shared
 > by Telegram + web. The June-2026 retrieval overhaul (the full chronology + the
 > measured before/after is in [`recall-eval.md`](./recall-eval.md)) added the
 > ranking factors below. The old version of this section ranked everything by raw
@@ -1114,7 +1114,7 @@ Each step delivers value standalone.
    a query actually demands it.
 8. **Web assistant surface**: DONE (MVP). `/assistant` page + `POST
    /api/assistant/turn` route; new `assistant_messages` table (migration
-   0021); shared `packages/agent-runtime` exports `buildChatMessages` +
+   0021); shared `packages/runtime/src/agent` exports `buildChatMessages` +
    `captureLlmUsage` for both surfaces. Memory layers wired: persona +
    facts + content_index + recent assistant turns. Deferred: streaming
    (request/response for now) and conversation digests for the web (kicks
@@ -1181,7 +1181,7 @@ Live today, in order of first read:
 5. [`server/api/src/main.ts`](../server/api/src/main.ts) `loadContext()`,
    how persona / facts / digests / content_hits / turns get assembled
    into the responder's prompt.
-6. [`packages/agent-runtime/src/messages.ts`](../packages/agent-runtime/src/messages.ts),
+6. [`packages/runtime/src/agent/messages.ts`](../packages/runtime/src/agent/messages.ts),
    `buildChatMessages` with three Anthropic cache breakpoints.
 7. [`server/api/src/agent/summarizer.ts`](../server/api/src/agent/summarizer.ts),
    `conversation_digest` production from `recent_turns`.

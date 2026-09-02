@@ -88,7 +88,7 @@ vi.mock('@mantle/runs', () => ({
   RUNS_WORKER_TURN_WORKFLOW: 'runsWorkerTurnWorkflow',
 }));
 
-vi.mock('@mantle/agent-runtime', () => ({
+vi.mock('@mantle/runtime/agent', () => ({
   composeSystemPromptWithSkills: (p: string) => p ?? 'sys',
   effectiveToolSlugs: () => [],
   resolveAgentSkills: async () => [],

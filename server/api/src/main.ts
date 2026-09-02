@@ -17,7 +17,7 @@ import { startProcessHeartbeat } from '@mantle/content';
 import { runTableStorageProbes } from '@mantle/tabledb';
 import { configureDBOS, RUNNER_QUEUE, runnerConcurrency, runsTurnConcurrency } from './config';
 import { assertEnvShape } from '@mantle/config';
-import { FORUM_QUEUE } from '@mantle/assistant-runtime';
+import { FORUM_QUEUE } from '@mantle/runtime/assistant';
 import { RUNS_TURN_QUEUE } from '@mantle/runs';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
 import { installTurnStreamObserver } from './turn-stream-observer';

@@ -44,7 +44,7 @@ split.
   Assistant turns now execute here, off the web request, and survive web-process
   restarts. Per-step idempotency is proven (crash-recovery test:
   `server/api/src/crash-test.ts`).
-- **`@mantle/assistant-runtime`**: the turn-execution package (lifted out of
+- **`@mantle/runtime`**: the turn-execution package (lifted out of
   `server/web/lib/assistant.ts`), importable by any process. Holds `runAssistantTurn`,
   `resolveAssistantAgent`, and the cross-process runner **contract**
   (`contract.ts`: `ASSISTANT_TURN_WORKFLOW`, `RUNNER_QUEUE`, `AssistantTurnInput`,
@@ -88,8 +88,8 @@ HTTP boundary as a *contract* and a frontend that consumes it.
 **Shared packages (the backend logic, already extracted):**
 `@mantle/db` (Drizzle schema + client), `@mantle/content` (notes/events/tasks/
 pages/tables/contacts/journal/peers), `@mantle/search`, `@mantle/files`,
-`@mantle/tools`, `@mantle/agent-runtime`, `@mantle/assistant-runtime`,
-`@mantle/email`, `@mantle/microsoft`, `@mantle/calendar`, `@mantle/heartbeats`,
+`@mantle/tools`, `@mantle/runtime`, `@mantle/runtime`,
+`@mantle/email`, `@mantle/microsoft`, `@mantle/calendar`, `@mantle/runtime`,
 `@mantle/tracing`, `@mantle/api-keys`, `@mantle/storage`, `@mantle/embeddings`.
 
 **Auth (`server/web/lib/auth.ts`, `auth-constants.ts`):**
@@ -262,7 +262,7 @@ the `agent` service, the `api` service already exists.
 - Realtime client + SSE: `jackdaw/components/realtime/use-realtime.ts`,
   `server/web/app/api/realtime/route.ts`, `server/web/app/api/assistant/stream/route.ts`.
 - The durable-runner contract (model for any future cross-process API):
-  `packages/assistant-runtime/src/contract.ts`, `server/web/lib/dbos-client.ts`.
+  `packages/runtime/src/assistant/contract.ts`, `server/web/lib/dbos-client.ts`.
 - Deploy topology: `docker-compose.yml` (one image, many commands).
 - UI conventions (must-read before any UI work): `server/web/CLAUDE.md`,
   `jackdaw/docs/ui-style-guide.md`.

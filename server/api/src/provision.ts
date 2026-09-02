@@ -6,7 +6,7 @@
  * it here keeps creation in the privileged one-shot and out of the hot path.
  *
  * Kept dependency-light (only `postgres`): the system-DB name logic is inlined
- * rather than importing resolveSystemDatabaseUrl from @mantle/assistant-runtime,
+ * rather than importing resolveSystemDatabaseUrl from @mantle/runtime/assistant,
  * which would pull the whole turn-runtime module graph into this tiny step.
  * Keep in sync with that resolver (the `mantle_dbos_sys` convention).
  */

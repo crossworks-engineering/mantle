@@ -18,7 +18,7 @@
  */
 
 import { getDefaultWorker, type NarratorParams } from '@mantle/db';
-import { resolveChatKey, resolveChatRoutes, chatWithFailover } from '@mantle/agent-runtime';
+import { resolveChatKey, resolveChatRoutes, chatWithFailover } from '@mantle/runtime/agent';
 import { env } from '@mantle/config';
 
 const NARRATION_PROMPT = `You narrate, in the FIRST PERSON, the single action an AI assistant is taking right now, so the user sees what it's doing. You are given a terse system status line. Rewrite it as ONE short, warm, natural first-person line — at most 8 words, present tense, no surrounding quotes, end with an ellipsis (…). Keep any specific topic or name from the input. Never use an em dash (—) or an en dash as a sentence break; a comma or a new sentence carries the pause instead. Reply with ONLY the rewritten line.

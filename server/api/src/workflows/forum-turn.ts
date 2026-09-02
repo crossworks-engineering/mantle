@@ -1,5 +1,5 @@
 /**
- * Forum-turn runner — wraps runForumTurn (@mantle/assistant-runtime) as a
+ * Forum-turn runner — wraps runForumTurn (@mantle/runtime/assistant) as a
  * durable DBOS workflow on the shared `mantle` queue, exactly like
  * team-turn.ts does for the 1:1 chat surface. The member's post is already
  * persisted by the route; this workflow owns the agent's answer — it survives
@@ -14,7 +14,7 @@ import {
   FORUM_TURN_WORKFLOW,
   type ForumTurnInput,
   type ForumTurnRunResult,
-} from '@mantle/assistant-runtime';
+} from '@mantle/runtime/assistant';
 import { errorMessage } from '@mantle/std';
 
 export type { ForumTurnInput, ForumTurnRunResult };

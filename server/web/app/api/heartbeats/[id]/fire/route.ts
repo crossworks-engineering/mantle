@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getHeartbeatRow } from '@/lib/heartbeats';
-import { forceFire } from '@mantle/heartbeats';
+import { forceFire } from '@mantle/runtime/heartbeats';
 import { errorMessage } from '@mantle/std';
 
 /**

@@ -297,7 +297,7 @@ The last bullet is the **only verification you can't do at the unit-test level**
 
 4. **Cache markers on providers that don't support them**: ignore `opts.cacheControl` silently. Don't try to emulate the marker by, e.g., reordering messages or stripping content. The runtime sets the flag every iteration; the assumption is "set + provider-decides".
 
-5. **Don't add the SDK as a dep unless you use it**. Phase 3 ended with four packages carrying `@openrouter/sdk` in their `package.json` despite no imports. Audit found it. Adding a provider with an SDK? Only add the SDK to `packages/voice/package.json` (or wherever the adapter lives), never to `server/api` / `server/web` / `packages/agent-runtime` / `packages/heartbeats`. Those go through the adapter interface.
+5. **Don't add the SDK as a dep unless you use it**. Phase 3 ended with four packages carrying `@openrouter/sdk` in their `package.json` despite no imports. Audit found it. Adding a provider with an SDK? Only add the SDK to `packages/voice/package.json` (or wherever the adapter lives), never to `server/api` / `server/web` / `packages/runtime/src/agent` / `packages/runtime/src/heartbeats`. Those go through the adapter interface.
 
 6. **Vision content is the audit-#1 silent-drop pattern**. The runtime's `buildChatMessages` emits multimodal user content `[{type:'text', text}, {type:'image_url', imageUrl: ...}]` whenever a Telegram/web responder turn carries an image. If your adapter's user-message translator does `typeof m.content === 'string' ? m.content : ''`, you'll silently drop the image. Always handle the array case explicitly, even for non-vision-capable providers, you should at minimum extract the text parts.
 

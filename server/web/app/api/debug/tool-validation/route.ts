@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
-import { resolveToolValidationMode } from '@mantle/agent-runtime';
+import { resolveToolValidationMode } from '@mantle/runtime/agent';
 import { toolValidationByTool, toolValidationRecent } from '@/lib/metrics';
 
 /** GET /api/debug/tool-validation — the central arg-validator's telemetry:

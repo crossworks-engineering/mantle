@@ -55,14 +55,18 @@ import {
   resolveChatKey,
   type ConversationContext,
   type UserImage,
-} from '@mantle/agent-runtime';
+} from '@mantle/runtime/agent';
 import {
   assembleResponderTurn,
   runResponderLoop,
   runWithImageFallback,
-} from '@mantle/assistant-runtime';
+} from '@mantle/runtime/assistant';
 import { registerAgentInvoker, seedBuiltinTools } from '@mantle/tools';
-import { HEARTBEAT_DUE_CHANNEL, registerHeartbeatTools, tickHeartbeats } from '@mantle/heartbeats';
+import {
+  HEARTBEAT_DUE_CHANNEL,
+  registerHeartbeatTools,
+  tickHeartbeats,
+} from '@mantle/runtime/heartbeats';
 
 // Register the cross-package bridge so the `invoke_agent` builtin (in
 // @mantle/tools) can synchronously delegate to another agent through
@@ -71,7 +75,7 @@ registerAgentInvoker(invokeAgent);
 
 // Register the 5 heartbeat-control builtins (heartbeat_complete,
 // heartbeat_snooze, heartbeat_update_state, heartbeat_list,
-// heartbeat_fire). These live in @mantle/heartbeats rather than
+// heartbeat_fire). These live in @mantle/runtime/heartbeats rather than
 // @mantle/tools to avoid an import cycle (heartbeats already depends
 // on tools). Must run BEFORE seedBuiltinTools() — the seed reads
 // from the in-memory registry. Idempotent.

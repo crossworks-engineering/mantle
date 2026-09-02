@@ -10,7 +10,7 @@
  */
 
 import type { DBOSClient, WorkflowStatus, WorkflowStatusString } from '@dbos-inc/dbos-sdk';
-import { RUNNER_QUEUE } from '@mantle/assistant-runtime';
+import { RUNNER_QUEUE } from '@mantle/runtime/assistant';
 import { getDbosClient } from '@/lib/dbos-client';
 import { isRunnerEngineAbsent } from './runners-engine';
 import type {

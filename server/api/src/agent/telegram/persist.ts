@@ -6,8 +6,8 @@
  * (audit, bloat B2).
  */
 import { db, nodes, telegramMessages, type Agent, type TelegramAccount } from '@mantle/db';
-import { recordTurn } from '@mantle/agent-runtime';
-import type { ResponderLoopResult } from '@mantle/assistant-runtime';
+import { recordTurn } from '@mantle/runtime/agent';
+import type { ResponderLoopResult } from '@mantle/runtime/assistant';
 import { step } from '@mantle/tracing';
 import type { Delivery } from './deliver';
 import type { InboundRow } from './types';

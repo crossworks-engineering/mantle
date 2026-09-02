@@ -1,7 +1,7 @@
 /**
  * Resolution/telemetry helpers for the `agents` table. Lives in
  * @mantle/db so both `server/web` (UI/CRUD) and the runtime
- * (`@mantle/agent-runtime`, `server/api`) can call them.
+ * (`@mantle/runtime/agent`, `server/api`) can call them.
  *
  * The sibling `ai-workers-resolve.ts` does the same job for the
  * `ai_workers` table; agents (responder + delegation targets like

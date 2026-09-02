@@ -16,7 +16,7 @@
  */
 
 import { db, tools, eq, and, type AgentMemoryConfig } from '@mantle/db';
-import { resolveAgentSkills, composeSystemPromptWithSkills } from '@mantle/agent-runtime';
+import { resolveAgentSkills, composeSystemPromptWithSkills } from '@mantle/runtime/agent';
 import { loadProfilePreferences } from '@mantle/content';
 import { listAgents } from '@/lib/agents';
 import { listSkills } from '@/lib/skills';

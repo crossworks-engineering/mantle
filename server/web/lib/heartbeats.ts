@@ -28,7 +28,11 @@ import {
   type HeartbeatScheduleSpec,
   type HeartbeatSurface,
 } from '@mantle/db';
-import { computeNextFireAt, notifyHeartbeatDue, validateSchedule } from '@mantle/heartbeats';
+import {
+  computeNextFireAt,
+  notifyHeartbeatDue,
+  validateSchedule,
+} from '@mantle/runtime/heartbeats';
 
 // Re-export the heartbeat shape types so callers (form actions, API routes) get
 // them without importing @mantle/db directly.

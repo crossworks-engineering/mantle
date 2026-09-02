@@ -45,19 +45,21 @@ vi.mock('@mantle/tools', async () => ({
   // loop tests exercise the REAL implementations — mocking them would let
   // the wiring drift undetected.
   validateToolArgs: (
-    await vi.importActual<typeof import('../../tools/src/validate-args')>(
-      '../../tools/src/validate-args',
+    await vi.importActual<typeof import('../../../tools/src/validate-args')>(
+      '../../../tools/src/validate-args',
     )
   ).validateToolArgs,
   sanitizeToolError: (
-    await vi.importActual<typeof import('../../tools/src/errors')>('../../tools/src/errors')
+    await vi.importActual<typeof import('../../../tools/src/errors')>('../../../tools/src/errors')
   ).sanitizeToolError,
   UNTRUSTED_CONTENT_TOOL_SLUGS: (
-    await vi.importActual<typeof import('../../tools/src/untrusted')>('../../tools/src/untrusted')
+    await vi.importActual<typeof import('../../../tools/src/untrusted')>(
+      '../../../tools/src/untrusted',
+    )
   ).UNTRUSTED_CONTENT_TOOL_SLUGS,
   getDynamicSchema: (
-    await vi.importActual<typeof import('../../tools/src/dynamic-schema')>(
-      '../../tools/src/dynamic-schema',
+    await vi.importActual<typeof import('../../../tools/src/dynamic-schema')>(
+      '../../../tools/src/dynamic-schema',
     )
   ).getDynamicSchema,
   dispatchTool: vi.fn(async (tool: { slug: string }, input: Record<string, unknown>) => {
@@ -1822,8 +1824,8 @@ describe('buildToolsForModel — invoke_agent delegate enum', () => {
 
   it('falls back to the static schema when a dynamic hook throws', async () => {
     const { registerDynamicSchema } = await vi.importActual<
-      typeof import('../../tools/src/dynamic-schema')
-    >('../../tools/src/dynamic-schema');
+      typeof import('../../../tools/src/dynamic-schema')
+    >('../../../tools/src/dynamic-schema');
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     registerDynamicSchema('exploding_tool', () => {
       throw new Error('hook bug');

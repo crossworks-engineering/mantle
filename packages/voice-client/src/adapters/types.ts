@@ -267,7 +267,7 @@ export interface ChatToolCall {
     name: string;
     /** Stringified JSON args. Anthropic returns a parsed object as
      *  `input`; the adapter stringifies it here so the loop sees a
-     *  single shape. Callers parse via @mantle/agent-runtime/tool-args
+     *  single shape. Callers parse via @mantle/runtime/agent/tool-args
      *  defensively because not every model emits valid JSON. */
     arguments: string;
   };
@@ -390,7 +390,7 @@ export interface ChatCacheControl {
  *  Restated here rather than imported from `@mantle/content` on purpose —
  *  `@mantle/voice` is the low-level adapter layer and must not pull in content's
  *  db/files/search dependency tree for five string literals. The two lists are
- *  pinned together by a compile-time assertion in `@mantle/assistant-runtime`,
+ *  pinned together by a compile-time assertion in `@mantle/runtime/assistant`,
  *  which already depends on both, so they cannot drift silently.
  *
  *  No `none`: "off" is expressed by omitting the field, because models flagged

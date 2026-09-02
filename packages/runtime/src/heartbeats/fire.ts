@@ -42,7 +42,7 @@ import {
   resolveBackupAdapter,
   runToolLoop,
   type ChatMessage,
-} from '@mantle/agent-runtime';
+} from '../agent';
 import {
   loadProfilePreferences,
   buildTimeContextLine,

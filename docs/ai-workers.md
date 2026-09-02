@@ -486,12 +486,12 @@ through MCP, is handled by **two cleanly-separated responsibilities**:
 - `parseDocumentBytes(bytes, ext)`, `@mantle/files`. The one place that maps
   format → parser. Used by the extractor and the live-answer helper.
 - `runVisionWorker({ ownerId, bytes, mimeType, filename, prompt? })`,
-  `@mantle/agent-runtime`. Resolves the owner's default vision worker,
+  `@mantle/runtime`. Resolves the owner's default vision worker,
   transcodes HEIC, runs the adapter. Best-effort: returns `ran:false` + a note
   rather than throwing. Used by the extractor (neutral) and the live-answer
   helper (question-aware).
 - `extractAttachmentForTurn({ ownerId, bytes, mimeType, filename, question? })`
-, `@mantle/agent-runtime`. The conversational helper: image → vision, doc →
+, `@mantle/runtime`. The conversational helper: image → vision, doc →
   `parseDocumentBytes` (capped at `DOC_TEXT_MAX` 24K), returns
   `{ kind, text, note }`. Used by both `/assistant` and Telegram.
 - `buildAttachmentContextText(text, { kind, transcript, note, nodeId })`,
@@ -572,7 +572,7 @@ OpenRouter implements it (OR's `file-parser` plugin, `engine: 'native'`, routes
 to Claude/Gemini under the hood). Providers without it (OpenAI, xAI) omit the
 method and the caller **falls back to rasterize → page OCR** automatically.
 
-`runDocumentWorker` (`@mantle/agent-runtime/attachments`) resolves a `document`
+`runDocumentWorker` (`@mantle/runtime/attachments`) resolves a `document`
 worker first, **falling back to the `vision` worker** when none is configured,
 so PDFs keep working out of the box; the dedicated worker is purely additive.
 
@@ -1002,7 +1002,7 @@ a runtime constant. Nothing in the codebase branches on it:
   doesn't change how often summarization fires.
 - **Tool-result spill** uses `TOOL_RESULT_MAX_CHUNKS` (env, 200),
   independent of any worker's `max_tokens`. See §9m of architecture.md.
-- **Tool-loop** ([tool-loop.ts:235](../packages/agent-runtime/src/tool-loop.ts#L235))
+- **Tool-loop** ([tool-loop.ts:235](../packages/runtime/src/agent/tool-loop.ts#L235))
   forwards the param verbatim if set, omits it if not. Adapters that
   *require* it default high (Anthropic chat = 4096, vision adapters =
   2000); adapters that don't (OpenRouter, Google, xAI, DeepSeek, HF)
@@ -1177,7 +1177,7 @@ That's the enabler for running a **local** model (e.g. gemma-3 via LM Studio /
 Ollama) as the primary for the summarizer / extractor / reflector with a cloud
 model as the safety net (or the reverse).
 
-**Failover policy** (in [`packages/agent-runtime/src/chat-failover.ts`](../packages/agent-runtime/src/chat-failover.ts)):
+**Failover policy** (in [`packages/runtime/src/agent/chat-failover.ts`](../packages/runtime/src/agent/chat-failover.ts)):
 - **Triggers:** a route-DOWN error (connection refused / DNS / timeout), **429**
   rate-limit, or **5xx**: classified by reusing `@mantle/voice`'s
   `classifyChatError` (the same transient/permanent split the per-adapter retry
@@ -1355,7 +1355,7 @@ loop, so the call-site change is mechanical. Same for
 shape, same fix.
 
 **3b. Tool loop refactor** (~400-500 LOC, the hard piece).
-[`packages/agent-runtime/src/tool-loop.ts`](../packages/agent-runtime/src/tool-loop.ts)
+[`packages/runtime/src/agent/tool-loop.ts`](../packages/runtime/src/agent/tool-loop.ts)
 currently calls `client.chat.send()` on the OpenRouter SDK, tightly
 coupled to OR's response shape. Migrating means:
 - The chat adapters need to expose tool-call info on `ChatResult`

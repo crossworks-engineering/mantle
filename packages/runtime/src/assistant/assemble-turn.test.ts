@@ -22,7 +22,7 @@ const h = vi.hoisted(() => ({
   thinkingBudget: 2048,
 }));
 
-vi.mock('@mantle/agent-runtime', () => ({
+vi.mock('../agent', () => ({
   // Arbitrary stand-in so these tests can control the split: '-tool-a' reads,
   // everything else writes. The REAL classification is tested where it lives,
   // in packages/tools/src/read-only.test.ts.
@@ -67,7 +67,7 @@ vi.mock('@mantle/content', () => ({
   resolveThinkingEffort: () => (h.thinkingBudget > 0 ? 'medium' : undefined),
 }));
 
-vi.mock('@mantle/heartbeats', () => ({
+vi.mock('../heartbeats', () => ({
   buildOpenHeartbeatContext: (open: Array<{ slug: string }>) =>
     open.length > 0 ? `HEARTBEAT-BLOCK(${open.map((o) => o.slug).join(',')})` : '',
   HEARTBEAT_RESPONDER_TOOLS: ['heartbeat_update_state', 'heartbeat_complete', 'heartbeat_snooze'],

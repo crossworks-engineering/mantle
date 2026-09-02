@@ -18,7 +18,7 @@ import {
   exportHintForExt,
 } from '@mantle/files';
 import { recordSkippedTrace, step } from '@mantle/tracing';
-import { documentWorkerPrefersNative } from '@mantle/agent-runtime';
+import { documentWorkerPrefersNative } from '@mantle/runtime/agent';
 import { parseFormulaSpec, formulaToText, isRecallTreePage } from '@mantle/content';
 import { isHollowFilenameBody } from '../extractor-parse';
 import { cleanText } from './text';

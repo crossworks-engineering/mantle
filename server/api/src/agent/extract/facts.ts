@@ -10,7 +10,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db, facts, nodes, type AiWorker, type ExtractorParams } from '@mantle/db';
 
 import { currentTrace, step } from '@mantle/tracing';
-import { resolveChatRoutes } from '@mantle/agent-runtime';
+import { resolveChatRoutes } from '@mantle/runtime/agent';
 import { type ExtractedFact, type ExtractorOutput } from '../extractor-parse';
 import { CLASSIFIER_PROMPT_TEMPLATE } from './prompts';
 import { chatComplete } from './model';

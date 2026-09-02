@@ -1,5 +1,5 @@
 import { DBOSClient } from '@dbos-inc/dbos-sdk';
-import { resolveSystemDatabaseUrl } from '@mantle/assistant-runtime';
+import { resolveSystemDatabaseUrl } from '@mantle/runtime/assistant';
 
 /**
  * Cached DBOSClient for enqueueing durable runner workflows (assistant turns,

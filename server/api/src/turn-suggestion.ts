@@ -31,8 +31,8 @@ import {
   type AgentParams,
   type SuggesterParams,
 } from '@mantle/db';
-import { resolveChatKey, resolveChatRoutes, chatWithFailover } from '@mantle/agent-runtime';
-import { setTurnSuggestionHook, type TurnSuggestionContext } from '@mantle/assistant-runtime';
+import { resolveChatKey, resolveChatRoutes, chatWithFailover } from '@mantle/runtime/agent';
+import { setTurnSuggestionHook, type TurnSuggestionContext } from '@mantle/runtime/assistant';
 import { env } from '@mantle/config';
 
 const SUGGESTION_PROMPT = `You propose the user's next message in a conversation with an AI assistant. Given the user's last message and the assistant's reply, propose ONE short follow-up question the user would plausibly ask next, in the user's FIRST PERSON voice, under 15 words, specific to the reply's content (dig deeper, apply it, or ask the natural next step). No preamble, no quotes, no list. Reply with ONLY the question.`;

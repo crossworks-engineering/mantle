@@ -33,7 +33,7 @@ import { z } from 'zod';
 import { db, nodes } from '@mantle/db';
 import { searchNodes } from '@mantle/search';
 import { embed } from '@mantle/embeddings';
-import { describeResponderPersona, runSimulatedResponderTurn } from '@mantle/assistant-runtime';
+import { describeResponderPersona, runSimulatedResponderTurn } from '@mantle/runtime/assistant';
 import {
   fileById,
   folderByPath,

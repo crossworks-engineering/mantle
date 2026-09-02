@@ -1666,7 +1666,7 @@ export const DELEGATE_SLUGS: readonly string[] = MANIFEST_AGENTS.filter((a) => a
 /**
  * Tool slugs that exist as real handlers but are registered OUTSIDE the static
  * BUILTIN_TOOLS array (heartbeat controls register only in the agent process via
- * @mantle/heartbeats). The validator treats these as known so a future manifest
+ * @mantle/runtime/heartbeats). The validator treats these as known so a future manifest
  * entry referencing them doesn't false-fail; none are referenced today.
  */
 export const KNOWN_EXTERNAL_TOOL_SLUGS: readonly string[] = [

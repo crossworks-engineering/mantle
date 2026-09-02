@@ -34,7 +34,7 @@
  */
 
 import { getApiKeyById } from '@mantle/api-keys';
-import { buildChatMessages, loadConversationContext } from '@mantle/agent-runtime';
+import { buildChatMessages, loadConversationContext } from '../agent';
 import { getChatAdapter } from '@mantle/voice';
 import { loadProfilePreferences } from '@mantle/content';
 import { startTrace, currentTrace } from '@mantle/tracing';

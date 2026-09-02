@@ -24,7 +24,7 @@
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { withDurableSteps } from '@mantle/tracing';
-import { RUNNER_QUEUE } from '@mantle/assistant-runtime';
+import { RUNNER_QUEUE } from '@mantle/runtime/assistant';
 import { handleTelegramMessage } from '../agent/runtime';
 import { errorMessage } from '@mantle/std';
 

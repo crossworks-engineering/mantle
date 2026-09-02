@@ -16,7 +16,7 @@
  *  No `none`: "off" is expressed by omitting the field entirely, because models
  *  flagged `reasoning.mandatory` in OpenRouter's GET /models reject an explicit
  *  none. Mirrored as `ThinkingEffort` in `@mantle/voice` (which must not depend
- *  on this package); a compile-time assertion in `@mantle/assistant-runtime`
+ *  on this package); a compile-time assertion in `@mantle/runtime/assistant`
  *  pins the two lists together. */
 export const THINKING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type ThinkingEffort = (typeof THINKING_EFFORTS)[number];

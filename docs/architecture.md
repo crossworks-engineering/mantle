@@ -56,7 +56,7 @@ Companion docs:
   every channel (web `/assistant`, Telegram, future WhatsApp) writes one
   per-(owner, agent) store (`assistant_messages` + `channel`), one summarizer
   rolls it up, and `/assistant` renders all of it. Channels are transports
-  (`recordTurn` / `loadConversationContext` in `@mantle/agent-runtime`); read
+  (`recordTurn` / `loadConversationContext` in `@mantle/runtime`); read
   this before touching how a surface persists or loads conversation turns.
 - [`journal.md`](./journal.md), "Journal": the note-like `journal` content
   type, short first-person entries (mood + life-area category) that teach
@@ -223,7 +223,7 @@ MinIO from docker-compose. That's it.
 > The Telegram responder loop is **no longer a `pnpm dev` lane of its own**: it
 > moved into the `api` runner (above). It still LISTENs on
 > `telegram_message_inserted` and replies via the adapter framework, sharing
-> prompt-build + LLM helpers with the web `/assistant` through `@mantle/agent-runtime`;
+> prompt-build + LLM helpers with the web `/assistant` through `@mantle/runtime`;
 > it just runs durably inside `server/api` now.
 
 The workers live under `server/web/workers/` (not in their own app) because they
@@ -268,10 +268,10 @@ Per-step idempotency is proven by a crash-recovery harness
 
 How it's wired (the cross-process contract):
 
-- **`@mantle/assistant-runtime`** holds the turn-execution code (lifted out of
+- **`@mantle/runtime`** holds the turn-execution code (lifted out of
   `server/web/lib/assistant.ts`) so any process can run a turn: `runAssistantTurn`,
   `resolveAssistantAgent`, and the runner **contract**
-  ([`contract.ts`](../packages/assistant-runtime/src/contract.ts):
+  ([`contract.ts`](../packages/runtime/src/assistant/contract.ts):
   `ASSISTANT_TURN_WORKFLOW`, `RUNNER_QUEUE`, `AssistantTurnInput`,
   `resolveSystemDatabaseUrl`).
 - **`@mantle/tracing` durable seam** ([`durable.ts`](../packages/tracing/src/durable.ts))
@@ -683,7 +683,7 @@ outbound is gated to allowlisted chats only.
 > transport/brain record), but **conversation history + summarization no longer
 > live in `telegram_messages`**: `handleMessage` calls `recordTurn(channel='telegram')`
 > for each turn and loads context via `loadConversationContext` (per-agent, ALL
-> channels); both from `@mantle/agent-runtime`. The two changes vs. the description
+> channels); both from `@mantle/runtime`. The two changes vs. the description
 > below: (1) "load conversation history" reads the unified stream per-agent, not
 > `telegram_messages` per-chat; (2) digests are produced by the single
 > `summarizeAgentConversation` keyed on `agent_id` (see §9b'-digests + `conversation.md`),
@@ -799,7 +799,7 @@ detects a question that needs deep work, it calls `invoke_agent` with
 as the triage agent's tool result.
 
 The bridge between `@mantle/tools` (where the builtin lives) and
-`@mantle/agent-runtime` (where `runToolLoop` lives) is a registered
+`@mantle/runtime` (where `runToolLoop` lives) is a registered
 callback, `server/api/src/main.ts` and `server/web/lib/assistant.ts`
 each call `registerAgentInvoker(invokeAgent)` at module load, so the
 builtin can call back into the runtime without an import cycle.
@@ -1143,7 +1143,7 @@ providers (OpenAI, xAI, Google, Hugging Face). See
 > `/assistant` is the **web doorway onto the same per-(owner, agent) store every
 > channel writes**, not a web-only surface. Two consequences: (1)
 > `server/web/lib/assistant.ts` persists/loads via the shared `recordTurn` /
-> `loadConversationContext` (`@mantle/agent-runtime`), so the responder here reads
+> `loadConversationContext` (`@mantle/runtime`), so the responder here reads
 > facts + digests + last-N turns **across all channels** (it gained per-agent
 > digests + the 0.85/0.6 retrieval cutoffs in the migration); (2) the window
 > **renders turns from other channels too**: Telegram turns appear inline with a
@@ -1262,7 +1262,7 @@ defaults). Form offers a "sensible defaults" preset
 (15min idle / 22:00–07:00 quiet / 30min cooldown); blank columns
 mean "no gate of that kind".
 
-5 builtin control tools live in `@mantle/heartbeats/src/tools.ts`
+5 builtin control tools live in `@mantle/runtime/src/tools.ts`
 (not `@mantle/tools`, would create a dep cycle): `heartbeat_complete`,
 `heartbeat_snooze`, `heartbeat_update_state` (all use **dual-mode
 addressing**: explicit `slug` arg → ALS context → error),
@@ -1561,7 +1561,7 @@ re-sending tens of KB costs fractions of a cent; the generous inline cap means
 ~95% of results (incl. essentially every delegated synthesis) never spill, and
 the store is the backstop for the genuine outliers.
 
-**Wiring.** The tool-loop ([`tool-loop.ts`](../packages/agent-runtime/src/tool-loop.ts))
+**Wiring.** The tool-loop ([`tool-loop.ts`](../packages/runtime/src/agent/tool-loop.ts))
 runs the middleware on every OK result and **always offers `read_result`** (auto-
 injected when the agent has tools) so a handle is never a dead end. Spills open
 a `spill_result` trace step (`{handle, bytes}`); each `read_result` records
@@ -1586,7 +1586,7 @@ form; `MAX_CHUNKS` and `TTL_DAYS` are global store policy (env).
 
 A defensive guard against misbehaving models that emit parallel
 byte-identical `tool_use` blocks for the same write operation. Lives in
-[`tool-loop.ts`](../packages/agent-runtime/src/tool-loop.ts), inside the
+[`tool-loop.ts`](../packages/runtime/src/agent/tool-loop.ts), inside the
 per-iteration dispatch loop.
 
 **The problem.** Some models (notably Grok-4.x) hedge by emitting

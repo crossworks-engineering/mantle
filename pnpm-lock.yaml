@@ -71,55 +71,6 @@ importers:
         specifier: ^2.0.1
         version: 2.0.1
 
-  packages/agent-runtime:
-    dependencies:
-      '@mantle/api-keys':
-        specifier: workspace:*
-        version: link:../api-keys
-      '@mantle/client-types':
-        specifier: workspace:*
-        version: link:../client-types
-      '@mantle/config':
-        specifier: workspace:*
-        version: link:../config
-      '@mantle/content':
-        specifier: workspace:*
-        version: link:../content
-      '@mantle/db':
-        specifier: workspace:*
-        version: link:../db
-      '@mantle/embeddings':
-        specifier: workspace:*
-        version: link:../embeddings
-      '@mantle/files':
-        specifier: workspace:*
-        version: link:../files
-      '@mantle/search':
-        specifier: workspace:*
-        version: link:../search
-      '@mantle/std':
-        specifier: workspace:*
-        version: link:../std
-      '@mantle/tools':
-        specifier: workspace:*
-        version: link:../tools
-      '@mantle/tracing':
-        specifier: workspace:*
-        version: link:../tracing
-      '@mantle/voice':
-        specifier: workspace:*
-        version: link:../voice
-      drizzle-orm:
-        specifier: ^0.45.2
-        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
-    devDependencies:
-      '@types/node':
-        specifier: ^22.20.1
-        version: 22.20.1
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-
   packages/api-keys:
     dependencies:
       '@mantle/crypto':
@@ -181,49 +132,6 @@ importers:
       '@types/react-dom':
         specifier: ^19.0.0
         version: 19.2.3(@types/react@19.2.17)
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-
-  packages/assistant-runtime:
-    dependencies:
-      '@mantle/agent-runtime':
-        specifier: workspace:*
-        version: link:../agent-runtime
-      '@mantle/api-keys':
-        specifier: workspace:*
-        version: link:../api-keys
-      '@mantle/config':
-        specifier: workspace:*
-        version: link:../config
-      '@mantle/content':
-        specifier: workspace:*
-        version: link:../content
-      '@mantle/db':
-        specifier: workspace:*
-        version: link:../db
-      '@mantle/heartbeats':
-        specifier: workspace:*
-        version: link:../heartbeats
-      '@mantle/std':
-        specifier: workspace:*
-        version: link:../std
-      '@mantle/tools':
-        specifier: workspace:*
-        version: link:../tools
-      '@mantle/tracing':
-        specifier: workspace:*
-        version: link:../tracing
-      '@mantle/voice':
-        specifier: workspace:*
-        version: link:../voice
-      drizzle-orm:
-        specifier: ^0.45.2
-        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
-    devDependencies:
-      '@types/node':
-        specifier: ^22.20.1
-        version: 22.20.1
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -529,51 +437,8 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
-  packages/heartbeats:
-    dependencies:
-      '@mantle/agent-runtime':
-        specifier: workspace:*
-        version: link:../agent-runtime
-      '@mantle/api-keys':
-        specifier: workspace:*
-        version: link:../api-keys
-      '@mantle/content':
-        specifier: workspace:*
-        version: link:../content
-      '@mantle/db':
-        specifier: workspace:*
-        version: link:../db
-      '@mantle/std':
-        specifier: workspace:*
-        version: link:../std
-      '@mantle/telegram':
-        specifier: workspace:*
-        version: link:../telegram
-      '@mantle/tools':
-        specifier: workspace:*
-        version: link:../tools
-      '@mantle/tracing':
-        specifier: workspace:*
-        version: link:../tracing
-      '@mantle/voice':
-        specifier: workspace:*
-        version: link:../voice
-      drizzle-orm:
-        specifier: ^0.45.2
-        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
-    devDependencies:
-      '@types/node':
-        specifier: ^22.20.1
-        version: 22.20.1
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-
   packages/mcp-core:
     dependencies:
-      '@mantle/assistant-runtime':
-        specifier: workspace:*
-        version: link:../assistant-runtime
       '@mantle/config':
         specifier: workspace:*
         version: link:../config
@@ -589,6 +454,9 @@ importers:
       '@mantle/files':
         specifier: workspace:*
         version: link:../files
+      '@mantle/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@mantle/search':
         specifier: workspace:*
         version: link:../search
@@ -692,6 +560,58 @@ importers:
       postgres:
         specifier: ^3.4.5
         version: 3.4.9
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  packages/runtime:
+    dependencies:
+      '@mantle/api-keys':
+        specifier: workspace:*
+        version: link:../api-keys
+      '@mantle/client-types':
+        specifier: workspace:*
+        version: link:../client-types
+      '@mantle/config':
+        specifier: workspace:*
+        version: link:../config
+      '@mantle/content':
+        specifier: workspace:*
+        version: link:../content
+      '@mantle/db':
+        specifier: workspace:*
+        version: link:../db
+      '@mantle/embeddings':
+        specifier: workspace:*
+        version: link:../embeddings
+      '@mantle/files':
+        specifier: workspace:*
+        version: link:../files
+      '@mantle/search':
+        specifier: workspace:*
+        version: link:../search
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
+      '@mantle/telegram':
+        specifier: workspace:*
+        version: link:../telegram
+      '@mantle/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@mantle/tracing':
+        specifier: workspace:*
+        version: link:../tracing
+      '@mantle/voice':
+        specifier: workspace:*
+        version: link:../voice
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -1019,15 +939,9 @@ importers:
       '@dbos-inc/dbos-sdk':
         specifier: ^4.23.6
         version: 4.23.6
-      '@mantle/agent-runtime':
-        specifier: workspace:*
-        version: link:../../packages/agent-runtime
       '@mantle/api-keys':
         specifier: workspace:*
         version: link:../../packages/api-keys
-      '@mantle/assistant-runtime':
-        specifier: workspace:*
-        version: link:../../packages/assistant-runtime
       '@mantle/client-types':
         specifier: workspace:*
         version: link:../../packages/client-types
@@ -1046,12 +960,12 @@ importers:
       '@mantle/files':
         specifier: workspace:*
         version: link:../../packages/files
-      '@mantle/heartbeats':
-        specifier: workspace:*
-        version: link:../../packages/heartbeats
       '@mantle/runs':
         specifier: workspace:*
         version: link:../../packages/runs
+      '@mantle/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@mantle/std':
         specifier: workspace:*
         version: link:../../packages/std
@@ -1144,18 +1058,12 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.1
         version: 2.1.1(hono@4.13.2)
-      '@mantle/agent-runtime':
-        specifier: workspace:*
-        version: link:../../packages/agent-runtime
       '@mantle/api-keys':
         specifier: workspace:*
         version: link:../../packages/api-keys
       '@mantle/app-build':
         specifier: workspace:*
         version: link:../../packages/app-build
-      '@mantle/assistant-runtime':
-        specifier: workspace:*
-        version: link:../../packages/assistant-runtime
       '@mantle/calendar':
         specifier: workspace:*
         version: link:../../packages/calendar
@@ -1183,9 +1091,6 @@ importers:
       '@mantle/files':
         specifier: workspace:*
         version: link:../../packages/files
-      '@mantle/heartbeats':
-        specifier: workspace:*
-        version: link:../../packages/heartbeats
       '@mantle/mcp-core':
         specifier: workspace:*
         version: link:../../packages/mcp-core
@@ -1195,6 +1100,9 @@ importers:
       '@mantle/runs':
         specifier: workspace:*
         version: link:../../packages/runs
+      '@mantle/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@mantle/search':
         specifier: workspace:*
         version: link:../../packages/search

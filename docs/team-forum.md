@@ -43,7 +43,7 @@ read-anything / write-nothing except `team_request_create`.
 
 ## 3. Turn pipeline
 
-`runForumTurn` (`packages/assistant-runtime/src/run-forum-turn.ts`) is a
+`runForumTurn` (`packages/runtime/src/assistant/run-forum-turn.ts`) is a
 sibling of `runTeamTurn` sharing the unified `assemble-turn`/`responder-loop`
 core, with three deliberate differences:
 

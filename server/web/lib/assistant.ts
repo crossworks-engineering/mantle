@@ -3,7 +3,7 @@
  * per-(owner, agent) conversation stream (docs/conversation.md).
  *
  * The turn-execution path (resolveAssistantAgent + runAssistantTurn) now lives
- * in @mantle/assistant-runtime so it can run OUTSIDE the Next.js request — from
+ * in @mantle/runtime/assistant so it can run OUTSIDE the Next.js request — from
  * the durable server/api runner as well as this route — and is re-exported here so
  * existing `@/lib/assistant` importers stay unchanged. What remains below is the
  * web-only read side: the timeline queries the /assistant page and its scroll-up
@@ -15,7 +15,7 @@ import { db, agents, assistantMessages, type Agent } from '@mantle/db';
 import {
   CHATTABLE_ROLES,
   resolveAssistantAgent as resolveAssistantAgentRuntime,
-} from '@mantle/assistant-runtime';
+} from '@mantle/runtime/assistant';
 import { getAssignedAgent } from './agents';
 import type { SessionUser } from './auth';
 
@@ -23,7 +23,7 @@ export {
   runAssistantTurn,
   resolveAssistantAgent,
   type AssistantTurnResult,
-} from '@mantle/assistant-runtime';
+} from '@mantle/runtime/assistant';
 import type { AssistantAgentOption, AssistantTimelineRow } from '@mantle/client-types';
 import type { ToolOutcomeStatsRow } from '@mantle/client-types';
 export type { ToolOutcomeStatsRow };

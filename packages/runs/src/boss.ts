@@ -125,7 +125,7 @@ export async function enqueueRunActions(actions: readonly PostCommitAction[]): P
   // connection is sick.
   //
   // DETACHED ON PURPOSE (`void`, the tool-loop's idiom — see
-  // notifyPendingCreated's caller in @mantle/agent-runtime). This function is
+  // notifyPendingCreated's caller in @mantle/runtime/agent). This function is
   // awaited from `settleAskHuman` BEFORE it writes the settle receipt
   // (`executed_at`), and the fan-out ends in a Telegram `sendMessage` whose
   // client default timeout is 500 s. Awaited, one unreachable Telegram API

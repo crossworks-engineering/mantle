@@ -38,9 +38,9 @@ vi.mock('./agents', async () => {
   return { ...actual, getAssignedAgent };
 });
 
-vi.mock('@mantle/assistant-runtime', async () => {
-  const actual = await vi.importActual<typeof import('@mantle/assistant-runtime')>(
-    '@mantle/assistant-runtime',
+vi.mock('@mantle/runtime/assistant', async () => {
+  const actual = await vi.importActual<typeof import('@mantle/runtime/assistant')>(
+    '@mantle/runtime/assistant',
   );
   return { ...actual, resolveAssistantAgent: runtimeResolve };
 });

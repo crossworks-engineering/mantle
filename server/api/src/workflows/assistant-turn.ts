@@ -1,6 +1,6 @@
 /**
  * Assistant-turn runner — the real one. Wraps runAssistantTurn (from
- * @mantle/assistant-runtime) as a durable DBOS workflow on the shared `mantle`
+ * @mantle/runtime/assistant) as a durable DBOS workflow on the shared `mantle`
  * queue, so a turn runs server-side to completion regardless of the request:
  * navigating away from /assistant no longer kills it, and a process restart
  * resumes via DBOS auto-recovery.
@@ -29,7 +29,7 @@ import {
   RUNNER_QUEUE,
   type AssistantTurnInput,
   type AssistantTurnRunResult,
-} from '@mantle/assistant-runtime';
+} from '@mantle/runtime/assistant';
 import { errorMessage } from '@mantle/std';
 
 export type { AssistantTurnInput, AssistantTurnRunResult };

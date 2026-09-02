@@ -33,11 +33,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db, agents, type Agent, type ForumPost, type TeamChannel } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
-import {
-  buildChatMessages,
-  loadConversationContext,
-  type HistoryTurn,
-} from '@mantle/agent-runtime';
+import { buildChatMessages, loadConversationContext, type HistoryTurn } from '../agent';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
 import {
   acquireForumAgentPending,

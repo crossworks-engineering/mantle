@@ -7,7 +7,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TurnSuggestionContext } from '@mantle/assistant-runtime';
+import type { TurnSuggestionContext } from '@mantle/runtime/assistant';
 
 const h = vi.hoisted(() => ({
   getDefaultWorker: vi.fn(),
@@ -37,12 +37,12 @@ vi.mock('drizzle-orm', () => ({
   eq: (...args: unknown[]) => ({ eq: args }),
   sql: (strings: TemplateStringsArray, ...vals: unknown[]) => ({ strings, vals }),
 }));
-vi.mock('@mantle/agent-runtime', () => ({
+vi.mock('@mantle/runtime/agent', () => ({
   resolveChatKey: h.resolveChatKey,
   resolveChatRoutes: h.resolveChatRoutes,
   chatWithFailover: h.chatWithFailover,
 }));
-vi.mock('@mantle/assistant-runtime', () => ({
+vi.mock('@mantle/runtime/assistant', () => ({
   setTurnSuggestionHook: (fn: (ctx: unknown) => void) => {
     h.installedHook = fn;
   },

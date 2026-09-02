@@ -23,7 +23,7 @@ A second principle governs everything that touches retrieved content:
 ## The per-call pipeline
 
 Every tool call in a turn passes through these stages, in order
-(`packages/agent-runtime/src/tool-loop.ts`):
+(`packages/runtime/src/agent/tool-loop.ts`):
 
 1. **In-response dedup**: byte-identical `tool_use` blocks within one model
    response are suppressed after the first (write-amplification guard).

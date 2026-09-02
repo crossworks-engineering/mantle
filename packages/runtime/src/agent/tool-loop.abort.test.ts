@@ -38,19 +38,21 @@ vi.mock('@mantle/tracing', async (importOriginal) => {
 
 vi.mock('@mantle/tools', async () => ({
   validateToolArgs: (
-    await vi.importActual<typeof import('../../tools/src/validate-args')>(
-      '../../tools/src/validate-args',
+    await vi.importActual<typeof import('../../../tools/src/validate-args')>(
+      '../../../tools/src/validate-args',
     )
   ).validateToolArgs,
   sanitizeToolError: (
-    await vi.importActual<typeof import('../../tools/src/errors')>('../../tools/src/errors')
+    await vi.importActual<typeof import('../../../tools/src/errors')>('../../../tools/src/errors')
   ).sanitizeToolError,
   UNTRUSTED_CONTENT_TOOL_SLUGS: (
-    await vi.importActual<typeof import('../../tools/src/untrusted')>('../../tools/src/untrusted')
+    await vi.importActual<typeof import('../../../tools/src/untrusted')>(
+      '../../../tools/src/untrusted',
+    )
   ).UNTRUSTED_CONTENT_TOOL_SLUGS,
   getDynamicSchema: (
-    await vi.importActual<typeof import('../../tools/src/dynamic-schema')>(
-      '../../tools/src/dynamic-schema',
+    await vi.importActual<typeof import('../../../tools/src/dynamic-schema')>(
+      '../../../tools/src/dynamic-schema',
     )
   ).getDynamicSchema,
   dispatchTool: vi.fn(async (tool: { slug: string }, input: Record<string, unknown>) => {

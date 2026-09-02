@@ -86,9 +86,9 @@ See [tables.md](tables.md) §3.
 | `rasterizePdfToPngs(bytes, {maxPages})` | `@mantle/files/rasterize` | extractor (`ocrIngestPdfNode`) | render a textless PDF's pages → PNG for the OCR fallback (lazy `pdf-to-png-converter`; pdfjs + `@napi-rs/canvas`) |
 | `parseTikaBytes(bytes, {mimeType})` | `@mantle/files/tika` | `parseDocumentBytes` (tier 2) | PUT to `apache/tika:3.3.0.0` docker service → plain text. Never-throws: any failure (service down, timeout, unparseable) returns `''`. Handles .odt/.ods/.odp/.pptx/.ppt/.doc/.rtf/.epub. Tika's JVM heap is capped at **1 GB** (`JAVA_TOOL_OPTIONS=-Xmx1g`): headroom for large Office files (a ~24 MB .pptx unzips to many× its size as XML); was 512m, which OOM'd big real decks to an empty parse. Raise to `-Xmx2g` on an 8 GB+ box with heavy deck workloads. Tika extracts **slide/document text only**; its embedded images come out through the separate `/unpack/all` endpoint (see §3a), not this one. Single-file ceiling is `MAX_UPLOAD_BYTES` (64 MB), note that ceiling rose from 25 MB for Project/XML plans, so a 64 MB Office file can now be accepted at upload and still OOM a 1 GB heap. |
 | `transcodeImageForVision` | `@mantle/files` | `runVisionWorker` | HEIC/HEIF → JPEG (libheif WASM), passthrough otherwise |
-| `runVisionWorker` | `@mantle/agent-runtime` | extractor (neutral), surfaces (question-aware) | resolve default vision worker + key + transcode + adapter; best-effort |
-| `extractAttachmentForTurn` | `@mantle/agent-runtime` | web /assistant, Telegram | image→vision / doc→parse → text for the current turn (ephemeral) |
-| `buildAttachmentContextText` | `@mantle/agent-runtime` | web /assistant, Telegram | fold extracted text into the turn + surface the node id (`extract_from_image` / `file_read`) |
+| `runVisionWorker` | `@mantle/runtime` | extractor (neutral), surfaces (question-aware) | resolve default vision worker + key + transcode + adapter; best-effort |
+| `extractAttachmentForTurn` | `@mantle/runtime` | web /assistant, Telegram | image→vision / doc→parse → text for the current turn (ephemeral) |
+| `buildAttachmentContextText` | `@mantle/runtime` | web /assistant, Telegram | fold extracted text into the turn + surface the node id (`extract_from_image` / `file_read`) |
 | `notifyNodeIngested(nodeId)` | `@mantle/db` | all updates + the extractor | the one documented `node_ingested` notify; best-effort |
 | `MAX_UPLOAD_BYTES` (64 MB) | `@mantle/files` | Files UI, /assistant, MCP | single storage cap (distinct from the vision limit) |
 | `maxImageBytesFor(model)` | `@mantle/tracing` | responder routing | per-provider raw-image size limit |
@@ -237,7 +237,7 @@ Two forms, and the difference is placement:
   Right for a one-off, and the only path that reaches Telegram (an explicit
   `sendPhoto`; inline markers are stripped from outbound Telegram text).
 - Doing both for one file shows it once: the inline placement wins and the strip
-  copy is dropped at finalize (`packages/assistant-runtime/src/inline-images.ts`).
+  copy is dropped at finalize (`packages/runtime/src/assistant/inline-images.ts`).
 - The `visual_answers` skill carries the judgment (show rather than narrate,
   which form to use, never invent a file id).
 
@@ -276,7 +276,7 @@ traced.
 |, | 🟡 | Telegram `audio`/`video` *file* attachments unhandled (voice notes work via STT) | ⚠️ Deferred, niche; out of scope by decision. |
 |, | 🟡 | Whole-file in-memory buffering (≤64 MB) | Accepted, inherent without streaming; fine at single-user scale. |
 | T1 | 🟠 | **Tika JVM had no memory cap**: default in-container JVM auto-sizes to ~1/4 of host RAM (unbounded by Mantle's setup). A malicious or pathological doc could push it into OOM territory. | ✅ **Fixed**: `JAVA_OPTS=-Xmx512m -Xms128m` on the Tika service in both compose files. 512 MB max comfortably handles Mantle's 25 MB `MAX_UPLOAD_BYTES` ceiling; `parse_document` step's `chars_out: 0` + short duration is the signal that Tika OOM'd if it ever happens. |
-| T8 | 🟡 | **Conversational attachment path (`extractAttachmentForTurn`) didn't trace its `parseDocumentBytes` call.** The durable extractor wrapped it in `parse_document` (`80b86c1`) but the live chat-turn path didn't, so a `.pptx` dropped in chat would have its Tika parse invisible in the `responder_turn` trace. | ✅ **Fixed**: same `parse_document` step now wraps the call in `packages/agent-runtime/src/attachments.ts`. Both paths use identical meta keys (`parser`, `chars_out`, `empty`), so filtering / aggregating works uniformly across surfaces. |
+| T8 | 🟡 | **Conversational attachment path (`extractAttachmentForTurn`) didn't trace its `parseDocumentBytes` call.** The durable extractor wrapped it in `parse_document` (`80b86c1`) but the live chat-turn path didn't, so a `.pptx` dropped in chat would have its Tika parse invisible in the `responder_turn` trace. | ✅ **Fixed**: same `parse_document` step now wraps the call in `packages/runtime/src/agent/attachments.ts`. Both paths use identical meta keys (`parser`, `chars_out`, `empty`), so filtering / aggregating works uniformly across surfaces. |
 | T2 | 🟡 | **No request-concurrency limit** between Mantle and Tika. N concurrent uploads → N concurrent Tika requests; could OOM the JVM under load. | Accepted, single-user system, realistic concurrent ingests are 1–3 (Gmail All Mail bursts already-deduped). The 512 MB cap (T1) protects from runaway-doc OOM; concurrent OOM would need ~5+ huge docs at once. |
 | T3 | 🟡 | **60s per-request Tika timeout** is tight on very large documents on slow hardware (worse since the cap rose to 64 MB). | Accepted, degrades to `no_text_layer` skip (clearly visible in `/traces`); user can re-upload smaller, or `TIKA_TIMEOUT_MS` could be exposed as an env var later. |
 | T4 | 🟢 | **Mismatched extensions could mislead Tika.** We pass `Content-Type` via `mimeForExt(ext)`. A file renamed (e.g. .pdf → .ods) would get the wrong hint. | Tika's content-sniffing fallback handles most mismatches via magic bytes; `sanitizeFilename` keeps extensions stable through Mantle's path. Not actionable. |

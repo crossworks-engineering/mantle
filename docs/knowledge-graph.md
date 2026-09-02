@@ -190,7 +190,7 @@ vector" pattern ([`memory.md` §4.3](./memory.md#43-why-both-together)).
 `entityRelationsFor(ownerId, entityIds)` (`packages/search/src/entities.ts`) is a
 batched, name-resolved fetch of the 1-hop relation triples touching a set of
 entities (excludes `mentioned_in` + retired edges, capped). In
-[`loadConversationContext`](../packages/agent-runtime/src/conversation.ts) the
+[`loadConversationContext`](../packages/runtime/src/agent/conversation.ts) the
 entities of the **top matching facts** become anchors, and their relations are
 rendered into the prompt as a "Known relationships" block:
 
@@ -245,7 +245,7 @@ and the detail page lists the relations drawn (`subject → verb → object`).
 | Relation extraction + entity reconcile | `server/api/src/agent/extractor.ts` (`process_relations`, `reconcileEntity`) |
 | Edge / entity schema | `packages/db/src/schema/{entities,entity-edges}.ts` |
 | Traversal (`entity_neighbors`, `graph_path`) | `packages/search/src/entities.ts` |
-| **Read-path expansion (`entityRelationsFor`)** | `packages/search/src/entities.ts` → `packages/agent-runtime/src/conversation.ts` |
+| **Read-path expansion (`entityRelationsFor`)** | `packages/search/src/entities.ts` → `packages/runtime/src/agent/conversation.ts` |
 | Near-dup consolidation (`orgCompactKey`) | `packages/content/src/entity-dedup.ts` |
 | Review UI | `jackdaw/app/(app)/settings/entities/*` |
 | Backfill / dedupe scripts | `server/web/scripts/{relations-backfill,entities-dedupe}.ts` |

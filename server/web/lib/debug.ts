@@ -10,7 +10,7 @@ import {
   telegramMessages,
   type PersonaNote,
 } from '@mantle/db';
-import type { ContextSnapshot } from '@mantle/agent-runtime';
+import type { ContextSnapshot } from '@mantle/runtime/agent';
 import type {
   AgentActivityRow,
   ChatRow,

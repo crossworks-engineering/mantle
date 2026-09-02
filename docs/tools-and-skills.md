@@ -25,9 +25,9 @@ effectiveToolSlugs = agent.tool_slugs  ∪  (every attached skill's tool_slugs)
 ```
 
 , [`effectiveToolSlugs`](../server/web/lib/skills.ts) (web) and its twin
-[`packages/agent-runtime/src/skills.ts`](../packages/agent-runtime/src/skills.ts),
+[`packages/runtime/src/agent/skills.ts`](../packages/runtime/src/agent/skills.ts),
 consumed by [`assistant.ts`](../server/web/lib/assistant.ts) and
-[`invoke-agent.ts`](../packages/agent-runtime/src/invoke-agent.ts).
+[`invoke-agent.ts`](../packages/runtime/src/agent/invoke-agent.ts).
 
 This is a **split-brain**. To answer "why can this agent edit pages?" you check
 two places. It directly contradicts Studio's governing principle, _no hidden
@@ -176,7 +176,7 @@ makes the cutover a no-op.
   grants the fresh persona `page_delete` too, so new installs match.
 - **`effectiveToolSlugs` is deliberately UNCHANGED.** The original plan said
   "drop the skill arm," but the same union is used by heartbeats
-  ([`heartbeats/fire.ts`](../packages/heartbeats/src/fire.ts)) to confer a
+  ([`heartbeats/fire.ts`](../packages/runtime/src/heartbeats/fire.ts)) to confer a
   heartbeat's bound-skill tools (e.g. `profile_interview`). Ripping it out would
   break those. Instead the _agent_ skills are drained (so they add nothing to the
   union) while _heartbeat_ skills keep theirs, a separate mechanism. The
@@ -361,7 +361,7 @@ Shipped in two commits (approach A, coarse groups, specialists expand):
     `registerHeartbeatTools()` at module load (beside `registerAgentInvoker`). The
     web responder runs its tool loop in-process and injects the continuity tools
     when a **web-surface** heartbeat is active, but the handlers live in
-    `@mantle/heartbeats` and only enter the registry via that call, without it,
+    `@mantle/runtime` and only enter the registry via that call, without it,
     the model was offered seeded tool rows whose dispatch failed with "builtin
     handler '…' not registered in this process". `tools.test.ts` pins the
     register→dispatchable contract.
@@ -420,7 +420,7 @@ Two things about this are worth stating plainly against the capability-only rule
                          ∪ (granted ENABLED groups → integration.skillSlug)
    ```
 
-   resolved in `resolveAgentSkills` (`@mantle/agent-runtime`), agent's own first,
+   resolved in `resolveAgentSkills` (`@mantle/runtime`), agent's own first,
    deduped, capped at 32 (loudly). Grant `weather-tools` and the agent both _can_
    call the weather tools and _knows how_, no second attach step to forget.
 

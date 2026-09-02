@@ -25,7 +25,7 @@ import {
   type TurnDeltaEvent,
   type TurnLifecycleEvent,
 } from '@mantle/tracing';
-import { stageLabelForStep, type StageLabel } from '@mantle/assistant-runtime';
+import { stageLabelForStep, type StageLabel } from '@mantle/runtime/assistant';
 import { publishTurnEvent, TURN_EVENT_SCHEMA_VERSION } from '@mantle/turn-stream';
 import type { TurnEvent } from '@mantle/client-types';
 import { isTurnNarrationEnabled, narrateStatus } from './turn-narration';

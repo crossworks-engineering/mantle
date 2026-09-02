@@ -2,7 +2,7 @@
  * Characterization tests for the Telegram turn pipeline
  * (`handleTelegramMessage` in ./runtime.ts) — written BEFORE the audit-#5c
  * refactor that routes the drift-prone middle of this pipeline through
- * @mantle/assistant-runtime. These pin the CURRENT externally-observable
+ * @mantle/runtime/assistant. These pin the CURRENT externally-observable
  * behavior at the pipeline's real seams (Telegram HTTP, the LLM tool loop,
  * the DB, the unified conversation stream) so the refactor can prove itself
  * behavior-preserving:
@@ -169,8 +169,8 @@ vi.mock('@mantle/telegram', () => ({
   sendVoice: (...a: unknown[]) => h.sendVoice(...a),
 }));
 
-// ── LLM/tool-loop + conversation-stream seams (@mantle/agent-runtime) ─────
-vi.mock('@mantle/agent-runtime', () => ({
+// ── LLM/tool-loop + conversation-stream seams (@mantle/runtime/agent) ─────
+vi.mock('@mantle/runtime/agent', () => ({
   buildChatMessages: (args: any) => {
     h.buildArgs.push(args);
     return [
@@ -205,7 +205,7 @@ vi.mock('@mantle/agent-runtime', () => ({
   resolveAgentToolGroups: vi.fn(async () => []),
   resolveAgentTools: vi.fn(async () => []),
   resolveBackupAdapter: vi.fn(async () => undefined),
-  // Used by run-turn via the real @mantle/assistant-runtime barrel.
+  // Used by run-turn via the real @mantle/runtime/assistant barrel.
   summarizeToolOutcomes: vi.fn(() => ({
     calls: 0,
     succeeded: 0,
@@ -251,7 +251,7 @@ vi.mock('@mantle/tracing', () => ({
   modelSupportsVision: vi.fn(() => true),
   maxImageBytesFor: vi.fn(() => 5 * 1024 * 1024),
   // Used by run-turn/run-team-turn, which ride into the module graph via the
-  // real @mantle/assistant-runtime barrel (the assembly under test is REAL).
+  // real @mantle/runtime/assistant barrel (the assembly under test is REAL).
   emitTurnLifecycle: vi.fn(),
   registerTurnAbort: vi.fn(() => null),
   unregisterTurnAbort: vi.fn(),
@@ -269,7 +269,7 @@ vi.mock('@mantle/content', () => ({
   noteInboundChannel: (...a: unknown[]) => (h.noteInboundChannel(...a), Promise.resolve()),
   isStreamThoughtsEnabled: () => h.thoughtsOn,
   isPersistThoughtsEnabled: () => h.thoughtsOn,
-  // Used by run-turn/run-team-turn via the real @mantle/assistant-runtime
+  // Used by run-turn/run-team-turn via the real @mantle/runtime/assistant
   // barrel — never exercised by these tests.
   applyAutoTimezone: vi.fn(async (_o: string, _l: unknown, prefs: unknown) => ({ prefs })),
   buildLocationContextLine: () => '',
@@ -303,7 +303,7 @@ vi.mock('@mantle/tools', () => ({
   registerAgentInvoker: vi.fn(),
   seedBuiltinTools: vi.fn(async () => ({ inserted: 0, updated: 0 })),
 }));
-vi.mock('@mantle/heartbeats', () => ({
+vi.mock('@mantle/runtime/heartbeats', () => ({
   buildOpenHeartbeatContext: () => '',
   HEARTBEAT_DUE_CHANNEL: 'heartbeat_due',
   HEARTBEAT_RESPONDER_TOOLS: [] as string[],
@@ -717,7 +717,7 @@ describe('handleTelegramMessage — parity-drift resolutions (audit #5c)', () =>
   it('b1 RESOLVED: per-turn loop overrides in memory_config ARE forwarded (clamped)', async () => {
     // Stage-0 pinned the OLD behavior (overrides silently ignored — the
     // Telegram copy predated the web path's forwarding). Stage 1 routes the
-    // assembly through @mantle/assistant-runtime, adopting the web behavior:
+    // assembly through @mantle/runtime/assistant, adopting the web behavior:
     // max_iterations clamped to 30, tool-volume caps forwarded raw.
     await runTurn(
       makeMsgRow(),

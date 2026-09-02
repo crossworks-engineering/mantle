@@ -20,7 +20,7 @@
 
 import { and, asc, eq } from 'drizzle-orm';
 import { db, agents, heartbeats, skills } from '@mantle/db';
-import { computeNextFireAt } from '@mantle/heartbeats';
+import { computeNextFireAt } from '@mantle/runtime/heartbeats';
 import { env } from '@mantle/config';
 
 const USER_ID = env('ALLOWED_USER_ID');

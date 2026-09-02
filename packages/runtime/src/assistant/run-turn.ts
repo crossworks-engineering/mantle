@@ -39,7 +39,7 @@ import {
   recordTurn,
   updateAssistantMessageOutcome,
   type UserImage,
-} from '@mantle/agent-runtime';
+} from '../agent';
 import { registerAgentInvoker, type ToolArtifact } from '@mantle/tools';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
 import {
@@ -49,7 +49,7 @@ import {
   applyAutoTimezone,
   type LocationPing,
 } from '@mantle/content';
-import { registerHeartbeatTools } from '@mantle/heartbeats';
+import { registerHeartbeatTools } from '../heartbeats';
 import {
   startTrace,
   runDurableStep,

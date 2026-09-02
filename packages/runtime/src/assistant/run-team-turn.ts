@@ -39,11 +39,7 @@ import {
   type TeamMessage,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
-import {
-  buildChatMessages,
-  loadConversationContext,
-  type HistoryTurn,
-} from '@mantle/agent-runtime';
+import { buildChatMessages, loadConversationContext, type HistoryTurn } from '../agent';
 import { getChatAdapter, stripAudioTags } from '@mantle/voice';
 import {
   appendTeamMessage,

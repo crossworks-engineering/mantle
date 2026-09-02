@@ -65,9 +65,9 @@ Schema source: [`packages/db/src/schema/agents.ts`](../packages/db/src/schema/ag
 
 ---
 
-## 4. The primitives ([`chat-failover.ts`](../packages/agent-runtime/src/chat-failover.ts))
+## 4. The primitives ([`chat-failover.ts`](../packages/runtime/src/agent/chat-failover.ts))
 
-Everything lives in `packages/agent-runtime/src/chat-failover.ts` and is re-exported from the package barrel. Five exports:
+Everything lives in `packages/runtime/src/agent/chat-failover.ts` and is re-exported from the package barrel. Five exports:
 
 ### `resolveChatRoutes(row): ChatRoutes`
 
@@ -150,7 +150,7 @@ The pre-existing config guards (skipped-trace on a missing key/adapter) stay; th
 
 ## 6. Integration B: the tool loop (sticky)
 
-Agents run a multi-iteration tool loop ([`tool-loop.ts`](../packages/agent-runtime/src/tool-loop.ts)), so failover is subtler: a failure can happen on iteration 3 of a reasoning chain.
+Agents run a multi-iteration tool loop ([`tool-loop.ts`](../packages/runtime/src/agent/tool-loop.ts)), so failover is subtler: a failure can happen on iteration 3 of a reasoning chain.
 
 `ToolLoopArgs` gains an optional `backup?: { adapter, apiKey, model }` (a pre-resolved route, keeps the test harness's ability to inject a fake adapter as the primary). The loop holds an **active-route pointer**:
 
@@ -190,8 +190,8 @@ runToolLoop({ adapter, apiKey, model, backup: await resolveBackupAdapter(ownerId
 
 - Responder, [`server/api/src/main.ts`](../server/api/src/main.ts)
 - Web assistant, [`server/web/lib/assistant.ts`](../server/web/lib/assistant.ts)
-- Heartbeat, [`packages/heartbeats/src/fire.ts`](../packages/heartbeats/src/fire.ts) (the backup is resolved in the enclosing async scope, since the `runToolLoop` call sits inside a non-async `withHeartbeatContext` callback)
-- `invoke_agent`, [`packages/agent-runtime/src/invoke-agent.ts`](../packages/agent-runtime/src/invoke-agent.ts)
+- Heartbeat, [`packages/runtime/src/heartbeats/fire.ts`](../packages/runtime/src/heartbeats/fire.ts) (the backup is resolved in the enclosing async scope, since the `runToolLoop` call sits inside a non-async `withHeartbeatContext` callback)
+- `invoke_agent`, [`packages/runtime/src/agent/invoke-agent.ts`](../packages/runtime/src/agent/invoke-agent.ts)
 
 ---
 
@@ -219,8 +219,8 @@ This is why the two features share a shape but not a constraint, and why the cha
 
 ## 9. Testing
 
-- [`chat-failover.test.ts`](../packages/agent-runtime/src/chat-failover.test.ts) (7), `chatWithFailover` (primary success / 5xx→backup / 4xx→rethrow / no-backup→rethrow, asserting the backup's *different* model served), `resolveChatRoutes` mapping (enabled / disabled / incomplete), `isChatFailover` classification (429/5xx/network yes; 400/401 no). Partial-mocks `@mantle/voice` (override `getChatAdapter`, keep the real `classifyChatError`) so the transient/permanent decision is exercised for real.
-- [`tool-loop.test.ts`](../packages/agent-runtime/src/tool-loop.test.ts) (+3), route-down→backup, 4xx→rethrow-backup-untouched, and the **sticky** case: a primary that always throws + a backup scripted for a tool-call iteration then a final answer; asserts the primary was attempted **exactly once** while the backup served **both** iterations.
+- [`chat-failover.test.ts`](../packages/runtime/src/agent/chat-failover.test.ts) (7), `chatWithFailover` (primary success / 5xx→backup / 4xx→rethrow / no-backup→rethrow, asserting the backup's *different* model served), `resolveChatRoutes` mapping (enabled / disabled / incomplete), `isChatFailover` classification (429/5xx/network yes; 400/401 no). Partial-mocks `@mantle/voice` (override `getChatAdapter`, keep the real `classifyChatError`) so the transient/permanent decision is exercised for real.
+- [`tool-loop.test.ts`](../packages/runtime/src/agent/tool-loop.test.ts) (+3), route-down→backup, 4xx→rethrow-backup-untouched, and the **sticky** case: a primary that always throws + a backup scripted for a tool-call iteration then a final answer; asserts the primary was attempted **exactly once** while the backup served **both** iterations.
 - [`extractor-chat.test.ts`](../server/api/src/agent/extractor-chat.test.ts), migrated to the new `chatComplete(ownerId, routes, …)` signature.
 
 49 `agent-runtime` tests green; monorepo typecheck clean throughout.
@@ -244,7 +244,7 @@ Shipped `5220834` (chat backup UI) + `ba0aa91` (per-route host UI). Pure config 
 
 ## 12. Key resolution: one source of truth (`resolveChatKey`)
 
-`resolveChatKey(ownerId, route)` (in [`chat-failover.ts`](../packages/agent-runtime/src/chat-failover.ts), `e351324`) is the **single** decision for "does this chat route have a usable key?", shared by the dispatch (`resolveRouteAdapter` calls it) AND every worker / agent pre-flight, so the two can never drift. Resolution order: route-pinned key → the provider's canonical **service key** → the `local` keyless sentinel. Non-throwing, returns `{ ok, apiKey } | { ok: false, disposition, detail }`; the dispatch throws on a miss, a worker skips with a trace.
+`resolveChatKey(ownerId, route)` (in [`chat-failover.ts`](../packages/runtime/src/agent/chat-failover.ts), `e351324`) is the **single** decision for "does this chat route have a usable key?", shared by the dispatch (`resolveRouteAdapter` calls it) AND every worker / agent pre-flight, so the two can never drift. Resolution order: route-pinned key → the provider's canonical **service key** → the `local` keyless sentinel. Non-throwing, returns `{ ok, apiKey } | { ok: false, disposition, detail }`; the dispatch throws on a miss, a worker skips with a trace.
 
 This replaced **7 copy-pasted `!apiKeyId` guards** (extractor / summarizer ×2 / reflector ×2 / responder / invoke_agent) that had silently drifted: when `local` workers were first configured (keyless), the stale guards skipped them entirely. Two behaviours worth knowing: (1) keyless `local` always resolves; (2) the **service-key fallback** means a worker with no *pinned* key but a saved service key for its provider now runs, the pre-flight finally agrees with the dispatch (the old per-worker guards checked only the pinned `apiKeyId` and could wrongly skip). No key anywhere → still skips. Adding the next keyless provider is a one-line change here.
 

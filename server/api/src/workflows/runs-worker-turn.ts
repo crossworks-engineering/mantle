@@ -64,7 +64,7 @@ import {
   resolveChatKey,
   runToolLoop,
   type ChatMessage,
-} from '@mantle/agent-runtime';
+} from '@mantle/runtime/agent';
 import { spillToolResult } from '@mantle/tools';
 import { currentTrace, runDurableStep, startTrace, withDurableSteps } from '@mantle/tracing';
 import { getChatAdapter } from '@mantle/voice';

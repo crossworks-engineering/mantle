@@ -69,12 +69,12 @@ import {
   type RunsResumeTurnResult,
 } from '@mantle/runs';
 import { sendMessage } from '@mantle/telegram';
-import { buildChatMessages, loadConversationContext, recordTurn } from '@mantle/agent-runtime';
+import { buildChatMessages, loadConversationContext, recordTurn } from '@mantle/runtime/agent';
 import {
   assembleResponderTurn,
   resolveAssistantAgent,
   runResponderLoop,
-} from '@mantle/assistant-runtime';
+} from '@mantle/runtime/assistant';
 import { getApiKeyById } from '@mantle/api-keys';
 import { loadProfilePreferences } from '@mantle/content';
 import { runDurableStep, startTrace, withDurableSteps } from '@mantle/tracing';

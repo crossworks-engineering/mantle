@@ -196,7 +196,7 @@ SELECT * FROM heartbeats
 ```
 
 then filters out rows in `isFireInflight(id)`, the in-process
-`Map<id, Promise>` lock in `packages/heartbeats/src/inflight.ts`.
+`Map<id, Promise>` lock in `packages/runtime/src/heartbeats/inflight.ts`.
 This is what stops the next tick from re-firing a slow heartbeat
 that's still mid-LLM-call (the schedule's `next_fire_at` doesn't
 update until the fire completes, ~30-90s of vulnerable window).
@@ -241,7 +241,7 @@ clobbered.
 
 ## 4. The 5 control tools
 
-Live in `packages/heartbeats/src/tools.ts` (not `@mantle/tools`,
+Live in `packages/runtime/src/heartbeats/tools.ts` (not `@mantle/tools`,
 would create a dependency cycle). `registerHeartbeatTools()` runs at
 agent boot, before `seedBuiltinTools()`.
 
@@ -289,7 +289,7 @@ must be in her `tool_slugs` allowlist (visible at `/settings/agents`).
 The seed script `seed-get-to-know-user.ts` calls
 `ensureHeartbeatToolsOnAgent()` to add them idempotently to the
 auto-detected responder agent (reads the canonical
-`HEARTBEAT_RESPONDER_TOOLS` constant from `@mantle/heartbeats` so
+`HEARTBEAT_RESPONDER_TOOLS` constant from `@mantle/runtime` so
 the grant list never drifts from the auto-exclusion list below).
 Custom heartbeats not seeded this way need the operator to grant
 the tools manually via the UI.
@@ -475,11 +475,11 @@ new symptoms surface.
   accept `slug` and fall back to ALS only when slug is absent.
 
 - **`tsx --watch` doesn't reliably reload workspace packages.**
-  After rapid commits to `packages/heartbeats`, the agent process
+  After rapid commits to `packages/runtime/src/heartbeats`, the agent process
   may run partially-stale code (some modules from disk, some
   cached). Symptom: trace says success but DB didn't update;
   restart fixes it. **Operator habit: manually restart `server/api`
-  after any change in `packages/heartbeats/`.** No code fix planned;
+  after any change in `packages/runtime/src/heartbeats/`.** No code fix planned;
   this is a dev-tooling characteristic, not a runtime bug.
 
 - **`traces.agent_id` FK to `agents.id`** (not `ai_workers`, not
@@ -603,7 +603,7 @@ with `next_fire_at` in the immediate future would wait up to a full
 minute before the tick loop picked it up. Felt like a bug to the
 operator (click "Create", nothing happens).
 
-`packages/heartbeats/src/notify.ts` adds `notifyHeartbeatDue(ownerId)`
+`packages/runtime/src/heartbeats/notify.ts` adds `notifyHeartbeatDue(ownerId)`
 which fires `pg_notify('heartbeat_due', <ownerId>)`. Producers:
 
 - `server/web/lib/heartbeats.ts` (`createHeartbeat`) after every insert
@@ -715,7 +715,7 @@ etc.) to avoid future collisions.
 
 There's no TypeScript type for these today; it's a documentation
 contract. A `WellKnownStateKeys` type re-exported from
-`@mantle/heartbeats` would catch typos at the skill-author layer
+`@mantle/runtime` would catch typos at the skill-author layer
 without forcing a schema change, v1.1 candidate.
 
 ## 11b. Skill design: prefer one focused fire over an interrogation
@@ -780,7 +780,7 @@ wasteful, never broken. In practice: persistent skills should be
 short ("how to format dates") and heartbeat skills should be
 specific ("interview the user across these 8 topics"). Don't mix.
 
-`composeSystemPromptWithSkills` (in `packages/agent-runtime/src/skills.ts`)
+`composeSystemPromptWithSkills` (in `packages/runtime/src/agent/skills.ts`)
 folds always-on skills into the system prompt, and is used by both the responder
 turn and the heartbeat fire. `effectiveToolSlugs` lives in the same file but is
 NOT a skill helper despite the neighbourhood: it resolves an agent's granted
@@ -797,14 +797,14 @@ the instructions are written.
 | --------------------------------------------- | ------------------------------------------------------------------------------ |
 | `packages/db/migrations/0030_heartbeats.sql`  | Schema + enum extension                                                        |
 | `packages/db/src/schema/heartbeats.ts`        | Drizzle types                                                                  |
-| `packages/heartbeats/src/schedule.ts`         | `computeNextFireAt` + `validateSchedule`                                       |
-| `packages/heartbeats/src/gates.ts`            | `checkGates` (idle / quiet / cooldown / earliest)                              |
-| `packages/heartbeats/src/prompt.ts`           | Synthetic prompt + open-heartbeat block + last_asked_at age helper             |
-| `packages/heartbeats/src/context.ts`          | AsyncLocalStorage for current heartbeat                                        |
-| `packages/heartbeats/src/inflight.ts`         | Per-process `Map<id, Promise>` lock (P0-2)                                     |
-| `packages/heartbeats/src/fire.ts`             | Single-fire orchestration (inflight lock + snooze preservation + state reload) |
-| `packages/heartbeats/src/tick.ts`             | Tick loop + `openHeartbeatsForSurface`                                         |
-| `packages/heartbeats/src/tools.ts`            | 5 builtin control tools (dual-mode addressing)                                 |
+| `packages/runtime/src/heartbeats/schedule.ts`         | `computeNextFireAt` + `validateSchedule`                                       |
+| `packages/runtime/src/heartbeats/gates.ts`            | `checkGates` (idle / quiet / cooldown / earliest)                              |
+| `packages/runtime/src/heartbeats/prompt.ts`           | Synthetic prompt + open-heartbeat block + last_asked_at age helper             |
+| `packages/runtime/src/heartbeats/context.ts`          | AsyncLocalStorage for current heartbeat                                        |
+| `packages/runtime/src/heartbeats/inflight.ts`         | Per-process `Map<id, Promise>` lock (P0-2)                                     |
+| `packages/runtime/src/heartbeats/fire.ts`             | Single-fire orchestration (inflight lock + snooze preservation + state reload) |
+| `packages/runtime/src/heartbeats/tick.ts`             | Tick loop + `openHeartbeatsForSurface`                                         |
+| `packages/runtime/src/heartbeats/tools.ts`            | 5 builtin control tools (dual-mode addressing)                                 |
 | `server/api/src/main.ts`                      | Tick wiring + responder context inject                                         |
 | `server/web/lib/heartbeats.ts`                  | CRUD lib                                                                       |
 | `jackdaw/app/(app)/settings/heartbeats/*`    | CRUD UI                                                                        |

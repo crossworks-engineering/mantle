@@ -10,7 +10,7 @@
  * drift silently.
  *
  * Scope: builtin defs registered in this package (`listBuiltins()`).
- * App-registered builtins that live elsewhere (e.g. @mantle/heartbeats)
+ * App-registered builtins that live elsewhere (e.g. @mantle/runtime/heartbeats)
  * would need this package to depend on theirs — they're governed by the
  * same guide but linted by eye for now.
  */

@@ -35,7 +35,7 @@ import { db, bumpWorkerUsage, nodes, contentChunks, type ExtractorParams } from 
 import { embed } from '@mantle/embeddings';
 import { effectiveBrainDepth, resolveEffectiveIndexing, metadataSpineText } from '@mantle/files';
 import { recordSkippedTrace, startTrace } from '@mantle/tracing';
-import { resolveChatKey, resolveChatRoutes } from '@mantle/agent-runtime';
+import { resolveChatKey, resolveChatRoutes } from '@mantle/runtime/agent';
 import { getChatAdapter } from '@mantle/voice';
 import { TEXT_STORE_MAX_CHARS, truncateForPrompt } from './extract/text';
 import { resolveExtractor, runExtractorModel } from './extract/model';

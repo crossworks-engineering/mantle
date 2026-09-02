@@ -336,7 +336,7 @@ cache + `extract_cost_cap_micro_usd`.
   backlinks commit.
 - **Responder/assistant chunk retrieval**: ✅ **built + eval-covered** (commit
   `9afbcd0`, "auto-chunk retrieval"). `loadConversationContext`
-  ([`packages/agent-runtime/src/conversation.ts`](../packages/agent-runtime/src/conversation.ts))
+  ([`packages/runtime/src/agent/conversation.ts`](../packages/runtime/src/agent/conversation.ts))
   calls `searchChunks` (default `chunk_limit=3`, 0.65 cosine cutoff, salience-
   aware, system-docs + telegram excluded) and injects the passages as the
   prompt's "Relevant passages" block, on **every** surface (web assistant +

@@ -32,7 +32,7 @@ export const RUN_RESUME_QUEUE = 'mantle.run.resume';
  * turns must NEVER starve foreground turns, so they get their own queue with
  * its own (deliberately low) concurrency cap — the same isolation FORUM_QUEUE
  * gives topic turns. This is a DBOS queue name (parallel to RUNNER_QUEUE /
- * FORUM_QUEUE in @mantle/assistant-runtime), distinct from the pg-boss queues
+ * FORUM_QUEUE in @mantle/runtime/assistant), distinct from the pg-boss queues
  * above.
  *
  * Deploy-skew posture: a runs worker that enqueues to 'mantle.runs' before

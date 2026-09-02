@@ -13,7 +13,7 @@ import {
   type AgentParams,
   type PersonaNote,
 } from '@mantle/db';
-import { CHATTABLE_ROLES } from '@mantle/assistant-runtime';
+import { CHATTABLE_ROLES } from '@mantle/runtime/assistant';
 import { computeAgentExperience, zeroExperience } from './agent-experience';
 import { MANIFEST_AGENTS } from './system-manifest/manifest';
 import { cloneAgentFields, slugifyAgentName, uniqueAgentSlug } from './agent-clone';

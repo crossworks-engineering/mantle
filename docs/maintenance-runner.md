@@ -43,7 +43,7 @@ server/web/lib/maintenance/registry.ts     ← the registry (data)
 
 ### Why not heartbeats
 
-Heartbeats (`packages/heartbeats`) are the wrong substrate: every fire resolves
+Heartbeats (`packages/runtime/src/heartbeats`) are the wrong substrate: every fire resolves
 an agent + skill and runs a **model tool-loop**: there is no plain-code
 execution path, and `kind:'cron'` is unimplemented (interval/once only).
 Scheduling SQL hygiene through an LLM invocation adds cost and nondeterminism

@@ -92,10 +92,10 @@ growing tail.
 1. **Large fixed context (~22K tok/turn)** before any tool runs: system prompt +
    composed skills + ~68 tool definitions + retrieved context (facts,
    content_hits, chunkHits, relations, digests, identity/journal block). See
-   `packages/agent-runtime/src/conversation.ts` (`loadConversationContext`) +
+   `packages/runtime/src/agent/conversation.ts` (`loadConversationContext`) +
    `messages.ts` (`buildChatMessages`).
 2. **Multi-step tool loops** (3–11 `llm_call`s/turn), each re-sending the whole,
-   growing context. Loop driver: `runToolLoop` (`@mantle/agent-runtime`).
+   growing context. Loop driver: `runToolLoop` (`@mantle/runtime`).
 3. **Prompt caching misfires** (the big lever): see below.
 
 ## The caching bug: where to look
@@ -124,7 +124,7 @@ Two observed failures to fix:
   everything-so-far, not just the static head.
 
 **Find the caller** that sets `cacheControl` per round (search `cacheControl`
-in `packages/agent-runtime` + how `runToolLoop` calls the adapter each
+in `packages/runtime/src/agent` + how `runToolLoop` calls the adapter each
 iteration), the placement decision likely lives there, not only in the adapter.
 
 ## Proposed fix + verification
@@ -233,7 +233,7 @@ call, because two per-turn ingredients sat inside cache breakpoint 1:
    prepends `UTC instant: <millisecond ISO>` to the system prompt at both
    call sites → the prefix is never byte-identical across turns.
 2. The query-ranked top-K facts were rendered inside the persona block
-   (`renderPersonaBlock` in `packages/agent-runtime/src/messages.ts`) →
+   (`renderPersonaBlock` in `packages/runtime/src/agent/messages.ts`) →
    they change with every query.
 
 So the 06-07 fix repaired *within-turn* caching (the moving tail marker);

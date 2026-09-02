@@ -157,7 +157,7 @@ DROP TRIGGER IF EXISTS assistant_messages_summarize_web_due_trg ON assistant_mes
 
 ## 4. Shared conversation module
 
-New file `packages/agent-runtime/src/conversation.ts`, the single read/write API both
+New file `packages/runtime/src/agent/conversation.ts`, the single read/write API both
 surfaces call. This dedups the two near-identical `loadContext` copies.
 
 ```ts
@@ -293,7 +293,7 @@ an agent to one login. Moving parts:
   and nothing kept them in step, the same reason renaming any agent in
   `/settings/agents` left it introducing its old name. So the name is now a
   token, resolved once per turn:
-  - `composeSystemPromptWithSkills` (`packages/agent-runtime/src/skills.ts`)
+  - `composeSystemPromptWithSkills` (`packages/runtime/src/agent/skills.ts`)
     substitutes `{{name}}` → `agents.name`. It resolves at that seam, not deeper
     in `renderPersonaBlock`, so Studio's composed-prompt preview shows exactly
     what the model sees (no hidden prompts). `agentName` is a REQUIRED option so
@@ -310,7 +310,7 @@ an agent to one login. Moving parts:
     resolved in the HTTP dispatcher and is never matched.
 - **Resolution**: `resolveAgentForActor` (`server/web/lib/assistant.ts`) at the
   HTTP boundary: explicit slug → the login's assigned agent → the runtime's
-  brain default. `resolveAssistantAgent` in `@mantle/assistant-runtime` is
+  brain default. `resolveAssistantAgent` in `@mantle/runtime` is
   unchanged; it runs outside the request and must not learn about logins.
 - **Cookie handshake**: `mantle_assistant_agent` is per-browser and sticky, so
   a co-admin already chatting to the shared agent would keep landing there. The
@@ -362,7 +362,7 @@ committing per phase on `main` with `pnpm --filter @mantle/web run typecheck`:
 
 ```
 0  schema (ADDITIVE only)         0071_unified_conversation.sql  ✅ columns + index, no trigger change
-1  shared module                  packages/agent-runtime/src/conversation.ts            ✅
+1  shared module                  packages/runtime/src/agent/conversation.ts            ✅
 2  web onto shared module         server/web/lib/assistant.ts                             ✅
 4  one summarizer                 server/api/src/summarizer.ts + main.ts                ✅
 3  Telegram cutover               server/api/src/main.ts (inbound+outbound recordTurn,  ✅

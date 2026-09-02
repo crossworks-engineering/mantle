@@ -12,12 +12,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mantle/assistant-runtime": "workspace:*",
     "@mantle/config": "workspace:*",
     "@mantle/content": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",
+    "@mantle/runtime": "workspace:*",
     "@mantle/search": "workspace:*",
     "@mantle/std": "workspace:*",
     "@mantle/telegram": "workspace:*",

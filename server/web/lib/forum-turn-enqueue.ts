@@ -13,7 +13,7 @@ import {
   FORUM_QUEUE,
   type ForumTurnInput,
   type ForumTurnRunResult,
-} from '@mantle/assistant-runtime';
+} from '@mantle/runtime/assistant';
 import type { TeamChannel } from '@mantle/db';
 
 export type EnqueueForumTurnArgs = {

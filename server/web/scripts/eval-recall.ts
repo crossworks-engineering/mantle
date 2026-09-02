@@ -40,7 +40,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, agents, nodes, type Agent } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import { searchNodes, searchChunks } from '@mantle/search';
-import { loadConversationContext } from '@mantle/agent-runtime';
+import { loadConversationContext } from '@mantle/runtime/agent';
 import { env } from '@mantle/config';
 
 const HERE = dirname(fileURLToPath(import.meta.url));

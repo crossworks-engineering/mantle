@@ -30,7 +30,7 @@ import {
   type TeamTurnInput,
   type TeamTurnRunResult,
   type RunTeamTurnOptions,
-} from '@mantle/assistant-runtime';
+} from '@mantle/runtime/assistant';
 import { recordTeamAccess } from '@mantle/content';
 import {
   ensureDatedUploadFolder,

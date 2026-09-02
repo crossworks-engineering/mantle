@@ -147,4 +147,4 @@ Then ask Saskia to read a page and watch `/traces`: her `responder_turn` with an
 | Agent + `web-read` group | [`server/web/lib/system-manifest/manifest.ts`](../server/web/lib/system-manifest/manifest.ts) |
 | Reader prompt | [`server/web/lib/system-manifest/prompts.ts`](../server/web/lib/system-manifest/prompts.ts) |
 | Seed wrapper | [`server/web/scripts/seed-agent.ts`](../server/web/scripts/seed-agent.ts) |
-| Delegation bridge | [`packages/agent-runtime/src/invoke-agent.ts`](../packages/agent-runtime/src/invoke-agent.ts) |
+| Delegation bridge | [`packages/runtime/src/agent/invoke-agent.ts`](../packages/runtime/src/agent/invoke-agent.ts) |

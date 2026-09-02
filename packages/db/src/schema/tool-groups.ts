@@ -125,7 +125,7 @@ export type ToolGroupIntegration = {
    * endpoint answers which question, unit conventions, how to chain calls.
    * Convention: `api-<group-slug>`. It travels WITH the grant: an agent granted
    * this group gets the skill in its context (see the effective-skills union in
-   * @mantle/agent-runtime), which is why it must stay short. The docs file
+   * @mantle/runtime/agent), which is why it must stay short. The docs file
    * remains the reference; the skill is judgment.
    */
   skillSlug?: string;

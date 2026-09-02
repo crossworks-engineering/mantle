@@ -35,7 +35,7 @@ import {
   resolveAgentToolGroups,
   resolveAgentTools,
   type SkillForRuntime,
-} from '@mantle/agent-runtime';
+} from '../agent';
 import {
   buildIdentityContext,
   buildWorkingNotesContext,
@@ -66,7 +66,7 @@ import {
   HEARTBEAT_RESPONDER_TOOLS,
   hasActiveHeartbeatsOnSurface,
   openHeartbeatsForSurface,
-} from '@mantle/heartbeats';
+} from '../heartbeats';
 import { maxImageBytesFor, modelSupportsVision, refreshModelCatalog } from '@mantle/tracing';
 
 /** Where a turn's open-heartbeat awareness is scoped. Mirrors the surface
