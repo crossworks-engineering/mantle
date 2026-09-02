@@ -25,6 +25,7 @@ import type {
   ReleaseInfo,
 } from '@mantle/client-types';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 export type { UpdaterPhase, UpdaterScriptState, ComposeState, ReleaseInfo };
 export type { ComposeStatus, UpdateCheck, UpdaterStatus };
@@ -147,7 +148,7 @@ async function fetchLatestRelease(
       error: null,
     };
   } catch (err) {
-    return { latest: null, error: err instanceof Error ? err.message : String(err) };
+    return { latest: null, error: errorMessage(err) };
   }
 }
 
@@ -381,6 +382,6 @@ export async function requestUpdate(
     );
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 }

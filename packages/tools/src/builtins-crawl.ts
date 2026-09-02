@@ -32,6 +32,7 @@ import { recordIngest, step } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { assertFetchableUrl } from './ssrf-guard';
 import { str } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 const KEY_HINT =
   'no firecrawl API key configured — add one at /settings/keys (service `firecrawl`; keys at https://www.firecrawl.dev). The free tier covers ~1,000 pages/month.';
@@ -73,7 +74,7 @@ async function vetUrl(raw: string): Promise<{ ok: true; url: URL } | ToolHandler
   try {
     await assertFetchableUrl(url.toString());
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
   return { ok: true, url };
 }
@@ -181,7 +182,7 @@ const web_map: BuiltinToolDef = {
       );
       return { ok: true, output: { url: vetted.url.toString(), count: links.length, links } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -263,7 +264,7 @@ const web_crawl: BuiltinToolDef = {
       docs = job.data ?? [];
       crawlStatus = typeof job.status === 'string' ? job.status : 'unknown';
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
     if (docs.length === 0) {
       return {

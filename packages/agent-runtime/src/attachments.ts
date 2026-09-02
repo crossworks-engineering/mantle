@@ -30,6 +30,7 @@ import {
 } from '@mantle/files';
 import { DEFAULT_VISION_DESCRIBE_PROMPT, getVisionAdapter } from '@mantle/voice';
 import { fallbackCostMicroUsd, recordStepUsage, step } from '@mantle/tracing';
+import { errorMessage } from '@mantle/std';
 
 /** Max chars of parsed document text folded into a responder prompt. The full
  *  text is persisted + indexed by the extractor; the turn only needs a slice. */
@@ -134,7 +135,7 @@ export async function runVisionWorker(opts: {
     return {
       ran: false,
       text: '',
-      note: `Vision worker failed: ${err instanceof Error ? err.message : String(err)}`,
+      note: `Vision worker failed: ${errorMessage(err)}`,
       model: worker.model,
     };
   }
@@ -232,7 +233,7 @@ export async function runDocumentWorker(opts: {
     return {
       ran: false,
       text: '',
-      note: `Document worker failed: ${err instanceof Error ? err.message : String(err)}`,
+      note: `Document worker failed: ${errorMessage(err)}`,
       model: worker.model,
     };
   }
@@ -484,7 +485,7 @@ export async function extractAttachmentForTurn(opts: {
       return {
         kind: 'file',
         text: '',
-        note: `Couldn't parse the ${ext.toUpperCase()} (scanned, encrypted, or corrupt?): ${err instanceof Error ? err.message : String(err)}`,
+        note: `Couldn't parse the ${ext.toUpperCase()} (scanned, encrypted, or corrupt?): ${errorMessage(err)}`,
       };
     }
   }

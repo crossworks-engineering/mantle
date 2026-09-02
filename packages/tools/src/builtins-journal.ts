@@ -31,21 +31,15 @@ import {
   type JournalRow,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
-import { str } from './coerce';
+import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { notFound } from './errors';
+import { errorMessage } from '@mantle/std';
 
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING journal entry the owner holds.
 const JOURNAL_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'journal', lookup: 'journal_list / search_nodes' },
 ];
-
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
-}
-function num(v: unknown, dflt: number): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : dflt;
-}
 
 /** Compact projection — light context, everything an agent needs to reason. */
 function compact(n: JournalRow) {
@@ -204,7 +198,7 @@ const journal_create: BuiltinToolDef = {
       ctx.step?.setOutput({ id: row.id, title: row.title, kind: row.kind });
       return { ok: true, output: compact(row) };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -259,7 +253,7 @@ const journal_update: BuiltinToolDef = {
       ctx.step?.setOutput({ id: row.id, title: row.title });
       return { ok: true, output: compact(row) };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -315,7 +309,7 @@ const journal_resolve_gap: BuiltinToolDef = {
         output: { resolved: compact(result.gap), answer: compact(result.answer) },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

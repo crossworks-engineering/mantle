@@ -1,8 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getRecallStateForPage } from '@/lib/recall';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE } from '@mantle/std';
 
 /** The editor lint badge: this page's place in Recall, or `state: null` —
  *  a 200 either way, so the editor can probe every open page cheaply. */

@@ -1,4 +1,6 @@
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
+
 /**
  * Client for the media sidecar (infra/media-sidecar) — yt-dlp + ffmpeg behind
  * a narrow bearer-authed HTTP interface, compose profile `media`.
@@ -101,7 +103,7 @@ function asFailure(err: unknown, timeoutMs: number): MediaResult<never> {
     code: aborted ? 'timeout' : 'unreachable',
     message: aborted
       ? `media sidecar did not answer within ${Math.round(timeoutMs / 1000)}s`
-      : `media sidecar unreachable: ${err instanceof Error ? err.message : String(err)}`,
+      : `media sidecar unreachable: ${errorMessage(err)}`,
   };
 }
 

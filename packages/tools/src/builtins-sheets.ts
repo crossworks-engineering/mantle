@@ -18,6 +18,7 @@ import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 import { str } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 const sheet_build: BuiltinToolDef = {
   slug: 'sheet_build',
@@ -168,7 +169,7 @@ const sheet_build: BuiltinToolDef = {
       if (err instanceof SheetSpecError) return { ok: false, error: err.message };
       return {
         ok: false,
-        error: `sheet build failed: ${err instanceof Error ? err.message : String(err)}`,
+        error: `sheet build failed: ${errorMessage(err)}`,
       };
     }
 
@@ -207,7 +208,7 @@ const sheet_build: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

@@ -59,6 +59,7 @@ import JSZip from 'jszip';
 import { describeImageBytes, type EmbeddedImage } from './embedded-images';
 import type { ParsedSheet } from './sheet-to-grid';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 /** True when the bytes carry the classic DWF magic (`(DWF Vnn.nn)`). */
 export function sniffDwf(bytes: Buffer): boolean {
@@ -248,7 +249,7 @@ async function openDwf(bytes: Buffer): Promise<OpenedDwf> {
   try {
     zip = await JSZip.loadAsync(bytes);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     throw new Error(`dwf: no readable ZIP archive in container (${msg})`, { cause: err });
   }
 

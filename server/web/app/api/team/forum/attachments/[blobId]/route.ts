@@ -18,8 +18,7 @@ import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import { getForumTopic, getForumUpload, recordTeamAccess } from '@mantle/content';
 import { readFileById, readQuarantineBytes } from '@mantle/files';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE } from '@mantle/std';
 
 function notFound() {
   return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });

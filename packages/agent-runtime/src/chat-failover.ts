@@ -22,6 +22,7 @@ import {
   type ChatOptions,
   type ChatResult,
 } from '@mantle/voice';
+import { errorMessage } from '@mantle/std';
 
 /** A configured chat route — which provider/model, which key, and where. */
 export interface ChatRoute {
@@ -206,7 +207,7 @@ export async function resolveBackupAdapter(
   } catch (err) {
     console.warn(
       `[chat] backup route '${backup.provider}/${backup.model}' unavailable — failover disabled: ` +
-        (err instanceof Error ? err.message : String(err)),
+        errorMessage(err),
     );
     return undefined;
   }
@@ -251,7 +252,7 @@ export async function chatWithFailover(
     if (!routes.backup || !isChatFailover(err)) throw err;
     log?.(
       `[chat] primary '${routes.primary.provider}/${routes.primary.model}' failed ` +
-        `(${err instanceof Error ? err.message : String(err)}) — failing over to backup ` +
+        `(${errorMessage(err)}) — failing over to backup ` +
         `'${routes.backup.provider}/${routes.backup.model}'`,
     );
     const backup = await resolveRouteAdapter(ownerId, routes.backup);

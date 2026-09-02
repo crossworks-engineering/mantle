@@ -68,6 +68,7 @@ import {
 import { spillToolResult } from '@mantle/tools';
 import { currentTrace, runDurableStep, startTrace, withDurableSteps } from '@mantle/tracing';
 import { getChatAdapter } from '@mantle/voice';
+import { errorMessage } from '@mantle/std';
 
 const PROPOSAL_CAP_CHARS = 2_000;
 
@@ -436,7 +437,7 @@ export async function runsWorkerTurnImpl(
       } catch (err) {
         // Model/transport failure — semantic retry, then structured failure
         // (same rules as slice 2's in-process handler).
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         DBOS.span?.setAttribute('mantle.error', msg);
         DBOS.logger.error(`[runs_worker_turn] FAILED (item=${item.id}): ${msg}`);
         return retryOrFail({ type: 'worker_error', message: msg, itemId: item.id });

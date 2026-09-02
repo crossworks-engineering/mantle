@@ -34,6 +34,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_VISION_MODELS } from '../catalogs/google';
+import { errorMessage } from '@mantle/std';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 const ALLOWED_MIMES = new Set([
@@ -154,7 +155,7 @@ export const googleVisionAdapter: VisionDispatcher = {
       return {
         available: [...GOOGLE_VISION_MODELS],
         filtered: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       };
     }
   },

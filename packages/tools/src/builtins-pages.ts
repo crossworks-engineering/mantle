@@ -53,6 +53,7 @@ import type { BuiltinToolDef } from './types';
 import { str, strArr } from './coerce';
 import { notFound } from './errors';
 import type { ToolPrecondition } from './types';
+import { errorMessage } from '@mantle/std';
 
 // Shared referential preconditions (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING page the owner holds.
@@ -167,7 +168,7 @@ const page_create: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       // createPage throws ParentPageNotFoundError ("…parent page not found") when
       // parent_id isn't one of the owner's pages — surface that plainly.
       if (parentId && msg.includes('parent page not found')) {
@@ -281,7 +282,7 @@ const page_replace_from_file: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -328,7 +329,7 @@ const page_update: BuiltinToolDef = {
         output: { id: page.id, url: nodeUrl(page.id), title: page.title, tags: page.tags },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -381,7 +382,7 @@ const page_update_draft: BuiltinToolDef = {
         if (!result) return notFound('page', id, 'page_list / search_nodes');
         metaUpdated = true;
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        return { ok: false, error: errorMessage(err) };
       }
     }
 
@@ -400,7 +401,7 @@ const page_update_draft: BuiltinToolDef = {
         if (!res.ok) return notFound('page', id, 'page_list / search_nodes');
         draftSaved = true;
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        return { ok: false, error: errorMessage(err) };
       }
     }
 
@@ -487,7 +488,7 @@ const page_commit: BuiltinToolDef = {
         output: { id, committed: true, url: nodeUrl(id), title: page.title },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -514,7 +515,7 @@ const page_discard_draft: BuiltinToolDef = {
       ctx.step?.setOutput({ id, discarded: true });
       return { ok: true, output: { id, discarded: true, url: nodeUrl(id) } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -544,7 +545,7 @@ const page_delete: BuiltinToolDef = {
       ctx.step?.setOutput({ id, deleted: true });
       return { ok: true, output: { id, deleted: true } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -583,7 +584,7 @@ const page_list: BuiltinToolDef = {
         })),
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -631,7 +632,7 @@ const page_get: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -772,7 +773,7 @@ const page_from_file: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -893,7 +894,7 @@ const page_from_note: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       // createPage throws ParentPageNotFoundError when parent_id isn't one of
       // the owner's pages — surface that plainly (mirrors page_create).
       if (parentId && msg.includes('parent page not found')) {
@@ -1058,7 +1059,7 @@ const page_from_notes: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       if (parentId && msg.includes('parent page not found')) {
         return {
           ok: false,
@@ -1197,7 +1198,7 @@ const page_from_journal: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       if (parentId && msg.includes('parent page not found')) {
         return {
           ok: false,
@@ -1421,7 +1422,7 @@ const page_block_update: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `markdown parse failed: ${err instanceof Error ? err.message : String(err)}`,
+        error: `markdown parse failed: ${errorMessage(err)}`,
       };
     }
     if (parsedBlocks.length === 0) {
@@ -1446,7 +1447,7 @@ const page_block_update: BuiltinToolDef = {
         return { ok: false, error: `page ${pageId} not found (race?)` };
       }
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
 
     ctx.step?.setOutput({
@@ -1501,7 +1502,7 @@ const page_block_insert_after: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `markdown parse failed: ${err instanceof Error ? err.message : String(err)}`,
+        error: `markdown parse failed: ${errorMessage(err)}`,
       };
     }
     if (parsedBlocks.length === 0) {
@@ -1526,7 +1527,7 @@ const page_block_insert_after: BuiltinToolDef = {
         return { ok: false, error: `page ${pageId} not found (race?)` };
       }
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
 
     ctx.step?.setOutput({ after: afterId, inserted_count: parsedBlocks.length });
@@ -1579,7 +1580,7 @@ const page_block_insert_before: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `markdown parse failed: ${err instanceof Error ? err.message : String(err)}`,
+        error: `markdown parse failed: ${errorMessage(err)}`,
       };
     }
     if (parsedBlocks.length === 0) {
@@ -1604,7 +1605,7 @@ const page_block_insert_before: BuiltinToolDef = {
         return { ok: false, error: `page ${pageId} not found (race?)` };
       }
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
 
     ctx.step?.setOutput({ before: beforeId, inserted_count: parsedBlocks.length });
@@ -1661,7 +1662,7 @@ const page_block_append: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `markdown parse failed: ${err instanceof Error ? err.message : String(err)}`,
+        error: `markdown parse failed: ${errorMessage(err)}`,
       };
     }
     if (parsedBlocks.length === 0) {
@@ -1680,7 +1681,7 @@ const page_block_append: BuiltinToolDef = {
         return { ok: false, error: `page ${pageId} not found (race?)` };
       }
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
 
     ctx.step?.setOutput({ position, inserted_count: parsedBlocks.length });
@@ -1740,7 +1741,7 @@ const page_block_delete: BuiltinToolDef = {
         return { ok: false, error: `page ${pageId} not found (race?)` };
       }
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
 
     ctx.step?.setOutput({ id: blockId, deleted: true });
@@ -1917,7 +1918,7 @@ const page_blocks_apply: BuiltinToolDef = {
           const parsed = markdownToDoc(markdown) as { content?: unknown[] };
           parsedBlocks = Array.isArray(parsed.content) ? parsed.content : [];
         } catch (err) {
-          return fail(`markdown parse failed: ${err instanceof Error ? err.message : String(err)}`);
+          return fail(`markdown parse failed: ${errorMessage(err)}`);
         }
         if (parsedBlocks.length === 0) return fail('markdown produced no blocks');
         const result =
@@ -2010,7 +2011,7 @@ const page_blocks_apply: BuiltinToolDef = {
         return { ok: false, error: `page ${pageId} not found (race?)` };
       }
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
 
     ctx.step?.setOutput({ ops: opsIn.length, ...counts });
@@ -2080,7 +2081,7 @@ const page_split: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -2124,7 +2125,7 @@ const page_extract_section: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -2185,7 +2186,7 @@ const page_move: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       if (parentId && msg.includes('parent page not found')) {
         return {
           ok: false,
@@ -2278,7 +2279,7 @@ const page_mention: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       if (msg.includes('not found')) {
         if (msg.includes('anchor block')) {
           return {
@@ -2354,7 +2355,7 @@ const page_share: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -2382,7 +2383,7 @@ const page_unshare: BuiltinToolDef = {
       ctx.step?.setOutput({ id, unshared: ok });
       return { ok: true, output: { id, unshared: ok } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

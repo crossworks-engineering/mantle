@@ -23,8 +23,7 @@ import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import { getDrawSvg, recordTeamAccess } from '@mantle/content';
 import { readFileById } from '@mantle/files';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE } from '@mantle/std';
 
 /** Absent, forbidden and malformed all answer the same. */
 export function mediaNotFound(): Response {

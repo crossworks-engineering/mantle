@@ -66,6 +66,7 @@ import type { ChatMessage } from './messages';
 import { fenceRetrieved } from './messages';
 import { parseToolArgs } from './tool-args';
 import { env } from '@mantle/config';
+import { errorMessage, UUID_RE } from '@mantle/std';
 
 const DEFAULT_MAX_ITERATIONS = 6;
 
@@ -329,8 +330,6 @@ const WRITE_VERBS = new Set([
 export function looksLikeWriteTool(slug: string): boolean {
   return slug.split('_').some((seg) => WRITE_VERBS.has(seg));
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Pull `{id, title}` out of a successful write tool's output. Builtins return
  *  the touched artifact at the top level (`{id, url, title}`) or under
@@ -882,7 +881,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
           if (!args.backup || failedOver || !isChatFailover(err)) throw err;
           console.warn(
             `[tool-loop] primary '${active.adapter.adapterName}:${active.model}' failed ` +
-              `(${err instanceof Error ? err.message : String(err)}) — failing over to backup ` +
+              `(${errorMessage(err)}) — failing over to backup ` +
               `'${args.backup.adapter.adapterName}:${args.backup.model}' for the rest of this turn`,
           );
           active = {

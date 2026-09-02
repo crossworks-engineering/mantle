@@ -36,7 +36,8 @@ import {
   type TaskPriority,
 } from '@mantle/content';
 import type { ToolPrecondition, BuiltinToolDef, ToolHandlerResult } from './types';
-import { str, strArr } from './coerce';
+import { str, strArr, strOpt, numOpt } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 const TEAM_CONTACT_ID_PRE: readonly ToolPrecondition[] = [
   {
@@ -46,13 +47,6 @@ const TEAM_CONTACT_ID_PRE: readonly ToolPrecondition[] = [
     lookup: 'team_chat_list / contact_find',
   },
 ];
-
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
-function numOpt(v: unknown): number | undefined {
-  return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
-}
 
 export const TEAM_REQUEST_TAG = 'team-request';
 
@@ -147,7 +141,7 @@ const team_request_create: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -265,7 +259,7 @@ const team_notify: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

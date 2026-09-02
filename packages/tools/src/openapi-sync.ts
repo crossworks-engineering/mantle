@@ -42,6 +42,7 @@ import {
   type SpecInventory,
 } from './openapi-spec';
 import { knownOpenapiApi } from './openapi-catalog';
+import { errorMessage } from '@mantle/std';
 
 /** Every OpenAPI connector group slug starts with this. NOT `api-`: that is
  *  the usage-skill naming convention (`apiSkillSlugForGroup`), and reusing it
@@ -533,7 +534,7 @@ export async function createOpenapiConnector(
       groupSlug,
       created: true,
       warnings: meta.warnings,
-      syncError: err instanceof Error ? err.message : String(err),
+      syncError: errorMessage(err),
     };
   }
 }

@@ -49,6 +49,7 @@ import { DEFAULT_MAX_RETRIES, isEmptyJsonBodyError } from './retry';
 import { mapOpenAICompatFinishReason } from './openai-compat';
 import { StreamingThinkScrubber } from './think-scrubber';
 import { ReasoningDetailsAccumulator, normalizeReasoningDetails } from './reasoning-accum';
+import { errorMessage } from '@mantle/std';
 
 // Backoff for the empty-body retry below — mirrors retry.ts's full-jitter shape.
 const RETRY_BASE_DELAY_MS = 500;
@@ -661,7 +662,7 @@ async function openrouterDiscover(apiKey: string): Promise<DiscoveryResult<ChatM
     return {
       available: [...OPENROUTER_CHAT_MODELS],
       filtered: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }

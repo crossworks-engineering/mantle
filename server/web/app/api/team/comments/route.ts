@@ -21,6 +21,7 @@ import {
 } from '@mantle/content';
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
 import { isUuid } from '@/lib/task-schemas';
+import { firstIssue } from '@/lib/zod-issue';
 
 const PostBody = z.object({
   nodeId: z.string().uuid(),
@@ -47,10 +48,7 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = PostBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { nodeId, body } = parsed.data;
   if (!(await isNodeTeamVisible(caller.ownerId, nodeId))) {

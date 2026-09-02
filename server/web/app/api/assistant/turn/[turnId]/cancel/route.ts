@@ -3,6 +3,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { publishTurnCancel } from '@mantle/turn-stream';
 import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
 import { markTurnSuperseded } from '@mantle/agent-runtime';
+import { UUID_RE } from '@mantle/std';
 
 /**
  * POST /api/assistant/turn/[turnId]/cancel — stop an in-flight streamed turn.
@@ -38,7 +39,6 @@ type CancelBody = {
 /** The row ids hit a uuid column — reject non-uuids up front (400, not a
  *  Postgres cast error). `newTurnId` is the client-minted idempotency key,
  *  also a uuid. */
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(
   req: Request,

@@ -21,6 +21,7 @@ import {
 } from '@mantle/search';
 import { createNote } from '@mantle/content';
 import type { BuiltinToolDef } from './types';
+import { errorMessage } from '@mantle/std';
 
 const CASES_TAG = 'recall-eval-cases';
 const RUN_TAG = 'recall-eval-run';
@@ -102,7 +103,7 @@ const recall_eval: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `golden-case note is invalid: ${err instanceof Error ? err.message : String(err)} — fix the '${CASES_TAG}' note's JSON and re-run recall_eval`,
+        error: `golden-case note is invalid: ${errorMessage(err)} — fix the '${CASES_TAG}' note's JSON and re-run recall_eval`,
       };
     }
 

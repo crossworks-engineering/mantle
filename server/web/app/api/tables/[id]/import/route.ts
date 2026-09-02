@@ -3,6 +3,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { getTable, saveTableDraft } from '@/lib/tables';
 import { parseSpreadsheetToGrid } from '@mantle/files/sheet-to-grid';
 import { tableDocFromGrid } from '@mantle/content/table-model';
+import { errorMessage } from '@mantle/std';
 
 /**
  * Import a spreadsheet into this table (v2.1 P2): the workbook replaces the
@@ -32,10 +33,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     sheets = await parseSpreadsheetToGrid(buf, ext);
   } catch (err) {
-    return NextResponse.json(
-      { error: `parse failed: ${err instanceof Error ? err.message : String(err)}` },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: `parse failed: ${errorMessage(err)}` }, { status: 400 });
   }
   if (sheets.length === 0) {
     return NextResponse.json({ error: 'no tabular data found' }, { status: 400 });
@@ -56,10 +54,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     result = await saveTableDraft(user.id, id, { tabs }, { replace: true });
   } catch (err) {
-    return NextResponse.json(
-      { error: `import failed: ${err instanceof Error ? err.message : String(err)}` },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: `import failed: ${errorMessage(err)}` }, { status: 400 });
   }
   if (!result) return NextResponse.json({ error: 'not found' }, { status: 404 });
 

@@ -5,6 +5,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { getTask } from '@/lib/maintenance/registry';
 import { planRun } from '@/lib/maintenance/run-args';
 import { getRun, isRunning, startRun } from '@/lib/maintenance/run-store';
+import { firstIssue } from '@/lib/zod-issue';
 
 // Start (POST) / poll (GET) a maintenance run. The rails mirror the CLI
 // (scripts/maintain.ts) via the shared planRun() — the UI cannot bypass them.
@@ -29,10 +30,7 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
 
   const task = getTask(parsed.data.slug);

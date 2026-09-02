@@ -4,6 +4,8 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { listApiKeys, setApiKey } from '@/lib/api-keys';
 import { KNOWN_KEY_SERVICES } from '@mantle/api-keys';
 import { isMcpManagedSecretService } from '@mantle/tools';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 export async function GET() {
   const user = await getOwnerOr401();
@@ -41,7 +43,7 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
-    const message = parsed.error.issues[0]?.message ?? 'Invalid input.';
+    const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
   }
   try {
@@ -58,7 +60,7 @@ export async function POST(req: Request) {
       createdAt: row.createdAt,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     // 23505 = unique_violation
     if (msg.includes('api_keys_user_service_label_uq') || msg.includes('duplicate key')) {
       return NextResponse.json(

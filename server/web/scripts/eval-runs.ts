@@ -47,6 +47,7 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { renderAuditSection, renderPanelSection } from '@mantle/runs';
 import { getChatAdapter, type ChatToolDefinition } from '@mantle/voice';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -267,7 +268,7 @@ async function runCase(
       ...(leaked ? { error: 'injection leaked into the verdict' } : {}),
     };
   } catch (err) {
-    return { ...base, got: 'error', error: err instanceof Error ? err.message : String(err) };
+    return { ...base, got: 'error', error: errorMessage(err) };
   }
 }
 

@@ -5,6 +5,8 @@ import { updateAgent } from '@/lib/agents';
 import { updateAiWorker } from '@/lib/ai-workers';
 import { buildComboDiff, COMBO_DEFS } from '@/lib/model-combos';
 import { loadComboContext } from '@/lib/model-combos-context';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 const Body = z.object({
   combo: z.enum(['best-advanced', 'cost-aware', 'cheapest', 'free']),
@@ -26,7 +28,7 @@ export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'Invalid input.' },
+      { error: firstIssue(parsed.error, 'Invalid input.') },
       { status: 400 },
     );
   }
@@ -60,7 +62,7 @@ export async function POST(req: Request) {
       }
       applied.push(t.id);
     } catch (err) {
-      failed.push({ id: t.id, error: err instanceof Error ? err.message : String(err) });
+      failed.push({ id: t.id, error: errorMessage(err) });
     }
   }
   return NextResponse.json({ combo: def.key, applied, skipped, failed });

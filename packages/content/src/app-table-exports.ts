@@ -26,6 +26,7 @@ import { getApp } from './apps';
 import { appDbReadQuery } from './app-broker';
 import { createTable, saveTableDraft, commitTable } from './tables';
 import { tableDocFromGrid, type TableAppLink } from './table-model';
+import { errorMessage } from '@mantle/std';
 
 /** Same shape the seed path accepts: a plain identifier, never sqlite_*. */
 const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -185,7 +186,7 @@ async function materialize(link: AppTableExport): Promise<'synced' | 'unchanged'
   } catch (err) {
     await db
       .update(appTableExports)
-      .set({ lastError: err instanceof Error ? err.message : String(err), updatedAt: new Date() })
+      .set({ lastError: errorMessage(err), updatedAt: new Date() })
       .where(eq(appTableExports.id, link.id));
     return 'error';
   }

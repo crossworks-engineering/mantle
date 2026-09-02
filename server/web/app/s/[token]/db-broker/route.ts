@@ -19,6 +19,7 @@ import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 import { AppDbBody, appDbBodyError } from '@/lib/app-db-broker-body';
+import { errorMessage } from '@mantle/std';
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
@@ -99,9 +100,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     if (parsed.data.op === 'exec') scheduleAppTableExportSync(share.ownerId, share.nodeId);
     return NextResponse.json({ ok: true, output });
   } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
+    return NextResponse.json({ ok: false, error: errorMessage(err) }, { status: 400 });
   }
 }

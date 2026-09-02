@@ -50,6 +50,7 @@ import {
   type OpenAICompatChatResponse,
 } from './openai-compat';
 import { scrubThinkBlocks } from './think-scrubber';
+import { errorMessage } from '@mantle/std';
 
 /** HF's router speaks the OpenAI-compat wire shape verbatim — no
  *  provider-specific quirks on the response side. Aliasing the shared
@@ -171,7 +172,7 @@ async function hfDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInfo
     return {
       available: [...HUGGINGFACE_CHAT_MODELS],
       filtered: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }

@@ -137,6 +137,7 @@ import {
 } from '@mantle/content';
 import { and, asc, eq } from 'drizzle-orm';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 /** Mutating Toolsmith tools — gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
  *  ON). Module-scope (env is process-stable) so the gate is evaluated once, not
@@ -400,7 +401,7 @@ export function registerMantleTools(
         }
         return jsonReply(indexing ? { ...folder, indexing } : folder);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         return { content: [{ type: 'text', text: `folder_create failed: ${msg}` }], isError: true };
       }
     },
@@ -469,7 +470,7 @@ export function registerMantleTools(
         }
         return jsonReply(updated);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         return { content: [{ type: 'text', text: `folder_rename failed: ${msg}` }], isError: true };
       }
     },
@@ -550,7 +551,7 @@ export function registerMantleTools(
         }
         return jsonReply(indexing ? { ...row, indexing } : row);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         return { content: [{ type: 'text', text: `file_upload failed: ${msg}` }], isError: true };
       }
     },
@@ -607,7 +608,7 @@ export function registerMantleTools(
         }
         return jsonReply(row);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         return { content: [{ type: 'text', text: `file_rename failed: ${msg}` }], isError: true };
       }
     },
@@ -994,7 +995,7 @@ export function registerMantleTools(
           ],
         };
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         return { content: [{ type: 'text', text: `send failed: ${msg}` }], isError: true };
       }
     },
@@ -1017,7 +1018,7 @@ export function registerMantleTools(
         await reactToMessage(account, chat_id, message_id, emoji);
         return { content: [{ type: 'text', text: 'reacted' }] };
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         return { content: [{ type: 'text', text: `react failed: ${msg}` }], isError: true };
       }
     },
@@ -1041,7 +1042,7 @@ export function registerMantleTools(
         await editMessage(account, chat_id, message_id, text, { markdown });
         return { content: [{ type: 'text', text: 'edited' }] };
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         return { content: [{ type: 'text', text: `edit failed: ${msg}` }], isError: true };
       }
     },
@@ -1571,7 +1572,7 @@ export function registerMantleTools(
         empty_reply_substituted: res.emptyReplySubstituted,
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       return {
         content: [{ type: 'text' as const, text: `${a.toolName} failed: ${msg}` }],
         isError: true,
@@ -1639,7 +1640,7 @@ export function registerMantleTools(
           advisory: p.advisory,
         });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         return {
           content: [{ type: 'text' as const, text: `ask_as_responder failed: ${msg}` }],
           isError: true,

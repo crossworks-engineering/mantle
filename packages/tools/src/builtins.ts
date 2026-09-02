@@ -87,20 +87,7 @@ import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { LOCATION_TOOLS } from './builtins-locations';
 import { EXPORT_TOOLS } from './builtins-export';
 import { SHEET_TOOLS } from './builtins-sheets';
-import { str } from './coerce';
-
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
-
-function num(v: unknown, dflt?: number): number | undefined {
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  return dflt;
-}
-
-function bool(v: unknown): boolean | undefined {
-  return typeof v === 'boolean' ? v : undefined;
-}
+import { str, strOpt, numOpt as num, boolOpt as bool } from './coerce';
 
 /**
  * Intentionally NOT the shared `strArrOpt` from './coerce': this variant also
@@ -249,7 +236,7 @@ const search_nodes: BuiltinToolDef = {
         }),
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -324,7 +311,7 @@ const search_chunks: BuiltinToolDef = {
         }),
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -927,7 +914,7 @@ const content_supersede: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       if (msg.includes('successor node not found')) {
         return {
           ok: false,
@@ -1321,7 +1308,7 @@ const file_create: BuiltinToolDef = {
       });
       return { ok: true, output: row };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1358,7 +1345,7 @@ const file_rename: BuiltinToolDef = {
       ctx.step?.setOutput({ fileId: row.id, filename: row.filename });
       return { ok: true, output: row };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1400,7 +1387,7 @@ const folder_rename: BuiltinToolDef = {
       ctx.step?.setOutput({ folderId: row.id, path: row.path });
       return { ok: true, output: row };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1442,7 +1429,7 @@ const folder_describe: BuiltinToolDef = {
       ctx.step?.setOutput({ folderId: row.id });
       return { ok: true, output: row };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1492,7 +1479,7 @@ const file_set_indexing: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1539,7 +1526,7 @@ const folder_set_indexing: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1574,7 +1561,7 @@ const file_move: BuiltinToolDef = {
       ctx.step?.setOutput({ fileId, destPath });
       return { ok: true, output: row };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1614,7 +1601,7 @@ const file_copy: BuiltinToolDef = {
       ctx.step?.setOutput({ sourceId: fileId, newId: row.id });
       return { ok: true, output: row };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1654,7 +1641,7 @@ const folder_move: BuiltinToolDef = {
       ctx.step?.setOutput({ folderId, destParentPath, requeued });
       return { ok: true, output: { folder, requeued } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1694,7 +1681,7 @@ const folder_copy: BuiltinToolDef = {
       });
       return { ok: true, output: result };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1702,6 +1689,7 @@ const folder_copy: BuiltinToolDef = {
 // ─── telegram ─────────────────────────────────────────────────────────────
 
 import { accountForChat, sendMessage } from '@mantle/telegram';
+import { errorMessage } from '@mantle/std';
 
 // ─── system / triggers ────────────────────────────────────────────────────
 
@@ -1812,7 +1800,7 @@ const telegram_send: BuiltinToolDef = {
       ctx.step?.setOutput({ messageIds: ids });
       return { ok: true, output: { messageIds: ids } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

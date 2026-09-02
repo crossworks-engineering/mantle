@@ -29,6 +29,7 @@
     "@fast-csv/parse": "^5.0.7",
     "@mantle/config": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/std": "workspace:*",
     "@napi-rs/canvas": "^1.0.2",
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",

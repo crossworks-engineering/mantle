@@ -12,8 +12,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { quarantineRoot } from './paths';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE } from '@mantle/std';
 
 /** Absolute path for one quarantined blob. Throws on a non-uuid segment —
  *  ids are server-minted, so a mismatch is a bug, not a user error. */

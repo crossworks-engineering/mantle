@@ -15,6 +15,7 @@
 import { db, apiKeys } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { catalogDrift, getChatAdapter, getProvider } from '@mantle/voice';
+import { errorMessage } from '@mantle/std';
 
 /** Providers whose catalogue is a fallback, not a curated list — their
  *  discovery builds `available` from the live response, so "drift" is not a
@@ -93,7 +94,7 @@ export async function runModelsDrift(): Promise<ModelsDriftResult> {
       result = await adapter.discoverModels(apiKey);
     } catch (err) {
       // One unreachable provider must not abort the sweep for the rest.
-      unchecked.push(`${label} — ${err instanceof Error ? err.message : String(err)}`);
+      unchecked.push(`${label} — ${errorMessage(err)}`);
       continue;
     }
 

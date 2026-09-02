@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { resolveGapEntry } from '@/lib/journal';
+import { firstIssue } from '@/lib/zod-issue';
 
 const ResolveBody = z.object({
   answer: z.string().max(20_000),
@@ -19,10 +20,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const raw = await req.json().catch(() => ({}));
   const parsed = ResolveBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   if (!parsed.data.answer.trim()) {
     return NextResponse.json({ error: 'answer is required' }, { status: 400 });

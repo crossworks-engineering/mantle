@@ -14,6 +14,8 @@ import { enqueueForumTurn } from '@/lib/forum-turn-enqueue';
 import { forumDailySpend, FORUM_DAILY_CAP } from '@/lib/forum-gate';
 import { resolveStagedAttachments } from '@/lib/forum-attachments';
 import { appendForumPost, getForumTopic, recordTeamAccess } from '@mantle/content';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const Body = z.object({
@@ -62,10 +64,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
 
   // Visibility-enforced load; members cannot post into a closed topic.
@@ -119,7 +118,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
     return NextResponse.json({ postId: post.id, outbound: enq.result.outbound }, { status: 201 });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (msg.includes('attachment is missing or already used')) {
       return NextResponse.json(
         { error: 'those attachments were already posted — re-attach and try again' },

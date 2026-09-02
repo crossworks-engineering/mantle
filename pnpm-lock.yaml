@@ -97,6 +97,9 @@ importers:
       '@mantle/search':
         specifier: workspace:*
         version: link:../search
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       '@mantle/tools':
         specifier: workspace:*
         version: link:../tools
@@ -147,6 +150,9 @@ importers:
       '@mantle/share-ui':
         specifier: workspace:*
         version: link:../share-ui
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       '@tailwindcss/oxide':
         specifier: ^4.3.3
         version: 4.3.3
@@ -199,6 +205,9 @@ importers:
       '@mantle/heartbeats':
         specifier: workspace:*
         version: link:../heartbeats
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       '@mantle/tools':
         specifier: workspace:*
         version: link:../tools
@@ -285,6 +294,9 @@ importers:
       '@mantle/search':
         specifier: workspace:*
         version: link:../search
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       '@mantle/tabledb':
         specifier: workspace:*
         version: link:../tabledb
@@ -341,6 +353,9 @@ importers:
       '@mantle/config':
         specifier: workspace:*
         version: link:../config
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
@@ -381,6 +396,9 @@ importers:
       '@mantle/rules':
         specifier: workspace:*
         version: link:../rules
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       '@mantle/storage':
         specifier: workspace:*
         version: link:../storage
@@ -436,6 +454,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       '@mantle/tracing':
         specifier: workspace:*
         version: link:../tracing
@@ -464,6 +485,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       '@napi-rs/canvas':
         specifier: 1.0.2
         version: 1.0.2
@@ -519,6 +543,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       '@mantle/telegram':
         specifier: workspace:*
         version: link:../telegram
@@ -565,6 +592,9 @@ importers:
       '@mantle/search':
         specifier: workspace:*
         version: link:../search
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       '@mantle/telegram':
         specifier: workspace:*
         version: link:../telegram
@@ -611,6 +641,9 @@ importers:
       '@mantle/files':
         specifier: workspace:*
         version: link:../files
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       '@mantle/storage':
         specifier: workspace:*
         version: link:../storage
@@ -671,6 +704,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
@@ -746,6 +782,15 @@ importers:
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.17)
 
+  packages/std:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.20.1
+        version: 22.20.1
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   packages/storage:
     dependencies:
       '@aws-sdk/client-s3':
@@ -770,6 +815,9 @@ importers:
       '@mantle/config':
         specifier: workspace:*
         version: link:../config
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -786,6 +834,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
@@ -841,6 +892,9 @@ importers:
       '@mantle/search':
         specifier: workspace:*
         version: link:../search
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       '@mantle/storage':
         specifier: workspace:*
         version: link:../storage
@@ -887,6 +941,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
@@ -925,6 +982,9 @@ importers:
       '@mantle/config':
         specifier: workspace:*
         version: link:../config
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       '@mantle/voice-client':
         specifier: workspace:*
         version: link:../voice-client
@@ -992,6 +1052,9 @@ importers:
       '@mantle/runs':
         specifier: workspace:*
         version: link:../../packages/runs
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../../packages/std
       '@mantle/storage':
         specifier: workspace:*
         version: link:../../packages/storage
@@ -1138,6 +1201,9 @@ importers:
       '@mantle/share-ui':
         specifier: workspace:*
         version: link:../../packages/share-ui
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../../packages/std
       '@mantle/storage':
         specifier: workspace:*
         version: link:../../packages/storage

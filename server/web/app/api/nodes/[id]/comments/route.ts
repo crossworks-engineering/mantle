@@ -20,6 +20,7 @@ import {
   listNodeComments,
   toNodeCommentDto,
 } from '@mantle/content';
+import { firstIssue } from '@/lib/zod-issue';
 
 const PostBody = z.object({
   body: z.string().min(1).max(COMMENT_BODY_MAX),
@@ -43,10 +44,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const raw = await req.json().catch(() => ({}));
   const parsed = PostBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const row = await addNodeComment(
     user.id,

@@ -44,6 +44,7 @@ import { recordIngest } from '@mantle/tracing';
 import { resolveTool } from './dispatch';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 const APP_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'app', lookup: 'app_list' },
@@ -120,7 +121,7 @@ const app_create: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -203,7 +204,7 @@ const app_file_write: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -236,7 +237,7 @@ const app_file_delete: BuiltinToolDef = {
       };
     } catch (err) {
       if (err instanceof CannotDeleteEntryError) return { ok: false, error: err.message };
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -303,7 +304,7 @@ const app_source_set: BuiltinToolDef = {
       };
     } catch (err) {
       if (err instanceof AppSourceLimitError) return { ok: false, error: err.message };
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -376,7 +377,7 @@ const app_build: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -449,7 +450,7 @@ const app_db_schema_set: BuiltinToolDef = {
     try {
       assertSafeScript(schemaSql);
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
     const app = await getApp(ctx.ownerId, id);
     if (!app) return { ok: false, error: `app ${id} not found` };
@@ -539,7 +540,7 @@ const app_db_seed: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -608,7 +609,7 @@ const app_publish: BuiltinToolDef = {
       return { ok: true, output: { id, url: nodeUrl(id), name: app.title, published: true } };
     } catch (err) {
       if (err instanceof NoGreenBuildError) return { ok: false, error: err.message };
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -634,7 +635,7 @@ const app_delete: BuiltinToolDef = {
       ctx.step?.setOutput({ id, deleted: true });
       return { ok: true, output: { id, deleted: true } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -663,7 +664,7 @@ const app_db_list: BuiltinToolDef = {
       ctx.step?.setOutput({ count: out.length });
       return { ok: true, output: { apps: out } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -710,7 +711,7 @@ const app_db_query: BuiltinToolDef = {
       }
       return { ok: true, output: { rows, row_count: rows.length } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -759,7 +760,7 @@ const app_table_export_set: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

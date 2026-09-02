@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { listMessages } from '@mantle/email';
 import { getOwnerOr401 } from '@/lib/auth';
+import { firstIssue } from '@/lib/zod-issue';
 
 const Query = z.object({
   account: z.string().uuid(),
@@ -22,10 +23,7 @@ export async function GET(req: Request) {
     limit: sp.get('limit') ?? undefined,
   });
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid query' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error, 'invalid query') }, { status: 400 });
   }
   const { account, folder, unread, limit } = parsed.data;
   const messages = await listMessages(user.id, {

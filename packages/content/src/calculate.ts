@@ -14,6 +14,7 @@
  * the unit checking trustworthy.
  */
 import { create, all, type FactoryFunctionMap, type MathJsInstance } from 'mathjs';
+import { errorMessage } from '@mantle/std';
 
 const ALL_FACTORIES = all as FactoryFunctionMap;
 
@@ -115,7 +116,7 @@ export function calculate(expression: string, opts: CalcOptions = {}): CalcResul
   } catch (err) {
     return {
       ok: false,
-      error: `could not parse: ${err instanceof Error ? err.message : String(err)}`,
+      error: `could not parse: ${errorMessage(err)}`,
     };
   }
 
@@ -123,7 +124,7 @@ export function calculate(expression: string, opts: CalcOptions = {}): CalcResul
   try {
     value = compile(src).evaluate({});
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 
   if (opts.to) {
@@ -136,9 +137,7 @@ export function calculate(expression: string, opts: CalcOptions = {}): CalcResul
       } catch (err) {
         return {
           ok: false,
-          error: `cannot convert the result to '${opts.to}': ${
-            err instanceof Error ? err.message : String(err)
-          }`,
+          error: `cannot convert the result to '${opts.to}': ${errorMessage(err)}`,
         };
       }
     }

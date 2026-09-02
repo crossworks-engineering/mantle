@@ -31,8 +31,9 @@ import {
   type RecurFreq,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
-import { str, strArrOpt } from './coerce';
+import { str, strArrOpt, strOpt, numOpt as num } from './coerce';
 import { notFound } from './errors';
+import { errorMessage } from '@mantle/std';
 
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING event the owner holds.
@@ -42,13 +43,6 @@ const EVENT_ID_PRE: readonly ToolPrecondition[] = [
 
 const RECUR_VALUES: readonly RecurFreq[] = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
-function num(v: unknown, dflt?: number): number | undefined {
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  return dflt;
-}
 /** Validated RecurFreq, or undefined to leave unchanged on update. */
 function recurOpt(v: unknown): RecurFreq | undefined {
   return typeof v === 'string' && (RECUR_VALUES as readonly string[]).includes(v)
@@ -94,7 +88,7 @@ const event_list: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -222,7 +216,7 @@ const event_create: BuiltinToolDef = {
       ctx.step?.setMeta({ eventId: row.id, title, startsAt, timezone });
       return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -302,7 +296,7 @@ const event_update: BuiltinToolDef = {
       ctx.step?.setMeta({ eventId: id });
       return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

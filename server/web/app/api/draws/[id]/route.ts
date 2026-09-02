@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { deleteDraw, getDraw, updateDraw } from '@/lib/draws';
+import { firstIssue } from '@/lib/zod-issue';
 
 const PatchBody = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -31,10 +32,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const row = await updateDraw(user.id, id, parsed.data);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });

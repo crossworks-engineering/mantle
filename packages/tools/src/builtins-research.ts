@@ -31,12 +31,9 @@ import {
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import { captureLlmUsage } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
-import { str } from './coerce';
+import { str, strOpt } from './coerce';
 import { env } from '@mantle/config';
-
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
+import { errorMessage } from '@mantle/std';
 
 /** Last-resort model when NO search worker is configured (fresh brain before the
  *  0087 backfill / onboarding provision runs). The worker is the real source of
@@ -200,7 +197,7 @@ async function runWebSearch(
     }
     return { ok: true, output: { query, model, answer, citations } };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 }
 

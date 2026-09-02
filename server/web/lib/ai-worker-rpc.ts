@@ -26,6 +26,7 @@ import {
 import { embed, resolveEmbeddingModel, runReembed, type ReembedResult } from '@mantle/embeddings';
 import { chatWithFailover, resolveChatRoutes } from '@mantle/agent-runtime';
 import { getAiWorker } from '@/lib/ai-workers';
+import { errorMessage } from '@mantle/std';
 
 export type DiscoverKind = 'tts' | 'stt' | 'chat' | 'vision' | 'image_gen' | 'embedding';
 
@@ -39,7 +40,7 @@ export async function reembedIndex(
     const result = await runReembed(userId, { model });
     return { ok: true, model, result };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 }
 
@@ -54,7 +55,7 @@ export async function testEmbeddingModel(
     const vec = await embed(userId, 'dimension probe', { model: slug });
     return { ok: true, dimensions: vec.length };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 }
 
@@ -217,7 +218,7 @@ export async function listVoices(
     const voices = await adapter.voicesForModel(modelId, apiKey ?? undefined);
     return { voices, error: null };
   } catch (err) {
-    return { voices: [], error: err instanceof Error ? err.message : String(err) };
+    return { voices: [], error: errorMessage(err) };
   }
 }
 

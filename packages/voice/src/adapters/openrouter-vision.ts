@@ -26,6 +26,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { OPENROUTER_BASE_URL, OPENROUTER_VISION_MODELS } from '../catalogs/openrouter';
+import { errorMessage } from '@mantle/std';
 
 const DEFAULT_MODEL = 'anthropic/claude-sonnet-5';
 
@@ -219,7 +220,7 @@ export const openrouterVisionAdapter: VisionDispatcher = {
       return {
         available: [...OPENROUTER_VISION_MODELS],
         filtered: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       };
     }
   },

@@ -262,6 +262,7 @@ import {
   type ExtractorOutput,
 } from './extractor-parse';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 /** A resolved entity mention (name + kind) as produced by the parser and
  *  threaded through the index + reconciliation stages. */
@@ -916,7 +917,7 @@ async function maybeExtractEmbeddedImages(
           // fully-failed save loop end status=success with created:0, which
           // read exactly like "this document has no pictures" (the same
           // ambiguity the bytes_available fix above exists to kill).
-          saveErrors.push(err instanceof Error ? err.message : String(err));
+          saveErrors.push(errorMessage(err));
           console.error('[extractor] embedded image save failed:', saveErrors.at(-1));
         }
       }
@@ -1461,7 +1462,7 @@ async function ocrIngestPdfNode(
             return r;
           } catch (err) {
             // Unrenderable / corrupt / encrypted PDF — record and give up.
-            const msg = err instanceof Error ? err.message : String(err);
+            const msg = errorMessage(err);
             if (/password/i.test(msg)) encrypted = true;
             h.setMeta({ pages: 0, error: msg });
             return [];

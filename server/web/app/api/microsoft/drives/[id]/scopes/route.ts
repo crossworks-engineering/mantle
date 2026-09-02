@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { listScopes, ownedDrive, setDriveScopes } from '@mantle/microsoft';
 import type { MsDriveScopeDTO } from '@mantle/client-types';
 import { getOwnerOr401 } from '@/lib/auth';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** Wire projection of a scope row (drops db id/timestamps). */
 function toScopeDTO(s: Awaited<ReturnType<typeof listScopes>>[number]): MsDriveScopeDTO {
@@ -43,7 +44,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'Invalid input.' },
+      { error: firstIssue(parsed.error, 'Invalid input.') },
       { status: 400 },
     );
   }

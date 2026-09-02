@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { db, curatedModels } from '@mantle/db';
 import { getOwnerOr401 } from '@/lib/auth';
 import { MODEL_POOL_IDS } from '@/lib/model-pools';
+import { firstIssue } from '@/lib/zod-issue';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -45,7 +46,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    const message = parsed.error.issues[0]?.message ?? 'Invalid input.';
+    const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
   }
   const b = parsed.data;

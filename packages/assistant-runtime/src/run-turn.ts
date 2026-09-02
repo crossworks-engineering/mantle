@@ -66,6 +66,7 @@ import {
   runWithImageFallback,
 } from './assemble-turn';
 import { emptyLoopResult, runResponderLoop, type ResponderLoopResult } from './responder-loop';
+import { errorMessage } from '@mantle/std';
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
 // First module load wires it up. Idempotent — last call wins.
@@ -536,7 +537,7 @@ export async function runAssistantTurn(
       // record + a reload + the non-blocking client all reflect it, emit the
       // terminal error event, then re-throw — the workflow lands in ERROR and the
       // blocking route's getResult() still rejects (unchanged failure surface).
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       await runDurableStep('fail_outbound', () =>
         updateAssistantMessageOutcome({
           ownerId,

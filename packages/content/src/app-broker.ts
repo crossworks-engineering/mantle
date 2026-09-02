@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, appDatabases } from '@mantle/db';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 /** Root dir for per-app SQLite files. A dedicated volume in prod (see compose);
  *  one file per app: <root>/<owner>/<app>.sqlite. When APP_DB_DIR is unset
@@ -627,7 +628,7 @@ export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSna
       report.failed.push({
         ownerId: r.ownerId,
         appNodeId: r.appNodeId,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       });
     }
   }

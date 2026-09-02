@@ -34,11 +34,9 @@ import {
 } from '@mantle/content';
 import { readFileById } from '@mantle/files';
 import type { BuiltinToolDef } from './types';
-import { str } from './coerce';
+import { str, strOptTrim as strOpt } from './coerce';
+import { errorMessage } from '@mantle/std';
 
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
-}
 /** Split a comma-separated recipient string into one-or-many. */
 function recipients(raw: string): string | string[] {
   const parts = raw
@@ -250,7 +248,7 @@ const email_send: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -385,7 +383,7 @@ const email_page: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -460,7 +458,7 @@ const email_list: BuiltinToolDef = {
       ctx.step?.setOutput({ count: rows.length });
       return { ok: true, output: rows };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -563,7 +561,7 @@ const email_get: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

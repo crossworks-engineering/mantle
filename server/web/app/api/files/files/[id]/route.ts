@@ -13,6 +13,8 @@ import { copyFileById, moveFileById } from '@mantle/files';
 import { thumbnailFor } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([
@@ -104,10 +106,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
 
   try {
@@ -178,7 +177,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     });
     return NextResponse.json({ file });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (msg.includes('already exists')) {
       return NextResponse.json({ error: msg }, { status: 409 });
     }
@@ -198,10 +197,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     .object({ copy_to: z.string().min(1).max(500), new_filename: z.string().max(200).optional() })
     .safeParse(raw);
   if (!body.success) {
-    return NextResponse.json(
-      { error: body.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   }
   try {
     const file = await copyFileById({

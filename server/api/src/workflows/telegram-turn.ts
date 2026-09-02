@@ -26,6 +26,7 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import { withDurableSteps } from '@mantle/tracing';
 import { RUNNER_QUEUE } from '@mantle/assistant-runtime';
 import { handleTelegramMessage } from '../agent/runtime';
+import { errorMessage } from '@mantle/std';
 
 /** DBOS workflow name the runner registers under. Internal to apps/api — the
  *  only enqueuer is this process's own LISTEN handler + boot drain, so unlike
@@ -51,7 +52,7 @@ async function telegramTurnImpl(input: TelegramTurnInput): Promise<void> {
     // The DBOS run record already captures status=ERROR + the error; add an
     // explicit, queryable failure log + span attribute. Re-throw so the run
     // lands in ERROR (and DBOS won't mark it complete).
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     DBOS.span?.setAttribute('mantle.error', msg);
     DBOS.logger.error(`[telegram_turn] FAILED (message=${messageId}): ${msg}`);
     throw err;

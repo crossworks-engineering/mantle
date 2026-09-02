@@ -2,6 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { deleteHeartbeat, getHeartbeat, updateHeartbeat } from '@/lib/heartbeats';
 import { UpdateHeartbeatBody, toUpdateInput } from '@/lib/heartbeat-schema';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** One owner-scoped heartbeat (summary), or 404. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -22,7 +24,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const parsed = UpdateHeartbeatBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'Invalid input.' },
+      { error: firstIssue(parsed.error, 'Invalid input.') },
       { status: 400 },
     );
   }
@@ -31,10 +33,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!heartbeat) return NextResponse.json({ error: 'Heartbeat not found.' }, { status: 404 });
     return NextResponse.json({ heartbeat });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
   }
 }
 

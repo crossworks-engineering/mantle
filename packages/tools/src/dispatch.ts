@@ -28,6 +28,7 @@ import { mcpCallRemoteTool } from './mcp-client';
 import { isMcpManagedSecretService } from './mcp-oauth';
 import { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
+import { errorMessage } from '@mantle/std';
 
 /** Look up a tool by slug for a given owner. Returns null if missing/disabled. */
 export async function resolveTool(ownerId: string, slug: string): Promise<Tool | null> {
@@ -79,7 +80,7 @@ export async function dispatchTool(
       }
       return await fn(input, ctx);
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   }
   if (h.kind === 'http') {
@@ -163,7 +164,7 @@ async function dispatchMcp(
     }
     return { ok: true, output, untrusted: true };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     return { ok: false, error: msg.slice(0, 2000) };
   }
 }
@@ -221,7 +222,7 @@ async function dispatchRecipe(
     } catch (err) {
       return {
         ok: false,
-        error: `recipe step ${i} ('${step.tool}'): ${err instanceof Error ? err.message : String(err)}`,
+        error: `recipe step ${i} ('${step.tool}'): ${errorMessage(err)}`,
       };
     }
 
@@ -388,7 +389,7 @@ async function dispatchHttp(
     // fences it as data before the model reads it.
     return { ok: true, output: parsed, untrusted: true };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     return { ok: false, error: scrub(msg) };
   }
 }

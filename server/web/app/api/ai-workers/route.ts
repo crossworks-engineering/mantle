@@ -9,6 +9,8 @@ import {
   openRouterModelIssue,
   toAiWorkerDTO,
 } from '@/lib/ai-workers';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 const KIND = z.enum([
   'reflector',
@@ -66,10 +68,7 @@ export async function POST(req: Request) {
   if (user instanceof Response) return user;
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   // Save-time catalog check: a bad OpenRouter id fails SILENTLY at call time
   // (the 2026-08-31 vision incident), so the save is where it must be caught.
@@ -94,7 +93,7 @@ export async function POST(req: Request) {
     if (worker.kind === 'embedding') clearEmbeddingModelCache(user.id);
     return NextResponse.json({ worker: toAiWorkerDTO(worker) });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (msg.includes('duplicate key') || msg.includes('_uq')) {
       return NextResponse.json(
         { error: 'A worker with that slug already exists.' },

@@ -31,6 +31,7 @@ import {
   HOUSE_STYLE_MAX,
 } from '@mantle/content';
 import { listReminderCapableAgents } from '@/lib/agents';
+import { errorMessage } from '@mantle/std';
 
 export async function GET() {
   const user = await getOwnerOr401();
@@ -164,9 +165,6 @@ export async function PUT(req: Request) {
     });
     return NextResponse.json({ preferences });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
   }
 }

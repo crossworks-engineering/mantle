@@ -5,6 +5,7 @@ import {
   findConnectorByOAuthState,
   syncMcpConnector,
 } from '@mantle/tools';
+import { errorMessage } from '@mantle/std';
 
 /** Minimal self-closing result page — the flow runs in a spare browser tab. */
 function htmlPage(title: string, detail: string, ok: boolean): Response {
@@ -52,7 +53,7 @@ export async function GET(req: Request) {
   try {
     await completeMcpOAuth(dbMcpOAuthStore(user.id, groupSlug), { code });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     return htmlPage(`Authorization failed for ${esc(groupSlug)}`, esc(msg), false);
   }
 
@@ -64,7 +65,7 @@ export async function GET(req: Request) {
       true,
     );
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     return htmlPage(
       `${esc(groupSlug)} authorized, sync failed`,
       `Tokens are stored, but listing the server's tools failed: ${esc(msg)}. Re-run sync via POST /api/mcp-connectors/${esc(groupSlug)}/sync.`,

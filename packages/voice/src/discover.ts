@@ -36,6 +36,8 @@ type ListModelsResponse = {
 };
 
 import type { DiscoveryResult } from '@mantle/voice-client/catalog';
+import { errorMessage } from '@mantle/std';
+
 export type { DiscoveryResult };
 
 /**
@@ -103,7 +105,7 @@ export async function discoverTtsModels(apiKey: string): Promise<DiscoveryResult
     return {
       available: [...OPENAI_TTS_MODELS],
       filtered: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }
@@ -121,7 +123,7 @@ export async function discoverSttModels(apiKey: string): Promise<DiscoveryResult
     return {
       available: [...OPENAI_STT_MODELS],
       filtered: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }

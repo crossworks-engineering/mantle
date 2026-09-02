@@ -36,6 +36,7 @@ import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { refuseTeamSurface } from './builtins-crawl';
 import { resolveOpenRouterKey } from './builtins-research';
 import { str } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 const OR_BASE = 'https://openrouter.ai/api/v1';
 const DATA_TIMEOUT_MS = 25_000;
@@ -58,7 +59,7 @@ async function orGet(
     }
     return { ok: true, json: await res.json() };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 }
 

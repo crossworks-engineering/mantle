@@ -20,6 +20,7 @@ import type {
   ToolGroupMcpBinding,
   ToolGroupOpenapiBinding,
 } from '@mantle/db';
+import { UUID_RE } from '@mantle/std';
 
 export type { ToolGroupIntegration, ToolGroupMcpBinding, ToolGroupOpenapiBinding };
 
@@ -28,7 +29,6 @@ export type { ToolGroupIntegration, ToolGroupMcpBinding, ToolGroupOpenapiBinding
 const SECRET_REF_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const SERVICE_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 const HTTP_URL_RE = /^https?:\/\/\S+$/i;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SKILL_SLUG_RE = /^[a-z0-9_-]{1,120}$/;
 /** A header/query name that carries a credential — flagged when its value has
  *  no `{{secret:…}}` ref (mirrors the API Console's baked-credential warning). */

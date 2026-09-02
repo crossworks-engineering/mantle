@@ -15,6 +15,7 @@ import {
   restorePersonaNote,
   retirePersonaNote,
 } from '@/lib/agents';
+import { firstIssue } from '@/lib/zod-issue';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const Kind = z.enum(['style', 'relationship', 'correction']);
@@ -41,7 +42,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'Invalid input.' },
+      { error: firstIssue(parsed.error, 'Invalid input.') },
       { status: 400 },
     );
   }

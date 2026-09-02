@@ -42,6 +42,7 @@ import { snapshotAllAppDatabases } from './app-broker';
 import type { BackupConfig, BackupFile, BackupStatus } from '@mantle/client-types';
 import type { BackupFrequency } from '@mantle/client-types';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 export type { BackupFrequency };
 export type { BackupConfig, BackupFile, BackupStatus };
@@ -583,5 +584,5 @@ export async function maybeRunScheduledBackups(): Promise<void> {
 }
 
 function msg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return errorMessage(err);
 }

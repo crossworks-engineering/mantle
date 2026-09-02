@@ -107,6 +107,7 @@ import { reflect } from './reflector.js';
 import { CONVERSATIONAL_ROLES, pickFallbackResponder } from './agent-select.js';
 import { computeFloorGroupAdditions } from './core-tools.js';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 // Resolved at the top of main() via waitForOwner() — either ALLOWED_USER_ID (when
 // set) or the sole auth.users row. Left `undefined` until then so a fresh install
@@ -1057,7 +1058,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
         } catch (err) {
           // The send_telegram step already recorded the error; capture it and
           // fall through to persist so the generated reply isn't lost.
-          sendError = err instanceof Error ? err.message : String(err);
+          sendError = errorMessage(err);
         }
 
         await step({ name: 'persist_outbound', kind: 'db_write' }, async (h) => {
@@ -1161,7 +1162,7 @@ export async function handleTelegramMessage(messageId: string): Promise<void> {
       },
     );
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     console.error('[agent] handle failed:', msg);
   } finally {
     stopTyping();

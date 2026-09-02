@@ -64,6 +64,7 @@ import {
   unregisterTurnAbort,
   currentTrace,
 } from '@mantle/tracing';
+import { errorMessage } from '@mantle/std';
 
 /** The one agent that serves the team surface. Provisioned by the manifest;
  *  resolved explicitly — priority/default selection never applies here. */
@@ -316,7 +317,7 @@ export async function runTeamTurn(
         ctx,
       };
     } else {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       await runDurableStep('fail_team_outbound', () =>
         updateTeamMessageOutcome({
           ownerId,

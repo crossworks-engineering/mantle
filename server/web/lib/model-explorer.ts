@@ -18,6 +18,8 @@
 import { getApiKey } from '@mantle/api-keys';
 import { isProviderId, type ProviderId } from '@mantle/voice';
 import type { ExplorerModel, ModelSort } from '@mantle/client-types';
+import { errorMessage } from '@mantle/std';
+
 export type { ExplorerModel, ModelSort };
 
 export type ProviderModelsResult = {
@@ -446,7 +448,7 @@ export async function fetchProviderModels(
       provider,
       models: [],
       fetchedAt: Date.now(),
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }

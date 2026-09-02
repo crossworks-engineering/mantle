@@ -10,6 +10,7 @@ import {
   toAiWorkerDTO,
   updateAiWorker,
 } from '@/lib/ai-workers';
+import { firstIssue } from '@/lib/zod-issue';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -52,10 +53,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { params, ...rest } = parsed.data;
   // Save-time catalog check against the EFFECTIVE post-patch config — a

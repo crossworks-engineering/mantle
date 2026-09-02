@@ -59,6 +59,7 @@ import {
 import { isMcpManagedSecretService } from './mcp-oauth';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { str } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 /* ───────────────────────────── helpers ───────────────────────────── */
 
@@ -389,7 +390,7 @@ const web_fetch: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -593,7 +594,7 @@ const api_tool_create: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       if (msg.includes('tools_owner_slug_uq') || msg.includes('duplicate key')) {
         return {
           ok: false,
@@ -797,7 +798,7 @@ const api_tool_update: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -824,7 +825,7 @@ const api_tool_delete: BuiltinToolDef = {
       ctx.step?.setOutput({ slug });
       return { ok: true, output: { slug, deleted: true } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1006,7 +1007,7 @@ const api_docs_set: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1435,7 +1436,7 @@ const recipe_tool_create: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       if (msg.includes('tools_owner_slug_uq') || msg.includes('duplicate key')) {
         return {
           ok: false,

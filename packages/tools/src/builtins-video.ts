@@ -58,6 +58,7 @@ import {
   transcriptWordCount,
 } from './video-transcript';
 import { envDynamic } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 // ─── caps ──────────────────────────────────────────────────────────
 // The STT duration cap deliberately does NOT inherit the voice path's 180 s
@@ -217,7 +218,7 @@ const video_ingest: BuiltinToolDef = {
       try {
         await assertFetchableUrl(url);
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        return { ok: false, error: errorMessage(err) };
       }
 
       const probe = await step({ name: 'video_probe', kind: 'http', input: { url } }, async (h) => {
@@ -582,7 +583,7 @@ async function saveAudio(
   } catch (err) {
     return {
       ok: false,
-      error: `audio was extracted but could not be saved: ${err instanceof Error ? err.message : String(err)}`,
+      error: `audio was extracted but could not be saved: ${errorMessage(err)}`,
     };
   }
 }
@@ -622,10 +623,10 @@ async function transcribeStep(
         // a single untimestamped body — stated honestly in the page + notes.
         return { ok: true as const, markdown: r.text.trim() };
       } catch (err) {
-        h.setMeta({ error: err instanceof Error ? err.message : String(err) });
+        h.setMeta({ error: errorMessage(err) });
         return {
           ok: false as const,
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         };
       }
     },
@@ -690,7 +691,7 @@ async function finishWithPage(
         audioFileId: args.audioFileId,
         transcriptPageId: null,
         preview: args.transcriptMd.slice(0, 1500),
-        error: `transcription succeeded but the page could not be created: ${err instanceof Error ? err.message : String(err)}`,
+        error: `transcription succeeded but the page could not be created: ${errorMessage(err)}`,
       },
     };
   }

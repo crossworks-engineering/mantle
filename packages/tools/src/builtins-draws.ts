@@ -14,6 +14,7 @@ import { listDraws, getDrawMeta, getDrawSceneText, nodeUrl } from '@mantle/conte
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str } from './coerce';
 import { notFound } from './errors';
+import { errorMessage } from '@mantle/std';
 
 const DRAW_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'draw', lookup: 'draw_list / search_nodes' },
@@ -59,7 +60,7 @@ const draw_list: BuiltinToolDef = {
         })),
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -101,7 +102,7 @@ const draw_get: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

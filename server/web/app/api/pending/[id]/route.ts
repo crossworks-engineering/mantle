@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/tools';
 import { ASK_HUMAN_FORM_LIMITS as L } from '@mantle/client-types';
 import { getOwnerOr401 } from '@/lib/auth';
+import { errorMessage } from '@mantle/std';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.object({
@@ -74,9 +75,6 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     }
     return NextResponse.json({ pending: row });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }

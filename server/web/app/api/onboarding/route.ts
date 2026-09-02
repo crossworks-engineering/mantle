@@ -26,6 +26,8 @@ import { isOnboarded, markOnboarded } from '@/lib/onboarding';
 import { listAiWorkers } from '@/lib/ai-workers';
 import { getAgentBySlug } from '@/lib/agents';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 /**
  * Onboarding wizard backend — the first-run flow's reads (GET) + every step's
@@ -149,7 +151,7 @@ async function checkDomain(browserHost: string | null): Promise<SanityCheck> {
       ok: false,
       detail:
         `“${host}” resolves but ${configured} isn't answering from this server — check the certificate/proxy (some networks also block a server fetching its own public IP; if ${configured} loads in your browser, treat this as a warning): ` +
-        (err instanceof Error ? err.message : String(err)),
+        errorMessage(err),
     };
   }
 }
@@ -166,7 +168,7 @@ async function runInfraChecks(browserHost: string | null): Promise<SanityCheck[]
     checks.push({
       label: 'Database (PostgreSQL)',
       ok: false,
-      detail: `not answering: ${err instanceof Error ? err.message : String(err)}`,
+      detail: `not answering: ${errorMessage(err)}`,
     });
   }
 
@@ -191,7 +193,7 @@ async function runInfraChecks(browserHost: string | null): Promise<SanityCheck[]
     checks.push({
       label: 'Job queue (pg-boss)',
       ok: false,
-      detail: `couldn't verify: ${err instanceof Error ? err.message : String(err)}`,
+      detail: `couldn't verify: ${errorMessage(err)}`,
     });
   }
 
@@ -223,7 +225,7 @@ async function runInfraChecks(browserHost: string | null): Promise<SanityCheck[]
     checks.push({
       label: 'Object storage (MinIO)',
       ok: false,
-      detail: `couldn't verify: ${err instanceof Error ? err.message : String(err)}`,
+      detail: `couldn't verify: ${errorMessage(err)}`,
     });
   }
 
@@ -454,7 +456,7 @@ export async function POST(req: Request) {
           } catch (err) {
             return NextResponse.json({
               ok: false,
-              message: `Couldn't reach the Azure endpoint: ${err instanceof Error ? err.message : String(err)}`,
+              message: `Couldn't reach the Azure endpoint: ${errorMessage(err)}`,
             });
           }
           await setApiKey(user.id, 'custom', 'default', azureKey);
@@ -530,7 +532,7 @@ export async function POST(req: Request) {
           configured: false,
           test: {
             ok: false,
-            message: `Embedding test failed: ${err instanceof Error ? err.message : String(err)}`,
+            message: `Embedding test failed: ${errorMessage(err)}`,
             provider,
             adapter: '',
           },
@@ -598,7 +600,7 @@ export async function POST(req: Request) {
       if (!parsed.success) {
         return NextResponse.json({
           ok: false,
-          error: parsed.error.issues[0]?.message ?? 'Invalid personality input.',
+          error: firstIssue(parsed.error, 'Invalid personality input.'),
         });
       }
       const applied = await savePersonaAgent(user.id, parsed.data);

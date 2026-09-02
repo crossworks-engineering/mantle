@@ -29,6 +29,8 @@ import {
   recordTeamAccess,
   type ForumTopicSort,
 } from '@mantle/content';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 const PAGE_SIZE = 20;
 
@@ -106,10 +108,7 @@ export async function POST(req: Request) {
 
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { body, kind, visibility } = parsed.data;
   const wantsReply = !(parsed.data.noReply ?? kind === 'discussion');
@@ -176,7 +175,7 @@ export async function POST(req: Request) {
       { status: 201 },
     );
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     // A lost attachment-bind race (a concurrent post consumed the same staged
     // blobs) rolls this whole create back — surface it as a clean 409 the
     // client can act on, not a generic 500.

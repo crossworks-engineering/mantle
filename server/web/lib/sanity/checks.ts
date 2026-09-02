@@ -10,6 +10,7 @@ import { runTableStorageProbes } from '@mantle/tabledb';
 import { readUpdaterStatus, updaterAvailable } from '../updates';
 import type { SanityCheck, SanityReport } from '@mantle/client-types/types/sanity';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 /**
  * System sanity checks — the CONFIG-correctness counterpart to lib/system-health
@@ -476,7 +477,7 @@ export async function runSanityChecks(userId: string): Promise<SanityReport> {
           label: d.label,
           category: d.category,
           status: 'warn',
-          detail: `Couldn't run this check — ${err instanceof Error ? err.message : String(err)}.`,
+          detail: `Couldn't run this check — ${errorMessage(err)}.`,
           fix: null,
         };
       }

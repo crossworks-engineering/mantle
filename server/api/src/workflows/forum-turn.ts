@@ -15,6 +15,7 @@ import {
   type ForumTurnInput,
   type ForumTurnRunResult,
 } from '@mantle/assistant-runtime';
+import { errorMessage } from '@mantle/std';
 
 export type { ForumTurnInput, ForumTurnRunResult };
 
@@ -51,7 +52,7 @@ async function forumTurnImpl(input: ForumTurnInput): Promise<ForumTurnRunResult>
       },
     );
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     DBOS.span?.setAttribute('mantle.error', msg);
     DBOS.logger.error(`[forum_turn] FAILED (owner=${ownerId}, topic=${options.topicId}): ${msg}`);
     throw err;

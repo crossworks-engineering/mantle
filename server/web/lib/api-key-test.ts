@@ -12,6 +12,8 @@
 import { getApiKeyById } from '@mantle/api-keys';
 import { getChatAdapter, getProvider, getSttAdapter, getTtsAdapter } from '@mantle/voice';
 import type { TestApiKeyResult } from '@mantle/client-types';
+import { errorMessage } from '@mantle/std';
+
 export type { TestApiKeyResult };
 
 export async function probeApiKey(keyId: string, service: string): Promise<TestApiKeyResult> {
@@ -89,7 +91,7 @@ export async function probeApiKey(keyId: string, service: string): Promise<TestA
   } catch (err) {
     return {
       ok: false,
-      message: err instanceof Error ? err.message : String(err),
+      message: errorMessage(err),
       provider: providerLabel,
       adapter: adapter.adapterName,
     };

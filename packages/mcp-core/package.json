@@ -19,6 +19,7 @@
     "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",
     "@mantle/search": "workspace:*",
+    "@mantle/std": "workspace:*",
     "@mantle/telegram": "workspace:*",
     "@mantle/tools": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",

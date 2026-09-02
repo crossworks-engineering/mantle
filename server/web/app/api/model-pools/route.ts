@@ -4,6 +4,8 @@ import { and, asc, eq } from 'drizzle-orm';
 import { db, curatedModels } from '@mantle/db';
 import { getOwnerOr401 } from '@/lib/auth';
 import { MODEL_POOLS, MODEL_POOL_IDS, poolModelIssue } from '@/lib/model-pools';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 export async function GET() {
   const user = await getOwnerOr401();
@@ -48,7 +50,7 @@ export async function POST(req: Request) {
   if (user instanceof Response) return user;
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    const message = parsed.error.issues[0]?.message ?? 'Invalid input.';
+    const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
   }
   const b = parsed.data;
@@ -92,7 +94,7 @@ export async function POST(req: Request) {
       .returning();
     return NextResponse.json({ entry: row });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (msg.includes('curated_models_owner_pool_name_uq') || msg.includes('duplicate key')) {
       return NextResponse.json(
         { error: `'${b.name}' is already in the ${b.pool} pool.` },

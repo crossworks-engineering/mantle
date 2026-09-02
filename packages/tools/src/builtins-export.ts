@@ -16,6 +16,7 @@ import { ensureDatedUploadFolder, readFileById, upsertFile } from '@mantle/files
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 // Referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an existing node the owner holds.
@@ -62,7 +63,7 @@ const export_node: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `export failed: ${err instanceof Error ? err.message : String(err)}`,
+        error: `export failed: ${errorMessage(err)}`,
       };
     }
     if (!result) {
@@ -115,7 +116,7 @@ const export_node: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

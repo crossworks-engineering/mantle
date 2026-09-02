@@ -27,6 +27,7 @@ import { db, recallMaps, recallNodes } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import type { BuiltinToolDef } from './types';
 import { str } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 const MATCH_LIMIT = 3;
 
@@ -240,7 +241,7 @@ const recall_match: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `embed failed: ${err instanceof Error ? err.message : String(err)}`,
+        error: `embed failed: ${errorMessage(err)}`,
       };
     }
 

@@ -15,6 +15,7 @@ import { eq, sql } from 'drizzle-orm';
 import { db, traces, traceSteps } from '@mantle/db';
 import { truncateJson } from './truncate';
 import { runDurableStep } from './durable';
+import { errorMessage } from '@mantle/std';
 
 export type TraceKind =
   | 'responder_turn'
@@ -431,7 +432,7 @@ function genId(): string {
 }
 
 function logErr(scope: string, err: unknown): void {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = errorMessage(err);
   console.error(`[tracing] ${scope}: ${msg}`);
 }
 
@@ -517,7 +518,7 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
       return result;
     } catch (err) {
       ctx.status = 'error';
-      ctx.failedError = err instanceof Error ? err.message : String(err);
+      ctx.failedError = errorMessage(err);
       throw err;
     } finally {
       // The root turn owns the per-turn seq cursor. When a lifecycle observer is
@@ -667,7 +668,7 @@ export async function step<T>(
       return result;
     } catch (err) {
       status = 'error';
-      errMsg = err instanceof Error ? err.message : String(err);
+      errMsg = errorMessage(err);
       stepInfo.meta = {
         ...stepInfo.meta,
         stack: err instanceof Error ? err.stack?.split('\n').slice(0, 8).join('\n') : undefined,

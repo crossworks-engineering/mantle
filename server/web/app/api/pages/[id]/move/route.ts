@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { movePage, PageCycleError, ParentPageNotFoundError } from '@/lib/pages';
+import { firstIssue } from '@/lib/zod-issue';
 
 // `parentId: null` moves the page to the top level; a uuid nests it under that
 // page. Structural-only — body/tags/sharing/index untouched (see movePage).
@@ -13,10 +14,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   try {
     const row = await movePage(user.id, id, parsed.data.parentId);

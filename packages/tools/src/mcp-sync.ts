@@ -26,6 +26,7 @@ import { parseMcpBinding } from './integration-meta';
 import { closeMcpClient, mcpListRemoteTools, type McpRemoteTool } from './mcp-client';
 import { clearMcpOAuthSecrets, dbMcpOAuthStore } from './mcp-oauth';
 import { knownMcpServer } from './mcp-catalog';
+import { errorMessage } from '@mantle/std';
 
 /** Every connector group slug starts with this — guarantees no collision with
  *  a manifest group (none are `mcp-*`) and makes connector groups greppable. */
@@ -351,7 +352,7 @@ export async function createMcpConnector(
     return {
       groupSlug,
       created: true,
-      syncError: err instanceof Error ? err.message : String(err),
+      syncError: errorMessage(err),
     };
   }
 }

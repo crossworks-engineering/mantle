@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { createOpenapiConnector } from '@mantle/tools';
 import { listOpenapiConnectors } from '@/lib/openapi-connectors';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** OpenAPI connectors: a service's OpenAPI 3.x spec consumed as a
  *  per-connector tool group of ordinary http tools. GET lists connected
@@ -50,18 +52,12 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   try {
     const result = await createOpenapiConnector(user.id, parsed.data);
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
   }
 }

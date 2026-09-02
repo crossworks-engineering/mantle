@@ -32,8 +32,7 @@ import {
 } from '@/lib/files';
 import { dashToLtree, deleteQuarantineBytes, readQuarantineBytes } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { errorMessage, UUID_RE } from '@mantle/std';
 
 /** Ensure files.review.<slug> exists (both levels). Tolerates the unique-index
  *  race when two reviews land together — the ensureDatedUploadFolder pattern. */
@@ -143,7 +142,7 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
       return NextResponse.json({ ok: true, nodeId, parentPath });
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     console.error('[team-admin/forum/uploads/file]', msg);
     return NextResponse.json({ error: 'filing failed — see the server log' }, { status: 500 });
   }

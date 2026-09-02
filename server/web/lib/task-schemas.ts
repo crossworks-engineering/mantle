@@ -11,10 +11,6 @@ export const TodoInputSchema = z.object({
 
 export const TodosSchema = z.array(TodoInputSchema).max(TASK_TODOS_MAX);
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** Route-param guard: a malformed id is a 404-shaped input, not a Postgres
  *  `invalid input syntax for type uuid` 500. */
-export function isUuid(value: string): boolean {
-  return UUID_RE.test(value);
-}
+export { isUuid } from '@mantle/std';

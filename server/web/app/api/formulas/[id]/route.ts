@@ -11,6 +11,7 @@ import {
   checkDimensions,
   signatureOf,
 } from '@/lib/formulas';
+import { firstIssue } from '@/lib/zod-issue';
 
 const PatchBody = z.object({
   spec: z.record(z.string(), z.unknown()).optional(),
@@ -47,10 +48,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   try {
     const row = await updateFormula(user.id, id, parsed.data);

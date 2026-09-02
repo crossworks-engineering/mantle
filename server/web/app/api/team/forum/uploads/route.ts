@@ -35,6 +35,7 @@ import {
   sanitizeFilename,
   writeQuarantineBytes,
 } from '@mantle/files';
+import { errorMessage, UUID_RE } from '@mantle/std';
 
 const MAX_FILES_PER_POST = 5;
 /** Hard body ceiling checked from Content-Length BEFORE `formData()` buffers
@@ -42,8 +43,6 @@ const MAX_FILES_PER_POST = 5;
  *  a single oversized body from OOMing the process. A little slack over the
  *  theoretical max for multipart boundaries/headers. */
 const MAX_BODY_BYTES = MAX_FILES_PER_POST * MAX_UPLOAD_BYTES + 1024 * 1024;
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(req: Request) {
   const caller = await resolveTeamChatCaller(req);
@@ -175,7 +174,7 @@ export async function POST(req: Request) {
       await deleteQuarantineBytes(ownerId, row.id).catch(() => {});
       await deleteStagedForumUploadRow(ownerId, row.id).catch(() => {});
     }
-    console.error('[team/forum/uploads]', err instanceof Error ? err.message : String(err));
+    console.error('[team/forum/uploads]', errorMessage(err));
     return NextResponse.json(
       { error: 'something went wrong staging that upload — the brain admin can see the details' },
       { status: 500 },

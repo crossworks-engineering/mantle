@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { requestUpdate } from '@/lib/updates';
 import { getOwnerOr401 } from '@/lib/auth';
+import { firstIssue } from '@/lib/zod-issue';
 
 const Body = z
   .object({
@@ -20,10 +21,7 @@ export async function POST(req: Request) {
   if (user instanceof Response) return user;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   return NextResponse.json(
     await requestUpdate(parsed.data.target ?? null, parsed.data.clientTarget ?? null),

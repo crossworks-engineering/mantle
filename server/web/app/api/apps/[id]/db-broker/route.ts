@@ -15,6 +15,7 @@ import { getApp } from '@mantle/content';
 import { appDbQuery, appDbExec } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
 import { AppDbBody, appDbBodyError } from '@/lib/app-db-broker-body';
+import { errorMessage } from '@mantle/std';
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
@@ -38,9 +39,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     scheduleAppTableExportSync(user.id, id);
     return NextResponse.json({ ok: true, output: res });
   } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
+    return NextResponse.json({ ok: false, error: errorMessage(err) }, { status: 400 });
   }
 }

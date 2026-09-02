@@ -8,14 +8,8 @@
  */
 import { getPeerNode, listPeers, queryPeer, searchPeerChunks } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
-import { str, strArrOpt } from './coerce';
-
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
-function numOpt(v: unknown): number | undefined {
-  return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
-}
+import { str, strArrOpt, strOpt, numOpt } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 const peer_list: BuiltinToolDef = {
   slug: 'peer_list',
@@ -37,7 +31,7 @@ const peer_list: BuiltinToolDef = {
       ctx.step?.setMeta({ count: rows.length });
       return { ok: true, output: { peers: rows, count: rows.length } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

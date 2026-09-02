@@ -39,6 +39,7 @@ import type { TranscribeOptions, TranscribeResult } from '../types';
 import type { SttModelInfo } from '../catalog';
 import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_STT_MODELS } from '../catalogs/google';
+import { errorMessage } from '@mantle/std';
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
 /** Inline-data body limit. Beyond this size we should be using the
@@ -193,7 +194,7 @@ export const googleSttAdapter: SttDispatcher = {
       return {
         available: [...GOOGLE_STT_MODELS],
         filtered: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       };
     }
   },

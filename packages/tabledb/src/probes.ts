@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { errorMessage } from '@mantle/std';
 
 /**
  * Table-storage capability probes — the "verified foundations" of the Tables v2
@@ -241,7 +242,7 @@ export async function runTableStorageProbes(): Promise<ProbeReport> {
           key: 'module_available',
           ok: false,
           required: true,
-          detail: `node:sqlite failed to import — ${err instanceof Error ? err.message : String(err)}`,
+          detail: `node:sqlite failed to import — ${errorMessage(err)}`,
         },
       ],
     };
@@ -256,7 +257,7 @@ export async function runTableStorageProbes(): Promise<ProbeReport> {
           key: p.key,
           ok: false,
           required: p.required,
-          detail: err instanceof Error ? err.message : String(err),
+          detail: errorMessage(err),
         };
       }
     });

@@ -63,6 +63,7 @@ import {
   currentTrace,
 } from '@mantle/tracing';
 import { TEAM_RESPONDER_SLUG } from './run-team-turn';
+import { errorMessage } from '@mantle/std';
 
 export type RunForumTurnOptions = {
   /** The member whose post triggered this turn (authenticated surface). */
@@ -401,7 +402,7 @@ export async function runForumTurn(
 
     return { outbound, reply };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     // Fail the pending (if we got that far) so no member is left with a
     // permanent "answering…" bubble, and make sure the stream terminates.
     if (outboundPending) {

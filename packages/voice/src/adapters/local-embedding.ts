@@ -25,6 +25,7 @@ import type {
 import type { DiscoveryResult } from '../discover';
 import { tailnetFetch } from './tailnet';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
 
@@ -176,7 +177,7 @@ export const localEmbedding: EmbeddingDispatcher = {
         }));
       return { available, filtered: false, error: null };
     } catch (e) {
-      return { available: [], filtered: false, error: e instanceof Error ? e.message : String(e) };
+      return { available: [], filtered: false, error: errorMessage(e) };
     }
   },
 };

@@ -36,18 +36,15 @@ import {
   type TaskTodoInput,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
-import { str, strArr, strArrOpt } from './coerce';
+import { str, strArr, strArrOpt, strOpt } from './coerce';
 import { notFound } from './errors';
+import { errorMessage } from '@mantle/std';
 
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING task the owner holds.
 const TASK_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'task', lookup: 'task_list / search_nodes' },
 ];
-
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
 
 /** Coerce a `todos` arg (full-replace checklist). `[]` clears the list.
  *  STRICT on malformed items: silently dropping them would wipe a checklist
@@ -158,7 +155,7 @@ const task_list: BuiltinToolDef = {
       const truncated = offset + rows.length < total;
       return { ok: true, output: { tasks: rows, count: rows.length, total, truncated } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -252,7 +249,7 @@ const task_create: BuiltinToolDef = {
       ctx.step?.setMeta({ taskId: row.id, title, priority: row.priority, dueAt: row.dueAt });
       return { ok: true, output: row };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -338,7 +335,7 @@ const task_update: BuiltinToolDef = {
       ctx.step?.setMeta({ taskId: id, status: row.status });
       return { ok: true, output: row };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

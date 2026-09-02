@@ -17,6 +17,7 @@ import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
 import { fileStats, resolveStoragePath } from '@mantle/tabledb';
 import { existsSync } from 'node:fs';
+import { errorMessage } from '@mantle/std';
 
 async function main() {
   const apply = process.argv.includes('--apply');
@@ -46,7 +47,7 @@ async function main() {
         }
       }
     } catch (err) {
-      verdict = err instanceof Error ? err.message : String(err);
+      verdict = errorMessage(err);
     }
     if (verdict) {
       skipped++;

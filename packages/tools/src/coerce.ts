@@ -41,3 +41,30 @@ export function strArrOpt(v: unknown): string[] | undefined {
   const out = strArr(v);
   return out.length > 0 ? out : undefined;
 }
+
+/** A non-empty string, else `undefined` (update-style: "leave unchanged"). */
+export function strOpt(v: unknown): string | undefined {
+  return typeof v === 'string' && v.length > 0 ? v : undefined;
+}
+
+/** {@link strOpt} that also trims, and treats whitespace-only as absent —
+ *  the contract the contact/email/notes/journal/formula tools want. */
+export function strOptTrim(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
+}
+
+/** A finite number, else `dflt` (which may be omitted → `undefined`). */
+export function numOpt(v: unknown, dflt?: number): number | undefined {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  return dflt;
+}
+
+/** A finite number, else the required default. */
+export function numOr(v: unknown, dflt: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : dflt;
+}
+
+/** A boolean, else `undefined`. */
+export function boolOpt(v: unknown): boolean | undefined {
+  return typeof v === 'boolean' ? v : undefined;
+}

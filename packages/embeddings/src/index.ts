@@ -34,6 +34,7 @@ import { currentTrace, step } from '@mantle/tracing';
 // online as a side effect of touching this module. Don't tree-shake.
 import { getEmbeddingAdapter, type EmbedInput } from '@mantle/voice';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 export type { EmbedInput };
 export {
@@ -576,7 +577,7 @@ async function doEmbed(
         console.warn(
           `[embeddings] primary route '${config.primary.provider}' unavailable — failing over to ` +
             `backup '${config.backup.provider}' (same model '${model}'): ` +
-            (err instanceof Error ? err.message : String(err)),
+            errorMessage(err),
         );
         usedProvider = config.backup.provider;
         failedOver = true;

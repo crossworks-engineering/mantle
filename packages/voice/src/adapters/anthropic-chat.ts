@@ -113,6 +113,7 @@ import {
   ANTHROPIC_BASE_URL,
   ANTHROPIC_CHAT_MODELS,
 } from '../catalogs/anthropic';
+import { errorMessage } from '@mantle/std';
 
 /** Anthropic content blocks. `string` content is the simple shape; the
  *  array form is required when any block needs a `cache_control` marker
@@ -812,7 +813,7 @@ async function anthropicDiscover(apiKey: string): Promise<DiscoveryResult<ChatMo
     return {
       available: [...ANTHROPIC_CHAT_MODELS],
       filtered: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }

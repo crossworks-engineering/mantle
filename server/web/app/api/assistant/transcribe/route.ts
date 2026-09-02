@@ -20,6 +20,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getSttAdapter, type SttDispatcher } from '@mantle/voice';
+import { errorMessage } from '@mantle/std';
 
 export async function POST(req: Request) {
   const user = await getOwnerOr401();
@@ -93,7 +94,7 @@ export async function POST(req: Request) {
       adapter: adapter.adapterName,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     console.error('[assistant/transcribe]', msg);
     // 422 for "we got the audio but couldn't make sense of it" — the
     // client can surface the exact provider message ("audio too

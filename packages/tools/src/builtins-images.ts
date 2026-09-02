@@ -33,6 +33,7 @@ import { nodeUrl } from '@mantle/content';
 import type { BuiltinToolDef, ToolArtifact, ToolHandlerResult, ToolPrecondition } from './types';
 import { str } from './coerce';
 import { notFound } from './errors';
+import { errorMessage } from '@mantle/std';
 
 const IMAGE_FILE_ID_PRE: readonly ToolPrecondition[] = [
   {
@@ -120,7 +121,7 @@ const show_image: BuiltinToolDef = {
         // Mirrors generate_image: a delivery failure is surfaced on the trace
         // but doesn't void the call — the artifact below may still land.
         ctx.step?.setMeta({
-          telegram_send_error: err instanceof Error ? err.message : String(err),
+          telegram_send_error: errorMessage(err),
         });
       }
     }

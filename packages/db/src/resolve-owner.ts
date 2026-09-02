@@ -21,8 +21,7 @@ import { eq } from 'drizzle-orm';
 import { db } from './client';
 import { authUsers } from './schema/auth-users';
 import { env } from '@mantle/config';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE } from '@mantle/std';
 
 /** Number of rows in auth.users. 0 ⇒ fresh install (signup is open). */
 export async function countUsers(): Promise<number> {

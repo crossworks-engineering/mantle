@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { adoptManifestItem, type AdoptKind } from '@/lib/system-manifest';
+import { firstIssue } from '@/lib/zod-issue';
 
 const Body = z.object({
   kind: z.enum(['persona', 'agent', 'skill', 'tool-group', 'worker']),
@@ -15,10 +16,7 @@ export async function POST(req: Request) {
   if (user instanceof Response) return user;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   try {
     await adoptManifestItem(user.id, parsed.data.kind as AdoptKind, parsed.data.slug);

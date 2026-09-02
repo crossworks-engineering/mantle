@@ -25,6 +25,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { XAI_BASE_URL, XAI_VISION_MODELS } from '../catalogs/xai';
+import { errorMessage } from '@mantle/std';
 
 const DEFAULT_MODEL = 'grok-4.3';
 const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -116,7 +117,7 @@ export const xaiVisionAdapter: VisionDispatcher = {
       return {
         available: [...XAI_VISION_MODELS],
         filtered: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       };
     }
   },

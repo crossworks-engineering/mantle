@@ -44,6 +44,8 @@ import { db, nodes, type ConversationAttachment } from '@mantle/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { recordIngest } from '@mantle/tracing';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 // Same shared ceiling as the assistant turn route — a plain-language message,
 // because the raw zod default is what team members would see beside the box.
@@ -203,10 +205,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     } else {
       const parsed = Body.safeParse(await req.json().catch(() => ({})));
       if (!parsed.success) {
-        return NextResponse.json(
-          { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-          { status: 400 },
-        );
+        return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
       }
       userText = parsed.data.text;
     }
@@ -259,7 +258,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       reply,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     console.error('[team/turn]', msg);
     // Uniform message — internals (agent config, provider errors) stay
     // owner-side; the member sees a clean failure, the admin sees traces.

@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { AvatarSchema } from '@/lib/avatar-schema';
 import { createAgent, listAgents } from '@/lib/agents';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 export async function GET() {
   const user = await getOwnerOr401();
@@ -117,14 +119,14 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
-    const message = parsed.error.issues[0]?.message ?? 'Invalid input.';
+    const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
   }
   try {
     const row = await createAgent(user.id, parsed.data);
     return NextResponse.json({ agent: row });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (msg.includes('agents_owner_slug_uq') || msg.includes('duplicate key')) {
       return NextResponse.json(
         { error: `An agent with slug "${parsed.data.slug}" already exists.` },

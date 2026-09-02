@@ -53,6 +53,7 @@ import { computeNextFireAt } from './schedule';
 import { withHeartbeatContext } from './context';
 import { buildHeartbeatPrompt, HEARTBEAT_DATA_BOUNDARY } from './prompt';
 import { runWithInflightLock } from './inflight';
+import { errorMessage } from '@mantle/std';
 
 const HEARTBEAT_CONTROL_TOOLS = [
   'heartbeat_complete',
@@ -349,7 +350,7 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
                 // recorded, mark the outer disposition
                 // fired_undelivered, let the operator decide.
                 h.setMeta({
-                  error: err instanceof Error ? err.message : String(err),
+                  error: errorMessage(err),
                 });
                 h.setSkipped('telegram_send_failed');
                 delivered = false;
@@ -444,7 +445,7 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
 
     return { disposition, replyText: reply };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     await recordFire(hb, {
       disposition: 'error',
       stateBefore: hb.state,

@@ -50,6 +50,8 @@ import {
 } from '@mantle/files';
 import type { ToolArtifact } from '@mantle/tools';
 import { recordIngest, startTrace, step } from '@mantle/tracing';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** Human-readable over-limit error — zod's default ("Too big: expected string
  *  to have <=20000 characters") reaches real users through clients without the
@@ -331,7 +333,7 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
       const raw = await req.json().catch(() => ({}));
       const parsed = Body.safeParse(raw);
       if (!parsed.success) {
-        return { status: 400, body: { error: parsed.error.issues[0]?.message ?? 'invalid input' } };
+        return { status: 400, body: { error: firstIssue(parsed.error) } };
       }
       userText = parsed.data.text;
       agentSlug = parsed.data.agentSlug?.trim() || undefined;
@@ -453,7 +455,7 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
       },
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     console.error('[assistant/turn]', msg);
     return { status: 500, body: { error: msg } };
   }

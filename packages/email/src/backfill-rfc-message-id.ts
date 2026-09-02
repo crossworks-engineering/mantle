@@ -34,6 +34,7 @@ import { ImapFlow } from 'imapflow';
 import { emails, emailAccounts, type EmailAccount } from '@mantle/db';
 import { decodeMsgId, normalizeRfcMessageId, unsealImapPassword } from './providers/imap';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 interface BackfillRow {
   id: string;
@@ -107,10 +108,7 @@ async function backfillAccount(
     logger: false,
   });
   client.on('error', (err) => {
-    console.warn(
-      `[backfill] ${masked} imap error:`,
-      err instanceof Error ? err.message : String(err),
-    );
+    console.warn(`[backfill] ${masked} imap error:`, errorMessage(err));
   });
   await client.connect();
 

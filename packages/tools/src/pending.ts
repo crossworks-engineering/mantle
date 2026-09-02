@@ -17,6 +17,7 @@ import {
 import { dispatchTool } from './dispatch';
 import { notifyPendingChanged } from './pending-notify';
 import { startTrace, step } from '@mantle/tracing';
+import { errorMessage } from '@mantle/std';
 
 export type PendingSummary = {
   id: string;
@@ -173,7 +174,7 @@ async function settleAskHuman(
       ...(answers?.length ? { answers } : {}),
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     return revertToPending(
       row.id,
       `the decision did not apply (${msg}) — the question is pending again; please decide once more`,
@@ -238,7 +239,7 @@ async function settleBudget(
     // Same recovery as settleAskHuman: revert so the operator can retry —
     // a stranded 'approved' on a run_budget row would leave the run paused
     // forever with nothing left to approve.
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     return revertToPending(
       row.id,
       `the decision did not apply (${msg}) — the budget question is pending again; please decide once more`,

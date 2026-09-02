@@ -38,7 +38,8 @@ import type { ImageGenModelInfo, ImageGenParam, TtsParam } from '@mantle/voice';
 import type { BuiltinToolDef, ToolArtifact, ToolHandlerResult, ToolPrecondition } from './types';
 import { registerDynamicSchema } from './dynamic-schema';
 import { notFound } from './errors';
-import { str } from './coerce';
+import { str, strOpt, numOpt as num } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 // ─── shared helpers ────────────────────────────────────────────────
 
@@ -53,14 +54,6 @@ const IMAGE_FILE_ID_PRE: readonly ToolPrecondition[] = [
 const NODE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'node_id', lookup: 'search_nodes / tree_list' },
 ];
-
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
-function num(v: unknown, dflt?: number): number | undefined {
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  return dflt;
-}
 
 /**
  * Resolve `{worker, apiKey}` for a default worker of the given kind,
@@ -172,7 +165,7 @@ const synthesize_speech: BuiltinToolDef = {
         language: params.language,
       });
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
     // Same honesty split as generate_image. TTS providers diverge hard here:
     // Gemini has no speed parameter at all, ElevenLabs takes a language code
@@ -249,7 +242,7 @@ const synthesize_speech: BuiltinToolDef = {
           },
         };
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        return { ok: false, error: errorMessage(err) };
       }
     }
 
@@ -366,7 +359,7 @@ const extract_from_image: BuiltinToolDef = {
         bytes = downloaded.bytes;
         mimeType = downloaded.mimeType;
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        return { ok: false, error: errorMessage(err) };
       }
     }
 
@@ -407,7 +400,7 @@ const extract_from_image: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -527,7 +520,7 @@ const summarize_text: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -804,7 +797,7 @@ const generate_image: BuiltinToolDef = {
         negativePrompt: get('negativePrompt'),
       });
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
 
     // The adapter gets the last word. `supports` is per-provider, but several
@@ -860,7 +853,7 @@ const generate_image: BuiltinToolDef = {
       // generated successfully, and on Telegram we can still deliver
       // it inline. Log it in the trace meta so it doesn't vanish.
       ctx.step?.setMeta({
-        file_save_error: err instanceof Error ? err.message : String(err),
+        file_save_error: errorMessage(err),
       });
     }
 
@@ -884,7 +877,7 @@ const generate_image: BuiltinToolDef = {
         // void the rest of the tool's work, but we should surface it
         // in the trace so the operator sees what happened.
         ctx.step?.setMeta({
-          telegram_send_error: err instanceof Error ? err.message : String(err),
+          telegram_send_error: errorMessage(err),
         });
       }
     }

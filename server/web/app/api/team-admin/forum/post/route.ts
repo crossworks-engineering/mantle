@@ -7,6 +7,8 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { appendForumPost, loadProfilePreferences, setForumTopicStatus } from '@mantle/content';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 const Body = z.object({
   topicId: z.string().uuid(),
@@ -20,10 +22,7 @@ export async function POST(req: Request) {
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { topicId, text, status } = parsed.data;
 
@@ -38,7 +37,7 @@ export async function POST(req: Request) {
     if (status) await setForumTopicStatus(user.id, topicId, status);
     return NextResponse.json({ postId: post.id }, { status: 201 });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (msg.includes('topic not found')) {
       return NextResponse.json({ error: 'topic not found' }, { status: 404 });
     }

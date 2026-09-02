@@ -5,6 +5,8 @@ import { collectionRoot, createDocCollection, listDocCollections } from '@mantle
 import { formatInProfile, loadProfilePreferences } from '@mantle/content';
 import { getReaderNav } from '@/lib/docs-reader';
 import { getOwnerOr401 } from '@/lib/auth';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** Doc collections + their server-formatted "last synced" strings (tz/locale
  *  stable) + a first-doc link per collection, for the /docs management pane. */
@@ -73,7 +75,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({
       ok: false,
-      message: parsed.error.issues[0]?.message ?? 'Invalid input.',
+      message: firstIssue(parsed.error, 'Invalid input.'),
     });
   }
   const input = parsed.data;
@@ -111,7 +113,7 @@ export async function POST(req: Request) {
         : `Created ${collection.label}.`,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (/duplicate key|doc_collections_owner_key_uq|unique/i.test(msg)) {
       return NextResponse.json({
         ok: false,

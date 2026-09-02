@@ -1,5 +1,6 @@
 import { and, desc, eq, or } from 'drizzle-orm';
 import { db, sandboxes, type Sandbox, type NewSandbox } from '@mantle/db';
+import { UUID_RE } from '@mantle/std';
 
 /**
  * Sandbox row CRUD — the DB half of the CLI-sandboxes feature. The container
@@ -27,7 +28,7 @@ export async function listSandboxes(ownerId: string): Promise<Sandbox[]> {
 
 /** Resolve `ref` as a sandbox id (uuid) or name, scoped to the owner. */
 export async function getSandboxByRef(ownerId: string, ref: string): Promise<Sandbox | null> {
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref);
+  const isUuid = UUID_RE.test(ref);
   const [row] = await db
     .select()
     .from(sandboxes)

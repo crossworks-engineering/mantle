@@ -4,6 +4,8 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { requestOrigin } from '@/lib/auth-constants';
 import { createMcpConnector, dbMcpOAuthStore, startMcpOAuth } from '@mantle/tools';
 import { listMcpConnectors } from '@/lib/mcp-connectors';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** MCP connectors: external MCP servers consumed as per-connector tool
  *  groups. GET lists connected servers plus the known-servers catalog
@@ -39,10 +41,7 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   try {
     const result = await createMcpConnector(user.id, parsed.data);
@@ -64,7 +63,7 @@ export async function POST(req: Request) {
     // the caller fixes the config (or the server comes back) and re-syncs.
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     const status = msg.includes('already exists') ? 409 : 400;
     return NextResponse.json({ error: msg }, { status });
   }

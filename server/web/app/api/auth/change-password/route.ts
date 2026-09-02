@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getSessionUser, updatePassword, verifyPassword } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
+import { firstIssue } from '@/lib/zod-issue';
 
 const ChangePasswordBody = z
   .object({
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = ChangePasswordBody.safeParse(raw);
   if (!parsed.success) {
-    const message = parsed.error.issues[0]?.message ?? 'Invalid input.';
+    const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
   }
 

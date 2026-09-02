@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import esbuild, { type BuildOptions, type Message, type Plugin } from 'esbuild';
 import { buildAppCss } from './css';
 import { KIT } from './kit';
+import { errorMessage } from '@mantle/std';
 
 /** Specifiers provided by the shared runtime via the iframe import map — marked
  *  external so they stay as bare imports in the app bundle. The react family is
@@ -330,7 +331,7 @@ export async function buildApp(
       warnings: [
         ...result.warnings,
         {
-          text: `app CSS compile failed (${err instanceof Error ? err.message : String(err)}); the app will rely on the host stylesheet`,
+          text: `app CSS compile failed (${errorMessage(err)}); the app will rely on the host stylesheet`,
           location: null,
         },
       ],
@@ -392,7 +393,7 @@ async function buildAppInner(source: AppSource): Promise<BuildResult> {
     }
     return {
       ok: false,
-      errors: [{ text: err instanceof Error ? err.message : String(err), location: null }],
+      errors: [{ text: errorMessage(err), location: null }],
       warnings: [],
       esbuildVersion: ESBUILD_VERSION,
     };

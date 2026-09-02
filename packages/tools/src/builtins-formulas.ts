@@ -30,19 +30,14 @@ import {
   type FormulaValue,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
-import { str } from './coerce';
+import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { notFound } from './errors';
+import { errorMessage } from '@mantle/std';
 
 const FORMULA_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'formula', lookup: 'formula_list / search_nodes' },
 ];
 
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
-}
-function num(v: unknown, dflt: number): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : dflt;
-}
 function tagList(v: unknown): string[] {
   return Array.isArray(v) ? (v as unknown[]).filter((t): t is string => typeof t === 'string') : [];
 }
@@ -201,7 +196,7 @@ const formula_evaluate: BuiltinToolDef = {
     try {
       spec = await readFormulaSpec(ctx.ownerId, id);
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
     const inputs = (
       typeof input.inputs === 'object' && input.inputs !== null ? input.inputs : {}
@@ -274,7 +269,7 @@ const formula_create: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -317,7 +312,7 @@ const formula_update: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

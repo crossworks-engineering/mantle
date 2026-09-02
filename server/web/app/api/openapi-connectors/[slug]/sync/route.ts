@@ -2,6 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { syncOpenapiConnector } from '@mantle/tools';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** Re-fetch the spec and reconcile the connector's mirrored tools. Explicit
  *  only — sync never runs on a schedule (cost-safety rule). Pass
@@ -16,10 +18,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   const raw = await req.json().catch(() => ({}));
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   try {
     const sync = await syncOpenapiConnector(user.id, slug, {
@@ -27,7 +26,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     });
     return NextResponse.json({ sync });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     const status = msg.includes('not an OpenAPI connector') ? 404 : 502;
     return NextResponse.json({ error: msg }, { status });
   }

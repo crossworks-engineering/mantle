@@ -25,6 +25,7 @@ import { pollOnce, evictBot, type PollHandlers } from '@mantle/telegram';
 import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/tools';
 import { runWorker } from './_runner';
 import { env } from '@mantle/config';
+import { sleep } from '@mantle/std';
 
 const CHANNEL_REFRESH_MS = 60_000;
 const BACKOFF_BASE_MS = 1_000;
@@ -207,8 +208,4 @@ function startTelegramLoop(channel: Channel): { stop: () => void } {
       if (accountId) evictBot(accountId);
     },
   };
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
 }

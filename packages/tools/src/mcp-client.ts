@@ -22,6 +22,7 @@ import { getApiKey } from '@mantle/api-keys';
 import { assertFetchableUrl } from './ssrf-guard';
 import { scrubSecrets } from './http-template';
 import { dbMcpOAuthStore, loadMcpOAuthTokens, runtimeMcpOAuthProvider } from './mcp-oauth';
+import { errorMessage } from '@mantle/std';
 
 const IDLE_SHUTDOWN_MS = 5 * 60 * 1000;
 /** Matches web_fetch's budget — an MCP call is the same class of egress. */
@@ -170,7 +171,7 @@ async function spawn(ownerId: string, groupSlug: string, mcp: ToolGroupMcpBindin
 }
 
 function isClosedError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = errorMessage(err);
   return /closed|not connected|ECONNRESET|EPIPE|disconnected|session/i.test(msg);
 }
 
@@ -237,7 +238,7 @@ async function withClient<T>(
 /** An upstream error can echo the auth header (401 bodies, proxy pages) —
  *  strip the plaintext before the message travels toward the model. */
 function scrubbedError(err: unknown, secrets: Map<string, string>): Error {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = errorMessage(err);
   return new Error(scrubSecrets(msg, secrets));
 }
 

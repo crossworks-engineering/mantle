@@ -64,6 +64,7 @@ import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { str, strArr } from './coerce';
 import { notFound } from './errors';
 import type { ToolPrecondition } from './types';
+import { errorMessage } from '@mantle/std';
 
 // Shared referential preconditions (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING node of the right type.
@@ -265,7 +266,7 @@ async function editViaOps(
       },
     };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 }
 
@@ -341,7 +342,7 @@ const table_create: BuiltinToolDef = {
         output: { id: table.id, title: table.title, columns: table.data.columns.map(colSummary) },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -391,7 +392,7 @@ const table_from_file: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `spreadsheet parse failed: ${err instanceof Error ? err.message : String(err)}`,
+        error: `spreadsheet parse failed: ${errorMessage(err)}`,
       };
     }
     if (sheets.length === 0) return { ok: false, error: 'no tabular data found in the file' };
@@ -440,7 +441,7 @@ const table_from_file: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -477,7 +478,7 @@ const table_from_text: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `parse failed: ${err instanceof Error ? err.message : String(err)}`,
+        error: `parse failed: ${errorMessage(err)}`,
       };
     }
     if (sheets.length === 0 || sheets[0]!.columns.length === 0) {
@@ -518,7 +519,7 @@ const table_from_text: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -559,7 +560,7 @@ const table_update: BuiltinToolDef = {
       ctx.step?.setOutput({ id: table.id, title: table.title });
       return { ok: true, output: { id: table.id, title: table.title, tags: table.tags } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -587,7 +588,7 @@ const table_delete: BuiltinToolDef = {
       ctx.step?.setOutput({ id, deleted: true });
       return { ok: true, output: { id, deleted: true } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -619,7 +620,7 @@ const table_commit: BuiltinToolDef = {
         output: { id, committed: true, rows: published.rowCount, columns: published.columnCount },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -690,7 +691,7 @@ const table_sql: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -732,7 +733,7 @@ const table_list: BuiltinToolDef = {
         })),
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -973,7 +974,7 @@ const table_tab_add: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1019,7 +1020,7 @@ const table_tab_rename: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1062,7 +1063,7 @@ const table_tab_delete: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1672,7 +1673,7 @@ const table_row_add: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1752,7 +1753,7 @@ const table_rows_add: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -1971,7 +1972,7 @@ const table_rows_upsert: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -2030,7 +2031,7 @@ const table_row_update: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -2079,7 +2080,7 @@ const table_row_delete: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -2141,7 +2142,7 @@ const table_cell_set: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

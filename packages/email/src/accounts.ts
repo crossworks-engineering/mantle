@@ -15,6 +15,7 @@ import { probeImapConnection, unsealImapPassword } from './providers/imap';
 import { probeSmtpConnection } from './send';
 import type { AccountFoldersResult } from '@mantle/client-types';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 export type { AccountFoldersResult };
 
@@ -258,7 +259,7 @@ export async function saveImapAccount(
 
 /** Tighten a few common IMAP/SMTP errors into plain English. */
 export function explainImapError(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
+  const raw = errorMessage(err);
   if (/authentication/i.test(raw))
     return 'Authentication failed — check the email address and app password.';
   if (/ENOTFOUND|EAI_AGAIN/i.test(raw)) return 'Could not resolve that host. Check the IMAP host.';
@@ -425,7 +426,7 @@ export async function listAccountFolders(
       scanned,
     };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 }
 

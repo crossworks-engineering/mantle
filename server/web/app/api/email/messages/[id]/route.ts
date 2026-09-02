@@ -8,6 +8,7 @@ import {
 } from '@mantle/email';
 import type { MessageDetailDTO } from '@mantle/client-types';
 import { getOwnerOr401 } from '@/lib/auth';
+import { firstIssue } from '@/lib/zod-issue';
 
 /**
  * One owner-scoped message with its attachments. Mapped to the wire DTO: the raw
@@ -60,10 +61,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   if (parsed.data.read !== undefined) await setReadStatus(user.id, id, parsed.data.read);
   if (parsed.data.starred !== undefined) await setStarred(user.id, id, parsed.data.starred);

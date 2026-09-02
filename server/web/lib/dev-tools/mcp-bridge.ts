@@ -21,6 +21,7 @@ import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 const IDLE_SHUTDOWN_MS = 5 * 60 * 1000;
 
@@ -104,7 +105,7 @@ async function spawnBridge(): Promise<Bridge> {
 
 /** Connection-closed errors are recoverable by respawning; others aren't. */
 function isClosedError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = errorMessage(err);
   return /closed|not connected|ECONNRESET|EPIPE|disconnected/i.test(msg);
 }
 

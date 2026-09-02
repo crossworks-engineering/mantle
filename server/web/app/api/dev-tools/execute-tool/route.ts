@@ -14,6 +14,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { dispatchTool, resolveTool } from '@mantle/tools';
 import { getOwnerOr401 } from '@/lib/auth';
+import { firstIssue } from '@/lib/zod-issue';
 
 const Body = z.object({
   slug: z
@@ -30,10 +31,7 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const tool = await resolveTool(user.id, parsed.data.slug);
   if (!tool) {

@@ -28,6 +28,7 @@ import { runPinnedModelDrift } from './pinned-model-drift-run';
 import { summarisePoolFit } from './pool-fit';
 import { runPoolFit } from './pool-fit-run';
 import { reapAbandonedTracesAllOwners } from '../journey';
+import { errorMessage } from '@mantle/std';
 
 export interface EntitiesDedupeResult {
   auto: MergeCandidate[];
@@ -204,5 +205,5 @@ export async function runScheduledSweeps(ownerId: string): Promise<void> {
 }
 
 function msg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return errorMessage(err);
 }

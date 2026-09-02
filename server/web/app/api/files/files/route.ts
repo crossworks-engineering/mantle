@@ -4,6 +4,8 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
 import { MAX_UPLOAD_BYTES, MEDIA_EXTS, extOf } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 const ListQuery = z.union([
   z.object({ parent: z.string().min(1).max(500) }),
@@ -99,10 +101,7 @@ export async function POST(req: Request) {
     });
     const parsed = TextBody.safeParse(raw);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
     }
     const buf = Buffer.from(parsed.data.content, 'utf8');
     const row = await upsertFile({
@@ -128,7 +127,7 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ file: row });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (msg.includes('file_filename_in_parent_uq') || msg.includes('duplicate key')) {
       return NextResponse.json(
         { error: 'a file with that name already exists in this folder' },
@@ -182,10 +181,7 @@ export async function DELETE(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = BulkDeleteBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   if (parsed.data.cascade) {
     const { deleteFileWithDerived } = await import('@mantle/content');

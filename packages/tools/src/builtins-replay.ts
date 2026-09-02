@@ -34,7 +34,8 @@ import {
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import type { BuiltinToolDef } from './types';
-import { str } from './coerce';
+import { str, strOpt, numOr as num } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 // ─── pure helpers (unit-tested in builtins-replay.test.ts) ──────────────────
 
@@ -80,13 +81,6 @@ export function mergeAndSortTurns(turns: RecallTurn[]): RecallTurn[] {
 }
 
 // ─── input coercion (mirrors builtins.ts helpers) ───────────────────────────
-
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
-function num(v: unknown, dflt: number): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : dflt;
-}
 
 const MAX_TURNS = 500;
 const MAX_WINDOWS = 25;
@@ -217,7 +211,7 @@ const find_window: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `embed failed: ${err instanceof Error ? err.message : String(err)}`,
+        error: `embed failed: ${errorMessage(err)}`,
       };
     }
     const vec = JSON.stringify(queryVec);

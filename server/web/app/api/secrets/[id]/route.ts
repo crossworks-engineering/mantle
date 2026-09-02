@@ -8,6 +8,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { SECRET_KINDS, deleteSecret, getSecretMetadata, updateSecret } from '@/lib/secrets';
+import { firstIssue } from '@/lib/zod-issue';
 
 const FieldSchema = z.object({
   label: z.string().max(80),
@@ -39,10 +40,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const row = await updateSecret(user.id, id, parsed.data);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });

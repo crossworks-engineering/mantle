@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { testTts } from '@/lib/ai-worker-rpc';
+import { errorMessage } from '@mantle/std';
 
 const Body = z.object({ text: z.string().optional() });
 
@@ -15,9 +16,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     return NextResponse.json(await testTts(user.id, id, parsed.data.text));
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
   }
 }

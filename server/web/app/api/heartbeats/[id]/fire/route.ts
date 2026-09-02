@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getHeartbeatRow } from '@/lib/heartbeats';
 import { forceFire } from '@mantle/heartbeats';
+import { errorMessage } from '@mantle/std';
 
 /**
  * Fire a heartbeat immediately, bypassing its gates (idle / quiet / cooldown) —
@@ -18,9 +19,6 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     await forceFire(row);
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
   }
 }

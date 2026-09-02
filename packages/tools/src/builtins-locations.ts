@@ -29,11 +29,9 @@ import {
 import { getApiKey } from '@mantle/api-keys';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
-import { str } from './coerce';
+import { str, strOptTrim as strOpt } from './coerce';
+import { errorMessage } from '@mantle/std';
 
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
-}
 function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
@@ -105,7 +103,7 @@ const location_save: BuiltinToolDef = {
       });
       return { ok: true, output: row };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -151,7 +149,7 @@ const location_nearby: BuiltinToolDef = {
       ctx.step?.setOutput({ count: rows.length });
       return { ok: true, output: { count: rows.length, places: rows.map(compactNearby) } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

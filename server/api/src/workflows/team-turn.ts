@@ -13,6 +13,7 @@ import {
   type TeamTurnInput,
   type TeamTurnRunResult,
 } from '@mantle/assistant-runtime';
+import { errorMessage } from '@mantle/std';
 
 export type { TeamTurnInput, TeamTurnRunResult };
 
@@ -49,7 +50,7 @@ async function teamTurnImpl(input: TeamTurnInput): Promise<TeamTurnRunResult> {
       },
     );
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     DBOS.span?.setAttribute('mantle.error', msg);
     DBOS.logger.error(
       `[team_turn] FAILED (owner=${ownerId}, contact=${options.contactId}): ${msg}`,

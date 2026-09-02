@@ -16,6 +16,7 @@
     "@mantle/api-keys": "workspace:*",
     "@mantle/content": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/std": "workspace:*",
     "@mantle/telegram": "workspace:*",
     "@mantle/tools": "workspace:*",
     "@mantle/tracing": "workspace:*",

@@ -1,3 +1,4 @@
+import { errorMessage } from '@mantle/std';
 /**
  * Draw render island — turns a committed scene into an SVG snapshot inside the
  * browser sidecar's Chromium.
@@ -164,7 +165,7 @@ void (async () => {
   try {
     await render();
   } catch (err) {
-    window.__mantleDrawError = err instanceof Error ? err.message : String(err);
+    window.__mantleDrawError = errorMessage(err);
   } finally {
     // Set last and unconditionally: the driver waits on done-or-error, so
     // failing to set this would hang the render until its timeout.

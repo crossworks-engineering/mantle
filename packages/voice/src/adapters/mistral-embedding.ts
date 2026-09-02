@@ -19,6 +19,7 @@ import type {
   EmbeddingModelInfo,
 } from './types';
 import type { DiscoveryResult } from '../discover';
+import { errorMessage } from '@mantle/std';
 
 const ENDPOINT = 'https://api.mistral.ai/v1/embeddings';
 const MODELS_URL = 'https://api.mistral.ai/v1/models';
@@ -129,7 +130,7 @@ export const mistralEmbedding: EmbeddingDispatcher = {
       return {
         available: [...STATIC_CATALOG],
         filtered: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       };
     }
   },

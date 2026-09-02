@@ -11,6 +11,7 @@ import { enqueueBackfills } from './backfill-queue';
 import { peekRecentSenders, type RecentSender } from './peek';
 import { imap } from './providers/imap';
 import type { EmailProvider } from './types';
+import { errorMessage } from '@mantle/std';
 
 export type UnknownSender = {
   fromAddr: string;
@@ -73,7 +74,7 @@ export async function recentUnknownSenders(
         }
       }
     } catch (err) {
-      lastErr = err instanceof Error ? err.message : String(err);
+      lastErr = errorMessage(err);
     }
   }
 

@@ -8,6 +8,8 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { callMcpTool, listMcpTools } from '@/lib/dev-tools/mcp-bridge';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 export async function GET() {
   const gate = await getOwnerOr401();
@@ -16,7 +18,7 @@ export async function GET() {
     const tools = await listMcpTools();
     return NextResponse.json({ tools });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     return NextResponse.json({ error: `MCP server unavailable: ${msg}` }, { status: 503 });
   }
 }
@@ -32,16 +34,13 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = CallBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   try {
     const result = await callMcpTool(parsed.data.name, parsed.data.args);
     return NextResponse.json({ result });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     return NextResponse.json({ error: msg }, { status: 502 });
   }
 }

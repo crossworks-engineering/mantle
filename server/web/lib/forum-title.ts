@@ -16,6 +16,7 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { bumpWorkerUsage, getDefaultWorker } from '@mantle/db';
 import { getChatAdapter } from '@mantle/voice';
 import { heuristicTitle, sanitizeTitle } from './forum-title-text';
+import { errorMessage } from '@mantle/std';
 
 const SUMMARIZE_TIMEOUT_MS = 6_000;
 
@@ -78,9 +79,7 @@ export async function titleForTopic(ownerId: string, body: string): Promise<stri
     }
     return title;
   } catch (err) {
-    console.warn(
-      `[forum-title] summarizer failed — heuristic: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    console.warn(`[forum-title] summarizer failed — heuristic: ${errorMessage(err)}`);
     return heuristicTitle(body);
   }
 }

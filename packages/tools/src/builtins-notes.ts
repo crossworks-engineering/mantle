@@ -21,8 +21,9 @@ import {
 import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
-import { str, strArr } from './coerce';
+import { str, strArr, strOptTrim as strOpt } from './coerce';
 import { notFound } from './errors';
+import { errorMessage } from '@mantle/std';
 
 // Shared referential preconditions (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING node of the right type.
@@ -35,10 +36,6 @@ const FILE_ID_PRE: readonly ToolPrecondition[] = [
 const PAGE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'page_id', nodeType: 'page', lookup: 'page_list / search_nodes' },
 ];
-
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
-}
 
 const note_create: BuiltinToolDef = {
   slug: 'note_create',
@@ -94,7 +91,7 @@ const note_create: BuiltinToolDef = {
 
       return { ok: true, output: row };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -128,7 +125,7 @@ const note_list: BuiltinToolDef = {
       ctx.step?.setOutput({ count: rows.length });
       return { ok: true, output: rows };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -162,7 +159,7 @@ const note_get: BuiltinToolDef = {
       ctx.step?.setOutput({ id: row.id, title: row.title });
       return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -248,7 +245,7 @@ const note_update: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -350,7 +347,7 @@ const note_from_file: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -416,7 +413,7 @@ const note_from_page: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

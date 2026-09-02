@@ -32,18 +32,13 @@ import {
 import { enqueueBackfills } from '@mantle/email';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { notFound } from './errors';
-import { str } from './coerce';
+import { str, strOptTrim as strOpt, numOr as num } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 const CONTACT_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'contact', lookup: 'contact_find / contact_list' },
 ];
 
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
-}
-function num(v: unknown, dflt: number): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : dflt;
-}
 /**
  * Coerce an `emails` input to a clean string[] (or undefined to leave alone).
  * Intentionally NOT the shared `strArr`/`strArrOpt` from './coerce': emails must
@@ -245,7 +240,7 @@ const contact_create: BuiltinToolDef = {
       ctx.step?.setOutput({ id: contact.id, title: contact.title });
       return { ok: true, output: compact(contact) };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -320,7 +315,7 @@ const contact_update: BuiltinToolDef = {
       ctx.step?.setOutput({ id: result.contact.id, title: result.contact.title });
       return { ok: true, output: compact(result.contact) };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

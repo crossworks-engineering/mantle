@@ -320,6 +320,8 @@ import type {
   ThoughtTrailMode,
   OnboardingModelChoices,
 } from '@mantle/client-types';
+import { UUID_RE } from '@mantle/std';
+
 export type { ReminderChannel, ThoughtTrailMode, OnboardingModelChoices };
 export type { ProfilePreferences };
 
@@ -355,9 +357,7 @@ export function projectOnboardingModels(raw: unknown): OnboardingModelChoices | 
 export function projectTeamHubAppId(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined;
   const trimmed = raw.trim().toLowerCase();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(trimmed)
-    ? trimmed
-    : undefined;
+  return UUID_RE.test(trimmed) ? trimmed : undefined;
 }
 
 /** Cap on curated Dashboard tag sections — enough for a rich overview, small

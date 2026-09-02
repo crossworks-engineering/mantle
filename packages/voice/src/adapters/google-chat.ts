@@ -34,6 +34,7 @@ import { STREAM_IDLE_TIMEOUT_MS, chatAbortSignal, readSSE, safeDelta, streamAbor
 import { wantGuardedThinking } from './thinking-guard';
 import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_CHAT_MODELS } from '../catalogs/google';
+import { errorMessage } from '@mantle/std';
 
 /** A Gemini content part. The runtime emits three kinds:
  *  - text: narrative content (a `thought: true` text part is a thinking summary,
@@ -631,7 +632,7 @@ async function googleDiscover(apiKey: string): Promise<DiscoveryResult<ChatModel
     return {
       available: [...GOOGLE_CHAT_MODELS],
       filtered: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }
