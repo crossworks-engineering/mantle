@@ -15,7 +15,7 @@
     "./journal": "./src/journal.ts",
     "./peers": "./src/peers.ts",
     "./peers-crypto": "./src/peers-crypto.ts",
-    "./pages": "./src/pages.ts",
+    "./pages": "./src/pages/index.ts",
     "./app-broker": "./src/app-broker.ts",
     "./app-table-exports": "./src/app-table-exports.ts",
     "./tables": "./src/tables.ts",
