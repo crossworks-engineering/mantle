@@ -161,21 +161,29 @@ streams a run.
   key, so CLI, UI, and cron (three different processes) can never merge
   concurrently, a contender fails fast with a clear message. Dry-runs skip
   the lock.
-- The schedule contains five tasks: `entities-dedupe` (auto tier),
-  `traces-reap` (all owners), and the three read-only reports `deps-drift`,
-  `models-drift` and `pinned-model-drift`. Backups stay on the `db-dump.sh`
-  path; they are already scheduled there.
+- The schedule contains six tasks: `entities-dedupe` (auto tier),
+  `traces-reap` (all owners), and the four read-only reports `deps-drift`,
+  `models-drift`, `pinned-model-drift` and `pool-fit`. Backups stay on the
+  `db-dump.sh` path; they are already scheduled there.
 
-  The two model reports answer different questions and neither subsumes the
-  other. `models-drift` is CATALOGUE-level: does our onboarding dropdown still
+  The three model reports answer different questions and none subsumes the
+  others. `models-drift` is CATALOGUE-level: does our onboarding dropdown still
   offer what providers serve? It skips OpenRouter, whose list is built from the
   provider and so cannot drift. `pinned-model-drift` is BRAIN-level: do the ids
   `agents.model` / `ai_workers.model` actually send still exist, and has the
   family moved on? A pin on OpenRouter absolutely can drift, a delisted slug
   404s at turn time, so it covers precisely what the other one skips.
+  `pool-fit` is the third axis: not *does the model exist* but *does it do the
+  job*. It came out of 2026-09-02, when an image GENERATOR was sitting in the
+  vision ("Read images") pool on all five brains. Generators accept image input
+  exactly like readers do, so nothing on the input side caught it, and it would
+  have billed image-generation tokens and returned a picture where the vision
+  worker parses text. It reuses `poolModelIssue` — the same rule the four write
+  guards enforce (docs/model-pools.md), so the report and the guards can never
+  disagree.
 
-  `pinned-model-drift` reports anything it cannot judge as **not checked, with
-  a reason**, never as missing. A provider with no list API, an absent key, and
+  `pinned-model-drift` and `pool-fit` report anything they cannot judge as
+  **not checked, with a reason**, never as a problem. A provider with no list API, an absent key, and
   a catalogue that does not cover the pin's modality all say nothing about
   whether the pin is valid. That distinction is the whole report: the naive
   version marked a healthy five-box fleet as three models retired, because

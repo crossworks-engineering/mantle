@@ -25,6 +25,7 @@
     "maintain": "tsx --env-file-if-exists=./.env.local scripts/maintain.ts",
     "models:drift": "tsx --env-file-if-exists=./.env.local scripts/models-drift.ts",
     "models:pinned": "tsx --env-file-if-exists=./.env.local scripts/pinned-model-drift.ts",
+    "models:pool-fit": "tsx --env-file-if-exists=./.env.local scripts/pool-fit.ts",
     "pgboss:init": "tsx --env-file-if-exists=./.env.local scripts/pgboss-init.ts",
     "predev": "pnpm run generate",
     "pretypecheck": "pnpm run route-manifest",

@@ -462,6 +462,22 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Lists each provider once (5-min cached) and invokes no model, so there is no token spend; the master key is needed only for providers whose list endpoint requires a key — OpenRouter, the common case, is keyless. Exits 0 even when drift is found. Everything it cannot see is reported as "not checked" with a reason, never as missing: a provider with no list API, an absent key, and a catalogue that does not cover the pin\'s modality all say nothing about whether the pin is valid. That distinction is the whole report — the naive version marked a healthy fleet as three models retired, because OpenRouter\'s /models enumerates chat only and its alias ids carry a leading tilde.',
   },
   {
+    slug: 'pool-fit',
+    title: 'Pool-fit report',
+    description:
+      'Checks every curated pool entry, enabled agent and enabled worker on an OpenRouter route against what that pool actually needs the model to DO, and reports the ones that cannot do it. The case it was built for: "Read images" and "Image generation" both accept image input, so an image GENERATOR passes every input-side check and then bills image-generation tokens and returns a picture where a text answer was expected. `architecture.output_modalities` is the half that separates them. Complements pinned-model-drift, which asks whether a model still EXISTS — this asks whether it belongs. Report-only: removing a curated entry is the owner\'s curation and repointing a live row is a cost decision.',
+    kind: 'recurring',
+    status: 'live',
+    cost: 'io',
+    schedulable: true,
+    script: 'scripts/pool-fit.ts',
+    cwd: 'server/web',
+    readOnly: true,
+    extraFlags: ['--all', '--json'],
+    notes:
+      "Keyless — OpenRouter's catalog is public, fetched once per run and cached 6h, and no model is invoked. Exits 0 even when a misfit is found. Only OpenRouter routes are subjects: the modality facts come from OpenRouter's catalog, so a direct-provider slug ('claude-opus-5') is out of scope rather than a finding, and the meta-routers (openrouter/auto*) are reported unchecked because their modalities are the union over everything they might route to. Same rule as the four write guards (`poolModelIssue`), so the report and the guards can never disagree.",
+  },
+  {
     slug: 'models-drift',
     title: 'Model catalogue drift report',
     description:

@@ -59,6 +59,13 @@ catalog allows the write; only positive catalog evidence rejects):
 | AI-worker save | `server/web/lib/ai-workers.ts` (`openRouterModelIssue`) |
 | Vision model dropdown | `packages/voice/src/adapters/openrouter-vision.ts` |
 
+A guard only protects the NEXT write. For rows that predate it — curated
+entries, and models already saved on an agent or worker — the `pool-fit`
+maintenance task reports the misfits and leaves the fixing to you
+(`pnpm -C server/web models:pool-fit`, nightly on the cron sweep,
+docs/maintenance-runner.md). It calls the same `poolModelIssue`, so the report
+and the guards can never disagree.
+
 `model_catalog` now returns `inputModalities` / `outputModalities` so the
 Curator sees the evidence rather than guessing from the model's NAME, which
 is how the bad entry got in. OpenRouter's meta-routers (`openrouter/auto*`)
