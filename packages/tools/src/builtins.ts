@@ -71,6 +71,10 @@ import {
 } from './builtins-files';
 import { secret_create } from './builtins-secrets';
 import { telegram_send } from './builtins-telegram';
+import { TELEGRAM_OPERATOR_TOOLS } from './builtins-telegram';
+import { PENDING_TOOLS, WORKER_GROUP_TOOLS } from './builtins-pending';
+import { FILE_OPERATOR_TOOLS } from './builtins-files';
+import { NOTE_OPERATOR_TOOLS } from './builtins-notes';
 import { invoke_agent } from './builtins-delegation';
 
 export const BUILTIN_TOOLS: BuiltinToolDef[] = [
@@ -223,6 +227,16 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Runner queues — durable, inspectable execution plans (docs/runs.md).
   // Responder-only via the `runs` tool group; creation gated by MANTLE_RUNS.
   ...RUN_TOOLS,
+  // Owner-only operator surface: the approval queue, the runner's worker
+  // panels, and the Telegram inbox controls. Every def is `mcpOnly`, so these
+  // are registered here (one implementation, one dispatch path) but never
+  // seeded into `tools` and never nameable by a manifest group — no agent can
+  // hold them. See BuiltinToolDef.mcpOnly.
+  ...PENDING_TOOLS,
+  ...WORKER_GROUP_TOOLS,
+  ...TELEGRAM_OPERATOR_TOOLS,
+  ...FILE_OPERATOR_TOOLS,
+  ...NOTE_OPERATOR_TOOLS,
 ];
 
 // P6: there is no flat "default assistant grant" anymore. A generalist persona's
@@ -239,6 +253,12 @@ export { SEARCH_TOOLS } from './builtins-search';
 export { ENTITY_TOOLS } from './builtins-entities';
 export { NODE_READ_TOOLS, CONTENT_CURATION_TOOLS, INGEST_TOOLS } from './builtins-nodes';
 export { SECRET_TOOLS } from './builtins-secrets';
-export { FILE_CREATE_TOOLS, FILE_MANAGE_TOOLS, FILE_TOOLS } from './builtins-files';
-export { TELEGRAM_TOOLS } from './builtins-telegram';
+export {
+  FILE_CREATE_TOOLS,
+  FILE_MANAGE_TOOLS,
+  FILE_OPERATOR_TOOLS,
+  FILE_TOOLS,
+} from './builtins-files';
+export { TELEGRAM_TOOLS, TELEGRAM_OPERATOR_TOOLS } from './builtins-telegram';
+export { PENDING_TOOLS, WORKER_GROUP_TOOLS } from './builtins-pending';
 export { DELEGATION_TOOLS } from './builtins-delegation';

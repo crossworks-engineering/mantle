@@ -29,6 +29,15 @@ export function listBuiltins(): BuiltinToolDef[] {
   return Array.from(REGISTRY.values()).sort((a, b) => a.slug.localeCompare(b.slug));
 }
 
+/** The builtins that become rows in the owner's `tools` table — everything
+ *  except the `mcpOnly` operator surface, which is reachable over MCP only and
+ *  must never end up in a catalog an agent can be granted from. Seeding is the
+ *  ONLY place this distinction is applied, so it lives here where a test can
+ *  see it rather than inline in seed.ts. */
+export function listSeedableBuiltins(): BuiltinToolDef[] {
+  return listBuiltins().filter((d) => !d.mcpOnly);
+}
+
 /** Fields the named builtin marks sensitive. Empty array for everything
  *  else (or unknown slugs). Cheap O(1) lookup used by the tool-loop
  *  before recording call args to `trace_steps.input`. */

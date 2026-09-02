@@ -172,7 +172,12 @@ describe('system manifest integrity', () => {
     // Every static builtin must be grantable via some group. (Runtime-only
     // affordances like heartbeat_* are registered outside BUILTIN_TOOLS and are
     // injected per-turn, never granted — so they're correctly absent here.)
-    const orphans = BUILTIN_TOOLS.map((t) => t.slug).filter((s) => !inAGroup.has(s));
+    // mcpOnly builtins are NOT grantable by construction (see the mcpOnly
+    // block below) — they are the owner's operator surface, reachable over MCP
+    // and never through a tool group.
+    const orphans = BUILTIN_TOOLS.filter((t) => !t.mcpOnly)
+      .map((t) => t.slug)
+      .filter((s) => !inAGroup.has(s));
     expect(orphans, 'these builtins are grantable but belong to no group').toEqual([]);
   });
 
@@ -440,5 +445,38 @@ describe('system manifest integrity', () => {
     for (const kind of ['extractor', 'summarizer', 'reflector', 'document']) {
       expect(required, `worker '${kind}' must be required`).toContain(kind);
     }
+  });
+});
+
+/**
+ * `mcpOnly` builtins are the OWNER's operator surface — the approval queue, the
+ * runner panels, the Telegram inbox, the file/note deletes. They live in the
+ * builtin registry so the MCP transports run one tested implementation, and
+ * that is exactly what makes this guard necessary: a builtin is the thing a
+ * tool group grants. An agent holding `pending_approve` would approve its own
+ * gated call, which is the gate the pending row exists to impose.
+ *
+ * KNOWN_TOOL_SLUGS is the set a manifest group may name, so filtering these out
+ * of it makes a group that names one fail the drift test above rather than ship.
+ */
+describe('mcpOnly builtins are not grantable', () => {
+  const mcpOnly = BUILTIN_TOOLS.filter((t) => t.mcpOnly).map((t) => t.slug);
+
+  it('there are some — the flag has not been silently dropped', () => {
+    expect(mcpOnly.length).toBeGreaterThan(0);
+  });
+
+  it('none of them is a slug the manifest may reference', () => {
+    const leaked = mcpOnly.filter((slug) => KNOWN_TOOL_SLUGS.has(slug));
+    expect(leaked, `mcpOnly builtins a manifest group could name: ${leaked.join(', ')}`).toEqual(
+      [],
+    );
+  });
+
+  it('no manifest tool group actually bundles one', () => {
+    const bundled = MANIFEST_TOOL_GROUPS.flatMap((g) =>
+      g.toolSlugs.filter((slug) => mcpOnly.includes(slug)).map((slug) => `${g.slug}: ${slug}`),
+    );
+    expect(bundled).toEqual([]);
   });
 });

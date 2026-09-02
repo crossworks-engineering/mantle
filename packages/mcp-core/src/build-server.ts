@@ -30,43 +30,19 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import {
-  db,
-  agentGroups,
-  agents,
-  channels,
-  nodes,
-  telegramAccounts,
-  telegramChats,
-  telegramMessages,
-} from '@mantle/db';
+import { db, nodes } from '@mantle/db';
 import { searchNodes } from '@mantle/search';
 import { embed } from '@mantle/embeddings';
 import { describeResponderPersona, runSimulatedResponderTurn } from '@mantle/assistant-runtime';
-import { accountForChat, editMessage, reactToMessage, sendMessage } from '@mantle/telegram';
 import {
-  createFolder,
-  deleteFileById,
-  deleteFolder,
-  ensureFilesRootBranch,
   fileById,
   folderByPath,
   readFileById,
   renameFileById,
   renameFolderById,
   updateFolderDescription,
-  upsertFile,
-  MAX_UPLOAD_BYTES,
-  setIndexingMode,
-  MEDIA_EXTS,
-  extOf,
 } from '@mantle/files';
 import {
-  ASK_HUMAN_FORM_LIMITS as FORM_LIMITS,
-  approvePendingCall,
-  getPendingCall,
-  listPendingCalls,
-  rejectPendingCall,
   checkToolPreconditions,
   CONTACT_TOOLS,
   WORKER_DELEGATION_TOOLS,
@@ -91,6 +67,11 @@ import {
   ENTITY_TOOLS,
   FILE_TOOLS,
   TELEGRAM_TOOLS,
+  TELEGRAM_OPERATOR_TOOLS,
+  FILE_OPERATOR_TOOLS,
+  NOTE_OPERATOR_TOOLS,
+  PENDING_TOOLS,
+  WORKER_GROUP_TOOLS,
   FILE_CREATE_TOOLS,
   CONTENT_CURATION_TOOLS,
   INGEST_TOOLS,
@@ -117,9 +98,6 @@ import {
 } from '@mantle/tools';
 import type { BuiltinToolDef } from '@mantle/tools';
 import {
-  deleteFileWithDerived,
-  deleteNote,
-  describeDerivedCounts,
   getPage,
   getTable,
   listPages,
@@ -127,7 +105,7 @@ import {
   listRows,
   ensureTableDoc,
 } from '@mantle/content';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 
@@ -305,36 +283,10 @@ export function registerMantleTools(
 
   // ─── files / folders ──────────────────────────────────────────────────────
 
-  server.tool(
-    'folder_create',
-    "Create a folder under `parent_path` (ltree, e.g. 'files.work'). Slug must be lowercase + dashes — anything else gets normalised. Description is optional but recommended so future agents know what the folder is for. Creates the directory on disk and the DB row in lockstep. Pass `indexing: 'metadata'` to make it a store-and-share area whose files are indexed by name/type/tags but whose CONTENT is never read into the brain (galleries, temp files, transcription clips).",
-    {
-      parent_path: z.string().min(1).max(500),
-      slug: z.string().min(1).max(64),
-      description: z.string().max(2000).optional(),
-      indexing: z.enum(['full', 'metadata']).optional(),
-    },
-    async ({ parent_path, slug, description, indexing }) => {
-      await ensureFilesRootBranch(ownerId);
-      try {
-        const folder = await createFolder({
-          ownerId: ownerId,
-          parentPath: parent_path,
-          slug,
-          description,
-        });
-        // Applied AFTER create so the flag write and the descendant sweep
-        // share one code path with the settings toggle.
-        if (indexing) {
-          await setIndexingMode({ ownerId, nodeId: folder.id, mode: indexing });
-        }
-        return jsonReply(indexing ? { ...folder, indexing } : folder);
-      } catch (err) {
-        const msg = errorMessage(err);
-        return { content: [{ type: 'text', text: `folder_create failed: ${msg}` }], isError: true };
-      }
-    },
-  );
+  // Create and destroy: bridged from `mcpOnly` builtins since tier 3 of the
+  // 2026-09-02 audit. No in-app tool group grants these, so promoting them
+  // shared the implementation without widening what any agent can reach.
+  registerBuiltinTools(FILE_OPERATOR_TOOLS);
 
   server.tool(
     'folder_describe',
@@ -405,75 +357,6 @@ export function registerMantleTools(
     },
   );
 
-  server.tool(
-    'folder_delete',
-    'Delete a folder. Refuses unless the folder is empty — clear its children first. Cannot delete the `files` root.',
-    { folder_id: z.string().uuid() },
-    async ({ folder_id }) => {
-      const res = await deleteFolder({ ownerId: ownerId, folderId: folder_id });
-      if (!res.ok) {
-        return { content: [{ type: 'text', text: `folder_delete: ${res.reason}` }], isError: true };
-      }
-      return { content: [{ type: 'text', text: 'deleted' }] };
-    },
-  );
-
-  server.tool(
-    'file_upload',
-    "Create or overwrite a file in a folder. Pass either `content_text` (utf-8) or `content_base64` (binary). Filename is lowercased + sanitised. The extractor agent will pick up text files (md/txt/json/yaml) automatically via pg_notify('node_ingested'). Pass `indexing: 'metadata'` to store WITHOUT content indexing (findable by name/type/tags only).",
-    {
-      parent_path: z.string().min(1).max(500),
-      filename: z.string().min(1).max(200),
-      content_text: z.string().optional(),
-      content_base64: z.string().optional(),
-      overwrite: z.boolean().optional(),
-      indexing: z.enum(['full', 'metadata']).optional(),
-    },
-    async ({ parent_path, filename, content_text, content_base64, overwrite, indexing }) => {
-      if (content_text == null && content_base64 == null) {
-        return {
-          content: [{ type: 'text', text: 'file_upload: pass content_text or content_base64' }],
-          isError: true,
-        };
-      }
-      const bytes =
-        content_text != null
-          ? Buffer.from(content_text, 'utf8')
-          : Buffer.from(content_base64!, 'base64');
-      if (bytes.byteLength > MAX_UPLOAD_BYTES) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `file_upload: too large (${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB > ${MAX_UPLOAD_BYTES / 1024 / 1024} MB)${MEDIA_EXTS.has(extOf(filename)) ? ' — for video, ingest the link instead (video_ingest)' : ''}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      try {
-        const row = await upsertFile({
-          ownerId: ownerId,
-          parentPath: parent_path,
-          filename,
-          bytes,
-          overwrite,
-        });
-        // Best-effort ordering: the insert trigger may already have queued
-        // extraction, so a full pass CAN race this write. Harmless — the
-        // sweep inside setIndexingMode sees applied≠effective and re-queues,
-        // and the metadata pass reaps whatever the racing pass wrote.
-        if (indexing) {
-          await setIndexingMode({ ownerId, nodeId: row.id, mode: indexing });
-        }
-        return jsonReply(indexing ? { ...row, indexing } : row);
-      } catch (err) {
-        const msg = errorMessage(err);
-        return { content: [{ type: 'text', text: `file_upload failed: ${msg}` }], isError: true };
-      }
-    },
-  );
-
   // File-manager verbs + the indexing switch: BRIDGED from @mantle/tools so
   // MCP runs the same implementation as in-app agents (same teaching errors,
   // same indexing reconciliation) — hand-written twins rot, see
@@ -531,379 +414,16 @@ export function registerMantleTools(
     },
   );
 
-  server.tool(
-    'file_delete',
-    'Delete a file by id. Removes both the DB row and the on-disk file. If ingest derived nodes from the file (extracted images, imported tables, pages, notes), the call reports their counts instead of deleting; confirm with the user, then call again with delete_derived: true to remove them too.',
-    { file_id: z.string().uuid(), delete_derived: z.boolean().optional() },
-    async ({ file_id, delete_derived }) => {
-      if (delete_derived) {
-        const res = await deleteFileWithDerived(ownerId, file_id);
-        if (!res.ok) {
-          const text =
-            res.reason === 'attachment'
-              ? "can't delete — this file is an email attachment; delete it from the email instead"
-              : res.reason === 'in_drawing'
-                ? `can't delete — this image is used in ${(res.drawings ?? []).map((d) => d.title).join(', ') || 'a drawing'}; remove it from the drawing first`
-                : 'file not found';
-          return { content: [{ type: 'text', text }], isError: true };
-        }
-        const skipped = res.skipped > 0 ? ` (${res.skipped} derived node(s) skipped)` : '';
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `deleted, along with ${describeDerivedCounts(res.reaped)} derived from it${skipped}`,
-            },
-          ],
-        };
-      }
-      const res = await deleteFileById({ ownerId: ownerId, fileId: file_id });
-      if (!res.ok) {
-        if (res.reason === 'has_derived' && res.derived) {
-          // Not an error: a count-and-confirm preview. Nothing was deleted.
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `this file produced ${describeDerivedCounts(res.derived)} — nothing was deleted; call again with delete_derived: true to remove the file and everything derived from it`,
-              },
-            ],
-          };
-        }
-        const text =
-          res.reason === 'attachment'
-            ? "can't delete — this file is an email attachment; delete it from the email instead"
-            : res.reason === 'in_drawing'
-              ? `can't delete — this image is used in ${(res.drawings ?? []).map((d) => d.title).join(', ') || 'a drawing'}; remove it from the drawing first`
-              : 'file not found';
-        return { content: [{ type: 'text', text }], isError: true };
-      }
-      return { content: [{ type: 'text', text: 'deleted' }] };
-    },
-  );
-
-  // ─── pending tool calls (operator approvals) ─────────────────────────────
-
-  server.tool(
-    'pending_list',
-    "List operator-approval-required tool calls an agent has queued. By default returns the still-pending queue; pass `status` ('pending'|'approved'|'rejected'|'expired') to filter, and `limit` to cap.",
-    {
-      status: z.enum(['pending', 'approved', 'rejected', 'expired']).optional(),
-      limit: z.number().int().min(1).max(500).optional(),
-    },
-    async ({ status, limit }) => {
-      const rows = await listPendingCalls(ownerId, { status: status ?? 'pending', limit });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'pending_approve',
-    'Approve a queued tool call by id. The handler runs immediately under a fresh `manual` trace; the result is stored on the pending row and returned. For a runner `ask_human` question, approval completes the run step and `answer` carries the free-text reply the run continues with (omit it for a plain yes / option-pick approval). When the row carries a `form` (see its args), answer per sub-question with `answers` instead.',
-    {
-      id: z.string().uuid(),
-      answer: z.string().max(4000).optional(),
-      answers: z
-        .array(
-          z.object({
-            question: z.string().max(200).describe("The form question's id, e.g. 'env'"),
-            selected: z
-              .array(z.string().max(FORM_LIMITS.maxLabelChars))
-              .max(FORM_LIMITS.maxOptions)
-              .describe('Chosen option labels'),
-            other: z
-              .string()
-              .max(FORM_LIMITS.maxOtherChars)
-              .optional()
-              .describe('Free text when no option fits'),
-          }),
-        )
-        .max(FORM_LIMITS.maxQuestions)
-        .optional()
-        .describe("Structured answers, one entry per question in the row's `form`"),
-    },
-    async ({ id, answer, answers }) => {
-      const row = await approvePendingCall(
-        ownerId,
-        id,
-        answer || answers?.length
-          ? { ...(answer ? { answer } : {}), ...(answers?.length ? { answers } : {}) }
-          : undefined,
-      );
-      if (!row) {
-        return { content: [{ type: 'text', text: 'not found or already decided' }], isError: true };
-      }
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'pending_reject',
-    "Reject a queued tool call by id. No execution; just flips status to 'rejected'. A runner `ask_human` question completes its run step failed(rejected) so the run advances instead of waiting forever.",
-    { id: z.string().uuid() },
-    async ({ id }) => {
-      const row = await rejectPendingCall(ownerId, id);
-      if (!row) {
-        return { content: [{ type: 'text', text: 'not found or already decided' }], isError: true };
-      }
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'worker_group_list',
-    'List worker groups (panels) for runner queues. A run step with group:<slug> fans out into one attempt per member worker plus a panel audit.',
-    {},
-    async () => {
-      const rows = await db.select().from(agentGroups).where(eq(agentGroups.ownerId, ownerId));
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'worker_group_ensure',
-    "Create or update a worker group (panel) by slug. `members` are enabled worker-agent slugs — each must exist (agent_list shows agents; role 'worker'). Idempotent upsert.",
-    {
-      slug: z.string().min(1).max(64),
-      name: z.string().max(200).optional(),
-      members: z.array(z.string().min(1)).min(1).max(10),
-      enabled: z.boolean().optional(),
-    },
-    async ({ slug, name, members, enabled }) => {
-      const workers = await db
-        .select({ slug: agents.slug })
-        .from(agents)
-        .where(
-          and(eq(agents.ownerId, ownerId), eq(agents.role, 'worker'), eq(agents.enabled, true)),
-        );
-      const have = new Set(workers.map((w) => w.slug));
-      const missing = members.filter((m) => !have.has(m));
-      if (missing.length > 0) {
-        const available = workers.map((w) => w.slug).join(', ') || '(none yet)';
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `unknown worker(s): ${missing.join(', ')} — enabled worker agents: ${available}. Create workers first (settings → agents, role 'worker').`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      const [existing] = await db
-        .select({ id: agentGroups.id })
-        .from(agentGroups)
-        .where(and(eq(agentGroups.ownerId, ownerId), eq(agentGroups.slug, slug)));
-      const values = {
-        name: name ?? slug,
-        memberSlugs: members,
-        ...(enabled !== undefined ? { enabled } : {}),
-        updatedAt: new Date(),
-      };
-      const [row] = existing
-        ? await db
-            .update(agentGroups)
-            .set(values)
-            .where(eq(agentGroups.id, existing.id))
-            .returning()
-        : await db
-            .insert(agentGroups)
-            .values({ ownerId, slug, ...values })
-            .returning();
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'pending_get',
-    'Fetch a pending tool call by id — useful to inspect the args before deciding.',
-    { id: z.string().uuid() },
-    async ({ id }) => {
-      const row = await getPendingCall(ownerId, id);
-      if (!row) {
-        return { content: [{ type: 'text', text: 'not found' }], isError: true };
-      }
-      return jsonReply(row);
-    },
-  );
-
-  // ─── entities ─────────────────────────────────────────────────────────────
-
-  // ─── telegram ─────────────────────────────────────────────────────────────
-
-  server.tool(
-    'telegram_pending',
-    'Unanswered Telegram DMs, oldest first. Call after each turn (or via /loop) to see what needs a reply. Returns the row id (for mark_processed), telegram_message_id (for reply threading), chat_id, sender, text, and sent_at.',
-    {
-      chat_id: z.string().optional(),
-      limit: z.number().int().min(1).max(50).optional(),
-    },
-    async ({ chat_id, limit }) => {
-      const conds = [eq(telegramMessages.processed, false)];
-      if (chat_id) {
-        // chat_id is the *Telegram* chat id; resolve to our internal pk first.
-        const [chat] = await db
-          .select({ id: telegramChats.id })
-          .from(telegramChats)
-          .where(eq(telegramChats.telegramChatId, chat_id))
-          .limit(1);
-        if (!chat) return { content: [{ type: 'text', text: '[]' }] };
-        conds.push(eq(telegramMessages.chatId, chat.id));
-      }
-      const rows = await db
-        .select({
-          id: telegramMessages.id,
-          telegram_message_id: telegramMessages.telegramMessageId,
-          chat_id: telegramChats.telegramChatId,
-          from_user_id: telegramMessages.fromUserId,
-          from_username: telegramMessages.fromUsername,
-          from_name: telegramMessages.fromName,
-          text: telegramMessages.text,
-          sent_at: telegramMessages.sentAt,
-          attachments: telegramMessages.attachments,
-        })
-        .from(telegramMessages)
-        .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
-        .where(and(...conds))
-        .orderBy(asc(telegramMessages.sentAt))
-        .limit(limit ?? 20);
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'telegram_react',
-    'Add an emoji reaction to a Telegram message. Telegram accepts only a fixed whitelist (👍 👎 ❤ 🔥 👀 🎉 etc).',
-    {
-      chat_id: z.string(),
-      message_id: z.string(),
-      emoji: z.string(),
-    },
-    async ({ chat_id, message_id, emoji }) => {
-      const account = await accountForChat(chat_id);
-      if (!account) {
-        return { content: [{ type: 'text', text: 'no enabled telegram account' }], isError: true };
-      }
-      try {
-        await reactToMessage(account, chat_id, message_id, emoji);
-        return { content: [{ type: 'text', text: 'reacted' }] };
-      } catch (err) {
-        const msg = errorMessage(err);
-        return { content: [{ type: 'text', text: `react failed: ${msg}` }], isError: true };
-      }
-    },
-  );
-
-  server.tool(
-    'telegram_edit',
-    'Edit a previously-sent Telegram message in place. Useful for progress updates. Edits do not trigger push notifications — send a new reply when a long task completes.',
-    {
-      chat_id: z.string(),
-      message_id: z.string(),
-      text: z.string().min(1),
-      markdown: z.boolean().optional(),
-    },
-    async ({ chat_id, message_id, text, markdown }) => {
-      const account = await accountForChat(chat_id);
-      if (!account) {
-        return { content: [{ type: 'text', text: 'no enabled telegram account' }], isError: true };
-      }
-      try {
-        await editMessage(account, chat_id, message_id, text, { markdown });
-        return { content: [{ type: 'text', text: 'edited' }] };
-      } catch (err) {
-        const msg = errorMessage(err);
-        return { content: [{ type: 'text', text: `edit failed: ${msg}` }], isError: true };
-      }
-    },
-  );
-
-  server.tool(
-    'telegram_mark_processed',
-    'Mark a telegram message as answered so it stops appearing in telegram_pending. Pass the row id from telegram_pending.',
-    { id: z.string().uuid() },
-    async ({ id }) => {
-      const rows = await db
-        .update(telegramMessages)
-        .set({ processed: true, processedAt: new Date() })
-        .where(eq(telegramMessages.id, id))
-        .returning({ id: telegramMessages.id });
-      if (rows.length === 0) {
-        return { content: [{ type: 'text', text: 'no such message' }], isError: true };
-      }
-      return { content: [{ type: 'text', text: 'marked processed' }] };
-    },
-  );
-
-  server.tool(
-    'telegram_pair',
-    'Approve a pending Telegram pairing code. The chat gets allowlisted and a confirmation DM is sent.',
-    { code: z.string().regex(/^[a-f0-9]{6}$/i) },
-    async ({ code }) => {
-      const [chat] = await db
-        .select()
-        .from(telegramChats)
-        .where(and(eq(telegramChats.pairingCode, code), eq(telegramChats.userId, ownerId)))
-        .limit(1);
-      if (!chat) {
-        return {
-          content: [{ type: 'text', text: 'no pending pairing with that code' }],
-          isError: true,
-        };
-      }
-      if (chat.allowlistStatus === 'allowed') {
-        return { content: [{ type: 'text', text: 'already paired' }] };
-      }
-      if (chat.pairingExpiresAt && chat.pairingExpiresAt.getTime() < Date.now()) {
-        return {
-          content: [{ type: 'text', text: 'code expired — ask them to DM again' }],
-          isError: true,
-        };
-      }
-      await db
-        .update(telegramChats)
-        .set({
-          allowlistStatus: 'allowed',
-          pairingCode: null,
-          pairingExpiresAt: null,
-          pairingReplies: 0,
-          updatedAt: new Date(),
-        })
-        .where(eq(telegramChats.id, chat.id));
-
-      const [account] = await db
-        .select()
-        .from(telegramAccounts)
-        .where(eq(telegramAccounts.id, chat.accountId))
-        .limit(1);
-      if (account) {
-        let name = 'your assistant';
-        if (account.channelId) {
-          const [agentRow] = await db
-            .select({ name: agents.name })
-            .from(agents)
-            .innerJoin(channels, eq(channels.agentId, agents.id))
-            .where(eq(channels.id, account.channelId))
-            .limit(1);
-          if (agentRow?.name) name = agentRow.name;
-        }
-        try {
-          await sendMessage(account, chat.telegramChatId, `Paired! Say hi to ${name}.`);
-        } catch (err) {
-          // The chat is paired in the DB; the confirmation DM is best-effort.
-          console.error('[mantle-mcp] pair confirm DM failed:', err);
-        }
-      }
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `paired chat ${chat.telegramChatId} (${chat.title ?? chat.username ?? 'unnamed'})`,
-          },
-        ],
-      };
-    },
-  );
+  // ─── owner-operator surface: approvals, panels, the Telegram inbox ────────
+  // Bridged from `mcpOnly` builtins since tier 3 of the 2026-09-02 audit; they
+  // were hand-written here until then, which made them the one part of the
+  // surface with no in-repo test and no shared implementation. `mcpOnly` keeps
+  // the exposure identical: registered here, never seeded, never grantable —
+  // an agent that could call `pending_approve` would approve its own gated
+  // call, which is the gate these rows exist to impose.
+  registerBuiltinTools(PENDING_TOOLS);
+  registerBuiltinTools(WORKER_GROUP_TOOLS);
+  registerBuiltinTools(TELEGRAM_OPERATOR_TOOLS);
 
   // ─── Notes / Tasks / Events / Journal / Email / Peers ──────────────────────
   //
@@ -928,6 +448,7 @@ export function registerMantleTools(
   // group goes out: note_from_file / note_from_page here, peer_search_chunks and
   // email_send / email_page below.
   registerBuiltinTools(NOTE_TOOLS);
+  registerBuiltinTools(NOTE_OPERATOR_TOOLS);
   registerBuiltinTools(TASK_TOOLS);
   registerBuiltinTools(EVENT_TOOLS);
 
@@ -948,10 +469,6 @@ export function registerMantleTools(
   // The one exception: there is no note_delete builtin — the in-app agent
   // cannot delete notes — so MCP's own registration is not a duplicate and
   // stays hand-written.
-  server.tool('note_delete', 'Delete a note by id.', { id: z.string() }, async ({ id }) => {
-    const ok = await deleteNote(ownerId, id);
-    return { content: [{ type: 'text', text: ok ? 'deleted' : 'not found' }] };
-  });
 
   // ─── Pages (read-only) ─────────────────────────────────────────────────────
   //

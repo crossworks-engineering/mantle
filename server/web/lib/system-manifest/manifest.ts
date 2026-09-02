@@ -1681,7 +1681,10 @@ export const KNOWN_EXTERNAL_TOOL_SLUGS: readonly string[] = [
  *  runtime-only externals, and the seeded HTTP tools (so a group may bundle
  *  mapbox_* without false-failing the drift test). */
 export const KNOWN_TOOL_SLUGS: ReadonlySet<string> = new Set<string>([
-  ...BUILTIN_TOOLS.map((t) => t.slug),
+  // mcpOnly builtins are deliberately absent: a manifest tool group naming one
+  // would be granting an agent the owner's own operator controls, so the drift
+  // test should fail on it rather than wave it through.
+  ...BUILTIN_TOOLS.filter((t) => !t.mcpOnly).map((t) => t.slug),
   ...KNOWN_EXTERNAL_TOOL_SLUGS,
   ...MANIFEST_HTTP_TOOL_SLUGS,
 ]);

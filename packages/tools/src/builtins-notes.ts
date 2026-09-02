@@ -11,6 +11,7 @@
 
 import {
   createNote,
+  deleteNote,
   getNote,
   getPage,
   docToMarkdown,
@@ -417,6 +418,32 @@ const note_from_page: BuiltinToolDef = {
     }
   },
 };
+
+/** Destroys an owner note. Hand-written on the MCP side until tier 3 of the
+ *  2026-09-02 audit; `mcpOnly` because no in-app group has ever granted a note
+ *  delete — the assistant creates and updates, the owner removes. */
+export const note_delete: BuiltinToolDef = {
+  slug: 'note_delete',
+  mcpOnly: true,
+  preconditions: NOTE_ID_PRE,
+  name: 'Delete a note',
+  description: 'Delete a note by id.',
+  inputSchema: {
+    type: 'object',
+    properties: { id: { type: 'string', description: 'the note node id' } },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id);
+    if (!id) return { ok: false, error: 'id required' };
+    const ok = await deleteNote(ctx.ownerId, id);
+    if (!ok) return { ok: false, error: 'not found' };
+    return { ok: true, output: 'deleted' };
+  },
+};
+
+/** The owner's own note delete — MCP-only, never granted. */
+export const NOTE_OPERATOR_TOOLS: readonly BuiltinToolDef[] = [note_delete];
 
 export const NOTE_TOOLS: BuiltinToolDef[] = [
   note_create,

@@ -52,6 +52,7 @@ const NOT_A_TOOL_SLUG = new Set<string>([
   'deleted_ids', // page_blocks_apply result field (batch-chaining id map)
   'coverage_gaps', // formula_get result field (unspecified lookup key combinations)
   'dimension_issues', // formula_get result field (declared unit vs computed dimension)
+  'ask_human', // a run STEP kind (docs/runs.md), not a tool — what pending_* decides
 ]);
 
 /**

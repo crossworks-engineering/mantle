@@ -213,6 +213,18 @@ export type BuiltinToolDef = {
   /** Referential requirements checked centrally pre-dispatch — see
    *  {@link ToolPrecondition}. */
   preconditions?: readonly ToolPrecondition[];
+  /** Registered in the builtin registry (one tested implementation, reachable
+   *  through the normal dispatch path) but NOT offered to in-brain agents: it
+   *  is never seeded into the `tools` table and never nameable by a manifest
+   *  tool group, so no agent can be granted it. The MCP surface registers these
+   *  explicitly by group — see build-server.ts.
+   *
+   *  Use it for owner-only operator surface. `pending_approve` is the clearest
+   *  case: an agent that could approve its own queued call would defeat the
+   *  very gate that queued it. Everything here was hand-written on the MCP side
+   *  before the audit; the flag preserves that exposure exactly while the
+   *  implementation stops being a second copy. */
+  mcpOnly?: true;
   /** Handler implementation. */
   handler: BuiltinToolHandler;
   /** Input fields that contain sensitive data and MUST be replaced with

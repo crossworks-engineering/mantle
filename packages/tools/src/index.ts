@@ -16,6 +16,7 @@ export {
   getBuiltin,
   getBuiltinHandler,
   listBuiltins,
+  listSeedableBuiltins,
   getBuiltinRedactFields,
   isBuiltinReadOnly,
   listReadOnlyBuiltinSlugs,
@@ -65,6 +66,10 @@ export {
   ENTITY_TOOLS,
   FILE_TOOLS,
   TELEGRAM_TOOLS,
+  TELEGRAM_OPERATOR_TOOLS,
+  PENDING_TOOLS,
+  WORKER_GROUP_TOOLS,
+  FILE_OPERATOR_TOOLS,
 } from './builtins';
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';
 export { DRAW_TOOLS, DRAW_TOOL_SLUGS } from './builtins-draws';
@@ -90,7 +95,7 @@ export {
 } from './tool-results';
 export { PERSONA_TOOLS, PERSONA_TOOL_SLUGS } from './builtins-persona';
 export { TASK_TOOLS, TASK_TOOL_SLUGS } from './builtins-tasks';
-export { NOTE_TOOLS } from './builtins-notes';
+export { NOTE_TOOLS, NOTE_OPERATOR_TOOLS } from './builtins-notes';
 export { RECALL_TOOLS } from './builtins-recall';
 export { EVENT_TOOLS } from './builtins-events';
 export { PEER_TOOLS } from './builtins-peers';
