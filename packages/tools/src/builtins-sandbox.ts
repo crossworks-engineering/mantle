@@ -211,15 +211,15 @@ const sandbox_create: BuiltinToolDef = {
           'Egress tier: "full" = internet (never the brain\'s network); "balanced" = only ' +
           'package registries, GitHub and apt mirrors via an allowlisting proxy; "none" = offline.',
       },
-    },
-    inbox_folder_id: {
-      type: 'string',
-      format: 'uuid',
-      description:
-        'A Files folder to expose READ-ONLY at /mnt/inbox — from `folder_list` / `tree_list`. ' +
-        'Use it when the work starts from files a colleague will keep adding: they drop them ' +
-        'in that folder through the web UI and the sandbox sees them at once, with no import ' +
-        'step and no shell access. The sandbox cannot write back to it.',
+      inbox_folder_id: {
+        type: 'string',
+        format: 'uuid',
+        description:
+          'A Files folder to expose READ-ONLY at /mnt/inbox — from `folder_list` / `tree_list`. ' +
+          'Use it when the work starts from files a colleague will keep adding: they drop them ' +
+          'in that folder through the web UI and the sandbox sees them at once, with no import ' +
+          'step and no shell access. The sandbox cannot write back to it.',
+      },
     },
     required: ['name'],
     additionalProperties: false,
