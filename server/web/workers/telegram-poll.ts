@@ -23,9 +23,18 @@ import { eq } from 'drizzle-orm';
 import { channels, db, telegramAccounts, type Channel, type TelegramAccount } from '@mantle/db';
 import { pollOnce, evictBot, type PollHandlers } from '@mantle/telegram';
 import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/tools';
+import { registerRecallEmbedder } from '@mantle/content';
+import { embedBatch } from '@mantle/embeddings';
 import { runWorker } from './_runner';
 import { env } from '@mantle/config';
 import { sleep } from '@mantle/std';
+
+// An Approve tap runs the parked tool IN THIS PROCESS — `page_create` included
+// — and a page write kicks off `embedPendingRecallPrompts` fire-and-forget.
+// Without an embedder the bridge throws, recall.ts swallows it, and the prompt
+// row keeps a null embedding: the page is there, recall_match finds nothing.
+// recall-embed-registration.test.ts pins this call. (2026-09-03 audit.)
+registerRecallEmbedder(embedBatch);
 
 const CHANNEL_REFRESH_MS = 60_000;
 const BACKOFF_BASE_MS = 1_000;

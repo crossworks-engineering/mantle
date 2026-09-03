@@ -23,12 +23,21 @@ export function dispatchChat(
   adapter: ChatDispatcher,
   opts: ChatOptions,
   round: number,
+  /** Flipped to true the moment a delta actually reaches the client. The caller
+   *  reads it on failure: a round whose tokens the user has already seen must
+   *  NOT be replayed on the backup route, or they get the primary's partial
+   *  answer with the backup's whole answer appended to it. `emitTurnDelta`
+   *  reports the suppressed cases (no observer, delegated sub-agent) as false,
+   *  and those are precisely the ones where a replay is invisible. */
+  streamed?: { emitted: boolean },
 ): Promise<ChatResult> {
   // Thread the current turn's cancellation signal into every LLM call so a user
   // Stop aborts generation (the streaming adapter returns its partial reply).
   const withSignal = { ...opts, signal: currentTurnAbortSignal() };
   if (isTurnStreaming() && typeof adapter.chatStream === 'function') {
-    return adapter.chatStream(withSignal, (d) => emitTurnDelta(round, d.type, d.text));
+    return adapter.chatStream(withSignal, (d) => {
+      if (emitTurnDelta(round, d.type, d.text) && streamed) streamed.emitted = true;
+    });
   }
   return adapter.chat(withSignal);
 }
@@ -166,8 +175,14 @@ export function createModelCaller(deps: {
               : {}),
             ...maxRetries(),
           };
+          const streamed = { emitted: false };
           try {
-            const r = await dispatchChat(active.adapter, { ...routeOpts(), ...chatOpts }, iter);
+            const r = await dispatchChat(
+              active.adapter,
+              { ...routeOpts(), ...chatOpts },
+              iter,
+              streamed,
+            );
             recordChatUsage(h, r, active.model);
             tokensOut += r.tokensOut ?? 0;
             return r;
@@ -181,6 +196,21 @@ export function createModelCaller(deps: {
             // retries) against an already-dead signal; run-turn's catch
             // recognises the aborted signal and finalizes as a stop.
             if (turnAborted()) throw err;
+            // Tokens already on the user's screen: a failover here re-runs the
+            // round and streams the backup's whole answer AFTER the primary's
+            // partial one, which reads as the assistant answering twice. The
+            // stream's own idle guard raises a retryable TimeoutError mid-flight
+            // (voice/adapters/sse.ts), so this is the common way in, not a
+            // corner case. Fail the turn loudly instead. (2026-09-03 audit.)
+            if (streamed.emitted) {
+              h.setMeta({ failover_skipped: 'deltas_already_streamed' });
+              console.warn(
+                `[tool-loop] '${active.adapter.adapterName}:${active.model}' failed ` +
+                  `(${errorMessage(err)}) AFTER streaming deltas — not failing over, ` +
+                  `a replay would append a second answer to the one the user can see`,
+              );
+              throw err;
+            }
             if (!args.backup || failedOver || !isChatFailover(err)) throw err;
             console.warn(
               `[tool-loop] primary '${active.adapter.adapterName}:${active.model}' failed ` +

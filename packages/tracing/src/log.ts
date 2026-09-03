@@ -34,15 +34,23 @@
  * an error path into a crash. Falling back is the whole point.
  */
 
-/** What a sink must provide. `DBOS.logger` satisfies this as-is. */
+/** What a sink must provide. `DBOS.logger` satisfies this as-is.
+ *
+ *  A REGISTERED sink is only ever handed the finished line — extra arguments are
+ *  folded into it first. `DBOS.logger.error(msg, err)` reads that second
+ *  argument as structured metadata, which the runner's formatter does not print,
+ *  so `log('runs').error('turn failed', err)` used to reach the container log as
+ *  a bare "turn failed" with the reason nowhere (2026-09-03 audit). The `...rest`
+ *  here is for the console fallback, which formats an Error properly by itself. */
 export type LogSink = {
   info(message: string): void;
   warn(message: string): void;
   error(message: string, ...rest: unknown[]): void;
 };
 
-/** A scoped logger. `rest` is passed through untouched, so an Error argument
- *  keeps its stack rather than being flattened into the message. */
+/** A scoped logger. Extra arguments are folded into the message for a registered
+ *  sink (an Error contributes its stack on `error`), and passed through untouched
+ *  to the console fallback, which prints a stack of its own. */
 export type ScopedLogger = {
   info(message: string, ...rest: unknown[]): void;
   warn(message: string, ...rest: unknown[]): void;
@@ -90,13 +98,16 @@ export function log(scope: string): ScopedLogger {
 function emit(level: 'info' | 'warn' | 'error', message: string, rest: unknown[]): void {
   const target = sink ?? consoleSink;
   try {
-    if (level === 'error') {
-      target.error(message, ...rest);
+    // Console formats an Error argument with its stack, so hand it the args raw.
+    if (target === consoleSink && level === 'error') {
+      consoleSink.error(message, ...rest);
       return;
     }
-    // info/warn take a message only, which is DBOS.logger's shape. Anything
-    // extra is appended to the message so it is not silently dropped.
-    target[level](rest.length > 0 ? `${message} ${rest.map(render).join(' ')}` : message);
+    // A registered sink takes a message only — DBOS.logger's shape. Anything
+    // extra is folded in, or it is silently dropped as metadata nobody prints.
+    target[level](
+      rest.length > 0 ? `${message} ${rest.map((v) => render(v, level)).join(' ')}` : message,
+    );
   } catch {
     // A logger must never be the reason a request fails. If a registered sink
     // throws (a closed DBOS runtime during shutdown, say), fall back rather
@@ -105,10 +116,12 @@ function emit(level: 'info' | 'warn' | 'error', message: string, rest: unknown[]
   }
 }
 
-/** Best-effort rendering for extra args folded into an info/warn message. */
-function render(value: unknown): string {
+/** Best-effort rendering for extra args folded into the message. On an `error`
+ *  line the stack is the point of logging at all, so it goes in; on info/warn it
+ *  would be noise, so only the message does. */
+function render(value: unknown, level: 'info' | 'warn' | 'error'): string {
   if (typeof value === 'string') return value;
-  if (value instanceof Error) return value.message;
+  if (value instanceof Error) return (level === 'error' && value.stack) || value.message;
   try {
     return JSON.stringify(value) ?? String(value);
   } catch {

@@ -217,9 +217,12 @@ describe('startTicker', () => {
       },
     });
     await advance(1000);
+    // ONE string, reason included. A registered sink used to get the reason as
+    // a second argument, which DBOS.logger reads as structured metadata and the
+    // runner's formatter does not print — so this line reached the container
+    // log as a bare "extract sweep error" with no cause (2026-09-03 audit).
     expect(sink.error).toHaveBeenCalledWith(
-      '[agent] extract sweep error (will retry next tick):',
-      'boom',
+      '[agent] extract sweep error (will retry next tick): boom',
     );
   });
 

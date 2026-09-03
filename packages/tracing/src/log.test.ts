@@ -45,14 +45,40 @@ describe('log(scope)', () => {
     expect(sink.info).toHaveBeenCalledWith('[agent] LISTENing on node_ingested');
   });
 
-  it('passes error arguments through untouched, so a stack survives', () => {
+  it('folds the reason INTO an error line for a registered sink', () => {
+    // This used to pass the Error through as a second argument, on the theory
+    // that the sink would format the stack. DBOS.logger does the opposite: it
+    // reads argument two as structured metadata, and the runner's formatter
+    // does not print it — so every `log(scope).error('x failed', err)` in the
+    // runner reached the container log as a bare "x failed" with no reason at
+    // all (2026-09-03 audit). One string, reason included.
     const sink = fakeSink();
     registerLogSink(sink);
     const err = new Error('db down');
     log('agent').error('heartbeat tick error:', err);
-    expect(sink.error).toHaveBeenCalledWith('[agent] heartbeat tick error:', err);
-    // The Error itself, not a flattened string — the stack is why.
-    expect(sink.error.mock.calls[0]?.[1]).toBe(err);
+    expect(sink.error).toHaveBeenCalledTimes(1);
+    const [line, ...extra] = sink.error.mock.calls[0]!;
+    expect(extra, 'nothing may ride along as metadata').toEqual([]);
+    expect(line).toContain('[agent] heartbeat tick error:');
+    expect(line).toContain('db down');
+    // The stack too: on an error line it is the whole point of logging.
+    expect(line).toContain('log.test.ts');
+  });
+
+  it('keeps info/warn lines free of stack noise', () => {
+    const sink = fakeSink();
+    registerLogSink(sink);
+    log('agent').warn('sweep skipped', new Error('busy'));
+    const line = sink.warn.mock.calls[0]![0] as string;
+    expect(line).toBe('[agent] sweep skipped busy');
+  });
+
+  it('still hands the console fallback the raw Error, which prints its own stack', () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const err = new Error('db down');
+    log('agent').error('heartbeat tick error:', err);
+    expect(errorSpy).toHaveBeenCalledWith('[agent] heartbeat tick error:', err);
+    expect(errorSpy.mock.calls[0]?.[1]).toBe(err);
   });
 
   it('reads the sink per call, not when the logger was built', () => {

@@ -41,6 +41,20 @@ import { errorMessage } from '@mantle/std';
 
 const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
 
+/**
+ * How long we wait for a local server to answer, on BOTH the one-shot and the
+ * streaming path. Generous on purpose: a self-hosted server loading a cold model
+ * into VRAM can take minutes on the first request after a restart, and unlike a
+ * hosted provider there is no queue in front of it absorbing that.
+ *
+ * The streaming path used the shared 60s connect default until 2026-09-03. That
+ * is short enough to trip on a cold load, and a connect timeout is classified
+ * RETRYABLE — so a working box got its prompt re-sent twice and then failed the
+ * turn. The idle bound (120s between chunks, once tokens are flowing) is
+ * unchanged: by then the model is generating, and silence means a dead socket.
+ */
+const LOCAL_TIMEOUT_MS = 300_000;
+
 /** Resolved per-call so a config change takes effect without a restart. */
 function baseUrl(override?: string): string {
   return (override || env('MANTLE_LOCAL_CHAT_URL') || DEFAULT_BASE_URL).replace(/\/+$/, '');
@@ -72,7 +86,7 @@ async function localChat(opts: ChatOptions): Promise<ChatResult> {
       'content-type': 'application/json',
     },
     body: JSON.stringify(body),
-    signal: chatAbortSignal(opts.signal, 300_000),
+    signal: chatAbortSignal(opts.signal, LOCAL_TIMEOUT_MS),
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
@@ -135,6 +149,7 @@ function localChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<Ch
         'content-type': 'application/json',
       },
       provider: 'local',
+      connectMs: LOCAL_TIMEOUT_MS,
       ...(opts.viaTailnet ? { fetchImpl: tailnetFetch as typeof fetch } : {}),
     },
     onDelta,

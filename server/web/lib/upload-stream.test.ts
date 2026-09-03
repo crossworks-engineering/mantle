@@ -57,6 +57,19 @@ describe('readMultipartUpload', () => {
     await discardSpooled(parsed.file!.spooled);
   });
 
+  it('keeps a non-ASCII filename intact', async () => {
+    // busboy defaults multipart part headers to latin1 (RFC 7578 never states a
+    // charset) while every browser sends UTF-8, so without defParamCharset an
+    // accented or non-Latin name landed mojibake'd and was STORED that way.
+    const { readMultipartUpload } = await mod();
+    const name = 'Kr\u00fcger — вложение 附件.pdf';
+    const req = multipart([['file', name, randomBytes(64)]]);
+    const parsed = await readMultipartUpload(req, { maxBytes: 1024 * 1024 });
+    expect(parsed.file?.filename).toBe(name);
+    const { discardSpooled } = await import('@mantle/files');
+    await discardSpooled(parsed.file!.spooled);
+  });
+
   it('rejects an oversized file with the filename and cleans the spool', async () => {
     const { readMultipartUpload } = await mod();
     const { UploadTooLargeError, spoolDir } = await import('@mantle/files');

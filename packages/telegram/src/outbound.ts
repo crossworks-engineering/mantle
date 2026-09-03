@@ -3,7 +3,6 @@ import { db, telegramAccounts, type TelegramAccount } from '@mantle/db';
 import { InlineKeyboard, InputFile } from 'grammy';
 import type { ReactionTypeEmoji } from 'grammy/types';
 import { botFor } from './client';
-import { withTelegramRetry } from './retry';
 
 const MAX_CHUNK = 4096;
 
@@ -23,14 +22,15 @@ export async function sendMessage(
   const parseMode = options?.markdown ? ('MarkdownV2' as const) : undefined;
   const ids: number[] = [];
   for (let i = 0; i < chunks.length; i++) {
-    const sent = await withTelegramRetry(() =>
-      bot.api.sendMessage(chatId, chunks[i]!, {
-        ...(replyTo != null && i === 0
-          ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } }
-          : {}),
-        ...(parseMode ? { parse_mode: parseMode } : {}),
-      }),
-    );
+    // No withTelegramRetry here: botFor installs it as an api transformer, so
+    // every Bot API call in this file already waits out a 429. Wrapping again
+    // would multiply the attempt budget (3 x 3) against a rate limit.
+    const sent = await bot.api.sendMessage(chatId, chunks[i]!, {
+      ...(replyTo != null && i === 0
+        ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } }
+        : {}),
+      ...(parseMode ? { parse_mode: parseMode } : {}),
+    });
     ids.push(sent.message_id);
   }
   return ids;

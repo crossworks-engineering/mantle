@@ -36,6 +36,9 @@ import {
   sweepRuns,
 } from '@mantle/runs';
 
+import { registerRecallEmbedder } from '@mantle/content';
+import { embedBatch } from '@mantle/embeddings';
+
 import { executeRunItem } from '../lib/runs/execute-item';
 import { enqueueRunsResumeTurn } from '../lib/runs/dbos-enqueue';
 import { createBoss, runWorker, stopBoss } from './_runner';
@@ -48,6 +51,17 @@ const SWEEP_CRON = '* * * * *'; // every minute — the sweep is the immune syst
 // heartbeat-control builtins live in @mantle/runtime/heartbeats and need an explicit
 // registration, same as the web/agent processes.
 registerHeartbeatTools();
+
+// Run items execute tools in THIS process, page_create among them, and a page
+// write kicks off `embedPendingRecallPrompts` fire-and-forget. Without an
+// embedder registered here that call throws inside the bridge and recall.ts
+// swallows it: the page saves, the map compiles, and its prompt rows keep a
+// null embedding, so recall_match silently finds nothing on a MANTLE_RUNS=1
+// box. Registered unconditionally — the flag gates the queues, not the writes.
+// A static import is safe here where server/web/server/main.ts needs an awaited
+// one: the worker scripts pass --env-file, so env is set before any module runs.
+// recall-embed-registration.test.ts pins this call. (2026-09-03 audit.)
+registerRecallEmbedder(embedBatch);
 
 type DispatchJob = { itemId: string };
 type ResumeJob = { runId: string; groupId: string };

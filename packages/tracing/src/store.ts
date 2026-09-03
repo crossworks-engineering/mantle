@@ -316,15 +316,21 @@ export function isTurnStreaming(): boolean {
 
 /** Emit one streamed token delta for the current turn. No-op unless streaming is
  *  active. Shares the trace's `streamSeq` so deltas + status events interleave on
- *  one monotonic cursor. NEVER throws — a publish fault must not break the turn. */
-export function emitTurnDelta(round: number, kind: 'text' | 'reasoning', text: string): void {
+ *  one monotonic cursor. NEVER throws — a publish fault must not break the turn.
+ *
+ *  Returns whether the delta actually REACHED a client. The tool loop needs that
+ *  answer to decide whether a failed round may be replayed on the backup route:
+ *  once the user has seen tokens, re-running the round appends a second answer
+ *  to the first. The suppressed cases (no observer, a delegated sub-agent) are
+ *  exactly the ones where a replay is invisible and therefore safe. */
+export function emitTurnDelta(round: number, kind: 'text' | 'reasoning', text: string): boolean {
   const obs = turnDeltaObserver;
   const trace = currentTrace();
   // Only the ROOT turn streams reply text — a delegated sub-agent's tokens are
   // intermediate (its result is folded back into the persona's own reply), so
   // they must not append to the visible reply buffer. Sub-agent STATUS still
   // surfaces via the step observer above.
-  if (!obs || !trace?.turnId || !trace.isStreamRoot) return;
+  if (!obs || !trace?.turnId || !trace.isStreamRoot) return false;
   try {
     obs({
       turnId: trace.turnId,
@@ -334,8 +340,12 @@ export function emitTurnDelta(round: number, kind: 'text' | 'reasoning', text: s
       kind,
       text,
     });
+    return true;
   } catch (err) {
     logErr('turn delta observer', err);
+    // The observer threw, so nothing was published: report it as not emitted
+    // rather than blocking a failover the user would never see double.
+    return false;
   }
 }
 

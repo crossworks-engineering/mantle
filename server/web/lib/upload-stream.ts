@@ -51,6 +51,11 @@ export async function readMultipartUpload(
     const source = Readable.fromWeb(req.body as NodeReadableStream);
     const bb = busboy({
       headers: { 'content-type': contentType },
+      // Browsers send multipart part headers as UTF-8, but RFC 7578 leaves the
+      // charset unstated and busboy therefore defaults to latin1 — so an
+      // accented or non-Latin filename arrived mojibake'd ("Kruger" as
+      // "KrÃ¼ger") and was stored that way. (2026-09-03 audit.)
+      defParamCharset: 'utf8',
       limits: { files: 1, fields: 32, fieldSize: 64 * 1024 },
     });
 
