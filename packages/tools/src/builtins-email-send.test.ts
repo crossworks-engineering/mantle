@@ -46,11 +46,19 @@ const accountRows = [
   },
 ];
 
+/** Where clauses handed to the account selects, in call order. A
+ *  `mockReturnThis()` where accepts anything, so the owner-id term that keeps
+ *  one brain's accounts out of another's is read out of these instead. */
+const whereArgs: unknown[] = [];
+
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
   const chain = {
     from: vi.fn().mockReturnThis(),
-    where: vi.fn().mockReturnThis(),
+    where: vi.fn(function (this: unknown, clause: unknown) {
+      whereArgs.push(clause);
+      return this;
+    }),
     limit: vi.fn(async () => accountRows),
     then: (res: (v: unknown) => void) => Promise.resolve(accountRows).then(res),
   };
@@ -72,13 +80,18 @@ vi.mock('@mantle/content', async (importOriginal) => {
     contactEmails: vi.fn(async () => [] as string[]),
     findContactsByEmails: vi.fn(async () => []),
     recordContactSent: vi.fn(async () => {}),
-    renderPageEmail: vi.fn(async () => ({ html: '<p>x</p>', text: 'x', attachments: [] })),
+    // SYNC, and `{ html, imageFileIds }` — the real signature. The old stub was
+    // async and returned `{ html, text, attachments }`, so the handler
+    // destructured a Promise and every field came out undefined. Nothing
+    // caught it because email_page had no success arm (2026-09-03 audit).
+    renderPageEmail: vi.fn(() => ({ html: '<p>x</p>', imageFileIds: [] })),
     createShare: vi.fn(),
   };
 });
 
 import { sendEmail, accountCanSend } from '@mantle/email';
-import { getPage, contactEmails } from '@mantle/content';
+import { getPage, contactEmails, renderPageEmail } from '@mantle/content';
+import { paramsOf } from './test-support';
 import { EMAIL_TOOLS } from './builtins-email';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -98,6 +111,8 @@ const OK_ARGS = { to: 'friend@example.com', subject: 'Hi', body: 'Hello there' }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  whereArgs.length = 0;
+  vi.mocked(renderPageEmail).mockReturnValue({ html: '<p>x</p>', imageFileIds: [] } as never);
   // clearAllMocks clears CALLS, not implementations — a `mockReturnValue` set
   // inside one test survives into the next. Re-establish every default here or
   // the suite becomes order-dependent (the "no send-enabled account" case
@@ -230,5 +245,51 @@ describe('email_page', () => {
     // includeLink mints a PUBLIC share link. Doing that before the gate would
     // publish the page outward for a send that was then refused.
     expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('renders and sends the page, reporting what went out', async () => {
+    // The success arm this file lacked. Without it the renderPageEmail stub sat
+    // at the wrong signature (async, wrong keys) for as long as it liked: every
+    // other case refuses before the render, so the drift never showed.
+    const res = await page.handler(
+      { pageId: 'p1', to: 'friend@example.com', subject: 'The runbook' },
+      ctx,
+    );
+    expect(renderPageEmail).toHaveBeenCalledWith(
+      { type: 'doc', content: [] },
+      expect.objectContaining({ title: 'Runbook' }),
+    );
+    expect(sendEmail).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        to: 'friend@example.com',
+        subject: 'The runbook',
+        html: '<p>x</p>',
+      }),
+    );
+    expect(res.ok).toBe(true);
+    expect(res.ok && res.output).toMatchObject({
+      from: 'me@example.com',
+      to: 'friend@example.com',
+      subject: 'The runbook',
+      pageId: 'p1',
+      messageId: 'm1',
+      inlineImages: 0,
+    });
+  });
+
+  it('defaults the subject to the page title', async () => {
+    await page.handler({ pageId: 'p1', to: 'friend@example.com' }, ctx);
+    expect(sendEmail).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ subject: 'Runbook' }),
+    );
+  });
+
+  it('scopes the send-account lookup to the caller', async () => {
+    // Drop `eq(emailAccounts.userId, ...)` and the page would go out through
+    // whichever brain's account happened to come back first.
+    await page.handler({ pageId: 'p1', to: 'friend@example.com' }, ctx);
+    expect(whereArgs.map((w) => paramsOf(w))).toContainEqual(expect.arrayContaining(['o1']));
   });
 });

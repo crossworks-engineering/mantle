@@ -16,9 +16,23 @@
  *     reason, so a new tool that lands on one side only has to say why.
  *
  * "Behavioural test" here means: a test file in this directory that actually
- * invokes a handler (directly, or through the dispatcher) and names the slug.
- * A generic property sweep like description-lint counts for nothing here — it
- * runs over every tool by construction and never exercises a branch.
+ * invokes a handler (directly, or through the dispatcher) and takes the slug
+ * as its SUBJECT. A generic property sweep like description-lint counts for
+ * nothing here — it runs over every tool by construction and never exercises
+ * a branch.
+ *
+ * "Subject" is three checks, because a plain substring match was satisfiable
+ * by a comment. The 2026-09-03 audit demonstrated it: write the slug in a
+ * `//` comment inside any handler-invoking file and the floor went green. So:
+ *
+ *  1. Comments are stripped before anything is matched. Prose about a tool is
+ *     not coverage of it.
+ *  2. The file must SELECT the def by that slug — `=== 'slug'`, `('slug')`,
+ *     `('slug',`. Importing a bundle that happens to contain the tool is not
+ *     enough; the file has to reach for this one.
+ *  3. The slug must head a test block: `describe('slug'`, or a `name: 'slug'`
+ *     row in a table driven by `describe.each` (builtins-crud-delete.test.ts
+ *     is the exemplar — the block title comes from the data).
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
@@ -100,14 +114,69 @@ const THIS_FILE = basename(fileURLToPath(import.meta.url));
  *  match itself (it is also excluded by name — belt and braces). */
 const INVOKES_HANDLER = new RegExp(['\\.handler', '\\(', '|dispatchTool|runTool\\('].join(''));
 
+/**
+ * Drop `//` and block comments, keeping string literals intact (a slug inside
+ * a quoted string is real code; a slug inside prose is not). Small hand-rolled
+ * scanner rather than a parser: the input is our own test sources, and the
+ * only thing it has to get right is not treating a `/` inside a string as the
+ * start of a comment.
+ */
+function stripComments(src: string): string {
+  let out = '';
+  for (let i = 0; i < src.length;) {
+    const c = src[i];
+    if (c === '/' && src[i + 1] === '/') {
+      while (i < src.length && src[i] !== '\n') i++;
+      continue;
+    }
+    if (c === '/' && src[i + 1] === '*') {
+      i += 2;
+      while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) i++;
+      i += 2;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') {
+      out += c;
+      i++;
+      while (i < src.length && src[i] !== c) {
+        if (src[i] === '\\') {
+          out += src[i] + (src[i + 1] ?? '');
+          i += 2;
+          continue;
+        }
+        out += src[i];
+        i++;
+      }
+      out += c;
+      i++;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
 const BEHAVIOURAL_SOURCES: Array<{ file: string; src: string }> = readdirSync(SRC_DIR)
   .filter((f) => f.endsWith('.test.ts') && f !== THIS_FILE)
-  .map((file) => ({ file, src: readFileSync(join(SRC_DIR, file), 'utf8') }))
+  .map((file) => ({ file, src: stripComments(readFileSync(join(SRC_DIR, file), 'utf8')) }))
   .filter(({ src }) => INVOKES_HANDLER.test(src));
 
+/** The file reaches for THIS def: `=== 'slug'`, `('slug')`, `('slug',`. */
+const selectsDef = (slug: string): RegExp =>
+  new RegExp(`(===\\s*'${slug}'|\\('${slug}'\\)|\\('${slug}',)`);
+
+/** The slug HEADS a test block, literally or through a describe.each row. The
+ *  describe title may carry a trailing gloss (`describe('table_delete (whole
+ *  table, irreversible)'`), so match the slug at the start of the title and
+ *  stop at a non-slug character rather than requiring the closing quote. */
+const headsABlock = (slug: string): RegExp =>
+  new RegExp(`(describe(\\.\\w+)?\\(\\s*'${slug}(?![a-z0-9_])|name:\\s*'${slug}')`);
+
 function testFilesNaming(slug: string): string[] {
-  const quoted = `'${slug}'`;
-  return BEHAVIOURAL_SOURCES.filter(({ src }) => src.includes(quoted)).map(({ file }) => file);
+  return BEHAVIOURAL_SOURCES.filter(
+    ({ src }) => selectsDef(slug).test(src) && headsABlock(slug).test(src),
+  ).map(({ file }) => file);
 }
 
 // ---- the floor --------------------------------------------------------------

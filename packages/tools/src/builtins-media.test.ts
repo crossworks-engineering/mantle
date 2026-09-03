@@ -36,12 +36,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => {
   const selectQueue: unknown[][] = [];
+  /** Where clauses handed to the folder-existence selects, in call order. A
+   *  `mockReturnThis()` where accepts any clause, so the owner-id term that
+   *  keeps one brain's folders out of another's is read out of these. */
+  const selectWheres: unknown[] = [];
   const limit = vi.fn(async () => selectQueue.shift() ?? []);
-  const selectChain = { from: vi.fn().mockReturnThis(), where: vi.fn().mockReturnThis(), limit };
+  const selectChain = {
+    from: vi.fn().mockReturnThis(),
+    where: vi.fn(function (this: unknown, clause: unknown) {
+      selectWheres.push(clause);
+      return this;
+    }),
+    limit,
+  };
   const updateWhere = vi.fn(async () => undefined);
   const updateSet = vi.fn(() => ({ where: updateWhere }));
   return {
     selectQueue,
+    selectWheres,
     select: vi.fn(() => selectChain),
     update: vi.fn(() => ({ set: updateSet })),
   };
@@ -116,6 +128,7 @@ import {
 } from '@mantle/files';
 import { createPage } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
+import { paramsOf } from './test-support';
 import { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 import { VIDEO_TOOLS } from './builtins-video';
 import { IMAGE_TOOLS } from './builtins-images';
@@ -236,6 +249,7 @@ Finally we restart the device so the new profile loads.
 beforeEach(() => {
   vi.clearAllMocks();
   h.selectQueue.length = 0;
+  h.selectWheres.length = 0;
   vi.mocked(getDefaultWorker).mockImplementation(
     async (_o, kind) =>
       (kind === 'image_gen'
@@ -372,6 +386,17 @@ describe('generate_image', () => {
         inputImages: [{ bytes: PNG, mimeType: 'image/png', filename: 'a.png' }],
       }),
     );
+  });
+
+  it('scopes the folder-existence lookups to the caller', async () => {
+    // ensureBranch decides whether to create the folder. Drop
+    // `eq(nodes.ownerId, ...)` and another owner's identically-pathed folder
+    // satisfies the check, so the create is skipped and the image is written
+    // against a path this brain does not own.
+    h.selectQueue.push([], []);
+    await generateImage.handler({ prompt: 'A red fox' }, WEB_CTX);
+    expect(h.selectWheres.length).toBeGreaterThan(0);
+    for (const clause of h.selectWheres) expect(paramsOf(clause)).toContain('o1');
   });
 
   it('stores the image under the caller in the dated folder and hands back the inline ref', async () => {

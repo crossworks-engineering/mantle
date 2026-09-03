@@ -25,13 +25,23 @@ let selectRows: unknown[] = [toolRow];
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
+  const selectWheres: unknown[] = [];
   const chain = {
     from: vi.fn().mockReturnThis(),
-    where: vi.fn().mockReturnThis(),
+    // Recorded, not waved through: a `mockReturnThis()` where accepts any
+    // clause, so dropping the owner-id term would leave this file green.
+    where: vi.fn(function (this: unknown, clause: unknown) {
+      selectWheres.push(clause);
+      return this;
+    }),
     limit: vi.fn(async () => selectRows),
     then: (res: (v: unknown) => void) => Promise.resolve(selectRows).then(res),
   };
-  return { ...actual, db: { ...actual.db, select: vi.fn(() => chain) } };
+  return {
+    ...actual,
+    db: { ...actual.db, select: vi.fn(() => chain) },
+    __selectWheres: selectWheres,
+  };
 });
 vi.mock('@mantle/config', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/config')>();
@@ -55,14 +65,18 @@ vi.mock('./crud', async (importOriginal) => {
   return { ...actual, deleteTool: vi.fn() };
 });
 
+import * as dbmod from '@mantle/db';
 import { getSandboxByRef, deleteSandboxRow } from '@mantle/content';
 import { deleteTool } from './crud';
+import { paramsOf } from './test-support';
 import { SANDBOX_TOOLS } from './builtins-sandbox';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 const rm = SANDBOX_TOOLS.find((t) => t.slug === 'sandbox_rm')!;
 const apiDel = TOOLSMITH_TOOLS.find((t) => t.slug === 'api_tool_delete')!;
+
+const selectWheres = (dbmod as unknown as { __selectWheres: unknown[] }).__selectWheres;
 
 const ctx: ToolHandlerContext = { ownerId: 'o1' };
 
@@ -86,6 +100,7 @@ function daemonUrl(): string {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  selectWheres.length = 0;
   selectRows = [toolRow];
   vi.mocked(getSandboxByRef).mockResolvedValue({ id: 'sb1', name: 'scratch' } as never);
   vi.mocked(deleteSandboxRow).mockResolvedValue(undefined as never);
@@ -147,6 +162,15 @@ describe('sandbox_rm', () => {
 });
 
 describe('api_tool_delete', () => {
+  it('scopes the slug lookup to the caller', async () => {
+    // The delete keys off the row id this select returned, so this WHERE is
+    // the whole boundary: without the owner-id term a shared slug would
+    // resolve to — and delete — another owner's authored tool.
+    vi.mocked(deleteTool).mockResolvedValue(true as never);
+    await apiDel.handler({ slug: 'my_tool' }, ctx);
+    expect(paramsOf(selectWheres[0])).toEqual(expect.arrayContaining(['o1', 'my_tool']));
+  });
+
   it('refuses an unknown slug WITHOUT attempting a delete', async () => {
     selectRows = [];
     const res = await apiDel.handler({ slug: 'nope' }, ctx);

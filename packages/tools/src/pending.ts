@@ -14,7 +14,10 @@ import {
   RUN_BUDGET_TOOL_SLUG,
   type HumanFormAnswer,
 } from '@mantle/runs';
-import { dispatchTool } from './dispatch';
+// Via the bridge, not './dispatch' directly: builtins-pending.ts imports this
+// module, and dispatch.ts imports the registry, which imports every builtin —
+// closing the cycle back onto builtins-pending.ts. See dispatch-bridge.ts.
+import { dispatchViaBridge as dispatchTool } from './dispatch-bridge';
 import { notifyPendingChanged } from './pending-notify';
 import { startTrace, step } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';

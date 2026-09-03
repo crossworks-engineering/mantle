@@ -15,12 +15,19 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const chatRows: Array<{ status: string }> = [];
+/** Every where clause the allowlist select is handed, in call order. Recorded
+ *  rather than waved through: a `mockReturnThis()` where accepts any clause, so
+ *  dropping the owner-id term from the handler would leave this file green. */
+const whereArgs: unknown[] = [];
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
   const chain = {
     from: vi.fn().mockReturnThis(),
-    where: vi.fn().mockReturnThis(),
+    where: vi.fn(function (this: unknown, clause: unknown) {
+      whereArgs.push(clause);
+      return this;
+    }),
     limit: vi.fn(async () => chatRows),
   };
   return { ...actual, db: { ...actual.db, select: vi.fn(() => chain) } };
@@ -33,6 +40,7 @@ vi.mock('@mantle/telegram', () => ({
 }));
 
 import { accountForChat, sendMessage } from '@mantle/telegram';
+import { paramsOf } from './test-support';
 import { telegram_send } from './builtins-telegram';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -57,11 +65,19 @@ beforeEach(() => {
   // clearAllMocks clears CALLS, not implementations — re-establish every
   // default so no test inherits a value set by the one before it.
   chatRows.splice(0, chatRows.length, { status: 'allowed' });
+  whereArgs.length = 0;
   vi.mocked(accountForChat).mockResolvedValue(ACCOUNT as never);
   vi.mocked(sendMessage).mockResolvedValue([42] as never);
 });
 
 describe('telegram_send', () => {
+  it('scopes the allowlist lookup to the caller', async () => {
+    // Drop `eq(telegramChats.userId, ...)` and any owner's allowlisted chat
+    // would satisfy the gate — the brain would message a stranger's contact.
+    await telegram_send.handler({ chat_id: CHAT, text: 'hi' }, ctx);
+    expect(paramsOf(whereArgs[0])).toEqual(expect.arrayContaining(['o1', CHAT]));
+  });
+
   it('is confirm-gated — a message leaves the brain', () => {
     expect(telegram_send.requiresConfirm).toBe(true);
   });

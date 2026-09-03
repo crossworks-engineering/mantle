@@ -21,15 +21,28 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 let selectRows: unknown[] = [];
+/** Where clauses handed to the select, in call order. A `mockReturnThis()`
+ *  where accepts any clause, so the owner-id term is read out of these. */
+const selectWheres: unknown[] = [];
+const updateWheres: unknown[] = [];
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
   const select = {
     from: vi.fn().mockReturnThis(),
-    where: vi.fn().mockReturnThis(),
+    where: vi.fn(function (this: unknown, clause: unknown) {
+      selectWheres.push(clause);
+      return this;
+    }),
     limit: vi.fn(async () => selectRows),
   };
-  const update = { set: vi.fn().mockReturnThis(), where: vi.fn(async () => []) };
+  const update = {
+    set: vi.fn().mockReturnThis(),
+    where: vi.fn(async (clause: unknown) => {
+      updateWheres.push(clause);
+      return [];
+    }),
+  };
   const insert = { values: vi.fn(async () => []) };
   return {
     ...actual,
@@ -99,6 +112,7 @@ import {
 } from '@mantle/files';
 import { setApiKey } from '@mantle/api-keys';
 import { stat } from 'node:fs/promises';
+import { paramsOf } from './test-support';
 import { SANDBOX_TOOLS } from './builtins-sandbox';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -158,6 +172,8 @@ function daemonReplies(data: Record<string, unknown>, ok = true, bytes?: Buffer)
 beforeEach(() => {
   vi.clearAllMocks();
   selectRows = [];
+  selectWheres.length = 0;
+  updateWheres.length = 0;
   daemonReplies({ containerId: 'c1' });
   vi.mocked(getSandboxByRef).mockResolvedValue(ROW as never);
   vi.mocked(createSandboxRow).mockImplementation(async (input) => input as never);
@@ -540,6 +556,16 @@ describe('sandbox_publish', () => {
       baseUrl: 'http://sandboxd.test/svc/sb1/8000',
       port: 8000,
     });
+  });
+
+  it('scopes the group lookup to the caller, and the in-place update to the found row', async () => {
+    // Drop `eq(toolGroups.ownerId, ...)` and re-publishing a sandbox would
+    // repoint ANOTHER owner's group at this brain's proxy URL and token.
+    daemonReplies({});
+    selectRows = [{ id: 'tg1' }];
+    await publish.handler({ sandbox: 'scratch', port: 9000, group_slug: 'calc' }, ctx);
+    expect(paramsOf(selectWheres[0])).toEqual(expect.arrayContaining(['o1', 'calc']));
+    expect(paramsOf(updateWheres[0])).toContain('tg1');
   });
 
   it('updates an existing group in place, keeping its authored tools', async () => {

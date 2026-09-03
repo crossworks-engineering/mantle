@@ -30,12 +30,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => {
   const selectQueue: unknown[][] = [];
+  /** Where clauses handed to the selects, in call order. A `mockReturnThis()`
+   *  where asserts nothing, so owner scoping is read out of these instead. */
+  const selectWheres: unknown[] = [];
   const limit = vi.fn(async () => selectQueue.shift() ?? []);
-  const selectChain = { from: vi.fn().mockReturnThis(), where: vi.fn().mockReturnThis(), limit };
+  const selectChain = {
+    from: vi.fn().mockReturnThis(),
+    where: vi.fn(function (this: unknown, clause: unknown) {
+      selectWheres.push(clause);
+      return this;
+    }),
+    limit,
+  };
   const updateWhere = vi.fn(async () => undefined);
   const updateSet = vi.fn(() => ({ where: updateWhere }));
   return {
     selectQueue,
+    selectWheres,
     select: vi.fn(() => selectChain),
     update: vi.fn(() => ({ set: updateSet })),
     // OpenRouter: constructor args + the one method web_search calls.
@@ -117,6 +128,7 @@ import { bumpWorkerUsage, getDefaultWorker } from '@mantle/db';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import { createDocCollection, parseTikaBytes, upsertDocFromDisk } from '@mantle/files';
 import { captureLlmUsage, recordIngest } from '@mantle/tracing';
+import { paramsOf } from './test-support';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { RESEARCH_TOOLS } from './builtins-research';
 import { CRAWL_TOOLS } from './builtins-crawl';
@@ -158,6 +170,7 @@ function textResponse(body: string, contentType = 'text/plain', status = 200): R
 beforeEach(() => {
   vi.clearAllMocks();
   h.selectQueue.length = 0;
+  h.selectWheres.length = 0;
   fetchSpy = vi.fn();
   global.fetch = fetchSpy as unknown as typeof fetch;
   vi.mocked(getDefaultWorker).mockResolvedValue(null);
@@ -550,6 +563,15 @@ describe('web_crawl', () => {
     expect(createDocCollection).not.toHaveBeenCalled();
     expect(upsertDocFromDisk).not.toHaveBeenCalled();
     expect(recordIngest).not.toHaveBeenCalled();
+  });
+
+  it('scopes the per-site collection lookup to the caller', async () => {
+    // Drop `eq(docCollections.ownerId, ...)` and a crawl of a host another
+    // owner has already crawled would append its pages to THEIR collection.
+    h.fcCrawl.mockResolvedValue({ status: 'completed', data: DOCS });
+    h.selectQueue.push([]);
+    await webCrawl.handler({ url: PUBLIC }, ctx);
+    expect(paramsOf(h.selectWheres.at(-1))).toContain('o1');
   });
 
   it('creates the per-site collection DISABLED under the caller, then upserts each page', async () => {

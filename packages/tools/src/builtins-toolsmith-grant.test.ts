@@ -30,9 +30,23 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const h = vi.hoisted(() => {
   const selectQueue: unknown[][] = [];
+  /** Every where clause handed to a select, in call order. Owner scoping is
+   *  asserted against these, not against `where` merely having been called. */
+  const selectWheres: unknown[] = [];
+  const updateWheres: unknown[] = [];
   const limit = vi.fn(async () => selectQueue.shift() ?? []);
-  const selectChain = { from: vi.fn().mockReturnThis(), where: vi.fn().mockReturnThis(), limit };
-  const updateWhere = vi.fn(async () => undefined);
+  const selectChain = {
+    from: vi.fn().mockReturnThis(),
+    where: vi.fn(function (this: unknown, clause: unknown) {
+      selectWheres.push(clause);
+      return this;
+    }),
+    limit,
+  };
+  const updateWhere = vi.fn(async (clause: unknown) => {
+    updateWheres.push(clause);
+    return undefined;
+  });
   const updateSet = vi.fn((_patch: Record<string, unknown>) => ({ where: updateWhere }));
   const insertReturning = vi.fn(async () => [] as unknown[]);
   const insertValues = vi.fn((_row: Record<string, unknown>) => ({
@@ -41,6 +55,8 @@ const h = vi.hoisted(() => {
   }));
   return {
     selectQueue,
+    selectWheres,
+    updateWheres,
     select: vi.fn(() => selectChain),
     update: vi.fn(() => ({ set: updateSet })),
     updateSet,
@@ -79,6 +95,7 @@ import { listApiKeys } from '@mantle/api-keys';
 import { listToolsForOwner } from './crud';
 import { getGroupIntegration, setGroupIntegration } from './integration';
 import { notifyPendingCreated } from './pending-notify';
+import { paramsOf } from './test-support';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -140,6 +157,8 @@ const EXISTING_GROUP = {
 beforeEach(() => {
   vi.clearAllMocks();
   h.selectQueue.length = 0;
+  h.selectWheres.length = 0;
+  h.updateWheres.length = 0;
   h.insertReturning.mockResolvedValue([]);
   vi.mocked(listToolsForOwner).mockResolvedValue(OWNED as never);
   vi.mocked(listApiKeys).mockResolvedValue([] as never);
@@ -149,6 +168,16 @@ beforeEach(() => {
 });
 
 describe('tool_group_ensure', () => {
+  it('scopes the group lookup to the caller, so a slug cannot reach another owner', async () => {
+    // Drop `eq(toolGroups.ownerId, ...)` and this ensure would merge into — or
+    // with mode:'replace', empty — a group belonging to somebody else that
+    // happens to share the slug. The write itself keys off `existing.id`, so
+    // this select IS the whole boundary.
+    h.selectQueue.push([EXISTING_GROUP]);
+    await ensure.handler({ slug: 'geo-tools', tool_slugs: ['note_to_page'] }, ctx);
+    expect(paramsOf(h.selectWheres[0])).toEqual(expect.arrayContaining(['o1', 'geo-tools']));
+  });
+
   it('refuses a bad slug and a non-array tool_slugs before any lookup', async () => {
     expect(errorOf(await ensure.handler({ slug: 'Geo Tools', tool_slugs: [] }, ctx))).toMatch(
       /slug must be lowercase/,
@@ -333,6 +362,24 @@ describe('tool_group_ensure', () => {
 describe('agent_grant_tool_group', () => {
   const AGENT = { id: 'a1', groups: ['core'] };
   const GROUP = { id: 'g1', toolSlugs: ['geocode', 'note_to_page'] };
+
+  it('scopes BOTH lookups to the caller, and the agent update to the found row', async () => {
+    // Two owner-scoped selects guard this grant: the agent and the group. Drop
+    // either clause and a caller could widen a stranger's agent, or hand their
+    // own agent a stranger's group by naming its slug.
+    h.selectQueue.push([AGENT], [GROUP]);
+    await grant.handler({ agent_slug: 'responder', group_slug: 'geo-tools' }, ctx);
+    expect(paramsOf(h.selectWheres[0])).toEqual(expect.arrayContaining(['o1', 'responder']));
+    expect(paramsOf(h.selectWheres[1])).toEqual(expect.arrayContaining(['o1', 'geo-tools']));
+    expect(paramsOf(h.updateWheres[0])).toContain('a1');
+  });
+
+  it('scopes the requester lookup when an AGENT initiates the grant', async () => {
+    h.selectQueue.push([AGENT], [GROUP], [{ id: 'req1' }]);
+    h.insertReturning.mockResolvedValue([{ id: 'p1' }]);
+    await grant.handler({ agent_slug: 'responder', group_slug: 'geo-tools' }, agentCtx);
+    expect(paramsOf(h.selectWheres[2])).toEqual(expect.arrayContaining(['o1', 'toolsmith']));
+  });
 
   it('refuses a self-grant BEFORE any lookup', async () => {
     // An injected agent must not be able to widen its own capabilities.

@@ -23,6 +23,16 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 let selectRows: unknown[] = [];
 
+/**
+ * The db here is stubbed so importing builtins-sandbox.ts is safe — NOT as
+ * coverage. Neither tool under test reads the database: both resolve the
+ * sandbox through `getSandboxByRef(ownerId, ref)` (mocked below, and asserted
+ * on directly), and the only db statements in builtins-sandbox.ts belong to
+ * sandbox_publish, which builtins-sandbox-write.test.ts owns. So the `where`
+ * spies below deliberately assert nothing; there is no clause to assert on.
+ * (Flagged as a "blind" mock by the 2026-09-03 audit sweep — it is a false
+ * positive, and this note is why.)
+ */
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
   const select = {
@@ -82,6 +92,7 @@ vi.mock('@mantle/files', async (importOriginal) => {
 vi.mock('@mantle/api-keys', () => ({ setApiKey: vi.fn() }));
 vi.mock('node:fs/promises', () => ({ stat: vi.fn() }));
 
+import * as dbmod from '@mantle/db';
 import { getSandboxByRef, touchSandbox } from '@mantle/content';
 import { SANDBOX_TOOLS } from './builtins-sandbox';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -147,6 +158,15 @@ beforeEach(() => {
 });
 
 describe('sandbox_mcp_call', () => {
+  it('goes through getSandboxByRef, never the database directly', async () => {
+    // Pins the note on the db mock above: the owner boundary for these two
+    // tools is the getSandboxByRef(ownerId, ref) argument, asserted below, not
+    // a WHERE clause. If a db read ever appears here it needs its own
+    // owner-scoping assertion, and this test is what says so.
+    await call.handler({ sandbox: 'scratch', tool: 'Read' }, ctx);
+    expect(vi.mocked(dbmod.db.select)).not.toHaveBeenCalled();
+  });
+
   it('resolves the sandbox under the caller owner and stops on a miss before the daemon', async () => {
     vi.mocked(getSandboxByRef).mockResolvedValue(null);
     const res = await call.handler({ sandbox: 'nope', tool: 'Read' }, ctx);

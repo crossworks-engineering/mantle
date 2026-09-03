@@ -80,6 +80,7 @@ import {
   SealedGroupError,
 } from '@mantle/runs';
 import { resolveTools } from './resolve';
+import { paramsOf } from './test-support';
 import { RUN_TOOLS } from './builtins-runs';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -107,17 +108,6 @@ function errorOf(res: Result): string {
 function outputOf(res: Result): Record<string, unknown> {
   if (!res.ok) throw new Error(`expected success, got error: ${res.error}`);
   return res.output as Record<string, unknown>;
-}
-
-/** Bound parameter values of a drizzle SQL tree, in order. `eq(col, 'x')`
- *  contributes 'x'; `and(a, b)` nests. Owner scoping shows up here as the
- *  owner id being one of the params of the run lookup. */
-function paramsOf(node: unknown, out: unknown[] = []): unknown[] {
-  if (!node || typeof node !== 'object') return out;
-  const o = node as { queryChunks?: unknown[]; value?: unknown; encoder?: unknown };
-  if (Array.isArray(o.queryChunks)) for (const c of o.queryChunks) paramsOf(c, out);
-  else if ('value' in o && 'encoder' in o) out.push(o.value);
-  return out;
 }
 
 /** The params of the FIRST select's where clause: the run lookup. */

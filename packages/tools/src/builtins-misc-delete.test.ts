@@ -31,11 +31,22 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/db')>();
+  const deleteWheres: unknown[] = [];
   const chain = {
-    where: vi.fn().mockReturnThis(),
+    // Recorded, not waved through: a `mockReturnThis()` where accepts any
+    // clause, so dropping the owner-id term would leave this file green.
+    where: vi.fn(function (this: unknown, clause: unknown) {
+      deleteWheres.push(clause);
+      return this;
+    }),
     returning: vi.fn(async () => [] as { id: string }[]),
   };
-  return { ...actual, db: { ...actual.db, delete: vi.fn(() => chain) }, __chain: chain };
+  return {
+    ...actual,
+    db: { ...actual.db, delete: vi.fn(() => chain) },
+    __chain: chain,
+    __deleteWheres: deleteWheres,
+  };
 });
 vi.mock('@mantle/content', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content')>();
@@ -44,11 +55,13 @@ vi.mock('@mantle/content', async (importOriginal) => {
 
 import * as dbmod from '@mantle/db';
 import { deleteFormula } from '@mantle/content';
+import { paramsOf } from './test-support';
 import { CURATION_TOOLS } from './builtins-curation';
 import { FORMULA_TOOLS, FORMULA_AUTO_GRANT_SLUGS } from './builtins-formulas';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 const chain = (dbmod as unknown as { __chain: { returning: ReturnType<typeof vi.fn> } }).__chain;
+const deleteWheres = (dbmod as unknown as { __deleteWheres: unknown[] }).__deleteWheres;
 
 const poolRemove = CURATION_TOOLS.find((t) => t.slug === 'model_pool_remove')!;
 const formulaDel = FORMULA_TOOLS.find((t) => t.slug === 'formula_delete')!;
@@ -70,10 +83,20 @@ function outputOf(res: Result): Record<string, unknown> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  deleteWheres.length = 0;
   chain.returning.mockResolvedValue([]);
 });
 
 describe('model_pool_remove', () => {
+  it('scopes the delete to the caller, the pool AND the name', async () => {
+    // There is no select in front of this delete — the WHERE is the entire
+    // safety margin. Drop the owner-id term and one brain removes a model
+    // from every brain's shortlist that shares the pool and name.
+    chain.returning.mockResolvedValue([{ id: 'x' }]);
+    await poolRemove.handler({ pool: 'chat', name: 'Real Model' }, ctx);
+    expect(paramsOf(deleteWheres[0])).toEqual(expect.arrayContaining(['o1', 'chat', 'Real Model']));
+  });
+
   it('refuses on the team surface BEFORE touching the table', async () => {
     const res = await poolRemove.handler({ pool: 'chat', name: 'Some Model' }, {
       ...ctx,

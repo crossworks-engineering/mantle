@@ -30,12 +30,24 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const h = vi.hoisted(() => {
   const selectQueue: unknown[][] = [];
+  /** Where clauses handed to the selects, in call order. Recorded rather than
+   *  waved through: a `mockReturnThis()` where accepts any clause, so dropping
+   *  the owner-id term from a lookup would leave this file green. */
+  const selectWheres: unknown[] = [];
   const limit = vi.fn(async () => selectQueue.shift() ?? []);
-  const selectChain = { from: vi.fn().mockReturnThis(), where: vi.fn().mockReturnThis(), limit };
+  const selectChain = {
+    from: vi.fn().mockReturnThis(),
+    where: vi.fn(function (this: unknown, clause: unknown) {
+      selectWheres.push(clause);
+      return this;
+    }),
+    limit,
+  };
   const updateWhere = vi.fn(async () => undefined);
   const updateSet = vi.fn((_patch: Record<string, unknown>) => ({ where: updateWhere }));
   return {
     selectQueue,
+    selectWheres,
     select: vi.fn(() => selectChain),
     update: vi.fn(() => ({ set: updateSet })),
     updateSet,
@@ -82,6 +94,7 @@ import {
   API_DOCS_MAX_CHARS,
 } from './integration';
 import { dispatchViaBridge } from './dispatch-bridge';
+import { paramsOf } from './test-support';
 import { dispatchTool } from './dispatch';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -155,6 +168,7 @@ const VALID = {
 beforeEach(() => {
   vi.clearAllMocks();
   h.selectQueue.length = 0;
+  h.selectWheres.length = 0;
   vi.mocked(loadProfilePreferences).mockResolvedValue({ toolsmithRequireApproval: false } as never);
   vi.mocked(listApiKeys).mockResolvedValue([] as never);
   vi.mocked(createTool).mockImplementation(async (_o, input) => ({ ...input }) as never);
@@ -328,6 +342,16 @@ describe('api_tool_create', () => {
 });
 
 describe('api_tool_update', () => {
+  it('scopes the slug lookup to the caller', async () => {
+    // `toolRowBySlug` is the only thing standing between a slug and another
+    // owner's authored tool; the patch is then applied by the row id it
+    // returned. Drop `eq(tools.ownerId, ...)` and a shared slug is editable
+    // across brains.
+    h.selectQueue.push([row('http')]);
+    await update.handler({ slug: 'geo', enabled: false }, ctx);
+    expect(paramsOf(h.selectWheres[0])).toEqual(expect.arrayContaining(['o1', 'geo']));
+  });
+
   it('reports an unknown slug without writing', async () => {
     expect(errorOf(await update.handler({ slug: 'ghost', enabled: false }, ctx))).toMatch(
       /'ghost' not found/,
