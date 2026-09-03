@@ -95,15 +95,9 @@ importers:
 
   packages/app-build:
     dependencies:
-      '@mantle/config':
-        specifier: workspace:*
-        version: link:../config
       '@mantle/share-ui':
         specifier: workspace:*
         version: link:../share-ui
-      '@mantle/std':
-        specifier: workspace:*
-        version: link:../std
       '@tailwindcss/oxide':
         specifier: ^4.3.3
         version: 4.3.3

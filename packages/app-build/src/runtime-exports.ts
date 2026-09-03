@@ -24,13 +24,16 @@
 import { readFile } from 'node:fs/promises';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { env } from '@mantle/config';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 /** In order of trust: explicit override, package-relative, cwd convention. */
 export function manifestCandidates(): string[] {
-  const override = env('MANTLE_APP_RUNTIME_MANIFEST');
+  // Raw read on purpose: this package is published to npm and cannot depend
+  // on the private @mantle/config package. The name stays in config's
+  // inventory so it is documented alongside every other variable.
+  // eslint-disable-next-line no-restricted-syntax
+  const override = process.env.MANTLE_APP_RUNTIME_MANIFEST;
   return [
     ...(override ? [override] : []),
     // packages/app-build/src → <root>/server/web/public/app-runtime/manifest.json

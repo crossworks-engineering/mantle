@@ -15,7 +15,13 @@ import { fileURLToPath } from 'node:url';
 import esbuild, { type BuildOptions, type Message, type Plugin } from 'esbuild';
 import { buildAppCss } from './css';
 import { KIT } from './kit';
-import { errorMessage } from '@mantle/std';
+// Local copy of @mantle/std's errorMessage. This package is published as a
+// contract package; it must not depend on private workspace packages, which
+// do not exist on npm (the v0.232.122-153 tarballs shipped an unresolvable
+// @mantle/std@0.0.1 dependency for exactly this import).
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 /** Specifiers provided by the shared runtime via the iframe import map — marked
  *  external so they stay as bare imports in the app bundle. The react family is

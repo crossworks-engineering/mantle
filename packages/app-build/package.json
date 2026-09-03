@@ -8,14 +8,15 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "files": [
+    "src"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build:runtime": "node scripts/build-runtime.ts ../../server/web"
   },
   "dependencies": {
-    "@mantle/config": "workspace:*",
     "@mantle/share-ui": "workspace:*",
-    "@mantle/std": "workspace:*",
     "@tailwindcss/oxide": "^4.3.3",
     "esbuild": "^0.28.1",
     "lucide-react": "^1.25.0",

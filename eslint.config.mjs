@@ -193,6 +193,48 @@ export default tseslint.config(
     },
   },
   {
+    // Every PUBLISHED contract package may depend only on its published
+    // siblings. Any other @mantle/* import is a private workspace name that
+    // does not exist on npm: the v0.232.122-153 app-build tarballs shipped
+    // @mantle/std@0.0.1 and @mantle/config@0.0.1 dependencies and could not
+    // be installed. scripts/publish-contract.mjs refuses the same at publish
+    // time; this catches it at lint time, before the tag.
+    files: [
+      'packages/client-types/**/*.{ts,tsx}',
+      'packages/content-core/**/*.{ts,tsx}',
+      'packages/voice-client/**/*.{ts,tsx}',
+      'packages/app-build/**/*.{ts,tsx}',
+    ],
+    // Repo-internal build scripts are not packed (see each package's "files").
+    ignores: ['**/scripts/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@mantle/*',
+                '!@mantle/client-types',
+                '!@mantle/client-types/*',
+                '!@mantle/content-core',
+                '!@mantle/content-core/*',
+                '!@mantle/voice-client',
+                '!@mantle/voice-client/*',
+                '!@mantle/share-ui',
+                '!@mantle/share-ui/*',
+                '!@mantle/app-build',
+                '!@mantle/app-build/*',
+              ],
+              message:
+                'Contract packages may import only the five published @mantle contract packages; anything else is private and does not exist on npm.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Server tier must never import the client app.
     files: ['server/**/*.{ts,tsx}'],
     rules: {

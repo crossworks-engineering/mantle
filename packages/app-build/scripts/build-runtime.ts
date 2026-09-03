@@ -8,7 +8,6 @@
 import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 import { buildRuntime } from '../src/build-runtime.ts';
-import { env } from '@mantle/config';
 
 /**
  * Where to write. Each Next app serves its own copy — the ACAO:* runtime has
@@ -37,8 +36,8 @@ import { env } from '@mantle/config';
  */
 const appArg = process.argv[2]?.trim();
 const appDir = path.resolve(process.cwd(), appArg ?? '.');
-const outDir = env('APP_RUNTIME_OUT')
-  ? path.resolve(env('APP_RUNTIME_OUT'))
+const outDir = process.env.APP_RUNTIME_OUT
+  ? path.resolve(process.env.APP_RUNTIME_OUT)
   : path.join(appDir, 'public/app-runtime');
 
 // Tripwire for the failure above: a Next app always has a `public/`, so its
@@ -46,7 +45,7 @@ const outDir = env('APP_RUNTIME_OUT')
 // about to be written somewhere nothing serves. Fail loudly here rather than
 // print a cheerful success line pointing into node_modules. Skipped when
 // APP_RUNTIME_OUT names the destination outright.
-if (!env('APP_RUNTIME_OUT') && !existsSync(path.join(appDir, 'public'))) {
+if (!process.env.APP_RUNTIME_OUT && !existsSync(path.join(appDir, 'public'))) {
   console.error(
     `app-runtime: ${appDir} has no public/ directory, so it is not an app.\n` +
       `Run this from the app directory (paths resolve from the cwd), or pass an ` +
