@@ -265,10 +265,13 @@ export function registerMantleTools(
   registerBuiltinTools(NODE_READ_TOOLS);
   // 2026-09-02 (audit): the search / entity / file-read / telegram groups now
   // exist in @mantle/tools, so their MCP twins are bridged from the one tested
-  // handler each. Deliberately still hand-written (read-shape divergence, or
-  // a schema MCP clients already depend on): `search` (search_nodes under its
-  // shipped name), tree_list, file_get/file_read/file_rename (id vs file_id),
-  // folder_describe/folder_rename (accept a path as well as an id).
+  // handler each. Deliberately still hand-written (read-shape divergence, or a schema MCP
+  // clients already depend on): tree_list, file_get/file_read/file_rename (id
+  // vs file_id), folder_describe/folder_rename (accept a path as well as an
+  // id). `search_nodes` is skipped here because MCP registers it under its
+  // shipped name `search` in register/search.ts — a REGISTRATION alias since
+  // v0.232.171, not a second implementation: it runs this same def through
+  // callBuiltin.
   registerBuiltinTools(SEARCH_TOOLS, {
     skip: (def) => def.slug === 'search_nodes' || def.slug === 'tree_list',
   });

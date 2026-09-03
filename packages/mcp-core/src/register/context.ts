@@ -61,30 +61,12 @@ export function makeRegisterContext(
     };
   }
 
-  /** Lean projection of a node for list/search results: the "spine" (title, tags,
-   *  summary), never the full body (`data.content`) or the index internals. Use
-   *  node_read / file_read to fetch a body on demand. Mirrors the in-process
-   *  `search_nodes` builtin so the two tool surfaces don't drift. */
-  function leanNode(n: {
-    id: string;
-    type: string;
-    title: string;
-    path: string | null;
-    tags: string[] | null;
-    data: unknown;
-    updatedAt: Date;
-  }) {
-    const data = (n.data ?? {}) as Record<string, unknown>;
-    return {
-      id: n.id,
-      type: n.type,
-      title: n.title,
-      path: n.path,
-      tags: n.tags,
-      summary: typeof data.summary === 'string' ? data.summary : null,
-      updatedAt: n.updatedAt instanceof Date ? n.updatedAt.toISOString() : n.updatedAt,
-    };
-  }
+  // `leanNode` lived here: a hand-rolled node projection whose own comment said
+  // it "mirrors the in-process search_nodes builtin so the two tool surfaces
+  // don't drift". They drifted anyway — it never grew the `url` permalink or
+  // the supersession annotation the builtin gained. Its only caller was the
+  // `search` fork; `search` runs the builtin now, so the projection that was
+  // supposed to track it is gone rather than left to rot again.
 
   /** Bridge a set of in-app `BuiltinToolDef`s onto the MCP server, reusing the
    *  exact same handlers the in-app agent runs so the two surfaces never drift.
@@ -98,6 +80,39 @@ export function makeRegisterContext(
    *  `opts.skip` gates a def out; `opts.only` restricts to an explicit slug set,
    *  which is how a group is bridged for DEDUPLICATION without also widening the
    *  MCP surface with its other members. */
+  /** Run one builtin and shape its result as an MCP reply. Factored out of
+   *  registerBuiltinTools so a tool registered under a DIFFERENT MCP name can
+   *  still run the builtin through the identical path — preconditions, error
+   *  mapping and response hygiene included. `search` is the case: the MCP
+   *  surface has always called it `search`, the builtin is `search_nodes`, and
+   *  the name mismatch is exactly why a hand-written fork of it survived every
+   *  duplicate check we had. */
+  async function callBuiltin(def: BuiltinToolDef, args: Record<string, unknown>) {
+    const input = args ?? {};
+    // Declared referential preconditions run first, exactly as
+    // dispatch.ts does for the in-app agent. Without this the MCP surface
+    // is the only one where an id pointing at a missing — or wrong-type —
+    // node reaches the handler and comes back as a bare "not found",
+    // hiding the actual mistake.
+    if (def.preconditions?.length) {
+      const failure = await checkToolPreconditions(def.preconditions, input, ownerId);
+      if (failure && !failure.ok) {
+        return {
+          content: [{ type: 'text' as const, text: `Error: ${failure.error}` }],
+          isError: true,
+        };
+      }
+    }
+    const result = await def.handler(input, { ownerId: ownerId });
+    if (!result.ok) {
+      return {
+        content: [{ type: 'text' as const, text: `Error: ${result.error}` }],
+        isError: true,
+      };
+    }
+    return jsonReply(result.output);
+  }
+
   function registerBuiltinTools(
     defs: readonly BuiltinToolDef[],
     opts?: { skip?: (def: BuiltinToolDef) => boolean; only?: ReadonlySet<string> },
@@ -105,35 +120,8 @@ export function makeRegisterContext(
     for (const def of defs) {
       if (opts?.only && !opts.only.has(def.slug)) continue;
       if (opts?.skip?.(def)) continue;
-      server.tool(
-        def.slug,
-        def.description,
-        zodShapeFromJsonSchema(def.inputSchema),
-        async (args: Record<string, unknown>) => {
-          const input = args ?? {};
-          // Declared referential preconditions run first, exactly as
-          // dispatch.ts does for the in-app agent. Without this the MCP surface
-          // is the only one where an id pointing at a missing — or wrong-type —
-          // node reaches the handler and comes back as a bare "not found",
-          // hiding the actual mistake.
-          if (def.preconditions?.length) {
-            const failure = await checkToolPreconditions(def.preconditions, input, ownerId);
-            if (failure && !failure.ok) {
-              return {
-                content: [{ type: 'text' as const, text: `Error: ${failure.error}` }],
-                isError: true,
-              };
-            }
-          }
-          const result = await def.handler(input, { ownerId: ownerId });
-          if (!result.ok) {
-            return {
-              content: [{ type: 'text' as const, text: `Error: ${result.error}` }],
-              isError: true,
-            };
-          }
-          return jsonReply(result.output);
-        },
+      server.tool(def.slug, def.description, zodShapeFromJsonSchema(def.inputSchema), (args) =>
+        callBuiltin(def, args),
       );
     }
   }
@@ -145,8 +133,8 @@ export function makeRegisterContext(
     exposeTerminal,
     stripVectors,
     jsonReply,
-    leanNode,
     registerBuiltinTools,
+    callBuiltin,
   };
 }
 

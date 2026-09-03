@@ -50,6 +50,7 @@ export const search_nodes: BuiltinToolDef = {
           'telegram_message',
           'documentation',
           'journal',
+          'secret',
           'formula',
           'draw',
         ],
@@ -58,6 +59,11 @@ export const search_nodes: BuiltinToolDef = {
         type: 'array',
         items: { type: 'string' },
         description: "only nodes carrying at least one of these tags, e.g. ['work']",
+      },
+      since: {
+        type: 'string',
+        description:
+          'ISO-8601 instant; only nodes updated at or after it. A relevance filter, not a sort — results stay ranked by relevance, so for "what arrived today" use the date-sorted list tools instead.',
       },
       limit: {
         type: 'integer',
@@ -82,9 +88,22 @@ export const search_nodes: BuiltinToolDef = {
           console.error('[search_nodes] query embed failed, falling back to FTS:', err);
         }
       }
+      // `searchNodes` has always accepted a `since` bound; the schema simply
+      // never offered it, so no agent could date-scope a search. Rejected
+      // loudly rather than dropped: a silently ignored filter returns
+      // plausible out-of-range hits that read as a correct answer.
+      const sinceRaw = strOpt(input.since);
+      let since: Date | undefined;
+      if (sinceRaw) {
+        since = new Date(sinceRaw);
+        if (Number.isNaN(since.getTime())) {
+          return { ok: false, error: `since is not a valid ISO-8601 instant: ${sinceRaw}` };
+        }
+      }
       const rows = await searchNodes({
         ownerId: ctx.ownerId,
         q,
+        since,
         branch: strOpt(input.branch),
         type: strOpt(input.type) as Parameters<typeof searchNodes>[0]['type'],
         tags: Array.isArray(input.tags) ? (input.tags as string[]) : undefined,
