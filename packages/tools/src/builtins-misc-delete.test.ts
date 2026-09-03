@@ -1,20 +1,28 @@
 /**
- * Behavioural tests for the four remaining single destructive tools:
- * model_pool_remove, formula_delete, sandbox_rm, api_tool_delete.
+ * Behavioural tests for two of the remaining single destructive tools:
+ * model_pool_remove and formula_delete.
  *
- * They have nothing in common structurally, so each is pinned on the property
- * that makes ITS deletion safe:
+ * They share no structure, so each is pinned on the property that makes ITS
+ * deletion safe:
  *
- *  - `sandbox_rm` preserves the /files work directory unless `purge_files` is
- *    EXACTLY true. The check is `input.purge_files === true`, which is the
- *    whole safety margin: a truthy-but-not-true value ('false', 1, 'yes')
- *    must not delete the user's work. That is the highest-value case here.
  *  - `model_pool_remove` is owner-side and must refuse on the team and forum
- *    surfaces before it touches the table at all.
- *  - `formula_delete` is excluded from its own auto-grant list, the same
- *    pairing journal/contact use.
- *  - `api_tool_delete` resolves a slug to a row first, so a bad slug fails
- *    before any delete is attempted.
+ *    surfaces BEFORE it touches the table, so a team caller cannot mutate the
+ *    owner's curated shortlist even through a failed attempt.
+ *  - `formula_delete` is excluded from its own auto-grant list — the same
+ *    gate-plus-exclusion pairing journal_delete and contact_delete use.
+ *
+ * NOT covered here, and still open: `sandbox_rm` and `api_tool_delete`.
+ * Both need more setup than the others and are worth doing properly rather
+ * than cheaply:
+ *
+ *  - `sandbox_rm` reaches the sandbox daemon over HTTP through an internal
+ *    `sandboxd()`, so it needs fetch stubbed. Its property is worth the work:
+ *    the /files work directory survives unless `purge_files` is EXACTLY true
+ *    (`input.purge_files === true`), so a truthy-but-not-true value like
+ *    'false' or 1 must not delete the user's work.
+ *  - `api_tool_delete` resolves a slug through an internal `toolRowBySlug()`
+ *    that runs a db SELECT, so it needs a select-chain stub rather than the
+ *    delete-chain one below.
  *
  * Store edges stubbed; the tools' own branching is real.
  */
