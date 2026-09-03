@@ -90,19 +90,13 @@ export type ConversationContext = {
 // Text is snipped and the near-miss lists capped, so a snapshot stays well
 // under the tracing layer's 64KB truncation ceiling.
 
-const SNAP_SNIP = 240;
-const SNAP_DROPPED_CAP = 5;
-const snip = (s: string | null | undefined, n = SNAP_SNIP): string => {
-  const t = (s ?? '').replace(/\s+/g, ' ').trim();
-  return t.length > n ? `${t.slice(0, n)}…` : t;
-};
-const round3 = (n: number | null | undefined): number | null =>
-  typeof n === 'number' && Number.isFinite(n) ? Math.round(n * 1000) / 1000 : null;
+// The snapshot helpers (snip / round3 / the caps) live in
+// conversation/select.ts, beside the transforms that build the items.
 
-/** Entity-anchored expansion: how many of the top facts' entities to expand, and
- *  the cap on relationship triples injected. The graph axis of retrieval —
- *  vector finds the facts, this surfaces how their entities relate. */
-const RELATION_ANCHOR_LIMIT = 5;
+/** Cap on relationship triples injected. The graph axis of retrieval: vector
+ *  finds the facts, this surfaces how their entities relate. How many of the
+ *  top facts' entities become anchors is RELATION_ANCHOR_LIMIT, in
+ *  conversation/select.ts beside the code that picks them. */
 const RELATION_LIMIT = 12;
 
 // ─── Conversational query enrichment (zero-LLM query understanding) ─────────
@@ -124,117 +118,23 @@ export function looksAnaphoricFollowup(text: string): boolean {
   return words.length > 0 && words.length <= 8 && ANAPHORA.test(text);
 }
 
-// ─── Tool-outcome read-back (context-transfer audit, task 64170cb0) ─────────
-// History carries reply text only, so what a turn actually DID — which node it
-// wrote, what failed, what's parked behind approval — vanished unless the
-// prose restated it. The per-turn toolStats ledger persisted on
-// assistant_messages.data (see updateAssistantMessageOutcome) is rendered as a
-// compact one-line suffix on outbound history turns. Silent (returns null)
-// when the record adds nothing: all-success read-only turns and chat-only
-// turns stay byte-identical to before.
-
-const TOOL_RECORD_MAX_FAILURES = 2;
-const TOOL_RECORD_MAX_WRITES = 3;
-const TOOL_RECORD_ERR_SNIP = 60;
-
-/** Render an outbound turn's persisted toolStats as a `[tool record: …]`
- *  history suffix, or null when there is nothing worth saying. Tolerant of
- *  arbitrary `data` shapes — rows predate the ledger, and other writers own
- *  keys on the same jsonb. */
-export function formatToolRecordSuffix(data: unknown): string | null {
-  if (data === null || typeof data !== 'object') return null;
-  const stats = (data as { toolStats?: unknown }).toolStats;
-  if (stats === null || typeof stats !== 'object') return null;
-  const s = stats as {
-    calls?: unknown;
-    failed?: unknown;
-    queued?: unknown;
-    failures?: unknown;
-    writes?: unknown;
-  };
-  const calls = typeof s.calls === 'number' ? s.calls : 0;
-  const failed = typeof s.failed === 'number' ? s.failed : 0;
-  const queued = typeof s.queued === 'number' ? s.queued : 0;
-  const writes = Array.isArray(s.writes)
-    ? (s.writes as Array<{ id?: unknown; title?: unknown }>).filter(
-        (w) => w && typeof w.id === 'string',
-      )
-    : [];
-  if (failed <= 0 && queued <= 0 && writes.length === 0) return null;
-
-  const parts: string[] = [`${calls} tool call${calls === 1 ? '' : 's'} ran`];
-  if (failed > 0) {
-    const failures = Array.isArray(s.failures)
-      ? (s.failures as Array<{ slug?: unknown; error?: unknown }>)
-          .filter((f) => f && typeof f.slug === 'string')
-          .slice(0, TOOL_RECORD_MAX_FAILURES)
-          .map(
-            (f) =>
-              `${f.slug}${
-                typeof f.error === 'string' && f.error
-                  ? ` (${f.error.slice(0, TOOL_RECORD_ERR_SNIP)})`
-                  : ''
-              }`,
-          )
-      : [];
-    parts.push(`${failed} FAILED${failures.length > 0 ? `: ${failures.join(', ')}` : ''}`);
-  }
-  if (queued > 0) parts.push(`${queued} queued for operator approval, not yet run`);
-  if (writes.length > 0) {
-    const shown = writes
-      .slice(0, TOOL_RECORD_MAX_WRITES)
-      .map((w) =>
-        typeof w.title === 'string' && w.title
-          ? `"${w.title}" (${(w.id as string).slice(0, 8)})`
-          : (w.id as string).slice(0, 8),
-      );
-    const more = writes.length > TOOL_RECORD_MAX_WRITES ? ` +${writes.length - 3} more` : '';
-    parts.push(`wrote: ${shown.join(', ')}${more}`);
-  }
-  return `[tool record: ${parts.join('; ')}]`;
-}
-
-// ─── Media read-back ────────────────────────────────────────────────────────
-// The twin of the tool-outcome read-back above, for the pictures a turn carried.
-// A turn's media lives in `assistant_messages.attachments`, which history never
-// replayed — so an image generated on turn 1 was, by turn 2, an object the model
-// could see in the transcript UI and not name. It went hunting: two searches
-// that couldn't match a fresh file node (no embedding yet, filename is one FTS
-// token), then a UUID rebuilt from the 8-char prefix the corpus map prints, and
-// a page stored with a dangling reference. Replaying the id costs one short line
-// on the turns that have media and nothing at all on the turns that don't.
-
-/** Attachments quoted per turn. Beyond a few, the reply prose is the better
- *  record and the ids stop earning their bytes. */
-const MEDIA_RECORD_MAX = 3;
-const MEDIA_CAPTION_SNIP = 60;
-
-/** Render a turn's attachments as a `[media record: …]` history suffix, or null
- *  when there is nothing referenceable to say. Tolerant of arbitrary `jsonb`
- *  shapes — the column predates this and other writers own rows in it.
- *
- *  Only attachments carrying a `nodeId` are quoted: that is the id the
- *  `media:<id>` dialect resolves. A transport-only handle (a Telegram
- *  `fileId`) can't be referenced in a page or a reply, so quoting it would
- *  spend tokens on something unusable. */
-export function formatMediaRecordSuffix(attachments: unknown): string | null {
-  if (!Array.isArray(attachments)) return null;
-  const usable = attachments
-    .filter((a): a is Record<string, unknown> => !!a && typeof a === 'object')
-    .filter((a) => typeof a.nodeId === 'string' && a.nodeId.length > 0);
-  if (usable.length === 0) return null;
-
-  const shown = usable.slice(0, MEDIA_RECORD_MAX).map((a) => {
-    const kind = typeof a.kind === 'string' ? a.kind : 'file';
-    const caption = typeof a.caption === 'string' ? a.caption.replace(/\s+/g, ' ').trim() : '';
-    const label = caption
-      ? ` "${caption.length > MEDIA_CAPTION_SNIP ? `${caption.slice(0, MEDIA_CAPTION_SNIP)}…` : caption}"`
-      : '';
-    return `${kind}${label} = media:${a.nodeId as string}`;
-  });
-  const more = usable.length > MEDIA_RECORD_MAX ? ` +${usable.length - MEDIA_RECORD_MAX} more` : '';
-  return `[media record: ${shown.join('; ')}${more} — reference these by the id shown, copied whole]`;
-}
+// Tool-outcome and media read-back suffixes live in conversation/format.ts.
+// Re-exported here because they were part of this module's surface before the
+// split and several callers (and their tests) import them from this path.
+export { formatToolRecordSuffix, formatMediaRecordSuffix } from './conversation/format';
+import {
+  buildCorpusMap,
+  buildDigests,
+  buildHistory,
+  CHUNK_CUTOFF,
+  mergePreferences,
+  patchSuperseded,
+  selectChunkHits,
+  selectContentHits,
+  selectFacts,
+  snip,
+  staleNodeIds,
+} from './conversation/select';
 
 /** How many section-level passages to auto-pull into context (the fine-grained
  *  complement to the node-level content hits). The budget that matters is
@@ -255,9 +155,7 @@ const CORPUS_MAP_LIMIT_DEFAULT = 300;
  *  telegram messages are excluded (huge, conversational); branches are
  *  structure, not content. */
 const CORPUS_MAP_TYPES = ['page', 'table', 'file', 'note', 'task', 'app'];
-/** Cosine cutoff for a chunk to be worth injecting. Looser than the node cutoff
- *  (0.6): a passage can match tightly on a sub-topic the node summary misses. */
-const CHUNK_CUTOFF = 0.65;
+// CHUNK_CUTOFF lives in conversation/select.ts, beside the filter that applies it.
 
 /** Preferences are tiny + high-signal ("the user prefers terse replies"); the
  *  design always-injects the most recent few rather than waiting on a vector
@@ -559,34 +457,11 @@ export async function loadConversationContext(args: {
           .limit(factLimit)
       );
     });
-    factRows = rows
-      // Mismatch guard: if the query vector and stored fact vectors live in
-      // different embedding-model spaces, cosine distances cluster near 1.0.
-      // Drop those so a mismatch degrades to "no facts" (visible) rather than
-      // surfacing garbage-space rows. Loose by design (0.85) — legitimate facts
-      // still pass even when only loosely related.
-      .filter((r) => (r.dist ?? 1) < 0.85)
-      .map((r) => ({ content: r.content, kind: r.kind as string, entityName: r.entityName }));
-    const toSnapItem = (r: (typeof rows)[number]): SnapshotItem => ({
-      text: snip(r.content),
-      dist: round3(r.dist),
-      kind: r.kind as string,
-      entity: r.entityName,
-    });
-    factsSentSnap = rows.filter((r) => (r.dist ?? 1) < 0.85).map(toSnapItem);
-    factsDroppedSnap = rows
-      .filter((r) => (r.dist ?? 1) >= 0.85)
-      .slice(0, SNAP_DROPPED_CAP)
-      .map(toSnapItem);
-    // Anchor entities = the entities of the top matching facts (rank order,
-    // distinct), the seeds for graph expansion below.
-    const ranked: string[] = [];
-    for (const r of rows) {
-      if ((r.dist ?? 1) >= 0.85 || !r.entityId) continue;
-      if (!ranked.includes(r.entityId)) ranked.push(r.entityId);
-      if (ranked.length >= RELATION_ANCHOR_LIMIT) break;
-    }
-    anchorEntityIds = ranked;
+    const selection = selectFacts(rows);
+    factRows = selection.facts;
+    factsSentSnap = selection.sent;
+    factsDroppedSnap = selection.dropped;
+    anchorEntityIds = selection.anchorEntityIds;
   }
 
   // ─── Preferences: always-injected, not left to a vector match ───────────
@@ -603,22 +478,9 @@ export async function loadConversationContext(args: {
       .where(and(eq(facts.ownerId, ownerId), isNull(facts.validTo), eq(facts.kind, 'preference')))
       .orderBy(desc(facts.updatedAt))
       .limit(PREFERENCE_INJECT_LIMIT);
-    const seen = new Set(factRows.map((f) => f.content));
-    const prefs = prefRows
-      .filter((p) => !seen.has(p.content))
-      .map((p) => ({ content: p.content, kind: p.kind as string, entityName: p.entityName }));
-    if (prefs.length) {
-      factRows = [...prefs, ...factRows];
-      factsSentSnap = [
-        ...prefs.map((p) => ({
-          text: snip(p.content),
-          dist: null, // always-injected, not vector-ranked
-          kind: p.kind,
-          entity: p.entityName,
-        })),
-        ...factsSentSnap,
-      ];
-    }
+    const merged = mergePreferences(factRows, factsSentSnap, prefRows);
+    factRows = merged.facts;
+    factsSentSnap = merged.sent;
   }
 
   // ─── Content-index hits (excludes digests + raw telegram messages) ──────
@@ -681,41 +543,10 @@ export async function loadConversationContext(args: {
           .limit(contentHitLimit)
       );
     });
-    contentHits = rows
-      .filter((r) => (r.dist ?? 1) < 0.6) // salience-adjusted cutoff — drop non-matches + demoted bulk
-      .map((r) => {
-        const data = (r.data ?? {}) as Record<string, unknown>;
-        // `mime_type` is the stored key (snake), not `mimeType`. An extracted
-        // document image lands here as a plain `file` node, so the mime is the
-        // only thing that says "this hit is a picture, and showing it is a
-        // possible answer" — see ContentHit.inlineRef for why the finished
-        // marker travels with it.
-        const mime = typeof data.mime_type === 'string' ? data.mime_type : '';
-        const isImage = mime.startsWith('image/');
-        return {
-          nodeId: r.nodeId,
-          title: r.title,
-          type: r.type as string,
-          summary: typeof data.summary === 'string' ? data.summary : null,
-          ...(isImage ? { inlineRef: `![${r.title}](media:${r.nodeId})` } : {}),
-          ...(r.supersededBy ? { supersededBy: { id: r.supersededBy, title: '' } } : {}),
-        };
-      });
-    const toSnapItem = (r: (typeof rows)[number]): SnapshotItem => {
-      const data = (r.data ?? {}) as Record<string, unknown>;
-      return {
-        text: snip(typeof data.summary === 'string' ? data.summary : ''),
-        dist: round3(r.dist),
-        kind: r.type as string,
-        nodeId: r.nodeId,
-        title: r.title,
-      };
-    };
-    contentSentSnap = rows.filter((r) => (r.dist ?? 1) < 0.6).map(toSnapItem);
-    contentDroppedSnap = rows
-      .filter((r) => (r.dist ?? 1) >= 0.6)
-      .slice(0, SNAP_DROPPED_CAP)
-      .map(toSnapItem);
+    const selection = selectContentHits(rows);
+    contentHits = selection.hits;
+    contentSentSnap = selection.sent;
+    contentDroppedSnap = selection.dropped;
   }
 
   // ─── Section-level passages (the fine-grained complement to content hits) ──
@@ -739,28 +570,10 @@ export async function loadConversationContext(args: {
     });
     // Same exclusions as content hits: a raw telegram turn isn't a "passage"
     // (it's the conversation), and a weak match isn't worth the tokens.
-    const selected = hits
-      .filter((h) => h.distance < CHUNK_CUTOFF && h.nodeType !== 'telegram_message')
-      .slice(0, chunkLimit);
-    chunkHits = selected.map((h) => ({
-      nodeId: h.nodeId,
-      title: h.nodeTitle,
-      heading: h.headingPath,
-      text: h.text,
-      ...(h.nodeSupersededBy ? { supersededBy: { id: h.nodeSupersededBy, title: '' } } : {}),
-    }));
-    const toSnapItem = (h: (typeof hits)[number]): SnapshotItem => ({
-      text: snip(h.text),
-      dist: round3(h.distance),
-      nodeId: h.nodeId,
-      title: h.nodeTitle,
-      heading: h.headingPath,
-    });
-    chunkSentSnap = selected.map(toSnapItem);
-    chunkDroppedSnap = hits
-      .filter((h) => !selected.includes(h))
-      .slice(0, SNAP_DROPPED_CAP)
-      .map(toSnapItem);
+    const selection = selectChunkHits(hits, chunkLimit);
+    chunkHits = selection.hits;
+    chunkSentSnap = selection.sent;
+    chunkDroppedSnap = selection.dropped;
   }
 
   // ─── Content-currency: resolve supersession pointers ─────────────────────
@@ -769,25 +582,11 @@ export async function loadConversationContext(args: {
   // prompt marks them and the model prefers the current copy. One batched
   // resolution for both hit kinds; zero queries when nothing is superseded.
   {
-    const staleIds = [
-      ...contentHits.filter((h) => h.supersededBy).map((h) => h.nodeId),
-      ...chunkHits.filter((h) => h.supersededBy).map((h) => h.nodeId),
-    ];
+    const staleIds = staleNodeIds(contentHits, chunkHits);
     if (staleIds.length > 0) {
       const successors = await resolveSupersededTargets(ownerId, staleIds);
-      const patch = <T extends { nodeId: string; supersededBy?: { id: string; title: string } }>(
-        h: T,
-      ): T => {
-        if (!h.supersededBy) return h;
-        const succ = successors.get(h.nodeId);
-        // A dangling edge (successor deleted) drops the annotation rather
-        // than pointing the model at a ghost.
-        return succ
-          ? { ...h, supersededBy: { id: succ.id, title: succ.title } }
-          : { ...h, supersededBy: undefined };
-      };
-      contentHits = contentHits.map(patch);
-      chunkHits = chunkHits.map(patch);
+      contentHits = patchSuperseded(contentHits, successors);
+      chunkHits = patchSuperseded(chunkHits, successors);
     }
   }
 
@@ -823,29 +622,7 @@ export async function loadConversationContext(args: {
       )
       .orderBy(desc(nodes.updatedAt))
       .limit(corpusMapLimit + 1);
-    const truncated = rows.length > corpusMapLimit;
-    corpusMap = {
-      entries: rows.slice(0, corpusMapLimit).map((r) => {
-        const data = (r.data ?? {}) as Record<string, unknown>;
-        const wantSummary = r.type === 'page' || r.type === 'table';
-        return {
-          nodeId: r.id,
-          type: r.type as string,
-          title: r.title,
-          branch: String(r.path ?? '').split('.')[0] || 'content',
-          summary:
-            wantSummary && typeof data.summary === 'string' ? (data.summary as string) : null,
-          // Tables carry a one-line schema digest (tab names + shape + leading
-          // columns, written by the extractor) so the model knows what's
-          // queryable via table_schema/table_sql without a tool call.
-          schema:
-            r.type === 'table' && typeof data.schemaDigest === 'string'
-              ? (data.schemaDigest as string)
-              : null,
-        };
-      }),
-      truncated,
-    };
+    corpusMap = buildCorpusMap(rows, corpusMapLimit);
   }
 
   // ─── Entity-anchored expansion: the graph axis ──────────────────────────
@@ -884,19 +661,7 @@ export async function loadConversationContext(args: {
           .limit(digestLimit)
       : [];
 
-  const digests: Digest[] = digestRows
-    .reverse()
-    .map((d) => {
-      const data = d.data as Record<string, unknown>;
-      const topic = typeof data.topic === 'string' && data.topic.trim() ? data.topic.trim() : null;
-      return {
-        summary: String(data.summary ?? ''),
-        periodStart: String(data.period_start ?? ''),
-        periodEnd: String(data.period_end ?? ''),
-        topic,
-      };
-    })
-    .filter((d) => d.summary.length > 0);
+  const digests: Digest[] = buildDigests(digestRows);
 
   // ─── Raw recent turns (all channels, per agent) ─────────────────────────
   // Only 'complete' turns are real conversation: the durable runner writes the
@@ -934,26 +699,11 @@ export async function loadConversationContext(args: {
     .where(and(...histConds))
     .orderBy(desc(assistantMessages.createdAt))
     .limit(historyLimit);
-  let historyToolRecords = 0;
-  let historyMediaRecords = 0;
-  const history: HistoryTurn[] = rows.reverse().map((r) => {
-    // Media read-back runs on BOTH directions: a picture the user uploaded is
-    // as re-referenceable as one a tool produced.
-    const media = formatMediaRecordSuffix(r.attachments);
-    if (media) historyMediaRecords++;
-    const withMedia = (text: string) => (media ? `${text}\n${media}` : text);
-    if (r.direction !== 'outbound') return { role: 'user', text: withMedia(r.text) };
-    // Tool-outcome read-back (context-transfer audit, dev-brain task
-    // 64170cb0): the ledger of what an assistant turn actually DID — failures,
-    // approval-queued calls, artifacts written — is otherwise invisible to the
-    // next turn unless the reply prose restated it, which is exactly what
-    // failed in the field ("Where did you update it?"). Appended only when the
-    // record says something the text may not, so chat-only and read-only turns
-    // cost nothing extra.
-    const suffix = formatToolRecordSuffix(r.data);
-    if (suffix) historyToolRecords++;
-    return { role: 'assistant', text: withMedia(suffix ? `${r.text}\n${suffix}` : r.text) };
-  });
+  const {
+    history,
+    toolRecords: historyToolRecords,
+    mediaRecords: historyMediaRecords,
+  } = buildHistory(rows);
 
   const snapshot: ContextSnapshot = {
     query: {
