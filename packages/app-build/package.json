@@ -18,16 +18,16 @@
   "dependencies": {
     "@mantle/share-ui": "workspace:*",
     "@tailwindcss/oxide": "^4.3.3",
-    "esbuild": "^0.28.1",
-    "lucide-react": "^1.25.0",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "esbuild": "^0.28.2",
+    "lucide-react": "^1.38.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.0.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
     "typescript": "^5.7.2"
   }
 }

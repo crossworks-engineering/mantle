@@ -16,13 +16,13 @@
     "@mantle/config": "workspace:*",
     "@mantle/std": "workspace:*",
     "@mantle/voice-client": "workspace:*",
-    "@openrouter/sdk": "^1.2.7",
+    "@openrouter/sdk": "^1.2.85",
     "undici": "^8.10.0"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
     "typescript": "^5.7.2",
-    "vite": "^8.1.5",
-    "vitest": "^4.1.10"
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
   }
 }
