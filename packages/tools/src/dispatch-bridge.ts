@@ -24,6 +24,14 @@ export function registerToolDispatcher(fn: ToolDispatcher): void {
   registered = fn;
 }
 
+/** True once dispatch.ts has been evaluated in this process. The same shape as
+ *  `hasLogSink()` / `hasRecallEmbedder()`, and for the same reason: the whole
+ *  bridge rests on "importing the package index loads dispatch.ts", which is an
+ *  ordering claim no type can hold up. module-graph.test.ts asserts it. */
+export function hasToolDispatcher(): boolean {
+  return registered !== null;
+}
+
 /** dispatchTool via the bridge. Throws a clear error if dispatch.ts has not
  *  been loaded in this process (it always is in the real runtime — index.ts
  *  exports it — so this only bites a test that imports a builtin in isolation). */

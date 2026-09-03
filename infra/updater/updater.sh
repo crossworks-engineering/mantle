@@ -103,6 +103,14 @@ SCRIPTS_REL=scripts
 # The operator scripts the image ships at /app/release/scripts. MUST match the
 # list release.yml puts in the deploy bundle and install.sh fetches — a script
 # in one and not the others is a box that has it stale or not at all.
+#
+# The NAMES are part of the fingerprint (see scripts_sha_of: each line is
+# 'name:hash'), and server/web/lib/updates.ts hardcodes the same list
+# independently. So RENAMING one of these files is not a rename — it shifts the
+# digest on every box, and during a rollout the old updater and the new web
+# image disagree, which reads as "scripts drifted" fleet-wide. That is why
+# scripts/install.sh still shares a name with the root bootstrap (2026-09-03
+# audit); both files carry a header saying which is which instead.
 SCRIPT_NAMES='db-dump.sh db-restore.sh install.sh sanity.sh compose-adopt.sh uninstall.sh'
 
 sha_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }

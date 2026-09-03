@@ -1,5 +1,24 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
+# ── THIS IS THE CONFIGURATOR. ────────────────────────────────────────────────
+# There are two files called install.sh and they do different jobs:
+#
+#   install.sh (repo root)  → THE PUBLIC BOOTSTRAP. The URL people curl. It
+#                             checks docker, downloads the deploy bundle, and
+#                             delegates to this script. It writes no config.
+#   scripts/install.sh      ← you are here. The only thing that writes .env,
+#                             and what an operator re-runs LATER to
+#                             reconfigure a live box (--domain, --local-embedder,
+#                             --check). Ships in the bundle; the updater keeps
+#                             it refreshed from the release.
+#
+# Do not rename this file without reading infra/updater/updater.sh's
+# SCRIPT_NAMES: the filename is part of the operator-script fingerprint that
+# /settings/updates compares, so a rename makes every box report "scripts
+# drifted" until its updater self-refreshes. (2026-09-03 audit; the naming
+# papercut did not justify a fleet-wide false alarm.)
+# ─────────────────────────────────────────────────────────────────────────────
+#
 # Mantle installer — smooth first-run setup for a self-hosted box.
 #
 #   • Asks how the brain should be reached — a domain with HTTPS, this machine

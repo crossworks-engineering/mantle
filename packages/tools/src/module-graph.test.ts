@@ -39,8 +39,25 @@ describe('module graph', () => {
     expect(Array.isArray(mod.PENDING_TOOLS)).toBe(true);
   });
 
-  it('index.ts still registers the dispatcher for the bridge', async () => {
-    const mod = await import('./index');
-    expect(typeof mod.dispatchTool).toBe('function');
+  it('importing the package index ARMS the bridge', async () => {
+    // The load-bearing claim of the whole fix: pending.ts calls dispatchTool
+    // through the bridge, and the bridge throws unless dispatch.ts has been
+    // evaluated. Every real consumer reaches it by importing the index, so
+    // that is what this asserts — not merely that the export exists, which
+    // would still be true if the registration were deleted.
+    const { hasToolDispatcher } = await import('./dispatch-bridge');
+    expect(hasToolDispatcher(), 'nothing has loaded dispatch.ts yet').toBe(false);
+    await import('./index');
+    expect(hasToolDispatcher(), 'index.ts must load dispatch.ts').toBe(true);
+  });
+
+  it('reaching pending.ts through the index arms the bridge too', async () => {
+    // The path that actually matters at runtime: telegram-poll imports
+    // approvePendingCall from the package, taps Approve, and pending.ts
+    // dispatches the parked tool.
+    const { approvePendingCall } = await import('./index');
+    const { hasToolDispatcher } = await import('./dispatch-bridge');
+    expect(typeof approvePendingCall).toBe('function');
+    expect(hasToolDispatcher()).toBe(true);
   });
 });

@@ -1,5 +1,23 @@
 #!/usr/bin/env bash
 #
+# ── THIS IS THE PUBLIC BOOTSTRAP (repo root). ────────────────────────────────
+# There are two files called install.sh and they do different jobs:
+#
+#   install.sh          ← you are here. The URL people curl. Checks docker,
+#                         downloads the deploy bundle, hands over. Never
+#                         writes .env, never touches an existing box's config.
+#   scripts/install.sh  → THE CONFIGURATOR. Ships inside the bundle, writes
+#                         .env, brings the stack up, and is what an operator
+#                         re-runs later to reconfigure (--domain, --check).
+#
+# The names collide, and renaming either is not free: `scripts/install.sh` is
+# in the operator-script FINGERPRINT the updater and /settings/updates compare
+# (infra/updater/updater.sh SCRIPT_NAMES, server/web/lib/updates.ts
+# RELEASE_SCRIPT_NAMES — the name is part of the digest), so changing it makes
+# every box read as "scripts drifted" until its updater self-refreshes. The
+# 2026-09-03 audit weighed that against a naming papercut and kept the names.
+# ─────────────────────────────────────────────────────────────────────────────
+#
 # Mantle one-line installer — pulls the published Docker image and starts the
 # full stack with generated secrets. No manual .env editing needed for a
 # localhost install; a domain install is one env var.

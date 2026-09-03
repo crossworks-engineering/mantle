@@ -241,7 +241,13 @@ const RELEASE_SCRIPTS_DIR = env('MANTLE_RELEASE_SCRIPTS_DIR') ?? '/app/release/s
 
 /** The operator scripts, in the order the updater hashes them. MUST match
  *  SCRIPT_NAMES in infra/updater/updater.sh — the two fingerprints are
- *  compared, so a different order or set makes every box read as drifted. */
+ *  compared, so a different order or set makes every box read as drifted.
+ *
+ *  That includes RENAMING one: the name is hashed alongside the content, and
+ *  a rollout in which the old updater still writes the old list while this
+ *  build reads the new one reports drift on every box. It is why
+ *  scripts/install.sh keeps a name it shares with the root bootstrap
+ *  (2026-09-03 audit) — the two files carry disambiguating headers instead. */
 const RELEASE_SCRIPT_NAMES = [
   'db-dump.sh',
   'db-restore.sh',
