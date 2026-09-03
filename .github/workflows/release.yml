@@ -64,7 +64,7 @@ jobs:
     env:
       CI_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Verify gate (the 2026-09-02 audit finding): nothing here waited for
       # build-check, so a tag could ship images that never passed a test.
@@ -149,7 +149,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Platform label
         run: |
@@ -272,7 +272,7 @@ jobs:
     permissions:
       contents: write # create the release + upload assets
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Assemble deploy bundle
         run: |
