@@ -14,6 +14,7 @@
   "dependencies": {
     "@mantle/config": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/std": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "pg-boss": "^12.26.1"
   },

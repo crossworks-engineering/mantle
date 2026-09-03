@@ -28,12 +28,12 @@
  */
 
 import { sanitizedEnv } from './sanitized-env';
+import { capOutput } from './output-cap';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { env } from '@mantle/config';
 
 const DEFAULT_TIMEOUT_S = 120;
 const MAX_TIMEOUT_S = 1800;
-const OUTPUT_CAP = 64 * 1024; // per stream, shown to the model
 const MAX_BUFFER = 16 * 1024 * 1024; // raw capture ceiling before truncation
 
 /** Default working directory: MANTLE_TERMINAL_CWD if set, else the process cwd
@@ -41,14 +41,6 @@ const MAX_BUFFER = 16 * 1024 * 1024; // raw capture ceiling before truncation
 function resolveCwd(override?: unknown): string {
   if (typeof override === 'string' && override.trim()) return override;
   return env('MANTLE_TERMINAL_CWD') || process.cwd();
-}
-
-function truncate(s: string): { text: string; truncated: boolean } {
-  if (s.length <= OUTPUT_CAP) return { text: s, truncated: false };
-  return {
-    text: `${s.slice(0, OUTPUT_CAP)}\n…[truncated ${s.length - OUTPUT_CAP} chars]`,
-    truncated: true,
-  };
 }
 
 const run_terminal: BuiltinToolDef = {
@@ -108,8 +100,8 @@ const run_terminal: BuiltinToolDef = {
         },
         (err, stdout, stderr) => {
           const durationMs = Date.now() - started;
-          const out = truncate(String(stdout));
-          const errOut = truncate(String(stderr));
+          const out = capOutput(String(stdout));
+          const errOut = capOutput(String(stderr));
           const e = err as
             | (NodeJS.ErrnoException & {
                 code?: number | string;

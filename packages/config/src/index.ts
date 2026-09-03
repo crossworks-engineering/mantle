@@ -34,7 +34,12 @@
  * its own config block).
  */
 
-/** Every environment variable the server tree reads (130 names). Keep sorted. */
+/** Every environment variable the server tree reads. Keep sorted.
+ *
+ *  Adding a name here is half the job: `env-coverage.test.ts` also requires it
+ *  to be either documented in `.env.example` or listed in {@link INTERNAL_ENV}
+ *  below with the reason nobody sets it by hand. The 2026-09 audit found 99
+ *  names that were neither, so a dial existed that no operator could find. */
 export type KnownEnvName =
   | 'AGENT_SLUG'
   | 'ALLOWED_USER_ID'
@@ -180,6 +185,61 @@ export const ENV_ALIASES: Partial<Record<KnownEnvName, string>> = {
   MANTLE_API_TOKEN: 'NEXT_PUBLIC_MANTLE_API_TOKEN',
   MANTLE_NEAT_LICENSE_KEY: 'NEXT_PUBLIC_NEAT_LICENSE_KEY',
   MANTLE_TURN_STREAMING: 'NEXT_PUBLIC_MANTLE_TURN_STREAMING',
+};
+
+/**
+ * Names deliberately absent from `.env.example`, and why.
+ *
+ * Two kinds, and the distinction is the point: a PLATFORM name is supplied by
+ * compose, Docker or the release image, so writing it into a hand-edited .env
+ * would be at best redundant and at worst a way to fight the platform; a SCRIPT
+ * name is an argument to a one-off CLI or test harness, meaningful only on the
+ * command line that runs it.
+ *
+ * Anything that an operator might reasonably want to change on a running box
+ * belongs in `.env.example` instead — that is the line this list must not blur.
+ */
+export const INTERNAL_ENV: Partial<Record<KnownEnvName, string>> = {
+  // Platform: the runtime, the image build, or compose sets these.
+  NODE_ENV: 'platform: set by the runtime',
+  PORT: 'platform: the port the server binds, set by compose',
+  HOST: 'platform: the interface the server binds, set by compose',
+  MANTLE_GIT_SHA: 'platform: baked into the image at build time',
+  MANTLE_BUILD_TIME: 'platform: baked into the image at build time',
+  MANTLE_RUNNER_VERSION: 'platform: bumped by a release to force a clean DBOS version',
+  DOCKER_SOCK: 'platform: the Docker socket path sandboxd is given',
+  MANTLE_HEARTBEAT_FILE: 'platform: per-container heartbeat path for the healthcheck',
+  MANTLE_UPDATE_SIGNAL_DIR: 'platform: the /signal mount the updater watches',
+  MANTLE_PRINT_ORIGIN: 'platform: how the print sidecar reaches the web tier, set by compose',
+  DBOS_SYSTEM_DATABASE_URL: 'platform: defaults to DATABASE_URL; split only by the runner image',
+  APP_RUNTIME_OUT: 'platform: output path for the app-runtime build script',
+  MANTLE_APP_RUNTIME_MANIFEST: 'platform: override for the generated app-runtime manifest',
+  SANDBOXD_PORT: 'platform: the port sandboxd binds inside its container',
+  SANDBOX_NETWORK: 'platform: the Docker network name compose creates',
+  SANDBOX_NETWORK_RESTRICTED: 'platform: the restricted Docker network name compose creates',
+  SANDBOX_EGRESS_PROXY_HOST: 'platform: where the egress proxy listens, set by compose',
+  SANDBOX_EGRESS_PROXY_PORT: 'platform: where the egress proxy listens, set by compose',
+  SANDBOX_INBOX_ROOT: 'platform: derived from MANTLE_FILES_HOST_DIR by compose',
+  MANTLE_RELEASE_COMPOSE_PATH: 'platform: path inside the release image',
+  MANTLE_RELEASE_CLIENT_COMPOSE_PATH: 'platform: path inside the release image',
+  MANTLE_RELEASE_CLIENT_TAG_PATH: 'platform: path inside the release image',
+  MANTLE_RELEASE_UPDATER_PATH: 'platform: path inside the release image',
+  MANTLE_RELEASE_CADDYFILE_PATH: 'platform: path inside the release image',
+  MANTLE_RELEASE_SCRIPTS_DIR: 'platform: path inside the release image',
+
+  // Script: an argument to a one-off CLI or test harness, not box config.
+  AGENT_SLUG: 'script: target agent for the seed-* scripts',
+  ATTACH_AGENT: 'script: agent to attach a seeded skill to',
+  TG_CHAT_ID: 'script: chat id for seed-get-to-know-user',
+  VERIFY_OWNER_ID: 'script: owner for verify-push-m2',
+  VERIFY_AGENT_SLUG: 'script: agent for verify-push-m2',
+  DOCS_MODEL: 'script: model for seed-docs',
+  MANTLE_MCP_DIR: 'script: where the dev MCP bridge finds server/mcp',
+  MANTLE_DEV_EMAIL: 'script: display email for the detached dev session',
+  MANTLE_CRASH_TEST: 'script: the crash-test harness in server/api',
+  CRASH_MARKER: 'script: the crash-test harness in server/api',
+  CRASH_POINT: 'script: the crash-test harness in server/api',
+  CRASH_TEST_SHAPE: 'script: the crash-test harness in server/api',
 };
 
 const warnedAliases = new Set<string>();

@@ -541,6 +541,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(pg@8.22.0)(postgres@3.4.9)

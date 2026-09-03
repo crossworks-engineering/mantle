@@ -10,6 +10,8 @@
  * (if genuinely needed) goes through `table_get`, which spills to the
  * read_result store. Pure, no DB.
  */
+
+import { truncate } from '@mantle/std';
 import {
   applyView,
   resolveCell,
@@ -51,9 +53,11 @@ export type ListRowsOptions = {
   previewChars?: number;
 };
 
-function truncate(s: string, max: number): string {
-  const flat = s.replace(/\r?\n/g, ' ').trim();
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+/** One-line cell preview. The flatten is newline-only ON PURPOSE — a cell with
+ *  a run of spaces keeps it, so the preview matches what the grid shows. The
+ *  cap itself is the shared one. */
+function cellPreview(s: string, max: number): string {
+  return truncate(s.replace(/\r?\n/g, ' ').trim(), max);
 }
 
 export function listRows(doc: TableDoc, opts: ListRowsOptions = {}): RowListResult {
@@ -75,7 +79,7 @@ export function listRows(doc: TableDoc, opts: ListRowsOptions = {}): RowListResu
     for (const col of doc.columns) {
       if (want && !want.has(col.id)) continue;
       const text = formatCellText(resolveCell(doc, row, col), col);
-      if (text) cells[col.id] = truncate(text, previewChars);
+      if (text) cells[col.id] = cellPreview(text, previewChars);
     }
     return { id: row.id, index: offset + i, cells };
   });

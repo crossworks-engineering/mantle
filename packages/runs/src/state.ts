@@ -8,6 +8,8 @@
  * failures, truncated), never full tool outputs — those live on the item's
  * trace (`trace_ref`) and are fetched only when wanted.
  */
+
+import { truncate } from '@mantle/std';
 import { asc, eq } from 'drizzle-orm';
 import { runItems, runs, type Db, type RunItemRow, type RunRow } from '@mantle/db';
 
@@ -71,9 +73,11 @@ export type CompiledRun = {
   totals: { items: number; byState: Record<string, number>; costMicroUsd: number };
 };
 
-function truncate(s: string, max = OUTCOME_MAX_CHARS): string {
-  const oneLine = s.replace(/\s+/g, ' ').trim();
-  return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max - 1)}…`;
+/** One-line outcome label. Collapses ANY whitespace run, unlike the table cell
+ *  preview which keeps spaces — a run outcome is prose, not tabular. The cap
+ *  itself is the shared one. */
+function flatCap(s: string, max = OUTCOME_MAX_CHARS): string {
+  return truncate(s.replace(/\s+/g, ' ').trim(), max);
 }
 
 function labelFor(item: RunItemRow): string {
@@ -89,15 +93,15 @@ function labelFor(item: RunItemRow): string {
       return args.length > 0 ? `tool ${tool}(${args.join(', ')})` : `tool ${tool}()`;
     }
     case 'note':
-      return typeof p.text === 'string' ? `note: ${truncate(p.text, 80)}` : 'note';
+      return typeof p.text === 'string' ? `note: ${flatCap(p.text, 80)}` : 'note';
     case 'worker_invoke': {
       const who = typeof p.worker === 'string' ? p.worker : 'worker';
-      return typeof p.step === 'string' ? `${who}: ${truncate(p.step, 80)}` : who;
+      return typeof p.step === 'string' ? `${who}: ${flatCap(p.step, 80)}` : who;
     }
     case 'audit':
       return 'audit';
     case 'ask_human':
-      return typeof p.question === 'string' ? `ask: ${truncate(p.question, 80)}` : 'ask human';
+      return typeof p.question === 'string' ? `ask: ${flatCap(p.question, 80)}` : 'ask human';
   }
 }
 
@@ -105,7 +109,7 @@ function outcomeFor(item: RunItemRow): string | undefined {
   const r = item.result as Record<string, unknown> | null;
   if (!r) return undefined;
   const failure = r.failure as { type?: string; message?: string } | undefined;
-  if (failure) return truncate(`FAILED (${failure.type ?? 'error'}): ${failure.message ?? ''}`);
+  if (failure) return flatCap(`FAILED (${failure.type ?? 'error'}): ${failure.message ?? ''}`);
   if (r.summary && typeof r.summary === 'object') {
     const s = r.summary as Record<string, unknown>;
     return `done=${s.done ?? 0} failed=${s.failed ?? 0} cancelled=${s.cancelled ?? 0}`;
@@ -117,20 +121,20 @@ function outcomeFor(item: RunItemRow): string | undefined {
   // An answered question: the operator's decision is the outcome, and it is
   // the one thing later steps reason from — render it, never omit it.
   // The per-question lines are joined with ' · ' BEFORE truncation, because
-  // the state renderer is line-based and `truncate` collapses newlines to
+  // the state renderer is line-based and `flatCap` collapses newlines to
   // bare spaces — which would run "Target: production" and "Timing: tonight"
   // together into one ambiguous phrase.
   if (typeof r.answer === 'string') {
-    const oneLine = r.answer
+    const joined = r.answer
       .split('\n')
       .map((l) => l.trim())
       .filter(Boolean)
       .join(' · ');
-    return truncate(`answered: ${oneLine}`, ANSWER_MAX_CHARS);
+    return flatCap(`answered: ${joined}`, ANSWER_MAX_CHARS);
   }
-  if (typeof r.proposal === 'string') return truncate(r.proposal);
-  if (typeof r.output === 'string') return truncate(r.output);
-  if (r.output !== undefined) return truncate(JSON.stringify(r.output));
+  if (typeof r.proposal === 'string') return flatCap(r.proposal);
+  if (typeof r.output === 'string') return flatCap(r.output);
+  if (r.output !== undefined) return flatCap(JSON.stringify(r.output));
   return undefined;
 }
 

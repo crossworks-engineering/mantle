@@ -44,12 +44,12 @@ import { and, eq } from 'drizzle-orm';
 import { db, toolGroups, type ToolGroupIntegration } from '@mantle/db';
 import { randomUUID } from 'node:crypto';
 import { notFound } from './errors';
+import { capOutput } from './output-cap';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
 import { env } from '@mantle/config';
 
 const DEFAULT_TIMEOUT_S = 120;
 const MAX_TIMEOUT_S = 1800;
-const OUTPUT_CAP = 64 * 1024; // per stream, shown to the model (matches run_terminal)
 
 /* ── sandboxd client ──────────────────────────────────────────────────── */
 
@@ -164,14 +164,6 @@ async function ensureExportsFolder(ownerId: string): Promise<void> {
   } catch (err) {
     if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
   }
-}
-
-function truncate(s: string): { text: string; truncated: boolean } {
-  if (s.length <= OUTPUT_CAP) return { text: s, truncated: false };
-  return {
-    text: `${s.slice(0, OUTPUT_CAP)}\n…[truncated ${s.length - OUTPUT_CAP} chars]`,
-    truncated: true,
-  };
 }
 
 /* ── tools ────────────────────────────────────────────────────────────── */
@@ -382,8 +374,8 @@ const sandbox_exec: BuiltinToolDef = {
     if (!res.ok) return res;
     await Promise.all([touchSandbox(row.id), setSandboxStatus(row.id, 'running')]);
 
-    const out = truncate(String(res.data.stdout ?? ''));
-    const errOut = truncate(String(res.data.stderr ?? ''));
+    const out = capOutput(String(res.data.stdout ?? ''));
+    const errOut = capOutput(String(res.data.stderr ?? ''));
     const { exitCode = null, timedOut = false, durationMs = null, cwd } = res.data;
     ctx.step?.setMeta({ exitCode, timedOut, durationMs });
     ctx.step?.setOutput({ exitCode, timedOut, durationMs });
@@ -972,7 +964,7 @@ const sandbox_mcp_call: BuiltinToolDef = {
       .map((c) => (typeof c.text === 'string' ? c.text : ''))
       .filter(Boolean)
       .join('\n');
-    const out = truncate(text);
+    const out = capOutput(text);
     ctx.step?.setOutput({ isError: result.isError === true, bytes: text.length });
     return {
       ok: true,
