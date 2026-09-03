@@ -16,7 +16,7 @@
     "@mantle/db": "workspace:*",
     "@mantle/std": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "grammy": "^1.45.1"
+    "grammy": "^1.46.0"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
