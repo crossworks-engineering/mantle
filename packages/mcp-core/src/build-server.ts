@@ -29,28 +29,13 @@
  * with no route to any of that — is unconditional on both.
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { db, nodes } from '@mantle/db';
-import { searchNodes } from '@mantle/search';
-import { embed } from '@mantle/embeddings';
-import { describeResponderPersona, runSimulatedResponderTurn } from '@mantle/runtime/assistant';
+import {} from '@mantle/files';
 import {
-  fileById,
-  folderByPath,
-  readFileById,
-  renameFileById,
-  renameFolderById,
-  updateFolderDescription,
-} from '@mantle/files';
-import {
-  checkToolPreconditions,
   CONTACT_TOOLS,
   WORKER_DELEGATION_TOOLS,
   EXPORT_TOOLS,
   SHEET_TOOLS,
-  PAGE_TOOLS,
   DRAW_TOOLS,
-  TABLE_TOOLS,
   APP_TOOLS,
   TOOLSMITH_TOOLS,
   NOTE_TOOLS,
@@ -59,7 +44,6 @@ import {
   JOURNAL_TOOLS,
   PEER_TOOLS,
   EMAIL_TOOLS,
-  FILE_MANAGE_TOOLS,
   RECALL_TOOLS,
   SANDBOX_TOOLS,
   NODE_READ_TOOLS,
@@ -68,7 +52,6 @@ import {
   FILE_TOOLS,
   TELEGRAM_TOOLS,
   TELEGRAM_OPERATOR_TOOLS,
-  FILE_OPERATOR_TOOLS,
   NOTE_OPERATOR_TOOLS,
   PENDING_TOOLS,
   WORKER_GROUP_TOOLS,
@@ -96,18 +79,14 @@ import {
   EVAL_TOOLS,
   TERMINAL_TOOLS,
 } from '@mantle/tools';
-import type { BuiltinToolDef } from '@mantle/tools';
-import {
-  getPage,
-  getTable,
-  listPages,
-  listTables,
-  listRows,
-  ensureTableDoc,
-} from '@mantle/content';
-import { and, eq } from 'drizzle-orm';
+import {} from '@mantle/content';
 import { env } from '@mantle/config';
-import { errorMessage } from '@mantle/std';
+import { makeRegisterContext } from './register/context';
+import { registerSearchTools } from './register/search';
+import { registerFileTools } from './register/files';
+import { registerPageTools } from './register/pages';
+import { registerTableTools } from './register/tables';
+import { registerResponderTools } from './register/responder';
 
 /** Mutating Toolsmith tools — gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
  *  ON). Module-scope (env is process-stable) so the gate is evaluated once, not
@@ -147,272 +126,11 @@ export function registerMantleTools(
   opts: { transport?: MantleMcpTransport } = {},
 ): void {
   const transport = opts.transport ?? 'http';
-  // Explicit env wins in both directions: =1 opts a network surface in, =0 opts
-  // a local one out. Unset means stdio yes, HTTP no.
-  const terminalEnv = env('MANTLE_MCP_TERMINAL') ?? '';
-  const exposeTerminal = /^(1|true|on|yes)$/i.test(terminalEnv)
-    ? true
-    : /^(0|false|off|no)$/i.test(terminalEnv)
-      ? false
-      : transport === 'stdio';
-  // ─── response hygiene ───────────────────────────────────────────────────────
-  // MCP tool results are serialised straight into the model's context, so they
-  // must NOT leak raw DB internals. A `select()` row carries `embedding` (768
-  // floats ≈ 9 KB) and `searchTsv` (the full tsvector ≈ 50 KB on a big doc) —
-  // pure noise to a reader that blows the context budget (a single `search` hit
-  // measured 125 KB, an `entity_search` for one name 76 KB, ~98% vectors). Strip
-  // those keys from every row before it goes out. See docs/recall-eval.md and the
-  // audit that motivated this.
-  const STRIP_KEYS = new Set(['embedding', 'searchTsv', 'search_tsv']);
-  function stripVectors<T>(value: T): T {
-    if (Array.isArray(value)) return value.map((v) => stripVectors(v)) as unknown as T;
-    if (value && typeof value === 'object') {
-      const out: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        if (STRIP_KEYS.has(k)) continue;
-        out[k] = stripVectors(v);
-      }
-      return out as T;
-    }
-    return value;
-  }
+  const ctx = makeRegisterContext(server, ownerId, transport);
+  const { exposeTerminal, registerBuiltinTools } = ctx;
 
-  /** Standard JSON tool reply, with vectors/tsvector stripped. */
-  function jsonReply(value: unknown) {
-    return {
-      content: [{ type: 'text' as const, text: JSON.stringify(stripVectors(value), null, 2) }],
-    };
-  }
-
-  /** Lean projection of a node for list/search results: the "spine" (title, tags,
-   *  summary), never the full body (`data.content`) or the index internals. Use
-   *  node_read / file_read to fetch a body on demand. Mirrors the in-process
-   *  `search_nodes` builtin so the two tool surfaces don't drift. */
-  function leanNode(n: {
-    id: string;
-    type: string;
-    title: string;
-    path: string | null;
-    tags: string[] | null;
-    data: unknown;
-    updatedAt: Date;
-  }) {
-    const data = (n.data ?? {}) as Record<string, unknown>;
-    return {
-      id: n.id,
-      type: n.type,
-      title: n.title,
-      path: n.path,
-      tags: n.tags,
-      summary: typeof data.summary === 'string' ? data.summary : null,
-      updatedAt: n.updatedAt instanceof Date ? n.updatedAt.toISOString() : n.updatedAt,
-    };
-  }
-
-  server.tool(
-    'tree_list',
-    'List children of a branch in the Mantle tree. Pass no path for top-level branches.',
-    { path: z.string().optional() },
-    async ({ path }) => {
-      const rows = await db
-        .select({ id: nodes.id, title: nodes.title, type: nodes.type, path: nodes.path })
-        .from(nodes)
-        .where(
-          and(eq(nodes.ownerId, ownerId), path ? eq(nodes.path, path) : eq(nodes.type, 'branch')),
-        )
-        .limit(200);
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'search',
-    "Hybrid semantic + full-text search over the user's Mantle — ranks by meaning (vector) with keyword as a booster, so vague/natural queries work, not just exact words. Use `branch` (ltree path) to scope, `type` to filter. Returns the spine (title, tags, summary) — use node_read / file_read / email_get for a full body.",
-    {
-      q: z.string().optional(),
-      branch: z.string().optional(),
-      type: z
-        .enum([
-          'branch',
-          'email',
-          'email_thread',
-          'file',
-          'note',
-          'page',
-          'sermon',
-          'contact',
-          'secret',
-          'task',
-          'event',
-          'printer_project',
-          'telegram_message',
-          'documentation',
-          'formula',
-          'draw',
-        ])
-        .optional(),
-      tags: z.array(z.string()).optional(),
-      since: z.string().datetime().optional(),
-      limit: z.number().int().min(1).max(200).optional(),
-    },
-    async ({ q, branch, type, tags, since, limit }) => {
-      // Embed the query so searchNodes runs its hybrid (vector-led) ranker. The
-      // legacy FTS-only path recalled ~8% on natural-language queries
-      // (docs/recall-eval.md); a failed embed degrades to FTS, not an error.
-      let queryEmbedding: number[] | undefined;
-      if (q && q.trim()) {
-        try {
-          queryEmbedding = await embed(ownerId, q);
-        } catch (err) {
-          console.error('[search] query embed failed, falling back to FTS:', err);
-        }
-      }
-      const results = await searchNodes({
-        ownerId: ownerId,
-        q,
-        branch,
-        type,
-        tags,
-        since: since ? new Date(since) : undefined,
-        limit,
-        queryEmbedding,
-      });
-      return jsonReply(results.map(leanNode));
-    },
-  );
-
-  // ─── files / folders ──────────────────────────────────────────────────────
-
-  // Create and destroy: bridged from `mcpOnly` builtins since tier 3 of the
-  // 2026-09-02 audit. No in-app tool group grants these, so promoting them
-  // shared the implementation without widening what any agent can reach.
-  registerBuiltinTools(FILE_OPERATOR_TOOLS);
-
-  server.tool(
-    'folder_describe',
-    "Set or clear a folder's description. Useful for agents that just created a folder and want to document what goes in it.",
-    {
-      folder_id: z.string().uuid().optional(),
-      path: z.string().optional(),
-      description: z.string().max(2000),
-    },
-    async ({ folder_id, path, description }) => {
-      let id = folder_id ?? null;
-      if (!id && path) {
-        const found = await folderByPath({ ownerId: ownerId, path });
-        id = found?.id ?? null;
-      }
-      if (!id) {
-        return {
-          content: [{ type: 'text', text: 'folder_describe: pass folder_id or path' }],
-          isError: true,
-        };
-      }
-      const updated = await updateFolderDescription({
-        ownerId: ownerId,
-        folderId: id,
-        description,
-      });
-      if (!updated) {
-        return { content: [{ type: 'text', text: 'folder not found' }], isError: true };
-      }
-      return jsonReply(updated);
-    },
-  );
-
-  server.tool(
-    'folder_rename',
-    'Rename a folder in place. `new_name` is lowercased + sanitised. Every file and sub-folder inside moves with it (their paths update). Pass `folder_id` or `path`. Cannot rename the `files` root.',
-    {
-      folder_id: z.string().uuid().optional(),
-      path: z.string().optional(),
-      new_name: z.string().min(1).max(64),
-    },
-    async ({ folder_id, path, new_name }) => {
-      let id = folder_id ?? null;
-      if (!id && path) {
-        const found = await folderByPath({ ownerId: ownerId, path });
-        id = found?.id ?? null;
-      }
-      if (!id) {
-        return {
-          content: [{ type: 'text', text: 'folder_rename: pass folder_id or path' }],
-          isError: true,
-        };
-      }
-      try {
-        const updated = await renameFolderById({
-          ownerId: ownerId,
-          folderId: id,
-          newSlug: new_name,
-        });
-        if (!updated) {
-          return { content: [{ type: 'text', text: 'folder not found' }], isError: true };
-        }
-        return jsonReply(updated);
-      } catch (err) {
-        const msg = errorMessage(err);
-        return { content: [{ type: 'text', text: `folder_rename failed: ${msg}` }], isError: true };
-      }
-    },
-  );
-
-  // File-manager verbs + the indexing switch: BRIDGED from @mantle/tools so
-  // MCP runs the same implementation as in-app agents (same teaching errors,
-  // same indexing reconciliation) — hand-written twins rot, see
-  // no-duplicate-tools.test.ts.
-  registerBuiltinTools(FILE_MANAGE_TOOLS);
-
-  server.tool(
-    'file_read',
-    'Read a file by id. For text files returns the content as a utf-8 string; for binaries returns base64-encoded bytes (only call this on small files).',
-    { file_id: z.string().uuid() },
-    async ({ file_id }) => {
-      const res = await readFileById({ ownerId: ownerId, fileId: file_id });
-      if (!res) {
-        return { content: [{ type: 'text', text: 'file not found' }], isError: true };
-      }
-      const isText = res.row.isText;
-      const out = {
-        file: res.row,
-        ...(isText
-          ? { content_text: res.bytes.toString('utf8') }
-          : { content_base64: res.bytes.toString('base64') }),
-      };
-      return jsonReply(out);
-    },
-  );
-
-  server.tool(
-    'file_get',
-    "Fetch a file's metadata by id without loading bytes. Useful for resolving a uuid surfaced by search before deciding what to do with it.",
-    { file_id: z.string().uuid() },
-    async ({ file_id }) => {
-      const row = await fileById({ ownerId: ownerId, fileId: file_id });
-      if (!row) {
-        return { content: [{ type: 'text', text: 'file not found' }], isError: true };
-      }
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'file_rename',
-    'Rename a file in place — its folder and extension are kept, only the basename changes. `new_stem` is the new name WITHOUT the extension (e.g. `huntsman-report` → `customerx-report`).',
-    { file_id: z.string().uuid(), new_stem: z.string().min(1).max(200) },
-    async ({ file_id, new_stem }) => {
-      try {
-        const row = await renameFileById({ ownerId: ownerId, fileId: file_id, newStem: new_stem });
-        if (!row) {
-          return { content: [{ type: 'text', text: 'file not found' }], isError: true };
-        }
-        return jsonReply(row);
-      } catch (err) {
-        const msg = errorMessage(err);
-        return { content: [{ type: 'text', text: `file_rename failed: ${msg}` }], isError: true };
-      }
-    },
-  );
+  registerSearchTools(ctx);
+  registerFileTools(ctx);
 
   // ─── owner-operator surface: approvals, panels, the Telegram inbox ────────
   // Bridged from `mcpOnly` builtins since tier 3 of the 2026-09-02 audit; they
@@ -469,48 +187,7 @@ export function registerMantleTools(
   // The one exception: there is no note_delete builtin — the in-app agent
   // cannot delete notes — so MCP's own registration is not a duplicate and
   // stays hand-written.
-
-  // ─── Pages (read-only) ─────────────────────────────────────────────────────
-  //
-  // Rich TipTap documents (type='page'). Read-only over MCP for now — pages are
-  // authored in the web editor; the assistant finds and reads them. page_list
-  // omits the document body; page_get returns the full ProseMirror JSON.
-
-  server.tool(
-    'page_list',
-    "List the owner's pages. Optional `query` substring-matches title/body/summary; `tag` filters to pages carrying that tag. Bodies are omitted — use page_get for the full document.",
-    {
-      query: z.string().optional(),
-      tag: z.string().optional(),
-    },
-    async ({ query, tag }) => {
-      const rows = await listPages(ownerId, { query, tag });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'page_get',
-    'Get a single page by id, including its full ProseMirror/TipTap document.',
-    { id: z.string() },
-    async ({ id }) => {
-      const row = await getPage(ownerId, id);
-      if (!row) return { content: [{ type: 'text', text: 'not found' }], isError: true };
-      return jsonReply(row);
-    },
-  );
-
-  // ─── Pages (write) ───────────────────────────────────────────────────────────
-  // The rich-document authoring surface — create pages (blank / from a file,
-  // note(s), or journal), edit metadata + draft body, and do block-level edits
-  // (list/get/update/insert/delete/split/extract/move blocks) plus mention/share.
-  // Bridged from the in-app PAGE_TOOLS so an MCP client authors with the exact
-  // same tested handlers the `pages` agent uses. page_list/page_get are skipped:
-  // they're already hand-wired above (those return the raw ProseMirror document;
-  // the builtin read tools return plaintext + block ids — left as the read path
-  // for the in-app agent to avoid changing the existing MCP read shape).
-  const PAGE_READ_SLUGS = new Set(['page_list', 'page_get']);
-  registerBuiltinTools(PAGE_TOOLS, { skip: (def) => PAGE_READ_SLUGS.has(def.slug) });
+  registerPageTools(ctx);
 
   // ─── Draw (read-only) ──────────────────────────────────────────────────────
   // Whiteboard scenes (type='draw'). Read-only over MCP — drawings are
@@ -518,231 +195,9 @@ export function registerMantleTools(
   // headings, shape labels, `A -> B: label` relations). Bridged from the
   // in-app DRAW_TOOLS: same tested handlers, plaintext read shape.
   registerBuiltinTools(DRAW_TOOLS);
-
-  // ─── Tables (read-only) ────────────────────────────────────────────────────
-  //
-  // Typed database grids (type='table'). Read-only over MCP — tables are authored
-  // in the web grid editor + by the Tables agent. table_list omits the grid;
-  // table_get returns columns + a row window; table_rows_list is the addressable
-  // row snapshot.
-
-  server.tool(
-    'table_list',
-    "List the owner's tables. Optional `query` substring-matches title/body/summary; `tag` filters. Grids are summarised (column + row counts) — use table_get for content.",
-    {
-      query: z.string().optional(),
-      tag: z.string().optional(),
-    },
-    async ({ query, tag }) => {
-      const rows = await listTables(ownerId, { query, tag });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'table_get',
-    'Get a single table by id: its columns and a window of rows (formula columns resolved). `offset`/`limit` page large grids.',
-    { id: z.string(), offset: z.number().optional(), limit: z.number().optional() },
-    async ({ id, offset, limit }) => {
-      const row = await getTable(ownerId, id);
-      if (!row) return { content: [{ type: 'text', text: 'not found' }], isError: true };
-      const doc = ensureTableDoc(row.data);
-      const listed = listRows(doc, { offset: offset ?? 0, limit: limit ?? 100 });
-      const out = {
-        id: row.id,
-        title: row.title,
-        tags: row.tags,
-        summary: row.summary,
-        columns: doc.columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
-        rows: listed.rows,
-        total_rows: listed.total,
-        aggregates: doc.aggregates ?? {},
-      };
-      return jsonReply(out);
-    },
-  );
-
-  server.tool(
-    'table_rows_list',
-    "Windowed snapshot of a table's rows — each a stable id + short per-cell text. Page via offset/limit.",
-    { table_id: z.string(), offset: z.number().optional(), limit: z.number().optional() },
-    async ({ table_id, offset, limit }) => {
-      const row = await getTable(ownerId, table_id);
-      if (!row) return { content: [{ type: 'text', text: 'not found' }], isError: true };
-      const listed = listRows(ensureTableDoc(row.data), {
-        offset: offset ?? 0,
-        limit: limit ?? 50,
-      });
-      return jsonReply(listed);
-    },
-  );
-
-  // ─── Tables (write) ───────────────────────────────────────────────────────────
-  // Build + operate typed data grids: create (blank / from a file or text),
-  // update metadata, edit rows (add/update/delete + per-cell set), edit columns
-  // (add/update/delete), set aggregates + views, query/aggregate over rows, and
-  // commit drafts. Bridged from the in-app TABLE_TOOLS so an MCP client uses the
-  // same tested handlers the Tables agent uses. table_list/table_get/
-  // table_rows_list are skipped — already hand-wired above (read-only) — to keep
-  // the existing MCP read shape unchanged.
-  const TABLE_READ_SLUGS = new Set(['table_list', 'table_get', 'table_rows_list']);
-  registerBuiltinTools(TABLE_TOOLS, { skip: (def) => TABLE_READ_SLUGS.has(def.slug) });
+  registerTableTools(ctx);
 
   // ── Federation: query other people's Mantles for data they've shared ─────────
-  /* ───────────────────────── Toolsmith over MCP ──────────────────────────
-   *
-   * The api_tool_* / tool_group_* / agent_* / web_fetch / api_key_refs set
-   * lets an MCP client (Claude Code, Claude Desktop) author, test, group,
-   * and grant templated HTTP API tools — the same capability the in-app
-   * Toolsmith agent has, on the user's own Claude subscription instead of
-   * Mantle's metered API key. "Read these Mapbox docs and build me the
-   * tool set" works end-to-end from Claude Code.
-   *
-   * Registered straight from TOOLSMITH_TOOLS (single source of truth) via
-   * a JSON-Schema→zod shape bridge, so the two surfaces cannot drift. The
-   * handlers run with the MCP process's ownerId — same trust model as
-   * every other tool in this file.
-   *
-   * Scoping: the read-only set (list/get/test/api_key_refs/api_docs_get/
-   * web_fetch) is always exposed. The mutating set — authoring
-   * (create/update/delete), grouping (tool_group_ensure), the integration
-   * writes (api_docs_set / api_skill_set), and granting
-   * (agent_grant_tool_group) — is gated on MANTLE_MCP_TOOLSMITH_WRITE,
-   * which defaults ON. Set it to
-   * 0/false/off on a shared or headless deployment to expose Toolsmith
-   * read-only while keeping tool authoring + granting to the in-app agent.
-   */
-
-  /** Convert one JSON-Schema property def into a zod type. Honors `items` for
-   *  arrays, `integer` (vs number), nested object `properties`, `[T,'null']`
-   *  nullable unions, and the size bounds (`minLength`/`maxLength`,
-   *  `minimum`/`maximum`, `minItems`/`maxItems`) — so validation isn't silently
-   *  dropped if a def grows past the original string/number/boolean/array
-   *  vocabulary.
-   *
-   *  The bounds matter as much as the types: `validate-args` enforces them for
-   *  the in-app agent, so dropping them here would leave the MCP surface the
-   *  only one that accepts a 10 000-character title. */
-  function zodForDef(def: Record<string, unknown>): z.ZodTypeAny {
-    const type = def.type;
-    if (Array.isArray(def.enum) && def.enum.every((v) => typeof v === 'string')) {
-      return z.enum(def.enum as [string, ...string[]]);
-    }
-    if (Array.isArray(type)) {
-      const base = type.find((x) => x !== 'null');
-      const inner = base ? zodForDef({ ...def, type: base }) : z.unknown();
-      return type.includes('null') ? inner.nullable() : inner;
-    }
-    const bound = (key: string): number | undefined =>
-      typeof def[key] === 'number' ? (def[key] as number) : undefined;
-    /** Apply a `[min, max]` pair, skipping the ends the schema left open. */
-    const bounded = <T extends { min(n: number): T; max(n: number): T }>(
-      t: T,
-      minKey: string,
-      maxKey: string,
-    ): T => {
-      const min = bound(minKey);
-      const max = bound(maxKey);
-      let out = t;
-      if (min !== undefined) out = out.min(min);
-      if (max !== undefined) out = out.max(max);
-      return out;
-    };
-    switch (type) {
-      case 'string':
-        return bounded(z.string(), 'minLength', 'maxLength');
-      case 'number':
-        return bounded(z.number(), 'minimum', 'maximum');
-      case 'integer':
-        return bounded(z.number().int(), 'minimum', 'maximum');
-      case 'boolean':
-        return z.boolean();
-      case 'array': {
-        const items = (def.items ?? {}) as Record<string, unknown>;
-        const inner = 'type' in items || 'enum' in items ? zodForDef(items) : z.unknown();
-        return bounded(z.array(inner), 'minItems', 'maxItems');
-      }
-      case 'object': {
-        const props = (def.properties ?? {}) as Record<string, Record<string, unknown>>;
-        // zod 4 requires the key type explicitly (`z.record(z.string(), z.unknown())` was
-        // zod 3). JSON object keys are always strings, so this is the same shape.
-        if (Object.keys(props).length === 0) return z.record(z.string(), z.unknown());
-        return z.object(buildZodShape(def));
-      }
-      default:
-        return z.unknown();
-    }
-  }
-
-  /** Build a zod raw shape from a JSON-Schema object node (properties + required). */
-  function buildZodShape(schema: Record<string, unknown>): Record<string, z.ZodTypeAny> {
-    const props = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
-    const required = new Set((schema.required as string[]) ?? []);
-    const shape: Record<string, z.ZodTypeAny> = {};
-    for (const [key, def] of Object.entries(props)) {
-      let t = zodForDef(def);
-      if (typeof def.description === 'string') t = t.describe(def.description);
-      if (!required.has(key)) t = t.optional();
-      shape[key] = t;
-    }
-    return shape;
-  }
-
-  function zodShapeFromJsonSchema(schema: Record<string, unknown>): Record<string, z.ZodTypeAny> {
-    return buildZodShape(schema);
-  }
-
-  /** Bridge a set of in-app `BuiltinToolDef`s onto the MCP server, reusing the
-   *  exact same handlers the in-app agent runs so the two surfaces never drift.
-   *  Handlers get the minimal context `{ ownerId }` — every other `ctx` field
-   *  (`step`, `surface`, `agent`) is optional and the handler degrades on its
-   *  own (e.g. a worker tool that needs a Telegram chat refuses cleanly here).
-   *  Binary `artifacts` are dropped (MCP results are text/JSON); tools that also
-   *  persist their output to a node — e.g. `generate_image` → /files — still
-   *  surface the node id in `output`.
-   *
-   *  `opts.skip` gates a def out; `opts.only` restricts to an explicit slug set,
-   *  which is how a group is bridged for DEDUPLICATION without also widening the
-   *  MCP surface with its other members. */
-  function registerBuiltinTools(
-    defs: readonly BuiltinToolDef[],
-    opts?: { skip?: (def: BuiltinToolDef) => boolean; only?: ReadonlySet<string> },
-  ) {
-    for (const def of defs) {
-      if (opts?.only && !opts.only.has(def.slug)) continue;
-      if (opts?.skip?.(def)) continue;
-      server.tool(
-        def.slug,
-        def.description,
-        zodShapeFromJsonSchema(def.inputSchema),
-        async (args: Record<string, unknown>) => {
-          const input = args ?? {};
-          // Declared referential preconditions run first, exactly as
-          // dispatch.ts does for the in-app agent. Without this the MCP surface
-          // is the only one where an id pointing at a missing — or wrong-type —
-          // node reaches the handler and comes back as a bare "not found",
-          // hiding the actual mistake.
-          if (def.preconditions?.length) {
-            const failure = await checkToolPreconditions(def.preconditions, input, ownerId);
-            if (failure && !failure.ok) {
-              return {
-                content: [{ type: 'text' as const, text: `Error: ${failure.error}` }],
-                isError: true,
-              };
-            }
-          }
-          const result = await def.handler(input, { ownerId: ownerId });
-          if (!result.ok) {
-            return {
-              content: [{ type: 'text' as const, text: `Error: ${result.error}` }],
-              isError: true,
-            };
-          }
-          return jsonReply(result.output);
-        },
-      );
-    }
-  }
 
   // ─── Contacts ────────────────────────────────────────────────────────────────
   // The email allowlist (nodes of type='contact'). Exposing these closes the gap
@@ -762,179 +217,7 @@ export function registerMantleTools(
   registerBuiltinTools(WORKER_DELEGATION_TOOLS, {
     skip: (def) => def.slug === 'synthesize_speech',
   });
-
-  // ─── Responder simulation ─────────────────────────────────────────────────────
-  // Talk to a responder agent over MCP with the REAL pipeline (persona +
-  // retrieval + real tool execution) but NOTHING persisted to its conversation
-  // store. Input caps mirror the web Studio sandbox (40 turns, 8000 chars each).
-  const SIM_MAX_HISTORY = 40;
-  const SIM_MAX_CONTENT = 8000;
-  const SIM_ARGS_CLIP = 500;
-  /** Shared handler for `ask_responder` and its deprecated alias. */
-  async function askResponder(a: {
-    message: string;
-    agent_slug?: string;
-    history?: { role: 'user' | 'assistant'; content: string }[];
-    exclude_tools?: string[];
-    read_only?: boolean;
-    max_iterations?: number;
-    include_tool_calls?: boolean;
-    toolName: string;
-  }) {
-    // Cap the caller-held transcript before it reaches the model — an
-    // unbounded resend would blow the context budget. Reject with a corrective
-    // (say the limit + the fix) rather than silently truncating history.
-    if (a.message.length > SIM_MAX_CONTENT) {
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text:
-              `${a.toolName}: message is ${a.message.length} chars (max ${SIM_MAX_CONTENT}) — ` +
-              'shorten it, or put the bulk in a file/page and reference it.',
-          },
-        ],
-        isError: true,
-      };
-    }
-    if (a.history && a.history.length > SIM_MAX_HISTORY) {
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text:
-              `${a.toolName}: history has ${a.history.length} turns (max ${SIM_MAX_HISTORY}) — ` +
-              'drop the oldest turns and resend, or start a fresh transcript.',
-          },
-        ],
-        isError: true,
-      };
-    }
-    const tooLong = (a.history ?? []).findIndex((t) => t.content.length > SIM_MAX_CONTENT);
-    if (tooLong >= 0) {
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text:
-              `${a.toolName}: history entry ${tooLong} is ${a.history![tooLong]!.content.length} ` +
-              `chars (max ${SIM_MAX_CONTENT}) — shorten or summarise that turn and resend.`,
-          },
-        ],
-        isError: true,
-      };
-    }
-    try {
-      const res = await runSimulatedResponderTurn(ownerId, {
-        message: a.message,
-        ...(a.agent_slug ? { agentSlug: a.agent_slug } : {}),
-        ...(a.history ? { history: a.history } : {}),
-        ...(a.exclude_tools ? { excludeToolSlugs: a.exclude_tools } : {}),
-        ...(a.read_only ? { readOnly: true } : {}),
-        ...(typeof a.max_iterations === 'number' ? { maxIterations: a.max_iterations } : {}),
-      });
-      const withCalls = a.include_tool_calls !== false;
-      return jsonReply({
-        reply: res.reply,
-        agent: res.agent,
-        read_only: a.read_only === true,
-        ...(withCalls
-          ? {
-              tool_calls: res.toolCalls.map((tc) => ({
-                slug: tc.slug,
-                status: tc.status,
-                duration_ms: tc.durationMs,
-                // Clip args so a large payload doesn't blow the reply budget.
-                args:
-                  tc.argsJson.length > SIM_ARGS_CLIP
-                    ? `${tc.argsJson.slice(0, SIM_ARGS_CLIP)}…`
-                    : tc.argsJson,
-                ...(tc.error ? { error: tc.error } : {}),
-              })),
-            }
-          : {}),
-        tool_stats: res.toolStats,
-        pending_ids: res.pendingIds,
-        trace_id: res.traceId,
-        empty_reply_substituted: res.emptyReplySubstituted,
-      });
-    } catch (err) {
-      const msg = errorMessage(err);
-      return {
-        content: [{ type: 'text' as const, text: `${a.toolName} failed: ${msg}` }],
-        isError: true,
-      };
-    }
-  }
-
-  const ASK_RESPONDER_SCHEMA = {
-    message: z.string().min(1),
-    agent_slug: z.string().optional(),
-    history: z
-      .array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() }))
-      .optional(),
-    exclude_tools: z.array(z.string()).optional(),
-    read_only: z.boolean().optional(),
-    max_iterations: z.number().int().min(1).max(30).optional(),
-    include_tool_calls: z.boolean().optional(),
-  };
-
-  server.tool(
-    'ask_responder',
-    "Ask one of the user's responder agents a question and get ITS answer, routed through " +
-      'its own persona, memory and tools. Runs ONE real turn server-side: composed persona ' +
-      '(identity + skills), real retrieval, real granted tools, real delegation — with every ' +
-      "guard and confirm-gate ENFORCED. Writes nothing to the agent's conversation history, " +
-      "so it's safe to probe repeatedly. **Tools EXECUTE by default: side effects happen and " +
-      'confirm-gated calls land on /pending (`pending_ids`). Pass `read_only` for a probe that ' +
-      'cannot write or send anything** — the right default for a post-deploy canary. Multi-turn ' +
-      'is caller-held: keep the transcript and resend it in `history`. Omit `agent_slug` for the ' +
-      'default responder. To answer AS the responder in your own loop instead, use ' +
-      '`ask_as_responder`.',
-    ASK_RESPONDER_SCHEMA,
-    async (a) => askResponder({ ...a, toolName: 'ask_responder' }),
-  );
-
-  server.tool(
-    'ask_as_responder',
-    "Adopt a responder's persona and answer as it YOURSELF, in your own loop. Returns the " +
-      'composed system prompt (identity + skills + house style), the skill list, the tool slugs ' +
-      'it would hold and its delegation edges — no model call, no tool run, nothing written. ' +
-      'Use when you want to sound and reason like the responder across a long stretch of your ' +
-      'own work. **What comes back is teaching, NOT permission: nothing here constrains you.** ' +
-      '`delegate_to` is a list rather than a gate, `tool_slugs` is what the responder would be ' +
-      'granted rather than what you can call, and confirm-gating, /pending parking and the loop ' +
-      'guards stay on the server. When the rules must actually be enforced, use `ask_responder` ' +
-      'and let the brain run the turn. Pass `read_only` to see the narrowed tool list a ' +
-      'read-only probe would get.',
-    {
-      agent_slug: z.string().optional(),
-      read_only: z.boolean().optional(),
-    },
-    async ({ agent_slug, read_only }) => {
-      try {
-        const p = await describeResponderPersona(ownerId, {
-          ...(agent_slug ? { agentSlug: agent_slug } : {}),
-          ...(read_only ? { readOnly: true } : {}),
-        });
-        return jsonReply({
-          agent: p.agent,
-          system_prompt: p.systemPrompt,
-          skills: p.skills,
-          tool_slugs: p.toolSlugs,
-          delegate_to: p.delegateTo,
-          read_only: p.readOnly,
-          advisory: p.advisory,
-        });
-      } catch (err) {
-        const msg = errorMessage(err);
-        return {
-          content: [{ type: 'text' as const, text: `ask_as_responder failed: ${msg}` }],
-          isError: true,
-        };
-      }
-    },
-  );
+  registerResponderTools(ctx);
 
   // ─── Export (Word / Excel) ───────────────────────────────────────────────────
   // Renders a page/note → .docx or a table → .xlsx into /files/exports and returns
@@ -1056,6 +339,29 @@ export function registerMantleTools(
   // is always available.
   if (exposeTerminal) registerBuiltinTools(TERMINAL_TOOLS);
 
+  /* ───────────────────────── Toolsmith over MCP ──────────────────────────
+   *
+   * The api_tool_* / tool_group_* / agent_* / web_fetch / api_key_refs set
+   * lets an MCP client (Claude Code, Claude Desktop) author, test, group,
+   * and grant templated HTTP API tools — the same capability the in-app
+   * Toolsmith agent has, on the user's own Claude subscription instead of
+   * Mantle's metered API key. "Read these Mapbox docs and build me the
+   * tool set" works end-to-end from Claude Code.
+   *
+   * Registered straight from TOOLSMITH_TOOLS (single source of truth) via
+   * a JSON-Schema→zod shape bridge, so the two surfaces cannot drift. The
+   * handlers run with the MCP process's ownerId — same trust model as
+   * every other tool in this file.
+   *
+   * Scoping: the read-only set (list/get/test/api_key_refs/api_docs_get/
+   * web_fetch) is always exposed. The mutating set — authoring
+   * (create/update/delete), grouping (tool_group_ensure), the integration
+   * writes (api_docs_set / api_skill_set), and granting
+   * (agent_grant_tool_group) — is gated on MANTLE_MCP_TOOLSMITH_WRITE,
+   * which defaults ON. Set it to
+   * 0/false/off on a shared or headless deployment to expose Toolsmith
+   * read-only while keeping tool authoring + granting to the in-app agent.
+   */
   // ─── Toolsmith ───────────────────────────────────────────────────────────────
   // Writes gated behind MANTLE_MCP_TOOLSMITH_WRITE (see TOOLSMITH_WRITE_SLUGS).
   registerBuiltinTools(TOOLSMITH_TOOLS, {
