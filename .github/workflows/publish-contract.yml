@@ -1,21 +1,33 @@
 # Publishes the contract packages (@crossworks/{client-types,content-core,
-# voice-client}) to npm on every release tag, so the jackdaw repo — the split
-# frontend — can consume the server's wire contract as ordinary npm deps
-# (split plan P1, docs/plans/jackdaw-repo-split.md).
+# voice-client,share-ui,app-build}) to npm on every release tag, so the
+# jackdaw repo (the split frontend) can consume the server's wire contract as
+# ordinary npm deps (split plan P1, docs/plans/jackdaw-repo-split.md).
 #
 # Workspace names stay @mantle/*; scripts/publish-contract.mjs renames to the
 # public scope at publish time (the @mantle npm scope is third-party-owned).
 #
+# npm versions are immutable, so a bad tree published here can never be
+# corrected in place. Two gates stand in front of the publish and either one
+# failing blocks it:
+#   1. `verify`: the same hermetic gate release.yml's guard runs (typecheck,
+#      lint, format, docs paths, the full vitest suite against a migrated
+#      Postgres). Before v0.232.160 this workflow ran NO gate at all.
+#   2. The smoke step in `publish`: `publish-contract.mjs --check` packs every
+#      staged package and installs each tarball into a fresh project against
+#      the real registry, so a dependency that is not on npm (the
+#      v0.232.122-153 app-build tarballs shipped two private @mantle/* deps
+#      and could not be installed) fails before anything is uploaded.
+#
 # Needs the NPM_TOKEN repo secret: an npm *automation* token for a member of
-# the @crossworks org. Until the org + token exist, the job skips cleanly
-# rather than failing the release.
+# the @crossworks org. Until the org + token exist, the publish step skips
+# cleanly rather than failing the release; both gates still run.
 name: publish-contract
 
 on:
   push:
     tags: ['v*']
   # Re-run a partial/failed publish for an existing tag without cutting a new
-  # release: Actions → publish-contract → Run workflow, tag = vX.Y.Z. The
+  # release: Actions -> publish-contract -> Run workflow, tag = vX.Y.Z. The
   # publish script skips versions already on npm, so this is safe to repeat.
   workflow_dispatch:
     inputs:
@@ -27,12 +39,34 @@ permissions:
   contents: read
 
 jobs:
-  publish:
+  # Self-contained on purpose rather than a workflow_call into release.yml or
+  # build-check: a called workflow runs ALL of its jobs (release.yml would
+  # build and push images again), and build-check's cancel-in-progress
+  # concurrency group, keyed on the ref, would let this run and the release
+  # run on the same tag cancel each other. The block below mirrors
+  # build-check's verify job and release.yml's guard; keep the three in step
+  # (same images, same action versions, same steps).
+  verify:
     runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      CI_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       # For workflow_dispatch, check out the TAG being re-published, not the
       # default branch the dispatch happens to run on: re-running a partial
-      # publish must pack the tag's tree, not whatever main looks like today.
+      # publish must verify and pack the tag's tree, not whatever main looks
+      # like today.
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag || github.ref }}
@@ -56,6 +90,56 @@ jobs:
           echo "✓ $tag matches the checked-out tree"
 
       - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Docs paths
+        run: pnpm docs:check
+
+      # Replay every migration from scratch, exactly as build-check does, so
+      # the DB-gated suites (packages/db schema drift, the runs engine) run
+      # against the schema this tag ships instead of skipping silently.
+      - name: Init + migrate the throwaway database
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: |
+          pnpm -C packages/db init-scratch
+          pnpm -C packages/db migrate
+
+      # DATABASE_URL itself is NOT exported here, only the *_TEST_ vars, so the
+      # tests that assert DB-less behaviour keep meaning what they say.
+      - name: Test
+        env:
+          MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: pnpm test
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
         with:
@@ -68,6 +152,15 @@ jobs:
       - name: 'Install workspace'
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      # Gate 2. Stages the manifests exactly as the publish will, refuses any
+      # private @mantle/* dependency that survived the alias pass, packs each
+      # package and installs every tarball into a fresh project against the
+      # real registry. Runs with or without the token: it needs only public
+      # registry reads, so a fork or a token-less run still proves the tree.
+      # Same command works locally: node scripts/publish-contract.mjs --check
+      - name: Smoke-install the staged tarballs
+        run: node scripts/publish-contract.mjs --check "${{ inputs.tag || github.ref_name }}"
+
       # `secrets.*` is not readable inside `if:` on a step directly; stage it
       # through an env probe so a missing token skips instead of erroring.
       - name: Check for the npm token
@@ -76,7 +169,7 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -n "$NPM_TOKEN" ]; then echo "have=true" >> "$GITHUB_OUTPUT";
-          else echo "have=false" >> "$GITHUB_OUTPUT"; echo "::notice::NPM_TOKEN not set — skipping contract publish"; fi
+          else echo "have=false" >> "$GITHUB_OUTPUT"; echo "::notice::NPM_TOKEN not set, skipping contract publish"; fi
 
       - name: Publish contract packages
         if: steps.token.outputs.have == 'true'

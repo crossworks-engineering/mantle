@@ -44,6 +44,25 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    # The DB-gated suites (packages/db schema drift, the runs engine) skipIf
+    # without a database. Before v0.232.160 this job had none, so they passed
+    # silently at release time while build-check ran them for real. Same
+    # image, same migrate path as build-check's verify job (and
+    # publish-contract's); keep the three identical.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      CI_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
 
@@ -52,8 +71,9 @@ jobs:
       # tag-release.sh pushes main and the tag in ONE push, which means
       # build-check and this workflow START TOGETHER; waiting on it would race
       # its cancel-in-progress rule under back-to-back releases. So the guard
-      # runs the same hermetic gate itself: typecheck + lint + format + tests.
-      # (The production build is exercised by the Docker build below.)
+      # runs the same hermetic gate itself: typecheck + lint + format + docs
+      # paths + tests against a migrated Postgres. (The production build is
+      # exercised by the Docker build below.)
       - uses: pnpm/action-setup@v4
         with:
           version: 11.1.2
@@ -72,7 +92,24 @@ jobs:
       - name: Lint + format
         run: pnpm lint && pnpm format:check
 
+      - name: Docs paths
+        run: pnpm docs:check
+
+      # Replay every migration from scratch, exactly as build-check does, so
+      # the drift + runs suites below run against the schema this tag ships.
+      - name: Init + migrate the throwaway database
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: |
+          pnpm -C packages/db init-scratch
+          pnpm -C packages/db migrate
+
+      # DATABASE_URL itself is NOT exported here, only the *_TEST_ vars, so the
+      # tests that assert DB-less behaviour keep meaning what they say.
       - name: Test
+        env:
+          MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm test
 
       - name: Assert tag matches the checked-out version
