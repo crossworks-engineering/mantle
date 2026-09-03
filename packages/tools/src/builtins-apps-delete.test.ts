@@ -101,9 +101,10 @@ describe('app_file_delete', () => {
     // the OUTCOME (the reason reaches the caller) and cannot pin the typed
     // branch. It would start earning its keep the moment the generic arm
     // stopped echoing err.message — which is exactly when it would matter.
-    vi.mocked(deleteDraftFile).mockRejectedValue(
-      new CannotDeleteEntryError('cannot delete the entry file'),
-    );
+    // The class carries its own message ('writeDraftFile: cannot delete the
+    // entry file') and takes no constructor argument — passing one typechecks
+    // as an error, which the vitest run alone did not catch.
+    vi.mocked(deleteDraftFile).mockRejectedValue(new CannotDeleteEntryError());
     expect(errorOf(await fileDel.handler({ id: APP_ID, path: 'App.tsx' }, ctx))).toMatch(
       /entry file/,
     );

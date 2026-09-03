@@ -38,12 +38,12 @@ vi.mock('@mantle/config', async (importOriginal) => {
   // sandboxd() short-circuits to "not enabled" without both of these.
   return {
     ...actual,
-    env: (name: string) =>
+    env: ((name: string) =>
       name === 'SANDBOXD_URL'
         ? 'http://sandboxd.test'
         : name === 'SANDBOXD_TOKEN'
           ? 'tok'
-          : actual.env(name),
+          : actual.env(name as Parameters<typeof actual.env>[0])) as typeof actual.env,
   };
 });
 vi.mock('@mantle/content', async (importOriginal) => {
