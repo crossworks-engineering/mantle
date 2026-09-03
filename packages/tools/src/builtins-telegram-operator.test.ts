@@ -232,6 +232,7 @@ describe('telegram_edit', () => {
   });
 
   it('refuses when no enabled account owns the chat, before the wire', async () => {
+    selectQueue.push([{ status: 'allowed' }]); // the owner+allowlist gate
     vi.mocked(accountForChat).mockResolvedValue(null as never);
     const res = await edit.handler({ chat_id: CHAT, message_id: '7', text: 'x' }, ctx);
     expect(errorOf(res)).toMatch(/no enabled telegram account/);
@@ -239,6 +240,7 @@ describe('telegram_edit', () => {
   });
 
   it('edits through the resolved account with the markdown flag', async () => {
+    selectQueue.push([{ status: 'allowed' }]); // the owner+allowlist gate
     const res = await edit.handler(
       { chat_id: CHAT, message_id: '7', text: 'done', markdown: true },
       ctx,
@@ -248,6 +250,7 @@ describe('telegram_edit', () => {
   });
 
   it('surfaces a transport failure as a tool error, not a throw', async () => {
+    selectQueue.push([{ status: 'allowed' }]); // the owner+allowlist gate
     vi.mocked(editMessage).mockRejectedValue(new Error('message is not modified'));
     const res = await edit.handler({ chat_id: CHAT, message_id: '7', text: 'x' }, ctx);
     expect(errorOf(res)).toMatch(/edit failed: message is not modified/);
@@ -264,6 +267,7 @@ describe('telegram_react', () => {
   });
 
   it('refuses when no enabled account owns the chat, before the wire', async () => {
+    selectQueue.push([{ status: 'allowed' }]); // the owner+allowlist gate
     vi.mocked(accountForChat).mockResolvedValue(null as never);
     const res = await react.handler({ chat_id: CHAT, message_id: '7', emoji: '👍' }, ctx);
     expect(errorOf(res)).toMatch(/no enabled telegram account/);
@@ -271,12 +275,14 @@ describe('telegram_react', () => {
   });
 
   it('reacts through the resolved account', async () => {
+    selectQueue.push([{ status: 'allowed' }]); // the owner+allowlist gate
     const res = await react.handler({ chat_id: CHAT, message_id: '7', emoji: '👍' }, ctx);
     expect(reactToMessage).toHaveBeenCalledWith(ACCOUNT, CHAT, '7', '👍');
     expect(outputOf(res)).toBe('reacted');
   });
 
   it('surfaces a rejected emoji as a tool error', async () => {
+    selectQueue.push([{ status: 'allowed' }]); // the owner+allowlist gate
     vi.mocked(reactToMessage).mockRejectedValue(new Error('REACTION_INVALID'));
     const res = await react.handler({ chat_id: CHAT, message_id: '7', emoji: '🦆' }, ctx);
     expect(errorOf(res)).toMatch(/react failed: REACTION_INVALID/);
@@ -290,11 +296,13 @@ describe('telegram_mark_processed', () => {
   });
 
   it('reports a miss rather than a silent success', async () => {
+    selectQueue.push([{ id: 'm1' }]); // the owner-scoped message lookup
     updateReturn = [];
     expect(errorOf(await markProcessed.handler({ id: 'm-ghost' }, ctx))).toMatch(/no such message/);
   });
 
   it('flips processed with a timestamp on the named row', async () => {
+    selectQueue.push([{ id: 'm1' }]); // the owner-scoped message lookup
     updateReturn = [{ id: 'm1' }];
     const res = await markProcessed.handler({ id: 'm1' }, ctx);
     expect(update.set).toHaveBeenCalledWith({ processed: true, processedAt: expect.any(Date) });

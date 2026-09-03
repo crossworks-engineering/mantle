@@ -26,6 +26,32 @@ import { str, strOpt, numOpt as num, boolOpt as bool } from './coerce';
 import { accountForChat, editMessage, reactToMessage, sendMessage } from '@mantle/telegram';
 import { errorMessage } from '@mantle/std';
 
+/**
+ * The outbound gate for a chat: the caller must OWN it and it must be
+ * allowlisted.
+ *
+ * `accountForChat` reads as though it scopes and does not — its parameter is
+ * `_chatId` and it returns the first enabled account on the box — so every
+ * tool that reaches the Telegram API has to carry this check itself.
+ * `telegram_send` always did; `telegram_react` and `telegram_edit` did not,
+ * and would act on any chat id handed to them, allowlisted or not, owned or
+ * not. One helper now, so the next outbound tool cannot forget it.
+ */
+async function allowlistedChat(
+  ownerId: string,
+  chatId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const [chat] = await db
+    .select({ status: telegramChats.allowlistStatus })
+    .from(telegramChats)
+    .where(and(eq(telegramChats.userId, ownerId), eq(telegramChats.telegramChatId, chatId)))
+    .limit(1);
+  if (!chat || chat.status !== 'allowed') {
+    return { ok: false, error: `chat ${chatId} is not allowlisted` };
+  }
+  return { ok: true };
+}
+
 export const telegram_send: BuiltinToolDef = {
   slug: 'telegram_send',
   name: 'Send a Telegram message',
@@ -56,15 +82,8 @@ export const telegram_send: BuiltinToolDef = {
     if (!chatId || !text) return { ok: false, error: 'chat_id + text required' };
     const account = await accountForChat(chatId);
     if (!account) return { ok: false, error: 'no enabled telegram account for this chat' };
-    // Verify allowlist on this owner.
-    const [chat] = await db
-      .select({ status: telegramChats.allowlistStatus })
-      .from(telegramChats)
-      .where(and(eq(telegramChats.userId, ctx.ownerId), eq(telegramChats.telegramChatId, chatId)))
-      .limit(1);
-    if (!chat || chat.status !== 'allowed') {
-      return { ok: false, error: `chat ${chatId} is not allowlisted` };
-    }
+    const gate = await allowlistedChat(ctx.ownerId, chatId);
+    if (!gate.ok) return gate;
     try {
       const ids = await sendMessage(account, chatId, text, {
         replyTo: strOpt(input.reply_to),
@@ -144,13 +163,15 @@ export const telegram_react: BuiltinToolDef = {
     },
     required: ['chat_id', 'message_id', 'emoji'],
   },
-  handler: async (input) => {
+  handler: async (input, ctx) => {
     const chatId = str(input.chat_id);
     const messageId = str(input.message_id);
     const emoji = str(input.emoji);
     if (!chatId || !messageId || !emoji) {
       return { ok: false, error: 'chat_id + message_id + emoji required' };
     }
+    const gate = await allowlistedChat(ctx.ownerId, chatId);
+    if (!gate.ok) return gate;
     const account = await accountForChat(chatId);
     if (!account) return { ok: false, error: 'no enabled telegram account' };
     try {
@@ -182,13 +203,15 @@ export const telegram_edit: BuiltinToolDef = {
     },
     required: ['chat_id', 'message_id', 'text'],
   },
-  handler: async (input) => {
+  handler: async (input, ctx) => {
     const chatId = str(input.chat_id);
     const messageId = str(input.message_id);
     const text = str(input.text);
     if (!chatId || !messageId || !text) {
       return { ok: false, error: 'chat_id + message_id + text required' };
     }
+    const gate = await allowlistedChat(ctx.ownerId, chatId);
+    if (!gate.ok) return gate;
     const account = await accountForChat(chatId);
     if (!account) return { ok: false, error: 'no enabled telegram account' };
     try {
@@ -213,9 +236,20 @@ export const telegram_mark_processed: BuiltinToolDef = {
     },
     required: ['id'],
   },
-  handler: async (input) => {
+  handler: async (input, ctx) => {
     const id = str(input.id);
     if (!id) return { ok: false, error: 'id required' };
+    // Owner scope rides on the chat, telegram_messages has no owner column.
+    // Resolved first so the UPDATE cannot touch a row the caller does not own:
+    // marking someone else's inbound message processed means their assistant
+    // never answers it, and nothing anywhere errors.
+    const [owned] = await db
+      .select({ id: telegramMessages.id })
+      .from(telegramMessages)
+      .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
+      .where(and(eq(telegramMessages.id, id), eq(telegramChats.userId, ctx.ownerId)))
+      .limit(1);
+    if (!owned) return { ok: false, error: 'no such message' };
     const rows = await db
       .update(telegramMessages)
       .set({ processed: true, processedAt: new Date() })
