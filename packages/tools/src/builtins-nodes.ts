@@ -5,7 +5,7 @@
  * unchanged; builtins.ts assembles BUILTIN_TOOLS from these groups.
  */
 
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db, nodes, notifyNodeIngested } from '@mantle/db';
 import { resolveSupersededTargets } from '@mantle/search';
 import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
@@ -255,7 +255,7 @@ export const process_extraction: BuiltinToolDef = {
       sql`(${nodes.data}->>'summary' is null or ${nodes.embedding} is null)`,
     ];
     if (typeFilter && typeFilter.length > 0) {
-      conds.push(sql`${nodes.type}::text = any(${typeFilter}::text[])`);
+      conds.push(inArray(sql`${nodes.type}::text`, typeFilter));
     }
     const rows = await db
       .select({ id: nodes.id })
