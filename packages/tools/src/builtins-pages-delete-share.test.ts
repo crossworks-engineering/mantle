@@ -1,5 +1,6 @@
 /**
- * Behavioural tests for page_block_delete and page_share.
+ * Behavioural tests for page_block_delete, page_share, page_delete and
+ * page_unshare.
  *
  * `deleteBlock` itself is left REAL here rather than stubbed, so the
  * container-empty refusal is exercised for what it is: most ProseMirror
@@ -28,19 +29,33 @@ vi.mock('@mantle/content', async (importOriginal) => {
     createShare: vi.fn(),
     applyShareMode: vi.fn(),
     setShareCascade: vi.fn(),
+    deletePage: vi.fn(),
+    getActiveShareForNode: vi.fn(),
+    revokeShareTree: vi.fn(),
     shareUrlForToken: (token: string) => `https://brain.test/s/${token}`,
   };
 });
 vi.mock('@mantle/files', () => ({ fileById: vi.fn(), readFileById: vi.fn() }));
 vi.mock('@mantle/tracing', () => ({ recordIngest: vi.fn() }));
 
-import { getPage, saveDraft, createShare, applyShareMode, setShareCascade } from '@mantle/content';
+import {
+  getPage,
+  saveDraft,
+  createShare,
+  applyShareMode,
+  setShareCascade,
+  deletePage,
+  getActiveShareForNode,
+  revokeShareTree,
+} from '@mantle/content';
 import { PAGE_TOOLS } from './builtins-pages';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 const all = PAGE_TOOLS as readonly BuiltinToolDef[];
 const blockDel = all.find((t) => t.slug === 'page_block_delete')!;
 const share = all.find((t) => t.slug === 'page_share')!;
+const pageDel = all.find((t) => t.slug === 'page_delete')!;
+const unshare = all.find((t) => t.slug === 'page_unshare')!;
 
 const ctx: ToolHandlerContext = { ownerId: 'o1' };
 const PAGE_ID = 'p-1';
@@ -89,6 +104,9 @@ beforeEach(() => {
   vi.mocked(saveDraft).mockResolvedValue({ ok: true, rev: 4 } as never);
   vi.mocked(createShare).mockResolvedValue({ id: 's-1', token: 'tok', mode: 'public' } as never);
   vi.mocked(setShareCascade).mockResolvedValue({ count: 3 } as never);
+  vi.mocked(deletePage).mockResolvedValue(true as never);
+  vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-1', token: 'tok' } as never);
+  vi.mocked(revokeShareTree).mockResolvedValue(true as never);
 });
 
 describe('page_block_delete', () => {
@@ -199,5 +217,64 @@ describe('page_share', () => {
     const res = await share.handler({ id: PAGE_ID, mode: 'everyone' }, ctx);
     expect(applyShareMode).not.toHaveBeenCalled();
     expect(outputOf(res).mode).toBe('team');
+  });
+});
+
+describe('page_delete', () => {
+  it('is confirm-gated — irreversible, so the operator sees it first', () => {
+    expect(pageDel.requiresConfirm).toBe(true);
+  });
+
+  it('refuses an empty id and deletes nothing', async () => {
+    expect(errorOf(await pageDel.handler({ id: '   ' }, ctx))).toMatch(/id is required/);
+    expect(deletePage).not.toHaveBeenCalled();
+  });
+
+  it('reports a missing page with the lookup that fixes it', async () => {
+    vi.mocked(deletePage).mockResolvedValue(false as never);
+    const res = await pageDel.handler({ id: PAGE_ID }, ctx);
+    expect(errorOf(res)).toMatch(/page_list|search_nodes/);
+  });
+
+  it('deletes under the CALLER owner and reports the id', async () => {
+    const res = await pageDel.handler({ id: ` ${PAGE_ID} ` }, ctx);
+    // Owner scoping is the whole access check here — the store never sees a
+    // page id without the owner it must belong to.
+    expect(deletePage).toHaveBeenCalledWith('o1', PAGE_ID);
+    expect(outputOf(res)).toEqual({ id: PAGE_ID, deleted: true });
+  });
+
+  it('surfaces a store failure as a tool error, not a throw', async () => {
+    vi.mocked(deletePage).mockRejectedValue(new Error('index unavailable'));
+    expect(errorOf(await pageDel.handler({ id: PAGE_ID }, ctx))).toMatch(/index unavailable/);
+  });
+});
+
+describe('page_unshare', () => {
+  it('refuses an empty id and revokes nothing', async () => {
+    expect(errorOf(await unshare.handler({ id: '' }, ctx))).toMatch(/id is required/);
+    expect(revokeShareTree).not.toHaveBeenCalled();
+  });
+
+  it('succeeds as a no-op when the page was never shared', async () => {
+    vi.mocked(getActiveShareForNode).mockResolvedValue(null as never);
+    const res = await unshare.handler({ id: PAGE_ID }, ctx);
+    // "Make it private" on an already-private page is not an error — and it
+    // must not reach the revoke path with an undefined share id.
+    expect(outputOf(res)).toEqual({ id: PAGE_ID, unshared: false });
+    expect(revokeShareTree).not.toHaveBeenCalled();
+  });
+
+  it('revokes the whole share TREE, not just the one link', async () => {
+    const res = await unshare.handler({ id: PAGE_ID }, ctx);
+    // A share made with children:true cascaded to sub-pages; unsharing the
+    // parent alone would leave every sub-page link live.
+    expect(revokeShareTree).toHaveBeenCalledWith('o1', 's-1');
+    expect(outputOf(res)).toEqual({ id: PAGE_ID, unshared: true });
+  });
+
+  it('surfaces a store failure as a tool error, not a throw', async () => {
+    vi.mocked(revokeShareTree).mockRejectedValue(new Error('db down'));
+    expect(errorOf(await unshare.handler({ id: PAGE_ID }, ctx))).toMatch(/db down/);
   });
 });
