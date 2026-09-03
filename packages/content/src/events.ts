@@ -480,6 +480,8 @@ function externalEventData(input: UpsertExternalEventInput): Record<string, unkn
 export async function upsertExternalEvent(
   ownerId: string,
   input: UpsertExternalEventInput,
+  /** Internal: false on the one retry after losing an insert race. */
+  retryOnRace = true,
 ): Promise<EventRow> {
   await ensureRoot(ownerId);
   const title = input.title.trim().slice(0, 200) || 'Untitled event';
@@ -530,6 +532,18 @@ export async function upsertExternalEvent(
     return rowOf(updated);
   }
 
+  // The SELECT above and this INSERT are check-then-act, and calendar sync is
+  // exactly the workload that runs them concurrently (a scheduled sync
+  // overlapping a manual one, a retried job). Both callers miss the row, both
+  // insert, and the owner gets the same meeting twice — embedded twice, and
+  // answering twice in retrieval. `nodes_event_external_uid_uq` (migration
+  // 0155) makes the second insert impossible; this clause is what turns the
+  // resulting violation into the right answer instead of a failed sync.
+  //
+  // Untargeted DO NOTHING because the conflict target is an EXPRESSION index
+  // and drizzle 0.45's `target` takes columns only. The only other unique
+  // constraint on `nodes` is the primary key, whose value is a fresh
+  // gen_random_uuid, so there is no second conflict this could be hiding.
   const [row] = await db
     .insert(nodes)
     .values({
@@ -540,9 +554,24 @@ export async function upsertExternalEvent(
       data,
       tags: dedupeTags(input.tags ?? []),
     })
+    .onConflictDoNothing()
     .returning();
-  if (!row) throw new Error('upsertExternalEvent: insert returned no row');
-  return rowOf(row); // INSERT fires node_ingested → extractor
+
+  if (!row) {
+    // Lost the race. Start over rather than hand-rolling the merge here: the
+    // SELECT now finds the winner's row and the UPDATE branch above does the
+    // whole job — the field merge, dropping stale extractor output, and the
+    // node_ingested notify. Once only; a second miss is not a race any more
+    // and should surface rather than spin.
+    if (!retryOnRace) {
+      throw new Error(
+        `upsertExternalEvent: insert conflicted for uid ${input.externalUid} but the ` +
+          'row was not found on retry — the unique index and the lookup disagree',
+      );
+    }
+    return upsertExternalEvent(ownerId, input, false);
+  }
+  return rowOf(row); // a plain INSERT fires node_ingested → extractor
 }
 
 /** External UIDs currently stored for a calendar account — used to detect
