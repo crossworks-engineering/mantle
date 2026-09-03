@@ -142,6 +142,16 @@ if [ -s "$TMP/Caddyfile" ]; then
   cp "$TMP/Caddyfile" "$STACK/infra/caddy/Caddyfile.release"
   cp "$TMP/Caddyfile" "$STACK/infra/caddy/Caddyfile"
   echo "✔ shapes + Caddyfile canonical installed (baselines seeded)"
+  # The release Caddyfile routes by MANTLE_CADDY_SHAPE and silently defaults
+  # to same-origin. Right for a one-domain box, wrong for one that serves the
+  # owner UI on its own hostname: say which one this box just got.
+  shape=$(sed -n 's/^MANTLE_CADDY_SHAPE=//p' "$STACK/.env" 2>/dev/null | head -1)
+  if [ -n "$shape" ]; then
+    echo "  front door shape: $shape (MANTLE_CADDY_SHAPE in .env)"
+  else
+    echo "  front door shape: same-origin (MANTLE_CADDY_SHAPE is not set in .env, so the default applies:"
+    echo "  one domain routes both apps; set MANTLE_CADDY_SHAPE=split for the owner UI on its own hostname)"
+  fi
   echo "  recreate the front door: docker compose up -d --no-deps --force-recreate caddy"
 fi
 echo "  converge with: docker compose up -d --remove-orphans"

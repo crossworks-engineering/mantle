@@ -74,7 +74,11 @@ if [ -z "$CHANNEL" ]; then
   [ -n "$CHANNEL" ] || { warn "could not resolve the latest release tag — falling back to main"; CHANNEL=main; }
 fi
 say "Installing Mantle into ${HOME_DIR} (bundle ref: ${CHANNEL})"
-mkdir -p "$HOME_DIR/infra/caddy" "$HOME_DIR/infra/postgres/init" "$HOME_DIR/infra/updater" "$HOME_DIR/scripts" "$HOME_DIR/data"
+# Every directory a fetch writes into, up front: `curl -o` creates none, so a
+# missing infra/caddy/shapes killed the raw-fetch path (and with it the
+# automatic fallback to main when the release lookup fails) on its first
+# shape download.
+mkdir -p "$HOME_DIR/infra/caddy/shapes" "$HOME_DIR/infra/caddy/conf.d" "$HOME_DIR/infra/postgres/init" "$HOME_DIR/infra/updater" "$HOME_DIR/scripts" "$HOME_DIR/data"
 cd "$HOME_DIR"
 
 fetch() { # fetch <repo-path> <local-path>
@@ -103,28 +107,17 @@ if [ -z "$USE_BUNDLE" ]; then
 fetch docker-compose.yml                 docker-compose.yml
 fetch docker-compose.client.yml          docker-compose.client.yml
 fetch docker-compose.core.yml            docker-compose.core.yml
-# Baselines for the release-owned compose contract: the updater sidecar
-# auto-refreshes these files on updates ONLY while each stays byte-identical
-# to its baseline (proof the box never hand-edited it — box-local changes go
-# in docker-compose.override.yml + .env instead).
-cp docker-compose.yml docker-compose.yml.release
-cp docker-compose.client.yml docker-compose.client.yml.release
-cp docker-compose.core.yml docker-compose.core.yml.release
 fetch .env.prod.example                  .env.prod.example
 fetch infra/caddy/Caddyfile              infra/caddy/Caddyfile
 # The front door is ONE release-owned Caddyfile; the routing shape is a file
 # it imports per MANTLE_CADDY_SHAPE (scripts/install.sh writes same-origin,
 # one domain path-routed to BOTH apps: without a shape a fresh box routes
 # nothing and the visitor can never reach signup). conf.d/ holds box-local
-# drop-ins a roll never touches. Baselines seeded like compose, so the
-# updater refreshes the front door from the next release on.
+# drop-ins a roll never touches.
 fetch infra/caddy/shapes/same-origin.caddy infra/caddy/shapes/same-origin.caddy
 fetch infra/caddy/shapes/split.caddy       infra/caddy/shapes/split.caddy
 fetch infra/caddy/README.md                infra/caddy/README.md
 fetch infra/caddy/conf.d/README.md         infra/caddy/conf.d/README.md
-cp infra/caddy/Caddyfile infra/caddy/Caddyfile.release
-cp infra/caddy/shapes/same-origin.caddy infra/caddy/shapes/same-origin.caddy.release
-cp infra/caddy/shapes/split.caddy infra/caddy/shapes/split.caddy.release
 fetch infra/postgres/init/01-extensions.sql  infra/postgres/init/01-extensions.sql
 fetch infra/postgres/init/02-auth-schema.sql infra/postgres/init/02-auth-schema.sql
 # The updater sidecar's entrypoint script. Compose bind-mounts it at
@@ -144,16 +137,33 @@ fetch scripts/compose-adopt.sh           scripts/compose-adopt.sh
 # is the one that takes the data directory with it.
 fetch scripts/uninstall.sh               scripts/uninstall.sh
 chmod +x scripts/db-dump.sh scripts/db-restore.sh scripts/install.sh scripts/sanity.sh scripts/compose-adopt.sh scripts/uninstall.sh
-# Baselines for the operator scripts, same contract as compose and the
-# Caddyfile: the updater refreshes each one only while it stays byte-identical
-# to its baseline. Seeded here so a fresh box self-refreshes its tooling from
-# the very next release — before this existed a box ran the scripts it was
+fi
+
+# Baselines for every release-owned file, seeded on BOTH paths: the bundle
+# ships none, and until this ran outside the raw-fetch block a bundle install
+# (the default since the bundle became the default) came up with zero
+# baselines. The updater sidecar auto-refreshes a file on updates ONLY while
+# it stays byte-identical to its .release baseline (proof the box never
+# hand-edited it; box-local changes go in docker-compose.override.yml, .env
+# and infra/caddy/conf.d/ instead), so a box without them reports no-baseline
+# on its first update and never takes a compose or Caddyfile change until an
+# operator runs compose-adopt by hand: the manual step this exists to remove.
+baseline() { # <file>: seed <file>.release (an older pinned bundle may lack a file)
+  if [ -f "$1" ]; then cp "$1" "$1.release"; else warn "no $1 in this bundle: baseline not seeded"; fi
+}
+baseline docker-compose.yml
+baseline docker-compose.client.yml
+baseline docker-compose.core.yml
+baseline infra/caddy/Caddyfile
+baseline infra/caddy/shapes/same-origin.caddy
+baseline infra/caddy/shapes/split.caddy
+# Operator scripts, same contract: a fresh box self-refreshes its tooling from
+# the very next release. Before this existed a box ran the scripts it was
 # installed with forever, and a stale compose-adopt.sh installed a compose it
 # did not understand (see infra/updater/updater.sh, refresh_scripts).
 for s in db-dump.sh db-restore.sh install.sh sanity.sh compose-adopt.sh uninstall.sh; do
   cp "scripts/$s" "scripts/$s.release"
 done
-fi
 ok "deploy bundle fetched"
 
 # ── 3. configure + start + verify — ONE code path ────────────────────────────

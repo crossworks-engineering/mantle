@@ -40,7 +40,7 @@
 
 set -u
 
-SIG=/signal
+SIG="${MANTLE_SIGNAL_DIR:-/signal}"
 STACK="${MANTLE_STACK_DIR:-}"
 
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
@@ -89,6 +89,7 @@ REFRESH=none          # last server-compose refresh outcome (stack.json)
 CLIENT_REFRESH=none   # last client-compose refresh outcome (stack.json)
 CORE_REFRESH=none     # last core-override refresh outcome (stack.json)
 CADDY_REFRESH=none    # last Caddyfile + shapes refresh outcome (stack.json)
+CADDY_RECREATE=""     # 1 when ANY front-door file changed this roll: force the caddy recreate
 SCRIPTS_REFRESH=none  # last operator-scripts refresh outcome (stack.json)
 UPDATER_REFRESH=none  # last updater-script refresh outcome (stack.json)
 
@@ -155,6 +156,54 @@ write_stack_info() {
     && mv "$SIG/stack.json.tmp" "$SIG/stack.json"
 }
 
+# compose_env_ok <box-file> <incoming>: can this box's .env satisfy the
+# incoming compose? Since v0.232.140 the canonical marks its secrets
+# `${VAR:?}`. A box installed before the installer wrote POSTGRES_PASSWORD /
+# S3_* passes the pristine check, takes the swap, and then fails `compose
+# pull` on interpolation with the new file already live: every compose verb
+# broken until .env is hand-edited, and an error pointing at a script the box
+# may not even have yet. So the incoming file is validated BEFORE the swap
+# and a box that cannot satisfy it keeps its existing compose, with the exact
+# variables and the lines to add written to update.log. The core file is an
+# override, never valid alone, so it is checked on top of the box's server
+# compose.
+compose_env_ok() {
+  if [ "$1" = docker-compose.core.yml ]; then
+    ceo_err=$(docker compose --project-directory "$STACK" --env-file "$STACK/.env" \
+      -f "$STACK/docker-compose.yml" -f "$2" config -q 2>&1 >/dev/null) && return 0
+  else
+    ceo_err=$(docker compose --project-directory "$STACK" --env-file "$STACK/.env" \
+      -f "$2" config -q 2>&1 >/dev/null) && return 0
+  fi
+  # Compose stops at the first `:?` it cannot resolve; the operator wants the
+  # whole list, so it is computed here from the file itself.
+  ceo_missing=""
+  for ceo_v in $(sed -n 's/.*\${\([A-Za-z_][A-Za-z0-9_]*\):?.*/\1/p' "$2" | sort -u); do
+    grep -q "^$ceo_v=." "$STACK/.env" 2>/dev/null || ceo_missing="$ceo_missing $ceo_v"
+  done
+  {
+    echo "[updater] $1: this box's .env cannot satisfy the incoming compose (incompatible-env)."
+    if [ -n "$ceo_missing" ]; then
+      echo "  Missing from .env:$ceo_missing"
+      echo "  Add these lines to .env, then request the update again. The values shown are the"
+      echo "  compose defaults an install older than v0.232.140 initialised its data dir with;"
+      echo "  if you chose your own, use those instead:"
+      for ceo_v in $ceo_missing; do
+        case "$ceo_v" in
+          POSTGRES_PASSWORD) echo "    POSTGRES_PASSWORD=postgres" ;;
+          S3_ACCESS_KEY) echo "    S3_ACCESS_KEY=minio" ;;
+          S3_SECRET_KEY) echo "    S3_SECRET_KEY=minio12345" ;;
+          *) echo "    $ceo_v=<value>" ;;
+        esac
+      done
+    else
+      echo "  docker compose config said:"
+      printf '%s\n' "$ceo_err" | tail -n 5 | sed 's/^/    /'
+    fi
+  } >> "$SIG/update.log"
+  return 1
+}
+
 # refresh_one <box-file> <release-path> — extract one canonical compose from
 # the (already pulled) target image and swap it in when the box copy is
 # pristine. Echoes the outcome token. Never blocks the update.
@@ -172,6 +221,9 @@ refresh_one() {
     rm -f "$incoming"; echo no-baseline; return
   fi
   if cmp -s "$STACK/$file" "$STACK/$file.release"; then
+    if ! compose_env_ok "$file" "$incoming"; then
+      rm -f "$incoming"; echo incompatible-env; return
+    fi
     if cp "$STACK/$file" "$STACK/$file.prev" \
       && cp "$incoming" "$STACK/.compose-release.tmp" \
       && mv "$STACK/.compose-release.tmp" "$STACK/$file.release" \
@@ -202,7 +254,10 @@ refresh_compose() {
     refreshed) echo "[updater] server compose refreshed to the $1 canonical" | tee -a "$SIG/update.log" ;;
     unavailable) echo "[updater] compose refresh skipped: $IMG ships no embedded canonical" | tee -a "$SIG/update.log" ;;
     no-baseline) echo "[updater] ⚠ SERVER COMPOSE NOT REFRESHED: no baseline (pre-adoption box)." \
-         "Run scripts/compose-adopt.sh once from the stack dir. Continuing on the EXISTING compose." | tee -a "$SIG/update.log" ;;
+         "Run once from the stack dir: sudo sh scripts/compose-adopt.sh --apply" \
+         "(sudo: a roll leaves root-owned files in the stack dir). Continuing on the EXISTING compose." | tee -a "$SIG/update.log" ;;
+    incompatible-env) echo "[updater] ⚠ SERVER COMPOSE NOT REFRESHED: .env lacks variables the $1 compose requires (listed above)." \
+         "Add them to .env, then request the update again. Continuing on the EXISTING compose." | tee -a "$SIG/update.log" ;;
     modified) echo "[updater] ⚠ SERVER COMPOSE NOT REFRESHED: docker-compose.yml has LOCAL EDITS." \
          "Move customization to docker-compose.override.yml + .env, then re-run scripts/compose-adopt.sh." \
          "Release-level compose changes are MISSING on this box." | tee -a "$SIG/update.log" ;;
@@ -282,32 +337,55 @@ refresh_file() {
   fi
 }
 
-# refresh_caddy: Caddyfile + every shipped shape. Sets CADDY_REFRESH to the
-# Caddyfile's outcome, or 'refreshed' when only a shape changed (either way
-# caddy needs a recreate). Requires IMG (set by refresh_compose).
+# refresh_caddy: every shipped shape FIRST, then the Caddyfile that imports
+# them. Sets CADDY_REFRESH to the Caddyfile's outcome (or 'refreshed' when
+# only a shape changed) for stack.json, and CADDY_RECREATE=1 when ANY of the
+# files changed, so the roll forces a caddy recreate even when the Caddyfile
+# itself is modified or has no baseline: a hand-edited Caddyfile that still
+# imports the shapes would otherwise run a release routing change only after
+# somebody restarted caddy by hand. Shapes first because the Caddyfile
+# imports them by name: a Caddyfile installed without its shape crash-loops
+# caddy and takes the site down (compose-adopt.sh learned this on
+# 2026-09-02; the updater used to do it the other way round). If a shape the
+# box needs is missing after the loop, the Caddyfile is left alone. Requires
+# IMG (set by refresh_compose).
 refresh_caddy() {
-  CADDY_REFRESH=$(refresh_file "$CADDY_REL" /app/release/Caddyfile no)
-  case "$CADDY_REFRESH" in
-    refreshed) echo "[updater] Caddyfile refreshed to the $1 canonical" | tee -a "$SIG/update.log" ;;
-    current) : ;;
-    unavailable) echo "[updater] Caddyfile refresh skipped: image ships no /app/release/Caddyfile" | tee -a "$SIG/update.log" ;;
-    no-baseline) echo "[updater] ⚠ CADDYFILE NOT REFRESHED: no baseline (pre-adoption box)." \
-         "Run scripts/compose-adopt.sh --apply once from the stack dir, then recreate caddy. Continuing on the EXISTING Caddyfile." | tee -a "$SIG/update.log" ;;
-    modified) echo "[updater] ⚠ CADDYFILE NOT REFRESHED: $CADDY_REL has LOCAL EDITS." \
-         "Move box routes to infra/caddy/conf.d/*.caddy, then re-run scripts/compose-adopt.sh --apply." \
-         "Release-level front-door changes are MISSING on this box." | tee -a "$SIG/update.log" ;;
-    *) echo "[updater] ⚠ Caddyfile refresh: $CADDY_REFRESH" | tee -a "$SIG/update.log" ;;
-  esac
+  CADDY_RECREATE=""
+  shapes_ok=1
   for shape in same-origin split; do
     r=$(refresh_file "$CADDY_SHAPES_REL/$shape.caddy" "/app/release/caddy-shapes/$shape.caddy" yes)
     case "$r" in
       refreshed|adopted)
         echo "[updater] caddy shape $shape $r" | tee -a "$SIG/update.log"
-        [ "$CADDY_REFRESH" = current ] && CADDY_REFRESH=refreshed ;;
+        CADDY_RECREATE=1 ;;
       current) : ;;
-      *) echo "[updater] ⚠ caddy shape $shape: $r" | tee -a "$SIG/update.log" ;;
+      *)
+        echo "[updater] ⚠ caddy shape $shape: $r" | tee -a "$SIG/update.log"
+        # modified / no-baseline shapes still exist and satisfy the import;
+        # only a shape that is NOT on disk blocks the Caddyfile.
+        [ -s "$STACK/$CADDY_SHAPES_REL/$shape.caddy" ] || shapes_ok=0 ;;
     esac
   done
+  if [ "$shapes_ok" != 1 ]; then
+    CADDY_REFRESH=shape-failed
+    echo "[updater] ⚠ CADDYFILE NOT REFRESHED: a shape it imports is missing and could not be installed (see above)." \
+         "A Caddyfile without its shape crash-loops caddy. Continuing on the EXISTING Caddyfile." | tee -a "$SIG/update.log"
+    return
+  fi
+  CADDY_REFRESH=$(refresh_file "$CADDY_REL" /app/release/Caddyfile no)
+  case "$CADDY_REFRESH" in
+    refreshed) CADDY_RECREATE=1; echo "[updater] Caddyfile refreshed to the $1 canonical" | tee -a "$SIG/update.log" ;;
+    current) [ -z "$CADDY_RECREATE" ] || CADDY_REFRESH=refreshed ;;
+    unavailable) echo "[updater] Caddyfile refresh skipped: image ships no /app/release/Caddyfile" | tee -a "$SIG/update.log" ;;
+    no-baseline) echo "[updater] ⚠ CADDYFILE NOT REFRESHED: no baseline (pre-adoption box). To adopt the release front door:" \
+         "1) set MANTLE_CADDY_SHAPE in .env (same-origin, the default: one domain routes both apps; split: owner UI on its own hostname);" \
+         "2) from the stack dir: sudo sh scripts/compose-adopt.sh --apply (sudo: the roll left root-owned files in infra/caddy);" \
+         "3) docker compose up -d --no-deps --force-recreate caddy. Continuing on the EXISTING Caddyfile." | tee -a "$SIG/update.log" ;;
+    modified) echo "[updater] ⚠ CADDYFILE NOT REFRESHED: $CADDY_REL has LOCAL EDITS." \
+         "Move box routes to infra/caddy/conf.d/*.caddy, then re-run: sudo sh scripts/compose-adopt.sh --apply" \
+         "Release-level front-door changes are MISSING on this box." | tee -a "$SIG/update.log" ;;
+    *) echo "[updater] ⚠ Caddyfile refresh: $CADDY_REFRESH" | tee -a "$SIG/update.log" ;;
+  esac
 }
 
 # ── operator scripts: release-owned too ──────────────────────────────────────
@@ -330,6 +408,14 @@ refresh_caddy() {
 # is today, waiting on a manual step per box that is the thing that never
 # happens. The previous copy is kept as <name>.pre-adopt.<utc> so an operator
 # edit is recoverable, and the source is the image this box already runs.
+# keep_newest <prefix> <n>: delete all but the newest <n> files named
+# <prefix>*. The suffix is a UTC stamp, so lexical order is time order.
+keep_newest() {
+  ls -1d "$1"* 2>/dev/null | sort -r | tail -n +"$(($2 + 1))" | while IFS= read -r kn_f; do
+    rm -f "$kn_f"
+  done
+}
+
 refresh_scripts() {
   rsd="$STACK/.release-scripts.tmp"
   rm -rf "$rsd"
@@ -365,7 +451,13 @@ refresh_scripts() {
         "changes to it are MISSING on this box." | tee -a "$SIG/update.log"
       continue
     fi
-    [ -f "$dst" ] && cp "$dst" "$dst.pre-adopt.$(date -u +%Y%m%d-%H%M%S)"
+    if [ -f "$dst" ]; then
+      cp "$dst" "$dst.pre-adopt.$(date -u +%Y%m%d-%H%M%S)"
+      # A pristine refresh writes one of these too, per changed script per
+      # roll; on daily releases that was hundreds of files nobody pruned.
+      # Three per script is plenty to recover an operator edit from.
+      keep_newest "$dst.pre-adopt." 3
+    fi
     if cp "$src" "$dst.tmp" && mv "$dst.tmp" "$dst" && cp "$src" "$dst.release"; then
       # docker cp carries the mode, plain cp does not reliably — and a
       # non-executable db-restore.sh is a script an operator finds at 3am.
@@ -398,15 +490,39 @@ refresh_scripts() {
 # against at /app/release/client-tag; a server roll moves the client to that
 # tag so the pair a user runs is always one that was tested together.
 
+# ── .env writes: keep the operator's ownership and mode ──────────────────────
+# This sidecar runs as root with umask 022. A bare `sed > tmp && mv` swapped
+# the operator's 0600 .env for a root:root 0644 one: the master key readable
+# by every user on the host, and the next unprivileged scripts/install.sh
+# re-run dying on its first `touch`. Every rewrite now goes through
+# env_rewrite: the temp file is created under umask 077 in the same
+# directory, then given the owner and mode of the file it replaces (0600
+# when there is nothing to copy them from), then moved over it.
+# stat: busybox and GNU take -c, BSD takes -f; both are tried so the same
+# code runs in the sidecar (alpine) and in the harness on a Mac.
+file_owner() { stat -c '%u:%g' "$1" 2>/dev/null || stat -f '%u:%g' "$1" 2>/dev/null; }
+file_mode()  { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null; }
+
+# env_rewrite <sed-expression>: rewrite $STACK/.env through sed, preserving
+# owner and mode. Non-zero (and .env untouched) on failure.
+env_rewrite() {
+  er_tmp="$STACK/.env.updater-tmp"
+  er_own=$(file_owner "$STACK/.env"); er_mode=$(file_mode "$STACK/.env")
+  rm -f "$er_tmp"
+  ( umask 077; sed "$1" "$STACK/.env" > "$er_tmp" ) || { rm -f "$er_tmp"; return 1; }
+  chmod "${er_mode:-600}" "$er_tmp" 2>/dev/null || chmod 600 "$er_tmp"
+  [ -z "$er_own" ] || chown "$er_own" "$er_tmp" 2>/dev/null
+  mv "$er_tmp" "$STACK/.env"
+}
+
 # persist_env <name> <value> — upsert one var in $STACK/.env. Temp-file
 # rewrite, not `sed -i` (busybox/BSD flag drift). Values reach here only via
 # the tag whitelist, so the sed pattern needs no escaping.
 persist_env() {
   if grep -q "^$1=" "$STACK/.env" 2>/dev/null; then
-    sed "s|^$1=.*|$1=$2|" "$STACK/.env" > "$STACK/.env.updater-tmp" \
-      && mv "$STACK/.env.updater-tmp" "$STACK/.env"
+    env_rewrite "s|^$1=.*|$1=$2|"
   else
-    printf '\n%s=%s\n' "$1" "$2" >> "$STACK/.env"
+    ( umask 077; printf '\n%s=%s\n' "$1" "$2" >> "$STACK/.env" )
   fi
 }
 
@@ -535,6 +651,11 @@ refresh_updater() {
   fi
 }
 
+# Library mode for scripts/test-deploy-scripts.sh: with MANTLE_UPDATER_LIB=1
+# the file defines its functions and stops here, so the refresh logic runs
+# against a fake stack with a stubbed docker instead of the poll loop.
+[ "${MANTLE_UPDATER_LIB:-}" != 1 ] || return 0
+
 CFG_ERR=$(config_error)
 if [ -n "$CFG_ERR" ]; then
   echo "[updater] not configured: $CFG_ERR." \
@@ -634,21 +755,15 @@ while true; do
     echo "[updater] update requested → $TARGET" | tee -a "$SIG/update.log"
 
     # Persist the tag so a later manual `docker compose up` doesn't roll back.
-    # Temp-file rewrite, not `sed -i` — the in-place flag's syntax differs
-    # between busybox (this image) and BSD sed and silently misbehaves.
-    if [ "$TARGET" != "latest" ]; then
-      if grep -q '^MANTLE_IMAGE_TAG=' "$STACK/.env" 2>/dev/null; then
-        sed "s/^MANTLE_IMAGE_TAG=.*/MANTLE_IMAGE_TAG=$TARGET/" "$STACK/.env" > "$STACK/.env.updater-tmp" \
-          && mv "$STACK/.env.updater-tmp" "$STACK/.env"
-      else
-        printf '\nMANTLE_IMAGE_TAG=%s\n' "$TARGET" >> "$STACK/.env"
-      fi
-    fi
+    # persist_env: temp-file rewrite that keeps .env's owner and mode (a bare
+    # redirect from this root sidecar left it root:root 0644).
+    [ "$TARGET" = latest ] || persist_env MANTLE_IMAGE_TAG "$TARGET"
 
     # Refresh the (pristine) compose from the target image BEFORE `compose
     # pull`/`up`, so a release's compose-level changes — new services, mounts,
     # healthchecks — take effect in the SAME roll as its image. (Phase is
     # already 'pulling' — claimed above the .env rewrite.)
+    CADDY_RECREATE=""
     refresh_compose "$TARGET"
     # Front door too (same image, same roll): a release that changes the
     # Caddyfile or a shape lands with its image, no hand copy per box.
@@ -695,9 +810,11 @@ while true; do
         if [ "$HAS_CADDY" -gt 0 ]; then
           # A refreshed Caddyfile/shape is a bind-mount CONTENT change, which
           # compose does not see: force the recreate so caddy reads the new
-          # inode. Unchanged files keep the cheap no-op path.
+          # files. CADDY_RECREATE is set by refresh_caddy when ANY front-door
+          # file changed, whatever the Caddyfile's own outcome was. Unchanged
+          # files keep the cheap no-op path.
           CADDY_FORCE=""
-          case "$CADDY_REFRESH" in refreshed|adopted) CADDY_FORCE="--force-recreate" ;; esac
+          [ -z "$CADDY_RECREATE" ] || CADDY_FORCE="--force-recreate"
           # shellcheck disable=SC2086  # an empty CADDY_FORCE must vanish, not quote to ""
           if ! docker compose --project-directory "$STACK" up -d --no-deps $CADDY_FORCE caddy >> "$SIG/update.log" 2>&1; then
             echo "[updater] ⚠ caddy did not converge — the previous caddy is still serving; see update.log" | tee -a "$SIG/update.log"
