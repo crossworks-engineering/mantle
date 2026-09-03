@@ -92,15 +92,18 @@ export const telegram_pending: BuiltinToolDef = {
       limit: { type: 'integer', minimum: 1, maximum: 50, description: 'cap the rows returned' },
     },
   },
-  handler: async (input) => {
+  handler: async (input, ctx) => {
     const chatId = strOpt(input.chat_id);
-    const conds = [eq(telegramMessages.processed, false)];
+    // Owner scope rides on the chat: telegram_messages has no owner column, so
+    // the join to telegram_chats.user_id is what keeps one owner's pending
+    // queue out of another's. See builtins-read-scope.test.ts.
+    const conds = [eq(telegramMessages.processed, false), eq(telegramChats.userId, ctx.ownerId)];
     if (chatId) {
       // chat_id is the *Telegram* chat id; resolve to our internal pk first.
       const [chat] = await db
         .select({ id: telegramChats.id })
         .from(telegramChats)
-        .where(eq(telegramChats.telegramChatId, chatId))
+        .where(and(eq(telegramChats.userId, ctx.ownerId), eq(telegramChats.telegramChatId, chatId)))
         .limit(1);
       if (!chat) return { ok: true, output: [] };
       conds.push(eq(telegramMessages.chatId, chat.id));

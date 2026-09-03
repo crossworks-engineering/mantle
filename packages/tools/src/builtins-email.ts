@@ -428,7 +428,10 @@ const email_list: BuiltinToolDef = {
         ? Math.min(Math.max(1, Math.floor(input.limit)), 200)
         : 50;
 
-    const conds = [] as ReturnType<typeof eq>[];
+    // `emails` carries no owner column: it scopes through account_id to
+    // email_accounts.user_id, so the join IS the scope. Without it this listed
+    // every email row on the box. See builtins-read-scope.test.ts.
+    const conds = [eq(emailAccounts.userId, ctx.ownerId)] as ReturnType<typeof eq>[];
     if (accountId) conds.push(eq(emails.accountId, accountId));
     if (since) {
       const d = new Date(since);
@@ -452,7 +455,8 @@ const email_list: BuiltinToolDef = {
           hasAttachments: emails.hasAttachments,
         })
         .from(emails)
-        .where(conds.length ? and(...conds) : undefined)
+        .innerJoin(emailAccounts, eq(emails.accountId, emailAccounts.id))
+        .where(and(...conds))
         .orderBy(desc(emails.internalDate))
         .limit(limit);
       ctx.step?.setOutput({ count: rows.length });
@@ -545,7 +549,12 @@ const email_get: BuiltinToolDef = {
           deliveryKind: emails.deliveryKind,
         })
         .from(emails)
-        .where(or(eq(emails.id, id), eq(emails.nodeId, id)))
+        // Owner scope, same account join as email_list: an id on its own must
+        // not open another owner's mail.
+        .innerJoin(emailAccounts, eq(emails.accountId, emailAccounts.id))
+        .where(
+          and(eq(emailAccounts.userId, ctx.ownerId), or(eq(emails.id, id), eq(emails.nodeId, id))),
+        )
         .limit(1);
       if (!row) return { ok: false, error: `email '${id}' not found` };
       const text = row.bodyText?.trim();
