@@ -28,7 +28,7 @@ overrides:
   qs@>=6.11.1 <6.15.2: ^6.15.2
 
 patchedDependencies:
-  katex@0.18.6: 9fc0d88b66f430a0ed9dfa38d8690224d18b7de2b77ac2e1656abadd3cc24d9b
+  katex@0.18.7: 9e31554f4c4317a21c14a802de59f3dbcfa6650e75ff3316e140d064de6b9b82
 
 importers:
 
@@ -665,8 +665,8 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       katex:
-        specifier: ^0.18.6
-        version: 0.18.6(patch_hash=9fc0d88b66f430a0ed9dfa38d8690224d18b7de2b77ac2e1656abadd3cc24d9b)
+        specifier: ^0.18.7
+        version: 0.18.7(patch_hash=9e31554f4c4317a21c14a802de59f3dbcfa6650e75ff3316e140d064de6b9b82)
       lucide-react:
         specifier: ^1.41.0
         version: 1.41.0(react@19.2.8)
@@ -1170,8 +1170,8 @@ importers:
         specifier: ^4.13.7
         version: 4.13.7
       katex:
-        specifier: ^0.18.6
-        version: 0.18.6(patch_hash=9fc0d88b66f430a0ed9dfa38d8690224d18b7de2b77ac2e1656abadd3cc24d9b)
+        specifier: ^0.18.7
+        version: 0.18.7(patch_hash=9e31554f4c4317a21c14a802de59f3dbcfa6650e75ff3316e140d064de6b9b82)
       libsodium-wrappers:
         specifier: ^0.8.4
         version: 0.8.4
@@ -4342,8 +4342,8 @@ packages:
     resolution: {integrity: sha512-Eeo8Ys1doU1z+x8AZsPpQu+p/QcZBI5PeOo7QGQdy2x2m0MU/hYagBbGOmXwr5KVbEfVuWv9LpnQWeehogurjg==}
     hasBin: true
 
-  katex@0.18.6:
-    resolution: {integrity: sha512-5B7yiIsr7gq9hlIH6uG7hTNglHSz7I+Csa9I66dK4Ljz/YEGQMoBcC1IwtFFp34I7byBcEPtCyYFNnzuxZnGlw==}
+  katex@0.18.7:
+    resolution: {integrity: sha512-h+UCwkZ+4Jz8WQ7MLGfj7UVFrRCizGb912fwF4luGdYsC5paYG1vx+jy+KRcC/XkpjGva/P7nAWuxNnPzRvzHw==}
     hasBin: true
 
   keyv@5.6.0:
@@ -9087,7 +9087,7 @@ snapshots:
     dependencies:
       commander: 8.3.0
 
-  katex@0.18.6(patch_hash=9fc0d88b66f430a0ed9dfa38d8690224d18b7de2b77ac2e1656abadd3cc24d9b):
+  katex@0.18.7(patch_hash=9e31554f4c4317a21c14a802de59f3dbcfa6650e75ff3316e140d064de6b9b82):
     dependencies:
       commander: 15.0.0
 
