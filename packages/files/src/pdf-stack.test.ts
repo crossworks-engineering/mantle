@@ -30,7 +30,7 @@
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { helveticaPdf, pdfStackSteps } from './pdf-fixtures.test-helper';
+import { claimPdfStackProcess, helveticaPdf, pdfStackSteps } from './pdf-fixtures.test-helper';
 
 const require_ = createRequire(import.meta.url);
 
@@ -78,6 +78,15 @@ describe('pdf stack: one pdfjs', () => {
 });
 
 describe('pdf stack: one process, rasterize first', () => {
+  it('has a module registry to itself (vitest isolation is ON)', () => {
+    // If this fails, `isolate: false` is in play and the sibling order file is
+    // no longer an independent second start — see `claimPdfStackProcess`.
+    expect(
+      claimPdfStackProcess(),
+      'another pdf-stack test file already ran in this module registry — vitest isolation is off, so the two order files no longer test two orders',
+    ).toBe(true);
+  });
+
   it('runs every pdfjs entry point after rasterizing', async () => {
     const bytes = helveticaPdf();
     for (const [name, run] of pdfStackSteps(bytes)) {

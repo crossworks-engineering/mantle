@@ -36,6 +36,41 @@ export function helveticaPdf(text = 'Hello Mantle'): Buffer {
 }
 
 /**
+ * True once any pdf-stack test file has loaded THIS module instance.
+ *
+ * Module scope, so its lifetime is the module registry's — which is exactly
+ * the thing the two-file split depends on. See `claimPdfStackProcess`.
+ */
+let processClaimed = false;
+
+/**
+ * Claim this module registry for one pdf-stack test file. Returns false if
+ * another file already claimed it.
+ *
+ * The order-dependent smoke tests are split across two files because a pdfjs
+ * version collision poisons a process permanently — only the entry point that
+ * ran FIRST can be observed to work, so testing both orders needs two clean
+ * starts. Vitest's per-file isolation is what supplies them.
+ *
+ * That is an assumption about the test runner, not something the tests
+ * control, and vitest 5 actively advertises turning it off ("at least ~3s
+ * faster with isolate: false") on every run. Take that advice and the second
+ * file silently inherits the first one's modules: still green, no longer
+ * testing a second order, and the pdfjs collision it exists to catch walks
+ * straight through. This turns that into a loud failure.
+ *
+ * A tripwire, not a proof: with `isolate: false` vitest still spreads files
+ * over several workers, so the two may land in different registries and the
+ * guard stays quiet. It fires when they land together, which is the case that
+ * would otherwise mislead.
+ */
+export function claimPdfStackProcess(): boolean {
+  if (processClaimed) return false;
+  processClaimed = true;
+  return true;
+}
+
+/**
  * Every pdfjs-backed entry point in the package, as `[name, run]` pairs.
  *
  * Callers run these in ONE process and in a chosen order — that is the whole
