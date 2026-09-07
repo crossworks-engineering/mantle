@@ -22,7 +22,11 @@ import { dirname, join, resolve } from 'node:path';
 const root = resolve(new URL('..', import.meta.url).pathname);
 // diagram-guides is vendored from the diagramming skill; its cross-references
 // name sibling files and scripts that skill never shipped here.
-const SKIP_DIRS = new Set(['_archive', '_changelog', 'node_modules', 'diagram-guides']);
+// `data` is the dev stack's bind-mount root (gitignored, docker-compose.dev.yml).
+// It holds no docs, and `data/postgres` is owned by the container's uid with
+// mode 0700 — walking into it throws EACCES and takes the whole check (and so
+// the pre-push gate) down on any clone that has ever run `pnpm infra:up`.
+const SKIP_DIRS = new Set(['_archive', '_changelog', 'node_modules', 'diagram-guides', 'data']);
 const REPO_PREFIX = /^(server|packages|scripts|docs|infra|eslint-rules|\.github|brand)\//;
 
 function walk(dir, out) {
