@@ -4,7 +4,7 @@ Plan of record for bringing the dependency tree up to date. Branch:
 `chore/dependency-upgrades`, forked from `main` at `f3249341` (v0.158.4).
 
 Snapshot taken 2026-07-22 with `pnpm outdated -r`. Counts drift daily, re-run
-before starting a wave; the *shape* of the plan is what matters, not the exact
+before starting a wave; the _shape_ of the plan is what matters, not the exact
 patch numbers.
 
 ## The situation
@@ -13,10 +13,10 @@ patch numbers.
 
 The important split is not major-vs-minor, it's **what needs a manifest edit**:
 
-| | count | how |
-| --- | ---: | --- |
+|                                           |  count | how                                      |
+| ----------------------------------------- | -----: | ---------------------------------------- |
 | Already allowed by the declared `^` range | **67** | `pnpm update -r`, no `package.json` edit |
-| Needs an explicit range bump | **19** | edit the manifest, one at a time |
+| Needs an explicit range bump              | **19** | edit the manifest, one at a time         |
 
 Most of the drift is a **stale lockfile**, not stale manifests. 78% of it comes
 back for the cost of one command and a verify run. The remaining 19 are the real
@@ -71,7 +71,7 @@ tables, math, mentions, task lists, drag handles, code blocks.
 1.2→1.3, select 2.2→2.3, slot 1.2→1.3). Gate: the master-detail settings screens,
 dialogs, and every `Switch`/`Select` surface.
 
-> **Checked, and it's fine:** the tree declares *both* the `radix-ui` umbrella
+> **Checked, and it's fine:** the tree declares _both_ the `radix-ui` umbrella
 > package and ~15 individual `@radix-ui/react-*` packages, and both import styles
 > are in real use (5 files from the umbrella, ~19 from individual packages). That
 > looks like it should produce two physical copies of each primitive and hence
@@ -111,47 +111,47 @@ identified, plus 8 that took their in-range bump but still have a major waiting
 
 Each of these touches 0–3 files. Cheap, independent, high confidence.
 
-| package | jump | files | what to prove |
-| --- | --- | ---: | --- |
-| `bcryptjs` + `@types/bcryptjs` | 2 → 3 | 3 | **Existing password hashes still verify.** Log in as an existing user before *and* after. v3 ships its own types → delete `@types/bcryptjs` (it's flagged deprecated). |
-| `chokidar` | 4 → 5 | 2 | Docs-collection watcher still picks up file changes. |
-| `react-day-picker` | 9 → 10 | 2 | The shared `DateTimePicker`, events, todos, secrets. |
-| `katex` | 0.16 → 0.18 |, | Math rendering in Pages. |
-| `@openrouter/sdk` | 0.12 → 1.0 | 2 | Chat + embeddings still route. Pairs with 1a. |
-| `nodemailer` + `@types/nodemailer` | 6 → 9 | 1 | **Send a real email.** Three majors on the outbound path. Check whether v9 ships its own types and drop `@types/nodemailer` if so. |
-| `pdf-parse` 1→2, `pdfjs-dist` 5→6 | | 2 | PDF ingest + the password-protected path. `pdf-password.ts` dynamically imports `pdfjs-dist/legacy/build/pdf.mjs`, **that subpath may have moved in v6**; verify before assuming. |
-| `esbuild` | 0.24 → 0.28 | 2 | Mini-app bundling (`packages/app-build`). Has an `allowBuilds` entry in `pnpm-workspace.yaml`. Build + publish an app, load it in the sandbox. |
-| `@napi-rs/canvas` | 0.1 → 1.0 | 0 direct | Pinned `~0.1.100` deliberately. `next.config.ts` externalizes it *by name* (including per-platform `@napi-rs/canvas-<os>-<arch>`) for the webpack production build, **read that block before bumping**, and prove `pnpm -C server/web build` still works, not just dev. |
-| `@types/libsodium-wrappers` | deprecated |, | No newer version exists. Check whether `libsodium-wrappers` now ships its own types; if so delete, else leave and document why. |
+| package                            | jump        |    files | what to prove                                                                                                                                                                                                                                                           |
+| ---------------------------------- | ----------- | -------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bcryptjs` + `@types/bcryptjs`     | 2 → 3       |        3 | **Existing password hashes still verify.** Log in as an existing user before _and_ after. v3 ships its own types → delete `@types/bcryptjs` (it's flagged deprecated).                                                                                                  |
+| `chokidar`                         | 4 → 5       |        2 | Docs-collection watcher still picks up file changes.                                                                                                                                                                                                                    |
+| `react-day-picker`                 | 9 → 10      |        2 | The shared `DateTimePicker`, events, todos, secrets.                                                                                                                                                                                                                    |
+| `katex`                            | 0.16 → 0.18 |        , | Math rendering in Pages.                                                                                                                                                                                                                                                |
+| `@openrouter/sdk`                  | 0.12 → 1.0  |        2 | Chat + embeddings still route. Pairs with 1a.                                                                                                                                                                                                                           |
+| `nodemailer` + `@types/nodemailer` | 6 → 9       |        1 | **Send a real email.** Three majors on the outbound path. Check whether v9 ships its own types and drop `@types/nodemailer` if so.                                                                                                                                      |
+| `pdf-parse` 1→2, `pdfjs-dist` 5→6  |             |        2 | PDF ingest + the password-protected path. `pdf-password.ts` dynamically imports `pdfjs-dist/legacy/build/pdf.mjs`, **that subpath may have moved in v6**; verify before assuming.                                                                                       |
+| `esbuild`                          | 0.24 → 0.28 |        2 | Mini-app bundling (`packages/app-build`). Has an `allowBuilds` entry in `pnpm-workspace.yaml`. Build + publish an app, load it in the sandbox.                                                                                                                          |
+| `@napi-rs/canvas`                  | 0.1 → 1.0   | 0 direct | Pinned `~0.1.100` deliberately. `next.config.ts` externalizes it _by name_ (including per-platform `@napi-rs/canvas-<os>-<arch>`) for the webpack production build, **read that block before bumping**, and prove `pnpm -C server/web build` still works, not just dev. |
+| `@types/libsodium-wrappers`        | deprecated  |        , | No newer version exists. Check whether `libsodium-wrappers` now ships its own types; if so delete, else leave and document why.                                                                                                                                         |
 
 ### Wave 2 status: ✅ done, with two caveats (2026-07-22)
 
 Nine of ten items landed. One was deliberately **not** taken.
 
-| item | outcome |
-| --- | --- |
-| `@types/libsodium-wrappers` | removed, upstream ships real types |
-| `katex` 0.16→0.18 | ✅ |
-| `chokidar` 4→5 | ✅ proved at runtime |
-| `react-day-picker` 9→10 | ✅ `table` classNames key → `month_grid` |
-| `bcryptjs` 2→3 (+drop `@types/`) | ✅ v2 hashes proved to verify under v3 |
-| `@openrouter/sdk` 0.12→1.0 | ✅ `/models/errors` subpath survived |
-| `nodemailer` 6→9 (+types 6→8) | ✅ message building proved; real send still manual |
-| `pdf-parse` 1→2 | ❌ **held at 1.x**: see below |
-| `pdfjs-dist` 5→6 | ✅ + single-version pin |
-| `esbuild` 0.24→0.28 | ✅ |
-| `@napi-rs/canvas` 0.1→1.0 | ✅ (was a required repair, not a bump) |
+| item                             | outcome                                            |
+| -------------------------------- | -------------------------------------------------- |
+| `@types/libsodium-wrappers`      | removed, upstream ships real types                 |
+| `katex` 0.16→0.18                | ✅                                                 |
+| `chokidar` 4→5                   | ✅ proved at runtime                               |
+| `react-day-picker` 9→10          | ✅ `table` classNames key → `month_grid`           |
+| `bcryptjs` 2→3 (+drop `@types/`) | ✅ v2 hashes proved to verify under v3             |
+| `@openrouter/sdk` 0.12→1.0       | ✅ `/models/errors` subpath survived               |
+| `nodemailer` 6→9 (+types 6→8)    | ✅ message building proved; real send still manual |
+| `pdf-parse` 1→2                  | ❌ **held at 1.x**: see below                      |
+| `pdfjs-dist` 5→6                 | ✅ + single-version pin                            |
+| `esbuild` 0.24→0.28              | ✅                                                 |
+| `@napi-rs/canvas` 0.1→1.0        | ✅ (was a required repair, not a bump)             |
 
 **The big lesson: wave 1 shipped two latent breakages that its gates could
 not see.** Both were in-range bumps whose transitive native deps moved:
 
 - `pdf-to-png-converter` 4.0.0→4.1.1 pulled a second `pdfjs-dist` (6.0.227
-  alongside 5.7.284). pdfjs compares API and Worker version strings *exactly*
+  alongside 5.7.284). pdfjs compares API and Worker version strings _exactly_
   and its worker config is process-global, so two copies in one process break
   whichever loads second.
 - The same bump moved its `@napi-rs/canvas` to 1.0.2 while `server/web` stayed
   pinned at `~0.1.100`. That pin exists so next.config.ts's webpack
-  externalization *resolves* at runtime, so the mismatch would have handed a
+  externalization _resolves_ at runtime, so the mismatch would have handed a
   0.1.x native binding to a library built for 1.0.x.
 
 Neither `pnpm verify` nor `next build` executes a PDF, so both passed clean.
@@ -184,7 +184,7 @@ Both items landed. `16 → 14 outdated.`
 
 **`lucide-react` 0.469 → 1.25 needed zero code changes** across all 201 import
 sites, not one icon we use was renamed or removed. That clean pass was checked
-to be *meaningful* rather than vacuous: a canary importing a non-existent icon
+to be _meaningful_ rather than vacuous: a canary importing a non-existent icon
 fails with TS2305, so lucide's types are strict and typecheck really is proof
 here. Bundle unchanged at 103 kB.
 
@@ -192,24 +192,25 @@ here. Bundle unchanged at 103 kB.
 legend content, all resolved using recharts' own exported types rather than
 hand-rolled shapes:
 
-| change | fix |
-| --- | --- |
-| `payload`/`label`/`active` off public Tooltip props (context-injected) | use exported `TooltipContentProps`, as `Partial<>` |
-| `LegendProps` Omits `payload`, keeps `verticalAlign` | split the `Pick<>`; declare `payload?: LegendPayload[]` |
-| `dataKey` widened to allow a function | no longer valid as a React key, reuse the stringified local |
-| `<Bar layout>` removed | parent `<BarChart layout>` already drove it; prop was redundant |
-| `labelFormatter` first arg now `ReactNode` | narrow with `String()` before parsing |
+| change                                                                 | fix                                                             |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `payload`/`label`/`active` off public Tooltip props (context-injected) | use exported `TooltipContentProps`, as `Partial<>`              |
+| `LegendProps` Omits `payload`, keeps `verticalAlign`                   | split the `Pick<>`; declare `payload?: LegendPayload[]`         |
+| `dataKey` widened to allow a function                                  | no longer valid as a React key, reuse the stringified local     |
+| `<Bar layout>` removed                                                 | parent `<BarChart layout>` already drove it; prop was redundant |
+| `labelFormatter` first arg now `ReactNode`                             | narrow with `String()` before parsing                           |
 
 > **Open verification gap.** There is no jsdom or testing-library in this repo,
 > `vitest.config.ts` says outright that "UI behaviour goes through `pnpm build`
-> + manual smoke". So verify + build being green says nothing about whether
-> charts actually *render*. Before merge, eyeball the dashboard
-> (`ingest-chart`, `spend-chart`, `brain-breakdown`) and `/debug/spend`.
-> Adding a render-test setup is worth considering, but not mid-upgrade.
+>
+> - manual smoke". So verify + build being green says nothing about whether
+>   charts actually _render_. Before merge, eyeball the dashboard
+>   (`ingest-chart`, `spend-chart`, `brain-breakdown`) and `/debug/spend`.
+>   Adding a render-test setup is worth considering, but not mid-upgrade.
 
 ### pdf-parse 2, revisited: adopted after testing (2026-07-22)
 
-Wave 2 held pdf-parse at 1.x on the *assumption* that forcing it onto pdfjs
+Wave 2 held pdf-parse at 1.x on the _assumption_ that forcing it onto pdfjs
 6.1.200 (a full major above its pinned 5.4.296) would risk silently degraded
 extraction. That was caution, not evidence. Tested afterwards; the assumption
 was wrong.
@@ -222,12 +223,12 @@ previously failed), and rasterize either side of it.
 
 **Extraction output changes, for the better:**
 
-| | pdf-parse 1.x | pdf-parse 2 |
-| --- | ---: | ---: |
-| output | 11,045 chars | 2,038 chars |
-| tokens in v1 missing from v2 |, | **none** |
-| formatting | fixed-width, space-padded | clean |
-| page markers | none | `-- N of M --` |
+|                              |             pdf-parse 1.x |    pdf-parse 2 |
+| ---------------------------- | ------------------------: | -------------: |
+| output                       |              11,045 chars |    2,038 chars |
+| tokens in v1 missing from v2 |                         , |       **none** |
+| formatting                   | fixed-width, space-padded |          clean |
+| page markers                 |                      none | `-- N of M --` |
 
 81% of v1's output was whitespace padding that every PDF chunk carried into its
 embedding. Decision: adopt, and **do not re-extract** existing PDFs, old ones
@@ -261,6 +262,7 @@ it. The `postgres` dep was a phantom and is reverted (`3c120b40`). **Wave 4's
 drizzle upgrade has no such blocker.**
 
 > ### The lesson that actually generalises
+>
 > **`node_modules/.pnpm` accumulates stale `<pkg>@<ver>_<peers>` directories
 > across incremental installs.** They are indistinguishable by eye from live
 > duplicate resolutions, and a workspace package can be left symlinked to a dead
@@ -288,7 +290,7 @@ is already in use. `eslint-config-next` is coupled to the Next major, so either
 hold it at 15.x here or fold it into Wave 5.
 
 **`vitest` 2 → 4**: two majors across 226 test files. Config and mocking APIs
-move between majors. Risk is *test-only*, but a broken suite blinds every later
+move between majors. Risk is _test-only_, but a broken suite blinds every later
 wave, so it must land clean.
 
 **`zod` 3 → 4**: 141 files. Almost all of it is `z.object({...}).parse(body)` in
@@ -326,7 +328,7 @@ eslint 10 promotes two rules into `recommended`, and both found real things,
   default the initializer already had (redundant assignment removed, comment
   explains why the default stands), and dead initializers where every branch
   assigns before use (`let x: T;` instead). The latter is a strict tightening,
-  the initializer had been *suppressing* TypeScript's definite-assignment check.
+  the initializer had been _suppressing_ TypeScript's definite-assignment check.
 - **`preserve-caught-error` ×3.** Two extractor throws and a seed script were
   interpolating a caught error's message but discarding the error itself, losing
   the cause chain exactly on the DLQ path where debugging matters.
@@ -356,7 +358,7 @@ requires an explicit key type on `z.record()`. 16 single-arg call sites became
 > runs **JSON Schema → zod**. Tool schemas come from our own JSON Schema literals
 > in `packages/tools/src/builtins-*.ts`, so the LLM-visible tool surface isn't
 > generated by zod and can't drift here. What zod does at that boundary is
-> *validate tool input*.
+> _validate tool input_.
 >
 > That still needed proving: the bridge has **no test coverage** (the 9 mcp-core
 > tests never touch `zodShapeFromJsonSchema`), and a validation change would
@@ -368,7 +370,7 @@ requires an explicit key type on `z.record()`. 16 single-arg call sites became
 
 **`drizzle-orm` 0.38 → 0.45 + `drizzle-kit` 0.30 → 0.31** (`88090933`). Seven 0.x
 minors across 238 files and 18 declaring packages, bumped in one commit (a
-partial bump *would* split the workspace). **Zero code changes; typecheck clean.**
+partial bump _would_ split the workspace). **Zero code changes; typecheck clean.**
 
 Types say nothing about emitted SQL, so two runtime checks:
 
@@ -413,7 +415,7 @@ Three things needed attention:
 
 1. **Turbopack is the default for `next build`, and a custom webpack config makes
    the build fail.** We have one (the `@napi-rs/canvas` + `esbuild`
-   externalization) and it *didn't* fire; because the hook is gated behind
+   externalization) and it _didn't_ fire; because the hook is gated behind
    `process.env.TURBOPACK` with a comment claiming "`next build` leaves it
    unset". True under 15; **Next 16 sets `TURBOPACK="auto"` for `next build`
    too** (probed it), so the gate now excludes the hook and Turbopack never sees
@@ -426,7 +428,7 @@ Three things needed attention:
 
 2. **`turbopack.root` is now pinned**: and this one matters for this repo's
    workflow. Next infers the workspace root by walking up for a lockfile, and
-   from a worktree under `.claude/worktrees/` it walks *past* this tree and picks
+   from a worktree under `.claude/worktrees/` it walks _past_ this tree and picks
    the **integrator checkout**, resolving files from a different copy of the
    repo. Now derived from the config file's own location, correct everywhere.
 
@@ -455,7 +457,7 @@ Two majors on the job queue. This is the only item on the list that can lose dat
 - **30+ touchpoints** across `server/api`, `server/web/workers`, `packages/runs`,
   `packages/email`, `packages/telegram`, `packages/microsoft`.
 - **It owns and migrates its own `pgboss` schema on boot.** Once a box starts on
-  v12 the schema is migrated; rolling back the image does *not* roll back the
+  v12 the schema is migrated; rolling back the image does _not_ roll back the
   schema.
 - In-flight jobs at upgrade time are the failure mode to think hardest about.
 
@@ -489,18 +491,18 @@ version using an older pg-boss release first.
 runs-dispatch, telegram-poll, calendar-sync, maintenance, heartbeats, on every
 box in the fleet. And no path to 25 was found:
 
-| release | against schema 24 |
-| --- | --- |
-| 10.4.2 (current) | migration store holds **22..24**: 24 is the end of the v10 line |
-| 11.0.0 | `AssertionError: Version 24 not found.` |
-| 11.1.2 | `error: relation "pgboss.job_common" does not exist` |
-| 12.26.1 library | refuses (above) |
-| 12.26.1 CLI `migrate` | **same refusal, even `--dry-run`** |
+| release               | against schema 24                                               |
+| --------------------- | --------------------------------------------------------------- |
+| 10.4.2 (current)      | migration store holds **22..24**: 24 is the end of the v10 line |
+| 11.0.0                | `AssertionError: Version 24 not found.`                         |
+| 11.1.2                | `error: relation "pgboss.job_common" does not exist`            |
+| 12.26.1 library       | refuses (above)                                                 |
+| 12.26.1 CLI `migrate` | **same refusal, even `--dry-run`**                              |
 
 Three things worth carrying:
 
 1. **The CLI's `version` command is misleading.** It reports `Current 24 / Latest
-   37 / Migrations pending: 13`, arithmetic, *not* a migratability check.
+37 / Migrations pending: 13`, arithmetic, _not_ a migratability check.
    `migrate` then refuses. Don't read "13 pending" as "13 will run".
 2. **Failed attempts are safe.** After every failure the schema was still exactly
    24 with all seeded jobs intact; they abort before mutating. The failure mode
@@ -515,7 +517,7 @@ untested individually); get upstream guidance; hand-write the 24→25 migration;
 drain the queues and let 12 build the schema fresh at 37, accepting the loss of
 queued/scheduled state. Filed as its own task.
 
-> Worth noting for calibration: types and tests would have *passed*. `pnpm verify`
+> Worth noting for calibration: types and tests would have _passed_. `pnpm verify`
 > stays green through a pg-boss bump, the failure only exists where a real
 > pg-boss 12 meets a real schema-24 database.
 
@@ -537,7 +539,7 @@ typescript-eslint@8.65.0  peerDependencies:
 ```
 
 TypeScript 7 is outside `typescript-eslint`'s supported range, and the only newer
-publishes are `8.65.1-alpha.*` prereleases. Next 16 is *not* a blocker; it
+publishes are `8.65.1-alpha.*` prereleases. Next 16 is _not_ a blocker; it
 declares no `typescript` peer at all.
 
 So adopting TS 7 today means running the lint gate unsupported or losing it. That
@@ -572,3 +574,94 @@ The reason we're 86 behind is that nothing watches. Before closing this out:
 - Add a CI drift check that regenerates the notices and fails on a diff.
 - Add a scheduled `pnpm outdated -r` report so drift is visible monthly instead
   of discovered annually.
+
+---
+
+# Refresh: 2026-09-07
+
+A second pass, branch `feat/deps-refresh` off v0.232.177. Not a re-plan — the
+waves above already did the hard migrations; this is the drift that accumulated
+since, plus the majors that have appeared. `pnpm -C server/web deps:drift
+--majors` (the tool the July effort's follow-up asked for, now built) reported
+**49 in-range + 5 majors** at the start and **0 in-range + 3 held** at the end.
+
+|                  |                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------- |
+| in-range refresh | 49 packages, 33 manifests, 0 deps added or removed                               |
+| majors taken     | `concurrently` 9→10, `vitest` 4→5, `nodemailer` 9→10 (+drop `@types/nodemailer`) |
+| majors held      | `mcp-handler` 1→2, `typescript` 5.9→7                                            |
+| pins left alone  | `pdfjs-dist` 6.2.108, `@napi-rs/canvas` 1.0.2                                    |
+
+**Every one of the 12 open advisories (8 high, 4 moderate) closed on the
+in-range refresh alone.** `pnpm audit` goes from 12 to "No known
+vulnerabilities found" without a single override edit. Worth knowing before
+reaching for a backstop entry: several of the existing ones in
+`pnpm-workspace.yaml` had gone stale in the other direction — the `qs` floor
+said `^6.15.2` while the live advisory wanted `>=6.16.0` — so a floor that was
+right when written can quietly stop covering the thing it was added for.
+
+## Held, with reasons
+
+**`mcp-handler` 1.1 → 2.1 is not a bump, it's an SDK migration.** v2 peers
+`@modelcontextprotocol/server@^2.0.0`, the successor package to
+`@modelcontextprotocol/sdk` 1.x, which four workspace packages declare and
+eight source files import. Same upstream repo and same exports shape (checked —
+it is not a name takeover), but taking it means moving the whole MCP core onto
+a new package major, which is its own project and touches the tool surface the
+assistant sees. `mcp-handler` stays at ^1.1.0.
+
+**`pdfjs-dist` 6.2.108 → 6.3.289 and `@napi-rs/canvas` 1.0.2 → 1.0.8 stay
+pinned.** These are the exact-pinned singletons from wave 2, so `deps:drift`
+lists them as out-of-range majors; they are neither. They were left alone
+because the runtime gate for them is currently red for an unrelated reason (see
+below), and wave 2's own lesson is that a native binding must not be moved on
+the strength of types and a build alone.
+
+**`typescript` 5.9 → 7.0 remains deferred, and the documented revisit condition
+is still unmet.** The July note says to revisit when
+`npm view typescript-eslint peerDependencies.typescript` includes 7.x. Checked
+2026-09-07 against `typescript-eslint@8.69.0`:
+
+```
+typescript: >=4.8.4 <6.1.0     ← still excludes 7.x
+eslint:     ^8.57.0 || ^9.0.0 || ^10.0.0
+```
+
+## A pre-existing PDF bug the smoke check found
+
+Wave 2's parting instruction was to add a runtime smoke for anything with a
+native binding or a process-global singleton. Doing that here surfaced a live
+defect that has nothing to do with this refresh — it fails identically on main:
+
+```
+rasterize first  → parsePdf fails:   API version "5.4.296" != Worker version "6.2.108"
+parse first      → rasterize fails:  API version "6.2.108" != Worker version "5.4.296"
+```
+
+`pdf-parse` **vendors its own pdfjs 5.4.296 inside its dist**, where the
+`pdfjs-dist` override cannot reach it. The lockfile shows exactly one
+`pdfjs-dist` and looks correct. Since pdfjs compares version strings exactly
+and its worker config is process-global, whichever of parse/rasterize runs
+first wins and the other fails for the life of the process — and both live in
+the extract worker (`load-body.ts` → `parseDocumentBytes` → `parsePdf`;
+`images.ts` → `rasterizePdfToPngs`). Filed as its own task.
+
+The generalisable bit: **an override pins what npm RESOLVES, not what a package
+vendors into its own dist.** A single-version lockfile check cannot see this
+class, and neither can typecheck or the build. Only running both paths in one
+process shows it.
+
+## Two smaller things worth carrying
+
+- **Every katex bump costs a patch regeneration.** `patchedDependencies` keys
+  an exact version, so the install fails outright (`ERR_PNPM_UNUSED_PATCH`)
+  rather than silently dropping the patch — which is the good failure mode, but
+  it means a katex bump is never a one-liner. The transform is mechanical
+  (strip woff/truetype `src` fallbacks, keep woff2), so regenerating is cheap;
+  verify it against the installed copy under `node_modules/.pnpm`, not against
+  the patch file.
+- **`pnpm update` resolves against a cached registry view.** katex 0.18.7 was
+  published too recently for it, so `update` kept reporting 0.18.6 as the top of
+  `^0.18.6`. An explicit `add pkg@version` forces the refetch. "Nothing to do"
+  is not the same as current — which is the same lesson `deps:drift` exists to
+  teach, one level down.
