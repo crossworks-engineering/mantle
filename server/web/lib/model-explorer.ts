@@ -18,6 +18,7 @@
 import { getApiKey } from '@mantle/api-keys';
 import { isProviderId, type ProviderId } from '@mantle/voice';
 import type { ExplorerModel, ModelSort } from '@mantle/client-types';
+import { kindFromModalities } from '@mantle/client-types/model-pools';
 import { errorMessage } from '@mantle/std';
 
 export type { ExplorerModel, ModelSort };
@@ -59,7 +60,22 @@ function isoFromEpochSeconds(v: unknown): string | undefined {
 function humanize(key: string): string {
   return key.replace(/_/g, ' ');
 }
-/** Infer a coarse model type from its id when the API doesn't say. */
+/**
+ * Bucket an OpenRouter row by what it PRODUCES — the catalog says so directly
+ * in `architecture.output_modalities`, so nothing here is a guess. The
+ * ordering lives in `@mantle/client-types/model-pools` next to
+ * `poolModelIssue`, shared with the Curator's `model_catalog` filter so the
+ * two cannot drift. Only a row with NO modalities at all falls back to the
+ * slug heuristic.
+ */
+function kindForOpenRouter(output: string[], id: string): string {
+  return output.length > 0 ? kindFromModalities(output) : kindFromId(id);
+}
+
+/** Infer a coarse model type from its id when the API doesn't say. Still the
+ *  right answer for the providers whose list API returns bare ids (OpenAI,
+ *  DeepSeek, Hugging Face) — but never for OpenRouter, which publishes the
+ *  modalities. */
 function kindFromId(id: string): string {
   const s = id.toLowerCase();
   if (s.includes('embed')) return 'embedding';
@@ -99,10 +115,8 @@ export function parseOpenRouter(data: unknown[]): ExplorerModel[] {
     const arch = rec(m.architecture);
     const top = rec(m.top_provider);
     const pricing = rec(m.pricing);
-    const builtModality = [
-      asArray(arch.input_modalities).join('+'),
-      asArray(arch.output_modalities).join('+'),
-    ]
+    const outputModalities = asArray(arch.output_modalities).map(String);
+    const builtModality = [asArray(arch.input_modalities).join('+'), outputModalities.join('+')]
       .filter(Boolean)
       .join('→');
     const modality = str(arch.modality) ?? (builtModality || undefined);
@@ -122,7 +136,7 @@ export function parseOpenRouter(data: unknown[]): ExplorerModel[] {
       outputPricePerM: perMillion(pricing.completion),
       extraPricing: extraPricing.length ? extraPricing : undefined,
       modality,
-      kind: kindFromId(String(m.id ?? '')),
+      kind: kindForOpenRouter(outputModalities, String(m.id ?? '')),
       created: isoFromEpochSeconds(m.created),
       raw,
     };
@@ -266,47 +280,18 @@ const FETCHERS: Partial<Record<ProviderId, Fetcher>> = {
   openrouter: {
     needsKey: false,
     fetch: async () => {
-      // OR splits its catalog across two endpoints — /v1/models is the
-      // chat-and-image catalog, /v1/embeddings/models is published
-      // separately (their explicit choice; the main catalog deliberately
-      // excludes embedding routes). Both are keyless, same response shape,
-      // disjoint by design. Fan out + concat so the /models page surfaces
-      // everything OR routes — and the existing kindFromId classifier
-      // auto-buckets `text-embedding-*` / `gemini-embedding-*` etc. into
-      // the `embedding` filter chip with no extra wiring.
+      // ONE call for the whole catalog. `output_modalities=all` is the
+      // difference between the text-out slice (430 rows on 2026-09-07) and
+      // everything OpenRouter routes (581): the image and video generators,
+      // the speech and transcription engines, embeddings and rerank.
       //
-      // Promise.allSettled so a flake on one endpoint doesn't blank the
-      // whole page — the chat catalog is the bigger one and the more
-      // commonly-needed view; embeddings is the augmentation.
-      const [chat, embeddings] = await Promise.allSettled([
-        getJson('https://openrouter.ai/api/v1/models'),
-        getJson('https://openrouter.ai/api/v1/embeddings/models'),
-      ]);
-      const out: ExplorerModel[] = [];
-      if (chat.status === 'fulfilled') {
-        out.push(...parseOpenRouter(asArray(rec(chat.value).data)));
-      }
-      if (embeddings.status === 'fulfilled') {
-        // Force kind='embedding' on this branch — source of truth is the
-        // URL we fetched from, not the slug heuristic. 13 of OR's 25
-        // embedding models (sentence-transformers, GTE, E5, BGE, MiniLM
-        // families) lack 'embed' in their slug; `kindFromId` would
-        // misclassify them as 'chat' and they'd vanish from the
-        // embedding filter chip. Override here, not in kindFromId,
-        // because the heuristic is still the right fallback when the
-        // *URL* is ambiguous (the main /v1/models catalog).
-        const embRows = parseOpenRouter(asArray(rec(embeddings.value).data)).map(
-          (m): ExplorerModel => ({ ...m, kind: 'embedding' }),
-        );
-        out.push(...embRows);
-      }
-      if (chat.status === 'rejected' && embeddings.status === 'rejected') {
-        // Surface the chat-catalog error since it's the dominant case;
-        // operators recognising "openrouter is down" matters more than
-        // the embedding-specific error wording.
-        throw chat.reason instanceof Error ? chat.reason : new Error(String(chat.reason));
-      }
-      return out;
+      // This replaces a two-endpoint fan-out (/models + /embeddings/models)
+      // plus a slug-substring classifier plus a hardcoded kind override for
+      // the embeddings branch — all of which existed to reconstruct, badly,
+      // the `output_modalities` the API publishes on every row. The `all`
+      // filter is also a superset of /v1/embeddings/models (37 vs 33).
+      const body = rec(await getJson('https://openrouter.ai/api/v1/models?output_modalities=all'));
+      return parseOpenRouter(asArray(body.data));
     },
   },
   openai: {

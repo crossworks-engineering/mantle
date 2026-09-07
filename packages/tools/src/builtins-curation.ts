@@ -22,7 +22,13 @@
 
 import { and, asc, eq } from 'drizzle-orm';
 import { db, curatedModels, type CuratedPricing, type CuratedRoute } from '@mantle/db';
-import { MODEL_POOLS, MODEL_POOL_IDS, poolModelIssue } from '@mantle/client-types/model-pools';
+import {
+  MODEL_POOLS,
+  MODEL_POOL_IDS,
+  poolModelIssue,
+  kindFromModalities,
+  type CatalogKind,
+} from '@mantle/client-types/model-pools';
 import { OPENAI_TTS_MODELS, OPENAI_STT_MODELS } from '@mantle/voice-client/catalog';
 import { GOOGLE_TTS_MODELS, GOOGLE_STT_MODELS } from '@mantle/voice-client/catalogs/google';
 import {
@@ -83,8 +89,9 @@ type CatalogModel = {
   name: string | null;
   /** Which provider this slug belongs to — the route to write into a pool. */
   provider: string;
-  /** 'tts' | 'stt' for the voice supplement; absent for LLM catalog rows. */
-  kind?: 'tts' | 'stt';
+  /** What the model produces. Derived from `output_modalities` for catalog
+   *  rows; hardcoded tts/stt for the direct-provider voice supplement. */
+  kind: CatalogKind;
   inputPerM: number | null;
   outputPerM: number | null;
   contextTokens: number | null;
@@ -99,13 +106,19 @@ type CatalogModel = {
 };
 
 /**
- * The voice supplement: OpenRouter's /models endpoint is the CHAT catalog and
- * omits dedicated TTS/STT engines entirely (grok-voice, whisper, ElevenLabs,
- * Deepgram, …), which made the tts/stt pools near-uncuratable. These are
- * Mantle's own WIRED voice catalogs — every slug here is one an adapter can
- * actually dispatch to. Pricing is null on purpose: voice billing is
- * per-character/per-minute, not per-token, and inventing a per-M figure would
+ * The voice supplement: the models Mantle can dispatch to that OpenRouter
+ * does NOT route — ElevenLabs, Deepgram, AssemblyAI, Google/OpenAI voices
+ * reached through their own adapters. Pricing is null on purpose: these bill
+ * per character/minute, not per token, and inventing a per-M figure would
  * poison the pool snapshots. Exported for unit tests.
+ *
+ * It used to also carry hand-written rows for OpenRouter's own voice slugs
+ * (`x-ai/grok-voice-tts-1.0`, `openai/gpt-4o-mini-transcribe`) because the
+ * bare `/models` call is the text-out slice and omits them. `loadCatalog`
+ * now asks for `output_modalities=all`, which returns all 18 speech and 20
+ * transcription routes — both of those slugs among them, and both token-billed,
+ * so they arrive with real per-1M pricing. Those two rows are gone, along with
+ * the obligation to keep them in sync with MANIFEST_WORKERS by hand.
  */
 export function voiceCatalogSupplement(): CatalogModel[] {
   const base = {
@@ -131,16 +144,6 @@ export function voiceCatalogSupplement(): CatalogModel[] {
   for (const m of ASSEMBLYAI_STT_MODELS) add('assemblyai', 'stt', m.id, m.label);
   add('xai', 'tts', XAI_TTS_MODEL_ID, 'Grok Voice');
   for (const m of XAI_STT_MODELS) add('xai', 'stt', m.id, m.label);
-  // The OpenRouter AUDIO-endpoint slugs Mantle ships as worker defaults —
-  // reachable through the owner's OpenRouter key but absent from /models.
-  // Keep in sync with MANIFEST_WORKERS (tts/stt defaults).
-  add('openrouter', 'tts', 'x-ai/grok-voice-tts-1.0', 'Grok Voice (via OpenRouter)');
-  add(
-    'openrouter',
-    'stt',
-    'openai/gpt-4o-mini-transcribe',
-    'GPT-4o Mini Transcribe (via OpenRouter)',
-  );
   return out;
 }
 
@@ -153,7 +156,12 @@ async function loadCatalog(): Promise<
   if (catalogCache && Date.now() - catalogCache.at < CATALOG_TTL_MS) {
     return { ok: true, models: catalogCache.models };
   }
-  const res = await orGet('/models', {});
+  // `output_modalities=all` — WITHOUT it this is the text-out slice only
+  // (430 of 581 rows on 2026-09-07): 41 of the 52 image generators, all 28
+  // video models, all 18 speech and all 20 transcription engines and the
+  // embedding/rerank routes are simply absent, which left the image_gen,
+  // tts and stt pools uncuratable from live data.
+  const res = await orGet('/models', { output_modalities: 'all' });
   if (!res.ok) return res;
   const data = (res.json as { data?: unknown[] }).data ?? [];
   const perM = (v: unknown): number | null => {
@@ -166,16 +174,27 @@ async function loadCatalog(): Promise<
     if (typeof m.id !== 'string') continue;
     const pricing = (m.pricing ?? {}) as Record<string, unknown>;
     const arch = (m.architecture ?? {}) as Record<string, unknown>;
+    const outputModalities = strList(arch.output_modalities);
+    const contextTokens = typeof m.context_length === 'number' ? m.context_length : null;
+    // Only token-billed rows get a per-1M price. A published context window is
+    // the tell: windowed rows price at $1–$16 per 1M, windowless ones at up to
+    // $360,000, because their `pricing.prompt` is a per-MINUTE audio rate
+    // (`openai/whisper-1` "0.006" IS OpenAI's $0.006/minute). The curator is
+    // told to copy these straight into a pool snapshot, so a wrong-unit number
+    // would silently poison the "$100 buys…" comparison — null keeps the old
+    // "never invent a rate" contract for exactly the rows that need it.
+    const tokenBilled = (contextTokens ?? 0) > 0;
     models.push({
       id: m.id,
       name: typeof m.name === 'string' ? m.name : null,
       provider: 'openrouter',
-      inputPerM: perM(pricing.prompt),
-      outputPerM: perM(pricing.completion),
-      contextTokens: typeof m.context_length === 'number' ? m.context_length : null,
+      kind: kindFromModalities(outputModalities),
+      inputPerM: tokenBilled ? perM(pricing.prompt) : null,
+      outputPerM: tokenBilled ? perM(pricing.completion) : null,
+      contextTokens,
       modality: typeof arch.modality === 'string' ? arch.modality : null,
       inputModalities: strList(arch.input_modalities),
-      outputModalities: strList(arch.output_modalities),
+      outputModalities,
       created: typeof m.created === 'number' ? m.created : null,
     });
   }
@@ -338,7 +357,7 @@ const model_catalog: BuiltinToolDef = {
   slug: 'model_catalog',
   name: 'Model catalog with pricing',
   description:
-    "Look up models with pricing: OpenRouter's public catalog (slug, live input/output $ per 1M, context, modality, plus `inputModalities`/`outputModalities` — the output side is what separates an image READER from an image GENERATOR) PLUS Mantle's wired voice catalogs (grok-voice, whisper/gpt-4o transcribe, ElevenLabs, Deepgram, Gemini voices) which OpenRouter's list omits. THE source for slugs and pricing snapshots when writing entries with `model_pool_set` — each row's `provider` is the route to record. Voice rows have `kind` tts/stt and NULL pricing (billed per character/minute, not per token — leave the snapshot empty, never invent a rate). `q` searches name/slug; `ids` fetches exact slugs. Keyless; cached ~5 minutes.",
+    "Look up models with pricing: OpenRouter's FULL catalog — chat, image/video generators, speech (TTS) and transcription (STT) engines, embeddings, rerank — each with slug, live input/output $ per 1M, context, `kind`, and `inputModalities`/`outputModalities` (the output side separates an image READER from a GENERATOR). Plus the voice models Mantle reaches through its own adapters (ElevenLabs, Deepgram, AssemblyAI, Google). Pricing is NULL wherever a model is not token-billed — per-minute audio and video routes, those adapter rows — so leave that snapshot empty rather than invent a rate. THE source for slugs and pricing when writing `model_pool_set` entries; each row's `provider` is the route to record. Filter by `kind` per pool; `q` searches name/slug, `ids` fetches exact slugs. Keyless; cached ~5 minutes.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -347,6 +366,12 @@ const model_catalog: BuiltinToolDef = {
         type: 'array',
         items: { type: 'string' },
         description: "Exact slugs to fetch, e.g. ['anthropic/claude-sonnet-5'].",
+      },
+      kind: {
+        type: 'string',
+        enum: ['chat', 'image', 'video', 'tts', 'stt', 'embedding', 'rerank', 'audio'],
+        description:
+          "What the model must PRODUCE, read from the catalog's output modalities (not from its name). 'chat' = text out.",
       },
       limit: {
         type: 'integer',
@@ -367,6 +392,7 @@ const model_catalog: BuiltinToolDef = {
       ? new Set(input.ids.filter((v): v is string => typeof v === 'string'))
       : null;
     const limit = typeof input.limit === 'number' ? input.limit : 25;
+    const kind = str(input.kind).trim();
     let models = [...res.models, ...voiceCatalogSupplement()];
     if (ids && ids.size > 0) models = models.filter((m) => ids.has(m.id));
     else if (q) {
@@ -374,6 +400,9 @@ const model_catalog: BuiltinToolDef = {
         (m) => m.id.toLowerCase().includes(q) || (m.name ?? '').toLowerCase().includes(q),
       );
     }
+    // Applied after `ids` too: an explicit slug lookup that contradicts the
+    // requested kind should come back empty, not silently wrong.
+    if (kind) models = models.filter((m) => m.kind === kind);
     return {
       ok: true,
       output: { total: models.length, models: models.slice(0, limit) },

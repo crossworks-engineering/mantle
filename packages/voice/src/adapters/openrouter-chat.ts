@@ -577,7 +577,7 @@ type OrListModelsResponse = {
     context_length?: number;
     top_provider?: { context_length?: number };
     pricing?: { prompt?: string; completion?: string };
-    architecture?: { modality?: string; input_modalities?: string[] };
+    architecture?: { modality?: string; input_modalities?: string[]; output_modalities?: string[] };
   }>;
 };
 
@@ -630,9 +630,14 @@ async function openrouterDiscover(apiKey: string): Promise<DiscoveryResult<ChatM
     }
     const parsed = (await res.json()) as OrListModelsResponse;
     const models = parsed.data ?? [];
-    // Filter to chat-shaped models (drop embeddings, image-gen). OR's
-    // catalog has a modality field on architecture; presence of
-    // 'text' input + 'text' output = chat.
+    // Filter to chat-shaped models: text in, text out. Note this fetch does
+    // NOT pass `output_modalities=all` on purpose — the bare call is the
+    // text-out slice, which is exactly what a chat dropdown wants (the
+    // catalog + curation fetches ask for `all` because their job is to judge
+    // every route). Both sides are read off `architecture`; the id is never
+    // consulted. A slug regex used to do the second half of this and it cut
+    // both ways — it dropped any chat model whose name happened to contain
+    // "image" or "flux", and it kept generators that didn't.
     const chatModels: ChatModelInfo[] = models
       .filter((m) => {
         const inputs = m.architecture?.input_modalities ?? [];
@@ -640,8 +645,10 @@ async function openrouterDiscover(apiKey: string): Promise<DiscoveryResult<ChatM
         if (inputs.length === 0) return true;
         return inputs.includes('text');
       })
-      // Skip image-output-only routes (they live in the kind='image' bucket).
-      .filter((m) => !/(image|stable-diffusion|flux|dall-e)/i.test(m.id))
+      .filter((m) => {
+        const outputs = m.architecture?.output_modalities ?? [];
+        return outputs.length === 0 || outputs.includes('text');
+      })
       .map((m) => ({
         id: m.id,
         label: m.name || m.id,

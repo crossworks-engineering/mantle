@@ -110,18 +110,52 @@ describe('parseCatalog', () => {
     expect(out['anthropic/claude-opus-4.7']?.contextLength).toBe(1_000_000);
   });
 
-  it('skips entries with no id or no positive context length', () => {
+  it('skips entries with no id', () => {
     const out = parseCatalog([
       { context_length: 100_000 }, // no id
       { id: '', context_length: 100_000 }, // empty id
-      { id: 'a/zero', context_length: 0 }, // zero
-      { id: 'a/neg', context_length: -1 }, // negative
-      { id: 'a/none' }, // no length at all
       { id: 'a/ok', context_length: 50_000 },
     ]);
     expect(Object.keys(out)).toEqual(['a/ok']);
     expect(out['a/ok']?.contextLength).toBe(50_000);
     expect(out['a/ok']?.vision).toBe(false);
+  });
+
+  it('KEEPS windowless rows as contextLength 0 (every speech/transcription route)', () => {
+    // These used to be dropped, which is why catalogModalities() came back
+    // null for exactly the models the tts/stt pool guards need to judge.
+    const out = parseCatalog([
+      {
+        id: 'deepgram/nova-3',
+        context_length: 0,
+        architecture: { input_modalities: ['audio'], output_modalities: ['transcription'] },
+        pricing: { prompt: '0.0043' },
+      },
+      { id: 'a/neg', context_length: -1 },
+      { id: 'a/none' },
+    ]);
+    expect(Object.keys(out)).toEqual(['deepgram/nova-3', 'a/neg', 'a/none']);
+    expect(out['deepgram/nova-3']?.contextLength).toBe(0);
+    expect(out['deepgram/nova-3']?.outputModalities).toEqual(['transcription']);
+  });
+
+  it('publishes NO per-1M price for a windowless row — the rate is not per token', () => {
+    // "0.0043" is Deepgram's per-MINUTE rate. ×1e6 would render $4,300 per 1M
+    // tokens, a confident wrong number that the curator is told to copy into a
+    // pool snapshot. Undefined means "pricing unavailable", which is true.
+    const out = parseCatalog([
+      { id: 'deepgram/nova-3', context_length: 0, pricing: { prompt: '0.0043' } },
+      // Token-billed voice routes DO publish a window, and keep their pricing.
+      {
+        id: 'openai/gpt-4o-mini-transcribe',
+        context_length: 128_000,
+        pricing: { prompt: '0.00000125', completion: '0.000005' },
+      },
+    ]);
+    expect(out['deepgram/nova-3']?.inputPricePerM).toBeUndefined();
+    expect(out['deepgram/nova-3']?.outputPricePerM).toBeUndefined();
+    expect(out['openai/gpt-4o-mini-transcribe']?.inputPricePerM).toBe(1.25);
+    expect(out['openai/gpt-4o-mini-transcribe']?.outputPricePerM).toBe(5);
   });
 
   it('extracts pricing as USD per 1M tokens (OpenRouter encodes per-token)', () => {

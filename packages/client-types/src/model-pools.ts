@@ -37,9 +37,13 @@ export type ModelPoolDef = {
 export type PoolModality = {
   /** Modalities the model must ACCEPT. Empty = text-only is fine. */
   input: readonly ('image' | 'file')[];
-  /** What the consumer reads back. `audio` pools live in the provider voice
-   *  catalogs, not OpenRouter's chat catalog, so they are never checked. */
-  output: 'text' | 'image' | 'audio';
+  /** What the consumer reads back, in OpenRouter's own output_modalities
+   *  vocabulary — `speech` is a TTS engine, `transcription` an ASR one. Those
+   *  two used to be uncheckable (the catalog fetch was the text-out slice, so
+   *  a voice route was always "unknown"); since the fetch asks for
+   *  `output_modalities=all` they carry positive evidence like everything
+   *  else. */
+  output: 'text' | 'image' | 'speech' | 'transcription';
 };
 
 const TEXT_OUT: PoolModality = { input: [], output: 'text' };
@@ -103,7 +107,7 @@ export const MODEL_POOLS: readonly ModelPoolDef[] = [
     description:
       'Turns replies into speech. Provider-specific catalog (Grok voice, GPT-4o TTS voices, ElevenLabs).',
     group: 'workers',
-    modality: { input: [], output: 'audio' },
+    modality: { input: [], output: 'speech' },
   },
   {
     id: 'stt',
@@ -111,7 +115,7 @@ export const MODEL_POOLS: readonly ModelPoolDef[] = [
     description:
       'Speech to text for voice notes and video ingest (Whisper family, grok-stt, gpt-4o-mini-transcribe).',
     group: 'workers',
-    modality: { input: [], output: 'audio' },
+    modality: { input: [], output: 'transcription' },
   },
   {
     id: 'search',
@@ -156,6 +160,33 @@ export type ModelModalities = {
   output: readonly string[];
 };
 
+/** The coarse bucket a catalog row falls into. `chat` is what a text-out row
+ *  is called; the rest mirror OpenRouter's output-modality vocabulary. */
+export type CatalogKind =
+  'chat' | 'image' | 'video' | 'tts' | 'stt' | 'embedding' | 'rerank' | 'audio';
+
+/**
+ * Bucket a model by what it PRODUCES. Lives here, beside `poolModelIssue`, so
+ * the /models type filter and the Curator's `model_catalog` filter cannot
+ * drift apart — they are answering the same question off the same field, and
+ * two copies of this ordering would eventually disagree about (say) a model
+ * that both generates images and returns text.
+ *
+ * Order matters: the dedicated buckets win over the generic ones, and audio
+ * beside text is a speech-capable CHAT model (`openai/gpt-audio`) rather than
+ * a sound generator.
+ */
+export function kindFromModalities(output: readonly string[]): CatalogKind {
+  if (output.includes('transcription')) return 'stt';
+  if (output.includes('speech')) return 'tts';
+  if (output.includes('embeddings')) return 'embedding';
+  if (output.includes('rerank')) return 'rerank';
+  if (output.includes('video')) return 'video';
+  if (output.includes('image')) return 'image';
+  if (output.includes('audio') && !output.includes('text')) return 'audio';
+  return 'chat';
+}
+
 /**
  * Does this model belong in this pool? Returns the reason it does NOT, or
  * null when it fits.
@@ -163,9 +194,9 @@ export type ModelModalities = {
  * Fail-open by design (same rule as the worker-config catalog check): a
  * `null` modalities argument means the catalog never loaded, and an outage
  * must never block a curator from recording their judgment. Only positive
- * catalog evidence rejects. Audio pools (tts/stt) are never checked — their
- * models live in the provider voice catalogs, not OpenRouter's chat catalog,
- * so any "evidence" about them here would be an absence, not a fact.
+ * catalog evidence rejects — a route the catalog does not list (every
+ * direct-provider voice slug: ElevenLabs, Deepgram, Gemini voices) still
+ * arrives here as an empty pair and passes.
  */
 export function poolModelIssue(
   poolId: string,
@@ -174,7 +205,6 @@ export function poolModelIssue(
   const pool = POOL_BY_ID.get(poolId);
   if (!pool || !modalities) return null;
   const want = pool.modality;
-  if (want.output === 'audio') return null;
   const outputs = modalities.output ?? [];
   const inputs = modalities.input ?? [];
   if (outputs.length === 0 && inputs.length === 0) return null;
@@ -187,8 +217,33 @@ export function poolModelIssue(
       `pool instead. Reading images is just a capable text-out model that accepts pictures.`
     );
   }
+  // Everything else non-text on a text-out pool: video, speech (a TTS engine),
+  // transcription (an ASR one), embeddings, rerank. Before the catalog was
+  // widened these could not reach a text pool because the fetch never listed
+  // them; now they can, so the guard has to name them.
+  if (want.output === 'text' && !outputs.includes('text') && outputs.length > 0) {
+    return `this model outputs ${outputs.join('+')}, not text — the ${pool.label} pool needs a text-out model.`;
+  }
   if (want.output === 'image' && !makesImages && outputs.length > 0) {
     return `this model does not output images (${outputs.join('+')}) — the ${pool.label} pool needs a generator.`;
+  }
+  // Voice pools. Two shapes qualify for each: the dedicated engine
+  // (`speech` / `transcription`) and the speech-capable chat model
+  // (`openai/gpt-audio` is `text+audio->text+audio` and legitimately serves
+  // BOTH pools — it is in the shipped template for both). What that still
+  // catches is the classic swap: a pure TTS engine parked in Transcribe emits
+  // no text and takes no audio, which is a positive contradiction.
+  if (want.output === 'speech' && outputs.length > 0) {
+    if (!outputs.includes('speech') && !outputs.includes('audio')) {
+      return `this model outputs ${outputs.join('+')} — it produces no audio, and the ${pool.label} pool needs a model that speaks.`;
+    }
+  }
+  if (want.output === 'transcription' && outputs.length > 0) {
+    const transcribes =
+      outputs.includes('transcription') || (outputs.includes('text') && inputs.includes('audio'));
+    if (!transcribes) {
+      return `this model does not turn audio into text (${inputs.join('+') || '?'}->${outputs.join('+')}) — the ${pool.label} pool needs one that does.`;
+    }
   }
   for (const need of want.input) {
     if (inputs.length > 0 && !inputs.includes(need)) {

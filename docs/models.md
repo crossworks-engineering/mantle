@@ -37,7 +37,7 @@ columns are best-effort and the raw pane always shows everything.
 
 | Provider | Endpoint | Key? | Rich fields returned |
 |---|---|---|---|
-| OpenRouter | `/api/v1/models` | none | id, name, description, context, prompt/completion + extra pricing, modality, created |
+| OpenRouter | `/api/v1/models?output_modalities=all` | none | id, name, description, context, prompt/completion + extra pricing, modality, created; `kind` comes from `output_modalities` |
 | Google (Gemini) | `/v1beta/models` | key | displayName, description, input/output token limits, methods → type |
 | Mistral | `/v1/models` | key | id, description, max_context_length, vision capability |
 | Cohere | `/v1/models` | key | name, context_length, endpoints → type |
@@ -57,6 +57,14 @@ columns are best-effort and the raw pane always shows everything.
   (input/output); other priced dimensions (image, web_search, cache) surface
   verbatim under "Other pricing". xAI's integer prices are shown as-is to avoid
   a wrong unit conversion.
+- **The type filter is catalog data, not a name guess.** For OpenRouter, `kind`
+  is read from `architecture.output_modalities` (`speech` → tts,
+  `transcription` → stt, `embeddings`, `rerank`, `video`, `image`, else chat).
+  The slug-substring heuristic remains only for the providers whose list API
+  returns bare ids (OpenAI, DeepSeek, Hugging Face). `output_modalities=all`
+  is what makes the non-chat buckets appear at all — the bare call returns the
+  text-out slice, and it also made the separate `/v1/embeddings/models` fetch
+  (and its hardcoded kind override) unnecessary: `all` is a superset.
 - **Security:** the route is owner-scoped (`requireOwner`); stored API keys are
   resolved server-side and never reach the client.
 - Adding a provider with a list API is one entry in `FETCHERS` + a pure parser

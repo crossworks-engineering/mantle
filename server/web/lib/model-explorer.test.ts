@@ -46,6 +46,36 @@ describe('parseOpenRouter', () => {
     expect(m.outputPricePerM).toBe(0);
     expect(m.extraPricing).toBeUndefined();
   });
+
+  it('kinds a row from output_modalities, not from its slug', () => {
+    // The whole point of asking OpenRouter for output_modalities=all: these
+    // slugs announce nothing, and the old substring classifier put every one
+    // of them in 'chat'.
+    const rows = parseOpenRouter([
+      { id: 'deepgram/aura-2', architecture: { output_modalities: ['speech'] } },
+      { id: 'nvidia/parakeet-tdt-0.6b-v3', architecture: { output_modalities: ['transcription'] } },
+      { id: 'meta/muse-image', architecture: { output_modalities: ['image', 'text'] } },
+      { id: 'alibaba/wan-3.0', architecture: { output_modalities: ['video'] } },
+      { id: 'qwen/qwen3-reranker-8b', architecture: { output_modalities: ['rerank'] } },
+      { id: 'baai/bge-m3', architecture: { output_modalities: ['embeddings'] } },
+      { id: 'openai/gpt-audio', architecture: { output_modalities: ['text', 'audio'] } },
+      { id: 'anthropic/claude-sonnet-5', architecture: { output_modalities: ['text'] } },
+    ]);
+    expect(rows.map((r) => r.kind)).toEqual([
+      'tts',
+      'stt',
+      'image',
+      'video',
+      'rerank',
+      'embedding',
+      'chat',
+      'chat',
+    ]);
+  });
+
+  it('falls back to the slug heuristic only when a row has no modalities', () => {
+    expect(parseOpenRouter([{ id: 'openai/whisper-1' }])[0]!.kind).toBe('stt');
+  });
 });
 
 describe('parseOpenAiLike', () => {
