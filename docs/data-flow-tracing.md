@@ -163,7 +163,8 @@ Three outcomes you'll see, and how to tell them apart at a glance:
 |---|---|
 | `extractor_run` **success** + summary set + facts > 0 + edges > 0 | **Healthy.** Content reached the brain. |
 | `extractor_run` **skipped**, disposition `body_too_short` | Declined, by design. < 20 chars of body, an unsupported file type or a title-only node. 0 facts/edges expected. |
-| `extractor_run` **skipped**, disposition `no_text_layer` | A scanned/image-only PDF whose OCR fallback also produced nothing (no/unwired vision worker, unrenderable PDF, or blank scan). Look for a preceding `photo_ingest` (`mode=pdf_ocr`) trace showing the rasterize + vision attempt. 0 facts/edges. |
+| `extractor_run` **skipped**, disposition `no_text_layer` | A scanned/image-only PDF whose OCR fallback also produced nothing (no/unwired vision worker, or a blank scan). Look for a preceding `photo_ingest` (`mode=pdf_ocr`) trace showing the rasterize + vision attempt. 0 facts/edges. |
+| `extractor_run` **skipped**, disposition `pdf_unreadable` | The rasterize step THREW — the PDF pipeline broke, which says nothing about the document. `details.error` has the message; the `rasterize_pdf` step on the preceding `photo_ingest` trace has it too. A version-mismatch error means the worker holds two pdfjs copies and every later PDF fails until it restarts. |
 | `extractor_run` **skipped**, disposition `already_extracted` | Declined; node already had `data.summary` + `embedding`. Re-fires no-op. |
 | `extractor_run` **skipped**, disposition `unsupported_media` | An audio/video file: stored + playable, deliberately not indexed. A transcript exists only if `video_ingest` was run on it (look for a page with `transcriptSource`). 0 facts/edges expected. |
 | `extractor_run` **skipped**, disposition `no_parser` | A parserless non-media format whose body fell back to the filename (the hollow-body guard). Honest skip where pre-v0.232.32 recorded a filename-only `success`. 0 facts/edges expected. |

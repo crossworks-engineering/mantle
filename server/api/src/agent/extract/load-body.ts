@@ -274,9 +274,10 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
  * Covers the body-load ladder: image vision-ingest, the typed body dispatch
  * (readNodeBodyRaw), and the PDF OCR / native-read / encrypted / bytes-missing
  * / no-text-layer fallbacks. Records its OWN terminal skip traces for every
- * dead-end (no_vision_text, encrypted_pdf, bytes_unavailable, no_text_layer,
- * body_too_short); when it does, it returns `{ ok: false }` and the caller must
- * simply return. On success returns the raw (untruncated) body text.
+ * dead-end (no_vision_text, encrypted_pdf, bytes_unavailable, pdf_unreadable,
+ * no_text_layer, body_too_short); when it does, it returns `{ ok: false }` and
+ * the caller must simply return. On success returns the raw (untruncated) body
+ * text.
  */
 export async function loadExtractableBody(
   node: typeof nodes.$inferSelect,
@@ -494,10 +495,35 @@ export async function loadExtractableBody(
         },
       });
       return { ok: false };
+    } else if (ocr.rasterizeError) {
+      // The rasterizer THREW. Nothing is wrong with the document as far as we
+      // know — the machinery failed — so `no_text_layer` would be a lie, and
+      // its hint ("configure a default vision worker") would send the operator
+      // to fix something that isn't broken. The error text goes in the details
+      // because it is the whole diagnosis: a corrupt file reads differently
+      // from a missing native binding, which reads differently again from two
+      // pdfjs copies in one process (an API/Worker version mismatch, which
+      // poisons EVERY later PDF in that worker until it restarts).
+      await recordSkippedTrace({
+        kind: 'extractor_run',
+        ownerId,
+        subjectId: node.id,
+        subjectKind: 'node',
+        disposition: 'pdf_unreadable',
+        details: {
+          worker_slug: worker.slug,
+          node_type: node.type,
+          title: node.title,
+          filename: existingData.filename,
+          error: ocr.rasterizeError,
+          hint: 'Rasterizing the PDF for OCR threw — see `error`. This is a failure of the PDF pipeline, not a verdict on the document: the file may well be fine. A version-mismatch error means the process holds two pdfjs copies and every later PDF will fail until it restarts; otherwise suspect a corrupt file or a broken native binding.',
+        },
+      });
+      return { ok: false };
     } else {
-      // No text layer AND OCR produced nothing (no/unwired vision worker, an
-      // unrenderable PDF, or a blank scan). Record an honest skip instead of a
-      // filename-only false success.
+      // No text layer AND OCR produced nothing (no/unwired vision worker, or a
+      // blank scan — an unrenderable PDF is `pdf_unreadable` above). Record an
+      // honest skip instead of a filename-only false success.
       await recordSkippedTrace({
         kind: 'extractor_run',
         ownerId,
@@ -509,7 +535,7 @@ export async function loadExtractableBody(
           node_type: node.type,
           title: node.title,
           filename: existingData.filename,
-          hint: 'PDF has no extractable text layer and OCR produced nothing — configure a default vision worker at /settings/ai-workers, or re-upload as an image. A blank/illegible scan can also land here.',
+          hint: 'PDF has no extractable text layer and OCR produced nothing — configure a default vision worker at /settings/ai-workers, or re-upload as an image. A blank/illegible scan can also land here. (A PDF that failed to RENDER is recorded as pdf_unreadable instead.)',
         },
       });
       return { ok: false };

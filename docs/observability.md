@@ -255,10 +255,11 @@ reason. The current catalog (extend as new pipelines land):
 - `already_extracted`; node has both `summary` and `embedding` already.
 - `body_too_short`, body < 20 chars; usually a title-only node.
 - `no_text_layer`, a PDF with no extractable text layer (scanned/image-only)
-  where the OCR fallback also produced nothing (no/unwired vision worker, an
-  unrenderable PDF, or a blank scan). Replaces the old silent failure where the
+  where the OCR fallback also produced nothing (no/unwired vision worker, or a
+  blank scan). Replaces the old silent failure where the
   filename fallback (≥20 chars) slipped past `body_too_short` and indexed a
-  filename-only summary as `success`.
+  filename-only summary as `success`. A PDF that failed to RENDER is
+  `pdf_unreadable`, not this.
 - `bytes_unavailable`, the file's bytes couldn't be retrieved at all: no disk
   path AND the object isn't in storage (a metadata-only node, e.g. an email
   attachment indexed from headers whose body was never fetched). Distinct from
@@ -273,6 +274,15 @@ reason. The current catalog (extend as new pipelines land):
   Before v0.232.32 a descriptive filename cleared `body_too_short` and indexed
   as a filename-only `success` — the same false-success family as
   `needs_export`, now closed for every extension, current and future.
+- `pdf_unreadable`, rasterizing the PDF for OCR THREW. This is a fault in the
+  PDF pipeline, not a verdict on the document — the file may be perfectly
+  good — so it is deliberately not `no_text_layer`, whose hint would send you
+  to the vision-worker settings for something that isn't broken. `details.error`
+  carries the message and is the whole diagnosis: an API/Worker version
+  mismatch means the process holds two pdfjs copies and **every** later PDF in
+  that worker will fail until it restarts (see
+  `packages/files/src/pdf-stack.test.ts`, the gate that keeps one pdfjs in the
+  tree); anything else is usually a corrupt file or a broken native binding.
 - `encrypted_pdf`, a password-protected PDF. The reader (native document
   worker + raster fallback) reports "password protected" / "No password given",
   so we record this distinct skip rather than the misleading `no_text_layer`,

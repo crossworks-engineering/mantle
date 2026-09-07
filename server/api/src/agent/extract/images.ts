@@ -415,13 +415,25 @@ const MAX_OCR_PAGES = 10;
  * concatenated text is persisted as `data.text` (+ `vision_model`, `ocr`) and
  * RETURNED so extractNode indexes it in the same pass (summary + embedding +
  * facts). Best-effort: a missing/erroring vision worker, an unrenderable PDF,
- * or a blank scan returns null and the trace records why. Page-capped at
- * MAX_OCR_PAGES. Mirrors {@link visionIngestImageNode}.
+ * or a blank scan returns null and the trace records why — and the four return
+ * fields keep those apart, so the caller records WHICH dead-end was hit rather
+ * than collapsing them into "no text layer". Page-capped at MAX_OCR_PAGES.
+ * Mirrors {@link visionIngestImageNode}.
  */
 export async function ocrIngestPdfNode(
   node: typeof nodes.$inferSelect,
   ownerId: string,
-): Promise<{ text: string | null; encrypted: boolean; bytesMissing: boolean }> {
+): Promise<{
+  text: string | null;
+  encrypted: boolean;
+  bytesMissing: boolean;
+  /** The rasterizer THREW — a corrupt PDF, a broken native binding, a pdfjs
+   *  version collision. Distinct from "rendered fine, but the scan is blank":
+   *  the caller must not report this as `no_text_layer`, because nothing about
+   *  the document is what went wrong. Null when rasterize wasn't reached or
+   *  didn't throw. */
+  rasterizeError: string | null;
+}> {
   // Bytes from disk (uploads) or object storage (email PDF attachments).
   const loaded = await loadFileBytes(node);
   // bytesMissing = we couldn't retrieve the file at all (no disk path, and the
@@ -429,7 +441,7 @@ export async function ocrIngestPdfNode(
   // whose body was never persisted). Distinct from "we have it but it's an
   // unreadable scan": the caller records `bytes_unavailable`, not the
   // misleading `no_text_layer`, so the operator knows to RE-FETCH not re-OCR.
-  if (!loaded) return { text: null, encrypted: false, bytesMissing: true };
+  if (!loaded) return { text: null, encrypted: false, bytesMissing: true, rasterizeError: null };
   const filename = loaded.filename;
 
   return await startTrace(
@@ -495,10 +507,18 @@ export async function ocrIngestPdfNode(
             .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
           h.setMeta({ chars: text.length, native: true });
         });
-        return { text, encrypted: false, bytesMissing: false };
+        return { text, encrypted: false, bytesMissing: false, rasterizeError: null };
       }
 
       // 2) Fall back to rasterize → per-page image OCR.
+      //
+      // A throw here used to be swallowed into `pages: 0`, which the caller
+      // could not tell apart from a blank scan — so a broken rasterizer
+      // (corrupt file, missing native binding, a second pdfjs in the process)
+      // indexed the document as `no_text_layer` and told the operator to go
+      // configure a vision worker. Carry the message out so the caller can be
+      // honest about which of the two happened.
+      let rasterizeError: string | null = null;
       const pages = await step(
         { name: 'rasterize_pdf', kind: 'compute', input: { max_pages: MAX_OCR_PAGES } },
         async (h) => {
@@ -511,12 +531,13 @@ export async function ocrIngestPdfNode(
             // Unrenderable / corrupt / encrypted PDF — record and give up.
             const msg = errorMessage(err);
             if (/password/i.test(msg)) encrypted = true;
+            else rasterizeError = msg;
             h.setMeta({ pages: 0, error: msg });
             return [];
           }
         },
       );
-      if (pages.length === 0) return { text: null, encrypted, bytesMissing: false };
+      if (pages.length === 0) return { text: null, encrypted, bytesMissing: false, rasterizeError };
 
       const parts: string[] = [];
       let model: string | null = null;
@@ -553,7 +574,7 @@ export async function ocrIngestPdfNode(
       }
 
       const text = cleanText(parts.join('\n\n').trim());
-      if (!text) return { text: null, encrypted, bytesMissing: false }; // worker unavailable / blank scan / encrypted
+      if (!text) return { text: null, encrypted, bytesMissing: false, rasterizeError: null }; // worker unavailable / blank scan / encrypted
 
       await step({ name: 'persist_vision_text', kind: 'db_write' }, async (h) => {
         await db
@@ -565,7 +586,7 @@ export async function ocrIngestPdfNode(
           .where(and(eq(nodes.id, node.id), eq(nodes.ownerId, ownerId)));
         h.setMeta({ chars: text.length, pages: pages.length });
       });
-      return { text, encrypted: false, bytesMissing: false };
+      return { text, encrypted: false, bytesMissing: false, rasterizeError: null };
     },
   );
 }
