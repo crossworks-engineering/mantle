@@ -1,7 +1,7 @@
 {
   "name": "@mantle/content-core",
   "version": "0.0.1",
-  "description": "Browser-safe content logic \u2014 markdown, blocks, pages, tables, formulas \u2014 shared by the server and any client. Zero server deps by design: nothing here may reach @mantle/db, node-only APIs, or the network (the jackdaw-repo-split P0 boundary).",
+  "description": "Browser-safe content logic — markdown, blocks, pages, tables, formulas — shared by the server and any client. Zero server deps by design: nothing here may reach @mantle/db, node-only APIs, or the network (the jackdaw-repo-split P0 boundary).",
   "private": true,
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -34,7 +34,7 @@
   },
   "dependencies": {
     "@mantle/client-types": "workspace:*",
-    "marked": "^18.0.7",
+    "marked": "^18.0.11",
     "mathjs": "15.2.0"
   }
 }

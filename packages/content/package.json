@@ -38,15 +38,15 @@
     "@mantle/search": "workspace:*",
     "@mantle/std": "workspace:*",
     "@mantle/tabledb": "workspace:*",
-    "docx": "^9.5.1",
+    "docx": "^9.7.1",
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",
-    "marked": "^18.0.7",
+    "marked": "^18.0.11",
     "mathjs": "15.2.0",
     "tz-lookup": "^6.1.25"
   },
   "devDependencies": {
-    "@types/node": "^26.4.0",
-    "typescript": "^5.7.2"
+    "@types/node": "^26.4.1",
+    "typescript": "^5.9.3"
   }
 }

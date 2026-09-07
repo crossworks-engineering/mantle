@@ -16,10 +16,10 @@
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "ical.js": "^2.1.0"
+    "ical.js": "^2.2.1"
   },
   "devDependencies": {
-    "@types/node": "^26.4.0",
-    "typescript": "^5.7.2"
+    "@types/node": "^26.4.1",
+    "typescript": "^5.9.3"
   }
 }
