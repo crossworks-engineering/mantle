@@ -159,6 +159,12 @@ Neither `pnpm verify` nor `next build` executes a PDF, so both passed clean.
 or a process-global singleton**, types and a successful build are not
 evidence there.
 
+**Done (2026-09-07):** `packages/files/src/pdf-stack.test.ts` (+
+`pdf-stack-order.test.ts`) asserts that every consumer — pdf-parse,
+pdf-to-png-converter and our own direct use — resolves pdfjs to the same file,
+and runs all four pdfjs entry points in one process in both orders. It is in
+`vitest run`, so `pnpm verify` and the pre-push gate now execute a PDF.
+
 ~~`pdf-parse` 2 is held back~~ **, superseded, see below.** It was held back on
 the assumption that forcing it onto our pdfjs would degrade extraction. That
 assumption was tested afterwards and was wrong; pdf-parse 2 was adopted in
