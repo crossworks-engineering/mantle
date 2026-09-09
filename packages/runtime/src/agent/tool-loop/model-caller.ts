@@ -295,11 +295,15 @@ export function createModelCaller(deps: {
           input: { model: active.model, provider: active.adapter.providerId, reason },
         },
         async (h) => {
+          // Bypasses dispatchChat (no streaming on the nudge), so thread the
+          // turn's abort signal in by hand — without it a Stop during the
+          // empty-retry is a no-op and the round cannot be cancelled.
           const r = await active.adapter.chat({
             ...routeOpts(),
             messages,
             toolChoice: 'none',
             cacheControl: { systemPrompt: true },
+            signal: currentTurnAbortSignal(),
             ...maxRetries(),
           });
           recordChatUsage(h, r, active.model);

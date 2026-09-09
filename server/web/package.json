@@ -56,6 +56,7 @@
     "start": "tsx server/main.ts",
     "test:fire-heartbeat": "tsx --env-file-if-exists=./.env.local scripts/test-fire-heartbeat.ts",
     "traces:reap": "tsx --env-file-if-exists=./.env.local scripts/traces-reap.ts",
+    "turns:reap": "tsx --env-file-if-exists=./.env.local scripts/turns-reap.ts",
     "typecheck": "tsc --noEmit",
     "widen:content-hits": "tsx --env-file-if-exists=./.env.local scripts/widen-content-hits.ts",
     "worker:calendar:dev": "tsx --watch --env-file-if-exists=./.env.local workers/calendar-sync.ts",

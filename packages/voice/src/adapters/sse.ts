@@ -169,6 +169,46 @@ export function chatAbortSignal(signal: AbortSignal | undefined, timeoutMs: numb
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
+/** The abort reason to reject with — the signal's own reason when it has one
+ *  (our `TimeoutError`, or the caller's Stop), else a generic `AbortError`. */
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException('aborted', 'AbortError');
+}
+
+/**
+ * Settle as soon as `signal` aborts, whatever the wrapped promise does.
+ *
+ * Handing an SDK our signal is not enough on its own, because the SDK may
+ * swallow the abort. The OpenRouter SDK classifies our connect-timeout
+ * `TimeoutError` as RETRYABLE (`retryConnectionErrors` + `isTimeoutError`), and
+ * with its default `timeoutMs: -1` it re-uses the SAME, already-aborted signal
+ * on every retry — so each attempt dies instantly and is retried again until
+ * its `maxElapsedTime`, which defaults to ONE HOUR. The promise we awaited
+ * never settles for that whole hour: no error, no timeout, and a user Stop that
+ * visibly does nothing.
+ *
+ * That is not hypothetical. On 2026-09-09 an agent left on
+ * `google/gemini-3.8-flash` wedged a turn for 3606s — the SDK's one-hour
+ * envelope, to the second — and then recorded it as `complete` with a
+ * 0-character reply, so nothing flagged it as a failure.
+ *
+ * Racing the call against the signal makes OUR abort terminal regardless of
+ * what the SDK does with it. The losing promise keeps running to no effect;
+ * `Promise.race` attaches handlers to both, so a late rejection is never an
+ * unhandled rejection.
+ */
+export function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(abortReason(signal));
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(abortReason(signal));
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  return Promise.race([promise, aborted]).finally(() => {
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+  });
+}
+
 /** Call a delta sink without ever letting a throwing consumer break the stream
  *  loop — a sink fault is the caller's bug, not a connection fault. */
 export function safeDelta(onDelta: ChatStreamSink, delta: ChatStreamDelta): void {

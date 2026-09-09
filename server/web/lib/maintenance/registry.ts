@@ -96,6 +96,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
   },
 
   {
+    slug: 'turns-reap',
+    title: 'Reap stuck assistant turns (all owners)',
+    description:
+      "Fails assistant turns still 'pending' past MANTLE_TURN_STALE_MIN (default 30). An outbound row is written 'pending' when a turn starts and settled only at the end; a provider call that neither returns nor throws, or a runner killed mid-turn, strands it forever. Until 2026-09-09 nothing swept this surface — the only symptom was a composer stuck on \"Thinking…\", with no error, no failed status and nothing for a failure count to see.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/turns-reap.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      "Idempotent; a no-op once clean. Threshold sits well clear of the adapters' own guards (60s connect, 120s idle, 90s SDK retry envelope) and of a long tool-loop turn.",
+  },
+  {
     slug: 'traces-reap',
     title: 'Reap abandoned traces (all owners)',
     description:

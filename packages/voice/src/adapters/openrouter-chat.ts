@@ -29,7 +29,13 @@
  */
 
 import { OpenRouter } from '@openrouter/sdk';
-import { STREAM_IDLE_TIMEOUT_MS, streamAbort, withIdleTimeout } from './sse';
+import {
+  STREAM_IDLE_TIMEOUT_MS,
+  abortable,
+  chatAbortSignal,
+  streamAbort,
+  withIdleTimeout,
+} from './sse';
 import { openrouterClientMeta } from '../openrouter-meta';
 import { OpenRouterError } from '@openrouter/sdk/models/errors';
 import type {
@@ -54,6 +60,36 @@ import { errorMessage } from '@mantle/std';
 // Backoff for the empty-body retry below — mirrors retry.ts's full-jitter shape.
 const RETRY_BASE_DELAY_MS = 500;
 const RETRY_MAX_DELAY_MS = 8_000;
+
+/** Per-attempt HTTP bound for the ONE-SHOT path. The SDK's own default is
+ *  `timeoutMs: -1` — no bound at all — which is why this adapter was the only
+ *  one whose `chat()` could hang indefinitely; every other adapter already
+ *  passes `chatAbortSignal(opts.signal, 60_000)`. Not applied to the streaming
+ *  path: there the SDK would fold it into the Request signal and cut a long,
+ *  healthy stream mid-body. */
+const ONE_SHOT_TIMEOUT_MS = 60_000;
+
+/** Ceiling on the SDK's INTERNAL retry envelope, whose default `maxElapsedTime`
+ *  is 3_600_000 — one hour. Our own guards (connect/idle, and `abortable`)
+ *  release the caller promptly, but without this the orphaned attempt keeps
+ *  retrying in the background for the rest of that hour. See `abortable` in
+ *  ./sse for the 2026-09-09 incident this bounds. */
+const SDK_RETRY_MAX_ELAPSED_MS = 90_000;
+
+/** Retry policy handed to the SDK on every call: the same backoff shape it uses
+ *  by default, with the one-hour envelope cut to {@link SDK_RETRY_MAX_ELAPSED_MS}. */
+function sdkRetries() {
+  return {
+    strategy: 'backoff',
+    backoff: {
+      initialInterval: RETRY_BASE_DELAY_MS,
+      maxInterval: RETRY_MAX_DELAY_MS,
+      exponent: 1.5,
+      maxElapsedTime: SDK_RETRY_MAX_ELAPSED_MS,
+    },
+    retryConnectionErrors: true,
+  } as const;
+}
 
 /** The SDK's own chat-request input type, derived rather than restated so it
  *  tracks the installed version automatically.
@@ -492,10 +528,21 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     ...(reasoningParam ? { reasoning: reasoningParam } : {}),
     ...(opts.extra ?? {}),
   };
+  // Every other adapter bounds its one-shot call with
+  // `chatAbortSignal(opts.signal, 60_000)`; this one passed no options at all,
+  // so a user Stop was a no-op and a stalled request had nothing to end it.
+  // `abortable` is belt to that brace — the SDK retries our abort otherwise.
+  const callSignal = chatAbortSignal(opts.signal, ONE_SHOT_TIMEOUT_MS);
   const sendOnce = () =>
-    client.chat.send({
-      chatRequest,
-    });
+    abortable(
+      client.chat.send(
+        {
+          chatRequest,
+        },
+        { signal: callSignal, timeoutMs: ONE_SHOT_TIMEOUT_MS, retries: sdkRetries() },
+      ),
+      callSignal,
+    );
 
   // The SDK retries HTTP-level transients (429/5xx/network) itself, which is why
   // the registry does NOT wrap this adapter in withChatRetry (double-retrying
@@ -782,13 +829,22 @@ async function openrouterChatStream(
   const abort = streamAbort(opts.signal);
   let sent: AsyncIterable<OrStreamChunk>;
   try {
-    sent = (await client.chat.send(
-      {
-        chatRequest,
-      },
-      // Thread the cancellation signal into the underlying fetch so a Stop aborts
-      // the HTTP stream — halting upstream token generation, not just our reading.
-      { signal: abort.signal },
+    sent = (await abortable(
+      client.chat.send(
+        {
+          chatRequest,
+        },
+        // Thread the cancellation signal into the underlying fetch so a Stop aborts
+        // the HTTP stream — halting upstream token generation, not just our reading.
+        // `retries` bounds the SDK's own one-hour envelope; no `timeoutMs` here,
+        // which the SDK would fold into the Request signal and use to cut a long
+        // but healthy stream.
+        { signal: abort.signal, retries: sdkRetries() },
+      ),
+      // The SDK treats our connect-timeout abort as retryable and re-sends it
+      // against the same dead signal, so awaiting it alone can hang past the
+      // guard that just fired. Race the signal directly.
+      abort.signal,
     )) as unknown as AsyncIterable<OrStreamChunk>;
   } catch (err) {
     if (opts.signal?.aborted) return { text: '', model: opts.model };

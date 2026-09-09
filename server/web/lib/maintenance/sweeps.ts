@@ -28,6 +28,7 @@ import { runPinnedModelDrift } from './pinned-model-drift-run';
 import { summarisePoolFit } from './pool-fit';
 import { runPoolFit } from './pool-fit-run';
 import { reapAbandonedTracesAllOwners } from '../journey';
+import { reapStalePendingTurns, summariseTurnsReap } from './turns-reap';
 import { errorMessage } from '@mantle/std';
 
 export interface EntitiesDedupeResult {
@@ -125,6 +126,9 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
     const reaped = await reapAbandonedTracesAllOwners();
     return reaped === 0 ? 'no abandoned traces' : `reaped ${reaped} abandoned trace(s)`;
   },
+  // Turns, not traces: a trace can be closed while its assistant_messages row
+  // is still 'pending', so these are genuinely separate surfaces.
+  'turns-reap': async () => summariseTurnsReap(await reapStalePendingTurns()),
 };
 
 /** Double-fire guard: skip a sweep whose last cron run (any state — a failed

@@ -66,6 +66,7 @@ import {
   runWithImageFallback,
 } from './assemble-turn';
 import { emptyLoopResult, runResponderLoop, type ResponderLoopResult } from './responder-loop';
+import { stoppedWithoutOutput } from './stopped-turn';
 import { errorMessage } from '@mantle/std';
 
 // Register the cross-package bridge for the `invoke_agent` builtin.
@@ -580,14 +581,27 @@ export async function runAssistantTurn(
 
   const durableAttachments = durableAttachmentsFor(outcome.loop.artifacts, reply);
 
+  // A turn that ends aborted with NOTHING to show is not an answer. It used to
+  // finalize 'complete' with a 0-character reply, which left a dead turn
+  // indistinguishable from a successful one: no error, no failed status, nothing
+  // any failure count or alert would ever pick up. On 2026-09-09 a stalled
+  // OpenRouter call sat for 3606s and then recorded exactly that — twice — and
+  // the only symptom anyone could see was a spinner that never stopped. Record
+  // it as failed instead, naming which kind of stop it was. A stop that DID
+  // stream something keeps its partial reply and still finalizes 'complete'.
+  const stoppedMessage = stoppedWithoutOutput(abortController?.signal, reply);
+  const stoppedEmpty = stoppedMessage !== null;
+
   // Finalize the pending outbound row: fill the composed reply + flip the status
-  // to 'complete'. Journaled, so a crash-resume re-applies it idempotently.
+  // to 'complete' (or 'failed' for the empty-stop above). Journaled, so a
+  // crash-resume re-applies it idempotently.
   const { persistedThoughts, toolStats } = outcome;
   const finalized = await runDurableStep('finalize_outbound', () =>
     updateAssistantMessageOutcome({
       ownerId,
       id: outboundPending.id,
-      status: 'complete',
+      status: stoppedEmpty ? 'failed' : 'complete',
+      ...(stoppedEmpty ? { error: stoppedMessage } : {}),
       text: reply,
       model: agent.model,
       ...(persistedThoughts.length ? { thoughts: persistedThoughts } : {}),
@@ -602,7 +616,7 @@ export async function runAssistantTurn(
     ...outboundPending,
     text: reply,
     model: agent.model,
-    status: 'complete',
+    status: stoppedEmpty ? 'failed' : 'complete',
   };
 
   void db
@@ -620,7 +634,11 @@ export async function runAssistantTurn(
   // partial reply is the durable answer), so the client ends the turn cleanly.
   // No-op unless the turn is streamed.
   retireAbort();
-  if (options?.streamId) {
+  if (options?.streamId && stoppedEmpty) {
+    // Terminal event must match the row: a 'done' here would tell the client the
+    // turn succeeded and leave it rendering an empty bubble.
+    emitTurnLifecycle(options.streamId, ownerId, 'error', { message: stoppedMessage });
+  } else if (options?.streamId) {
     emitTurnLifecycle(options.streamId, ownerId, 'done', {
       outboundId: outboundPending.id,
       // Real output-token total for the turn — the client swaps its streamed
