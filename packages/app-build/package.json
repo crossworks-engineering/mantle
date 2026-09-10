@@ -19,7 +19,7 @@
     "@mantle/share-ui": "workspace:*",
     "@tailwindcss/oxide": "^4.3.3",
     "esbuild": "^0.28.2",
-    "lucide-react": "^1.41.0",
+    "lucide-react": "^1.42.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.3"
