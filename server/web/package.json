@@ -111,7 +111,7 @@
     "katex": "^0.18.7",
     "libsodium-wrappers": "^0.8.4",
     "lowlight": "^3.3.0",
-    "lucide-react": "^1.41.0",
+    "lucide-react": "^1.42.0",
     "mcp-handler": "^1.1.0",
     "pg-boss": "^12.30.0",
     "postgres": "^3.4.9",
