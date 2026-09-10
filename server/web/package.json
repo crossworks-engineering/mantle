@@ -135,6 +135,6 @@
     "tailwindcss": "^4.3.3",
     "tailwindcss-animate": "^1.0.7",
     "tsx": "^4.23.13",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }
