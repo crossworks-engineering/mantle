@@ -30,6 +30,7 @@
     "@mantle/config": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/std": "workspace:*",
+    "@mantle/storage": "workspace:*",
     "@napi-rs/canvas": "1.0.2",
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",

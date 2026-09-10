@@ -31,6 +31,7 @@ import {
   notifyNodeIngested,
   type Node,
 } from '@mantle/db';
+import { getContent } from '@mantle/storage';
 import { fileRowFromNode, type FileRow } from './shared';
 
 const TEXT_BYTE_CAP = 1_000_000; // 1 MB cap for content-in-DB caching.
@@ -212,10 +213,52 @@ export async function upsertFile(args: {
   return fileRowFromNode(row);
 }
 
+/**
+ * Bytes for a file node whose content lives in OBJECT STORAGE rather than the
+ * host-mirrored tree. Today that means an email attachment: sync uploads the
+ * bytes and records the key on `email_attachments`, then points the row at a
+ * file node — `deleteFileById` already says it plainly, "the bytes are owned by
+ * the email". Nothing is ever written to disk for these.
+ *
+ * Returns null when this node has no attachment row, and also when the object
+ * itself is gone: a missing object is the same class of fact as a missing disk
+ * file, so callers 404 cleanly rather than taking a 500 from the S3 client.
+ */
+async function storageBytesForNode(nodeId: string): Promise<Buffer | null> {
+  const [attachment] = await db
+    .select({ storageKey: emailAttachments.storageKey })
+    .from(emailAttachments)
+    .where(eq(emailAttachments.fileNodeId, nodeId))
+    .limit(1);
+  if (!attachment?.storageKey) return null;
+  try {
+    const { body } = await getContent(attachment.storageKey);
+    const chunks: Buffer[] = [];
+    for await (const chunk of body) chunks.push(Buffer.from(chunk));
+    return Buffer.concat(chunks);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read one file node's bytes, from wherever they actually live.
+ *
+ * Three sources, in order: inline `data.content` (text files), the
+ * host-mirrored disk tree, then object storage. That last fallback exists
+ * because an email attachment has NO disk presence at all and no
+ * `data.filename` to build a path from — so this used to return null for every
+ * one of them, and `/api/files/files/<id>?raw=1` answered a chat link with
+ * `{"error": "not found"}`. The document was found and linked correctly; only
+ * the bytes 404'd. (2026-09-10: 267 of 268 attachments on jason-prod.)
+ *
+ * `path` is null when the bytes did not come from disk — no caller reads it,
+ * but returning a disk path we never touched would be a lie.
+ */
 export async function readFileById(args: {
   ownerId: string;
   fileId: string;
-}): Promise<{ row: FileRow; bytes: Buffer; path: string } | null> {
+}): Promise<{ row: FileRow; bytes: Buffer; path: string | null } | null> {
   const [node] = await db
     .select()
     .from(nodes)
@@ -225,25 +268,28 @@ export async function readFileById(args: {
   const data = (node.data ?? {}) as Record<string, unknown>;
   const filename = String(data.filename ?? '');
   const filePath = diskPathForFile(node.path, filename);
-  if (!filePath) return null;
-  // Prefer cached content for text files to avoid disk reads in the
-  // hot path; fall back to disk for binaries.
-  let bytes: Buffer;
+
+  // Prefer cached content for text files to avoid disk reads in the hot path.
   if (typeof data.content === 'string') {
-    bytes = Buffer.from(data.content as string, 'utf8');
-  } else {
+    return { row: fileRowFromNode(node), bytes: Buffer.from(data.content, 'utf8'), path: filePath };
+  }
+
+  // Disk next — the normal home for an uploaded binary. A node with no usable
+  // path (no `data.filename`) skips straight to storage rather than failing.
+  if (filePath) {
     const { promises: fs } = await import('node:fs');
     try {
-      bytes = await fs.readFile(filePath);
+      return { row: fileRowFromNode(node), bytes: await fs.readFile(filePath), path: filePath };
     } catch (err) {
-      // Node exists but its disk bytes are gone (host-mirrored tree edited
-      // out-of-band, or a half-completed delete): treat as not-found so
-      // callers 404 cleanly instead of a bare ENOENT bubbling to a 500.
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
-      throw err;
+      // Bytes gone from the mirrored tree (edited out-of-band, half-completed
+      // delete) — fall through to storage before giving up.
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     }
   }
-  return { row: fileRowFromNode(node), bytes, path: filePath };
+
+  const stored = await storageBytesForNode(node.id);
+  if (!stored) return null;
+  return { row: fileRowFromNode(node), bytes: stored, path: null };
 }
 
 /**

@@ -390,6 +390,18 @@ async function getOrCreateFileNode(
       title: args.filename,
       path: args.path,
       tags: [],
+      // Deliberately NO `data.filename` — the name lives on `title`, and
+      // `fileRowFromNode` already falls back to it, so display is unaffected.
+      // Setting it would enrol these nodes in the partial unique index
+      // `file_filename_in_parent_uq` (owner_id, path, data->>'filename')
+      // WHERE type='file' AND data ? 'filename' — and attachment nodes are
+      // content-addressed (deduped by sha256 above), so two different files
+      // legitimately share one name in the same attachments folder. Outlook's
+      // inline `image001.png` is the everyday case; jason-prod also carries
+      // six distinct nodes all named 00000005898460992730234.pdf. Adding the
+      // key would make the next such email fail this transaction on a unique
+      // violation. The index's `data ? 'filename'` guard is the exemption
+      // these nodes rely on; leave them outside it.
       data: {
         sha256: args.sha256,
         mimeType: args.mimeType,

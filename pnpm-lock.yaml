@@ -387,6 +387,9 @@ importers:
       '@mantle/std':
         specifier: workspace:*
         version: link:../std
+      '@mantle/storage':
+        specifier: workspace:*
+        version: link:../storage
       '@napi-rs/canvas':
         specifier: 1.0.2
         version: 1.0.2
