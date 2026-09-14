@@ -16,10 +16,10 @@
     "@mantle/db": "workspace:*",
     "@mantle/std": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "pg-boss": "^12.30.0"
+    "pg-boss": "^12.31.0"
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.5.1",
     "postgres": "^3.4.9",
     "typescript": "^5.9.3"
   }
