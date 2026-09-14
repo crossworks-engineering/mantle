@@ -909,7 +909,12 @@ services:
     container_name: mantle_api
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 1.5g
+    # 1.5g fits an ordinary box. One carrying large Tables workbooks next to
+    # heavy extraction can spike past it: a cgroup OOM measured 2026-09-09 at
+    # ~1.46 GB anon-rss killed the runtime mid-extract and left extract jobs
+    # stranded 'active'. Such boxes set API_MEM_LIMIT=3g; the default is
+    # deliberately unchanged so no other box moves.
+    mem_limit: ${API_MEM_LIMIT:-1.5g}
     # Heartbeat-based liveness (no HTTP port; DBOS admin server off by default).
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
