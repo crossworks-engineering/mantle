@@ -32,3 +32,27 @@ problem listed. It requires nothing, so DB-less development stays possible.
 
 `server/sandboxd` is a standalone image with no workspace dependencies and
 keeps its own config block at the top of `main.ts`.
+
+## Install-time env contract
+
+The variables that decide what a box *is* are written into `.env` by
+`scripts/install.sh` and read by compose, the updater sidecar and the sanity
+check. The canonical explanation of each is the
+[install page](./guide/01-installation.md); this is the checklist for a
+hand-written `.env`:
+
+| Variable | Set by | What it decides |
+|---|---|---|
+| `MANTLE_SERVER_ORIGIN` | installer | the origin the browser reaches the API on; the owner UI serves it as its API base |
+| `MANTLE_CADDY_SHAPE` | installer (`same-origin`) | which `infra/caddy/shapes/*.caddy` the front door imports; `split` needs a second hostname |
+| `MANTLE_CLIENT_ENABLED` | `--no-client` writes `0` | whether the owner UI stack runs; missing means on |
+| `MANTLE_CLIENT_IMAGE_TAG` | updater (`client-tag.auto`) or a hand pin | the `mantle-client` image tag, on its own stream since the repo split |
+| `COMPOSE_PROFILES` | installer flags | opt-in services: `sandboxes`, `media`, `local-embedder`, `helpers` |
+| `COMPOSE_FILE` | `--core` | adds `docker-compose.core.yml` as an override (absolute paths, the updater needs them) |
+| `MEDIA_SIDECAR_TOKEN` | you (`openssl rand -hex 32`) | bearer between the app and the media sidecar; the installer never sets it |
+| `SANDBOXD_TOKEN` | installer when sandboxes are on | bearer between web/api and `sandboxd`; never rotated on a re-run |
+| `MANTLE_SANDBOXES_HOST_DIR` | installer (`<data-dir>/sandboxes`) | host-absolute bind source `sandboxd` hands to the Docker daemon |
+
+Alongside the five compose refuses to start without (`POSTGRES_PASSWORD`,
+`SESSION_SECRET`, `MANTLE_MASTER_KEY`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`) and the
+address trio (`MANTLE_SITE_ADDRESS`, `MANTLE_PUBLIC_URL`, `MANTLE_STACK_DIR`).

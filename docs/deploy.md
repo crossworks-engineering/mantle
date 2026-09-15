@@ -1,8 +1,10 @@
 # Deploying Mantle to production (Docker Hub → VPS)
 
-The production stack is `docker-compose.yml`, built images, a migrate gate,
-healthchecks, restart policies, the bundled embedder (Ollama) + Tika, and an
-optional Tailscale profile. This runbook covers the **build → push → deploy**
+The production stack is `docker-compose.yml` plus `docker-compose.client.yml`:
+published images, a migrate gate, healthchecks, restart policies, Tika and a
+headless browser for documents, an always-on Tailscale sidecar (idle until you
+activate it from Settings → Network), and opt-in profiles for the local
+embedder (Ollama), CLI sandboxes and the media sidecar. This runbook covers the **build → push → deploy**
 loop and the **one-time data migration** from your dev brain.
 
 Companion: [`docker-compose.yml`](../docker-compose.yml) header comments,
@@ -32,16 +34,19 @@ Companion: [`docker-compose.yml`](../docker-compose.yml) header comments,
 | **Prod**  | Contabo VPS | `docker compose pull && up -d` (no build on the VPS)                             |
 
 Persistent data is **bind-mounted** under `MANTLE_DATA_DIR` (default `./data`):
-`postgres/`, `minio/`, `files/`. The Ollama model cache + Tailscale identity stay
-as named volumes (re-pullable / re-auth on a new host).
+`postgres/`, `minio/`, `files/`, `backups/`, `app-dbs/`, `caddy/` (certificates),
+`ollama/` (model cache), `tailscale/` (node state) and `update-signal/`. All of it
+is in the backup set; the only named volume is the Tailscale IPC socket.
 
 ## 0a. VPS sizing: measured, not guessed
 
 Numbers from the author's production box (Contabo, **6 vCPU / 12 GB RAM /
-96 GB disk**, 2026-06-11): the full 13-container stack idles at **~2.5 GB
-RAM** total and **<5% CPU**; Ollama loads the embedder on demand (idle
-~40 MB, ~1 GB while embedding); the Mantle image is ~1.7 GB plus the infra
-images (Postgres, MinIO, Ollama, Tika, Caddy). What actually spikes a small
+96 GB disk**, 2026-06-11, when the stack was 13 containers; a full install today
+runs 23 of the 26 defined services plus the client container): it idled at
+**~2.5 GB RAM** total and **<5% CPU**; Ollama loads the embedder on demand (idle
+~40 MB, ~1 GB while embedding); the `mantle-server` image is ~1.7 GB plus the infra
+images (Postgres, MinIO, Tika, the browser, Caddy; Ollama only with the
+`local-embedder` profile). What actually spikes a small
 box is not steady state; it's two specific events:
 
 1. **`next build`** during a **build-on-VPS** deploy (multi-GB RSS for
@@ -53,7 +58,7 @@ box is not steady state; it's two specific events:
 | Profile                                                                             | vCPU | RAM   | Disk  | Notes                                                                                                                                                                                                                |
 | ----------------------------------------------------------------------------------- | ---- | ----- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Minimum** (registry-pull deploys)                                                 | 2    | 4 GB  | 40 GB | Steady state fits with room for embedding spikes; add 2 GB swap as insurance. Ingest is slower, never wrong.                                                                                                         |
-| **Brain-core** (`install.sh --core`, online embeddings)                             | 2    | 4 GB  | 40 GB | The small headless shape for dedicated memory cores: sheds the channel workers + doc helpers (~14 instead of ~22 services; `--helpers` re-adds tika + the PDF browser). See docs/self-hosting.md "Brain-core shape". |
+| **Brain-core** (`install.sh --core`, online embeddings)                             | 2    | 4 GB  | 40 GB | The small headless shape for dedicated memory cores: sheds the channel workers + doc helpers (8 of the 26 defined services; `--helpers` re-adds tika + the PDF browser). See docs/self-hosting.md "Brain-core shape". |
 | **Recommended** (build-on-VPS, only if you build your own image on the box; see §2) | 4    | 8 GB  | 80 GB | Headroom for `next build`; each build leaves ~3–6 GB of Docker build cache, run `docker builder prune` after deploy bursts (a 5×-in-a-day burst once accumulated 35 GB).                                             |
 | **Reference** (author's prod)                                                       | 6    | 12 GB | 96 GB | Comfortable; ~27 GB disk in use including images, brain data itself is tiny (~170 MB at ~700 nodes).                                                                                                                 |
 
@@ -87,6 +92,12 @@ cp .env.prod.example .env
 #                        dir that baked the old one in at initdb.
 #                        scripts/install.sh does this for you either way.
 #   MANTLE_PUBLIC_URL
+#   MANTLE_SERVER_ORIGIN  the origin the BROWSER reaches the API on (the owner UI
+#                        serves it to the page as its API base, and its server-side
+#                        render needs an absolute origin even in the same-origin
+#                        shape). Same as the public URL on a domain install.
+#   MANTLE_CADDY_SHAPE=same-origin   the front-door routing shape; without it a
+#                        fresh box routes nothing (see below)
 #   MANTLE_STACK_DIR     host-absolute path of THIS dir (MANTLE_STACK_DIR=$(pwd -P));
 #                        required for the in-app updater (Settings → Updates)
 #   MANTLE_IMAGE_NAMESPACE=<your docker hub user>
@@ -107,7 +118,9 @@ automatic HTTPS, before first boot:
    Let's Encrypt cert automatically and renews it. (`:80` = plain HTTP for local
    testing without a domain.)
 
-Certs persist in the `caddy_data` volume, don't wipe it, or you risk LE rate limits.
+Certs persist under `MANTLE_DATA_DIR/caddy/data` (a bind mount, not a named
+volume), so they survive `docker compose down -v`; don't delete that directory,
+or you risk LE rate limits.
 
 Since **v0.202.0** the front door also routes to the _client_ app (the split
 shipped two images), and since **v0.232.126** the Caddyfile is ONE
@@ -170,15 +183,18 @@ docker login
 MANTLE_IMAGE_NAMESPACE=youruser MANTLE_IMAGE_TAG=v1 scripts/docker-build-push.sh
 ```
 
-Builds + pushes **one image**: `<youruser>/mantle:v1`. Every service (web,
-agent, the four workers, migrate) runs from that same image, differing only in
-the compose `command:`. Use a real tag (`v1`, a date, or a git sha), `latest`
+Builds + pushes the **server image**, `<youruser>/mantle-server:v1`. Every
+brain service (web, api, sandboxd, the workers, migrate) runs from that same
+image, differing only in the compose `command:`. The media sidecar is a
+separate image (`<ns>/mantle-media`, from `infra/media-sidecar`), and the owner
+UI image (`<ns>/mantle-client`) is built by the jackdaw repo, not here. Use a real tag (`v1`, a date, or a git sha), `latest`
 is fine but harder to roll back from.
 
 > **Automated alternative (the official images).** A push of a `v*` tag runs
 > [`.github/workflows/release.yml`](../.github/workflows/release.yml): it builds
-> the image **multi-arch** (amd64 + arm64), pushes `titanwest/mantle:<tag>` +
-> `:latest`, and cuts a GitHub Release with the deploy bundle. So for the
+> the images **multi-arch** (amd64 + arm64), pushes `titanwest/mantle-server:<tag>`
+> + `:latest` (and `titanwest/mantle-media` alongside), and cuts a GitHub Release
+> with the deploy bundle. So for the
 > published images you never run the script by hand; you
 > `git tag vX.Y.Z && git push --tags`. Needs the `DOCKERHUB_USERNAME` /
 > `DOCKERHUB_TOKEN` repo secrets. See [`self-hosting.md`](./self-hosting.md)
@@ -212,8 +228,16 @@ rsync -a  dev-host:/path/to/dev/data/minio/  "$MANTLE_DATA_DIR"/minio/
 # 3e. Bring up the rest — migrate sees the restored bookkeeping and no-ops
 docker compose up -d --wait
 
-# 3f. (optional) join the tailnet for remote inference
-TS_AUTHKEY=tskey-... docker compose --profile tailnet up -d --wait
+# 3f. The owner UI is a SECOND compose project (mantle-client) off the same
+#     .env. Without it there is no sign-up screen and no owner UI. Bring it up,
+#     then recreate Caddy so the front door can route to it.
+docker compose -f docker-compose.client.yml --project-directory . pull
+docker compose -f docker-compose.client.yml --project-directory . up -d --wait
+docker compose up -d --force-recreate caddy
+
+# 3f'. (optional) remote inference over Tailscale: the tailscale sidecar is
+#     already up (it is not a profile); paste an auth key under
+#     Settings → Network and click Activate. See docs/tailscale.md.
 
 # 3g. (optional) video ingest — yt-dlp/ffmpeg sidecar for the video_ingest
 #     tool. Needs v0.232.34+ (the mantle-media image ships from that release;
@@ -423,8 +447,9 @@ To test the real VPS→tailnet→model path without touching prod data, run a se
 isolated project:
 
 ```bash
-MANTLE_DATA_DIR=/opt/mantle/staging-data TS_HOSTNAME=mantle-staging \
-  docker compose -p mantle-staging --profile tailnet up -d --wait
+MANTLE_DATA_DIR=/opt/mantle/staging-data \
+  docker compose -p mantle-staging up -d --wait
+# then activate the tailnet from the staging app's Settings → Network
 # ...test..., then:
 docker compose -p mantle-staging down
 ```

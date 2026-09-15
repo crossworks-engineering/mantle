@@ -4,7 +4,10 @@ The consumer path: run Mantle from the published Docker image with one
 command, configure everything else in the interface, and update by pulling.
 No checkout, no build, no hand-edited env.
 
-This is the **standard way to run Mantle**. The companion docs serve other
+This is the **standard way to run Mantle**. The install itself (prompts, env
+vars, requirements, sandboxes, media, the manual path) is on the one canonical
+install page, [`guide/01-installation.md`](./guide/01-installation.md); this
+page carries the operational detail. The companion docs serve other
 audiences: [`getting-started.md`](./getting-started.md) is the developer
 checkout, [`deploy.md`](./deploy.md) is the operator reference for building
 _your own_ image and migrating data between machines, and
@@ -13,8 +16,10 @@ _your own_ image and migrating data between machines, and
 ## Requirements
 
 - Docker Engine + the compose plugin (`docker compose version` works)
-- ~4 GB RAM / 2 vCPU / 40 GB disk to be comfortable (measured sizing:
-  [`deploy.md`](./deploy.md) §0a)
+- RAM depends on the shape: the **full** stack's memory caps sum to about
+  15 GB and it wants 8 GB or more under real ingest load; the **core** shape
+  (`--core`) fits 2 vCPU / 4 GB. 40 GB of disk is comfortable. Measured
+  sizing: [`deploy.md`](./deploy.md) §0a
 - Optional, for HTTPS: a domain with an A record pointing at the box and
   ports 80/443 open
 
@@ -36,15 +41,15 @@ MANTLE_DOMAIN=mantle.example.com bash -c "$(curl -fsSL https://raw.githubusercon
 ```
 
 What it does, and all it does: checks Docker, downloads the deploy bundle
-(both compose files, env template, Caddy + Postgres init files, backup + install
-scripts) into `./mantle`, then delegates to the bundled
+(the three compose files, env template, Caddy + Postgres init files, backup +
+install scripts) into `./mantle`, then delegates to the bundled
 **`scripts/install.sh`**: the single configurator. That **generates the
 secrets** (`SESSION_SECRET`, `MANTLE_MASTER_KEY`, DB + object-store
 passwords) into a mode-600 `.env` (re-runs never rotate an existing master
 key), **verifies your domain's DNS points at the box before enabling
 HTTPS**, then `docker compose pull && docker compose up -d --wait` and a
 **per-service sanity check** (every container's health + the app answering).
-First boot downloads ~4 GB of images and runs DB migrations (the one-shot
+First boot downloads ~2 GB of images and runs DB migrations (the one-shot
 `migrate` service gates every app service).
 
 Before the pull it also checks free disk and memory and whether ports 80/443
@@ -190,6 +195,23 @@ default). Turn any shed service on ad hoc with
 `docker compose up -d <service>` (naming a service overrides its profile
 gate), or return to the full shape with `scripts/install.sh --no-core`.
 
+### Sandboxes and the media sidecar
+
+**CLI sandboxes are on by default on a fresh full install** (off on a core
+box): the `sandboxes` profile adds the `sandboxd` service, and the installer
+generates `SANDBOXD_TOKEN`, sets `MANTLE_SANDBOXES_HOST_DIR` and pre-pulls the
+sandbox base image. Nothing is installed on the host. Turn them off with
+`--no-sandboxes`; an existing box only gains them with an explicit
+`scripts/install.sh --sandboxes`. Details: [`sandboxes.md`](./sandboxes.md).
+
+**Video ingest and CAD drawing ingest are off until you enable the `media`
+profile.** It runs the `titanwest/mantle-media` sidecar (yt-dlp, ffmpeg and
+the DWG tools) behind `MEDIA_SIDECAR_TOKEN`; the installer sets neither. Add
+`media` to `COMPOSE_PROFILES` in `.env`, set the token
+(`openssl rand -hex 32`), then `docker compose --profile media up -d --wait`.
+The image exists from v0.232.34, so update first on an older box. Guide:
+[`video-ingest.md`](./video-ingest.md).
+
 ### Manual install (no script)
 
 Grab the `mantle-deploy-<version>.tar.gz` bundle from the
@@ -221,15 +243,19 @@ docker compose up -d --force-recreate caddy   # now that client-web exists
 
 Skipping the second stack leaves a healthy backend with **no interface**,
 sign-up lives in the owner UI, so the server app alone will only show you a
-"this has moved" card. The bundle and the images are versioned together, a
-release's compose always matches its images, and the two images are lockstep
-on one `MANTLE_IMAGE_TAG`.
+"this has moved" card. The bundle and the server image are versioned together
+(a release's compose always matches `MANTLE_IMAGE_TAG`); the client image has
+its own tag, `MANTLE_CLIENT_IMAGE_TAG`, which the in-app updater sets from the
+`client-pair.tag` baked into each server release (recorded in
+`client-tag.auto`). A hand-pinned value is respected.
 
 ## Updating
 
-Releases are tagged `vX.Y.Z`; every release publishes the image to Docker
-Hub (`titanwest/mantle:vX.Y.Z` + `latest`, amd64 + arm64) and attaches the
-matching deploy bundle.
+Releases are tagged `vX.Y.Z`; every release publishes the server image to
+Docker Hub (`titanwest/mantle-server:vX.Y.Z` + `latest`, amd64 + arm64),
+the media sidecar (`titanwest/mantle-media`, same tags) and attaches the
+matching deploy bundle. The owner UI image (`titanwest/mantle-client`) is
+published by the jackdaw repo on its own stream.
 
 > **Two upgrades need their own runbook, a routine `pull` will not do them:**
 >
@@ -354,15 +380,17 @@ Two deliberately separate operations, because only one of them is reversible.
 **The default removes containers, networks and named volumes and leaves your
 data alone**, `scripts/install.sh` afterwards brings the same brain back, same
 keys and all. Nothing of value is in what it removes: postgres, the object
-store, files and backups are all bind-mounted into `MANTLE_DATA_DIR`, and the
-only named volumes are a tailscale socket and Caddy's certificate cache.
+store, files, backups and Caddy's certificates are all bind-mounted into
+`MANTLE_DATA_DIR`, and the only named volumes are the tailscale socket and the
+standalone client Caddy's cache (unused on a single-box install).
 
 **`--purge` additionally deletes the data directory and `.env`.** That is the
 brain itself, plus `MANTLE_MASTER_KEY`, and without that key the API keys and
 mailbox passwords in your vault cannot be decrypted, _including from a backup
 taken later_. It asks you to type `PURGE` rather than press `y`, and `--dry-run`
 prints the blast radius (paths, sizes, container counts) without touching
-anything. `--images` also drops the pulled images, freeing ~4 GB.
+anything. `--images` also drops the pulled images (the ~2 GB the installer
+downloaded).
 
 The data directory is read from `.env`, never guessed. Directories the
 containers created are root-owned, so it removes them via `sudo` where

@@ -1,13 +1,17 @@
 # Onboarding: from a clean brain to a working assistant
 
-> A fresh Mantle clone boots into a working brain with **no SQL and no env
-> editing**: clone → `pnpm start` → open the browser → create an account → walk a
-> resumable wizard that adds model keys, provisions the assistant + specialists +
-> AI workers, runs a sanity check, captures the brain's **purpose**, and shapes
+> A fresh Mantle install boots into a working brain with **no SQL and no env
+> editing**: install (or `pnpm start` the brain and `pnpm dev:fe` the UI from a
+> [jackdaw](https://github.com/crossworks-engineering/jackdaw) checkout) → open
+> the browser → create an account → walk a resumable wizard that adds model
+> keys, provisions the assistant + specialists + AI workers, runs a sanity check, captures the brain's **purpose**, and shapes
 > the assistant's personality. Everything it sets up is editable later under
 > Settings.
 
-Shipped 2026-06. Route `/onboarding`; signup at `/login` (first-run mode).
+Shipped 2026-06. Route `/onboarding`; signup at `/login` (first-run mode). Both
+screens live in the jackdaw repo (`app/onboarding`, `app/login`) since the
+2026-08-13 split; this repo keeps the API side (`/api/auth/signup`, the
+provisioning and the onboarding-state helpers).
 
 ---
 
@@ -216,11 +220,12 @@ on the Welcome step (`preferences.displayName`).
 ## 7. Files
 
 - **New:** `server/web/app/api/auth/signup/route.ts`, `server/web/lib/onboarding.ts`,
-  `server/web/lib/onboarding-provision.ts`, `jackdaw/app/onboarding/*`,
+  `server/web/lib/onboarding-provision.ts`, the wizard UI (jackdaw `app/onboarding/*`),
   `packages/db/src/resolve-owner.ts`, `packages/content-core/src/persona-bank.ts`,
   `packages/content-core/src/onboarding-questions.ts` (+ tests).
-- **Modified:** `server/web/app/login/*` (first-run mode), `jackdaw/app/(app)/layout.tsx`
-  (server-side onboarding gate), the `server/api` agent runtime +
+- **Modified:** the login screen (jackdaw `app/login/*`, first-run mode) and the
+  app layout (jackdaw `app/(app)/layout.tsx`, server-side onboarding gate), the
+  `server/api` agent runtime +
   `server/web/workers/{files-watch,docs-sync}.ts` + `server/mcp/src/server.ts`
   (wait-for-owner), `packages/content/src/profile-preferences.ts`
   (displayName/purpose/onboardedAt/onboardingStep), env examples.

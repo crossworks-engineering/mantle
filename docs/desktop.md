@@ -4,14 +4,19 @@ The owner UI as a native app. It carries the full web client (`jackdaw`)
 inside an Electron shell, points it at whichever brain you choose, and adds
 the things a browser tab can't: OS notifications, `mantle://` deep links, a
 tray, and auto-update. Design history and decisions:
-[desktop-app-plan.md](_archive/desktop-app-plan.md); developer docs:
-[client/desktop/README.md](https://github.com/crossworks-engineering/jackdaw).
+[desktop-app-plan.md](_archive/desktop-app-plan.md). The desktop shell's
+source and developer docs live in the
+[jackdaw repo](https://github.com/crossworks-engineering/jackdaw) (its
+`client/desktop` package), not in this repo.
 
 ## Install
 
-Installers are attached to the GitHub release for each version, Linux
-AppImage/deb, macOS dmg, Windows installer, built by CI on the same tags as
-the server images. macOS builds are currently unsigned (Gatekeeper will ask
+Installers are attached to each
+[jackdaw GitHub release](https://github.com/crossworks-engineering/jackdaw/releases):
+a Debian package and AppImage for Linux, an arm64 dmg and zip for macOS, and a
+Windows installer, built by CI on the jackdaw tag (its own version stream; the
+server release that pairs with it is recorded in the mantle repo's
+`client-pair.tag`). macOS builds are currently unsigned (Gatekeeper will ask
 for a right-click → Open on first launch, and self-update is disabled there
 until signing lands).
 
@@ -72,5 +77,5 @@ newer endpoints).
   self-heals a lost presence cookie since 0.215.0); if it does, sign in
   again; the session was local, nothing server-side changed.
 - **The app UI fails to load at all**: the embedded UI server may have been
-  built for another platform or be missing; reinstall, or for a source
-  checkout run `pnpm -C client/desktop build:ui` first.
+  built for another platform or be missing; reinstall, or for a jackdaw source
+  checkout run `pnpm -C client/desktop build:ui` there first.

@@ -60,7 +60,8 @@ split.
 
 Net effect for Phase 2: **all business logic is in reusable packages**, there is
 a **proven durable backend**, and there is **precedent** for non-Next consumers
-of the same logic (`server/api`, `server/mcp`, `server/api`). What's missing is the
+of the same logic (`server/api`, `server/mcp`, and the agent service that has
+since been folded into `server/api`). What's missing is the
 HTTP boundary as a *contract* and a frontend that consumes it.
 
 ---
@@ -88,8 +89,9 @@ HTTP boundary as a *contract* and a frontend that consumes it.
 **Shared packages (the backend logic, already extracted):**
 `@mantle/db` (Drizzle schema + client), `@mantle/content` (notes/events/tasks/
 pages/tables/contacts/journal/peers), `@mantle/search`, `@mantle/files`,
-`@mantle/tools`, `@mantle/runtime`, `@mantle/runtime`,
-`@mantle/email`, `@mantle/microsoft`, `@mantle/calendar`, `@mantle/runtime`,
+`@mantle/tools`, `@mantle/runtime` (which absorbed the former agent-runtime,
+assistant-runtime and heartbeats packages),
+`@mantle/email`, `@mantle/microsoft`, `@mantle/calendar`,
 `@mantle/tracing`, `@mantle/api-keys`, `@mantle/storage`, `@mantle/embeddings`.
 
 **Auth (`server/web/lib/auth.ts`, `auth-constants.ts`):**
@@ -220,9 +222,9 @@ Electron priority (the screens the desktop app needs first).
 API base URL + bearer token, and consumes SSE over HTTP. Realtime already works
 over HTTP once Task 2 makes SSE bearer-auth'd.
 
-**Task 6, (carryover) Absorb `server/api` into `server/api`.** Telegram +
+**Task 6, (carryover) Absorb the old agent service into `server/api`.** Telegram +
 heartbeat/reflector/extract runners move into `server/api`, the Telegram loop
-becomes a durable workflow, and `server/api` is deleted. This is a Phase 1
+becomes a durable workflow, and the agent service is deleted. This is a Phase 1
 remainder; do it whenever convenient (independent of the FE work). Compose: drop
 the `agent` service, the `api` service already exists.
 
