@@ -24,7 +24,7 @@ name: mantle
 #   OLLAMA_KEEP_ALIVE       (default: 5m — set to -1 to keep the embedder always
 #                            resident instead of unloading when idle)
 #   MINIO_IMAGE_TAG / MC_IMAGE_TAG / OLLAMA_IMAGE_TAG (optional — pin the minio,
-#                            minio/mc, and ollama images. Defaults are the newest
+#                            minio/mc (both from quay.io), and ollama images. Defaults are the newest
 #                            stable tags at time of writing; pinned (like
 #                            tailscale) so the in-app update path can't pull a
 #                            breaking upstream `:latest` mid-update.)
@@ -344,7 +344,10 @@ services:
   minio:
     # Pinned (was :latest) — the in-app update path re-pulls images, so a
     # breaking upstream release would land mid-update. Override via env.
-    image: minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
+    # From quay.io, not Docker Hub: on 2026-09-14 MinIO pulled minio/minio and
+    # minio/mc from Docker Hub, so every fresh install failed at the pull. The
+    # quay.io mirror carries the same pinned tags.
+    image: quay.io/minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
     container_name: mantle_minio
     restart: unless-stopped
     logging: *default-logging
@@ -375,7 +378,8 @@ services:
   # service that writes object bytes depends_on this completing.
   createbuckets:
     # Pinned (was :latest) — same reason as minio above: the update path re-pulls.
-    image: minio/mc:${MC_IMAGE_TAG:-RELEASE.2025-08-13T08-35-41Z}
+    # quay.io for the same reason as minio above too.
+    image: quay.io/minio/mc:${MC_IMAGE_TAG:-RELEASE.2025-08-13T08-35-41Z}
     container_name: mantle_createbuckets
     restart: "no"
     depends_on:

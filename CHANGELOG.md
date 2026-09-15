@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased — MinIO images from quay.io: fresh installs pull again (branch feat/minio-quay)
+
+On 2026-09-14 MinIO removed `minio/minio` and `minio/mc` from Docker Hub, so
+every fresh install failed at `docker compose up` with "pull access denied for
+minio/minio". Both images now come from `quay.io/minio/*`, which carries the
+same pinned tags (`RELEASE.2025-09-07T16-13-09Z` / `RELEASE.2025-08-13T08-35-41Z`),
+so no data or version changes. Prod compose, dev compose and `scripts/up.sh`
+all moved. Existing boxes recreate the minio container once on their next
+update (the image reference changed); the data is a bind mount and stays put.
+`MINIO_IMAGE_TAG` / `MC_IMAGE_TAG` still override the tag only.
+
 ## Unreleased — OpenAPI connectors: a service's spec as an http tool group (branch claude/zealous-leakey-73c34c)
 
 The raw-API twin of MCP connectors, per docs/plans/openapi-connector.md.
