@@ -58,9 +58,10 @@ name: mantle
 #   Deploy on VPS: docker compose pull && docker compose up -d --wait
 #
 # Optional — reach models on a box you own behind NAT (home GPU / LAN server):
-#   docker compose --profile tailnet up -d   (off by default)
-#   TS_AUTHKEY              (Tailscale auth key — generate in the TS admin console)
-#   TS_HOSTNAME             (default: mantle-vps — this node's name on the tailnet)
+#   the `tailscale` service is NOT a profile: it starts with every `up` and sits
+#   unauthenticated until you activate it from the UI (/settings/network with an
+#   auth key from the TS admin console). Nothing else waits on it.
+#   TS_IMAGE_TAG            (pin override for the tailscale image)
 #   See docs/tailscale.md.
 #
 # Embedding is ONLINE by default — configured in onboarding (text-embedding-3-large,
@@ -86,7 +87,7 @@ volumes:
   # so there's no Let's Encrypt re-issuance / rate-limit risk.
   #
   # The ONLY named volume is the tailscaled IPC socket dir below: a live unix
-  # socket shared web↔tailscale (optional `tailnet` profile), not durable data
+  # socket shared web↔tailscale (the always-on sidecar), not durable data
   # — a host bind there buys nothing and risks breaking the socket.
   mantle_tailscale_sock:
 
@@ -558,7 +559,7 @@ services:
       OLLAMA_HOST: http://ollama:11434
     entrypoint: ["ollama", "pull", "${MANTLE_EMBEDDING_PULL_MODEL:-embeddinggemma}"]
 
-  # ── Tailscale (OPTIONAL — `tailnet` profile) ──────────────────────────────
+  # ── Tailscale (always-on sidecar, idle until activated) ───────────────────
   # Reaches capable chat/vision models running on a box you own (home GPU, LAN
   # server) behind NAT — without port-forwarding. Joins your tailnet; the app
   # then reaches `http://<magicdns-name>:<port>` for that box. See docs/tailscale.md.
