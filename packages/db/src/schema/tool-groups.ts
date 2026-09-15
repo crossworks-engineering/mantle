@@ -46,7 +46,8 @@ export type ToolGroupMcpOAuth = {
   /** 'pending' until the first authorization completes; 'needs_reconnect'
    *  when a refresh died and the owner must re-authorize. */
   status: 'pending' | 'connected' | 'needs_reconnect';
-  /** client_id from dynamic registration (public identifier, not a secret). */
+  /** client_id from dynamic registration, or of a `manual` pre-registered
+   *  app (public identifier, not a secret). */
   clientId?: string;
   /** Set while an authorization redirect is in flight. */
   pending?: { state: string; redirectUri: string; startedAt: string };
@@ -57,7 +58,34 @@ export type ToolGroupMcpOAuth = {
   tokenExpiresAt?: string;
   connectedAt?: string;
   lastError?: string;
+  /** Pre-registered OAuth app, for authorization servers that do not offer
+   *  dynamic client registration (Microsoft Entra ID). Absent = the connector
+   *  registers itself (RFC 7591). */
+  client?: ToolGroupMcpOAuthClient;
+  /** Scope asked for at authorization. Absent = the server's own choice (its
+   *  WWW-Authenticate scope, else its advertised `scopes_supported`). A
+   *  Microsoft app always adds `offline_access`, or Entra issues no refresh
+   *  token and the connection dies at the first access-token expiry. */
+  scope?: string;
 };
+
+/**
+ * Where a connector's pre-registered OAuth app comes from.
+ * - `microsoft`: borrow the app from Settings → Microsoft (client id, secret,
+ *   tenant). Nothing is copied, so a secret rotated there applies here too,
+ *   and sign-in goes to that tenant's authority, not the server's generic one.
+ * - `manual`: an app registered by hand with the server's provider. Its id is
+ *   `clientId` on the oauth block; its secret, if any, is vault-sealed as the
+ *   connector's `oauth-client` registration JSON, like a dynamic one.
+ */
+export type ToolGroupMcpOAuthClient =
+  | { source: 'microsoft' }
+  | {
+      source: 'manual';
+      /** Sign in here instead of where the server's discovery points, e.g. a
+       *  tenant authority for a single-tenant app. */
+      authorizationServer?: string;
+    };
 
 export type ToolGroupMcpBinding = {
   /** Streamable-HTTP endpoint, e.g. 'https://mcp.firecrawl.dev/v2/mcp'. */

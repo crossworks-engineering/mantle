@@ -240,7 +240,12 @@ export {
   MCP_OAUTH_SECRET_LABELS,
   runtimeMcpOAuthProvider,
   startMcpOAuth,
+  setMcpOAuthClient,
+  explainMcpOAuthError,
+  abandonMcpOAuth,
   type McpOAuthStore,
+  type McpOAuthClientInput,
+  type MicrosoftOAuthApp,
   type StartMcpOAuthResult,
 } from './mcp-oauth';
 export { isMcpManagedSecretService, MCP_VAULT_SERVICE_PREFIX } from './integration-meta';

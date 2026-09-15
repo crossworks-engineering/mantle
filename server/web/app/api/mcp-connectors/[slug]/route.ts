@@ -2,7 +2,12 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { deleteMcpConnector } from '@mantle/tools';
-import { getMcpConnector, updateMcpConnector } from '@/lib/mcp-connectors';
+import {
+  getMcpConnector,
+  McpOAuthClientBody,
+  McpOAuthScopeBody,
+  updateMcpConnector,
+} from '@/lib/mcp-connectors';
 import { firstIssue } from '@/lib/zod-issue';
 
 export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -24,6 +29,11 @@ const PatchBody = z.object({
   secretRef: z.string().max(160).optional(),
   authHeader: z.string().max(64).optional(),
   authScheme: z.string().max(20).optional(),
+  /** Switch the OAuth app. A real change drops the old app's tokens; the
+   *  owner authorizes again. Re-sending the current app is a no-op. */
+  oauthClient: McpOAuthClientBody.optional(),
+  /** OAuth scope override; '' clears it. */
+  scope: McpOAuthScopeBody.optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string }> }) {

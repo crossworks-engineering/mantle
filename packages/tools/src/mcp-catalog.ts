@@ -32,6 +32,12 @@ export type KnownMcpServer = {
   docsUrl: string;
   /** Selection guidance folded into the generated group description. */
   whenToUse: string;
+  /** The server's sign-in needs a pre-registered app, because its
+   *  authorization server offers no dynamic registration. 'microsoft': the
+   *  Settings → Microsoft app works (Entra ID fronts the server). */
+  oauthClient?: 'microsoft';
+  /** Steps outside Mantle that the owner, or their IT admin, must do first. */
+  setup?: string[];
 };
 
 export const KNOWN_MCP_SERVERS: readonly KnownMcpServer[] = [
@@ -56,6 +62,25 @@ export const KNOWN_MCP_SERVERS: readonly KnownMcpServer[] = [
     docsUrl: 'https://docs.devin.ai/work-with-devin/deepwiki-mcp',
     whenToUse:
       'Use to understand a public GitHub repository — its structure, docs, or how something in it works. For general web questions use the researcher’s `web_search`/`web_fetch` instead; for THIS product’s own code the brain’s indexed docs win.',
+  },
+  {
+    slug: 'powerbi',
+    label: 'Power BI (Microsoft)',
+    description:
+      'Microsoft’s remote Power BI MCP server (preview): ask questions of Power BI semantic models. It reads a model’s schema and runs DAX as the signed-in user, so row-level security applies.',
+    url: 'https://api.fabric.microsoft.com/v1/mcp/powerbi',
+    oauthUrl: 'https://api.fabric.microsoft.com/v1/mcp/powerbi',
+    oauthClient: 'microsoft',
+    docsUrl:
+      'https://learn.microsoft.com/en-us/power-bi/developer/mcp/remote-mcp-server-external-clients',
+    whenToUse:
+      'Use to answer questions from the organisation’s Power BI semantic models (measures, KPIs, report data). Needs the semantic model id, from the model’s URL in app.powerbi.com. Read the schema, then write the DAX yourself: its Generate Query tool spends Copilot capacity. For documents and SharePoint files use the brain’s own search instead.',
+    setup: [
+      'A Power BI admin turns on the tenant setting "Users can use the Power BI Model Context Protocol server endpoint (preview)".',
+      'Settings → Microsoft has an Azure app. On that app in Azure: API permissions → Power BI Service → delegated Dataset.Read.All, MLModel.Execute.All and Workspace.Read.All, then Grant admin consent.',
+      'On the same app: Authentication → add this box’s connector callback URL under the Web platform. Not “Mobile and desktop”, as Microsoft’s guide says for desktop apps: Mantle sends the app’s secret, and Entra refuses a secret on a public-client redirect.',
+      'Each user needs Build permission on the semantic models they query.',
+    ],
   },
 ];
 

@@ -1,9 +1,13 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { requestOrigin } from '@/lib/auth-constants';
 import { createMcpConnector, dbMcpOAuthStore, startMcpOAuth } from '@mantle/tools';
-import { listMcpConnectors } from '@/lib/mcp-connectors';
+import {
+  connectorOAuthCallbackUrl,
+  listMcpConnectors,
+  McpOAuthClientBody,
+  McpOAuthScopeBody,
+} from '@/lib/mcp-connectors';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -12,10 +16,12 @@ import { firstIssue } from '@/lib/zod-issue';
  *  (placeholder rows for the settings UI); POST creates a connector and runs
  *  its first sync. See docs/mcp-connectors.md. */
 
-export async function GET() {
+export async function GET(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const result = await listMcpConnectors(user.id);
+  const result = await listMcpConnectors(user.id, {
+    oauthRedirectUri: connectorOAuthCallbackUrl(req),
+  });
   return NextResponse.json(result);
 }
 
@@ -33,6 +39,12 @@ const CreateBody = z.object({
   /** True for a server that authenticates via the MCP OAuth flow — the
    *  response then carries `authorizeUrl` for the owner's browser. */
   oauth: z.boolean().optional(),
+  /** The OAuth app (implies `oauth`): 'dynamic' (default) registers itself;
+   *  'microsoft' borrows the Settings → Microsoft app; 'manual' is an app
+   *  registered by hand. Needed for servers behind Microsoft Entra ID. */
+  oauthClient: McpOAuthClientBody.optional(),
+  /** OAuth scope override (implies `oauth`). */
+  scope: McpOAuthScopeBody.optional(),
 });
 
 export async function POST(req: Request) {
@@ -43,14 +55,28 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
+  const { oauthClient, scope, ...rest } = parsed.data;
+  const oauth = !!(rest.oauth || oauthClient || scope);
+  let result: Awaited<ReturnType<typeof createMcpConnector>>;
   try {
-    const result = await createMcpConnector(user.id, parsed.data);
-    if (parsed.data.oauth) {
-      // Kick off the authorization flow immediately: discovery + dynamic
-      // registration happen server-side; the browser opens `authorizeUrl`.
-      const redirectUri = `${requestOrigin(req)}/api/mcp-connectors/oauth/callback`;
+    result = await createMcpConnector(user.id, {
+      ...rest,
+      oauth,
+      ...(oauthClient ? { oauthClient } : {}),
+      ...(scope ? { oauthScope: scope } : {}),
+    });
+  } catch (err) {
+    const msg = errorMessage(err);
+    const status = msg.includes('already exists') ? 409 : 400;
+    return NextResponse.json({ error: msg }, { status });
+  }
+  try {
+    if (oauth) {
+      // Kick off the authorization flow immediately: discovery (+ dynamic
+      // registration, unless the app is pre-registered) happens server-side;
+      // the browser opens `authorizeUrl`.
       const flow = await startMcpOAuth(dbMcpOAuthStore(user.id, result.groupSlug), {
-        redirectUri,
+        redirectUri: connectorOAuthCallbackUrl(req),
       });
       return NextResponse.json(
         'authorizeUrl' in flow
@@ -63,8 +89,11 @@ export async function POST(req: Request) {
     // the caller fixes the config (or the server comes back) and re-syncs.
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
+    // The connector EXISTS; only its authorization could not start. Report
+    // that as such (the reason is also on the connector as lastError), not
+    // as a failed create: the owner fixes the app choice and authorizes again.
     const msg = errorMessage(err);
-    const status = msg.includes('already exists') ? 409 : 400;
-    return NextResponse.json({ error: msg }, { status });
+    console.error('[mcp-connectors] authorize after create failed', result.groupSlug, msg);
+    return NextResponse.json({ ...result, oauthError: msg }, { status: 201 });
   }
 }

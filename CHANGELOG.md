@@ -4,6 +4,37 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: MCP connectors sign in with pre-registered OAuth apps, so Power BI works (branch feat/mcp-entra-oauth)
+
+Connecting Microsoft's Power BI MCP server failed silently: the connector sat
+on "authorization pending" with no reason. Power BI signs in through Microsoft
+Entra ID, which offers no dynamic client registration, and the connector flow
+depended on it. An OAuth connector can now use a pre-registered app instead:
+`microsoft` borrows the Settings → Microsoft app and signs in at its tenant (a
+single-tenant app cannot use the `organizations` endpoint Power BI
+advertises); `manual` takes an app registered by hand, sealed in the vault.
+The Microsoft app always asks for `offline_access` (without it there is no
+refresh token, and the connection died within the hour), shows the account
+picker instead of the SDK's forced consent prompt (which blocks an
+already-consented app on tenants without user consent), sends no RFC 8707
+`resource` parameter, and posts the secret in the body. All through the SDK
+1.30 provider hooks, no fork. Power BI ships as a catalogue entry with its
+customer-side setup steps. Its redirect URI must be registered under the Web
+platform, not "Mobile and desktop" as Microsoft's desktop-client guide says.
+
+Bugs fixed on the way: a failed start, a refused consent or a failed code
+exchange no longer leaves a silent `pending`; the reason lands on
+`oauth.lastError`, with the cure appended for the common AADSTS codes. The
+code exchange keeps the first token error instead of the one from the SDK's
+own retry. A create whose authorization could not start now answers 201 with
+`oauthError`, not a misleading "create failed".
+
+API: `oauthClient` and `scope` on create and patch; the list also returns
+`oauthRedirectUri` and `microsoftApp`. Contract (`@crossworks/client-types`):
+optional `oauth.client` and `oauth.scope` on the MCP binding. 11 new tests
+against an in-process Entra-shaped authorization server, plus 5 parser cases.
+docs/mcp-connectors.md; help page extended.
+
 ## Unreleased — MinIO images from quay.io: fresh installs pull again (branch feat/minio-quay)
 
 On 2026-09-14 MinIO removed `minio/minio` and `minio/mc` from Docker Hub, so

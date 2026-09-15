@@ -50,6 +50,13 @@ export function msScopeString(): string {
   return MS_SCOPES.join(' ');
 }
 
+/** The tenant's v2 authority — the OAuth issuer an MCP connector signs in
+ *  against when it borrows this app. Tenant-specific on purpose: a
+ *  single-tenant app cannot use `organizations` / `common` (AADSTS50194). */
+export function microsoftAuthority(tenant: string): string {
+  return `${AUTHORITY}/${tenant}/v2.0`;
+}
+
 export function authorizeEndpoint(tenant: string): string {
   return `${AUTHORITY}/${tenant}/oauth2/v2.0/authorize`;
 }

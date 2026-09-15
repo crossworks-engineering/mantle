@@ -132,6 +132,13 @@ export interface ToolGroupIntegrationDTO {
       tokenExpiresAt?: string;
       connectedAt?: string;
       lastError?: string;
+      /** Pre-registered OAuth app, for servers without dynamic registration
+       *  (Microsoft Entra ID). `microsoft` borrows the Settings → Microsoft
+       *  app; `manual` is an app registered by hand (its id is `clientId`, its
+       *  secret stays vault-sealed). Absent = the connector registers itself. */
+      client?: { source: 'microsoft' } | { source: 'manual'; authorizationServer?: string };
+      /** Scope asked for at authorization; absent = the server's own choice. */
+      scope?: string;
     };
     lastSyncAt?: string;
     toolCount?: number;

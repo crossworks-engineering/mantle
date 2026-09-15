@@ -8,17 +8,51 @@
  */
 
 import { and, eq } from 'drizzle-orm';
+import { z } from 'zod';
 import { db, toolGroups, type ToolGroup, type ToolGroupMcpBinding } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
+import { getConfigStatus } from '@mantle/microsoft';
 import {
   closeMcpClient,
+  dbMcpOAuthStore,
   KNOWN_MCP_SERVERS,
   mcpGroupSlug,
   parseMcpBinding,
+  setMcpOAuthClient,
   type KnownMcpServer,
+  type McpOAuthClientInput,
 } from '@mantle/tools';
+import { errorMessage } from '@mantle/std';
+import { requestOrigin } from '@/lib/auth-constants';
 import { listToolGroupBackrefs } from '@/lib/tool-groups';
 import type { ToolGroupDTO } from '@mantle/client-types';
+
+/** Where every connector's OAuth flow lands. One helper, so the URI the
+ *  owner registers in Azure (shown on the connectors screen) and the one the
+ *  flow sends can never drift apart. */
+export function connectorOAuthCallbackUrl(req: Request): string {
+  return `${requestOrigin(req)}/api/mcp-connectors/oauth/callback`;
+}
+
+/** Request body for a connector's OAuth app (create + patch). */
+export const McpOAuthClientBody = z.discriminatedUnion('source', [
+  z.object({ source: z.literal('dynamic') }),
+  z.object({ source: z.literal('microsoft') }),
+  z.object({
+    source: z.literal('manual'),
+    clientId: z.string().trim().min(1, 'a manual app needs its client id').max(300),
+    clientSecret: z.string().max(2000).optional(),
+    authorizationServer: z
+      .string()
+      .trim()
+      .max(2000)
+      .regex(/^https:\/\/\S+$/i, 'authorizationServer must be an https:// URL')
+      .optional(),
+  }),
+]);
+
+/** OAuth scope override: space-separated, '' clears. */
+export const McpOAuthScopeBody = z.string().max(1000);
 
 export type McpConnectorSummary = ToolGroupDTO & { grantedTo: string[] };
 
@@ -58,14 +92,26 @@ function toDTO(g: ToolGroup, grantedTo: string[], tokenServices: Set<string>): M
   };
 }
 
-export async function listMcpConnectors(ownerId: string): Promise<{
+/** The Settings → Microsoft app as the connectors screen needs it: whether a
+ *  connector can borrow it, and which app / tenant that would be. Non-secret. */
+export type MicrosoftAppSummary =
+  { configured: false } | { configured: true; clientId: string; tenant: string };
+
+export async function listMcpConnectors(
+  ownerId: string,
+  opts: { oauthRedirectUri: string },
+): Promise<{
   connectors: McpConnectorSummary[];
   catalog: Array<KnownMcpServer & { connected: boolean }>;
+  /** The callback URL an OAuth app must list as a (Web) redirect URI. */
+  oauthRedirectUri: string;
+  microsoftApp: MicrosoftAppSummary;
 }> {
-  const [rows, backrefs, tokenServices] = await Promise.all([
+  const [rows, backrefs, tokenServices, ms] = await Promise.all([
     db.select().from(toolGroups).where(eq(toolGroups.ownerId, ownerId)),
     listToolGroupBackrefs(ownerId),
     oauthTokenServices(ownerId),
+    getConfigStatus(ownerId),
   ]);
   const connectors = rows
     .filter((g) => g.integration?.mcp)
@@ -76,7 +122,11 @@ export async function listMcpConnectors(ownerId: string): Promise<{
     ...s,
     connected: have.has(mcpGroupSlug(s.slug)),
   }));
-  return { connectors, catalog };
+  const microsoftApp: MicrosoftAppSummary =
+    ms.configured && ms.clientId
+      ? { configured: true, clientId: ms.clientId, tenant: ms.tenant ?? 'common' }
+      : { configured: false };
+  return { connectors, catalog, oauthRedirectUri: opts.oauthRedirectUri, microsoftApp };
 }
 
 export async function getMcpConnector(
@@ -104,6 +154,10 @@ export type UpdateMcpConnectorInput = {
   secretRef?: string;
   authHeader?: string;
   authScheme?: string;
+  /** Switch the connector's OAuth app (OAuth connectors only). */
+  oauthClient?: McpOAuthClientInput;
+  /** OAuth scope override; '' clears it. */
+  scope?: string;
 };
 
 /** Patch a connector's binding/name/enabled. A binding change closes the
@@ -145,7 +199,15 @@ export async function updateMcpConnector(
     nextMcp = parsed.value;
   }
 
-  const [updated] = await db
+  const oauthTouched = patch.oauthClient !== undefined || patch.scope !== undefined;
+  if (oauthTouched && !mcp.oauth?.enabled) {
+    return {
+      error: `'${groupSlug}' does not use OAuth, so it has no OAuth app or scope to set`,
+      status: 400,
+    };
+  }
+
+  let [updated] = await db
     .update(toolGroups)
     .set({
       ...(patch.name !== undefined ? { name: patch.name } : {}),
@@ -155,7 +217,20 @@ export async function updateMcpConnector(
     })
     .where(eq(toolGroups.id, row.id))
     .returning();
-  if (bindingTouched) await closeMcpClient(ownerId, groupSlug);
+  // After the row update, never before: that update writes the binding it
+  // read, which would clobber a fresher oauth block.
+  if (oauthTouched) {
+    try {
+      await setMcpOAuthClient(dbMcpOAuthStore(ownerId, groupSlug), {
+        client: patch.oauthClient,
+        scope: patch.scope,
+      });
+    } catch (err) {
+      return { error: errorMessage(err), status: 400 };
+    }
+    [updated] = await db.select().from(toolGroups).where(eq(toolGroups.id, row.id)).limit(1);
+  }
+  if (bindingTouched || oauthTouched) await closeMcpClient(ownerId, groupSlug);
   const [backrefs, tokenServices] = await Promise.all([
     listToolGroupBackrefs(ownerId),
     oauthTokenServices(ownerId),

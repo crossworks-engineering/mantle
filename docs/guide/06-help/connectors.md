@@ -19,13 +19,21 @@ way you grant any other.
 This is the outward twin of Settings → MCP. That screen lets other AI clients
 reach INTO your brain; this one lets your brain reach OUT: Firecrawl for
 ad-hoc scraping, DeepWiki for questions about public GitHub repositories,
-Open-Meteo for live weather, or any MCP server or OpenAPI-described API.
+Power BI for questions about your organisation's reports, Open-Meteo for live
+weather, or any MCP server or OpenAPI-described API.
 
 Three ways a server can authenticate: not at all (public servers), with an API
 key you store under Settings → API keys, or with OAuth, where you approve the
 connection once in a browser tab and the brain refreshes tokens silently from
 then on. When a refresh finally dies the connector shows "needs reconnect" and
 one click re-runs the approval.
+
+Some servers sign in through Microsoft, Power BI among them. Microsoft does
+not let apps register themselves, so these connectors borrow the Microsoft
+app you already set up under Settings → Microsoft. Your IT admin gives that
+app the server's permissions, and adds this brain's connector callback URL
+(the connectors screen shows it) as a Web redirect. If an approval ever
+fails, the connector shows why, together with the fix.
 
 The tool list is a mirror, refreshed only when you press Sync: connecting,
 syncing, and granting are all deliberate acts, and nothing here runs on a
@@ -43,6 +51,7 @@ leaves edited tools alone unless you ask it to overwrite them.
 
 - "Use Firecrawl to pull the pricing page off example.com and summarise it."
 - "Ask DeepWiki how routing works in vercel/next.js."
+- "In Power BI, what were last month's sales by region? The model id is in the report link."
 
 Grant the connector's group to a research-style agent first. Results from an
 external server are third-party content: the brain fences them as untrusted
@@ -63,6 +72,13 @@ Credentials never sit on the row. A key connector stores a `service/label`
 pointer into the encrypted vault; an OAuth connector seals its registration,
 tokens, and PKCE verifier there under the connector's own slug, and deleting
 the connector purges them along with the mirrored tools and every agent grant.
+
+An OAuth connector can use a pre-registered app instead of registering
+itself, for servers whose sign-in allows no self-registration.
+`oauth.client` is `microsoft` (borrow the Settings → Microsoft app and sign
+in at its tenant) or `manual` (an app registered by hand, sealed in the
+vault). The details, including the Power BI setup, are in
+`docs/mcp-connectors.md`.
 
 Sync reconciles rather than replaces: tools that vanish from the remote server
 are disabled, never deleted, so a grant can't silently shrink, and a tool that

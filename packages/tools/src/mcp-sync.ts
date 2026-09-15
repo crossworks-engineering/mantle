@@ -24,7 +24,12 @@ import {
 } from '@mantle/db';
 import { parseMcpBinding } from './integration-meta';
 import { closeMcpClient, mcpListRemoteTools, type McpRemoteTool } from './mcp-client';
-import { clearMcpOAuthSecrets, dbMcpOAuthStore } from './mcp-oauth';
+import {
+  clearMcpOAuthSecrets,
+  dbMcpOAuthStore,
+  setMcpOAuthClient,
+  type McpOAuthClientInput,
+} from './mcp-oauth';
 import { knownMcpServer } from './mcp-catalog';
 import { errorMessage } from '@mantle/std';
 
@@ -285,6 +290,11 @@ export type CreateMcpConnectorInput = {
    *  sync is skipped (it would 401) — the caller starts the authorization
    *  flow next and syncs after the callback. */
   oauth?: boolean;
+  /** The OAuth app to use (implies `oauth`). Absent or 'dynamic' = the
+   *  connector registers itself; see setMcpOAuthClient. */
+  oauthClient?: McpOAuthClientInput;
+  /** OAuth scope override (implies `oauth`). */
+  oauthScope?: string;
 };
 
 export type CreateMcpConnectorResult = {
@@ -310,12 +320,13 @@ export async function createMcpConnector(
     );
   }
   const groupSlug = mcpGroupSlug(connectorSlug);
+  const oauth = !!(input.oauth || input.oauthClient || input.oauthScope);
   const parsed = parseMcpBinding({
     url: input.url,
     secretRef: input.secretRef,
     authHeader: input.authHeader,
     authScheme: input.authScheme,
-    ...(input.oauth ? { oauth: { enabled: true, status: 'pending' } } : {}),
+    ...(oauth ? { oauth: { enabled: true, status: 'pending' } } : {}),
   });
   if (!parsed.ok) throw new Error(parsed.error);
 
@@ -330,6 +341,18 @@ export async function createMcpConnector(
     );
   }
 
+  // Check what can be checked BEFORE the row exists, so a bad app choice
+  // never leaves a half-configured connector behind.
+  const store = dbMcpOAuthStore(ownerId, groupSlug);
+  if (input.oauthClient?.source === 'microsoft' && !(await store.microsoftApp())) {
+    throw new Error(
+      'this connector would borrow the Microsoft app, but Settings → Microsoft has none configured — add the app there (client id, secret, tenant) first',
+    );
+  }
+  if (input.oauthClient?.source === 'manual' && !input.oauthClient.clientId.trim()) {
+    throw new Error('a manual OAuth app needs its client id');
+  }
+
   const catalog = knownMcpServer(connectorSlug);
   await db.insert(toolGroups).values({
     ownerId,
@@ -341,9 +364,13 @@ export async function createMcpConnector(
     enabled: true,
   });
 
+  if (input.oauthClient || input.oauthScope) {
+    await setMcpOAuthClient(store, { client: input.oauthClient, scope: input.oauthScope });
+  }
+
   // An OAuth connector has no credential yet — the first sync would 401.
   // The caller starts the authorization flow and syncs after the callback.
-  if (input.oauth) return { groupSlug, created: true };
+  if (oauth) return { groupSlug, created: true };
 
   try {
     const sync = await syncMcpConnector(ownerId, groupSlug);

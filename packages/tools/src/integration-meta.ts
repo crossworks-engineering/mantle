@@ -266,6 +266,9 @@ export function isMcpManagedSecretService(service: string): boolean {
  * `serverInfo`) through so a validated round-trip of a DB row doesn't drop
  * the connector's sync state.
  */
+/** Longest OAuth scope string a connector may ask for. */
+const MAX_OAUTH_SCOPE_CHARS = 1000;
+
 export function parseMcpBinding(
   raw: unknown,
 ): { ok: true; value: ToolGroupMcpBinding } | IntegrationParseError {
@@ -425,6 +428,50 @@ export function parseMcpBinding(
     const lastErrorRaw = pickO('lastError', 'last_error');
     if (typeof lastErrorRaw === 'string' && lastErrorRaw.trim()) {
       oauth.lastError = lastErrorRaw.trim().slice(0, 500);
+    }
+    // Pre-registered app — only WHERE it comes from lives here; a manual
+    // app's secret is sealed in the vault by the connectors API.
+    const clientRaw = o.client;
+    if (clientRaw !== undefined && clientRaw !== null) {
+      if (typeof clientRaw !== 'object' || Array.isArray(clientRaw)) {
+        return {
+          ok: false,
+          error:
+            "integration.mcp.oauth.client must be { source: 'microsoft' } or { source: 'manual', authorization_server? } — set it via the connectors API, which also seals a manual app's secret",
+        };
+      }
+      const c = clientRaw as Record<string, unknown>;
+      if (c.source === 'microsoft') {
+        oauth.client = { source: 'microsoft' };
+      } else if (c.source === 'manual') {
+        const asRaw = c.authorizationServer ?? c.authorization_server;
+        const as = asRaw === undefined || asRaw === null ? '' : String(asRaw).trim();
+        if (as && !/^https:\/\/\S+$/i.test(as)) {
+          return {
+            ok: false,
+            error: `integration.mcp.oauth.client.authorization_server '${as}' must be an https:// URL — e.g. https://login.microsoftonline.com/<tenant-id>/v2.0`,
+          };
+        }
+        oauth.client = as
+          ? { source: 'manual', authorizationServer: as.slice(0, 2000) }
+          : { source: 'manual' };
+      } else {
+        return {
+          ok: false,
+          error: `integration.mcp.oauth.client.source '${String(c.source)}' must be microsoft | manual (leave client out for an app that registers itself)`,
+        };
+      }
+    }
+    const scopeRaw = o.scope;
+    if (typeof scopeRaw === 'string' && scopeRaw.trim()) {
+      const scope = scopeRaw.trim().replace(/\s+/g, ' ');
+      if (scope.length > MAX_OAUTH_SCOPE_CHARS || HAS_SECRET_REF.test(scope)) {
+        return {
+          ok: false,
+          error: `integration.mcp.oauth.scope must be a space-separated list of scopes (max ${MAX_OAUTH_SCOPE_CHARS} characters), e.g. "https://api.fabric.microsoft.com/.default"`,
+        };
+      }
+      oauth.scope = scope;
     }
     value.oauth = oauth;
   }

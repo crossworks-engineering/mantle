@@ -1,5 +1,6 @@
 import { getOwnerOr401 } from '@/lib/auth';
 import {
+  abandonMcpOAuth,
   completeMcpOAuth,
   dbMcpOAuthStore,
   findConnectorByOAuthState,
@@ -45,15 +46,20 @@ export async function GET(req: Request) {
       false,
     );
   }
+  const store = dbMcpOAuthStore(user.id, groupSlug);
   if (providerError || !code) {
     const desc = url.searchParams.get('error_description') ?? providerError ?? 'no code returned';
-    return htmlPage(`Authorization failed for ${esc(groupSlug)}`, esc(desc), false);
+    // End the flow on the connector too, or it sits on `pending` with no reason.
+    const msg = await abandonMcpOAuth(store, desc);
+    console.error('[mcp-connectors] provider refused authorization', groupSlug, msg);
+    return htmlPage(`Authorization failed for ${esc(groupSlug)}`, esc(msg), false);
   }
 
   try {
-    await completeMcpOAuth(dbMcpOAuthStore(user.id, groupSlug), { code });
+    await completeMcpOAuth(store, { code });
   } catch (err) {
-    const msg = errorMessage(err);
+    const msg = errorMessage(err); // already carries its cure, when one is known
+    console.error('[mcp-connectors] token exchange failed', groupSlug, msg);
     return htmlPage(`Authorization failed for ${esc(groupSlug)}`, esc(msg), false);
   }
 

@@ -149,7 +149,7 @@ async function spawn(ownerId: string, groupSlug: string, mcp: ToolGroupMcpBindin
     // refresh via the provider; a needed re-authorization surfaces as a
     // teaching error from the provider (a tool call can't open a browser).
     const store = oauthStoreFactory(ownerId, groupSlug);
-    authProvider = runtimeMcpOAuthProvider(store, mcp.oauth.redirectUri);
+    authProvider = runtimeMcpOAuthProvider(store, mcp.oauth);
     const tokens = await loadMcpOAuthTokens(store);
     if (tokens?.access_token) secrets.set(`${groupSlug}/oauth`, tokens.access_token);
   } else {

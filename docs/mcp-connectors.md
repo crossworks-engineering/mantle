@@ -87,12 +87,12 @@ on a cron — cost-safety rule.
 
 ## API (owner-gated)
 
-| Route                                         | Does                                                                                                                                                                                      |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/mcp-connectors`                     | Connected servers + the `KNOWN_MCP_SERVERS` catalog (placeholder rows, `connected` flags)                                                                                                 |
-| `POST /api/mcp-connectors`                    | `{ slug, url, secretRef?, authHeader?, authScheme?, name? }` → creates `mcp-<slug>` + first sync. A failed first sync keeps the group (`syncError` in the response) — fix config, resync. |
-| `GET/PATCH/DELETE /api/mcp-connectors/<slug>` | Inspect / edit binding (bounces the cached client) / delete (rows + group + grants)                                                                                                       |
-| `POST /api/mcp-connectors/<slug>/sync`        | Re-list + reconcile                                                                                                                                                                       |
+| Route                                         | Does                                                                                                                                                                                                                                                                                                 |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/mcp-connectors`                     | Connected servers + the `KNOWN_MCP_SERVERS` catalog (placeholder rows, `connected` flags)                                                                                                                                                                                                            |
+| `POST /api/mcp-connectors`                    | `{ slug, url, secretRef?, authHeader?, authScheme?, name?, oauth?, oauthClient?, scope? }` → creates `mcp-<slug>` + first sync (OAuth: returns `authorizeUrl`, or `oauthError` if the flow could not start). A failed first sync keeps the group (`syncError` in the response) — fix config, resync. |
+| `GET/PATCH/DELETE /api/mcp-connectors/<slug>` | Inspect / edit binding, OAuth app (`oauthClient`) and `scope` (bounces the cached client) / delete (rows + group + grants)                                                                                                                                                                           |
+| `POST /api/mcp-connectors/<slug>/sync`        | Re-list + reconcile                                                                                                                                                                                                                                                                                  |
 
 ## OAuth servers (the MCP auth flow)
 
@@ -120,6 +120,76 @@ Engine: `packages/tools/src/mcp-oauth.ts`.
 - **Same egress rules.** Discovery/registration/token requests run through
   the SSRF guard with redirects refused, like every other connector request.
 
+## Servers without dynamic registration (pre-registered apps)
+
+Some authorization servers do not let a client register itself. Microsoft
+Entra ID is the big one: it fronts every Microsoft MCP server, Power BI
+included. There the connector uses an app someone registered by hand, set as
+`integration.mcp.oauth.client`:
+
+| `client`                                     | Where the app comes from                                                                                      | Sign-in goes to                                                                    |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| absent                                       | RFC 7591 dynamic registration (the default)                                                                   | wherever RFC 9728 discovery points                                                 |
+| `{ source: 'microsoft' }`                    | the Settings → Microsoft app (client id, secret, tenant), resolved on every flow, never copied                | that app's **tenant** authority, `https://login.microsoftonline.com/<tenant>/v2.0` |
+| `{ source: 'manual', authorizationServer? }` | an app registered by hand: its id on `oauth.clientId`, its secret sealed in `oauth-client` like a dynamic one | `authorizationServer` if set, else discovery                                       |
+
+Set it at create (`"oauthClient": { "source": "microsoft" }` on
+`POST /api/mcp-connectors`) or later (`oauthClient` on
+`PATCH /api/mcp-connectors/<slug>`). A real change drops the old app's tokens,
+and the owner authorizes again; re-sending the current app is a no-op, so a
+form save cannot cut a live connection. `scope` (create and patch, `''`
+clears) overrides the scope asked for.
+
+What the Microsoft app changes, and why (engine:
+`packages/tools/src/mcp-oauth.ts`, all through the SDK's own provider hooks):
+
+- **Tenant authority, not `organizations`.** Power BI's metadata names the
+  generic multi-tenant endpoint. A single-tenant app cannot sign in there
+  (AADSTS50194), so `discoveryState()` points the SDK at the tenant.
+- **`offline_access` is always added** to the scope (the server's
+  `scopes_supported`, unless `scope` is set). Without it Entra issues no
+  refresh token, and the connection dies at the first access-token expiry.
+- **`prompt=select_account`, not the SDK's `prompt=consent`.** The SDK adds
+  `consent` whenever `offline_access` is asked for. On a tenant where users
+  may not consent to apps themselves, that blocks an app an admin has
+  already consented.
+- **No RFC 8707 `resource` parameter** (`validateResourceURL()` returns
+  nothing): Entra v2 takes the audience from the scope.
+- **The secret goes in the body** (`client_secret_post`), like the Graph
+  sign-in in `packages/microsoft/src/oauth.ts`.
+
+Failures are recorded, never silent. A failed start, a refused consent on the
+callback, or a failed code exchange clears the in-flight marker and stores the
+reason as `oauth.lastError`, with the cure appended for the Entra errors an
+owner can hit (AADSTS700025, 7000215, 7000222, 65001, 50011, 50194). The code
+exchange keeps the FIRST token-endpoint error: on `invalid_client` the SDK
+retries by itself, and the retry's error would otherwise bury the real one.
+`GET /api/mcp-connectors` also returns `oauthRedirectUri` (the exact URL to
+register with the app) and `microsoftApp` (whether one is configured, and
+which client id and tenant).
+
+### Power BI (catalogue entry `powerbi`)
+
+Microsoft's remote Power BI MCP server,
+`https://api.fabric.microsoft.com/v1/mcp/powerbi`, uses the Microsoft app.
+Before connecting, on the customer's side:
+
+1. A Power BI admin enables the tenant setting "Users can use the Power BI
+   Model Context Protocol server endpoint (preview)".
+2. On the Settings → Microsoft app in Azure: API permissions → Power BI
+   Service → delegated `Dataset.Read.All`, `MLModel.Execute.All` and
+   `Workspace.Read.All`, then Grant admin consent.
+3. On the same app: add `oauthRedirectUri` as a **Web** redirect URI.
+   Microsoft's
+   [guide for external clients](https://learn.microsoft.com/en-us/power-bi/developer/mcp/remote-mcp-server-external-clients)
+   says "Mobile and desktop", but it is written for desktop apps that hold no
+   secret. Mantle is a confidential server app, and Entra refuses a secret on
+   a public-client redirect (AADSTS700025).
+4. Each user needs Build permission on the semantic models they query.
+
+Its Generate Query tool spends Copilot capacity. The catalogue's `whenToUse`
+steers agents to read the model's schema and write the DAX themselves.
+
 ## The catalog
 
 `KNOWN_MCP_SERVERS` (`packages/tools/src/mcp-catalog.ts`) is the
@@ -127,7 +197,9 @@ Engine: `packages/tools/src/mcp-oauth.ts`.
 prose that lands in the generated group description — that's where
 "call this vs the built-ins" judgment lives. The Firecrawl entry marks the
 boundary explicitly: `web_map`/`web_crawl` own crawl-and-ingest;
-the connector is for ad-hoc scrape/search/extract into context.
+the connector is for ad-hoc scrape/search/extract into context. Entries for servers behind Entra
+carry `oauthClient: 'microsoft'` plus `setup`, the customer-side steps, which
+the settings UI shows before anyone connects.
 The DeepWiki entry (no auth at all — an empty binding is valid) is the
 generality proof: an unrelated third-party server, verified live.
 Pre-known services are **not** auto-provisioned.

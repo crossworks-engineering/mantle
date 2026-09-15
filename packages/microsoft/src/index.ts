@@ -10,6 +10,7 @@ export {
   MS_SCOPES,
   msScopeString,
   defaultRedirectUri,
+  microsoftAuthority,
   oauthConfigFromEnv,
   type MsOAuthConfig,
 } from './config';
