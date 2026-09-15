@@ -86,34 +86,75 @@ describe('readMultipartUpload', () => {
     expect(left).toEqual([]);
   });
 
-  it('cleans the spool when the client drops the connection mid-body', async () => {
-    const { readMultipartUpload } = await mod();
-    const { spoolDir } = await import('@mantle/files');
-    // Take a real multipart body, then replay only its first half and fail.
+  /** A real multipart body, replayed as its first half and then a failed read:
+   *  a client dropping the connection mid-upload. The error lands on the read
+   *  after the half, once `dropWhen` settles, so the test picks the moment by
+   *  state rather than by a wall-clock timer (a 10 ms timer raced the spool's
+   *  own setup and flaked CI on 2026-09-15). */
+  async function droppedUpload(dropWhen: () => Promise<void>) {
     const full = multipart([
       ['field', 'parentPath', 'files.inbox'],
       ['file', 'dropped.bak', randomBytes(400 * 1024)],
     ]);
-    const contentType = full.headers.get('content-type')!;
     const body = new Uint8Array(await full.arrayBuffer());
-    const half = body.subarray(0, Math.floor(body.length / 2));
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(half);
-        setTimeout(() => controller.error(new Error('aborted')), 10);
+    let sent = false;
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        async pull(controller) {
+          if (!sent) {
+            sent = true;
+            controller.enqueue(body.subarray(0, Math.floor(body.length / 2)));
+            return;
+          }
+          await dropWhen();
+          controller.error(new Error('aborted'));
+        },
       },
-    });
-    const req = new Request('http://localhost/api/files/files', {
+      { highWaterMark: 0 },
+    );
+    return new Request('http://localhost/api/files/files', {
       method: 'POST',
-      headers: { 'content-type': contentType },
+      headers: { 'content-type': full.headers.get('content-type')! },
       body: stream,
       // @ts-expect-error duplex is required for a streaming body in undici
       duplex: 'half',
     });
-    await expect(readMultipartUpload(req, { maxBytes: 4 * 1024 * 1024 })).rejects.toThrow();
+  }
+
+  const spoolParts = async () => {
+    const { spoolDir } = await import('@mantle/files');
+    return (await readdir(spoolDir()).catch(() => [])).filter((n) => n.endsWith('.part'));
+  };
+
+  it('survives a drop before the spool file is even open', async () => {
+    // The drop lands while spoolUpload is still awaiting mkdir/open, before
+    // its pipeline holds the part stream. The part stream is destroyed with
+    // the error then, and an unlistened 'error' is an uncaught exception.
+    const { readMultipartUpload } = await mod();
+    const req = await droppedUpload(async () => {});
+    await expect(readMultipartUpload(req, { maxBytes: 4 * 1024 * 1024 })).rejects.toThrow(
+      'aborted',
+    );
     await new Promise((r) => setTimeout(r, 50));
-    const left = (await readdir(spoolDir())).filter((n) => n.endsWith('.part'));
-    expect(left).toEqual([]);
+    expect(await spoolParts()).toEqual([]);
+  });
+
+  it('cleans the spool when the client drops the connection mid-body', async () => {
+    const { readMultipartUpload } = await mod();
+    let sawPart = false;
+    const req = await droppedUpload(async () => {
+      // Drop only once bytes are going to disk: the .part is there to clean.
+      for (let i = 0; i < 500 && !sawPart; i++) {
+        sawPart = (await spoolParts()).length > 0;
+        if (!sawPart) await new Promise((r) => setTimeout(r, 10));
+      }
+    });
+    await expect(readMultipartUpload(req, { maxBytes: 4 * 1024 * 1024 })).rejects.toThrow(
+      'aborted',
+    );
+    expect(sawPart).toBe(true);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await spoolParts()).toEqual([]);
   });
 
   it('returns file: null when no file part came', async () => {

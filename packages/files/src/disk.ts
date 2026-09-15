@@ -216,8 +216,20 @@ export async function spoolUpload(
   source: Readable,
   opts: { maxBytes: number },
 ): Promise<SpooledUpload> {
+  // Nothing listens on `source` until `pipeline` below, and the awaits before
+  // it leave a window: a client drop there destroys the stream with an error
+  // nobody hears, which Node raises as an uncaught exception. Hold a listener
+  // across the window; `pipeline` still sees the error (the stream is
+  // destroyed) and the cleanup below runs as usual.
+  const holdError = () => {};
+  source.on('error', holdError);
   const dir = spoolDir();
-  await fs.mkdir(dir, { recursive: true });
+  try {
+    await fs.mkdir(dir, { recursive: true });
+  } catch (err) {
+    source.off('error', holdError);
+    throw err;
+  }
   const tempPath = path.join(dir, `${randomUUID()}.part`);
   const hash = createHash('sha256');
   let size = 0;
@@ -236,10 +248,13 @@ export async function spoolUpload(
   // it mid-open would let the file appear AFTER the unlink below, leaving a
   // stray .part behind. With the fd open first, the error path is honest.
   const out = createWriteStream(tempPath);
-  await once(out, 'open');
   try {
-    await pipeline(source, meter, out);
+    await once(out, 'open');
+    const done = pipeline(source, meter, out);
+    source.off('error', holdError);
+    await done;
   } catch (err) {
+    source.off('error', holdError);
     await fs.unlink(tempPath).catch(() => {});
     throw err;
   }
