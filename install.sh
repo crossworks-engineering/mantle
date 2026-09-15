@@ -31,12 +31,14 @@
 #   MANTLE_DOMAIN=m.example.com   serve this hostname with automatic HTTPS
 #                                 (DNS A record + open ports 80/443 first);
 #                                 omit for plain HTTP on :80 across this
-#                                 machine's network — http://<server-ip>. For
-#                                 loopback only, run scripts/install.sh
-#                                 --localhost from the bundle afterwards.
-#   MANTLE_CHANNEL=main           git ref to fetch the deploy bundle from
-#                                 (default: main; a release tag like v0.108.0
-#                                 pins compose+infra to that release)
+#                                 machine's network — http://<server-ip>.
+#                                 With a terminal the installer asks which
+#                                 access mode you want (domain, this machine
+#                                 only, or LAN).
+#   MANTLE_CHANNEL=v0.232.0       release tag to install (default: the latest
+#                                 release tag, verified against SHA256SUMS;
+#                                 MANTLE_CHANNEL=main fetches the files from
+#                                 the branch without verification)
 #   MANTLE_YES=1                  never prompt — take the defaults (the old
 #                                 behaviour). Without it, a terminal gets
 #                                 asked: how the brain is reached, and which
