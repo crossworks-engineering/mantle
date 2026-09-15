@@ -48,6 +48,28 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
+# Assert main is not BEHIND its remote. Everything below asserts facts about
+# the LOCAL tree, all of which can be true of a stale clone — which is how
+# jackdaw v0.6.109's pair shipped a mantle tag built on a tree that reverted a
+# fix landed from another machine (2026-09-15). The tag pushed; main was
+# rejected as non-fast-forward, which is the FIRST anyone hears of it, and by
+# then the publish workflows are already running. Fetch and check instead.
+#
+# Skipped when there is no upstream (a fresh clone, or CI with no remote).
+if git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+  echo "→ fetching, so a stale clone cannot tag a stale tree"
+  git fetch --quiet origin || { echo "✗ git fetch failed — refusing to tag blind" >&2; exit 1; }
+  behind="$(git rev-list --count 'main..@{u}')"
+  if [ "$behind" != "0" ]; then
+    echo "✗ main is $behind commit(s) BEHIND $(git rev-parse --abbrev-ref '@{u}')" >&2
+    echo "  Someone released from another clone. Tagging now would publish a tree" >&2
+    echo "  missing their work, and the push of main would be rejected anyway." >&2
+    echo "  Integrate first, re-bump, then tag:" >&2
+    echo "    git log --oneline main..@{u}    # what you are missing" >&2
+    exit 1
+  fi
+fi
+
 version="$(node -p "require('./package.json').version")"
 web_version="$(node -p "require('./server/web/package.json').version")"
 if [ "$version" != "$web_version" ]; then
