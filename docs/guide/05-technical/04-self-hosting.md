@@ -1,7 +1,8 @@
 # Self-hosting
 
 Mantle is self-hosted by design; you run it, you own the data. This page is the
-orientation; the step-by-step operator runbooks live in the repo's developer docs.
+orientation; the install steps are on [Installation](../01-installation.md), the
+one canonical install page, and the operator runbooks live in the repo's developer docs.
 
 ## Two environments
 
@@ -33,15 +34,17 @@ Backups are a database dump plus a copy of those folders.
 - **Updating** is `docker compose pull && docker compose up -d --wait`, or one click
   in **Settings → Updates**; the data volumes carry over. (Self-builders who run their
   own image build on the server rebuild instead of pulling.)
-- **Models:** a single OpenRouter key gets the brain fully working; embeddings run
-  locally and free. You can add local model machines on your own network for privacy
+- **Models:** a single OpenRouter key gets the brain fully working, embeddings
+  included (online by default; a local embedder is opt-in). You can add local model machines on your own network for privacy
   (see [keys, embedding & local models](../04-configuring/04-keys-embedding-local-models.md)).
 
 ## The runbooks
 
 For the actual commands and checklists, see these developer docs in the repo:
 
-- `docs/deploy.md`, first-time production deploy.
+- `docs/guide/01-installation.md`, the install page (one-liner, prompts, sandboxes, media, manual path).
+- `docs/self-hosting.md`, running from the published images: updating, pinning, rollback, uninstall.
+- `docs/deploy.md`, building your own image and migrating a brain between machines.
 - `docs/update-prod.md`, the pull-and-roll update flow.
 - `docs/tailscale.md`, connecting model machines on your own network.
 - `docs/architecture.md` §Operations, backups, secret rotation, disaster recovery.

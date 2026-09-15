@@ -191,27 +191,35 @@ With a domain (automatic HTTPS; point the A record at the box first):
 MANTLE_DOMAIN=mantle.example.com bash -c "$(curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh)"
 ```
 
-The one-liner serves plain HTTP on the machine's network, so open
-`http://<server-ip>` (or your domain) create your account, and the
-onboarding wizard takes it from there: model keys, your assistant's
-personality, who you are. (Want it on loopback only? Run the bundled
-`scripts/install.sh` and pick "this machine only".) Updating is
-`docker compose pull && docker compose up -d --wait`. Full guide
-(domains/HTTPS, pinned versions, backups, rollback):
-**[docs/self-hosting.md](./docs/self-hosting.md)**
+The one-liner asks how the brain should be reached (a domain with HTTPS,
+this machine only, or the machine's network) and what to install, then
+brings up both stacks: the brain and the owner UI ([Jackdaw](https://github.com/crossworks-engineering/jackdaw),
+a separate container). `MANTLE_YES=1` skips the questions. Open the
+address it prints, create your account, and the onboarding wizard takes
+it from there: model keys, your assistant's personality, who you are.
+Updating is one click in Settings → Updates. The one install page
+(prompts and flags, sandboxes, media, requirements, manual path):
+**[docs/guide/01-installation.md](./docs/guide/01-installation.md)**;
+updating, pinning and rollback: **[docs/self-hosting.md](./docs/self-hosting.md)**
 
 Letting an AI agent install it for you? Point it at the machine-oriented
 runbook: **https://mantle-ai.tech/ai-install.md**
 
-Hack on it: dev checkout with hot reload. Prereqs: **Node 26+**, **pnpm**,
-and **Docker** running (`pnpm start` boots Postgres/MinIO/Tika in containers):
+Hack on it: this repo is the **brain** (API, MCP, workers). Prereqs:
+**Node 26+**, **pnpm 11**, and **Docker** running (`pnpm start` boots
+Postgres/MinIO/Tika in containers):
 
 ```bash
 git clone https://github.com/crossworks-engineering/mantle && cd mantle
 pnpm install
-cp .env.example server/web/.env.local   # two generated secrets — see the guide
-pnpm start
+cp .env.example server/web/.env.local   # two generated secrets, see the guide
+pnpm start                              # the brain on :3000, no screen
 ```
+
+The owner UI is the [jackdaw](https://github.com/crossworks-engineering/jackdaw)
+repo: clone it, `pnpm install`, `pnpm dev:fe` against your brain, and sign
+up there. The desktop app ships from jackdaw's
+[Releases](https://github.com/crossworks-engineering/jackdaw/releases).
 
 Embeddings default to an online model you pick in onboarding; prefer
 everything local? There's an opt-in local embedder, see

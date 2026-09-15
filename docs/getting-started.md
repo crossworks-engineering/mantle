@@ -1,53 +1,54 @@
 # Getting started
 
-The operator's setup guide, local dev stack, first run, connecting email and
-Telegram, API keys, and the agent basics. (Moved here from the README, which
-is now the product front door.) Production deployment is
-[`deploy.md`](./deploy.md), its §0a has measured **VPS sizing** (minimum
-2 vCPU / 4 GB; recommended 4 vCPU / 8 GB for build-on-VPS); updating a
-running box is [`update-prod.md`](./update-prod.md).
+The operator's setup guide: the developer checkout of the **brain**, first run,
+connecting email and Telegram, API keys, and the agent basics. (Moved here from
+the README, which is now the product front door.) Installing on a server is
+[`guide/01-installation.md`](./guide/01-installation.md), the one canonical
+install page; production sizing is in [`deploy.md`](./deploy.md) §0a; updating
+a running box is [`update-prod.md`](./update-prod.md).
+
+> **This repo is the brain only.** Since the 2026-08-13 split the owner UI
+> (sign-up, onboarding, every owner screen) lives in the separate
+> [jackdaw](https://github.com/crossworks-engineering/jackdaw) repo. `pnpm start`
+> here gives you the API, the MCP server and the workers on
+> http://localhost:3000, and no screen. Run the UI from a jackdaw checkout with
+> `pnpm dev:fe` there, pointed at this brain.
 
 ## Layout
 
 ```
 mantle/
 ├── infra/
-│   └── postgres/init/   # extensions + auth.users baked in at first container boot
-├── apps/
-│   ├── web/             # Next.js 15 (App Router) + shadcn UI
-│   ├── mcp/             # MCP server (stdio) — Claude's tools
-│   └── agent/           # the responder + extractor/summarizer/reflector loops
-├── packages/
-│   ├── db/              # Drizzle schema + migrations
-│   ├── email/           # IMAP adapters + sync engine
-│   ├── telegram/        # Telegram bot ingest + outbound
-│   ├── storage/         # S3-compatible (MinIO) wrapper
-│   ├── api-keys/        # Encrypted API key vault (OpenRouter, OpenAI, …)
-│   ├── crypto/          # AES-256-GCM helpers for secrets at rest
-│   ├── search/          # full-text + vector search helpers
-│   ├── embeddings/      # embedding dispatch + cache + re-embed
-│   ├── agent-runtime/   # tool loop + prompt assembly (shared by all surfaces)
-│   ├── content/         # notes, tasks, events, journals, backups, …
-│   └── rules/           # ingest rules engine
-├── scripts/             # dev convenience (up.sh, db-dump.sh, …)
-├── docker-compose.dev.yml   # Postgres + MinIO + Tika for local dev (local embedder = your own Ollama, if you opt in)
-└── docker-compose.yml       # full production stack (Linux): built app images (+ optional local embedder behind the `local-embedder` profile)
+│   ├── postgres/init/   # extensions + auth schema baked in at first container boot
+│   ├── caddy/           # the release-owned Caddyfile + routing shapes
+│   └── updater/         # the in-app updater sidecar's script
+├── server/
+│   ├── web/             # Hono HTTP API + MCP-over-HTTP + share/print pages; the workers live in workers/
+│   ├── api/             # durable turn runners + the ingest listeners (summarize/extract/reflect)
+│   ├── mcp/             # MCP server (stdio) for Claude Desktop / Claude Code
+│   └── sandboxd/        # CLI-sandbox daemon (standalone image, holds the Docker socket)
+├── packages/            # the shared logic: db, content, search, embeddings, runtime, tools, email, telegram, …
+├── scripts/             # dev + operator scripts (up.sh, install.sh, db-dump.sh, …)
+├── docker-compose.dev.yml    # Postgres + MinIO + Tika for local dev (the apps run on the host)
+├── docker-compose.yml        # the production brain stack (26 services)
+├── docker-compose.client.yml # the owner UI stack (image built by jackdaw)
+└── docker-compose.core.yml   # override that shrinks the brain to the 4 GB core shape
 ```
 
 ## First-time setup
 
-Prereqs: **Node.js 24+**, **pnpm** (installed in step 1), and **Docker**
-(Desktop or engine) running, `pnpm start` boots Postgres/MinIO/Tika in
-containers.
+Prereqs: **Node.js 26+**, **pnpm 11.1.2** (the version pinned in
+`package.json`'s `packageManager`, installed in step 1), and **Docker** (Desktop
+or engine) running; `pnpm start` boots Postgres, MinIO and Tika in containers.
 
 ```bash
-# 1. Install pnpm
-corepack enable && corepack prepare pnpm@10 --activate
+# 1. Install pnpm at the pinned version
+corepack enable && corepack prepare pnpm@11.1.2 --activate
 
 # 2. Install deps
 pnpm install
 
-# 3. Copy env (single file — Next.js, workers, MCP, agent, and Drizzle all read it)
+# 3. Copy env (single file: the API, workers, MCP server and Drizzle all read it)
 cp .env.example server/web/.env.local
 $EDITOR server/web/.env.local
 #  - MANTLE_MASTER_KEY  → openssl rand -base64 32
@@ -56,12 +57,12 @@ $EDITOR server/web/.env.local
 # 4. (Optional) Local embedder — the product DEFAULT is an online embedder
 #    (text-embedding-3-large @768, chosen in onboarding's Memory step on your
 #    OpenRouter/OpenAI key). Install Ollama only if you want the opt-in local
-#    path; Mantle's apps reach it at http://localhost:11434 by default.
+#    path; the apps reach it at http://localhost:11434 by default.
 brew install ollama
 brew services start ollama    # serves on :11434 (or run the menu-bar app)
 ollama pull embeddinggemma    # the 768-dim local embedder (opt-in)
 
-# 5. Bring up the stack (Docker must be running)
+# 5. Bring up the brain (Docker must be running)
 pnpm start
 ```
 
@@ -83,14 +84,11 @@ pnpm start
 > https://ollama.com/install.sh | sh`.
 
 > **Dev vs production.** The steps above are the **local dev stack** (`pnpm start`:
-> infra in Docker + the apps hot-reloading on the host + your local Ollama).
-> **Production is meant to run on Linux** via the full `docker-compose.yml`, which
-> builds the app images. A **local embedder (Ollama + model pull)** is bundled
-> too, but behind the opt-in **`local-embedder` compose profile**: it does NOT
-> run by default (`docker compose --profile local-embedder up -d` to enable,
-> then select provider `local` in Settings → Embedding). The default deploy
-> uses the online embedder chosen in onboarding, so it needs no Ollama at all.
-> See [`deploy.md`](./deploy.md).
+> infra in Docker + the brain hot-reloading on the host). **Production runs on
+> Linux** from the published images via `docker-compose.yml` plus
+> `docker-compose.client.yml`; see the
+> [install page](./guide/01-installation.md). The bundled local embedder is
+> opt-in there too, behind the `local-embedder` compose profile.
 
 `pnpm start` runs `scripts/up.sh`, which:
 
@@ -98,38 +96,52 @@ pnpm start
 2. Ensures the `mantle` MinIO bucket exists
 3. Runs Drizzle migrations against the fresh DB
 4. Ensures the pg-boss schema exists (so the workers don't race to create it)
-5. Starts the dev servers (web + mcp + email worker + telegram worker + agent)
+5. Starts the dev servers: `server/web`, `server/api`, `server/mcp` and every
+   worker (email, telegram, files, docs, events, maintenance, runs, calendar,
+   microsoft, push)
 
-That's it, **no SQL, no `ALLOWED_USER_ID` to fill in.** Open
-http://localhost:3000 and you'll land on **Create your account** (the first-run
-signup, available only while `auth.users` is empty). After signup, the
-**onboarding wizard** walks you through everything the brain needs to run: a
-model key (OpenRouter), your model picks, an optional voice (xAI) key, your
-embedder (the Memory step), then it provisions your assistant + the background
-AI workers, runs a sanity check, captures the brain's purpose, and lets you
-shape the assistant's personality. See [`onboarding.md`](./onboarding.md).
+That's the brain. **Sign-up and the onboarding wizard live in the UI**, so now
+run jackdaw against it:
+
+```bash
+git clone https://github.com/crossworks-engineering/jackdaw && cd jackdaw
+pnpm install
+pnpm dev:fe     # the owner UI against your brain; its README documents the env file
+```
+
+Open the address `pnpm dev:fe` prints and you'll land on **Create your account**
+(the first-run signup, available only while `auth.users` is empty). After
+signup, the **onboarding wizard** walks you through everything the brain needs
+to run: a model key (OpenRouter), your model picks, an optional voice (xAI)
+key, your embedder (the Memory step), then it provisions your assistant + the
+background AI workers, runs a sanity check, captures the brain's purpose, and
+lets you shape the assistant's personality. See [`onboarding.md`](./onboarding.md).
+No SQL, no `ALLOWED_USER_ID` to fill in.
 
 > `ALLOWED_USER_ID` is **optional**: left blank, the workers and MCP server
 > auto-resolve the single `auth.users` row, so a fresh install is zero-config.
 > Set it only for scripts or a multi-DB setup.
 
-Other handy scripts:
+The scripts in the root `package.json`:
 
-| Command           | What it does |
-|-------------------|--------------|
-| `pnpm start`      | Full stack (infra + migrations + pg-boss + dev servers). The "from cold" command. |
-| `pnpm dev`        | Dev servers only (assumes infra already up). Preflight refuses politely if it's not. |
-| `pnpm stop`       | Stop infra (keeps volumes) |
-| `pnpm reset`      | Wipe the dev brain + rebuild from scratch (asks for confirmation, backs up first) |
-| `pnpm infra:up`   | Bring infra up without dev servers |
-| `pnpm infra:logs` | Tail postgres + minio logs |
-| `pnpm infra:psql` | Open psql in the postgres container |
-| `pnpm db:migrate` | Apply Drizzle migrations |
-| `pnpm db:studio`  | Drizzle Studio (browse the DB) |
-| `pnpm dev:web`    | Just the web (helpful when iterating on UI) |
-| `pnpm dev:agent`  | Just the agent |
+| Command               | What it does |
+|-----------------------|--------------|
+| `pnpm start`          | Full stack (infra + migrations + pg-boss + dev servers). The "from cold" command. |
+| `pnpm dev`            | Dev servers only (assumes infra already up). Preflight refuses politely if it's not. |
+| `pnpm stop`           | Stop infra (keeps the data) |
+| `pnpm reset`          | Wipe the dev brain + rebuild from scratch (asks for confirmation, backs up first) |
+| `pnpm infra:up`       | Bring infra up without dev servers |
+| `pnpm infra:logs`     | Tail postgres + minio logs |
+| `pnpm infra:psql`     | Open psql in the postgres container |
+| `pnpm db:migrate`     | Apply Drizzle migrations |
+| `pnpm db:studio`      | Drizzle Studio (browse the DB) |
+| `pnpm dev:web`        | Just the HTTP API (`server/web`) |
+| `pnpm dev:api`        | Just the turn runners + ingest listeners (`server/api`) |
+| `pnpm dev:mcp`        | Just the stdio MCP server |
+| `pnpm dev:worker`, `dev:telegram`, `dev:files`, `dev:docs`, `dev:events` | One worker at a time |
+| `pnpm verify`         | typecheck + lint + format check + docs check + tests (what the pre-push hook runs) |
 
-App: http://localhost:3000
+API: http://localhost:3000 (a bare visit redirects to `/login`, which the UI serves)
 MinIO console: http://localhost:9001 (user `minio` / pass `minio12345`)
 
 ## Connecting an email account

@@ -42,7 +42,7 @@ not a click-by-click tour.
 | **API keys** | Provider keys (OpenRouter, OpenAI, Anthropic, Google, etc.) the assistant and workers use. |
 | **Agents** | Configure the conversational assistants, persona, model, primary/backup routes, voice, tools, skills. See [Agents & workers](../04-configuring/01-agents-and-workers.md). |
 | **AI workers** | Configure the background jobs, extractor, summarizer, reflector, text-to-speech, speech-to-text, vision, image generation. |
-| **Embedding** | The model that powers meaning-based search. Runs locally and free by default. |
+| **Embedding** | The model that powers meaning-based search. Online on your provider key by default; a local embedder is opt-in. |
 | **Local network** | Connect Mantle to model machines on your own network (via Tailscale) so a cloud server can reach a model box at home. |
 | **Tools** | The catalogue of actions agents can take, and which ones require your approval. See [Skills & tools](../04-configuring/02-skills-and-tools.md). |
 | **Skills** | Reusable know-how you can attach to agents. |

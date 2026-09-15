@@ -71,8 +71,9 @@ To make Mantle genuinely useful, connect a few sources:
   worth adding). See [Email & inbox](03-using/02-email-inbox-and-contacts.md).
 - **Telegram**: pair your phone so the assistant reaches you anywhere.
 - **API keys**: add at least one model provider key under **Settings → API keys**
-  so the assistant and the background indexing can run. (Embeddings run locally and
-  free by default.)
+  so the assistant and the background indexing can run. Embeddings use an online
+  model on that same key by default; a local embedder is an opt-in for big boxes
+  (see [Installation](01-installation.md#embeddings)).
 
 ## Where things live
 

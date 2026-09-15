@@ -47,8 +47,8 @@ opposite way: **memory is the product.**
 
 - **You choose the models, local or cloud.** Run everything on a local model on
   your own hardware for total privacy and zero per-token cost, or use a frontier
-  cloud model, or mix the two with automatic failover. Embeddings run locally and
-  free by default.
+  cloud model, or mix the two with automatic failover. Embeddings default to an
+  online model on your provider key; a local embedder is an opt-in for big boxes.
 
 - **It can learn any API.** Point the built-in **Toolsmith** agent at a service's
   API documentation (maps, weather, your accounting system) and it builds,

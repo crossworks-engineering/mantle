@@ -88,8 +88,8 @@ it.
 You're not locked into the cloud. With the **Local network** settings (Tailscale)
 and the local model adapters, you can point agents or workers at a model running on
 your own hardware (total privacy, no per-token cost) and keep a cloud model as
-backup. Embeddings (meaning-based search) already run locally and free by default;
-see **Settings → Embedding**.
+backup. Embeddings (meaning-based search) default to an online model on your
+provider key; the local embedder is an opt-in under **Settings → Embedding**.
 
 ## A sensible starting setup
 

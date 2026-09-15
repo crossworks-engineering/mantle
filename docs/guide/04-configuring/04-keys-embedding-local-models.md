@@ -27,9 +27,12 @@ document and query is embedded so the brain can find things by meaning. There's
 **one embedding model for the whole system** (it has to be consistent, or stored
 and query vectors wouldn't be comparable).
 
-The default is **EmbeddingGemma running locally** (via Ollama): 768-dimensional,
-**free**, and **private**: your content's vectors never leave the box. That's the
-right default for a self-hosted brain.
+The default is an **online model** (`text-embedding-3-large`, reduced to 768
+dimensions) on your OpenRouter or OpenAI key, chosen in the onboarding Memory
+step. The **local** option, EmbeddingGemma via Ollama, is also 768-dimensional,
+free, and private (your content's vectors never leave the box), but it is an
+opt-in that needs a big server: see the
+[install page](../01-installation.md#embeddings).
 
 The settings page lets you:
 
@@ -67,7 +70,8 @@ brain and only touch the cloud as a fallback.
 ## A sensible default
 
 1. One **OpenRouter** key → chat + embeddings + document/vision all work.
-2. Leave **Embedding** on the local default (free, private, already 768-dim).
+2. Leave **Embedding** on the online default (768-dim on the same key); switch to
+   `local` only if you installed the local embedder.
 3. Add **OpenAI**/**ElevenLabs** only if you want voice; add image-gen providers
    only if you want generated images.
 4. Explore **local models** later if privacy or cost makes it worthwhile.
