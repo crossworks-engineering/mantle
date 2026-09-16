@@ -113,10 +113,7 @@ async function sendToDevices(
  * told apart. A payload with no status comes from the pre-0156 trigger shape
  * (rows inserted already 'complete') and is treated as complete.
  */
-export function wantsOutboundPush(c: {
-  direction?: string;
-  status?: string | null;
-}): boolean {
+export function wantsOutboundPush(c: { direction?: string; status?: string | null }): boolean {
   if (c.direction !== 'outbound') return false;
   return c.status == null || c.status === 'complete';
 }
