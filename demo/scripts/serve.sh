@@ -114,10 +114,17 @@ else
   echo "    (run demo/seed/enable-team.ts against a WRITABLE api to fix)"
 fi
 
+echo "→ mint the phone-app reviewer bearer"
+MOBILE_TOKEN=$(DATABASE_URL="postgres://postgres:postgres@127.0.0.1:56432/postgres" \
+  pnpm -s -C server/web exec tsx ../../demo/seed/mint-mobile-token.ts | tail -1)
+[ -n "$MOBILE_TOKEN" ] || { echo "✗ failed to mint the mobile token"; exit 1; }
+echo "  minted (${#MOBILE_TOKEN} chars, never printed)"
+
 echo "→ render the edge config"
 mkdir -p "$ART/edge"
 sed -e "s|__DEMO_TEAM__|$TEAM|" \
     -e "s|__DEMO_SESSION__|$SESSION|" \
+    -e "s|__DEMO_MOBILE_TOKEN__|$MOBILE_TOKEN|" \
     -e "s|__DEMO_WEB__|host.docker.internal:$UI_PORT|" \
     -e "s|__DEMO_API__|host.docker.internal:$API_PORT|" \
     -e "s|^demo\.mantle-ai\.tech {|:80 {|" \

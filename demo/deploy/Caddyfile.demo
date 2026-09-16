@@ -5,6 +5,7 @@
 # deploy time by demo/scripts/render-caddy.sh:
 #
 #   __DEMO_SESSION__   the minted session cookie value (demo/seed/mint-session.ts)
+#   __DEMO_MOBILE_TOKEN__  the phone-app bearer (demo/seed/mint-mobile-token.ts)
 #   __DEMO_WEB__       upstream host:port of the demo client
 #   __DEMO_API__       upstream host:port of the demo API
 #
@@ -24,6 +25,21 @@ demo.mantle-ai.tech {
 	# a faked 200: a bogus success desyncs the screen's cache and makes the
 	# demo look broken, which is worse than an obvious "you can't do that".
 	# The app already renders this as a clean toast — v1 proved it.
+	# ── Store reviewers: the phone app signs in here ──────────────────────
+	# The phone app authenticates with POST /api/auth/mobile-login, which the
+	# write block below would refuse. The edge answers it itself, for ANY
+	# username and password, with a bearer minted for the demo owner by
+	# demo/seed/mint-mobile-token.ts (a real mobile_tokens row, one-year TTL).
+	# Reads then work with that bearer; writes still meet the 403 below. Logout
+	# is a no-op so the app's sign-out never errors. Must sit BEFORE @writes.
+	handle /api/auth/mobile-login {
+		header Content-Type application/json
+		respond `{"token":"__DEMO_MOBILE_TOKEN__","expiresIn":31536000}` 200
+	}
+	handle /api/auth/mobile-logout {
+		header Content-Type application/json
+		respond `{}` 200
+	}
 	@writes not method GET HEAD OPTIONS
 	handle @writes {
 		header Content-Type application/json
