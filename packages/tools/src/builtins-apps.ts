@@ -687,7 +687,18 @@ const app_db_query: BuiltinToolDef = {
         type: 'string',
         description: 'a read-only SELECT query; use ? placeholders for values',
       },
-      params: { type: 'array', description: 'values bound to the ? placeholders, in order' },
+      // `items` is mandatory, not decoration: Google validates every function
+      // declaration before the model runs and 400s the WHOLE request when an
+      // array property omits it, so one itemless schema takes down every tool
+      // the agent has (NATREF, 2026-09-16). Enforced by
+      // schema-provider-compat.test.ts.
+      params: {
+        type: 'array',
+        items: {
+          anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }, { type: 'null' }],
+        },
+        description: 'values bound to the ? placeholders, in order',
+      },
     },
     required: ['app_id', 'sql'],
   },
