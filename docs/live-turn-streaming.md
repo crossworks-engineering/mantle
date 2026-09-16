@@ -140,6 +140,12 @@ reuses the existing **Postgres `LISTEN/NOTIFY` bridge** in `lib/realtime`, the s
 behind the `conversation_changed` channel today. Note its current limit: **no backlog**, so a
 reconnect can miss deltas, the §2 buffer is what adds `Last-Event-ID` replay on top.
 
+`conversation_changed` itself fires twice for a streamed turn since migration 0156: once when
+the runner inserts the 'pending' placeholder row (empty text) and once when it finalizes the
+row to 'complete' or 'failed'. The payload carries `status` so a listener can tell the two
+apart. The push-notify worker only pushes the finished one; before 0156 it teasered the
+placeholder and every phone got a notification with an empty body.
+
 **Two server processes, always.** This is the crux the implementation made concrete: the turn runs
 in **`server/api`** (DBOS runner, no HTTP surface) and the browser's SSE socket is held by **`server/web`**
 (which serves every `/api/**` route). They never share memory, Postgres `NOTIFY` is the bridge.

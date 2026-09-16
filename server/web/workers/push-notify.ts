@@ -8,6 +8,10 @@
  *
  * Runs as `pnpm worker:push:dev` locally and the `worker_push` service in prod.
  *
+ * The NOTIFY fires twice for a streamed turn: on the 'pending' insert (empty
+ * text) and on the finalize update (migration 0156). Only the finished one is
+ * pushed — see wantsOutboundPush.
+ *
  * NOTE (M2): trigger policy is "push every outbound turn." Foreground
  * suppression (don't notify a device that's actively streaming) is handled
  * client-side in the app (M3/M4) — it drops the local notification when
@@ -16,7 +20,7 @@
  */
 import postgres from 'postgres';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
-import { pushApproval, pushOutbound } from '../lib/push/notify';
+import { pushApproval, pushOutbound, wantsOutboundPush } from '../lib/push/notify';
 import { runWorker } from './_runner';
 import { env } from '@mantle/config';
 
@@ -24,6 +28,8 @@ interface ConversationChange {
   ownerId: string;
   agentSlug: string;
   direction: 'inbound' | 'outbound';
+  /** Row status (migration 0156); absent from the pre-0156 trigger payload. */
+  status?: 'pending' | 'complete' | 'failed';
 }
 
 async function handleConversation(payload: string): Promise<void> {
@@ -33,7 +39,7 @@ async function handleConversation(payload: string): Promise<void> {
   } catch {
     return; // malformed — drop rather than crash the listener
   }
-  if (!c?.ownerId || !c?.agentSlug || c.direction !== 'outbound') return;
+  if (!c?.ownerId || !c?.agentSlug || !wantsOutboundPush(c)) return;
 
   try {
     const r = await pushOutbound(c.ownerId, c.agentSlug);

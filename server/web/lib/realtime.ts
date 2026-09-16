@@ -30,6 +30,9 @@ export type ConversationChange = {
   ownerId: string;
   agentSlug: string;
   direction: 'inbound' | 'outbound';
+  /** Row status (migration 0156): a streamed turn notifies once 'pending' and
+   *  once 'complete' | 'failed'. Absent from the pre-0156 payload. */
+  status?: 'pending' | 'complete' | 'failed';
 };
 type ConvSubscriber = (c: ConversationChange) => void;
 
