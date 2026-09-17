@@ -355,9 +355,13 @@ services:
       retries: 12
       start_period: 40s
 
-  # ── The UI (client/web) — where the 94 screens live ────────────────────────
+  # ── The UI (jackdaw client/web) — where every screen lives ─────────────────
   client:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-client:${MANTLE_IMAGE_TAG:?same tag as the server — releases are lockstep}
+    # Its OWN tag since the 2026-08-13 repo split: the client ships from the
+    # jackdaw repo on its own version stream (v0.6.x), the server from mantle
+    # (v0.232.x). They cannot share a variable — the pair the server release
+    # was tested with is mantle's client-pair.tag at that tag.
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-client:${MANTLE_CLIENT_IMAGE_TAG:?pin the jackdaw client release — mantle's client-pair.tag names the pair the server was tested with}
     container_name: mantle_demo_srv_client
     restart: unless-stopped
     mem_limit: 768m
