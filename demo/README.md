@@ -60,7 +60,11 @@ demo/
   world/               P1 — the world bible (cast, companies, vocabulary)
   generator/           P2 — deterministic content generator
   seed/                P3/P4 — ingest + behavioural-data runs
-  check/               P6 — coverage gate + publish guard
+  generator/guard.mjs  P6a — the publish guard (shape-based, runs post-ingest too)
+  scripts/check-routes.sh
+                       P6b — the coverage gate. The gate itself lives in the
+                       jackdaw repo (e2e/check-routes.mjs) with the screens
+                       it walks; this script delegates to a checkout of it
   deploy/              P7 — serve-time compose + Caddy block for the demo host
 ```
 
