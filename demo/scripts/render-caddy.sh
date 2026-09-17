@@ -62,9 +62,19 @@ else
   echo "  ⚠ no team member on this brain — /team and /hub will show the token box" >&2
 fi
 
+# The phone app's credential. The edge answers POST /api/auth/mobile-login
+# itself with this bearer (a real mobile_tokens row for the demo owner), so
+# store reviewers can sign in with any username and password. Until now this
+# was substituted by hand on the box and the rendered vhost drifted from
+# Caddyfile.demo — re-running this script would have silently dropped it.
+MOBILE_TOKEN=$(pnpm -s -C server/web exec tsx ../../demo/seed/mint-mobile-token.ts | tail -1)
+[ -n "$MOBILE_TOKEN" ] || fail "failed to mint the phone-app bearer"
+echo "  mobile token (${#MOBILE_TOKEN} chars, never printed)" >&2
+
 RENDERED="$ART/demo.caddy"
 sed -e "s|__DEMO_SESSION__|$SESSION|" \
     -e "s|__DEMO_TEAM__|$TEAM|" \
+    -e "s|__DEMO_MOBILE_TOKEN__|$MOBILE_TOKEN|" \
     -e "s|__DEMO_WEB__|$UPSTREAM_UI|" \
     -e "s|__DEMO_API__|$UPSTREAM_API|" \
     "$DEMO/deploy/Caddyfile.demo" > "$RENDERED"
