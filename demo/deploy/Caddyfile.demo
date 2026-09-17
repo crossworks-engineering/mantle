@@ -120,7 +120,15 @@ demo.mantle-ai.tech {
 	# invariant is about the DEMO branch not editing app code, and the fix
 	# belongs on main, which is where it went.
 
-	handle /api/* {
+	# Everything the SERVER app serves — the same list as the standard
+	# same-origin shape (infra/caddy/shapes/same-origin.caddy): the API, share
+	# pages and print views, and the two runtimes the mini-app sandbox frame
+	# loads its stylesheets and modules from. The first version of this file
+	# routed only /api/* and let /share-runtime/* fall through to the client,
+	# which 404s it: every mini-app rendered as bare text with no stylesheet,
+	# and nothing anywhere said why.
+	@server path /api /api/* /s /s/* /print /print/* /share-runtime/* /app-runtime/*
+	handle @server {
 		reverse_proxy __DEMO_API__
 	}
 
