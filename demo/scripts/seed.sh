@@ -176,9 +176,15 @@ DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
 # member cookie is minted here rather than inside the seeder so the seeder never
 # needs database credentials.
 echo "→ forum topics (the brain answers these for real)"
+# Non-fatal on purpose (2026-09-17): the forum turn is a real agent turn, and
+# on a busy bench its chat stream can time out while the extractor is still
+# working through eight hundred nodes. That is a missing ANSWER, not a broken
+# brain; the app seed and verify below are worth more than aborting here. The
+# failure is re-raised at the very end, after everything else has run.
+forum_failed=0
 DEMO_TEAM_COOKIE="$(pnpm -s -C server/web exec tsx ../../demo/seed/mint-team-cookie.ts | tail -1)" \
 DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
-  pnpm -C server/web exec tsx ../../demo/seed/seed-forum.ts
+  pnpm -C server/web exec tsx ../../demo/seed/seed-forum.ts || forum_failed=1
 
 # Create → draft → build → publish, through the same endpoints an owner uses.
 # A broken app fails HERE with a compiler error rather than as an error card in
@@ -189,3 +195,8 @@ DEMO_SERVER_URL="http://127.0.0.1:$WEB_PORT" \
 
 echo "→ verify (waits for extraction to drain)"
 pnpm -C server/web exec tsx ../../demo/seed/verify.ts --wait "${DEMO_VERIFY_WAIT:-900}"
+if [ "$forum_failed" = "1" ]; then
+  echo "✗ the forum topics were posted but not all were answered — re-run seed-forum.ts once the extractor is quiet:" >&2
+  echo "    DEMO_TEAM_COOKIE=\"\$(pnpm -s -C server/web exec tsx ../../demo/seed/mint-team-cookie.ts | tail -1)\" DEMO_SERVER_URL=http://127.0.0.1:$WEB_PORT pnpm -C server/web exec tsx ../../demo/seed/seed-forum.ts" >&2
+  exit 1
+fi
