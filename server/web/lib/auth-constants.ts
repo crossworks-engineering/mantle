@@ -22,6 +22,9 @@ export const SESSION_COOKIE_NAME = 'mantle_session';
 export const PUBLIC_PATHS = [
   '/login',
   '/api/auth',
+  // The QR sign-in URL's landing page for a browser that scanned it (the
+  // phone app parses the URL itself and never opens it).
+  '/pair',
   '/s',
   '/api/federation',
   '/api/version',

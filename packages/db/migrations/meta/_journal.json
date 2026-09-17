@@ -1100,6 +1100,13 @@
       "when": 1789560000000,
       "tag": "0156_conversation_changed_on_finalize",
       "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1789670000000,
+      "tag": "0157_pairing_codes",
+      "breakpoints": true
     }
   ]
 }

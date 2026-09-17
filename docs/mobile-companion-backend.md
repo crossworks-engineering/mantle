@@ -5,7 +5,7 @@ _Last updated: 2026-08-06._
 API + schema added to Mantle to support the **Mantle Companion** mobile app
 (Flutter; repo `~/Projects/mantle-companion`). Single-user/self-hosted, so the
 only auth scope is the owner. Everything here is **owner-gated via
-`requireOwner()`**, which accepts the session cookie *or* a mobile bearer token,
+`requireOwner()`**, which accepts the session cookie _or_ a mobile bearer token,
 so each route works unchanged from web and mobile.
 
 > Status: **DEPLOYED TO PROD (2026-06-14, v0.24.0).** Migrations 0089/0090/0091
@@ -30,10 +30,22 @@ so each route works unchanged from web and mobile.
   401s a malformed one (wrapped in try/catch).
 - Routes: `POST /api/auth/mobile-login` `{email, password, deviceName}` →
   `{token, expiresIn}`; `POST /api/auth/mobile-logout` (revokes by `jti`).
+- **QR sign-in ("Sign in on your phone")** — `server/web/lib/pair-code.ts`,
+  table `pairing_codes` (`0157_pairing_codes.sql`). The signed-in web app
+  calls `POST /api/auth/pair` (owner session, 10/min per login) → `{id, code,
+url, expiresAt, ttlSeconds}` and shows `url` (`<brain>/pair#v=1&code=…`,
+  the code in the fragment so no log sees it) as a QR. The phone scans it and
+  calls `POST /api/auth/pair/claim` `{code, deviceName?}` (public, 10/min per
+  IP) → the `mobile-login` shape plus `email`. Codes are 192 random bits
+  stored as SHA-256, live 90 s, and are single-use (one conditional UPDATE);
+  every claim failure is one 401 line. `GET /api/auth/pair/[id]` (owner) →
+  `{status: pending|claimed|expired, deviceLabel}` for the page's poll.
+  `GET /pair` is a public static page for a browser that scanned the QR; it
+  never reads the fragment.
 - **Client contract:** a revoked/expired token still passes the stateless Edge
   gate (revocation is enforced in the Node layer). The JSON API routes below gate
   with **`getOwnerOr401()`**, which returns a clean **401 `{error:'unauthorized'}`**
-  in that case, not a redirect. (HTML *page* routes still use `requireOwner()` →
+  in that case, not a redirect. (HTML _page_ routes still use `requireOwner()` →
   **307 → /login**.) The app treats **401 OR 3xx→/login** as "session invalid".
 - **`getOwnerOr401()`** (`lib/auth.ts`) is the gate for programmatic JSON routes:
   it returns `SessionUser | NextResponse`, so the handler does
@@ -45,21 +57,21 @@ so each route works unchanged from web and mobile.
 - `GET /api/dashboard/summary` (`app/api/dashboard/summary/route.ts`), mirrors the
   web dashboard KPIs by composing existing `lib/dashboard.ts` / `lib/metrics.ts`
   functions: `{ spend: {last7MicroUsd, prior7MicroUsd}, brain: {nodesTotal,
-  entitiesTotal, edgesTotal, factsTotal}, vectors: {vectorsTotal, …}, pendingCount }`.
+entitiesTotal, edgesTotal, factsTotal}, vectors: {vectorsTotal, …}, pendingCount }`.
   Spend is **micro-USD** (÷1e6). System vitals come from the existing `/api/health`.
 
 ## Conversations inbox + read state
 
 - Schema `packages/db/src/schema/assistant-read-cursors.ts` + migration
   `0090_assistant_read_cursors.sql`, `assistant_read_cursors(owner_id, agent_id,
-  last_read_at)` (composite PK, FK → agents). Mantle had **no** read/unread concept
+last_read_at)` (composite PK, FK → agents). Mantle had **no** read/unread concept
   before this.
 - `server/web/lib/assistant-inbox.ts`, `getReadCursors`, `markAssistantRead`
   (upsert), `assistantConversations` (per chat-capable agent: latest message
   preview + `unreadCount` = outbound messages newer than the cursor; sorted by
   recency).
 - `GET /api/assistant/conversations` → `{ conversations: [{ agentId, slug, name,
-  avatar, lastMessage: {text, direction, createdAt} | null, unreadCount }] }`.
+avatar, lastMessage: {text, direction, createdAt} | null, unreadCount }] }`.
 - `POST /api/assistant/read` `{ agentSlug?, at? }`, marks an agent's thread read
   (clears unread). Omitting `agentSlug` marks the default agent. Body is
   `safeParse`d → **400 `{error:'invalid_body'}`** on a malformed/mistyped body
@@ -84,7 +96,7 @@ so each route works unchanged from web and mobile.
   Since `assistant_messages` aren't `nodes`, they don't flow through the existing
   `node_ingested` path; this is a separate channel on the same bridge.
 - Verified live: trigger→NOTIFY→bridge→subscriber delivers `{ownerId, agentSlug,
-  direction}` end-to-end (fresh-eval). Note: a *running* dev server's bridge is a
+direction}` end-to-end (fresh-eval). Note: a _running_ dev server's bridge is a
   `globalThis` singleton that survives HMR, so a newly-added LISTEN needs a server
   restart to register, a dev-only artifact; prod evaluates the module once.
 
@@ -108,7 +120,7 @@ so each route works unchanged from web and mobile.
 - **Two gotchas hit during smoke-testing, one still live, one now designed out:**
   1. **Segment-name conflict (still live).** The route was first added at
      `[slug]/avatar`, but `agents/[id]/…` already exists. Next forbids two
-     different dynamic slug names at one level and silently 404s *both*. Fix:
+     different dynamic slug names at one level and silently 404s _both_. Fix:
      nest under the existing `[id]`.
   2. **`react-dom/server` couldn't render the old boring-avatars component.** It
      calls `useId()`, and in a Next route the bundled React runtime and an
@@ -179,7 +191,7 @@ For the app-side architecture see
 
 - **Live turn streaming (1.3/1.4).** `GET /api/assistant/turn/:id/stream` (SSE
   `TurnEvent`s; the turn id = the client idempotency-key) and `POST
-  /api/assistant/turn/:id/cancel`. The client pins
+/api/assistant/turn/:id/cancel`. The client pins
   `TURN_EVENT_SCHEMA_VERSION` (= 1): it ends the stream on a higher `v`
   rather than mis-parse, **bump `v` only on breaking shape changes** so old
   clients degrade to refetch instead of breaking. The thought trail renders
@@ -229,13 +241,13 @@ offer a real search screen without routing queries through a chat turn.
   `@mantle/embeddings` (vector-led hybrid; **a failed embed silently
   degrades to FTS**, same as the tool). Response:
   `{mode, results: [{id, type, title, path, tags, summary, updatedAt, url,
-  supersededBy?}]}` — `summary` from `data.summary` when present, `url` via
+supersededBy?}]}` — `summary` from `data.summary` when present, `url` via
   `nodeUrl` (open-on-web), `supersededBy {id, title, url}` names the living
   successor so clients can prefer it.
 - **`mode=chunks`** → `searchChunks` (passage-level). Vector-first, so a
   failed embed is an explicit **503** here, not degraded results. Response
   rows: `{nodeId, nodeTitle, nodeType, ordinal, heading, text, url,
-  supersededBy?}` (`heading` is nullable; `supersededBy {id, title, url}`
+supersededBy?}` (`heading` is nullable; `supersededBy {id, title, url}`
   carries the living successor, same as nodes mode, v0.148.1).
   `type`/`tags` are ignored in this mode.
 - **Client contract:** results are relevance-ranked, NOT date-sorted (use

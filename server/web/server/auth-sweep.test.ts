@@ -122,6 +122,7 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
         '/api/oauth',
         '/api/team',
         '/api/version',
+        '/pair',
         '/s',
       ].sort(),
     );
