@@ -375,6 +375,10 @@ services:
       # pages themselves render fine. One origin is the whole design.
       MANTLE_SERVER_ORIGIN: ${MANTLE_PUBLIC_URL:?set MANTLE_PUBLIC_URL=https://demo.mantle-ai.tech}
       MANTLE_TURN_STREAMING: ${MANTLE_TURN_STREAMING:-}
+      # The guided tour the client opens once per browser (jackdaw ≥ v0.6.113,
+      # docs/tour.md there). Read per request through /env.js, so this needs a
+      # client restart and nothing else. Empty = no tour.
+      MANTLE_TOUR: ${MANTLE_TOUR:-}
       NODE_ENV: production
     ports:
       - '127.0.0.1:${DEMO_CLIENT_PORT:-57081}:3000'
