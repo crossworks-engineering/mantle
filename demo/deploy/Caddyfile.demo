@@ -40,6 +40,35 @@ demo.mantle-ai.tech {
 		header Content-Type application/json
 		respond `{}` 200
 	}
+	# ── Two POSTs that are reads, admitted BEFORE the refusal below ──────
+	# Found by the coverage gate after the v0.232.195 / jackdaw v0.6.112 roll.
+	#
+	# POST /api/auth/sso: the shell fires it once per page load whenever it
+	# holds a bearer — a silent bearer→cookie upgrade that "grants nothing new"
+	# (server/web/lib/owner-sso.ts). Every visitor here already carries the
+	# injected owner cookie, so answer the 204 it expects; a 403 landed in the
+	# console of every single screen and told a visitor nothing true.
+	@sso {
+		method POST
+		path /api/auth/sso
+	}
+	handle @sso {
+		respond 204
+	}
+
+	# POST /api/apps/<id>/frame-ticket mints the seconds-lived signed ticket
+	# the sandboxed app iframe presents to GET …/frame (the frame carries no
+	# cookie, so THIS call is where the owner authenticates). It writes
+	# nothing — an HMAC over the session — and without it every mini-app
+	# shows its "not built" state behind a 403. Proxy it to the real API.
+	@frameTicket {
+		method POST
+		path /api/apps/*/frame-ticket
+	}
+	handle @frameTicket {
+		reverse_proxy __DEMO_API__
+	}
+
 	@writes not method GET HEAD OPTIONS
 	handle @writes {
 		header Content-Type application/json
