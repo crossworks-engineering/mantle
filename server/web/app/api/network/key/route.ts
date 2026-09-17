@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { setTailscaleConfig, clearTailscaleConfig } from '@/lib/tailscale-config';
 import { getOwnerOr401 } from '@/lib/auth';
+import { errorMessage } from '@mantle/std';
 
 type NetworkResult = { ok: boolean; message: string };
 const json = (r: NetworkResult) => NextResponse.json(r);
@@ -28,7 +29,7 @@ export async function POST(req: Request) {
     await setTailscaleConfig(owner.id, key, host);
     return json({ ok: true, message: 'Auth key saved. Click Activate to join the tailnet.' });
   } catch (err) {
-    return json({ ok: false, message: err instanceof Error ? err.message : String(err) });
+    return json({ ok: false, message: errorMessage(err) });
   }
 }
 

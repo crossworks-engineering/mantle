@@ -38,6 +38,7 @@ import {
   mimeForElevenLabsFormat,
 } from '../catalogs/elevenlabs';
 import { stripAudioTags } from '../audio-tags';
+import { errorMessage } from '@mantle/std';
 
 type ElevenLabsVoicesResponse = {
   voices?: Array<{
@@ -240,7 +241,7 @@ async function elevenLabsDiscoverModels(apiKey: string): Promise<DiscoveryResult
     return {
       available: ELEVENLABS_TTS_MODELS.map(toTtsModelInfo),
       filtered: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }

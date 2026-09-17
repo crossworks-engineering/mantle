@@ -1,17 +1,17 @@
-# Phase 3 — Direct-provider chat routing
+# Phase 3: Direct-provider chat routing
 
 **Shipped May 2026** (commits `97298a5` through `8ae4d3d`, 17 commits, +5015 / −444 LOC across 50 files, 865 vitest pass, monorepo typecheck clean).
 
 This is the canonical post-Phase-3 reference. Two halves:
 
-- **[Part 1 — How it works now](#part-1--how-it-works-now)** is the architecture deep-dive: the dispatch flow, the contract widening, the cache marker semantics, the tool-call normalisation. Read this if you're touching the chat path.
-- **[Part 2 — Quality + journey](#part-2--quality--journey)** is the retrospective: the staged commits, the audit findings, the honest scorecard, the lessons. Read this if you're picking up a similar adapter-flip in another part of the codebase.
+- **[Part 1, How it works now](#part-1--how-it-works-now)** is the architecture deep-dive: the dispatch flow, the contract widening, the cache marker semantics, the tool-call normalisation. Read this if you're touching the chat path.
+- **[Part 2, Quality + journey](#part-2--quality--journey)** is the retrospective: the staged commits, the audit findings, the honest scorecard, the lessons. Read this if you're picking up a similar adapter-flip in another part of the codebase.
 
 For the prose-level "where does provider X route?" cheatsheet, [`docs/ai-workers.md` §8.1](./ai-workers.md#81-provider-routing-today--what-goes-through-what) is the always-current source. This doc is the **archaeology + the depth**.
 
 ---
 
-## Part 1 — How it works now
+## Part 1: How it works now
 
 ### The shape, in one diagram
 
@@ -130,7 +130,7 @@ Wide enough to cover:
 - Multimodal user turns (text + image_url for vision-capable responder)
 - Tool-loop iterations (assistant with toolCalls, then tool result messages)
 
-Each adapter translates this union to its provider's native shape — see the per-adapter notes below.
+Each adapter translates this union to its provider's native shape, see the per-adapter notes below.
 
 ### The adapter implementations
 
@@ -138,7 +138,7 @@ There are five registered chat adapters today, with very different translation s
 
 #### `openrouter-chat` ([source](../packages/voice/src/adapters/openrouter-chat.ts))
 
-- Wraps `@openrouter/sdk` — the SDK's typed input is camelCase (`toolCalls`, `imageUrl`, `cacheControl`) which it converts to snake_case on the wire.
+- Wraps `@openrouter/sdk`, the SDK's typed input is camelCase (`toolCalls`, `imageUrl`, `cacheControl`) which it converts to snake_case on the wire.
 - Discovery: keyless GET `/api/v1/models`, filtered to chat-shaped routes, ~330+ models.
 - Caches: surfaces `usage.cost` (OR-reported actual charge), `usage.promptTokensDetails.cachedTokens`, and `usage.promptTokensDetails.cacheWriteTokens`. The OR SDK's `ChatUsage` type already has all three.
 - Cache markers: passes through via the SDK's `cacheControl` field on text blocks. OR forwards the marker to Anthropic-backed routes.
@@ -151,7 +151,7 @@ There are five registered chat adapters today, with very different translation s
   - **Tool calls → tool_use blocks in assistant content**: each `ChatToolCall` becomes `{type:'tool_use', id, name, input}` in the assistant message's content array. JSON-parsed input (Anthropic expects a parsed object, not a string).
   - **Tool results → user messages with tool_result blocks**: consecutive `role:'tool'` messages from the runtime coalesce into a single user message with multiple `{type:'tool_result', tool_use_id, content}` blocks. Anthropic models tool results as user-fed-back, not a separate role.
   - **Images → image blocks**: data-URL form (`data:image/png;base64,...`) splits into `{type:'image', source:{type:'base64', media_type, data}}`. http(s) URLs become `{type:'image', source:{type:'url', url}}`.
-  - **Cache markers**: `cacheControl.systemPrompt` attaches ephemeral marker to the system block. `cacheControl.lastUserMessage` attaches it to the last block of the last user message (text, tool_result, image, or tool_use — any block type accepts the marker on Anthropic).
+  - **Cache markers**: `cacheControl.systemPrompt` attaches ephemeral marker to the system block. `cacheControl.lastUserMessage` attaches it to the last block of the last user message (text, tool_result, image, or tool_use, any block type accepts the marker on Anthropic).
 - Reads cache fields: `usage.cache_read_input_tokens` + `usage.cache_creation_input_tokens` (Anthropic's two distinct cache lines).
 
 #### `google-chat` ([source](../packages/voice/src/adapters/google-chat.ts))
@@ -163,14 +163,14 @@ There are five registered chat adapters today, with very different translation s
   - **Tool calls → `parts: [functionCall: {name, args}]`** on model-role contents.
   - **Tool results → `parts: [functionResponse: {name, response}]`** on user-role contents. Gemini calls have no ids, so the adapter mints synthetic `gemini_call_<n>` ids on extraction and resolves them back via an in-flight name-by-id map when translating outbound tool results.
   - **Tools → single `functionDeclarations` array** wrapping every tool (different shape from OpenAI's per-tool wrapping).
-  - **Images dropped to text-only** today. Gemini vision has a separate `inline_data` shape we don't translate — the dedicated `google-vision` adapter is the production path for image understanding.
+  - **Images dropped to text-only** today. Gemini vision has a separate `inline_data` shape we don't translate, the dedicated `google-vision` adapter is the production path for image understanding.
   - **`toolChoice: 'none'` → `toolConfig.functionCallingConfig.mode: 'NONE'`**.
 - Cache: surfaces `usageMetadata.cachedContentTokenCount` (Gemini 2.5+'s implicit caching).
 
 #### `xai-chat` ([source](../packages/voice/src/adapters/xai-chat.ts)) + `huggingface-chat` ([source](../packages/voice/src/adapters/huggingface-chat.ts))
 
 - Both speak the OpenAI-compat `/v1/chat/completions` wire shape directly (snake_case, `tool_calls`, `tool_call_id`).
-- **Translation shared** via [packages/voice/src/adapters/openai-compat.ts](../packages/voice/src/adapters/openai-compat.ts) — `toOpenAICompatMessages` + `extractOpenAICompatToolCalls`.
+- **Translation shared** via [packages/voice/src/adapters/openai-compat.ts](../packages/voice/src/adapters/openai-compat.ts), `toOpenAICompatMessages` + `extractOpenAICompatToolCalls`.
 - Each adapter keeps only its provider-specific quirks: xAI's `choices[].text` legacy fallback; HF's routing-suffix logic (`<model>:fastest`).
 - Cache: both surface `usage.prompt_tokens_details.cached_tokens` when their underlying provider exposes it (xAI always; HF sub-provider dependent).
 
@@ -195,7 +195,7 @@ A worked example for **the responder running on direct Anthropic with one tool c
 8. Loop appends `{role:'tool', toolCallId:'toolu_x', content: '{"hits":[...]}'}` to messages.
 9. **Iter 2**:
    - `adapter.chat({...})` again with the now-longer messages array + same cacheControl.
-   - Inside the adapter: `splitSystemAndMessages` translates the tool message into a `user` message with a `tool_result` block. `markLastBlockForCache` attaches `cache_control: {type: 'ephemeral'}` to that trailing tool_result block — caches the entire prefix up through this turn.
+   - Inside the adapter: `splitSystemAndMessages` translates the tool message into a `user` message with a `tool_result` block. `markLastBlockForCache` attaches `cache_control: {type: 'ephemeral'}` to that trailing tool_result block, caches the entire prefix up through this turn.
    - Response: `{content: [{type:'text', text:'Found 3 relevant items...'}], usage: {input_tokens: 50, output_tokens: 200, cache_read_input_tokens: 1300}}`. The 1300 cache_read covers the iter 1 system + user + assistant + tool_result prefix the marker established.
    - `recordChatUsage` records the cache_read separately; cost dashboard correctly bills the cached prefix at ~10% rate.
    - Loop sees no toolCalls → returns `{reply: 'Found 3 relevant items...', iterations: 2, ...}`.
@@ -209,7 +209,7 @@ Pre-Phase-3, every chat step name was `openrouter_chat` regardless of provider. 
 - `anthropic-chat_chat` / `anthropic-chat_chat[1]` / `anthropic-chat_chat[force_final]`
 - `google-chat_chat`, `xai-chat_chat`, etc.
 
-Trace step `input` now carries `provider` alongside `model`, so the `/debug` reactflow view shows at a glance which adapter ran a given call. `recordChatUsage` writes the same meta keys (`model`, `tokens_in`, `tokens_out`, `cache_read`, `cost_micro_usd`) as the legacy `captureLlmUsage` — dashboards needed no changes.
+Trace step `input` now carries `provider` alongside `model`, so the `/debug` reactflow view shows at a glance which adapter ran a given call. `recordChatUsage` writes the same meta keys (`model`, `tokens_in`, `tokens_out`, `cache_read`, `cost_micro_usd`) as the legacy `captureLlmUsage`, dashboards needed no changes.
 
 ### Cost story, concretely
 
@@ -239,13 +239,13 @@ Turn structure:
 - Fresh input on new content only: ~2.8K → $0.0084
 - **Total input cost: ~$0.042 per single turn**
 
-For a single turn the totals are close — cumulative caching slightly more on this turn because of the extra cache writes. **The compounding starts on follow-up turns:** the cache state after this exchange covers the full 8.2K prefix. Any follow-up user message within 5 minutes reads that entire prefix at cache-read rate instead of writing it fresh. Across a multi-turn conversation the savings scale to **20-40% of input cost**.
+For a single turn the totals are close, cumulative caching slightly more on this turn because of the extra cache writes. **The compounding starts on follow-up turns:** the cache state after this exchange covers the full 8.2K prefix. Any follow-up user message within 5 minutes reads that entire prefix at cache-read rate instead of writing it fresh. Across a multi-turn conversation the savings scale to **20-40% of input cost**.
 
 For the **chat-shaped workers** (extractor doing a backfill on Anthropic Haiku), the savings are starker: the system prompt (~2K tokens, identical across every node) caches once. 50 nodes ingested in an active hour pays the cache-write penalty once and cache-read on the other 49 → ~80% reduction in system-prompt cost vs. fresh-input every node.
 
 ---
 
-## Part 2 — Quality + journey
+## Part 2: Quality + journey
 
 ### The staged history, with commit shas
 
@@ -254,8 +254,8 @@ Three stages, four sub-stages, plus eight audit items:
 | Stage | Commit | What it did | Why |
 |---|---|---|---|
 | Stage 1 | `5dc3984` | Embeddings adapter framework | `@mantle/embeddings` flips from OR-hardcoded to adapter-routed (5 adapters). Sets the pattern Phase 3 inherits. |
-| Stage 2 | `b7d57e9` | Form clamps | "Honest UX while deferred" — workers + agents forms clamp chat-shaped kinds to OR keys with explanatory copy. ~50 LOC, the right move at the time. |
-| Pre-work A | `97298a5` | Widen ChatResult | Add `cacheReadTokens`, `cacheWriteTokens`, `reportedCostUsd` to the chat adapter contract. Mandatory before any call-site migration — otherwise telemetry silently goes to zero on non-OR providers. |
+| Stage 2 | `b7d57e9` | Form clamps | "Honest UX while deferred", workers + agents forms clamp chat-shaped kinds to OR keys with explanatory copy. ~50 LOC, the right move at the time. |
+| Pre-work A | `97298a5` | Widen ChatResult | Add `cacheReadTokens`, `cacheWriteTokens`, `reportedCostUsd` to the chat adapter contract. Mandatory before any call-site migration, otherwise telemetry silently goes to zero on non-OR providers. |
 | Pre-work B | `6297e66` | `openrouter-chat` adapter | Close the framework asymmetry where OR was the only chat provider without an adapter file. ~780 LOC. |
 | Pre-work C | `4f95681` | `recordChatUsage` helper | Typed sibling to `captureLlmUsage` that reads from `ChatResult` instead of an `unknown` raw blob. Same meta keys for `/debug` compat. |
 | 3a | `652ba19` | Chat-shaped workers | Migrate extractor / summarizer / reflector to `getChatAdapter(provider).chat({...})`. Mechanical. |
@@ -264,7 +264,7 @@ Three stages, four sub-stages, plus eight audit items:
 | 3d | `38e2cbc` | Unclamp forms | Strip `RUNTIME_OR_ONLY_KINDS`, strip `service==='openrouter'` filter, add provider dropdown to agents form. |
 | 3e | `ff7eebc` | Docs cleanup | Flip §8.1 routing table, retire §10.1 deferral spec to SHIPPED, retire architecture.md §16 entry. |
 | Audit fix | `2a77a86` | Multimodal + multi-block lossless | **Two silent-drop bugs the audit caught.** Vision user turns and multi-block system content were being silently flattened. |
-| Audit #1 | `f78b419` | Model dropdown reactive | The dropdown hard-coded `?provider=openrouter` — saving an OR slug for direct Anthropic 404s at first turn. |
+| Audit #1 | `f78b419` | Model dropdown reactive | The dropdown hard-coded `?provider=openrouter`, saving an OR slug for direct Anthropic 404s at first turn. |
 | Audit #2 | `c021a95` | Worker cacheControl wiring | Chat-shaped workers never opted into cacheControl. On Anthropic-direct extractor that's ~10× on system prompt cost across batches. |
 | Audit #3 | `9038bef` | Test chat for agents | Operators configuring direct-Anthropic had to send a real Telegram message to discover their key+provider combo was wrong. Now: type prompt → click → see reply. |
 | Audit #4 | `69861f4` | Iter 2+ cache marker | `lastUserMessage` was a no-op on tool-loop iterations 2+. The cumulative-caching cost math above came from fixing this. |
@@ -273,7 +273,7 @@ Three stages, four sub-stages, plus eight audit items:
 | Audit #7 | `2edda7b` | Type-cast retired | `messages as unknown as ChatToolLoopMessage[]` was stale ceremony. Removed → type checker becomes the safety net for future ChatMessage drift. |
 | Audit #8 | `8ae4d3d` | Dead deps removed | `@openrouter/sdk` dropped from four `package.json`s that no longer imported it. Grep-truth is now honest. |
 
-### The audit story — bugs caught before shipping
+### The audit story: bugs caught before shipping
 
 The most consequential audit moment: **two silent-drop regressions were caught after 3b shipped but before any production traffic.** Both would have been hard to debug in the wild because they fail without errors.
 
@@ -292,13 +292,13 @@ The most consequential audit moment: **two silent-drop regressions were caught a
 
 The fix (commit `2a77a86`) widened the contract to handle both shapes everywhere + added 9 focused tests covering: data-URL → Anthropic base64-source translation, http URL → Anthropic url-source, xAI multimodal passthrough, Google text-only fallback, Anthropic multi-block system with per-block markers, Google flatten to systemInstruction, OpenRouter array-shape system passthrough.
 
-**Lesson:** the type-cast in the tool-loop was actively hiding the bug. Audit #7 retired the cast so future drift compile-errors instead of silently dropping. That's the most durable fix in the whole series — the type checker is now the safety net.
+**Lesson:** the type-cast in the tool-loop was actively hiding the bug. Audit #7 retired the cast so future drift compile-errors instead of silently dropping. That's the most durable fix in the whole series; the type checker is now the safety net.
 
 ### Other audit items worth highlighting
 
-- **Audit #4 (iter 2+ cache marker)** had the highest ongoing cost impact. The original `cacheControl.lastUserMessage` logic skipped any user message with array content — exactly the shape coalesced tool_result blocks take on Anthropic iter 2+. Only iter 1's prefix cached. Audit #4 extended cache markers to all Anthropic content-block types (text, tool_use, tool_result, image), enabling the cumulative-prefix caching the cost math above relies on.
+- **Audit #4 (iter 2+ cache marker)** had the highest ongoing cost impact. The original `cacheControl.lastUserMessage` logic skipped any user message with array content, exactly the shape coalesced tool_result blocks take on Anthropic iter 2+. Only iter 1's prefix cached. Audit #4 extended cache markers to all Anthropic content-block types (text, tool_use, tool_result, image), enabling the cumulative-prefix caching the cost math above relies on.
 
-- **Audit #1 (model dropdown)** was a 30-minute fix with disproportionate operator-UX value. Without it, switching the agent's provider in the form would silently leave the OR-shaped model slug in place — saving and trying to call would 404 at first turn. With it, the dropdown re-fetches per provider and a slug-mismatch hint fires when the typed model isn't in the current catalog.
+- **Audit #1 (model dropdown)** was a 30-minute fix with disproportionate operator-UX value. Without it, switching the agent's provider in the form would silently leave the OR-shaped model slug in place, saving and trying to call would 404 at first turn. With it, the dropdown re-fetches per provider and a slug-mismatch hint fires when the typed model isn't in the current catalog.
 
 - **Audit #5 (runToolLoop tests)** added 14 direct unit tests where pre-Phase-3 there were zero. The fake-adapter pattern + `vi.mock`-on-tools-and-db approach is reusable for any future tool-loop work. Most valuable test: the "sends cacheControl on every iteration" case, which is the safety net for audit #4 at the iteration level.
 
@@ -340,7 +340,7 @@ Three patterns from this refactor that other codebase areas could lift:
 
 **Pattern 1: Honest forms while you defer the runtime.** Stage 2 (`b7d57e9`) clamped the workers + agents forms to the runtime's actual capabilities with explanatory copy, rather than showing operators a configuration that would fail at first call. ~50 LOC. Lower cost than the full migration and prevents the worst kind of user trust loss (silent first-call failure). Whenever you've got a "we'll get to it" backlog item that touches a configuration surface, clamp the form to the truth first.
 
-**Pattern 2: Pre-work commits before the structural change.** Pre-work A/B/C landed the contract widening + the new helper + the asymmetry-closing adapter BEFORE any call site moved. Each was independently shippable and useful. When 3a/3b landed, they were "pure replacement of OR SDK call → adapter call" — small, reviewable diffs. Splits the high-risk-coupling work from the low-risk-mechanical work.
+**Pattern 2: Pre-work commits before the structural change.** Pre-work A/B/C landed the contract widening + the new helper + the asymmetry-closing adapter BEFORE any call site moved. Each was independently shippable and useful. When 3a/3b landed, they were "pure replacement of OR SDK call → adapter call", small, reviewable diffs. Splits the high-risk-coupling work from the low-risk-mechanical work.
 
 **Pattern 3: Audit-as-a-discrete-task.** Reading the diff with fresh eyes (after the implementation was "done") caught two silent-drop bugs that the type-cast was hiding. The audit pass paid for itself the moment it caught the first bug. Bake it in as a real task on multi-commit work, not a vague "I'll check it before pushing."
 
@@ -356,13 +356,13 @@ Three patterns from this refactor that other codebase areas could lift:
 
 If you've just inherited this codebase and want to understand the chat path, read in this order:
 
-1. **[docs/ai-workers.md](./ai-workers.md) §8.1** — the routing table cheatsheet. 5 minutes.
-2. **This doc, Part 1** — how it works end-to-end. 15 minutes.
-3. **[packages/voice/src/adapters/types.ts](../packages/voice/src/adapters/types.ts)** — the contract. The doc-comments are honest and detailed.
-4. **[packages/voice/src/adapters/openrouter-chat.ts](../packages/voice/src/adapters/openrouter-chat.ts)** — read one adapter end-to-end. OR is the SDK-typed shape; once you understand it, anthropic-chat and google-chat make more sense by contrast.
-5. **[packages/agent-runtime/src/tool-loop.ts](../packages/agent-runtime/src/tool-loop.ts)** — the iteration grammar. ~470 LOC, well-commented.
-6. **[packages/agent-runtime/src/tool-loop.test.ts](../packages/agent-runtime/src/tool-loop.test.ts)** — see the loop's behaviour exercised. Often the fastest way to internalise an iteration grammar is reading its tests.
-7. **This doc, Part 2** — the journey + the trade-offs we made + the known sharp edges. 10 minutes.
+1. **[docs/ai-workers.md](./ai-workers.md) §8.1**: the routing table cheatsheet. 5 minutes.
+2. **This doc, Part 1**: how it works end-to-end. 15 minutes.
+3. **[packages/voice/src/adapters/types.ts](../packages/voice/src/adapters/types.ts)**: the contract. The doc-comments are honest and detailed.
+4. **[packages/voice/src/adapters/openrouter-chat.ts](../packages/voice/src/adapters/openrouter-chat.ts)**: read one adapter end-to-end. OR is the SDK-typed shape; once you understand it, anthropic-chat and google-chat make more sense by contrast.
+5. **[packages/agent-runtime/src/tool-loop.ts](../packages/agent-runtime/src/tool-loop.ts)**: the iteration grammar. ~470 LOC, well-commented.
+6. **[packages/agent-runtime/src/tool-loop.test.ts](../packages/agent-runtime/src/tool-loop.test.ts)**: see the loop's behaviour exercised. Often the fastest way to internalise an iteration grammar is reading its tests.
+7. **This doc, Part 2**: the journey + the trade-offs we made + the known sharp edges. 10 minutes.
 
 For a deeper dive into any single piece, the per-commit message bodies have surprising depth (see `git log --reverse 2385fe0..HEAD`).
 
@@ -374,7 +374,7 @@ For a deeper dive into any single piece, the per-commit message bodies have surp
 - **+5015 / −444 LOC** across **50 files**.
 - **865 vitest pass** across the monorepo (60 test files), **+49 new tests** added during the refactor + audit.
 - **Typecheck clean** across every workspace package.
-- **Zero breakage** for existing installs — migration 0048 defaults `agents.provider = 'openrouter'`, preserving every pre-Phase-3 row's routing.
+- **Zero breakage** for existing installs, migration 0048 defaults `agents.provider = 'openrouter'`, preserving every pre-Phase-3 row's routing.
 - **Two silent-drop bugs caught + fixed** before any production traffic.
 - **Quality score: 7.8 → 9.2** across the refactor + audit arc.
 

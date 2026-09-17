@@ -1,28 +1,40 @@
 import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { agents, db, traceSteps, traces } from '@mantle/db';
-import {
-  contextLimitFor,
-  contextSourceFor,
-  refreshModelCatalog,
-  type ContextSource,
-} from '@mantle/tracing';
+import { contextLimitFor, contextSourceFor, refreshModelCatalog } from '@mantle/tracing';
+import type {
+  AgentContext,
+  SpendRange,
+  AgentSpend,
+  ModelSpend,
+  DailySpend,
+  RecentFailure,
+  TopError,
+  ToolValidationAgg,
+  ToolValidationEvent,
+} from '@mantle/client-types';
+import type {
+  CacheHitStats,
+  DuplicateSuppression,
+  FactCostCapStats,
+  Traffic,
+} from '@mantle/client-types';
+export type { CacheHitStats, DuplicateSuppression, FactCostCapStats, Traffic };
+export type {
+  AgentContext,
+  SpendRange,
+  AgentSpend,
+  ModelSpend,
+  DailySpend,
+  RecentFailure,
+  TopError,
+  ToolValidationAgg,
+  ToolValidationEvent,
+};
 
 /**
  * Aggregate metrics computed over the traces + trace_steps tables.
  * All owner-scoped. Used by the /debug dashboard widgets.
  */
-
-export type Traffic = {
-  count: number;
-  errorCount: number;
-  avgMs: number | null;
-  costMicroUsd: number;
-  tokensIn: number;
-  tokensOut: number;
-  tokensCacheRead: number;
-};
-
-export type SpendRange = 'day' | 'week' | 'month';
 
 export type SpendSummary = {
   range: SpendRange;
@@ -52,20 +64,6 @@ export async function spendInRange(userId: string, range: SpendRange): Promise<S
     runs: r?.runs ?? 0,
   };
 }
-
-export type AgentContext = {
-  agentId: string;
-  agentName: string | null;
-  agentSlug: string | null;
-  modelSlug: string;
-  lastTokensIn: number;
-  contextLimit: number | null;
-  /** Where contextLimit came from: live OpenRouter data, the static
-   *  fallback, or unknown (slug not in either). Surfaced in the UI. */
-  contextSource: ContextSource;
-  pct: number | null;
-  lastRunAt: string;
-};
 
 type AgentContextRow = {
   agent_id: string;
@@ -165,17 +163,6 @@ export async function trafficWindow(userId: string, hoursBack: number): Promise<
   };
 }
 
-export type AgentSpend = {
-  agentId: string | null;
-  agentName: string | null;
-  agentSlug: string | null;
-  costMicroUsd: number;
-  tokensIn: number;
-  tokensOut: number;
-  cacheReadTokens: number;
-  runs: number;
-};
-
 export async function spendByAgent(userId: string, daysBack: number): Promise<AgentSpend[]> {
   const since = new Date(Date.now() - daysBack * 86_400_000);
   const rows = await db
@@ -207,12 +194,6 @@ export async function spendByAgent(userId: string, daysBack: number): Promise<Ag
   }));
 }
 
-export type CacheHitStats = {
-  hits: number;
-  misses: number;
-  apiCalls: number;
-};
-
 export async function embedderCacheStats(userId: string, daysBack: number): Promise<CacheHitStats> {
   const since = new Date(Date.now() - daysBack * 86_400_000);
   const rows = await db
@@ -237,16 +218,6 @@ export async function embedderCacheStats(userId: string, daysBack: number): Prom
     apiCalls: r?.apiCalls ?? 0,
   };
 }
-
-export type DailySpend = {
-  /** ISO date (YYYY-MM-DD) in the server's local timezone. */
-  day: string;
-  costMicroUsd: number;
-  tokensIn: number;
-  tokensOut: number;
-  cacheReadTokens: number;
-  runs: number;
-};
 
 /**
  * Per-day spend buckets for the last `daysBack` days. Includes zero
@@ -289,16 +260,6 @@ export async function spendByDay(userId: string, daysBack: number): Promise<Dail
   return out;
 }
 
-export type ModelSpend = {
-  /** The OpenRouter model slug captured in trace_steps.meta.model. */
-  model: string;
-  costMicroUsd: number;
-  tokensIn: number;
-  tokensOut: number;
-  cacheReadTokens: number;
-  calls: number;
-};
-
 /**
  * Per-model spend rollup over the trace_steps table. Embeddings and chat
  * completions both land here because both go through `step(...).setMeta(
@@ -338,13 +299,6 @@ export async function spendByModel(userId: string, daysBack: number): Promise<Mo
   }));
 }
 
-export type TopError = {
-  message: string;
-  count: number;
-  lastAt: string;
-  lastTraceId: string;
-};
-
 export async function topErrors(userId: string, daysBack: number, limit = 5): Promise<TopError[]> {
   const since = new Date(Date.now() - daysBack * 86_400_000);
   // Group by the first 80 chars of the error message — keeps similar
@@ -377,13 +331,6 @@ export async function topErrors(userId: string, daysBack: number, limit = 5): Pr
   }));
 }
 
-export type RecentFailure = {
-  id: string;
-  kind: string;
-  startedAt: string;
-  error: string;
-};
-
 export async function recentFailures(userId: string, limit = 10): Promise<RecentFailure[]> {
   const rows = await db
     .select({
@@ -404,17 +351,6 @@ export async function recentFailures(userId: string, limit = 10): Promise<Recent
     error: r.error ?? '',
   }));
 }
-
-export type DuplicateSuppression = {
-  /** Model slug captured in trace_steps.meta.model at suppression time. */
-  model: string;
-  /** How many duplicate tool_use blocks were suppressed in the window. */
-  count: number;
-  /** Distinct tool slugs the duplicates targeted (top 5, comma-separated). */
-  topSlugs: string;
-  /** Most recent suppression, ISO string. */
-  lastAt: string;
-};
 
 /**
  * Roll-up of in-response duplicate tool-call suppressions, grouped by model.
@@ -465,17 +401,6 @@ export async function duplicateSuppressionStats(
   }));
 }
 
-export type FactCostCapStats = {
-  /** Extractor model slug captured in trace_steps.meta.model. */
-  model: string;
-  /** How many process_facts steps dropped facts to the cap in the window. */
-  runs: number;
-  /** Total facts discarded across those runs (sum of meta.dropped). */
-  factsDropped: number;
-  /** Most recent occurrence, ISO string. */
-  lastAt: string;
-};
-
 /**
  * Roll-up of fact runs that hit the extractor's cost cap and discarded
  * facts the LLM already produced (and we already paid for), grouped by
@@ -522,29 +447,6 @@ export async function factCostCapStats(
 }
 
 // ── Tool-call arg-validation telemetry (v0.119.0 warn-mode rollout) ────────
-
-/** Per-tool tallies of calls the central validator flagged. Clean calls
- *  write no `arg_validation` meta at all, so these are problem counts,
- *  not rates — an empty result means nothing was flagged, not no calls. */
-export type ToolValidationAgg = {
-  tool: string;
-  flaggedCalls: number;
-  withRepairs: number;
-  withUnknownKeys: number;
-  withViolations: number;
-  lastAt: string;
-};
-
-export type ToolValidationEvent = {
-  stepId: string;
-  traceId: string;
-  tool: string;
-  mode: string;
-  repairs: Array<{ key: string; kind: string; note: string }>;
-  unknownKeys: Array<{ key: string; suggestion: string | null }>;
-  violations: string[];
-  startedAt: string;
-};
 
 /** Flagged-call tallies per tool over the window. `withViolations` is the
  *  enforce-flip question: each one is a call warn mode let through that

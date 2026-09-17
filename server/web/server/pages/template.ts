@@ -1,5 +1,10 @@
-import { displayFontFaceCss } from '@mantle/web-ui/display-fonts';
-import type { AppearanceAttrs } from '@mantle/web-ui/appearance';
+import { displayFontFaceCss } from '@mantle/client-types/display-fonts';
+import {
+  appearanceFontAttrs,
+  appearanceFontVars,
+  type AppearanceAttrs,
+} from '@mantle/share-ui/appearance';
+import { SHARE_MODE_STORAGE_KEY } from '@mantle/share-ui/share-mode';
 
 /**
  * HTML shells for the server-rendered surfaces (/s, /print, stubs) — the
@@ -27,14 +32,28 @@ export function scriptSafeJson(value: unknown): string {
     .replace(/\u2029/g, '\\u2029');
 }
 
-/** Replacement for the next/font(lib/fonts.ts) output: the same self-hosted
- *  faces declared by hand, wired to the theme vars (--font-sans/--font-logo)
- *  that themes.css maps onto the font-sans/font-logo utilities. */
+/**
+ * Replacement for the next/font (client/web/lib/fonts.ts) output: the default
+ * interface face declared by hand, wired to `--font-sans` and to
+ * `--font-sans-base`.
+ *
+ * Inter is the only face declared here because it is the only one that is
+ * ALWAYS loaded. Every selectable face comes from the shared registry's
+ * `@font-face` block below, which is lazy — a file is fetched only when
+ * something actually paints in it.
+ *
+ * `--font-sans-base` must hold Inter unconditionally, even when the brain has
+ * chosen another interface font: it is what the "Inter" row in the selection
+ * modal previews through, and resolving that row through `--font-sans` (the var
+ * the choice overrides) would render it in whatever face is currently selected.
+ *
+ * A brain's own choices arrive as inline style on `<html>` (see htmlAttrs), and
+ * inline style outranks these `:root` rules, so this block is purely the floor.
+ */
 const FONT_CSS = `
 @font-face{font-family:'InterVariable';font-style:normal;font-weight:100 900;font-display:swap;src:url('/Inter/Inter-VariableFont_opsz,wght.woff2') format('woff2')}
 @font-face{font-family:'InterVariable';font-style:italic;font-weight:100 900;font-display:swap;src:url('/Inter/Inter-Italic-VariableFont_opsz,wght.woff2') format('woff2')}
-@font-face{font-family:'Bukhari Script';font-style:normal;font-weight:400;font-display:swap;src:url('/fonts/BukhariScript-Regular.woff2') format('woff2')}
-:root{--font-sans:'InterVariable',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif;--font-logo:'Bukhari Script'}
+:root{--font-sans:'InterVariable',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,'Noto Sans',sans-serif;--font-sans-base:'InterVariable',ui-sans-serif,system-ui,sans-serif}
 `.trim();
 
 export type PageMeta = {
@@ -48,6 +67,32 @@ export type PageMeta = {
   extraHead?: string;
   /** Load /share-runtime/islands.js at the end of <body>. */
   islands?: boolean;
+  /**
+   * The /s reader's mode + backdrop behaviour. When present, the page:
+   *  - stamps the owner's default mode server-side (`.dark` on `<html>` for
+   *    'dark'), so a no-JS visitor and a crawler see the owner's choice;
+   *  - runs a tiny pre-paint inline script that applies the VISITOR's own
+   *    stored toggle choice (localStorage) over that default — before first
+   *    paint, so switching never flashes ('system' resolves there too, since
+   *    only the browser knows it);
+   *  - with `readerChrome` (everything except the full-viewport app kind), loads
+   *    /share-runtime/share-page.js — the mode toggle button plus the Neat
+   *    gradient mount — and, when a background is saved, renders the fixed
+   *    `-z-10` host div the gradient paints into.
+   * Absent (print, stubs) ⇒ none of this: those surfaces stay mode-less.
+   */
+  share?: {
+    defaultMode: 'light' | 'dark' | 'system';
+    /** Canonical encoded Neat spec, or null/absent for the plain themed fill. */
+    neat?: string | null;
+    /** Neat licence key (watermark removal on deployed domains) — rides to the
+     *  browser on the host div, exactly like the client app's
+     *  NEXT_PUBLIC_NEAT_LICENSE_KEY. Unset is fine on localhost. */
+    neatLicense?: string;
+    /** Mode toggle + Neat backdrop (false: mode stamping only — the app kind,
+     *  which owns the whole viewport). */
+    readerChrome: boolean;
+  };
   /**
    * The brain OWNER's appearance, rendered as attributes + inline style on the
    * `<html>` tag (see @mantle/web-ui/appearance). These are BRANDED surfaces:
@@ -66,17 +111,37 @@ function htmlAttrs(a: AppearanceAttrs | undefined): string {
   if (!a) return '';
   const parts: string[] = [];
   if (a.colorTheme) parts.push(`data-color-theme="${escapeHtml(a.colorTheme)}"`);
-  if (a.fontLogo) parts.push(`data-font-logo="${escapeHtml(a.fontLogo)}"`);
-  if (a.fontTitle) parts.push(`data-font-title="${escapeHtml(a.fontTitle)}"`);
-  const vars: string[] = [];
-  if (a.fontVars.wordmark) vars.push(`--font-wordmark:${a.fontVars.wordmark}`);
-  if (a.fontVars.pageTitle) vars.push(`--font-page-title:${a.fontVars.pageTitle}`);
+  // Every font attribute and var comes from the SAME projections the client
+  // root layout consumes (appearance.ts) — never a hand-copied list. This
+  // renderer's copy used to carry only the two header faces, which meant the
+  // interface font never reached /s or /print at all: a share rendered in Inter
+  // no matter what the brain had chosen. The prose font makes that gap
+  // load-bearing rather than cosmetic, because /print IS the PDF export.
+  for (const [attr, value] of Object.entries(appearanceFontAttrs(a))) {
+    parts.push(`${attr}="${escapeHtml(value)}"`);
+  }
+  const vars = Object.entries(appearanceFontVars(a)).map(([name, value]) => `${name}:${value}`);
   if (vars.length) parts.push(`style="${escapeHtml(vars.join(';'))}"`);
   // The lock rides along even when everything is default: an owner surface is
   // owner-branded regardless, and the lock is what stops a mounted island's
   // provider from applying visitor-local state (e.g. the random-theme toggle)
   // over it.
   return [' data-color-theme-owner="1"', ...parts].join(' ');
+}
+
+/** Applies the visitor's stored mode (or resolves 'system') before first
+ *  paint. Inline and dependency-free on purpose: it must run before the body
+ *  exists, and a failed localStorage read (private mode) must fall through to
+ *  the server-stamped default, never throw. */
+function sharePrePaintScript(): string {
+  return (
+    `<script>(()=>{try{var d=document.documentElement,` +
+    `o=d.getAttribute('data-share-mode-default')||'light',s=null;` +
+    `try{s=localStorage.getItem('${SHARE_MODE_STORAGE_KEY}')}catch(e){}` +
+    `var m=s==='light'||s==='dark'?s:` +
+    `o==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):o;` +
+    `d.classList.toggle('dark',m==='dark')}catch(e){}})()</script>`
+  );
 }
 
 export function htmlPage(meta: PageMeta, bodyHtml: string): string {
@@ -110,31 +175,54 @@ export function htmlPage(meta: PageMeta, bodyHtml: string): string {
     // as <html> attributes/inline style via meta.appearance, not a script.
     `<style>${displayFontFaceCss()}</style>`,
     meta.extraHead ?? '',
+    // After the stylesheets: the class it toggles only matters once the theme
+    // rules exist, and running late in <head> still beats first paint.
+    meta.share ? sharePrePaintScript() : '',
   ]
     .filter(Boolean)
     .join('\n');
 
-  const islands = meta.islands
-    ? `<script type="module" src="/share-runtime/islands.js"></script>`
+  const share = meta.share;
+  const htmlClass = share?.defaultMode === 'dark' ? 'h-full dark' : 'h-full';
+  const shareAttr = share ? ` data-share-mode-default="${escapeHtml(share.defaultMode)}"` : '';
+  // The Neat host sits at -z-10: above the html/body background (which paints
+  // on the root canvas, beneath everything) and below ALL in-flow content —
+  // which is why shareShell drops its own bg when a gradient is active.
+  const neatLicense = share?.neatLicense
+    ? ` data-neat-license="${escapeHtml(share.neatLicense)}"`
     : '';
+  const neatHost =
+    share?.readerChrome && share.neat
+      ? `<div data-neat-spec="${escapeHtml(share.neat)}"${neatLicense} class="pointer-events-none fixed inset-0 -z-10" aria-hidden="true"></div>\n`
+      : '';
+  const scripts = [
+    share?.readerChrome ? `<script type="module" src="/share-runtime/share-page.js"></script>` : '',
+    meta.islands ? `<script type="module" src="/share-runtime/islands.js"></script>` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
   return `<!DOCTYPE html>
-<html lang="en" class="h-full"${htmlAttrs(meta.appearance)}>
+<html lang="en" class="${htmlClass}"${shareAttr}${htmlAttrs(meta.appearance)}>
 <head>
 ${head}
 </head>
 <body class="h-full font-sans antialiased">
-${bodyHtml}
-${islands}
+${neatHost}${bodyHtml}
+${scripts}
 </body>
 </html>`;
 }
 
 /** The /s share shell (was app/s/layout.tsx): clean centered surface, quiet
- *  footer, its own scroll container (globals.css pins html/body overflow). */
-export function shareShell(inner: string): string {
-  return `<div class="flex h-dvh flex-col overflow-y-auto scrollbar-thin bg-background text-foreground">
+ *  footer, its own scroll container (globals.css pins html/body overflow).
+ *  With `neat`, the shell's own ground goes transparent: the fixed -z-10
+ *  gradient canvas must show through, and body already paints bg-background
+ *  beneath it as the no-WebGL/no-JS fallback. */
+export function shareShell(inner: string, opts?: { neat?: boolean }): string {
+  const ground = opts?.neat ? '' : ' bg-background';
+  return `<div class="flex h-dvh flex-col overflow-y-auto scrollbar-thin${ground} text-foreground">
 <main class="flex-1">${inner}</main>
-<footer class="border-t border-border/60 py-6"><p class="text-center text-xs text-muted-foreground">Shared via <span class="font-logo lowercase">mantle</span></p></footer>
+<footer class="border-t border-border/60 py-6"><p class="text-center text-xs text-muted-foreground">Shared via <span class="wordmark-brand lowercase">mantle</span></p></footer>
 </div>`;
 }
 

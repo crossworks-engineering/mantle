@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { clearConfig, defaultRedirectUri, getConfigStatus, saveConfig } from '@mantle/microsoft';
 import { getOwnerOr401 } from '@/lib/auth';
 import { requestOrigin } from '@/lib/auth-constants';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** Current Azure-app config status + the redirect URI to suggest (host-derived). */
 export async function GET(req: Request) {
@@ -30,7 +31,7 @@ export async function PUT(req: Request) {
   const parsed = SaveBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'Invalid input.' },
+      { error: firstIssue(parsed.error, 'Invalid input.') },
       { status: 400 },
     );
   }

@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { countTraces, listTraces } from '@/lib/traces';
-import type { TraceSort, TraceSortDir } from '@mantle/web-ui/traces-format';
+import type { TraceSort, TraceSortDir } from '@mantle/client-types/traces-format';
 
 /**
  * GET /api/traces?kind=&status=&hours=&sort=&dir=&page=

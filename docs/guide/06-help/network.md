@@ -4,8 +4,8 @@ title: Local network
 
 ## Local network
 
-Connects your Mantle to a machine you own that isn't on the public internet —
-a GPU box at home, a server on the office LAN — so it can be used for
+Connects your Mantle to a machine you own that isn't on the public internet,
+a GPU box at home, a server on the office LAN, so it can be used for
 inference.
 
 The problem this solves is ordinary and annoying: the useful hardware is behind
@@ -24,7 +24,7 @@ arrives, forever. Moving those onto hardware you already own is where the saving
 is, and it means the bulk of your corpus is never sent anywhere.
 
 Pair it with a cloud backup route rather than replacing cloud entirely. A home
-machine will be offline sometimes — that's not a failure worth designing around
+machine will be offline sometimes, that's not a failure worth designing around
 when a backup route covers it silently.
 
 The auth key is a credential for your whole mesh. It's stored sealed here, but

@@ -5,7 +5,7 @@
  * chain — launch → system-DB journaling → queue dispatch → durable step → run
  * record with timing — without needing the long-lived service running.
  *
- *   pnpm -C apps/api smoke
+ *   pnpm -C server/api smoke
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';

@@ -7,6 +7,8 @@ import {
   listEnabledWorkerAgents,
   listWorkerGroups,
 } from '@/lib/worker-groups';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** GET /api/settings/worker-groups — the owner's worker groups + the enabled
  *  worker agents available as members (so the picker needs no second call). */
@@ -38,16 +40,13 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   try {
     const row = await createWorkerGroup(user.id, parsed.data);
     return NextResponse.json({ group: row });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (msg.includes('agent_groups_owner_slug_uq') || msg.includes('duplicate key')) {
       return NextResponse.json(
         { error: `A worker group with slug "${parsed.data.slug}" already exists.` },

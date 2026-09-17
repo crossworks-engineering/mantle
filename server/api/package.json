@@ -11,17 +11,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@dbos-inc/dbos-sdk": "^4.23.6",
-    "@mantle/agent-runtime": "workspace:*",
+    "@dbos-inc/dbos-sdk": "^4.27.6",
     "@mantle/api-keys": "workspace:*",
-    "@mantle/assistant-runtime": "workspace:*",
     "@mantle/client-types": "workspace:*",
+    "@mantle/config": "workspace:*",
     "@mantle/content": "workspace:*",
+    "@mantle/content-core": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",
-    "@mantle/heartbeats": "workspace:*",
     "@mantle/runs": "workspace:*",
+    "@mantle/runtime": "workspace:*",
+    "@mantle/std": "workspace:*",
     "@mantle/storage": "workspace:*",
     "@mantle/tabledb": "workspace:*",
     "@mantle/telegram": "workspace:*",
@@ -30,12 +31,12 @@
     "@mantle/turn-stream": "workspace:*",
     "@mantle/voice": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "pg-boss": "^12.26.1",
-    "postgres": "^3.4.5"
+    "pg-boss": "^12.30.0",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@types/node": "^22.20.1",
-    "tsx": "^4.23.1",
-    "typescript": "^5.7.2"
+    "@types/node": "^26.4.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3"
   }
 }

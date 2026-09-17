@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { setView, type TableDoc } from './table-model';
+import { setView, type TableDoc } from '@mantle/content-core/table-model';
 import { listRows } from './table-list';
 
 function bigGrid(n: number): TableDoc {

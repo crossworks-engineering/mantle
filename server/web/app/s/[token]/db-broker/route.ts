@@ -11,20 +11,32 @@
  * Runs against the app's own SQLite under the share owner's scope.
  */
 import { NextResponse } from '@/server/http-compat';
-import { z } from 'zod';
 import { resolveActiveShareByToken } from '@/lib/shares';
 import { getApp, recordAppAccess } from '@mantle/content';
 import { appDbQuery, appDbExec } from '@mantle/content/app-broker';
+import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
 import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
+import { rateLimit, clientIp } from '@/lib/rate-limit';
 
-const Body = z.object({
-  op: z.enum(['query', 'exec']),
-  sql: z.string().min(1).max(20_000),
-  params: z.array(z.unknown()).max(100).optional().default([]),
-});
+import { AppDbBody, appDbBodyError } from '@/lib/app-db-broker-body';
+import { errorMessage } from '@mantle/std';
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
+
+  // Generous — a running app is query-chatty — but bounded, like the other
+  // /s/[token] surfaces: this endpoint executes SQL for strangers.
+  const { ok, retryAfterSec } = rateLimit(`share-db-broker:${clientIp(req)}`, {
+    max: 300,
+    windowMs: 60_000,
+  });
+  if (!ok) {
+    return NextResponse.json(
+      { ok: false, error: 'too many requests' },
+      { status: 429, headers: { 'retry-after': String(retryAfterSec) } },
+    );
+  }
+
   const share = await resolveActiveShareByToken(token);
   if (!share || share.nodeType !== 'app') {
     return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
@@ -38,9 +50,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     );
   }
 
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = AppDbBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success)
-    return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
+    return NextResponse.json({ ok: false, error: appDbBodyError(parsed.error) }, { status: 400 });
 
   if (parsed.data.op === 'exec' && visitor.mode === 'public') {
     return NextResponse.json(
@@ -83,11 +95,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
             parsed.data.params,
             app.manifest.sqlite,
           );
+    // A member's write may feed a linked app-table export — debounced,
+    // hash-gated, and running under the owner (the sync is not a member act).
+    if (parsed.data.op === 'exec') scheduleAppTableExportSync(share.ownerId, share.nodeId);
     return NextResponse.json({ ok: true, output });
   } catch (err) {
-    return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
+    return NextResponse.json({ ok: false, error: errorMessage(err) }, { status: 400 });
   }
 }

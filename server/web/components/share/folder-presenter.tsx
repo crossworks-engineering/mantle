@@ -1,6 +1,6 @@
 import { Download, File as FileIcon, Folder as FolderIcon } from 'lucide-react';
 import { listFolders, listFiles, folderByPath, ltreeToDash } from '@/lib/files';
-import { formatBytes } from '@mantle/web-ui/lib/format-bytes';
+import { formatBytes } from '@mantle/client-types/lib/format-bytes';
 
 /**
  * Public folder render: a read-only listing of the shared folder's subtree.

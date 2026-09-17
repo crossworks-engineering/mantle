@@ -1,7 +1,9 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { AvatarSchema } from '@/lib/avatar-schema';
 import { deleteAgent, updateAgent } from '@/lib/agents';
+import { firstIssue } from '@/lib/zod-issue';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -61,13 +63,7 @@ const Params = z
   })
   .strict();
 
-const Avatar = z
-  .object({
-    style: z.string().min(1).max(64),
-    seed: z.string().min(1).max(200),
-  })
-  .strict()
-  .nullable();
+const Avatar = AvatarSchema;
 
 const PatchBody = z
   .object({
@@ -110,7 +106,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
-    const message = parsed.error.issues[0]?.message ?? 'Invalid input.';
+    const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
   }
   const row = await updateAgent(user.id, idParsed.data.id, parsed.data);

@@ -5,7 +5,7 @@
  * time comes, the configured agent runs the configured skill with
  * the heartbeat's accumulated state on the configured surface.
  * Heartbeat lifecycle (active → paused / completed / cancelled) is
- * driven by the tick loop in apps/agent (or the operator via the
+ * driven by the tick loop in server/api (or the operator via the
  * pause/resume buttons here).
  *
  * Gate fields (min_idle_minutes, quiet_hours, cooldown_minutes,
@@ -28,7 +28,11 @@ import {
   type HeartbeatScheduleSpec,
   type HeartbeatSurface,
 } from '@mantle/db';
-import { computeNextFireAt, notifyHeartbeatDue, validateSchedule } from '@mantle/heartbeats';
+import {
+  computeNextFireAt,
+  notifyHeartbeatDue,
+  validateSchedule,
+} from '@mantle/runtime/heartbeats';
 
 // Re-export the heartbeat shape types so callers (form actions, API routes) get
 // them without importing @mantle/db directly.
@@ -38,6 +42,8 @@ export type {
   HeartbeatScheduleSpec,
   HeartbeatSurface,
 } from '@mantle/db';
+import type { HeartbeatFireSummary } from '@mantle/client-types';
+export type { HeartbeatFireSummary };
 
 /**
  * The summary the CRUD layer returns and `GET /api/heartbeats` serializes.
@@ -251,18 +257,6 @@ export async function deleteHeartbeat(ownerId: string, id: string): Promise<bool
     .returning({ id: heartbeats.id });
   return rows.length > 0;
 }
-
-export type HeartbeatFireSummary = {
-  id: string;
-  firedAt: string;
-  traceId: string | null;
-  disposition: string;
-  stateBefore: Record<string, unknown> | null;
-  stateAfter: Record<string, unknown> | null;
-  replyText: string | null;
-  replySurfaceRef: Record<string, unknown> | null;
-  errorMessage: string | null;
-};
 
 function toFireSummary(f: HeartbeatFire): HeartbeatFireSummary {
   return {

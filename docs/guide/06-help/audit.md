@@ -4,15 +4,15 @@ title: Audit log
 
 ## Audit log
 
-Who did what, when — filterable by actor, action and date range.
+Who did what, when, filterable by actor, action and date range.
 
 The value here is that it spans the different kinds of actor a Mantle has. A
 login is one. The assistant acting on your behalf is another. A connected MCP
-client, a peer's Mantle asking a federated question, a team member's request —
+client, a peer's Mantle asking a federated question, a team member's request,
 each shows up as itself rather than being flattened into "the system".
 
-That's the question this screen actually answers: not "what happened" — plenty
-of screens show that — but "what caused it".
+That's the question this screen actually answers: not "what happened", plenty
+of screens show that, but "what caused it".
 
 ## When to use this
 
@@ -29,7 +29,7 @@ node was deleted and by whom; it does not hold a copy of what was in it.
 ## Technical
 
 Entries are written by the action paths themselves rather than reconstructed
-from database changes, which is what lets an entry carry intent — the actor, the
+from database changes, which is what lets an entry carry intent, the actor, the
 surface it arrived on, and the operation as it was requested.
 
 The log is append-only in practice: nothing in the application updates or

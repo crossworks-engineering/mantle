@@ -36,6 +36,7 @@ import {
   ANTHROPIC_BASE_URL,
   ANTHROPIC_VISION_MODELS,
 } from '../catalogs/anthropic';
+import { errorMessage } from '@mantle/std';
 
 const DEFAULT_MODEL = 'claude-haiku-4-5';
 const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
@@ -216,7 +217,7 @@ export const anthropicVisionAdapter: VisionDispatcher = {
       return {
         available: [...ANTHROPIC_VISION_MODELS],
         filtered: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       };
     }
   },

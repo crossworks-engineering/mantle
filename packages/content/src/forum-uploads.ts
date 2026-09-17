@@ -12,6 +12,8 @@
  */
 import { and, asc, count, eq, gte, inArray, isNull, lt, or, sql as dsql } from 'drizzle-orm';
 import { db, forumTopics, forumUploads, nodes, type ForumUpload } from '@mantle/db';
+import type { PendingForumUpload } from '@mantle/client-types';
+export type { PendingForumUpload };
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -180,19 +182,6 @@ export async function listForumUploadStatesForTopic(
     .from(forumUploads)
     .where(and(eq(forumUploads.ownerId, ownerId), eq(forumUploads.topicId, topicId)));
 }
-
-export type PendingForumUpload = {
-  id: string;
-  topicId: string | null;
-  postId: string | null;
-  topicTitle: string | null;
-  contactId: string | null;
-  contactName: string | null;
-  filename: string;
-  mime: string;
-  sizeBytes: number;
-  createdAt: string;
-};
 
 /** The owner's review queue: pending blobs OLDEST-first (FIFO — a review queue
  *  drains front to back; the longest-waiting upload should be seen first), and

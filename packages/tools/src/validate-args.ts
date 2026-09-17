@@ -32,10 +32,13 @@
  *     Unknown keys are always *reported* for telemetry; they only become
  *     violations when the schema explicitly sets `additionalProperties: false`.
  *
- * Pure and dependency-free so vitest locks it down without DB or runtime.
+ * Pure — no DB, no runtime — so vitest locks it down directly. Its one import
+ * is @mantle/std, which is itself dependency-free.
  * The enforcement MODE (off/warn/enforce) is the caller's concern — this
  * module just reports; the tool-loop decides whether to block.
  */
+
+import { truncate } from '@mantle/std';
 
 export type ArgRepair = {
   key: string;
@@ -386,10 +389,6 @@ function describeValue(value: unknown): string {
     default:
       return `${typeof value} ${truncate(String(value), 60)}`;
   }
-}
-
-function truncate(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }
 
 function asRecord(v: unknown): Record<string, unknown> | null {

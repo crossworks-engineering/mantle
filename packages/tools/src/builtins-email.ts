@@ -34,11 +34,9 @@ import {
 } from '@mantle/content';
 import { readFileById } from '@mantle/files';
 import type { BuiltinToolDef } from './types';
-import { str } from './coerce';
+import { str, strOptTrim as strOpt } from './coerce';
+import { errorMessage } from '@mantle/std';
 
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
-}
 /** Split a comma-separated recipient string into one-or-many. */
 function recipients(raw: string): string | string[] {
   const parts = raw
@@ -250,7 +248,7 @@ const email_send: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -385,7 +383,7 @@ const email_page: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -394,6 +392,7 @@ const email_page: BuiltinToolDef = {
 
 const email_list: BuiltinToolDef = {
   slug: 'email_list',
+  readOnly: true,
   name: 'List recent emails',
   description:
     'Recent emails newest-first (sorted by `internal_date` desc, NOT by ingest time). ' +
@@ -429,7 +428,10 @@ const email_list: BuiltinToolDef = {
         ? Math.min(Math.max(1, Math.floor(input.limit)), 200)
         : 50;
 
-    const conds = [] as ReturnType<typeof eq>[];
+    // `emails` carries no owner column: it scopes through account_id to
+    // email_accounts.user_id, so the join IS the scope. Without it this listed
+    // every email row on the box. See builtins-read-scope.test.ts.
+    const conds = [eq(emailAccounts.userId, ctx.ownerId)] as ReturnType<typeof eq>[];
     if (accountId) conds.push(eq(emails.accountId, accountId));
     if (since) {
       const d = new Date(since);
@@ -453,13 +455,14 @@ const email_list: BuiltinToolDef = {
           hasAttachments: emails.hasAttachments,
         })
         .from(emails)
-        .where(conds.length ? and(...conds) : undefined)
+        .innerJoin(emailAccounts, eq(emails.accountId, emailAccounts.id))
+        .where(and(...conds))
         .orderBy(desc(emails.internalDate))
         .limit(limit);
       ctx.step?.setOutput({ count: rows.length });
       return { ok: true, output: rows };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -489,6 +492,7 @@ export function htmlToPlainText(html: string): string {
 
 const email_get: BuiltinToolDef = {
   slug: 'email_get',
+  readOnly: true,
   name: 'Get one email by id',
   description:
     'Fetch a single email by id — headers (from/to/cc, subject, date, folder, flags) plus the ' +
@@ -545,7 +549,12 @@ const email_get: BuiltinToolDef = {
           deliveryKind: emails.deliveryKind,
         })
         .from(emails)
-        .where(or(eq(emails.id, id), eq(emails.nodeId, id)))
+        // Owner scope, same account join as email_list: an id on its own must
+        // not open another owner's mail.
+        .innerJoin(emailAccounts, eq(emails.accountId, emailAccounts.id))
+        .where(
+          and(eq(emailAccounts.userId, ctx.ownerId), or(eq(emails.id, id), eq(emails.nodeId, id))),
+        )
         .limit(1);
       if (!row) return { ok: false, error: `email '${id}' not found` };
       const text = row.bodyText?.trim();
@@ -561,7 +570,7 @@ const email_get: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

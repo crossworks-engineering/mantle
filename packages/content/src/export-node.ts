@@ -7,7 +7,7 @@
  * Dispatch by node type:
  *   - `page`  → .docx  (render the stored ProseMirror doc)
  *   - `note`  → .docx  (markdown → ProseMirror via `markdownToDoc`, then render)
- *   - `table` → .xlsx  (render the typed TableDoc)
+ *   - `table` → .xlsx  (the whole workbook: one worksheet per tab)
  *
  * Image embedding for pages is delegated to an injected `loadImage` callback so
  * this package stays free of a `@mantle/files` dependency (the caller wires it).
@@ -15,29 +15,31 @@
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { getPage } from './pages';
+import { getDrawSvg } from './draws';
 import { getNote } from './notes';
 import { getTable } from './tables';
-import { markdownToDoc } from './markdown-to-doc';
-import { docToMarkdown } from './doc-to-markdown';
+import { markdownToDoc } from '@mantle/content-core/markdown';
+import { docToMarkdown } from '@mantle/content-core/doc-to-markdown';
 import { renderDocx, type LoadedImage } from './render-docx';
-import { renderXlsx } from './render-xlsx';
+import { renderXlsx, renderXlsxWorkbook, type RenderXlsxSheet } from './render-xlsx';
 import { tableToText, tableToCsv } from './table-to-text';
 
-export type ExportFormat = 'docx' | 'xlsx' | 'md' | 'csv';
-export type ExportKind = 'page' | 'note' | 'table';
+export type ExportFormat = 'docx' | 'xlsx' | 'md' | 'csv' | 'svg';
+export type ExportKind = 'page' | 'note' | 'table' | 'draw';
 
 /** Formats a node can be asked to download as (the caller picks). PDF is NOT
- *  here — it's rendered in apps/web via headless Chromium against the live HTML
+ *  here — it's rendered in server/web via headless Chromium against the live HTML
  *  surface, not through this pure (browser-free) package. Each node kind serves
  *  the subset it supports (page/note → docx|md; table → xlsx|md|csv) and falls
  *  back to its default for the rest. */
-export type DocExportFormat = 'docx' | 'md' | 'csv' | 'xlsx';
+export type DocExportFormat = 'docx' | 'md' | 'csv' | 'xlsx' | 'svg';
 
 export const EXPORT_MIME: Record<ExportFormat, string> = {
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   md: 'text/markdown; charset=utf-8',
   csv: 'text/csv; charset=utf-8',
+  svg: 'image/svg+xml; charset=utf-8',
 };
 
 export type ExportResult = {
@@ -52,6 +54,11 @@ export type ExportResult = {
 
 export type ResolveExportOptions = {
   loadImage?: (fileId: string) => Promise<LoadedImage | null>;
+  /** Raster bytes for an embedded drawing, whose stored snapshot is SVG and so
+   *  can't be embedded in Word directly. Needs a browser, so it is injected
+   *  like `loadImage` rather than imported; a caller without one gets the
+   *  `[drawing: …]` placeholder. Only the docx path consults it. */
+  loadDraw?: (drawId: string) => Promise<LoadedImage | null>;
   /** Requested download format for a page/note. Ignored for tables (always
    *  xlsx). Defaults to `docx` when omitted (preserves the original behavior). */
   format?: DocExportFormat;
@@ -62,6 +69,7 @@ export const EXPORTABLE_TYPES: Record<ExportKind, ExportFormat> = {
   page: 'docx',
   note: 'docx',
   table: 'xlsx',
+  draw: 'svg',
 };
 
 /** Prepend the node's title as an H1 so a Markdown download opens as a titled
@@ -108,7 +116,11 @@ export async function resolveExport(
       const md = docToMarkdown(page.doc);
       return result(Buffer.from(md, 'utf8'), 'md', 'page', page.title);
     }
-    const bytes = await renderDocx(page.doc, { title: page.title, loadImage: opts.loadImage });
+    const bytes = await renderDocx(page.doc, {
+      title: page.title,
+      loadImage: opts.loadImage,
+      loadDraw: opts.loadDraw,
+    });
     return result(bytes, 'docx', 'page', page.title);
   }
 
@@ -120,8 +132,14 @@ export async function resolveExport(
       const md = withTitle(note.title, note.content ?? '');
       return result(Buffer.from(md, 'utf8'), 'md', 'note', note.title);
     }
+    // Notes carry drawings too: markdownToDoc turns `![alt](draw:<id>)` into
+    // the same image node with a drawId, so the raster path covers both kinds.
     const doc = markdownToDoc(note.content ?? '');
-    const bytes = await renderDocx(doc, { title: note.title, loadImage: opts.loadImage });
+    const bytes = await renderDocx(doc, {
+      title: note.title,
+      loadImage: opts.loadImage,
+      loadDraw: opts.loadDraw,
+    });
     return result(bytes, 'docx', 'note', note.title);
   }
 
@@ -141,8 +159,40 @@ export async function resolveExport(
     if (opts.format === 'csv') {
       return result(Buffer.from(tableToCsv(table.data), 'utf8'), 'csv', 'table', table.title);
     }
-    const bytes = await renderXlsx(table.data, { title: table.title });
+    // .xlsx is the only format that can carry a whole workbook, so it does:
+    // one worksheet per tab, in tab order. Markdown and CSV are single-grid
+    // formats and keep rendering the open tab alone — flattening six tabs into
+    // one CSV would silently interleave unrelated grids.
+    //
+    // `getTable` materialises ONE tab per call (the sqlite file is only opened
+    // for the tab asked for), so a workbook costs one call per tab. A table
+    // with no tab list is a pre-v2.1 single-grid table; `table.data` is it.
+    const tabs = table.tabs ?? [];
+    if (tabs.length <= 1) {
+      const bytes = await renderXlsx(table.data, { title: table.title });
+      return result(bytes, 'xlsx', 'table', table.title);
+    }
+    const sheets: RenderXlsxSheet[] = [];
+    for (const tab of tabs) {
+      // Reuse the already-materialised doc for the tab we were handed, rather
+      // than opening the file a second time for it.
+      const doc =
+        tab.id === table.tabId
+          ? table.data
+          : (await getTable(ownerId, nodeId, { tabId: tab.id }))?.data;
+      if (doc) sheets.push({ name: tab.name, doc });
+    }
+    const bytes = await renderXlsxWorkbook(sheets);
     return result(bytes, 'xlsx', 'table', table.title);
+  }
+
+  if (node.type === 'draw') {
+    // The committed snapshot IS the export — already validated, fonts
+    // inlined, renders anywhere. Null (nothing committed yet, or the last
+    // commit carried no valid snapshot) means there is nothing to download.
+    const svg = await getDrawSvg(ownerId, nodeId);
+    if (!svg) return null;
+    return result(Buffer.from(svg, 'utf8'), 'svg', 'draw', node.title);
   }
 
   return null;

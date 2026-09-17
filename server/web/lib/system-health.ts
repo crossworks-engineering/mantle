@@ -2,13 +2,19 @@ import os from 'node:os';
 import { statfs } from 'node:fs/promises';
 import si from 'systeminformation';
 import { db, sql } from '@mantle/db';
-import { filesRoot, tikaVersion } from '@mantle/files';
+import { filesRoot, mediaSidecarHealth, tikaVersion } from '@mantle/files';
 import { sandboxdHealth } from './sandboxd';
 import { bucketReachable } from '@mantle/storage';
 import { resolveEmbeddingConfig, probeEmbeddingRoute } from '@mantle/embeddings';
 import { attachmentBytes } from './dashboard';
 import { getTailnetStatus } from './tailscale';
 import { browserHealth } from './render-pdf';
+import type { SystemHealth } from '@mantle/client-types';
+import type { DiskInfo } from '@mantle/client-types';
+import { env } from '@mantle/config';
+
+export type { DiskInfo };
+export type { SystemHealth };
 
 /**
  * Live system/infra vitals for the dashboard. Server-only — imported ONLY by
@@ -20,87 +26,6 @@ import { browserHealth } from './render-pdf';
  * is appended to `degraded`. In a prod container CPU/RAM/disk reflect the
  * container's cgroup, not the VPS host — surfaced via `scope`.
  */
-
-export type DiskInfo = { usedBytes: number; totalBytes: number; usedPct: number; mount: string };
-
-export type SystemHealth = {
-  ts: string;
-  scope: 'container' | 'host';
-  host: {
-    cpuLoadPct: number | null;
-    mem: { usedBytes: number; totalBytes: number; usedPct: number } | null;
-    disk: DiskInfo | null;
-    uptimeSec: number;
-    heapUsedBytes: number;
-    rssBytes: number;
-    loadAvg: number[];
-    cpuCores: number;
-  };
-  postgres: {
-    up: boolean;
-    dbSizeBytes: number | null;
-    connections: number | null;
-    cacheHitPct: number | null;
-    topTables: { name: string; bytes: number }[];
-  };
-  storage: {
-    minioUp: boolean | null;
-    attachmentBytes: number | null;
-    filesDisk: DiskInfo | null;
-  };
-  /** Tier-2 document parser fallback (.odt / .pptx / .doc / .rtf / .epub /
-   *  …) — sibling docker service. `up: false` means the fallback path
-   *  degrades cleanly to `no_text_layer` on every new ingest of those
-   *  formats; in-process parsers (pdf/docx/xlsx/text) keep working. */
-  tika: {
-    up: boolean;
-    version: string | null;
-  };
-  /** The browser sidecar (browserless/chromium) — the Pages → PDF export
-   *  engine, a sibling docker service like Tika. `up: false` means PDF
-   *  downloads 503 until it's back (Markdown/Word unaffected); `up: null`
-   *  means BROWSER_WS_ENDPOINT isn't configured (e.g. detached dev). */
-  browser: {
-    up: boolean | null;
-    version: string | null;
-  };
-  /** The configured embedding server. For the `local` provider this is the
-   *  self-hosted Ollama/LM Studio/TEI on MANTLE_LOCAL_EMBEDDING_URL (the
-   *  bundled `ollama` compose service in prod). `up: true` means it's
-   *  reachable AND the configured model is loaded — the only state in which
-   *  ingest can actually embed. `up: null` = a remote/cloud embedder
-   *  (openrouter/openai/google), which isn't pingable from here without a key,
-   *  so it's surfaced as "remote" rather than a misleading red dot. */
-  embedder: {
-    up: boolean | null;
-    provider: string | null;
-    model: string | null;
-    detail: string | null;
-    /** Where the embedder runs: a self-hosted server ('local') or a cloud
-     *  provider ('remote'). Shown on the dashboard pill label. */
-    scope: 'remote' | 'local' | null;
-  };
-  /** CLI sandboxes supervisor (sandboxd) — profile-gated like the tailnet,
-   *  so `up: null` (muted pill) is the resting state on a box without the
-   *  `sandboxes` compose profile. `up: true` requires sandboxd answering
-   *  (its own /healthz additionally verifies docker); counts and the disk
-   *  budget come from its live listing. */
-  sandboxes: {
-    up: boolean | null;
-    total: number | null;
-    running: number | null;
-    disk: { usedBytes: number | null; budgetBytes: number } | null;
-  };
-  /** Tailscale / local network — the optional tailnet that lets a cloud VPS
-   *  reach a LAN model box by MagicDNS name. Profile-gated and off by default
-   *  in dev, so `up: null` (a muted/disabled pill) is the normal resting state;
-   *  `up: true` only when tailscaled reports backendState 'Running'. */
-  network: {
-    up: boolean | null;
-    detail: string | null;
-  };
-  degraded: string[];
-};
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -197,7 +122,7 @@ async function embedderHealth(userId: string): Promise<SystemHealth['embedder']>
   }
   const base = (
     cfg.primary.baseUrl ||
-    process.env.MANTLE_LOCAL_EMBEDDING_URL ||
+    env('MANTLE_LOCAL_EMBEDDING_URL') ||
     DEFAULT_LOCAL_EMBED_URL
   ).replace(/\/+$/, '');
   try {
@@ -285,7 +210,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     }
   }
 
-  const [load, mem, disk, pg, attBytes, minioUp, tikaVer, browserH, emb, net, sbx] =
+  const [load, mem, disk, pg, attBytes, minioUp, tikaVer, browserH, emb, net, sbx, media] =
     await Promise.all([
       probe('host.cpu', () => si.currentLoad()),
       probe('host.mem', () => si.mem()),
@@ -308,6 +233,9 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
       // sandboxdHealth never-throws (profile off ⇒ up:null; unreachable ⇒
       // up:false); the wrapper bounds a hung listing.
       probe('sandboxes', () => sandboxdHealth()),
+      // mediaSidecarHealth never-throws (profile off ⇒ up:null; unreachable ⇒
+      // up:false); its versions expose a stale/failed yt-dlp self-update.
+      probe('media', () => mediaSidecarHealth(1_500)),
     ]);
 
   const memInfo = mem
@@ -320,7 +248,7 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
 
   return {
     ts: new Date().toISOString(),
-    scope: process.env.NODE_ENV === 'production' ? 'container' : 'host',
+    scope: env('NODE_ENV') === 'production' ? 'container' : 'host',
     host: {
       cpuLoadPct: load ? load.currentLoad : null,
       mem: memInfo,
@@ -355,6 +283,14 @@ export async function getSystemHealth(userId: string): Promise<SystemHealth> {
     browser: browserH ?? { up: false, version: null },
     embedder: emb ?? { up: null, provider: null, model: null, detail: null, scope: null },
     sandboxes: sbx ?? { up: null, total: null, running: null, disk: null },
+    media: media ?? {
+      up: null,
+      ytDlpVersion: null,
+      ffmpegVersion: null,
+      ezdwfVersion: null,
+      dwg2dxfVersion: null,
+      ezdxfVersion: null,
+    },
     network: net ?? { up: null, detail: null },
     degraded,
   };

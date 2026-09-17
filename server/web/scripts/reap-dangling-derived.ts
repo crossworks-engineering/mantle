@@ -24,8 +24,9 @@
 import { db, closeDb } from '@mantle/db';
 import { sql } from 'drizzle-orm';
 import { reapDerivedFromFile } from '@mantle/content';
+import { env } from '@mantle/config';
 
-const OWNER_ID = process.env.ALLOWED_USER_ID;
+const OWNER_ID = env('ALLOWED_USER_ID');
 if (!OWNER_ID) {
   console.error('reap-dangling-derived: ALLOWED_USER_ID must be set');
   process.exit(1);

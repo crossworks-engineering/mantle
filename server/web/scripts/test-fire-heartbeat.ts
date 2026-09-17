@@ -13,22 +13,23 @@
  * tool loop including heartbeat_update_state if Saskia chooses to
  * call it), then re-reads the row and prints state before/after so
  * we can see whether the UPDATE landed in THIS process (separate
- * from the apps/agent process the UI Zap button would hit).
+ * from the server/api process the UI Zap button would hit).
  */
 
 import { and, eq } from 'drizzle-orm';
 import { db, heartbeats } from '@mantle/db';
-import { forceFire, registerHeartbeatTools } from '@mantle/heartbeats';
+import { forceFire, registerHeartbeatTools } from '@mantle/runtime/heartbeats';
 import { registerAgentInvoker } from '@mantle/tools';
-import { invokeAgent } from '@mantle/agent-runtime';
+import { invokeAgent } from '@mantle/runtime/agent';
+import { env } from '@mantle/config';
 
-const USER_ID = process.env.ALLOWED_USER_ID;
+const USER_ID = env('ALLOWED_USER_ID');
 if (!USER_ID) {
   console.error('ALLOWED_USER_ID env var required');
   process.exit(1);
 }
 
-// Same boot sequence as apps/agent/src/main.ts.
+// Same boot sequence as server/api/src/main.ts.
 registerAgentInvoker(invokeAgent);
 registerHeartbeatTools();
 

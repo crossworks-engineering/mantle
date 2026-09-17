@@ -30,10 +30,19 @@ import type {
   ChatToolCall,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
-import { chatAbortSignal, readSSE, safeDelta } from './sse';
+import {
+  STREAM_IDLE_TIMEOUT_MS,
+  chatAbortSignal,
+  readSSE,
+  routeBase,
+  safeDelta,
+  streamAbort,
+} from './sse';
+import { tailnetFetch } from './tailnet';
 import { wantGuardedThinking } from './thinking-guard';
 import type { DiscoveryResult } from '../discover';
 import { GOOGLE_BASE_URL, GOOGLE_CHAT_MODELS } from '../catalogs/google';
+import { errorMessage } from '@mantle/std';
 
 /** A Gemini content part. The runtime emits three kinds:
  *  - text: narrative content (a `thought: true` text part is a thinking summary,
@@ -542,15 +551,18 @@ async function googleChat(opts: ChatOptions): Promise<ChatResult> {
 
   const body = buildGoogleBody(opts);
 
-  const res = await fetch(`${GOOGLE_BASE_URL}/models/${opts.model}:generateContent`, {
-    method: 'POST',
-    headers: {
-      'x-goog-api-key': opts.apiKey,
-      'content-type': 'application/json',
+  const res = await (opts.viaTailnet ? tailnetFetch : fetch)(
+    `${routeBase(opts.baseUrl, GOOGLE_BASE_URL)}/models/${opts.model}:generateContent`,
+    {
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': opts.apiKey,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: chatAbortSignal(opts.signal, 60_000),
     },
-    body: JSON.stringify(body),
-    signal: chatAbortSignal(opts.signal, 60_000),
-  });
+  );
   if (!res.ok) {
     const errBody = await res.text().catch(() => '');
     throw new ChatHttpError({
@@ -631,7 +643,7 @@ async function googleDiscover(apiKey: string): Promise<DiscoveryResult<ChatModel
     return {
       available: [...GOOGLE_CHAT_MODELS],
       filtered: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }
@@ -650,12 +662,17 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
   const body = buildGoogleBody(opts);
   if (opts.signal?.aborted) return { text: '', model: opts.model };
 
-  const res = await fetch(`${GOOGLE_BASE_URL}/models/${opts.model}:streamGenerateContent?alt=sse`, {
-    method: 'POST',
-    headers: { 'x-goog-api-key': opts.apiKey, 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    ...(opts.signal ? { signal: opts.signal } : {}),
-  });
+  const abort = streamAbort(opts.signal);
+  const res = await (opts.viaTailnet ? tailnetFetch : fetch)(
+    `${routeBase(opts.baseUrl, GOOGLE_BASE_URL)}/models/${opts.model}:streamGenerateContent?alt=sse`,
+    {
+      method: 'POST',
+      headers: { 'x-goog-api-key': opts.apiKey, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: abort.signal,
+    },
+  );
+  abort.connected();
   if (!res.ok || !res.body) {
     const errBody = await res.text().catch(() => '');
     throw new ChatHttpError({
@@ -679,7 +696,9 @@ async function googleChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Pro
   const fnParts: GeminiPart[] = [];
 
   try {
-    for await (const payload of readSSE(res.body, opts.signal)) {
+    for await (const payload of readSSE(res.body, opts.signal, {
+      idleMs: STREAM_IDLE_TIMEOUT_MS,
+    })) {
       if (opts.signal?.aborted) break;
       let chunk: GeminiResponse;
       try {

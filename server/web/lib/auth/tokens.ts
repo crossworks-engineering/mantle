@@ -17,9 +17,10 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { SESSION_COOKIE_NAME } from '../auth-constants';
+import { env } from '@mantle/config';
 
-/** The `k` claim: mobile bearer, asset token, team visitor, team chat. */
-type TokenKind = 'm' | 'a' | 't' | 'c';
+/** The `k` claim: mobile bearer, asset token, team visitor, team chat, app frame. */
+type TokenKind = 'm' | 'a' | 't' | 'c' | 'f';
 
 /**
  * Claims whose signature, kind and expiry have already been checked. Every
@@ -31,7 +32,7 @@ type SignedClaims = Record<string, unknown> & { exp: number };
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 
 function secret(): Buffer {
-  const s = process.env.SESSION_SECRET;
+  const s = env('SESSION_SECRET');
   if (!s || s.length < 32) {
     throw new Error('SESSION_SECRET must be set (>=32 chars). Run `openssl rand -base64 48`.');
   }
@@ -180,8 +181,9 @@ export function mobileTokenJti(token: string): string | null {
 
 // ── Asset access tokens (`k:'a'`) ────────────────────────────────────────────
 // Short-lived, owner-scoped, stateless token for browser-native asset sources —
-// `<img>`/`<iframe>`/download `src`s to `/api/files/files/[id]?raw=1` and
-// `/api/attachments/[id]` — which CANNOT carry an Authorization header, so a
+// `<img>`/`<iframe>`/download `src`s to `/api/files/files/[id]?raw=1`,
+// `/api/attachments/[id]` and `/api/export/[id]` — which CANNOT carry an
+// Authorization header, so a
 // detached/Electron client (cross-origin, no cookie) can't otherwise load them.
 // Delivered in the URL (`?at=`), so the TTL is deliberately short to bound a
 // leaked URL; no revocation row (unlike mobile tokens) — TTL + secret rotation
@@ -190,15 +192,26 @@ export function mobileTokenJti(token: string): string | null {
 
 const ASSET_TOKEN_TTL_SECONDS = 2 * 60 * 60; // 2h — one working session.
 
-/** Mint a short-lived asset-access token for `userId` (see block comment). */
-export function buildAssetToken(userId: string): string {
-  return signClaims({ uid: userId, k: 'a' }, ASSET_TOKEN_TTL_SECONDS).value;
+/** Mint a short-lived asset-access token for `userId` (see block comment).
+ *  `actorId` names the LOGIN the token was minted for, when it differs from
+ *  the anchor: per-login asset routes (the profile photo) read it so a
+ *  detached second admin sees their own face, while owner-scoped byte routes
+ *  keep using `uid` (everything is owned by the anchor). */
+export function buildAssetToken(userId: string, actorId?: string): string {
+  return signClaims(
+    { uid: userId, ...(actorId && actorId !== userId ? { act: actorId } : {}), k: 'a' },
+    ASSET_TOKEN_TTL_SECONDS,
+  ).value;
 }
 
 /** Verify an asset token's signature, expiry and kind (`k:'a'`). No DB. */
-export function verifyAssetToken(token: string): { uid: string } | null {
+export function verifyAssetToken(token: string): { uid: string; act?: string } | null {
   const claims = verifySigned(token, 'a');
-  return claims && typeof claims.uid === 'string' ? { uid: claims.uid } : null;
+  if (!claims || typeof claims.uid !== 'string') return null;
+  return {
+    uid: claims.uid,
+    ...(typeof claims.act === 'string' ? { act: claims.act } : {}),
+  };
 }
 
 // ── Team-visitor cookies (`k:'t'`) ───────────────────────────────────────────
@@ -278,6 +291,56 @@ export function verifyTeamChatValue(value: string): { ownerId: string; contactId
   const claims = verifySigned(value, 'c');
   if (!claims || typeof claims.own !== 'string' || typeof claims.cid !== 'string') return null;
   return { ownerId: claims.own, contactId: claims.cid };
+}
+
+// ── App-frame tickets (`k:'f'`) ──────────────────────────────────────────────
+// The mini-app sandbox iframe navigates to a real URL (/api/apps/[id]/frame or
+// /s/[token]/frame) instead of an inlined srcdoc. That navigation can carry NO
+// credential: the iframe is sandboxed without allow-same-origin (opaque origin
+// ⇒ no cookies), and an iframe src can't attach a bearer header. So the parent
+// — which CAN authenticate (session cookie, share visitor cookie, or the split
+// client's bearer) — mints this ticket first and puts it in the frame URL
+// (`?t=`). Delivered in a URL, so the TTL is seconds, not hours: it outlives
+// one navigation and nothing else. Claims bind the ticket to ONE app (and, on
+// the share surface, ONE share), so a leaked ticket can serve exactly one
+// app's already-built bundle for a few seconds and can never escalate — the
+// session/mobile/asset verifiers all reject kind 'f'.
+
+const APP_FRAME_TICKET_TTL_SECONDS = 120;
+
+/** Mint an app-frame ticket. `shareId` set ⇒ share surface (published build
+ *  only); absent ⇒ owner surface (`uid` = the owner, draft build allowed).
+ *  `contactId` records WHO a team-mode share visitor is, so the frame route
+ *  can re-check membership LIVENESS — a removed member must lose access
+ *  immediately, not at ticket expiry (the team-gate doctrine). */
+export function buildAppFrameTicket(opts: {
+  ownerId: string;
+  appId: string;
+  shareId?: string;
+  contactId?: string | null;
+}): string {
+  const claims: Record<string, unknown> = { uid: opts.ownerId, app: opts.appId, k: 'f' };
+  if (opts.shareId) claims.sh = opts.shareId;
+  if (opts.contactId) claims.cid = opts.contactId;
+  return signClaims(claims, APP_FRAME_TICKET_TTL_SECONDS).value;
+}
+
+/** Verify an app-frame ticket: signature, expiry, kind (`k:'f'`). No DB —
+ *  callers must still confirm the app (and share, when `shareId` is set)
+ *  matches the route being served, and re-check team liveness via
+ *  `contactId` on team-mode shares. */
+export function verifyAppFrameTicket(
+  value: string,
+): { ownerId: string; appId: string; shareId?: string; contactId?: string } | null {
+  const claims = verifySigned(value, 'f');
+  if (!claims || typeof claims.uid !== 'string' || typeof claims.app !== 'string') return null;
+  const out: { ownerId: string; appId: string; shareId?: string; contactId?: string } = {
+    ownerId: claims.uid,
+    appId: claims.app,
+  };
+  if (typeof claims.sh === 'string') out.shareId = claims.sh;
+  if (typeof claims.cid === 'string') out.contactId = claims.cid;
+  return out;
 }
 
 /**

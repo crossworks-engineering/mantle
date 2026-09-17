@@ -22,7 +22,7 @@ The compose files gate the pgvector image behind `POSTGRES_IMAGE_TAG` (default
 image: pgvector/pgvector:${POSTGRES_IMAGE_TAG:-pg18}
 ```
 
-**Fresh installs come up on pg18 directly** — a new box has no data dir, so it just
+**Fresh installs come up on pg18 directly**: a new box has no data dir, so it just
 initialises on 18. This is the shipping default going forward; new deployments need
 no migration and no flags.
 
@@ -30,7 +30,7 @@ The gate exists for **existing pg17 boxes**. A new major will not start on an ol
 major's data dir, so a box already on pg17 must EITHER complete the migration below,
 OR set `POSTGRES_IMAGE_TAG=pg17` in its env to hold on 17 until it does. **Deploy
 ordering matters**: never let an un-migrated pg17 box pull this compose and `up`
-without one of those — it will crash-loop pg18 on a pg17 dir. Practically, before
+without one of those; it will crash-loop pg18 on a pg17 dir. Practically, before
 rolling this to the fleet, either migrate each existing box or pin it to `pg17`
 first, then unpin as each is migrated.
 
@@ -43,20 +43,20 @@ into a mount at the classic `/var/lib/postgresql/data`, failing with *"there app
 to be PostgreSQL data in /var/lib/postgresql/data (unused mount/volume)"* and
 crash-looping. Pinning `PGDATA` back keeps the existing bind mount
 (`${MANTLE_DATA_DIR}/postgres`) working; it is a no-op on pg17 (already its default).
-Without it, `POSTGRES_IMAGE_TAG=pg18` will not boot — the tag change alone is not
+Without it, `POSTGRES_IMAGE_TAG=pg18` will not boot; the tag change alone is not
 enough.
 
 > `pgvector/pgvector` bundles Postgres **and** the vector extension in one image, so
 > "upgrade Postgres" and "upgrade pgvector" are the same image. `pg18` currently
 > ships **PostgreSQL 18.4 + pgvector 0.8.5** (same pgvector as the `pg17` image, so
-> the extension version does not change — only the Postgres major does).
+> the extension version does not change; only the Postgres major does).
 
 ## ⚠️ After you land on pg18: scheduled backups need v0.202.1+
 
 A box that completes this upgrade while running an image older than
 **v0.202.1** has **silently broken scheduled backups** from that moment on.
 The image shipped the PostgreSQL **17** client, and `pg_dump` refuses to dump
-a server newer than itself — so the in-app backup path (Settings → Backups,
+a server newer than itself, so the in-app backup path (Settings → Backups,
 and the nightly schedule) fails on every run while the UI shows no obvious
 alarm. It was found in the field on 2026-07-25 and dated precisely: the last
 successful scheduled dump on the reference box was the morning of its pg18
@@ -69,7 +69,7 @@ construction. That is also why the breakage hid for so long.
 **So:** either upgrade the image to v0.202.1+ (which ships the pg18 client)
 in the same maintenance window, or treat the box as having no automatic
 backups until you do. Either way, once you are on v0.202.1+, **run
-Settings → Backups → “Run backup now” once** and confirm a fresh dump lands —
+Settings → Backups → “Run backup now” once** and confirm a fresh dump lands,
 that is the only positive proof the scheduled path is alive. And distrust the
 age of your newest pre-fix dump: it is probably older than it looks.
 
@@ -78,10 +78,10 @@ age of your newest pre-fix dump: it is probably older than it looks.
 `scripts/db-dump.sh` / `scripts/db-restore.sh` operate on the **`postgres`
 database only** (plus the app- and table-SQLite volumes, which are unaffected by a
 Postgres upgrade). A major upgrade starts a **fresh cluster**, so **every**
-non-template Postgres database must be captured — not just `postgres`. Depending on
+non-template Postgres database must be captured, not just `postgres`. Depending on
 what a box runs, that can also include:
 
-- `mantle_dbos_sys` — the DBOS workflow/runs engine state (present when runs are enabled)
+- `mantle_dbos_sys`, the DBOS workflow/runs engine state (present when runs are enabled)
 - any additional brain/demo databases
 
 List them first: `docker exec <pg> psql -U postgres -c '\l'`. If `postgres` is the
@@ -92,7 +92,7 @@ only non-template database, `db-dump.sh` alone is enough; otherwise take a
 
 `<pg>` = the Postgres container (`mantle_pg` on deployed boxes, `mantle_dev_pg` in
 dev). Adjust the compose invocation to the box (`docker compose` /
-`docker compose -f docker-compose.dev.yml`). **Schedule downtime** — the DB is
+`docker compose -f docker-compose.dev.yml`). **Schedule downtime**: the DB is
 offline for the dump+restore.
 
 ### 1. Full backups (nothing is deleted until these exist)
@@ -140,7 +140,7 @@ docker compose up -d postgres --wait        # fresh initdb; init scripts run
 > and the extensions. If a box's on-disk init script is **older than the dumped
 > schema** (e.g. it predates a column added by a later migration), `pg_restore`
 > silently skips `CREATE TABLE auth.users` ("already exists") and then its data
-> `COPY` fails on the column mismatch — leaving `auth.users` **empty and
+> `COPY` fails on the column mismatch, leaving `auth.users` **empty and
 > wrong-shaped**, which breaks auth. This actually happened on a live box. The fix
 > is to restore into a **pristine** database with no init objects:
 
@@ -160,9 +160,9 @@ docker compose up -d --wait                 # migrate is a no-op; app starts
 ```
 
 A pristine restore should report **0 errors**. `pgcrypto` upgrades 1.3 → 1.4 on
-pg18 — a normal bundled-extension bump, not an error. (`scripts/db-restore.sh`
+pg18, a normal bundled-extension bump, not an error. (`scripts/db-restore.sh`
 restores *over* the init objects instead, which is fine only when the box's init
-script exactly matches the dumped schema — the drop/recreate above is unconditional
+script exactly matches the dumped schema, the drop/recreate above is unconditional
 and safe, so prefer it for major upgrades.)
 
 ### 4. Verify
@@ -179,10 +179,10 @@ docker exec <pg> psql -U postgres -d postgres -tAc "select count(*) filter (wher
 docker exec <pg> psql -U postgres -tAc "select datname from pg_database where not datistemplate"  # all DBs present
 ```
 
-Start the app **only after** these pass. Gate the app behind DB verification — if
+Start the app **only after** these pass. Gate the app behind DB verification, if
 `auth.users` is empty/short, roll back (step 5) rather than starting the app.
 
-Then persist the flag so it survives a reboot/redeploy — add `POSTGRES_IMAGE_TAG=pg18`
+Then persist the flag so it survives a reboot/redeploy, add `POSTGRES_IMAGE_TAG=pg18`
 to the box's env file (the same place `MANTLE_IMAGE_TAG` etc. live).
 
 ### 5. Rollback (if verification fails)
@@ -201,13 +201,13 @@ Once pg18 is confirmed healthy and you no longer need the rollback, delete
 
 - **One box at a time**, lowest-stakes first; verify before moving on.
 - **HNSW/ivfflat indexes rebuild from `CREATE INDEX` on restore** (they are not
-  copied binary), so vector search returns immediately after restore — no reindex
+  copied binary), so vector search returns immediately after restore, no reindex
   step, but the restore does the index-build work up front.
 - **In-flight runs / DBOS**: a box mid-workflow will lose queue state unless
   `mantle_dbos_sys` is captured and restored (step 1/3 above). Prefer a quiet
   window.
 - **A client/production brain mid-acceptance is upgraded last**, with its own
-  scheduled window and a tested rollback — never batched with the rest.
+  scheduled window and a tested rollback, never batched with the rest.
 - **No concurrent writers**: make sure no dev server or other session is writing to
   the brain during the dump/restore, or their writes between the dump and the
   restore are lost.
@@ -215,12 +215,12 @@ Once pg18 is confirmed healthy and you no longer need the rollback, delete
 ## Validation status
 
 Proven end-to-end on a **live full-stack production box** (12-container stack, real
-brain): migrated 17.10 → **18.4** in place with ~4 min downtime, then verified —
+brain): migrated 17.10 → **18.4** in place with ~4 min downtime, then verified,
 node count preserved exactly (936), 2228 chunks, all **4 HNSW indexes rebuilt**,
 pgvector 0.8.2 → **0.8.5**, owner identity intact, and the full stack (web + api +
 10 workers + tika **3.3.1.0** + chromium **v2.55.0**) came back healthy and served
 live traffic. Both failure modes in this doc were **hit and fixed on that box**: the
-`PGDATA` crash-loop (§ safety gate) and the `auth.users` init-collision (§ step 3) —
+`PGDATA` crash-loop (§ safety gate) and the `auth.users` init-collision (§ step 3),
 the drop/recreate restore then reported 0 errors. A prior dry run (throwaway pg18
 container, live stack untouched) had also validated the dump/restore.
 

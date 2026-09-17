@@ -1,4 +1,4 @@
-# Files — the host-mirrored filesystem
+# Files: the host-mirrored filesystem
 
 How Mantle stores user-managed files. Companion to
 [`architecture.md`](./architecture.md) and [`memory.md`](./memory.md).
@@ -9,7 +9,7 @@ files automatically. PDFs upload + display but ingestion is wired
 behind a parser hook that ships in a follow-up.
 
 A file can be shared read-only via a public link (`/s/[token]`), which serves
-its bytes through a token-scoped asset route with a media-appropriate viewer —
+its bytes through a token-scoped asset route with a media-appropriate viewer,
 see [`sharing.md`](./sharing.md). Pages reuse the same upload/serve pipeline for
 embedded image/file nodes.
 
@@ -40,10 +40,10 @@ DB-only. The Telegram, email, and digest branches don't touch disk.
 
 Three reasons:
 
-1. **The user owns the files.** `cat`, `vim`, `cp`, Syncthing — all
+1. **The user owns the files.** `cat`, `vim`, `cp`, Syncthing, all
    work as expected. Nothing's trapped behind an API.
 2. **External edits round-trip cleanly** once a rescan is wired in (not
-   built yet — manual import via the UI for now).
+   built yet, manual import via the UI for now).
 3. **Backup is a folder copy.** No special tooling needed.
 
 The tradeoff is that the DB and disk must stay paired. Every write
@@ -57,15 +57,15 @@ file isn't).
 
 ## 3. The package layout
 
-- [`packages/files`](../packages/files) — host fs ops + slug helpers
-  + the high-level operations (`createFolder`, `upsertFile`,
-  `deleteFolder`, `listFiles`, …). Pure logic, no HTTP, no UI.
-- [`apps/web/lib/files.ts`](../apps/web/lib/files.ts) — thin re-export
+- [`packages/files`](../packages/files), host fs ops + slug helpers
+  - the high-level operations (`createFolder`, `upsertFile`,
+    `deleteFolder`, `listFiles`, …). Pure logic, no HTTP, no UI.
+- [`server/web/lib/files.ts`](../server/web/lib/files.ts), thin re-export
   so the web's API routes can import from `@/lib/files` (convention).
-- [`apps/web/app/api/files/**`](../apps/web/app/api/files/) — REST API.
-- [`apps/web/app/(app)/files/`](../apps/web/app/(app)/files/) — UI.
-- [`apps/mcp/src/server.ts`](../apps/mcp/src/server.ts) — MCP tools.
-- [`apps/agent/src/extractor.ts`](../apps/agent/src/extractor.ts) —
+- [`server/web/app/api/files/**`](../server/web/app/api/files/), REST API.
+- [`jackdaw/app/(app)/files/`](<../jackdaw/app/(app)/files/>), UI.
+- [`server/mcp/src/server.ts`](../server/mcp/src/server.ts), MCP tools.
+- [`server/api/src/agent/extractor.ts`](../server/api/src/agent/extractor.ts),
   `readNodeBody` falls back to disk for `type='file'` nodes whose
   `data.content` wasn't cached.
 
@@ -85,11 +85,11 @@ client-side hint.
 
 **Folders are not renameable.** Renaming a folder would cascade ltree
 path updates across every descendant node + reshuffle the on-disk
-tree. Skipped for the same reason `branch` paths are unique-indexed —
+tree. Skipped for the same reason `branch` paths are unique-indexed,
 a rename would either break the index or require a transactional
 rewrite of every descendant. Make a new folder + move files instead.
 
-**Files are renameable**, basename only — the extension is preserved.
+**Files are renameable**, basename only; the extension is preserved.
 
 ---
 
@@ -138,11 +138,11 @@ files root directory is auto-created on first folder access via
 
 All three converge on the same `@mantle/files` ops:
 
-| Surface | Folder create | Folder describe | File upload | File edit | Delete |
-|---|---|---|---|---|---|
-| UI | New folder button | Inline edit on header | Drag-drop + Upload + New \* | Editor save | Toolbar buttons |
-| REST | `POST /api/files/folders` | `PATCH /api/files/folders/[id]` | `POST /api/files/files` (multipart or JSON) | `PATCH /api/files/files/[id]` | `DELETE …` |
-| MCP | `folder_create` | `folder_describe` | `file_upload` (`content_text` or `content_base64`) | `file_upload(overwrite=true)` | `folder_delete` · `file_delete` |
+| Surface | Folder create             | Folder describe                 | File upload                                        | File edit                     | Delete                          |
+| ------- | ------------------------- | ------------------------------- | -------------------------------------------------- | ----------------------------- | ------------------------------- |
+| UI      | New folder button         | Inline edit on header           | Drag-drop + Upload + New \*                        | Editor save                   | Toolbar buttons                 |
+| REST    | `POST /api/files/folders` | `PATCH /api/files/folders/[id]` | `POST /api/files/files` (multipart or JSON)        | `PATCH /api/files/files/[id]` | `DELETE …`                      |
+| MCP     | `folder_create`           | `folder_describe`               | `file_upload` (`content_text` or `content_base64`) | `file_upload(overwrite=true)` | `folder_delete` · `file_delete` |
 
 ---
 
@@ -159,39 +159,102 @@ which:
    `data.content` first (the cached copy for editable text); if absent,
    falls back to reading the on-disk file by `INGESTABLE_EXTS`
    extension allowlist.
-3. Skips silently when the body is too short (< 20 chars) — that's
+3. Skips silently when the body is too short (< 20 chars), that's
    how binaries fall through.
 4. Runs the summary + facts + entities pipeline as for any other node.
 
 Set `agent.memory_config.extract_cost_cap_micro_usd` on the extractor
 to bound spend per file (gap #1 from the previous round).
 
+### 8a. Metadata-only indexing — store it, share it, don't embed it
+
+Some files belong in the workspace for its plumbing and not in the brain: a
+photo gallery, temp files, the transcriber's audio clips. For those, flip
+`indexing` to `metadata` on the file or any ancestor folder:
+
+- The file stays fully stored, shareable, renameable — nothing about storage
+  changes.
+- It keeps a searchable **spine**: a deterministic summary + embedding built
+  from its name, type, folder path and tags (`metadataSpineText` in
+  `packages/files/src/indexing.ts`). "Find my December photos" still works.
+- Its **content is never read**: no passages (`content_chunks`), no entity or
+  fact extraction, no content-derived summary. `search_chunks` will not see
+  inside it, and the spine says so in as many words, so an agent quoting it
+  never presents a name-only index as if it had read the file.
+
+The flag is `data.indexing: 'full' | 'metadata'` on file and folder nodes;
+absent means inherit. Effective mode = own flag → nearest ancestor folder's
+flag → `full`, resolved at **extract time**, so moving files or re-flagging
+folders needs no stored denormalisation. `data.indexing_applied` records which
+mode the extractor last ran, and is what listings badge.
+
+Toggling has teeth in both directions:
+
+- **full → metadata** reaps the file's existing `content_chunks` and replaces
+  summary + embedding with the spine. No LLM call — flipping a thousand-file
+  gallery costs local embeddings only.
+- **metadata → full** clears the completion marker and re-queues real
+  extraction through the ordinary pg-boss pipeline, one job per file, never a
+  burst loop. This is real LLM spend in proportion to the file count — which
+  is exactly what turning content indexing ON means.
+- Flipping a flag to the value a file is already indexed under queues nothing.
+
+Surfaces: `file_set_indexing` / `folder_set_indexing` (builtin tools, `files`
+group), `indexing` param on the MCP `file_upload` / `folder_create`, and
+`PATCH {indexing}` on the file/folder API routes. Known limit: facts extracted
+BEFORE a flip to metadata stay in the graph until curation touches them — the
+flip stops future extraction and removes passages, it does not rewrite fact
+history.
+
+### 8b. Move and copy
+
+`moveFileById` / `moveFolderById` / `copyFileById` / `copyFolderById`
+(`packages/files/src/move-copy.ts`) — the operations the two-pane manager
+stands on. The invariants:
+
+- **Disk and DB never diverge**: disk first (atomic rename within the tree),
+  DB in a transaction, disk rolled back if the DB write fails — the
+  `renameFolderById` discipline; folder moves reuse its ltree `CASE` rewrite.
+- **A move follows the indexing rules of where it lands** (§8a): after every
+  move, `reconcileFilesIndexing` re-queues any file whose effective mode
+  changed — moving into a name-only gallery sheds the content index, moving
+  out regains it.
+- **A copy is a new file**: fresh node, fresh bytes, fresh extraction under
+  the destination's mode. Nothing links to the original.
+- **Folder copies cap at 200 files** and refuse loudly with the count —
+  every copy re-extracts, so a big copy is a spend decision, not a default.
+  Flagging the destination name-only first makes the whole copy LLM-free.
+
+Surfaces: `file_move` / `file_copy` / `folder_move` / `folder_copy` builtins
+(`files` group); `PATCH {move}` and `POST {copy_to}` on the file/folder API
+routes; the two-pane view in the client.
+
 ---
 
 ## 9. MCP tools
 
-Wired in [`apps/mcp/src/server.ts`](../apps/mcp/src/server.ts):
+Wired in [`server/mcp/src/server.ts`](../server/mcp/src/server.ts):
 
-| Tool | Purpose |
-|---|---|
-| `folder_list` | Children of a folder, or the whole tree |
-| `folder_create` | Create folder + on-disk dir, optional description |
-| `folder_describe` | Set/clear folder description |
-| `folder_delete` | Delete an empty folder (root cannot be deleted) |
-| `file_list` | Files in a folder |
-| `file_upload` | Create/overwrite a file (`content_text` or `content_base64`) |
-| `file_get` | File metadata only |
-| `file_read` | File metadata + bytes (utf-8 for text, base64 for binary) |
-| `file_delete` | Delete a file (both DB row and disk) |
+| Tool              | Purpose                                                      |
+| ----------------- | ------------------------------------------------------------ |
+| `folder_list`     | Children of a folder, or the whole tree                      |
+| `folder_create`   | Create folder + on-disk dir, optional description            |
+| `folder_describe` | Set/clear folder description                                 |
+| `folder_delete`   | Delete an empty folder (root cannot be deleted)              |
+| `file_list`       | Files in a folder                                            |
+| `file_upload`     | Create/overwrite a file (`content_text` or `content_base64`) |
+| `file_get`        | File metadata only                                           |
+| `file_read`       | File metadata + bytes (utf-8 for text, base64 for binary)    |
+| `file_delete`     | Delete a file (both DB row and disk)                         |
 
-Same auth model as the other MCP tools — every query is scoped to
+Same auth model as the other MCP tools; every query is scoped to
 `OWNER_ID = process.env.ALLOWED_USER_ID`.
 
 ---
 
 ## 10. External-edit watcher
 
-A separate worker (`apps/web/workers/files-watch.ts`, runs as the
+A separate worker (`server/web/workers/files-watch.ts`, runs as the
 `files` lane in `pnpm dev`) uses [chokidar](https://github.com/paulmillr/chokidar)
 to observe `MANTLE_FILES_ROOT` and reflect off-Mantle disk changes back
 into the DB. So if you `vim` a markdown file on the host, or Syncthing
@@ -199,11 +262,11 @@ drops a new PDF into the folder, the row updates without any UI action.
 
 **Three events**:
 
-| chokidar event | What the watcher does                                         |
-|----------------|---------------------------------------------------------------|
-| `add`          | `syncFileFromDisk` — insert a `file` node (or no-op if same sha256). |
-| `change`       | `syncFileFromDisk` — update node, clear embedding, re-fire `node_ingested`. |
-| `unlink`       | `deleteFileByPath` — drop the DB row.                         |
+| chokidar event | What the watcher does                                                      |
+| -------------- | -------------------------------------------------------------------------- |
+| `add`          | `syncFileFromDisk`, insert a `file` node (or no-op if same sha256).        |
+| `change`       | `syncFileFromDisk`, update node, clear embedding, re-fire `node_ingested`. |
+| `unlink`       | `deleteFileByPath`, drop the DB row.                                       |
 
 **Loop prevention** is built in: `syncFileFromDisk` only ever reads the
 disk, never writes back. So when the UI uploads a file, it updates the
@@ -232,7 +295,34 @@ recommended path for renames.
   complexity disproportionate to the value at this scale.
 - **No file versioning.** Edits overwrite; the old content is gone.
   Git the folder if you care.
-- **Scanned PDFs return empty text.** No OCR — they fall through the
+- **Scanned PDFs return empty text.** No OCR; they fall through the
   20-char guard and get skipped.
 - **Concurrent writes**: two simultaneous saves on the same file
   race at the disk layer. Single-user system, fine for now.
+
+## Upload limits
+
+Two caps, because there are two transports (`packages/files/src/limits.ts`):
+
+| path                                                           | cap                                           | why                                                                                                                                                                                             |
+| -------------------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/files/files` multipart (the web uploader)           | **512 MB** by default, `MANTLE_MAX_UPLOAD_MB` | Streamed. The body spools to disk as it arrives (`spoolUpload`, hashed and counted per chunk), then is adopted into the folder by rename. Memory stays flat; the cap is a disk/patience number. |
+| MCP `file_upload`, chat attachments, forum uploads, Drive sync | **64 MB**, fixed (`MAX_UPLOAD_BYTES`)         | Buffered. The whole file sits in memory (base64 inflates 4/3 on the wire) and Office formats unzip many times over inside Tika.                                                                 |
+
+The reverse proxy has its own ceiling, `MANTLE_MAX_BODY_SIZE` (default `1GB`,
+Caddyfile `request_body max_size`). It must stay above the streamed cap plus
+multipart framing; raise both together. The app refuses an oversized file
+itself: on the declared `Content-Length` before reading a byte where the client
+sends one, otherwise at the cap mid-stream, either way with HTTP 413 and the
+limit in the body (`maxUploadBytes`). `/api/shell` carries the same number so a
+client can refuse the file before sending anything.
+
+Half-written spool files (`<files root>/.upload-spool/*.part`) are residue from
+a process that died mid-upload; the route sweeps anything older than two hours
+on each upload, and the disk-sync watcher ignores dot-prefixed paths so a
+`.part` never becomes a node.
+
+History: the 100 MB proxy cap and the 64 MB buffered cap were the walls a
+250 MB SQL Server backup hit on 2026-09-02, spinning for half an hour with no
+error and no progress because the buffered route could only answer after the
+last byte.

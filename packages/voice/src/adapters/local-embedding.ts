@@ -24,6 +24,8 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { tailnetFetch } from './tailnet';
+import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
 
@@ -32,10 +34,7 @@ const DEFAULT_BASE_URL = 'http://localhost:11434/v1';
  *  backup can target different hosts) → the `MANTLE_LOCAL_EMBEDDING_URL` env
  *  → the Ollama default. */
 function baseUrl(override?: string): string {
-  return (override || process.env.MANTLE_LOCAL_EMBEDDING_URL || DEFAULT_BASE_URL).replace(
-    /\/+$/,
-    '',
-  );
+  return (override || env('MANTLE_LOCAL_EMBEDDING_URL') || DEFAULT_BASE_URL).replace(/\/+$/, '');
 }
 
 function assertTextOnly(input: EmbedInput[]): void {
@@ -59,7 +58,7 @@ function toPlainText(item: EmbedInput): string {
  *  vCPU; a GPU box doesn't notice the difference). Override via env for
  *  unusually slow/fast hardware. */
 const SUB_BATCH = (() => {
-  const n = Number.parseInt(process.env.MANTLE_LOCAL_EMBED_BATCH ?? '', 10);
+  const n = Number.parseInt(env('MANTLE_LOCAL_EMBED_BATCH') ?? '', 10);
   return Number.isFinite(n) && n >= 1 ? n : 16;
 })();
 
@@ -68,7 +67,7 @@ const SUB_BATCH = (() => {
  *  any single request small enough that this rarely matters. Override via
  *  `MANTLE_LOCAL_EMBED_TIMEOUT_MS` for unusually slow hardware. */
 const REQUEST_TIMEOUT_MS = (() => {
-  const n = Number.parseInt(process.env.MANTLE_LOCAL_EMBED_TIMEOUT_MS ?? '', 10);
+  const n = Number.parseInt(env('MANTLE_LOCAL_EMBED_TIMEOUT_MS') ?? '', 10);
   return Number.isFinite(n) && n >= 1_000 ? n : 120_000;
 })();
 
@@ -178,7 +177,7 @@ export const localEmbedding: EmbeddingDispatcher = {
         }));
       return { available, filtered: false, error: null };
     } catch (e) {
-      return { available: [], filtered: false, error: e instanceof Error ? e.message : String(e) };
+      return { available: [], filtered: false, error: errorMessage(e) };
     }
   },
 };

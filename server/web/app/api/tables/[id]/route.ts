@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { deleteTable, getTable, updateTable } from '@/lib/tables';
+import { firstIssue } from '@/lib/zod-issue';
 
 const PatchBody = z.object({
   title: z.string().min(1).max(200).optional(),
@@ -29,10 +30,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const { id } = await ctx.params;
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const row = await updateTable(user.id, id, parsed.data);
   if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });

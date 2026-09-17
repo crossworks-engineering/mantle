@@ -14,6 +14,8 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { BUILTIN_TOOLS } from '@mantle/tools';
+
 import { registerMantleTools } from './build-server';
 
 type Handler = (
@@ -23,14 +25,14 @@ type Handler = (
 type Registration = { schema: Record<string, z.ZodTypeAny>; handler: Handler };
 
 /** Register the whole surface once and index it by slug. */
-function surface(): Map<string, Registration> {
+function surface(transport: 'stdio' | 'http' = 'stdio'): Map<string, Registration> {
   const out = new Map<string, Registration>();
   const fakeServer = {
     tool: (name: string, _desc: string, schema: Record<string, z.ZodTypeAny>, handler: Handler) => {
       out.set(name, { schema, handler });
     },
   };
-  registerMantleTools(fakeServer as never, 'owner-1');
+  registerMantleTools(fakeServer as never, 'owner-1', { transport });
   return out;
 }
 
@@ -79,19 +81,103 @@ describe('bridging the content groups changed the implementation, not the surfac
     expect(PREVIOUSLY_EXPOSED.filter((slug) => !registered.has(slug))).toEqual([]);
   });
 
-  it('does not expose the other members of the groups it bridged', () => {
-    // email_send in particular: bridging EMAIL_TOOLS wholesale would hand an
-    // MCP client the ability to send mail as the owner. That is a product
-    // decision, not a side effect of removing duplication.
+  it('now exposes the rest of those groups too', () => {
+    // These five were held back while bridging was a pure deduplication. The
+    // widening has since been made deliberately (full parity — see the header
+    // of build-server.ts), so they ship. email_send is the one worth naming:
+    // it can send mail as the owner, and its boundary is the contacts
+    // allowlist, which applies identically on every surface.
     const registered = surface();
-    const notInvited = [
+    const nowInvited = [
       'email_send',
       'email_page',
       'note_from_file',
       'note_from_page',
       'peer_search_chunks',
     ];
-    expect(notInvited.filter((slug) => registered.has(slug))).toEqual([]);
+    expect(nowInvited.filter((slug) => !registered.has(slug))).toEqual([]);
+  });
+});
+
+describe('CLI sandboxes are on the MCP surface', () => {
+  // The contained shell is the ONE command-execution path an MCP client gets.
+  // Before this it had none, and a client asked to work in a sandbox could only
+  // report that no such tool existed — the brain's own coder agent held the
+  // group, nothing else did. Pin the whole group so a future group edit cannot
+  // silently drop one verb (an exec you can start but not stop is worse than
+  // no exec at all).
+  const SANDBOX_SLUGS = [
+    'sandbox_create',
+    'sandbox_exec',
+    'sandbox_list',
+    'sandbox_stop',
+    'sandbox_rm',
+    'sandbox_export',
+    'sandbox_import',
+    'sandbox_ls',
+    'sandbox_autostart',
+    'sandbox_publish',
+    'sandbox_mcp_tools',
+    'sandbox_mcp_call',
+  ];
+
+  it('exposes every sandbox verb', () => {
+    const registered = surface();
+    expect(SANDBOX_SLUGS.filter((slug) => !registered.has(slug))).toEqual([]);
+  });
+
+  it('is available on both transports', () => {
+    // The contained shell is never the transport-dependent one — that is
+    // run_terminal's job (below). A sandbox has no route to postgres, minio or
+    // the web tier, so nothing about the network changes its blast radius.
+    expect(surface('stdio').has('sandbox_exec')).toBe(true);
+    expect(surface('http').has('sandbox_exec')).toBe(true);
+  });
+});
+
+/**
+ * The parity rule, enforced.
+ *
+ * The MCP surface is hand-maintained, so it drifts from the in-app catalog
+ * silently: a tool group added for an agent simply never appears, and the
+ * client cannot report a capability it was never told about. This test turns
+ * every future gap into a failing build, and makes each deliberate exception
+ * cost an entry with a reason attached.
+ */
+describe('every in-app tool reaches the MCP surface', () => {
+  /** Registered under a different name, or structurally impossible here. */
+  const EXCEPTIONS: Record<string, string> = {
+    // Same handler, exposed as `search` since the first MCP release; shipped
+    // clients call that name. Renaming is a client-visible break for no gain.
+    search_nodes: 'exposed as `search`',
+    // Needs a live delivery surface (a Telegram chat / the web reply stream) to
+    // play the audio into. Over MCP it could only ever error.
+    synthesize_speech: 'needs a delivery surface the bridge cannot supply',
+  };
+
+  it('exposes every builtin slug over stdio, except the documented ones', () => {
+    const registered = surface('stdio');
+    const missing = BUILTIN_TOOLS.map((t) => t.slug)
+      .filter((slug) => !registered.has(slug) && !(slug in EXCEPTIONS))
+      .sort();
+    expect(missing).toEqual([]);
+  });
+
+  it('keeps the exception list honest', () => {
+    // An exception that IS registered is stale and would mask a real gap.
+    const registered = surface('stdio');
+    const stale = Object.keys(EXCEPTIONS).filter((slug) => registered.has(slug));
+    expect(stale).toEqual([]);
+  });
+
+  it("differs between transports only by the brain's own shell", () => {
+    const stdio = new Set(surface('stdio').keys());
+    const http = new Set(surface('http').keys());
+    const stdioOnly = [...stdio].filter((slug) => !http.has(slug)).sort();
+    const httpOnly = [...http].filter((slug) => !stdio.has(slug)).sort();
+
+    expect(stdioOnly).toEqual(['run_terminal']);
+    expect(httpOnly).toEqual([]);
   });
 });
 

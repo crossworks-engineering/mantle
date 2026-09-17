@@ -1,4 +1,4 @@
-# Handover — onboarding hardening + system integrity (June 2026)
+# Handover: onboarding hardening + system integrity (June 2026)
 
 A single session that took onboarding from "provisions rows" to "provisions a
 *working, verifiable* system", and introduced a single source of truth for the
@@ -14,14 +14,14 @@ note.
 | commit | what |
 |---|---|
 | `341eb38` | onboarding seeds the specialist stack (Pages/Ledger/Remy/Researcher/Coder + skills + delegate_to); `/pages`·`/tables` Assist agent made **configurable** on the surface (picker → `profiles.preferences.{pages,tables}AssistAgentSlug`; routes resolve via `resolveAssistAgentSlug` → 409 not 500) |
-| `5a96bcd` | fix: `/settings/agents` double scrollbar — Radix Switch bubble-inputs escaped the detail pane's clip; made the pane a containing block (`relative`). Root-caused + verified live (main.scrollHeight 9481→945) |
+| `5a96bcd` | fix: `/settings/agents` double scrollbar, Radix Switch bubble-inputs escaped the detail pane's clip; made the pane a containing block (`relative`). Root-caused + verified live (main.scrollHeight 9481→945) |
 | `7d5bbaa` | onboarding Telegram step reuses the agents bot **connect→pair** flow (shared `TelegramBotSection`, same `/api/agents/[id]/telegram` routes); was token-only before, no pairing |
 | `03130c5` | the **vitals**: assistant was created with EMPTY tool_slugs (couldn't act/delegate) and never got `tool_grounding`/`voice_reply` → `DEFAULT_ASSISTANT_TOOL_SLUGS` (68 tools) in `@mantle/tools` + skill attach + repair-on-rerun; onboarding Check verifies them |
 | `c683825` | **system integrity Phase 1**: declarative manifest + CI drift-test + `checkSystemIntegrity` + `/debug/integrity` "System config" tab; onboarding Check sources from it (one source of truth) |
-| `4c0c2a8` | **system integrity Phase 2**: manifest is the **seeding** source — `prompts.ts` (verbatim bodies) + `applyManifest` seeder (gap-fill/overwrite); onboarding + the 8 CLI `seed:*` scripts are thin wrappers. Net −603 LOC |
+| `4c0c2a8` | **system integrity Phase 2**: manifest is the **seeding** source, `prompts.ts` (verbatim bodies) + `applyManifest` seeder (gap-fill/overwrite); onboarding + the 8 CLI `seed:*` scripts are thin wrappers. Net −603 LOC |
 | `f84f0f9` | fix: System config tab re-fetch loop (auto-run effect keyed on an unmemoized `toast` ref → mount-once) |
 
-(`adac921`/`4ae9786` — Jason's versioning/release commits — landed interleaved; rebased onto cleanly.)
+(`adac921`/`4ae9786` (Jason's versioning/release commits) landed interleaved; rebased onto cleanly.)
 
 ## The shape now
 
@@ -32,7 +32,7 @@ note.
   seeder (onboarding + CLI), and the `checkSystemIntegrity` checker (`/debug` tab +
   onboarding Check). See `docs/system-integrity.md`.
 - **Operator personas** (`telegram-default`/Saskia, `apostle-paul`) are NOT manifest
-  slugs — never seeded/clobbered.
+  slugs, never seeded/clobbered.
 
 ## Verified this session
 
@@ -47,15 +47,15 @@ note.
   on the dev brain → `coder` gained `mantle-ops`, aligned to role `custom`, and both
   personas now delegate to `coder`. The integrity check's "Agent ↔ skill links" went
   green (problems 3→2).
-- CLI `tsx` resolution confirmed (scripts import the seed module by relative path —
+- CLI `tsx` resolution confirmed (scripts import the seed module by relative path,
   the `@/` alias doesn't resolve under tsx).
 
 ## Dev-brain note (not a bug)
 
 The dev brain (`:54323`) was hand-built before onboarding existed, so its persona is
 `telegram-default` (Saskia), not the manifest's canonical `assistant`. The System
-tab therefore shows **2 honest reds** — "Persona agent (assistant)" + "Delegation
-wiring" — because it measures against slug `assistant`, which isn't present. A
+tab therefore shows **2 honest reds**: "Persona agent (assistant)" + "Delegation
+wiring", because it measures against slug `assistant`, which isn't present. A
 freshly **onboarded** brain creates slug `assistant` and reads fully green. Nothing
 is broken on the dev brain; the checker is measuring against the canonical.
 
@@ -67,7 +67,7 @@ is broken on the dev brain; the checker is measuring against the canonical.
   the live TTS/STT/image calls. `applyManifest` will create the specialists from
   scratch there.
 - **Phase 2 follow-on (optional):** the heartbeat-tools-not-registered-in-web seeding
-  gap (documented in `system-integrity.md §6`) — register heartbeat tools in the web
+  gap (documented in `system-integrity.md §6`), register heartbeat tools in the web
   seed path if we ever want the persona to hold them by default.
 - **Optional polish:** (a) memoize the toast provider's `api` object (latent footgun
   for any future auto-run+toast component); (b) make the persona check slug-flexible

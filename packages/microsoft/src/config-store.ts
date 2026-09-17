@@ -10,6 +10,8 @@ import { eq } from 'drizzle-orm';
 import { db, microsoftConfig } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { oauthConfigFromEnv, type MsOAuthConfig } from './config';
+import type { MsConfigStatus } from '@mantle/client-types';
+export type { MsConfigStatus };
 
 function mask(secret: string): string {
   if (secret.length < 8) return '••••';
@@ -33,18 +35,6 @@ export async function resolveOAuthConfig(ownerId: string): Promise<MsOAuthConfig
     };
   }
   return oauthConfigFromEnv();
-}
-
-export interface MsConfigStatus {
-  configured: boolean;
-  /** Where the active config comes from — drives the UI ("set here" vs "from
-   *  environment, read-only"). */
-  source: 'db' | 'env' | null;
-  clientId: string | null;
-  tenant: string;
-  redirectUri: string | null;
-  /** Masked secret for display; never the plaintext. */
-  secretMasked: string | null;
 }
 
 /** Non-secret view of the current config for the settings form. */

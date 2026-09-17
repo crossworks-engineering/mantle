@@ -28,8 +28,10 @@ import {
   type AppManifest,
   type BuildRef,
 } from '@mantle/db';
-import { shareModeOf, type ShareMode } from './shares';
+import { shareModeOf } from './shares';
 import { loadProfilePreferences } from './profile-preferences';
+import type { AppRow, AppDetail } from '@mantle/client-types';
+export type { AppRow, AppDetail };
 
 export const APPS_ROOT_LABEL = 'apps';
 
@@ -81,38 +83,6 @@ export function assertSourceWithinLimits(source: AppSource): void {
     }
   }
 }
-
-export type AppRow = {
-  id: string;
-  title: string;
-  icon: string | null;
-  tags: string[];
-  summary: string | null;
-  description: string | null;
-  /** Number of declared api_tool slugs. */
-  toolCount: number;
-  /** Whether the published source has a green build (renders today). */
-  hasBuild: boolean;
-  /** Whether an uncommitted draft exists. */
-  hasDraft: boolean;
-  /**
-   * The app's exposure: mode of its active share ('public' | 'team'), or null
-   * when it has never been shared / the share is revoked (owner-only).
-   */
-  shareMode: ShareMode | null;
-  /** Whether this app is the designated Team Hub (prefs.teamHubAppId). */
-  isHub: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type AppDetail = AppRow & {
-  source: AppSource;
-  draft: AppSource | null;
-  manifest: AppManifest;
-  draftBuild: BuildRef | null;
-  publishedBuild: BuildRef | null;
-};
 
 type SidecarCols = {
   source: AppSource;
@@ -387,6 +357,14 @@ export async function updateAppMeta(
   return loadDetail(ownerId, id);
 }
 
+// INVARIANT: `draft_build` is a build OF `draft_source`, so every writer below
+// clears it. Without that, a green build outlives the source it came from and
+// `publishApp` promotes the pair — shipping NEW source with an OLD bundle. The
+// app then serves code that provably isn't in its own source, which reads to
+// everyone (including the agent, which inspects source) as "the edit silently
+// did nothing": the source is correct, the served bundle is not, and no cache
+// clear or rebuild-less republish can converge them.
+
 /** Replace the entire draft source tree (autosave). Returns false if missing. */
 export async function saveDraftSource(
   ownerId: string,
@@ -397,7 +375,7 @@ export async function saveDraftSource(
   assertSourceWithinLimits(source);
   await db
     .update(apps)
-    .set({ draftSource: source, draftUpdatedAt: new Date() })
+    .set({ draftSource: source, draftUpdatedAt: new Date(), draftBuild: null })
     .where(eq(apps.nodeId, id));
   return true;
 }
@@ -417,7 +395,7 @@ export async function writeDraftFile(
   assertSourceWithinLimits(next);
   await db
     .update(apps)
-    .set({ draftSource: next, draftUpdatedAt: new Date() })
+    .set({ draftSource: next, draftUpdatedAt: new Date(), draftBuild: null })
     .where(eq(apps.nodeId, id));
   return next;
 }
@@ -443,7 +421,7 @@ export async function deleteDraftFile(
   const next: AppSource = { entry: base.entry, files };
   await db
     .update(apps)
-    .set({ draftSource: next, draftUpdatedAt: new Date() })
+    .set({ draftSource: next, draftUpdatedAt: new Date(), draftBuild: null })
     .where(eq(apps.nodeId, id));
   return next;
 }
@@ -488,7 +466,10 @@ export async function discardDraft(ownerId: string, id: string): Promise<boolean
 
 export class NoGreenBuildError extends Error {
   constructor() {
-    super('publishApp: draft has no successful build to publish');
+    super(
+      'publishApp: draft has no successful build to publish — every source edit ' +
+        'clears the build, so run a build after your last edit and before publishing',
+    );
     this.name = 'NoGreenBuildError';
   }
 }
@@ -499,20 +480,49 @@ export class NoGreenBuildError extends Error {
  * Refuses if the draft hasn't been built green. Returns the published detail, or
  * null if the app doesn't exist (or has nothing to publish).
  */
+/**
+ * Ship the staged draft — or, when nothing is staged, a REBUILD of what is
+ * already published.
+ *
+ * That second case is not a nicety. `app_build` compiles `draft ?? source`, so
+ * building an app with no draft produces a green build OF THE PUBLISHED SOURCE.
+ * Gating publish on the draft SOURCE left that build unpromotable: an app whose
+ * code has not changed but whose BUNDLE is stale had no path to a fresh one
+ * short of rewriting its own source back over itself.
+ *
+ * Which stopped being hypothetical the day per-app Tailwind CSS shipped
+ * (v0.230.57). Every app built before it carries a bundle with no CSS sidecar,
+ * the frame serves `appCss` from that sidecar, and so every app on every box
+ * rolled past that release renders with NO STYLESHEET until it is rebuilt. The
+ * repair is a rebuild, and the rebuild could not be published. Any future change
+ * to what a build EMITS — a source map, a second sidecar — strands every
+ * existing app the same way, so the gate belongs on the build, not the source.
+ *
+ * Safe because the two cases write different things: with a draft, source and
+ * bundle are promoted TOGETHER (they were built as a pair); without one, only
+ * the bundle moves and the source it was built from is already published. The
+ * pairing invariant that `apps-build-staleness.test.ts` guards — never ship new
+ * source beside an old bundle — is untouched in both.
+ */
 export async function publishApp(ownerId: string, id: string): Promise<AppDetail | null> {
   const app = await loadDetail(ownerId, id);
   if (!app) return null;
-  if (!app.draft) return app; // nothing staged — already published
+  // Nothing staged and no rebuild waiting — already published.
+  if (!app.draft && !app.draftBuild) return app;
   if (!app.draftBuild?.ok) throw new NoGreenBuildError();
 
   const published = app.draft;
   const build = app.draftBuild;
+  // Only when a draft is actually staged. A build-only publish must not touch
+  // the source — it was built from what is already there. Hoisted out of the
+  // `.set({…})` rather than spread inline: the staleness tripwire parses those
+  // payloads with a non-greedy match, and a nested `})` truncates what it sees.
+  const sourceFields = published ? { source: published, sourceText: sourceToText(published) } : {};
   await db.transaction(async (tx) => {
     await tx
       .update(apps)
       .set({
-        source: published,
-        sourceText: sourceToText(published),
+        ...sourceFields,
         publishedBuild: build,
         draftSource: null,
         draftUpdatedAt: null,

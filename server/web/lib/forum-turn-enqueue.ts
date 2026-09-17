@@ -6,14 +6,14 @@
  * /api/team/turn/[turnId]/stream route serves forum turns untouched.
  */
 import { getDbosClient } from '@/lib/dbos-client';
-import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
+import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
 import { mintTeamTurnId } from '@/lib/team-chat-gate';
 import {
   FORUM_TURN_WORKFLOW,
   FORUM_QUEUE,
   type ForumTurnInput,
   type ForumTurnRunResult,
-} from '@mantle/assistant-runtime';
+} from '@mantle/runtime/assistant';
 import type { TeamChannel } from '@mantle/db';
 
 export type EnqueueForumTurnArgs = {

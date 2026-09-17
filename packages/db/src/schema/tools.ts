@@ -47,8 +47,34 @@ export type ToolHandler =
       headersRef?: string | null;
       authRef?: string | null;
       timeoutMs?: number;
+      /** Present ONLY on rows materialised by an OpenAPI connector's sync
+       *  (@mantle/tools openapi-sync.ts). `group` names the connector's tool
+       *  group, `op` the spec operation identity (operationId, else
+       *  'method /path'). `vanishedAt` mirrors the mcp marker: set when the
+       *  SYNC disabled the row because the operation vanished or was
+       *  deselected — only marked rows auto-re-enable, so an owner-disable is
+       *  never overridden. `editedAt` is stamped when the definition is
+       *  edited by hand; the sync then leaves the row alone until asked to
+       *  overwrite. Never authored directly — the crud layer refuses. */
+      openapi?: { group: string; op: string; vanishedAt?: string; editedAt?: string };
     }
   | { kind: 'shell'; cmd: string }
+  | {
+      /** A tool served by an EXTERNAL MCP server. `group` names the connector's
+       *  tool group, whose `integration.mcp` binding holds the endpoint + auth;
+       *  `toolName` is the remote server's own tool name (the row's slug is the
+       *  namespaced `mcp_<connector>_<tool>` form). Rows of this kind are
+       *  materialised and pruned by the connector sync (@mantle/tools
+       *  mcp-sync.ts), never authored by hand. */
+      kind: 'mcp';
+      group: string;
+      toolName: string;
+      /** Set (with the row disabled) when the SYNC disabled it because the
+       *  remote tool vanished. Its presence is what lets the next sync
+       *  re-enable a returned tool without overriding a disable the OWNER
+       *  made by hand — an owner-disabled row has no marker and stays off. */
+      vanishedAt?: string;
+    }
   | {
       /** A composition of existing tools. Steps run in order; each step's
        *  output is addressable by later steps (`$0`, `$name.path`). The

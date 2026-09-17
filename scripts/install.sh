@@ -1,5 +1,24 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
+# ── THIS IS THE CONFIGURATOR. ────────────────────────────────────────────────
+# There are two files called install.sh and they do different jobs:
+#
+#   install.sh (repo root)  → THE PUBLIC BOOTSTRAP. The URL people curl. It
+#                             checks docker, downloads the deploy bundle, and
+#                             delegates to this script. It writes no config.
+#   scripts/install.sh      ← you are here. The only thing that writes .env,
+#                             and what an operator re-runs LATER to
+#                             reconfigure a live box (--domain, --local-embedder,
+#                             --check). Ships in the bundle; the updater keeps
+#                             it refreshed from the release.
+#
+# Do not rename this file without reading infra/updater/updater.sh's
+# SCRIPT_NAMES: the filename is part of the operator-script fingerprint that
+# /settings/updates compares, so a rename makes every box report "scripts
+# drifted" until its updater self-refreshes. (2026-09-03 audit; the naming
+# papercut did not justify a fleet-wide false alarm.)
+# ─────────────────────────────────────────────────────────────────────────────
+#
 # Mantle installer — smooth first-run setup for a self-hosted box.
 #
 #   • Asks how the brain should be reached — a domain with HTTPS, this machine
@@ -36,6 +55,68 @@ warn() { printf '  %s!%s %s\n' "$YLW" "$RS" "$*"; }
 inf()  { printf '  %s•%s %s\n' "$BLU" "$RS" "$*"; }
 die()  { printf '\n%s✗ %s%s\n' "$RED$B" "$*" "$RS" >&2; exit 1; }
 banner() {
+  # The full-width mark needs 100 columns; a narrower terminal (or a dumb
+  # pipe) gets the compact box instead of a wrapped mess.
+  local cols; cols="${COLUMNS:-$( (tput cols) 2>/dev/null || printf 80 )}"
+  if [[ ${cols:-80} -ge 100 ]]; then
+    printf '%s' "$CYN"
+    cat <<'BANNER_ART'
+                                         @@@@%##*#***##@@@@
+                                    @%*++#%%##*===-=+*##%@#+++%@
+                                 %==%@#=...               ..=#@%+=*@
+                              %=+%#=.  .            .          .:#%*=#@
+                           @+=%*:                .                 .+#=+@
+                         @=+#-.        .        -@@@@@@@@.      .    .=#+=@
+                       @=+@-                 .@      -  -@@@.           :%==@
+                      +=*:.    .            @         @@@@#@@@..         .-*=+
+                    @=++.                 .@        *@ . @#@@%@@@ @-       .++=@
+                   %-#:.                . @         . @@@@+.       : @       =#-%
+                  #-+:               .   @ .          =+##%**@@@@@@@-         -*-+
+                 #:+:            .       @          @@  :+*#@@.                :+-*
+                #-*:                    @%  .      @@%+%==*#@.              .   -*-#
+               @=*..        .           @+.          @@%%#**@                  . =+-@
+               +--.                    @: . =%@ *       @@@#@.    .              .=-+
+              @-=:....................@.            - .   :+%@...:................:+-%
+              ==:...................#+ :    :+@@-=+         =@@....................=-=
+             %:-...................*.  .  -#=     *= -   ===##@....................---@
+             #:-.:................@.   =#@   . : *@@. *+  :***@@...................:-:%
+             *-:.................%: *.@ .   + @@@.=%   *@+*+##%@....................--*
+             +-:.................*##@*=-%@@@=%  -+@    # *#+#*@.....................--=
+             +-:................@@. @  #  - % %@ @-     # ****@.....................--+
+             *-:..............+@. **  * .% #+@* @%  .  -  #**%@.....................--*
+             %:-:............%+#+%  @  @*@*%: :@@=  .    @**#@:....................:-:%
+              :-............#-=*-:@@-@@@=-:=.#@%     . %%%**%*......................-:
+              *-.:.:.....:.+.@  @-#::@ . ##%%@*    + @=+##*%%.....................-.-+
+               --.::......%#: @-# :.#*.=.@#@@     -:@*=##*#@....................:..--@
+               *-:.+-===-@* ##=::.:.+@=%###    - @#*****###--=====-------=======+---#
+               @=-.==:-:+%*@+*.+ +.- *#**+.  @@@ *##****#+-:::---:::::::::::-:-=+:-=@
+                %--.=-:::%#% %.# + =%#***# +@=*##**+**#%*::::--:-::--::::------+.--@
+                 @--.+-=*%-+.=:- .@#**+**#%-#****+**#@@#######################*.-:%
+                   --..*%% *.+ =%#*+**%%%.##@@@%**@@@@        .    .          .--@
+                   @+-:.%@-# ###*****#- *-+@@ +@@#@       .                 .#==@
+                     *:-.:++@%**+*+**%@@ @@@    @@@                       .++-*
+                      @=-..:% #*++**@@@   :@@     @@#                    =#==@
+                        @=-:..@@#*#@@      .@@     .@@.                -%+-%
+                          @=--..#@@.         @@      @@@            .*%+=#
+                            @*--...       *. .%@@@@@@@##@@@@@@@  .+##-+@
+                               @+-+%*--+@@@@@@@#-+#+=+#@@@@-...-**==@
+                                   #====::.:...............:---=*@
+                                       @#*+++=--::::---=+*+*@
+                                                @@@@
+               ...                    ....             ....
+               ...    ....       ...  ....         ........   ....
+               ...  ........  ............  .... .......... ........ ....   ...   ...
+               ... ....  ......... ............ ....  .........  ........   ...   ...
+               ... ...    .......     ......... ...    .......    ... ...   ...   ...
+               ... .......... ............  .............. .......... ...............
+               ...  .........  ...........   ... ........   .........  .............
+               ...
+                ..
+BANNER_ART
+    printf '%s\n' "$RS"
+    printf '   %smantle · installer%s\n\n' "$B$CYN" "$RS"
+    return
+  fi
   printf '%s\n' "$B$CYN"
   printf '   ┌──────────────────────────────────────────┐\n'
   printf '   │   %smantle%s%s   ·   installer                 │\n' "$RS$B" "$RS$B$CYN" "$CYN"
@@ -109,6 +190,20 @@ LOCAL_EMBEDDER="${MANTLE_LOCAL_EMBEDDER:-}"
 # CLI sandboxes (sandboxd): 1=enable, 0=disable, empty=default (ON for a FRESH
 # box, keep .env as-is on a re-run — existing boxes never flip implicitly).
 SANDBOXES="${MANTLE_SANDBOXES:-}"
+# Brain-core shape: 1=core (small memory core — channel workers + doc helpers
+# off), 0=full, empty=keep .env as-is. See docker-compose.core.yml.
+CORE="${MANTLE_CORE:-}"
+# Doc helpers (tika parse fallback + PDF-export browser): 1=enable on a core
+# box, 0=disable, empty=keep .env as-is. Only meaningful on the core shape;
+# the full shape always runs them.
+HELPERS="${MANTLE_HELPERS:-}"
+# Owner web UI (the separate client stack): 1=run it, 0=headless (API + MCP +
+# share pages only — no signup, no owner screens), empty=keep .env as-is
+# (missing from .env means ON, the pre-flag behaviour).
+CLIENT="${MANTLE_CLIENT:-}"
+# Owner UI image tag — its OWN version stream since the repo split (built by
+# the frontend repo, default `latest`). Empty=keep .env as-is.
+CLIENT_TAG="${MANTLE_CLIENT_IMAGE_TAG:-}"
 usage() {
   cat <<EOF
 ${B}Mantle installer${RS}
@@ -144,6 +239,33 @@ ${B}Options${RS}
                          the data dir, and pre-pulls the sandbox base image.
   --no-sandboxes         Install without CLI sandboxes (or disable them again;
                          sandbox /files dirs are never touched)
+  --core                 Brain-core shape: a small headless memory core that
+                         fits a 2 vCPU / 4 GB box with ONLINE embeddings. Keeps
+                         the HTTP API, MCP, share pages, file/docs ingest and
+                         backups; sheds the channel workers (email/telegram/
+                         microsoft/calendar/push/runs) and the doc helpers
+                         (add those back with --helpers). Persists via
+                         COMPOSE_FILE in .env so every later pull/up — the
+                         updater included — keeps the shape. Sandboxes default
+                         OFF for a fresh core box.
+  --no-core              Back to the full shape (the shed services start on
+                         the next 'docker compose up -d')
+  --helpers              Doc helpers on a core box: tika (parse fallback for
+                         .odt/.pptx/.doc/.rtf — common formats parse in-process
+                         without it) + the PDF-export browser (~2 GB image).
+                         Persists via COMPOSE_PROFILES in .env. No effect on
+                         the full shape, which always runs both.
+  --no-helpers           Shed the doc helpers again on a core box
+  --client               Run the owner web UI (the default; a separate small
+                         container on its own version stream)
+  --no-client            Headless box: API + MCP + share pages only. No owner
+                         UI means no signup and no owner screens — pair a
+                         headless brain from another brain or over MCP.
+                         Persists as MANTLE_CLIENT_ENABLED in .env; the
+                         updater and the sanity check honour it.
+  --client-image-tag <t> Pin the owner UI image tag (MANTLE_CLIENT_IMAGE_TAG,
+                         default: latest — it does NOT follow --image-tag
+                         since the repo split)
   -y, --yes              Non-interactive: accept defaults, never prompt
   --skip-up              Write .env only; don't bring the stack up
   --sanity, --check      Only run the post-install sanity check, then exit
@@ -172,6 +294,13 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --no-local-embedder) LOCAL_EMBEDDER=0; shift ;;
   --sandboxes) SANDBOXES=1; shift ;;
   --no-sandboxes) SANDBOXES=0; shift ;;
+  --core) CORE=1; shift ;;
+  --no-core) CORE=0; shift ;;
+  --helpers) HELPERS=1; shift ;;
+  --no-helpers) HELPERS=0; shift ;;
+  --client) CLIENT=1; shift ;;
+  --no-client) CLIENT=0; shift ;;
+  --client-image-tag) CLIENT_TAG="${2:-}"; shift 2 ;;
   -y|--yes|--non-interactive) ASSUME_YES=1; shift ;;
   --skip-up) SKIP_UP=1; shift ;;
   --sanity|--check) SANITY_ONLY=1; shift ;;
@@ -504,6 +633,68 @@ case "$ACCESS_MODE" in
   *)         ok "Site address: ${B}$OPEN_URL${RS} ${DIM}(HTTP, no certificate)${RS}" ;;
 esac
 
+# ── 2b. what to install ──────────────────────────────────────────────────────
+# Every component choice used to be flag-only, which meant an interactive
+# operator never saw it — the options may as well not have existed. Ask each
+# one, with the cost stated where the answer is given, so choosing is informed
+# rather than archaeological.
+#
+# Asked on a FRESH box only (same freshness rule as the generated DB secrets:
+# no postgres data dir yet). A re-run keeps .env exactly as-is unless a flag
+# says otherwise — an existing box must never flip a component because someone
+# re-ran the installer to add a domain. Flags and MANTLE_* env always win over
+# the questions (each question is skipped when its variable is already set).
+FRESH_BOX=0
+if [[ ! -d "$DATA_DIR/postgres" && ! -d "$STACK_DIR/data/postgres" ]]; then FRESH_BOX=1; fi
+# An aborted first run may have left an .env full of answers with no database
+# behind it yet — default each question to what was chosen last time, so
+# hitting enter through the re-run keeps the earlier answers instead of
+# silently reverting them. (getval proper is defined with the .env writers
+# below; questions only need this read-side.)
+envval() { [[ -f "$ENV_FILE" ]] && grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- || true; }
+if [[ $INTERACTIVE -eq 1 && $FRESH_BOX -eq 1 ]]; then
+  hd "What to install"
+  # The shape first — it changes the right default for everything after it.
+  if [[ -z "$CORE" ]]; then
+    core_d=n
+    if [[ "$(envval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then core_d=y; fi
+    if [[ -n "${mem_mb:-}" && $mem_mb -lt 6000 ]]; then
+      warn "This box has $((mem_mb / 1024))GB RAM — the full stack wants 8GB+. The small core shape is built for boxes like this."
+      core_d=y
+    fi
+    inf "${DIM}Full = everything: chat, email/Telegram/calendar channels, background workers.${RS}"
+    inf "${DIM}Core = a small headless memory core (HTTP API, MCP, share pages, file ingest, backups) that fits 2 vCPU / 4 GB.${RS}"
+    if confirm "Install the SMALL core shape instead of the full stack?" "$core_d"; then CORE=1; else CORE=0; fi
+  fi
+  if [[ "$CORE" == 1 && -z "$HELPERS" ]]; then
+    hlp_d=n; if [[ "$(envval COMPOSE_PROFILES)" == *helpers* ]]; then hlp_d=y; fi
+    inf "${DIM}Doc helpers = tika (parses .odt/.pptx/.doc/.rtf — common formats parse without it) + the PDF-export browser (~2 GB image).${RS}"
+    if confirm "Add the doc helpers to the core?" "$hlp_d"; then HELPERS=1; else HELPERS=0; fi
+  fi
+  if [[ -z "$SANDBOXES" ]]; then
+    sbx_d=y; if [[ "$CORE" == 1 ]]; then sbx_d=n; fi
+    if [[ "$(envval COMPOSE_PROFILES)" == *sandboxes* ]]; then sbx_d=y; fi
+    inf "${DIM}CLI sandboxes give the coder agent isolated containers to work in (docs/sandboxes.md). One extra service + a base image pull.${RS}"
+    if confirm "Enable CLI sandboxes?" "$sbx_d"; then SANDBOXES=1; else SANDBOXES=0; fi
+  fi
+  if [[ -z "$LOCAL_EMBEDDER" ]]; then
+    emb_d=n; if [[ "$(envval COMPOSE_PROFILES)" == *local-embedder* ]]; then emb_d=y; fi
+    if [[ -n "${mem_mb:-}" && $mem_mb -lt 15000 ]]; then
+      inf "${DIM}Local embedder (Ollama + EmbeddingGemma, ~3.3 GB): needs a LARGE box — it degrades a 16GB/8-core server under multi-file ingest. This box is smaller; online embeddings (set up in onboarding) are the right choice here.${RS}"
+    else
+      inf "${DIM}Local embedder (Ollama + EmbeddingGemma, ~3.3 GB image + model): embeddings never leave the box. Skip it to use online embeddings, chosen during onboarding.${RS}"
+    fi
+    if confirm "Bundle the LOCAL embedder?" "$emb_d"; then LOCAL_EMBEDDER=1; else LOCAL_EMBEDDER=0; fi
+  fi
+  if [[ -z "$CLIENT" ]]; then
+    cli_d=y; if [[ "$(envval MANTLE_CLIENT_ENABLED)" == 0 ]]; then cli_d=n; fi
+    inf "${DIM}The owner web UI is a separate small container — signup and every owner screen live in it. Skip it only for a headless memory core driven over MCP/API.${RS}"
+    if confirm "Run the owner web UI?" "$cli_d"; then CLIENT=1; else CLIENT=0; fi
+  fi
+elif [[ $INTERACTIVE -eq 1 ]]; then
+  inf "Existing install — components stay as configured. ${DIM}(Change with --core/--sandboxes/--local-embedder/--helpers/--no-client; see --help.)${RS}"
+fi
+
 # ── 3. secrets + .env ────────────────────────────────────────────────────────
 hd "Configuration (.env)"
 getval() { [[ -f "$ENV_FILE" ]] && grep -E "^$1=" "$ENV_FILE" | head -1 | cut -d= -f2- || true; }
@@ -532,7 +723,15 @@ if [[ -n "$(getval POSTGRES_PASSWORD)" ]]; then
 elif [[ ! -d "$DATA_DIR/postgres" && ! -d "$STACK_DIR/data/postgres" ]]; then
   ensure POSTGRES_PASSWORD "gen_hex 16"   # fresh box → strong generated password
 else
-  warn "POSTGRES_PASSWORD not set but a postgres data dir exists — leaving it on the compose default (matches how the DB was initialised)."
+  # Write the default EXPLICITLY rather than leaving the line out. The value is
+  # identical either way — compose resolved ${POSTGRES_PASSWORD:-postgres} to
+  # exactly this — but an absent line is indistinguishable from a misconfigured
+  # box, and compose now REQUIRES the var (:?) so no box can silently run on a
+  # default nobody chose. Generating a NEW one here would still break auth
+  # against a data dir that baked the old one in at initdb, which is why this
+  # branch exists at all.
+  upsert POSTGRES_PASSWORD postgres
+  warn "POSTGRES_PASSWORD was unset with an existing postgres data dir — pinned to the compose default it was initialised with. Rotate it deliberately (ALTER USER + this line) if you want a strong one."
 fi
 # Same fresh-only rule for the object-store credentials (MinIO bakes its root
 # user/password in at first start, exactly like postgres).
@@ -543,7 +742,11 @@ elif [[ ! -d "$DATA_DIR/minio" && ! -d "$STACK_DIR/data/minio" ]]; then
   ensure S3_ACCESS_KEY   "gen_hex 12"
   ensure S3_SECRET_KEY   "gen_hex 24"
 else
-  warn "S3 keys not set but a minio data dir exists — leaving them on the compose defaults (matches how the object store was initialised)."
+  # Same reasoning as POSTGRES_PASSWORD above: pin the defaults MinIO baked in
+  # at first start, so the required-var check has something to read.
+  upsert S3_ACCESS_KEY minio
+  upsert S3_SECRET_KEY minio12345
+  warn "S3 keys were unset with an existing minio data dir — pinned to the compose defaults they were initialised with. Rotate them deliberately if you want strong ones."
 fi
 upsert MANTLE_SITE_ADDRESS "$SITE_ADDRESS"
 # Which interface the front door listens on. 127.0.0.1 for a "this machine
@@ -626,6 +829,88 @@ if [[ -n "$LOCAL_EMBEDDER" ]]; then
     ok "Local embedder OFF — ollama will not be pulled or started"
   fi
 fi
+# ── Brain-core shape (small headless memory core) ────────────────────────────
+# Persisted via COMPOSE_FILE in .env: compose (and the updater sidecar) load
+# docker-compose.core.yml as an override that gates the channel workers + the
+# PDF-export browser behind a `full` profile — see that file's header for the
+# exact service split. Paths are ABSOLUTE on purpose: the updater runs compose
+# from cwd=/, and a relative COMPOSE_FILE resolves against cwd, not the stack
+# dir (verified against the docker:28-cli compose). COMPOSE_PROFILES stays
+# untouched — a core can still opt into local-embedder etc.
+# Flag not passed → keep whatever .env already has (re-runs never flip it).
+if [[ -n "$CORE" ]]; then
+  if [[ "$CORE" == 1 ]]; then
+    [[ -f "$STACK_DIR/docker-compose.core.yml" ]] \
+      || die "docker-compose.core.yml missing from $STACK_DIR — re-download the deploy bundle (--core needs it)."
+    upsert COMPOSE_FILE "$STACK_DIR/docker-compose.yml:$STACK_DIR/docker-compose.core.yml"
+    # Best-effort: stop + remove the services the core sheds (a fresh box has
+    # none of them yet; a downsized box drops them here). Naming a service
+    # explicitly overrides its profile gate, so this works post-COMPOSE_FILE.
+    # The doc helpers (tika + browser) are only shed when the helpers profile
+    # isn't active — the --helpers block below runs after this one.
+    SHED="worker_email worker_telegram worker_microsoft worker_calendar worker_push worker_runs"
+    if [[ "$HELPERS" != 1 && "$(getval COMPOSE_PROFILES)" != *helpers* ]]; then SHED="tika browser $SHED"; fi
+    # shellcheck disable=SC2086  # word-splitting $SHED into args is intended
+    docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
+      rm -sf $SHED >/dev/null 2>&1 || true
+    ok "Brain-core shape ON — channel workers + doc helpers won't start (see docker-compose.core.yml)"
+  else
+    if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then
+      tmp="$(mktemp)"; grep -vE '^COMPOSE_FILE=' "$ENV_FILE" > "$tmp"; mv "$tmp" "$ENV_FILE"
+      ok "Brain-core shape OFF — the full service set starts on the next 'docker compose up -d'"
+    elif [[ -n "$(getval COMPOSE_FILE)" ]]; then
+      warn "COMPOSE_FILE in .env is not the core shape — leaving your custom value alone."
+    fi
+  fi
+fi
+# ── Doc helpers (tika + PDF-export browser) on the core shape ────────────────
+# Persisted via COMPOSE_PROFILES exactly like the embedder. Only meaningful
+# when the core override is active (the full shape runs both unconditionally),
+# but writing the profile on a full box is harmless — it simply pre-arms the
+# choice for a later --core. Flag not passed → keep .env as-is.
+if [[ -n "$HELPERS" ]]; then
+  rest="$(getval COMPOSE_PROFILES | tr ',' '\n' | grep -vx 'helpers' | grep -v '^$' | paste -sd, -)" || rest=""
+  if [[ "$HELPERS" == 1 ]]; then
+    upsert COMPOSE_PROFILES "${rest:+$rest,}helpers"
+    ok "Doc helpers ON — tika + the PDF-export browser start with the stack"
+  else
+    if [[ -n "$rest" ]]; then
+      upsert COMPOSE_PROFILES "$rest"
+    elif grep -qE '^COMPOSE_PROFILES=' "$ENV_FILE" 2>/dev/null; then
+      tmp="$(mktemp)"; grep -vE '^COMPOSE_PROFILES=' "$ENV_FILE" > "$tmp"; mv "$tmp" "$ENV_FILE"
+    fi
+    # Best-effort stop, but ONLY on the core shape — on a full box these two
+    # are always-on services and must not be touched.
+    if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then
+      docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
+        rm -sf tika browser >/dev/null 2>&1 || true
+    fi
+    ok "Doc helpers OFF — tika + the PDF-export browser won't start on the core shape"
+  fi
+fi
+# ── Owner web UI (the separate client stack) ─────────────────────────────────
+# Persisted as MANTLE_CLIENT_ENABLED so the bring-up below, the updater's
+# client roll and the sanity check all read ONE switch. Missing from .env
+# means ON — every box installed before this flag existed runs the UI and
+# must keep doing so. Flag not passed → keep .env as-is.
+if [[ -n "$CLIENT" ]]; then
+  if [[ "$CLIENT" == 1 ]]; then
+    upsert MANTLE_CLIENT_ENABLED 1
+    ok "Owner web UI ON"
+  else
+    upsert MANTLE_CLIENT_ENABLED 0
+    # Best-effort: stop + remove a running client container (its image stays).
+    if [[ -f "$STACK_DIR/docker-compose.client.yml" ]]; then
+      docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
+        -f "$STACK_DIR/docker-compose.client.yml" rm -sf client-web >/dev/null 2>&1 || true
+    fi
+    ok "Owner web UI OFF — headless: API + MCP + share pages only (no signup screen)"
+  fi
+fi
+if [[ -n "$CLIENT_TAG" ]]; then
+  upsert MANTLE_CLIENT_IMAGE_TAG "$CLIENT_TAG"
+  ok "Owner UI image pinned to ${B}$CLIENT_TAG${RS}"
+fi
 # ── CLI sandboxes (sandboxd + isolated sandbox networks) ─────────────────────
 # Part of the system on NEW boxes: defaults ON for a genuinely fresh install
 # (same freshness rule as the generated DB secrets — no postgres data dir yet).
@@ -633,8 +918,14 @@ fi
 # with --sandboxes, opt out anywhere with --no-sandboxes. Persisted via
 # COMPOSE_PROFILES exactly like the embedder, so the updater keeps it running.
 if [[ -z "$SANDBOXES" && ! -d "$DATA_DIR/postgres" && ! -d "$STACK_DIR/data/postgres" ]]; then
-  SANDBOXES=1
-  inf "Fresh install — CLI sandboxes default ON (skip with --no-sandboxes)"
+  # …except on a core box: sandboxes are a full-shape luxury a 4 GB memory
+  # core shouldn't carry by default (explicit --sandboxes still wins above).
+  if [[ "$CORE" == 1 || "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then
+    inf "Core shape — CLI sandboxes stay OFF (enable with --sandboxes)"
+  else
+    SANDBOXES=1
+    inf "Fresh install — CLI sandboxes default ON (skip with --no-sandboxes)"
+  fi
 fi
 if [[ -n "$SANDBOXES" ]]; then
   rest="$(getval COMPOSE_PROFILES | tr ',' '\n' | grep -vx 'sandboxes' | grep -v '^$' | paste -sd, -)" || rest=""
@@ -673,13 +964,18 @@ if [[ $SKIP_UP -eq 1 ]]; then hd "Done (--skip-up)"; inf "Config written; stack 
 # ── 3b. front door: route BOTH apps on one domain ────────────────────────────
 # Since v0.200 Mantle is two images — the server (API + share/print surfaces)
 # and the zero-secret owner UI. A fresh install uses the SAME-ORIGIN shape:
-# one domain, path-routed, no second DNS record and no CORS. The shipped
-# default Caddyfile expects a separate app.<domain> vhost, so swap it.
-if [[ -f "$STACK_DIR/infra/caddy/Caddyfile.same-origin" ]]; then
-  cp "$STACK_DIR/infra/caddy/Caddyfile.same-origin" "$STACK_DIR/infra/caddy/Caddyfile"
-  ok "Front door configured (same-origin: one domain serves both apps)"
+# one domain, path-routed, no second DNS record and no CORS. The Caddyfile is
+# release-owned and identical on every box; the shape is a switch in .env
+# (infra/caddy/shapes/<shape>.caddy, see infra/caddy/README.md).
+if grep -q '^MANTLE_CADDY_SHAPE=' "$ENV_FILE" 2>/dev/null; then
+  ok "Front door shape already set ($(sed -n 's/^MANTLE_CADDY_SHAPE=//p' "$ENV_FILE" | head -1))"
 else
-  warn "infra/caddy/Caddyfile.same-origin missing — the front door may not route the owner UI. Re-download the deploy bundle."
+  printf '\n# Front door routing shape: same-origin (one domain, path-routed) or split\n# (owner UI on app.<domain>). See infra/caddy/README.md.\nMANTLE_CADDY_SHAPE=same-origin\n' >> "$ENV_FILE"
+  ok "Front door configured (same-origin: one domain serves both apps)"
+fi
+mkdir -p "$STACK_DIR/infra/caddy/conf.d" "$STACK_DIR/infra/caddy/shapes" 2>/dev/null || true
+if [[ ! -f "$STACK_DIR/infra/caddy/shapes/same-origin.caddy" ]]; then
+  warn "infra/caddy/shapes/ is missing: the front door will not route. Re-download the deploy bundle."
 fi
 
 # ── 3c. review ───────────────────────────────────────────────────────────────
@@ -700,6 +996,9 @@ row "Data"        "$DATA_DIR  ${DIM}(documents, database, backups)${RS}"
 row "Stack"       "$STACK_DIR"
 row "Version"     "$IMAGE_TAG"
 row "Embedder"    "$(if [[ "$(getval COMPOSE_PROFILES)" == *local-embedder* ]]; then printf 'bundled (local)'; else printf 'online — chosen during onboarding'; fi)"
+row "Shape"       "$(if [[ "$(getval COMPOSE_FILE)" == *docker-compose.core.yml* ]]; then if [[ "$(getval COMPOSE_PROFILES)" == *helpers* ]]; then printf 'core + doc helpers (channel workers off)'; else printf 'core (channel workers + doc helpers off)'; fi; else printf 'full'; fi)"
+row "Sandboxes"   "$(if [[ "$(getval COMPOSE_PROFILES)" == *sandboxes* ]]; then printf 'on (coder agent gets isolated containers)'; else printf 'off'; fi)"
+row "Owner UI"    "$(if [[ "$(getval MANTLE_CLIENT_ENABLED)" == 0 ]]; then printf 'off — headless (MCP / API only)'; else printf 'on (tag: %s)' "$(getval MANTLE_CLIENT_IMAGE_TAG | grep . || echo latest)"; fi)"
 if [[ "$DEBUG_PORT" != 3000 ]]; then row "Debug port" "127.0.0.1:$DEBUG_PORT  ${DIM}(3000 was taken)${RS}"; fi
 existing="$(docker ps -aq --filter "label=com.docker.compose.project=mantle" 2>/dev/null | head -1)"
 if [[ -n "$existing" ]]; then
@@ -732,10 +1031,15 @@ fi
 inf "Bringing services up (waits for migrate + health)…"
 "${COMPOSE[@]}" up -d --wait || warn "up --wait returned non-zero — the sanity check below will show what's wrong."
 
-# The owner UI — a SEPARATE stack on the same tag (releases are lockstep).
+# The owner UI — a SEPARATE stack on its own version stream (jackdaw-built;
+# pinned by MANTLE_CLIENT_IMAGE_TAG, default `latest`).
 # Skipping this leaves a brain with no usable interface: signup and every
-# owner screen live here.
-if [[ -f "$STACK_DIR/docker-compose.client.yml" ]]; then
+# owner screen live here — which is exactly what a deliberate --no-client box
+# wants, and an accident everywhere else. MANTLE_CLIENT_ENABLED=0 is the one
+# switch; missing means ON.
+if [[ "$(getval MANTLE_CLIENT_ENABLED)" == 0 ]]; then
+  inf "Owner web UI disabled (MANTLE_CLIENT_ENABLED=0) — headless brain: no signup screen; drive it over MCP / the API."
+elif [[ -f "$STACK_DIR/docker-compose.client.yml" ]]; then
   inf "Bringing up the owner UI (client app)…"
   "${CLIENT_COMPOSE[@]}" pull -q 2>&1 | sed 's/^/    /' || warn "Client image pull failed — the owner UI will not start."
   "${CLIENT_COMPOSE[@]}" up -d --wait || warn "Client app did not become healthy — check 'docker logs mantle_client_web'."

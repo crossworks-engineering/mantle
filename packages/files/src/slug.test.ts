@@ -19,7 +19,9 @@ import {
   exportHintForExt,
   extOf,
   INGESTABLE_EXTS,
+  isVisionImage,
   ltreeToDash,
+  MEDIA_EXTS,
   mimeForExt,
   PREVIEWABLE_MARKDOWN_EXTS,
   sanitizeFilename,
@@ -140,6 +142,20 @@ describe('extOf', () => {
 });
 
 describe('mimeForExt', () => {
+  it('covers media and archive families (previously octet-stream)', () => {
+    // A Telegram voice note is ogg/opus and the transcriber's clips are m4a —
+    // both stored as application/octet-stream before this map learned audio,
+    // so the client could only ever show a generic binary icon.
+    expect(mimeForExt('opus')).toBe('audio/ogg');
+    expect(mimeForExt('m4a')).toBe('audio/mp4');
+    expect(mimeForExt('mp3')).toBe('audio/mpeg');
+    expect(mimeForExt('mp4')).toBe('video/mp4');
+    expect(mimeForExt('mov')).toBe('video/quicktime');
+    expect(mimeForExt('zip')).toBe('application/zip');
+    expect(mimeForExt('tiff')).toBe('image/tiff');
+    expect(mimeForExt('avif')).toBe('image/avif');
+  });
+
   it('maps the well-known text types', () => {
     expect(mimeForExt('md')).toMatch(/^text\/markdown/);
     expect(mimeForExt('txt')).toMatch(/^text\/plain/);
@@ -163,6 +179,24 @@ describe('mimeForExt', () => {
 
   it('falls back to octet-stream for unknown', () => {
     expect(mimeForExt('xyz123')).toBe('application/octet-stream');
+  });
+
+  it('maps media to real audio/video types (the inline players key on the prefix)', () => {
+    expect(mimeForExt('mp4')).toBe('video/mp4');
+    expect(mimeForExt('mov')).toBe('video/quicktime');
+    expect(mimeForExt('webm')).toBe('video/webm');
+    expect(mimeForExt('mkv')).toBe('video/x-matroska');
+    expect(mimeForExt('mp3')).toBe('audio/mpeg');
+    expect(mimeForExt('m4a')).toBe('audio/mp4');
+    expect(mimeForExt('wav')).toBe('audio/wav');
+    expect(mimeForExt('ogg')).toBe('audio/ogg');
+    expect(mimeForExt('flac')).toBe('audio/flac');
+  });
+
+  it('every MEDIA_EXTS entry resolves to an audio/ or video/ mime', () => {
+    for (const ext of MEDIA_EXTS) {
+      expect(mimeForExt(ext)).toMatch(/^(audio|video)\//);
+    }
   });
 });
 
@@ -196,6 +230,13 @@ describe('extension sets', () => {
   it('PREVIEWABLE_MARKDOWN_EXTS only contains markdown extensions', () => {
     expect([...PREVIEWABLE_MARKDOWN_EXTS].sort()).toEqual(['markdown', 'md']);
   });
+
+  it('MEDIA_EXTS stays out of INGESTABLE_EXTS (no parser; transcription is an explicit action)', () => {
+    for (const ext of MEDIA_EXTS) {
+      expect(INGESTABLE_EXTS.has(ext)).toBe(false);
+      expect(parserRouteForExt(ext)).toBe('none');
+    }
+  });
 });
 
 import { parserRouteForExt, TIKA_EXTS } from './slug';
@@ -209,11 +250,11 @@ describe('parserRouteForExt', () => {
     expect(parserRouteForExt('docx')).toBe('mammoth');
   });
 
-  it('routes the whole Excel family — xlsx, legacy xls, macro xlsm, binary xlsb — to SheetJS (tier 1)', () => {
-    expect(parserRouteForExt('xlsx')).toBe('sheetjs');
-    expect(parserRouteForExt('xls')).toBe('sheetjs');
-    expect(parserRouteForExt('xlsm')).toBe('sheetjs');
-    expect(parserRouteForExt('xlsb')).toBe('sheetjs');
+  it('routes modern Excel to exceljs and the legacy binaries to the converter', () => {
+    expect(parserRouteForExt('xlsx')).toBe('exceljs');
+    expect(parserRouteForExt('xls')).toBe('legacy-sheet');
+    expect(parserRouteForExt('xlsm')).toBe('exceljs');
+    expect(parserRouteForExt('xlsb')).toBe('legacy-sheet');
   });
 
   it('routes text-family extensions to utf8 (tier 1)', () => {
@@ -291,5 +332,35 @@ describe('exportHintForExt', () => {
     for (const ext of EXPORT_REQUIRED_EXTS.keys()) {
       expect(parserRouteForExt(ext)).toBe('none');
     }
+  });
+});
+
+describe('isVisionImage (ext routing beats client-supplied mime)', () => {
+  it('a DWG upload claiming image/vnd.dwg stays on the dwg route, never vision', () => {
+    // The replayed defect: the upload request's mime sent the CAD binary to
+    // the vision worker → empty read → terminal no_vision_text skip.
+    expect(isVisionImage('dwg', 'image/vnd.dwg')).toBe(false);
+  });
+
+  it('a DXF upload claiming image/vnd.dxf stays on the dxf route, never vision', () => {
+    // image/vnd.dxf is the registered alias clients send; same trap as dwg.
+    expect(isVisionImage('dxf', 'image/vnd.dxf')).toBe(false);
+  });
+
+  it('no ingestable extension ever routes to vision, whatever the mime claims', () => {
+    for (const ext of INGESTABLE_EXTS) {
+      expect(isVisionImage(ext, 'image/png'), `${ext} must keep its parser route`).toBe(false);
+    }
+  });
+
+  it('real images route to vision by mime or by extension', () => {
+    expect(isVisionImage('png', 'image/png')).toBe(true);
+    expect(isVisionImage('png', 'application/octet-stream')).toBe(true);
+    // Email attachments: no usable extension, truth in data.mimeType.
+    expect(isVisionImage('', 'image/jpeg')).toBe(true);
+  });
+
+  it('unrouted non-images stay off the vision path', () => {
+    expect(isVisionImage('bin', 'application/octet-stream')).toBe(false);
   });
 });

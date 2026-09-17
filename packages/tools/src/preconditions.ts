@@ -31,11 +31,10 @@
 
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { markdownRefs, type MarkdownRef } from '@mantle/content/markdown-refs';
+import { markdownRefs, type MarkdownRef } from '@mantle/content-core/markdown-refs';
 import { notFound } from './errors';
 import type { ToolHandlerResult, ToolPrecondition } from './types';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE } from '@mantle/std';
 
 /** Injectable for tests: resolve a node's type by (ownerId, id); null when
  *  the node doesn't exist (or isn't the owner's). */
@@ -55,6 +54,7 @@ const REF_LOOKUP: Record<MarkdownRef['scheme'], string> = {
   media: 'file_list / search_nodes',
   page: 'page_list / search_nodes',
   mention: 'search_nodes',
+  draw: 'draw_list / search_nodes',
 };
 
 /** The href form as written, for quoting back in the error. */

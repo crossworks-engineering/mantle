@@ -12,19 +12,15 @@
 #     (MANTLE_CLIENT_SITE_ADDRESS in the server .env).
 #   Separate box: `--profile standalone` adds a dedicated Caddy front door.
 #
-# Version: the SAME MANTLE_IMAGE_TAG as the server stack — releases are
-# lockstep; never roll one without the other.
+# Version: the client image builds in the JACKDAW repo (its own version
+# stream) since the 2026-08-13 repo split — pin with MANTLE_CLIENT_IMAGE_TAG
+# (default: latest). Compatibility is the contract-version handshake
+# (GET /api/version → contractVersion), not tag lockstep.
 name: mantle-client
 
 services:
   client-web:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-client:${MANTLE_IMAGE_TAG:-latest}
-    build:
-      context: .
-      target: client
-      args:
-        MANTLE_GIT_SHA: ${MANTLE_GIT_SHA:-}
-        MANTLE_BUILD_TIME: ${MANTLE_BUILD_TIME:-}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-client:${MANTLE_CLIENT_IMAGE_TAG:-latest}
     container_name: mantle_client_web
     restart: unless-stopped
     mem_limit: 768m

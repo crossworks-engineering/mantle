@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { setAggregate, type TableDoc } from './table-model';
+import { setAggregate, type TableDoc } from '@mantle/content-core/table-model';
 import { formatCellText, tableToText, tableToCsv } from './table-to-text';
 
 function grid(): TableDoc {

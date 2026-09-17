@@ -62,6 +62,9 @@ async function latestOutbound(
         eq(assistantMessages.ownerId, ownerId),
         eq(assistantMessages.agentId, agent.id),
         eq(assistantMessages.direction, 'outbound'),
+        // The durable runner inserts the reply row 'pending' with empty text
+        // and fills it on finalize (migration 0105). Never teaser a placeholder.
+        eq(assistantMessages.status, 'complete'),
       ),
     )
     .orderBy(desc(assistantMessages.createdAt))
@@ -101,6 +104,18 @@ async function sendToDevices(
     }
   }
   return { delivered, dropped };
+}
+
+/**
+ * Should a `conversation_changed` NOTIFY trigger an outbound push? Only a
+ * finished outbound turn: the trigger (migration 0156) fires on the 'pending'
+ * insert AND on the finalize update, and carries `status` so the two can be
+ * told apart. A payload with no status comes from the pre-0156 trigger shape
+ * (rows inserted already 'complete') and is treated as complete.
+ */
+export function wantsOutboundPush(c: { direction?: string; status?: string | null }): boolean {
+  if (c.direction !== 'outbound') return false;
+  return c.status == null || c.status === 'complete';
 }
 
 /**

@@ -2,7 +2,7 @@
  * Server-only read + lifecycle layer for the Runners screen — Mantle's in-app
  * replica of the DBOS admin console, built on the same WorkflowStatus journal
  * DBOS keeps in its system database. This is the web-side parallel of
- * apps/api/src/runs.ts: that file reads via the runtime `DBOS.*` API inside the
+ * server/api/src/runs.ts: that file reads via the runtime `DBOS.*` API inside the
  * runner process; here we read (and act) from Next.js via the cached
  * `DBOSClient` (lib/dbos-client.ts), so no DBOS HTTP admin server is needed.
  *
@@ -10,7 +10,7 @@
  */
 
 import type { DBOSClient, WorkflowStatus, WorkflowStatusString } from '@dbos-inc/dbos-sdk';
-import { RUNNER_QUEUE } from '@mantle/assistant-runtime';
+import { RUNNER_QUEUE } from '@mantle/runtime/assistant';
 import { getDbosClient } from '@/lib/dbos-client';
 import { isRunnerEngineAbsent } from './runners-engine';
 import type {
@@ -19,7 +19,7 @@ import type {
   RunnerRun,
   RunnerRunDetail,
   RunnerStep,
-} from '@mantle/web-ui/runners-types';
+} from '@mantle/client-types/runners-types';
 
 /** StepInfo isn't re-exported from the SDK index, so derive it from the client. */
 type StepInfo = NonNullable<Awaited<ReturnType<DBOSClient['listWorkflowSteps']>>>[number];

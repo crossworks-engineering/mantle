@@ -29,6 +29,14 @@
  */
 
 import { OpenRouter } from '@openrouter/sdk';
+import {
+  STREAM_IDLE_TIMEOUT_MS,
+  abortable,
+  chatAbortSignal,
+  streamAbort,
+  withIdleTimeout,
+} from './sse';
+import { openrouterClientMeta } from '../openrouter-meta';
 import { OpenRouterError } from '@openrouter/sdk/models/errors';
 import type {
   ChatCacheControl,
@@ -47,10 +55,41 @@ import { DEFAULT_MAX_RETRIES, isEmptyJsonBodyError } from './retry';
 import { mapOpenAICompatFinishReason } from './openai-compat';
 import { StreamingThinkScrubber } from './think-scrubber';
 import { ReasoningDetailsAccumulator, normalizeReasoningDetails } from './reasoning-accum';
+import { errorMessage } from '@mantle/std';
 
 // Backoff for the empty-body retry below — mirrors retry.ts's full-jitter shape.
 const RETRY_BASE_DELAY_MS = 500;
 const RETRY_MAX_DELAY_MS = 8_000;
+
+/** Per-attempt HTTP bound for the ONE-SHOT path. The SDK's own default is
+ *  `timeoutMs: -1` — no bound at all — which is why this adapter was the only
+ *  one whose `chat()` could hang indefinitely; every other adapter already
+ *  passes `chatAbortSignal(opts.signal, 60_000)`. Not applied to the streaming
+ *  path: there the SDK would fold it into the Request signal and cut a long,
+ *  healthy stream mid-body. */
+const ONE_SHOT_TIMEOUT_MS = 60_000;
+
+/** Ceiling on the SDK's INTERNAL retry envelope, whose default `maxElapsedTime`
+ *  is 3_600_000 — one hour. Our own guards (connect/idle, and `abortable`)
+ *  release the caller promptly, but without this the orphaned attempt keeps
+ *  retrying in the background for the rest of that hour. See `abortable` in
+ *  ./sse for the 2026-09-09 incident this bounds. */
+const SDK_RETRY_MAX_ELAPSED_MS = 90_000;
+
+/** Retry policy handed to the SDK on every call: the same backoff shape it uses
+ *  by default, with the one-hour envelope cut to {@link SDK_RETRY_MAX_ELAPSED_MS}. */
+function sdkRetries() {
+  return {
+    strategy: 'backoff',
+    backoff: {
+      initialInterval: RETRY_BASE_DELAY_MS,
+      maxInterval: RETRY_MAX_DELAY_MS,
+      exponent: 1.5,
+      maxElapsedTime: SDK_RETRY_MAX_ELAPSED_MS,
+    },
+    retryConnectionErrors: true,
+  } as const;
+}
 
 /** The SDK's own chat-request input type, derived rather than restated so it
  *  tracks the installed version automatically.
@@ -458,16 +497,14 @@ function enrichOpenRouterError(err: unknown, model: string, elapsedMs?: number):
 }
 
 async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
+  warnRouteOverride(opts);
   if (!opts.apiKey) throw new Error('openrouter-chat: apiKey required');
   if (!opts.model) throw new Error('openrouter-chat: model required');
 
   const client = new OpenRouter({
     apiKey: opts.apiKey,
     // Identifiers OR shows on its dashboard for traffic attribution.
-    // Kept consistent with the existing direct-SDK call sites in
-    // apps/agent so OR sees the same fingerprint pre- and post-migration.
-    httpReferer: 'https://mantle.crossworks.network',
-    appTitle: 'Mantle',
+    ...openrouterClientMeta(),
   });
 
   const messages = buildMessages(opts.messages, opts.cacheControl);
@@ -491,10 +528,21 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     ...(reasoningParam ? { reasoning: reasoningParam } : {}),
     ...(opts.extra ?? {}),
   };
+  // Every other adapter bounds its one-shot call with
+  // `chatAbortSignal(opts.signal, 60_000)`; this one passed no options at all,
+  // so a user Stop was a no-op and a stalled request had nothing to end it.
+  // `abortable` is belt to that brace — the SDK retries our abort otherwise.
+  const callSignal = chatAbortSignal(opts.signal, ONE_SHOT_TIMEOUT_MS);
   const sendOnce = () =>
-    client.chat.send({
-      chatRequest,
-    });
+    abortable(
+      client.chat.send(
+        {
+          chatRequest,
+        },
+        { signal: callSignal, timeoutMs: ONE_SHOT_TIMEOUT_MS, retries: sdkRetries() },
+      ),
+      callSignal,
+    );
 
   // The SDK retries HTTP-level transients (429/5xx/network) itself, which is why
   // the registry does NOT wrap this adapter in withChatRetry (double-retrying
@@ -576,7 +624,7 @@ type OrListModelsResponse = {
     context_length?: number;
     top_provider?: { context_length?: number };
     pricing?: { prompt?: string; completion?: string };
-    architecture?: { modality?: string; input_modalities?: string[] };
+    architecture?: { modality?: string; input_modalities?: string[]; output_modalities?: string[] };
   }>;
 };
 
@@ -629,9 +677,14 @@ async function openrouterDiscover(apiKey: string): Promise<DiscoveryResult<ChatM
     }
     const parsed = (await res.json()) as OrListModelsResponse;
     const models = parsed.data ?? [];
-    // Filter to chat-shaped models (drop embeddings, image-gen). OR's
-    // catalog has a modality field on architecture; presence of
-    // 'text' input + 'text' output = chat.
+    // Filter to chat-shaped models: text in, text out. Note this fetch does
+    // NOT pass `output_modalities=all` on purpose — the bare call is the
+    // text-out slice, which is exactly what a chat dropdown wants (the
+    // catalog + curation fetches ask for `all` because their job is to judge
+    // every route). Both sides are read off `architecture`; the id is never
+    // consulted. A slug regex used to do the second half of this and it cut
+    // both ways — it dropped any chat model whose name happened to contain
+    // "image" or "flux", and it kept generators that didn't.
     const chatModels: ChatModelInfo[] = models
       .filter((m) => {
         const inputs = m.architecture?.input_modalities ?? [];
@@ -639,8 +692,10 @@ async function openrouterDiscover(apiKey: string): Promise<DiscoveryResult<ChatM
         if (inputs.length === 0) return true;
         return inputs.includes('text');
       })
-      // Skip image-output-only routes (they live in the kind='image' bucket).
-      .filter((m) => !/(image|stable-diffusion|flux|dall-e)/i.test(m.id))
+      .filter((m) => {
+        const outputs = m.architecture?.output_modalities ?? [];
+        return outputs.length === 0 || outputs.includes('text');
+      })
       .map((m) => ({
         id: m.id,
         label: m.name || m.id,
@@ -662,7 +717,7 @@ async function openrouterDiscover(apiKey: string): Promise<DiscoveryResult<ChatM
     return {
       available: [...OPENROUTER_CHAT_MODELS],
       filtered: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }
@@ -732,13 +787,13 @@ async function openrouterChatStream(
   opts: ChatOptions,
   onDelta: ChatStreamSink,
 ): Promise<ChatResult> {
+  warnRouteOverride(opts);
   if (!opts.apiKey) throw new Error('openrouter-chat: apiKey required');
   if (!opts.model) throw new Error('openrouter-chat: model required');
 
   const client = new OpenRouter({
     apiKey: opts.apiKey,
-    httpReferer: 'https://mantle.crossworks.network',
-    appTitle: 'Mantle',
+    ...openrouterClientMeta(),
   });
 
   const messages = buildMessages(opts.messages, opts.cacheControl);
@@ -771,20 +826,31 @@ async function openrouterChatStream(
   if (opts.signal?.aborted) {
     return { text: '', model: opts.model };
   }
+  const abort = streamAbort(opts.signal);
   let sent: AsyncIterable<OrStreamChunk>;
   try {
-    sent = (await client.chat.send(
-      {
-        chatRequest,
-      },
-      // Thread the cancellation signal into the underlying fetch so a Stop aborts
-      // the HTTP stream — halting upstream token generation, not just our reading.
-      ...(opts.signal ? [{ signal: opts.signal }] : []),
+    sent = (await abortable(
+      client.chat.send(
+        {
+          chatRequest,
+        },
+        // Thread the cancellation signal into the underlying fetch so a Stop aborts
+        // the HTTP stream — halting upstream token generation, not just our reading.
+        // `retries` bounds the SDK's own one-hour envelope; no `timeoutMs` here,
+        // which the SDK would fold into the Request signal and use to cut a long
+        // but healthy stream.
+        { signal: abort.signal, retries: sdkRetries() },
+      ),
+      // The SDK treats our connect-timeout abort as retryable and re-sends it
+      // against the same dead signal, so awaiting it alone can hang past the
+      // guard that just fired. Race the signal directly.
+      abort.signal,
     )) as unknown as AsyncIterable<OrStreamChunk>;
   } catch (err) {
     if (opts.signal?.aborted) return { text: '', model: opts.model };
     throw enrichOpenRouterError(err, opts.model, Date.now() - startedAt);
   }
+  abort.connected();
 
   let text = '';
   let rawFinish: string | null | undefined;
@@ -802,7 +868,7 @@ async function openrouterChatStream(
   const reasoningDetails = new ReasoningDetailsAccumulator();
 
   try {
-    for await (const chunk of sent) {
+    for await (const chunk of withIdleTimeout(sent, STREAM_IDLE_TIMEOUT_MS, abort.abortIdle)) {
       // User hit Stop — stop reading and keep whatever streamed so far. Breaking
       // the iterator also closes the underlying stream (belt to the fetch signal).
       if (opts.signal?.aborted) break;
@@ -914,6 +980,17 @@ function safeDelta(onDelta: ChatStreamSink, delta: ChatStreamDelta): void {
       err instanceof Error ? err.message : err,
     );
   }
+}
+
+let warnedRouteOverride = false;
+/** The OpenRouter SDK owns its endpoint; a per-route base URL or tailnet flag
+ *  cannot apply here. Say so once rather than ignore it silently. */
+function warnRouteOverride(opts: ChatOptions): void {
+  if (warnedRouteOverride || (!opts.baseUrl?.trim() && !opts.viaTailnet)) return;
+  warnedRouteOverride = true;
+  console.warn(
+    '[openrouter-chat] this route sets baseUrl/viaTailnet, which the OpenRouter SDK does not honour — use a custom or local route for a self-hosted endpoint.',
+  );
 }
 
 export const openrouterChatAdapter: ChatDispatcher = {

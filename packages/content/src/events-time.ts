@@ -1,3 +1,5 @@
+import type { RecurFreq } from '@mantle/client-types';
+export type { RecurFreq };
 /**
  * Pure time/timezone helpers used by the events surface. Lives in its
  * own module so vitest can import these without dragging in the
@@ -36,14 +38,6 @@ export function computeRemindAt(startsAt: string, minutesBefore: number): string
   if (Number.isNaN(t)) throw new Error(`computeRemindAt: invalid starts_at "${startsAt}"`);
   return new Date(t - minutesBefore * 60_000).toISOString();
 }
-
-/**
- * Recurrence frequencies an event can repeat on. `none` is the default —
- * a one-shot event. The reminder worker rolls a recurring event's single
- * row forward to its next occurrence after each ping (no instance
- * materialisation), so one node always represents the next upcoming hit.
- */
-export type RecurFreq = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 const RECUR_FREQS: readonly RecurFreq[] = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 

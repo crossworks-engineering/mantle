@@ -5,11 +5,10 @@
  * a member-uploaded HTML/SVG must not execute in the owner's origin either.
  */
 import { getOwnerOr401 } from '@/lib/auth';
-import { safeDownloadHeaders } from '@mantle/web-ui/lib/safe-download';
+import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import { getForumUpload } from '@mantle/content';
 import { readFileById, readQuarantineBytes } from '@mantle/files';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { UUID_RE } from '@mantle/std';
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();

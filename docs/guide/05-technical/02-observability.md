@@ -1,8 +1,8 @@
-# Observability — traces, journey & debug
+# Observability: traces, journey & debug
 
 Mantle is built on a hard rule: **nothing happens to your data without a record of
 it.** Every assistant turn, every extraction, every reminder leaves a trace you can
-inspect — what ran, in what order, how long it took, and what it cost. This is what
+inspect, what ran, in what order, how long it took, and what it cost. This is what
 makes the system auditable instead of a black box.
 
 ## Traces
@@ -14,27 +14,27 @@ and status.
 
 The **Traces** screen lets you filter by status/kind/time and sort by cost or
 duration; opening one shows the step tree as a diagram, with the input/output of
-each step. When you want to know *exactly* how the assistant arrived at an answer —
-including any specialist agents it delegated to, and what each leg cost — this is
+each step. When you want to know *exactly* how the assistant arrived at an answer,
+including any specialist agents it delegated to, and what each leg cost; this is
 where you look.
 
 ## Node history
 
 Most items have a **history** view that gathers every trace that touched that
-specific node — its ingestion, summary, fact extraction, graph links — into one
+specific node (its ingestion, summary, fact extraction, graph links) into one
 timeline. "What did the brain do with this email?" answered in one place.
 
 ## Debug dashboards
 
 The **Debug** area is a set of operational dashboards:
 
-- **Overview** — health at a glance: recent activity, spend, cache hit rate, errors.
-- **Spend** — token spend over time, broken down by model and by agent.
-- **Topics / Digests / Facts** — what the brain has learned and rolled up.
-- **Agents** — per-agent activity and cost.
-- **Telegram** — chat/account state.
-- **Journey** — see below.
-- **Integrity** — see below.
+- **Overview**: health at a glance: recent activity, spend, cache hit rate, errors.
+- **Spend**: token spend over time, broken down by model and by agent.
+- **Topics / Digests / Facts**: what the brain has learned and rolled up.
+- **Agents**: per-agent activity and cost.
+- **Telegram**: chat/account state.
+- **Journey**: see below.
+- **Integrity**: see below.
 
 ## Journey
 
@@ -48,7 +48,7 @@ Filter by pipeline (content vs conversation vs automation) and hide no-ops.
 
 **Integrity** is a self-audit surface. A **Live** view lets you add a piece of
 content and watch its full memory footprint appear (summary, embedding, chunks,
-facts, graph) — and remove it. A **Corpus Audit** scans for invariant violations
+facts, graph), and remove it. A **Corpus Audit** scans for invariant violations
 across everything you've stored. Useful for confidence that the brain is healthy,
 and for spotting anything that didn't index correctly.
 
@@ -62,7 +62,7 @@ It's the human-in-the-loop checkpoint for consequential actions (see
 ## Cost transparency
 
 Because every model call is metered into its trace, Mantle can tell you what
-*anything* cost — a single turn, a day of ingestion, or per-agent/per-model totals on
+*anything* cost, a single turn, a day of ingestion, or per-agent/per-model totals on
 the Debug → Spend view. Delegated work is attributed to the specialist that did it,
 so the numbers stay honest. (The deep reference for the tracing layer is
 `docs/observability.md` in the repo.)

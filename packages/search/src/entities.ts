@@ -21,6 +21,7 @@
 
 import { and, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db, entities, entityEdges, facts, nodes, type Entity, type Fact } from '@mantle/db';
+import { UUID_RE } from '@mantle/std';
 
 export type EntitySearchOptions = {
   ownerId: string;
@@ -327,7 +328,6 @@ export type GraphPathResult = {
  * The walk returns id/relation arrays; entity names are resolved in one
  * follow-up query and assembled into readable hop chains.
  */
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function assertUuid(v: string, field: string): string {
   if (!UUID_RE.test(v)) throw new Error(`graphPath: ${field} is not a uuid`);
   return v;

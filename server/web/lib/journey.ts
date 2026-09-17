@@ -1,13 +1,26 @@
 import { and, desc, eq, gte, isNull, lt, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { db, entities, entityEdges, facts, isWriteRefused, nodes, traces } from '@mantle/db';
-import { getTrace } from './traces';
-import type { TraceDetail } from '@mantle/web-ui/traces-format';
 import {
-  deriveAction,
-  type ActionCategory,
-  type ActionPresentation,
-} from '@mantle/web-ui/journey-format';
+  agents,
+  db,
+  entities,
+  entityEdges,
+  facts,
+  isWriteRefused,
+  nodes,
+  traces,
+} from '@mantle/db';
+import { getTrace } from './traces';
+import { deriveAction, type ActionCategory } from '@mantle/client-types/journey-format';
+import type {
+  LandedLayers,
+  ActivityItem,
+  JourneyDetail,
+  LiveActivity,
+} from '@mantle/client-types/journey-format';
+import { env } from '@mantle/config';
+
+export type { LandedLayers, ActivityItem, JourneyDetail, LiveActivity };
 
 /**
  * Journey view data layer (server-only). Reads the observability tables and
@@ -17,54 +30,6 @@ import {
  *
  * Owner-scoped throughout — pass the user's id. Read-only; never mutates.
  */
-
-export type ActivityItem = ActionPresentation & {
-  traceId: string;
-  kind: string;
-  status: string;
-  startedAt: string;
-  durationMs: number | null;
-  costMicroUsd: number;
-  stepCount: number;
-  /** Node title (or recorded filename) for the subject of the action. */
-  title: string | null;
-  subjectKind: string | null;
-  subjectId: string | null;
-  /** Outcome — what entered the brain. Facts mined + entities linked +
-   *  relations drawn from this action's node (0 for non-content / dialog
-   *  actions). */
-  factCount: number;
-  mentionCount: number;
-  relationCount: number;
-};
-
-/** Live snapshot for the always-on Activity surfaces: what's running right now,
- *  what recently succeeded, and what failed. */
-export type LiveActivity = {
-  active: ActivityItem[];
-  recent: ActivityItem[];
-  failures: ActivityItem[];
-};
-
-export type LandedLayers = {
-  /** L6 content_store — the node itself. */
-  node: { id: string; type: string; title: string } | null;
-  /** L5 content_index — the searchable catalogue entry. */
-  index: {
-    summary: string | null;
-    hasEmbedding: boolean;
-    hasText: boolean;
-    tags: string[];
-  } | null;
-  /** L4 profile — durable facts mined from this node (currently-valid only). */
-  facts: { content: string; kind: string; entityName: string | null }[];
-  /** Graph — entities mentioned in this node. */
-  mentions: { name: string; kind: string }[];
-  /** Graph — relations this node drew between entities (subject→object). */
-  relations: { subject: string; relation: string; object: string }[];
-};
-
-export type JourneyDetail = TraceDetail & { landed: LandedLayers | null };
 
 /** Normalise db.execute / select result shapes. */
 function strOf(v: unknown): string | null {
@@ -89,6 +54,10 @@ function mapActivityRow(r: {
   factCount: number | null;
   mentionCount: number | null;
   relationCount: number | null;
+  agentId: string | null;
+  agentName: string | null;
+  agentSlug: string | null;
+  agentAvatar: unknown;
 }): ActivityItem {
   const traceData = (r.data ?? {}) as Record<string, unknown>;
   const nodeData = (r.nodeData ?? {}) as Record<string, unknown>;
@@ -96,6 +65,7 @@ function mapActivityRow(r: {
   const mime = strOf(nodeData.mimeType) ?? strOf(nodeData.mime);
   const pres = deriveAction({ kind: r.kind, nodeType: r.nodeType, mime, source });
   const title = r.nodeTitle ?? strOf(traceData.filename) ?? strOf(traceData.title);
+  const avatarSeed = strOf((r.agentAvatar as Record<string, unknown> | null)?.seed) ?? r.agentSlug;
   return {
     ...pres,
     traceId: r.id,
@@ -111,6 +81,12 @@ function mapActivityRow(r: {
     factCount: r.factCount ?? 0,
     mentionCount: r.mentionCount ?? 0,
     relationCount: r.relationCount ?? 0,
+    agentId: r.agentId,
+    agentName: r.agentName,
+    agentSlug: r.agentSlug,
+    avatarSeed,
+    workerSlug: strOf(traceData.worker_slug),
+    parentTraceId: strOf(traceData.parent_trace_id),
   };
 }
 
@@ -139,6 +115,10 @@ async function queryActivity(
       factCount: sql<number>`(select count(*)::int from ${facts} where ${facts.sourceNodeId} = ${traces.subjectId} and ${facts.validTo} is null)`,
       mentionCount: sql<number>`(select count(*)::int from ${entityEdges} where ${entityEdges.targetId} = ${traces.subjectId} and ${entityEdges.targetKind} = 'node' and ${entityEdges.relation} = 'mentioned_in')`,
       relationCount: sql<number>`(select count(*)::int from ${entityEdges} where ${entityEdges.data}->>'source_node_id' = ${traces.subjectId}::text)`,
+      agentId: traces.agentId,
+      agentName: agents.name,
+      agentSlug: agents.slug,
+      agentAvatar: agents.avatar,
     })
     .from(traces)
     .leftJoin(
@@ -149,6 +129,10 @@ async function queryActivity(
         eq(nodes.ownerId, userId),
       ),
     )
+    // Owner condition is defense-in-depth: every trace writer stamps agent_id
+    // from an agent resolved under the same owner, but a future writer bug
+    // must not leak another owner's agent name/seed into this feed.
+    .leftJoin(agents, and(eq(traces.agentId, agents.id), eq(agents.ownerId, userId)))
     .where(and(eq(traces.ownerId, userId), ...extraConds))
     .orderBy(desc(traces.startedAt))
     .limit(limit);
@@ -187,7 +171,7 @@ export async function listActivity(
  *  a long-but-live run isn't false-flagged as abandoned in the activity view —
  *  only a genuinely orphaned trace (process crashed before writing a terminal
  *  status) gets reaped. */
-const ABANDON_AFTER_MIN = (Number(process.env.MANTLE_EXTRACT_EXPIRE_MIN) || 60) + 15;
+const ABANDON_AFTER_MIN = (Number(env('MANTLE_EXTRACT_EXPIRE_MIN')) || 60) + 15;
 
 /**
  * Reconcile orphaned traces: mark long-`running` rows as `error: abandoned`

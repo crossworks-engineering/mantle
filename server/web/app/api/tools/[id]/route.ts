@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { deleteTool, getToolById, updateTool } from '@/lib/tools';
 import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -35,20 +37,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   try {
     const row = await updateTool(user.id, idParsed.data.id, parsed.data);
     if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 });
     return NextResponse.json({ tool: row });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
   }
 }
 
@@ -62,9 +58,6 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
     return NextResponse.json({ ok: true });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
   }
 }

@@ -13,7 +13,8 @@ import {
   type AgentParams,
   type PersonaNote,
 } from '@mantle/db';
-import { CHATTABLE_ROLES } from '@mantle/assistant-runtime';
+import { CHATTABLE_ROLES } from '@mantle/runtime/assistant';
+import { computeAgentExperience, zeroExperience } from './agent-experience';
 import { MANIFEST_AGENTS } from './system-manifest/manifest';
 import { cloneAgentFields, slugifyAgentName, uniqueAgentSlug } from './agent-clone';
 
@@ -90,15 +91,33 @@ function toSummary(a: Agent): AgentSummary {
  *  reads the agents table doesn't disappear. */
 const CONVERSATIONAL_ROLES = ['responder', 'assistant', 'custom'] as const;
 
-export async function listAgents(userId: string): Promise<AgentSummary[]> {
+export async function listAgents(
+  userId: string,
+  opts: {
+    /** Also compute the experience rollup (two grouped aggregate queries over
+     *  the owner's history). Opt-IN: only the agents screens show the level
+     *  badge — internal callers (studio graph, model-combos context) must not
+     *  pay for data they throw away. */
+    withExperience?: boolean;
+  } = {},
+): Promise<AgentSummary[]> {
   const rows = await db
     .select()
     .from(agents)
     .where(eq(agents.ownerId, userId))
     .orderBy(desc(agents.priority), desc(agents.updatedAt));
-  return rows
-    .filter((r) => (CONVERSATIONAL_ROLES as readonly string[]).includes(r.role))
-    .map(toSummary);
+  const conversational = rows.filter((r) =>
+    (CONVERSATIONAL_ROLES as readonly string[]).includes(r.role),
+  );
+  if (!opts.withExperience) return conversational.map(toSummary);
+  const experience = await computeAgentExperience(
+    userId,
+    conversational.map((r) => r.id),
+  );
+  return conversational.map((r) => ({
+    ...toSummary(r),
+    experience: experience.get(r.id) ?? zeroExperience(),
+  }));
 }
 
 export async function getAgent(userId: string, id: string): Promise<AgentSummary | null> {
@@ -188,6 +207,14 @@ export type CreateAgentInput = {
   enabled?: boolean;
 };
 
+/** Drop an explicit-clear `parts: {}` so the row never stores the empty map
+ *  (absent and {} must read identically — see the avatar note in updateAgent). */
+function normalizeAvatar(a: AgentAvatar | null): AgentAvatar | null {
+  if (!a?.parts || Object.keys(a.parts).length > 0) return a;
+  const { parts: _cleared, ...rest } = a;
+  return rest;
+}
+
 /** `db`, or a transaction handle standing in for it. Lets a caller compose
  *  several writes atomically without re-implementing the insert mapping (the
  *  pattern `packages/agent-runtime/src/conversation.ts` uses). */
@@ -223,7 +250,7 @@ export async function createAgent(
       toolGroupSlugs: input.toolGroupSlugs ?? [],
       memoryConfig: input.memoryConfig ?? {},
       params: input.params ?? {},
-      avatar: input.avatar ?? null,
+      avatar: normalizeAvatar(input.avatar ?? null),
       priority: input.priority ?? 100,
       enabled: input.enabled ?? true,
     })
@@ -271,7 +298,21 @@ export async function updateAgent(
     )}::jsonb`;
   }
   if (patch.params !== undefined) next.params = patch.params;
-  if (patch.avatar !== undefined) next.avatar = patch.avatar;
+  // Avatar writes must not let a parts-unaware client wipe builder pins: a
+  // pre-builder jackdaw (or any wire type predating `parts`) rebuilds the
+  // avatar as {style, seed}, and a wholesale replace would silently drop the
+  // stored pins. So an ABSENT parts key means "keep what's stored" (jsonb ||,
+  // same top-level-merge pattern as memoryConfig above), and clearing is
+  // explicit: parts: {} — normalized away so the row never stores the empty
+  // map. A non-empty parts (or null avatar) replaces outright.
+  if (patch.avatar !== undefined) {
+    const a = patch.avatar;
+    if (a && a.parts === undefined) {
+      next.avatar = sql`coalesce(${agents.avatar}, '{}'::jsonb) || ${JSON.stringify(a)}::jsonb`;
+    } else {
+      next.avatar = normalizeAvatar(a);
+    }
+  }
   if (patch.priority !== undefined) next.priority = patch.priority;
   if (patch.enabled !== undefined) next.enabled = patch.enabled;
 
@@ -301,7 +342,7 @@ export async function setEnabled(
  * people typing at once from landing in one interleaved thread.
  *
  * Thread separation, NOT privacy: `userId` here is still the anchor, every
- * agent stays visible to every login, and recall_window replays any of them.
+ * agent stays visible to every login, and replay_window replays any of them.
  * ------------------------------------------------------------------------- */
 
 /**

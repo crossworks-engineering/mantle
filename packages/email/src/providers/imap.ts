@@ -11,6 +11,7 @@ import type {
   RawMessage,
   SyncCursor,
 } from '../types';
+import { errorMessage } from '@mantle/std';
 
 /**
  * Headers fetched on the cheap listSince path so `classifyDelivery` can
@@ -175,7 +176,7 @@ async function connect(account: EmailAccount): Promise<ImapFlow> {
       '[imap] socket/protocol error on',
       account.address.replace(/^(.).+@(.+)$/, '$1***@$2'),
       '-',
-      err instanceof Error ? err.message : String(err),
+      errorMessage(err),
     );
   });
   await client.connect();
@@ -639,10 +640,7 @@ export async function probeImapConnection(opts: {
   // socket-level error during probe would crash the calling process
   // (Next.js worker thread or the test-connection request handler).
   client.on('error', (err) => {
-    console.warn(
-      '[imap] probe socket/protocol error -',
-      err instanceof Error ? err.message : String(err),
-    );
+    console.warn('[imap] probe socket/protocol error -', errorMessage(err));
   });
   await client.connect();
   try {

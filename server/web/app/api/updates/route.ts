@@ -5,7 +5,7 @@ import {
   readUpdaterStatus,
   updaterAvailable,
 } from '@/lib/updates';
-import { APP_VERSION, GIT_SHA, BUILD_TIME } from '@mantle/web-ui/version';
+import { APP_VERSION, GIT_SHA, BUILD_TIME } from '@mantle/client-types/version';
 import { getOwnerOr401 } from '@/lib/auth';
 
 /** Initial-load bundle for /settings/updates — the release check, whether the

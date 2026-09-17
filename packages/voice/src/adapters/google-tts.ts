@@ -34,6 +34,7 @@ import {
   GOOGLE_TTS_VOICES,
   audioTagsForGoogleTtsModel,
 } from '../catalogs/google';
+import { errorMessage } from '@mantle/std';
 
 type GeminiTtsResponse = {
   candidates?: Array<{
@@ -149,7 +150,7 @@ async function googleTtsDiscover(apiKey: string): Promise<DiscoveryResult<TtsMod
     return {
       available: ttsModelInfo(),
       filtered: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }

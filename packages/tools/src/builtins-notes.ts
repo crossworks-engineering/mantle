@@ -11,6 +11,7 @@
 
 import {
   createNote,
+  deleteNote,
   getNote,
   getPage,
   docToMarkdown,
@@ -21,8 +22,9 @@ import {
 import { fileById, readFileById } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
-import { str, strArr } from './coerce';
+import { str, strArr, strOptTrim as strOpt } from './coerce';
 import { notFound } from './errors';
+import { errorMessage } from '@mantle/std';
 
 // Shared referential preconditions (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING node of the right type.
@@ -35,10 +37,6 @@ const FILE_ID_PRE: readonly ToolPrecondition[] = [
 const PAGE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'page_id', nodeType: 'page', lookup: 'page_list / search_nodes' },
 ];
-
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
-}
 
 const note_create: BuiltinToolDef = {
   slug: 'note_create',
@@ -94,7 +92,7 @@ const note_create: BuiltinToolDef = {
 
       return { ok: true, output: row };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -103,6 +101,7 @@ const note_create: BuiltinToolDef = {
 
 const note_list: BuiltinToolDef = {
   slug: 'note_list',
+  readOnly: true,
   name: 'List notes',
   description:
     "List the owner's notes, newest first. `query` substring-matches title/body/summary; `tag` " +
@@ -127,13 +126,14 @@ const note_list: BuiltinToolDef = {
       ctx.step?.setOutput({ count: rows.length });
       return { ok: true, output: rows };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
 
 const note_get: BuiltinToolDef = {
   slug: 'note_get',
+  readOnly: true,
   name: 'Get one note by id',
   description:
     'Fetch a single note by id — full row including the markdown content. Use after `note_list` or ' +
@@ -160,7 +160,7 @@ const note_get: BuiltinToolDef = {
       ctx.step?.setOutput({ id: row.id, title: row.title });
       return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -246,7 +246,7 @@ const note_update: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -348,7 +348,7 @@ const note_from_file: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -414,10 +414,36 @@ const note_from_page: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
+
+/** Destroys an owner note. Hand-written on the MCP side until tier 3 of the
+ *  2026-09-02 audit; `mcpOnly` because no in-app group has ever granted a note
+ *  delete — the assistant creates and updates, the owner removes. */
+export const note_delete: BuiltinToolDef = {
+  slug: 'note_delete',
+  mcpOnly: true,
+  preconditions: NOTE_ID_PRE,
+  name: 'Delete a note',
+  description: 'Delete a note by id.',
+  inputSchema: {
+    type: 'object',
+    properties: { id: { type: 'string', description: 'the note node id' } },
+    required: ['id'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id);
+    if (!id) return { ok: false, error: 'id required' };
+    const ok = await deleteNote(ctx.ownerId, id);
+    if (!ok) return { ok: false, error: 'not found' };
+    return { ok: true, output: 'deleted' };
+  },
+};
+
+/** The owner's own note delete — MCP-only, never granted. */
+export const NOTE_OPERATOR_TOOLS: readonly BuiltinToolDef[] = [note_delete];
 
 export const NOTE_TOOLS: BuiltinToolDef[] = [
   note_create,

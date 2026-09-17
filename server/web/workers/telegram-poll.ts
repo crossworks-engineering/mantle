@@ -23,7 +23,18 @@ import { eq } from 'drizzle-orm';
 import { channels, db, telegramAccounts, type Channel, type TelegramAccount } from '@mantle/db';
 import { pollOnce, evictBot, type PollHandlers } from '@mantle/telegram';
 import { approvePendingCall, getPendingCall, rejectPendingCall } from '@mantle/tools';
+import { registerRecallEmbedder } from '@mantle/content';
+import { embedBatch } from '@mantle/embeddings';
 import { runWorker } from './_runner';
+import { env } from '@mantle/config';
+import { sleep } from '@mantle/std';
+
+// An Approve tap runs the parked tool IN THIS PROCESS — `page_create` included
+// — and a page write kicks off `embedPendingRecallPrompts` fire-and-forget.
+// Without an embedder the bridge throws, recall.ts swallows it, and the prompt
+// row keeps a null embedding: the page is there, recall_match finds nothing.
+// recall-embed-registration.test.ts pins this call. (2026-09-03 audit.)
+registerRecallEmbedder(embedBatch);
 
 const CHANNEL_REFRESH_MS = 60_000;
 const BACKOFF_BASE_MS = 1_000;
@@ -94,7 +105,7 @@ const approvalHandlers: PollHandlers = {
 };
 
 runWorker('channel-poll', async () => {
-  if (!process.env.MANTLE_MASTER_KEY) throw new Error('MANTLE_MASTER_KEY must be set');
+  if (!env('MANTLE_MASTER_KEY')) throw new Error('MANTLE_MASTER_KEY must be set');
 
   await refreshChannels();
   const interval = setInterval(refreshChannels, CHANNEL_REFRESH_MS);
@@ -206,8 +217,4 @@ function startTelegramLoop(channel: Channel): { stop: () => void } {
       if (accountId) evictBot(accountId);
     },
   };
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
 }

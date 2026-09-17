@@ -15,7 +15,9 @@
     "@mantle/api-keys": "workspace:*",
     "@mantle/app-build": "workspace:*",
     "@mantle/client-types": "workspace:*",
+    "@mantle/config": "workspace:*",
     "@mantle/content": "workspace:*",
+    "@mantle/content-core": "workspace:*",
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
     "@mantle/email": "workspace:*",
@@ -24,16 +26,21 @@
     "@mantle/microsoft": "workspace:*",
     "@mantle/runs": "workspace:*",
     "@mantle/search": "workspace:*",
+    "@mantle/std": "workspace:*",
     "@mantle/storage": "workspace:*",
     "@mantle/tabledb": "workspace:*",
     "@mantle/telegram": "workspace:*",
     "@mantle/tracing": "workspace:*",
     "@mantle/voice": "workspace:*",
-    "@openrouter/sdk": "^1.2.7",
-    "drizzle-orm": "^0.45.2"
+    "@mantle/voice-client": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@openrouter/sdk": "^1.2.107",
+    "drizzle-orm": "^0.45.2",
+    "firecrawl": "^4.38.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
-    "@types/node": "^22.20.1",
-    "typescript": "^5.7.2"
+    "@types/node": "^26.4.1",
+    "typescript": "^5.9.3"
   }
 }

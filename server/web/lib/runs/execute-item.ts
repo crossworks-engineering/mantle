@@ -18,6 +18,7 @@ import { BANNED_ITEM_TOOLS, dispatchTool, resolveTool, validateToolArgs } from '
 import { currentTrace, startTrace, step } from '@mantle/tracing';
 
 import { executeWorkerInvoke } from './execute-worker';
+import { errorMessage } from '@mantle/std';
 
 /** Cap what lands in `run_items.result.output` — the compiled state wants
  *  one-liners; the full output lives on the item's trace step. */
@@ -89,7 +90,7 @@ export async function executeRunItem(itemId: string): Promise<ExecuteItemOutcome
       state: 'failed',
       failure: {
         type: 'internal_error',
-        message: err instanceof Error ? err.message : String(err),
+        message: errorMessage(err),
         itemId: item.id,
       },
     });
@@ -207,7 +208,7 @@ async function runResolved(
     },
   ).catch((err) => ({
     ok: false as const,
-    error: err instanceof Error ? err.message : String(err),
+    error: errorMessage(err),
   }));
 
   const accounting = {

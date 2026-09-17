@@ -7,7 +7,7 @@ import { suggestionPayload } from '@/lib/turn-suggestion-read';
 /**
  * GET /api/assistant/turn/[turnId]/suggestion: the follow-up suggestion for a
  * finalized turn. `turnId` is the OUTBOUND row's id (the client has it from
- * `done` / the poll reconcile). The suggester (apps/api, see turn-suggestion.ts)
+ * `done` / the poll reconcile). The suggester (server/api, see turn-suggestion.ts)
  * persists onto that row's `data` jsonb strictly after the turn finalizes, so
  * delivery is deliberately fetch-after-done rather than a post-`done` SSE event:
  * the client tears the stream down on `done` and the trace frees the turn's

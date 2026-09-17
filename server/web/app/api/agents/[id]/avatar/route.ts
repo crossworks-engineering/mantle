@@ -1,9 +1,12 @@
+import { createHash } from 'node:crypto';
+import { APP_VERSION } from '@mantle/client-types/version';
 import { NextResponse } from '@/server/http-compat';
 import { and, eq } from 'drizzle-orm';
 import { getOwnerOr401 } from '@/lib/auth';
 import { loadProfilePreferences } from '@mantle/content';
-import { renderAvatarSvg, resolveAvatarTint } from '@mantle/web-ui/avatar';
+import { renderAvatarSvg, resolveAvatarTint } from '@mantle/share-ui/avatar';
 import { db, agents } from '@mantle/db';
+import { UUID_RE } from '@mantle/std';
 
 // Server-render the agent's avatar SVG so non-web clients (the mobile
 // companion) show the same one the web app does.
@@ -30,7 +33,6 @@ import { db, agents } from '@mantle/db';
 // rejects anything else — which is also why passing the oklch-era tokens here
 // would throw. themes.css emits hex, so these stay in step by construction.
 const PALETTE = ['#666ed1', '#ae467f', '#ad5700', '#4b830f', '#00889b'];
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const owner = await getOwnerOr401();
@@ -60,21 +62,46 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const style = prefs?.avatarStyle;
   const tint = resolveAvatarTint(prefs?.avatarTint);
 
+  // The drawing is a pure function of these inputs PLUS the renderer itself,
+  // so the ETag hashes APP_VERSION too — a DiceBear/style pin bump changes
+  // what identical inputs draw, and without the salt a revalidating client
+  // would 304 onto the old image forever. The URL alone isn't the identity
+  // (id + size only), and the old blanket max-age=86400 kept a companion a
+  // day stale after a builder edit; max-age=300 bounds staleness at 5 min
+  // while capping revalidation traffic (a 304 still pays auth + two reads —
+  // per render was too often, per 5 minutes is noise).
+  const inputs = {
+    v: APP_VERSION,
+    seed: agent.avatar.seed || agent.slug,
+    parts: agent.avatar.parts ?? null,
+    style: style ?? null,
+    tint,
+    size,
+  };
+  const etag = `"${createHash('sha1').update(JSON.stringify(inputs)).digest('hex')}"`;
+  const headers = {
+    'Content-Type': 'image/svg+xml; charset=utf-8',
+    'Cache-Control': 'private, max-age=300',
+    ETag: etag,
+  };
+  // Tolerate weak validators: a compressing proxy may rewrite the strong tag
+  // to W/"…", and a strict compare would silently defeat every 304.
+  const inm = req.headers.get('if-none-match');
+  if (inm && inm.replace(/^W\//, '') === etag) {
+    return new Response(null, { status: 304, headers });
+  }
+
   // Async because style JSON is fetched on demand (avatar.ts) — 50 styles are
   // far too much to hold resident just to serve one avatar. Cached after the
   // first request, and a brain draws one style.
   const svg = await renderAvatarSvg({
     style,
-    seed: agent.avatar.seed || agent.slug,
+    seed: inputs.seed,
+    parts: agent.avatar.parts,
     size,
     ramp: PALETTE,
     tint,
   });
 
-  return new Response(svg, {
-    headers: {
-      'Content-Type': 'image/svg+xml; charset=utf-8',
-      'Cache-Control': 'private, max-age=86400',
-    },
-  });
+  return new Response(svg, { headers });
 }

@@ -9,6 +9,8 @@ import {
 import { db, toolGroups, and, eq } from '@mantle/db';
 import { createTool, listToolsForOwner } from '@/lib/tools';
 import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 export async function GET() {
   const user = await getOwnerOr401();
@@ -46,10 +48,7 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { groupSlug, ...toolInput } = parsed.data;
   let inherited: string | null = null;
@@ -97,7 +96,7 @@ export async function POST(req: Request) {
       ...(inherited ? { inherited } : {}),
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (msg.includes('tools_owner_slug_uq') || msg.includes('duplicate key')) {
       return NextResponse.json(
         { error: `A tool with slug "${parsed.data.slug}" already exists.` },

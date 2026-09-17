@@ -3,7 +3,7 @@ import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { resolveCapabilities } from '@/lib/integrity/capabilities';
 import { countLanded, listLanded } from '@/lib/integrity/landed';
-import type { LandedReport } from '@mantle/web-ui/types/integrity';
+import type { LandedReport } from '@mantle/client-types/types/integrity';
 
 // Read-only live view of the real content you've added and its brain footprint.
 // No writes, no fixtures — safe to poll and safe to leave mid-load.

@@ -14,7 +14,7 @@
  * differing only in identity.
  */
 
-import { AGENT_NAME_TOKEN } from '@mantle/agent-runtime';
+import { AGENT_NAME_TOKEN } from '@mantle/runtime/agent';
 import type { CreateAgentInput } from './agents';
 import type { AgentDTO } from '@mantle/client-types';
 

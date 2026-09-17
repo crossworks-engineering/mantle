@@ -6,17 +6,18 @@
  * it here keeps creation in the privileged one-shot and out of the hot path.
  *
  * Kept dependency-light (only `postgres`): the system-DB name logic is inlined
- * rather than importing resolveSystemDatabaseUrl from @mantle/assistant-runtime,
+ * rather than importing resolveSystemDatabaseUrl from @mantle/runtime/assistant,
  * which would pull the whole turn-runtime module graph into this tiny step.
  * Keep in sync with that resolver (the `mantle_dbos_sys` convention).
  */
 
 import postgres from 'postgres';
+import { env } from '@mantle/config';
 
 function systemDbUrl(): string {
-  const explicit = process.env.DBOS_SYSTEM_DATABASE_URL;
+  const explicit = env('DBOS_SYSTEM_DATABASE_URL');
   if (explicit) return explicit;
-  const app = process.env.DATABASE_URL;
+  const app = env('DATABASE_URL');
   if (!app) throw new Error('DATABASE_URL (or DBOS_SYSTEM_DATABASE_URL) must be set');
   const u = new URL(app);
   u.pathname = '/mantle_dbos_sys';

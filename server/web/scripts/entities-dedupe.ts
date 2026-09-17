@@ -18,6 +18,7 @@
 import { db, nodes } from '@mantle/db';
 import { mergeEntities, type MergeCandidate } from '@mantle/content';
 import { runEntitiesDedupe } from '../lib/maintenance/sweeps';
+import { env } from '@mantle/config';
 
 function arg(name: string): string | null {
   const a = process.argv.find((x) => x.startsWith(`--${name}=`));
@@ -26,7 +27,7 @@ function arg(name: string): string | null {
 const has = (f: string) => process.argv.includes(`--${f}`);
 
 async function main() {
-  if (!process.env.DATABASE_URL) {
+  if (!env('DATABASE_URL')) {
     console.error('entities-dedupe: DATABASE_URL must be set');
     process.exit(1);
   }

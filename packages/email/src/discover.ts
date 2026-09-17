@@ -2,7 +2,7 @@
  * Sender discovery — a live look at who recently emailed the owner but
  * isn't yet a contact (so their mail is NOT being ingested). Reads the
  * provider on demand across every enabled account; persists nothing. Lifted
- * from the `apps/web` settings/discover action so it's reachable over HTTP.
+ * from the `server/web` settings/discover action so it's reachable over HTTP.
  */
 import type { EmailAccount } from '@mantle/db';
 import { createContact, loadContactGate } from '@mantle/content';
@@ -11,6 +11,7 @@ import { enqueueBackfills } from './backfill-queue';
 import { peekRecentSenders, type RecentSender } from './peek';
 import { imap } from './providers/imap';
 import type { EmailProvider } from './types';
+import { errorMessage } from '@mantle/std';
 
 export type UnknownSender = {
   fromAddr: string;
@@ -73,7 +74,7 @@ export async function recentUnknownSenders(
         }
       }
     } catch (err) {
-      lastErr = err instanceof Error ? err.message : String(err);
+      lastErr = errorMessage(err);
     }
   }
 

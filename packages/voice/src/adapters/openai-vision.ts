@@ -31,6 +31,7 @@ import type {
 } from './types';
 import type { DiscoveryResult } from '../discover';
 import { OPENAI_VISION_MODELS } from '../catalogs/openai-vision';
+import { errorMessage } from '@mantle/std';
 
 const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions';
 const OPENAI_MODELS_URL = 'https://api.openai.com/v1/models';
@@ -124,7 +125,7 @@ export const openAiVisionAdapter: VisionDispatcher = {
       return {
         available: [...OPENAI_VISION_MODELS],
         filtered: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       };
     }
   },

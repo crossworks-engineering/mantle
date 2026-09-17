@@ -38,7 +38,9 @@ import type { ImageGenModelInfo, ImageGenParam, TtsParam } from '@mantle/voice';
 import type { BuiltinToolDef, ToolArtifact, ToolHandlerResult, ToolPrecondition } from './types';
 import { registerDynamicSchema } from './dynamic-schema';
 import { notFound } from './errors';
-import { str } from './coerce';
+import { str, strOpt, numOpt as num } from './coerce';
+import { resolveImageParams } from './image-params';
+import { errorMessage } from '@mantle/std';
 
 // ─── shared helpers ────────────────────────────────────────────────
 
@@ -54,21 +56,13 @@ const NODE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'node_id', lookup: 'search_nodes / tree_list' },
 ];
 
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
-function num(v: unknown, dflt?: number): number | undefined {
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  return dflt;
-}
-
 /**
  * Resolve `{worker, apiKey}` for a default worker of the given kind,
  * or return a structured error the tool can pass straight back to the
  * LLM. Centralised so every worker tool reports the same shape of
  * "not configured" message.
  */
-async function resolveDefaultWorker(
+export async function resolveDefaultWorker(
   ownerId: string,
   kind: AiWorkerKind,
 ): Promise<
@@ -172,7 +166,7 @@ const synthesize_speech: BuiltinToolDef = {
         language: params.language,
       });
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
     // Same honesty split as generate_image. TTS providers diverge hard here:
     // Gemini has no speed parameter at all, ElevenLabs takes a language code
@@ -249,7 +243,7 @@ const synthesize_speech: BuiltinToolDef = {
           },
         };
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        return { ok: false, error: errorMessage(err) };
       }
     }
 
@@ -284,6 +278,7 @@ const synthesize_speech: BuiltinToolDef = {
 
 const extract_from_image: BuiltinToolDef = {
   slug: 'extract_from_image',
+  readOnly: true,
   name: 'Read text from an image',
   description:
     "Run the owner's default vision worker over an image and return the extracted text. Use when the user asks to re-read a previously-sent photo, OCR a file in their notes, or extract content from a specific image they reference. For photos that JUST arrived in this conversation, the agent's auto-ingest pipeline has already saved the transcript as a note — search_nodes for it before re-extracting.",
@@ -365,7 +360,7 @@ const extract_from_image: BuiltinToolDef = {
         bytes = downloaded.bytes;
         mimeType = downloaded.mimeType;
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        return { ok: false, error: errorMessage(err) };
       }
     }
 
@@ -406,7 +401,7 @@ const extract_from_image: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -415,6 +410,7 @@ const extract_from_image: BuiltinToolDef = {
 
 const summarize_text: BuiltinToolDef = {
   slug: 'summarize_text',
+  readOnly: true,
   name: 'Summarize a note or block of text',
   description:
     "Run the owner's default summarizer worker (a chat-shaped worker tuned for compression) over text — either inline content or a note's body. Use when the user asks for a TLDR, a recap of a long note, or a digest of something they pasted. For automatic chat-history summarization, the background summarizer already runs; don't call this for that.",
@@ -525,7 +521,7 @@ const summarize_text: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -693,63 +689,14 @@ const generate_image: BuiltinToolDef = {
       };
     }
 
-    const params = (worker.params ?? {}) as {
-      size?: string;
-      aspect_ratio?: string;
-      style?: string;
-      quality?: string;
-    };
-
-    // Per-call arg wins, else the worker's saved default. `origin` is kept so
-    // the report below can distinguish "the model asked for this and it did
-    // not apply" (worth saying out loud) from "an operator default did not
-    // apply" (worth a trace line and a settings pointer).
-    const requested: Array<{
-      param: ImageGenParam;
-      key: string;
-      value: string;
-      fromCall: boolean;
-      /** Set when the ADAPTER rejected it for this model, not the caller. */
-      reason?: string;
-    }> = [];
-    const take = (param: ImageGenParam, key: string, callValue?: string, saved?: string) => {
-      const fromCall = callValue != null && callValue !== '';
-      const value = fromCall ? callValue : (saved ?? '');
-      if (value) requested.push({ param, key, value, fromCall });
-    };
-    take('size', 'size', strOpt(input.size), params.size);
-    take('aspectRatio', 'aspect_ratio', strOpt(input.aspect_ratio), params.aspect_ratio);
-    take('style', 'style', strOpt(input.style), params.style);
-    take('quality', 'quality', strOpt(input.quality), params.quality);
-    take('negativePrompt', 'negative_prompt', strOpt(input.negative_prompt));
-
-    // Precedence between the two SIZING options, resolved here because this is
-    // the only layer that knows where each value came from.
-    //
-    // `size` and `aspect_ratio` both describe the shape, and providers treat an
-    // explicit pixel size as authoritative (OpenRouter rejects a companion
-    // ratio outright). So a worker default of 1024x1024 would quietly outrank
-    // "make it a 16:9 banner" — which is what it did on the first real test:
-    // the request said 16:9, the trace claimed 16:9 applied, and the file came
-    // back square. A per-call argument must beat a saved default, never the
-    // other way round.
-    const supersede = (winner: ImageGenParam, loser: ImageGenParam) => {
-      const w = requested.find((r) => r.param === winner && r.fromCall);
-      const l = requested.find((r) => r.param === loser && !r.fromCall);
-      if (w && l) l.reason = `superseded by the ${w.key} you asked for (${w.value})`;
-    };
-    supersede('aspectRatio', 'size');
-    supersede('size', 'aspectRatio');
-
-    // The honesty split. An option the adapter does not forward must never
-    // look like it applied: an operator once had size/style/quality saved on
-    // an OpenRouter worker, all three shown in the UI, none of them sent, and
-    // nothing anywhere said so.
-    const supported = new Set<ImageGenParam>(adapter.supports);
-    // A superseded default is neither sent nor claimed as applied.
-    const sent = requested.filter((r) => supported.has(r.param) && !r.reason);
-    const ignored = requested.filter((r) => !supported.has(r.param) || r.reason);
-    const get = (param: ImageGenParam) => sent.find((a) => a.param === param)?.value;
+    // Which options were asked for, which the adapter will forward, and which
+    // must be reported as ignored. See image-params.ts for why this is its own
+    // module: both field failures here were silent, not crashes.
+    const { sent, ignored, get, supported } = resolveImageParams({
+      input,
+      worker,
+      supports: adapter.supports,
+    });
 
     // ── reference images (image-to-image) ──
     // Refused BEFORE the request, not warned about after: an adapter that
@@ -802,7 +749,7 @@ const generate_image: BuiltinToolDef = {
         negativePrompt: get('negativePrompt'),
       });
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
 
     // The adapter gets the last word. `supports` is per-provider, but several
@@ -858,7 +805,7 @@ const generate_image: BuiltinToolDef = {
       // generated successfully, and on Telegram we can still deliver
       // it inline. Log it in the trace meta so it doesn't vanish.
       ctx.step?.setMeta({
-        file_save_error: err instanceof Error ? err.message : String(err),
+        file_save_error: errorMessage(err),
       });
     }
 
@@ -882,7 +829,7 @@ const generate_image: BuiltinToolDef = {
         // void the rest of the tool's work, but we should surface it
         // in the trace so the operator sees what happened.
         ctx.step?.setMeta({
-          telegram_send_error: err instanceof Error ? err.message : String(err),
+          telegram_send_error: errorMessage(err),
         });
       }
     }

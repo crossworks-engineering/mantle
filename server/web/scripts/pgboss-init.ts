@@ -18,8 +18,9 @@
  */
 
 import { PgBoss } from 'pg-boss';
+import { env } from '@mantle/config';
 
-const url = process.env.DATABASE_URL;
+const url = env('DATABASE_URL');
 if (!url) {
   console.error('[pgboss-init] DATABASE_URL is required');
   process.exit(1);

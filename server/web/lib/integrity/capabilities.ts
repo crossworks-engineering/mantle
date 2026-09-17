@@ -12,9 +12,10 @@
  * don't require a key, so those only check that a worker is configured.
  */
 import { db, sql, getDefaultWorker, type AiWorkerKind } from '@mantle/db';
-import { tikaIsUp } from '@mantle/files';
+import { mediaSidecarHealth, tikaIsUp } from '@mantle/files';
 
-import type { Capability, Capabilities } from '@mantle/web-ui/types/integrity';
+import type { Capability, Capabilities } from '@mantle/client-types/types/integrity';
+import { env } from '@mantle/config';
 
 async function workerCap(
   ownerId: string,
@@ -48,7 +49,7 @@ async function embeddingCap(ownerId: string): Promise<Capability> {
   if (provider !== 'local') return { available: true, detail: `${model} · ${provider}` };
   const base = (
     row.base_url ||
-    process.env.MANTLE_LOCAL_EMBEDDING_URL ||
+    env('MANTLE_LOCAL_EMBEDDING_URL') ||
     'http://localhost:11434/v1'
   ).replace(/\/+$/, '');
   try {
@@ -69,15 +70,17 @@ async function embeddingCap(ownerId: string): Promise<Capability> {
 }
 
 export async function resolveCapabilities(ownerId: string): Promise<Capabilities> {
-  const [tikaUp, vision, extractor, embedding, summarizer, reflector, stt] = await Promise.all([
-    tikaIsUp().catch(() => false),
-    workerCap(ownerId, 'vision', true),
-    workerCap(ownerId, 'extractor', false),
-    embeddingCap(ownerId),
-    workerCap(ownerId, 'summarizer', false),
-    workerCap(ownerId, 'reflector', false),
-    workerCap(ownerId, 'stt', false),
-  ]);
+  const [tikaUp, vision, extractor, embedding, summarizer, reflector, stt, mediaH] =
+    await Promise.all([
+      tikaIsUp().catch(() => false),
+      workerCap(ownerId, 'vision', true),
+      workerCap(ownerId, 'extractor', false),
+      embeddingCap(ownerId),
+      workerCap(ownerId, 'summarizer', false),
+      workerCap(ownerId, 'reflector', false),
+      workerCap(ownerId, 'stt', false),
+      mediaSidecarHealth(1_500),
+    ]);
   return {
     tika: {
       available: tikaUp,
@@ -89,5 +92,22 @@ export async function resolveCapabilities(ownerId: string): Promise<Capabilities
     summarizer,
     reflector,
     stt,
+    media:
+      mediaH.up === null
+        ? { available: false, detail: 'not enabled (media compose profile off)' }
+        : mediaH.up
+          ? {
+              available: true,
+              detail:
+                `yt-dlp ${mediaH.ytDlpVersion ?? '?'} · ffmpeg ${mediaH.ffmpegVersion ?? '?'} · ` +
+                (mediaH.ezdwfVersion
+                  ? `ezdwf ${mediaH.ezdwfVersion}`
+                  : 'ezdwf missing (image predates the CAD tier — DWF renders fall back to thumbnails)') +
+                ' · ' +
+                (mediaH.ezdxfVersion
+                  ? `dwg ${mediaH.dwg2dxfVersion ?? '?'}/ezdxf ${mediaH.ezdxfVersion}`
+                  : 'dwg tier missing (image predates v0.232.99 — DWG files error at extract)'),
+            }
+          : { available: false, detail: 'configured but unreachable' },
   };
 }

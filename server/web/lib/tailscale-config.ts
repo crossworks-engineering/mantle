@@ -1,6 +1,6 @@
 /**
  * The owner's Tailscale auth key + device name, sealed at rest. Web-only (the
- * app process owns the tailscaled socket), so this lives in apps/web/lib rather
+ * app process owns the tailscaled socket), so this lives in server/web/lib rather
  * than a shared package. Mirrors @mantle/api-keys: seal with the row id as AAD,
  * never surface plaintext to the UI (only `masked`).
  */
@@ -10,12 +10,8 @@ import { eq } from 'drizzle-orm';
 import { db, tailscaleConfig } from '@mantle/db';
 import { seal, open } from '@mantle/crypto';
 import { maskPlaintext } from '@mantle/api-keys';
-
-export type TailscaleConfigSummary = {
-  hostname: string;
-  masked: string;
-  lastActivatedAt: Date | null;
-};
+import type { TailscaleConfigSummary } from '@mantle/client-types';
+export type { TailscaleConfigSummary };
 
 /** Masked summary for the UI — never the plaintext key. */
 export async function getTailscaleConfig(ownerId: string): Promise<TailscaleConfigSummary | null> {

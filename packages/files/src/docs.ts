@@ -35,6 +35,7 @@ import {
 } from '@mantle/db';
 import type { DocBrainDepth, DocCollection } from '@mantle/db';
 import { dashToLtree, ltreeToDash } from './slug';
+import { env } from '@mantle/config';
 
 /** The single ltree label that roots the documentation subtree. */
 export const DOCS_ROOT_LABEL = 'documentation';
@@ -49,15 +50,15 @@ let warnedUnset = false;
  *  caveat as `filesRoot()`: the cwd-relative default resolves differently per
  *  process, so set an absolute path in .env.local / compose. */
 export function docsRoot(): string {
-  const env = process.env.MANTLE_DOCS_ROOT?.trim();
-  if (!env && !warnedUnset) {
+  const configured = env('MANTLE_DOCS_ROOT')?.trim();
+  if (!configured && !warnedUnset) {
     warnedUnset = true;
     console.warn(
       '[docs] MANTLE_DOCS_ROOT is not set — falling back to the cwd-relative ' +
         `'${DEFAULT_DOCS_ROOT}'. Set an absolute path shared by every process.`,
     );
   }
-  return path.resolve(env || DEFAULT_DOCS_ROOT);
+  return path.resolve(configured || DEFAULT_DOCS_ROOT);
 }
 
 /**
@@ -81,8 +82,8 @@ export function effectiveBrainDepth(nodeType: string, rawDepth: unknown): DocBra
  *                            `<docsRoot>/guide`. PORTABLE — the right shape for
  *                            repo-shipped content baked into the image. (Note:
  *                            do NOT resolve relative paths against cwd — every
- *                            Mantle process runs with cwd `apps/web`, so a bare
- *                            relative path would land under apps/web, not docs.)
+ *                            Mantle process runs with cwd `server/web`, so a bare
+ *                            relative path would land under server/web, not docs.)
  *   - absolute `root_path` → used as-is, for an external dir (e.g. an Obsidian
  *                            vault). Machine-specific by definition; not portable.
  */
@@ -494,6 +495,16 @@ const BUILTIN_COLLECTIONS: ReadonlyArray<{
     label: 'Changelog',
     origin: 'system',
     rootPath: '_changelog',
+    brainDepth: 'retrieval',
+  },
+  {
+    // Per-type drawing references for the Draftsman diagram specialist
+    // (docs/diagrams.md). Indexing is opt-in like every collection; the
+    // diagram_design skill degrades to its core rules when not enabled.
+    key: 'diagram-guides',
+    label: 'Diagram guides',
+    origin: 'system',
+    rootPath: 'diagram-guides',
     brainDepth: 'retrieval',
   },
 ];

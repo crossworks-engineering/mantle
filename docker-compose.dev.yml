@@ -38,7 +38,7 @@ services:
       retries: 20
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest   # Docker Hub dropped minio/* on 2026-09-14
     container_name: mantle_dev_minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -133,3 +133,42 @@ services:
       timeout: 5s
       retries: 12
       start_period: 20s
+
+  # Media sidecar (yt-dlp + ffmpeg) — the video_ingest fetch/transcode engine.
+  # Built locally from the repo's `media` Dockerfile stage (prod pulls the
+  # published mantle-media image instead). Loopback-published like tika; the
+  # native-node dev server connects via
+  # MEDIA_SIDECAR_URL=http://127.0.0.1:8095 + MEDIA_SIDECAR_TOKEN=mantle in
+  # .env.local. Dev-only token — the port is loopback-published, so this is a
+  # formality the app requires, not a security boundary.
+  media:
+    build:
+      context: .
+      target: media
+    container_name: mantle_dev_media
+    restart: unless-stopped
+    # tini reaps group-killed yt-dlp/ffmpeg orphans (see prod compose note).
+    init: true
+    mem_limit: 1g
+    environment:
+      MEDIA_TOKEN: mantle
+    volumes:
+      # Optional YouTube cookies for dev — ./data/media/cookies.txt (see the
+      # prod compose note + docs/video-ingest.md).
+      - ${MANTLE_DATA_DIR:-./data}/media:/etc/media:ro
+    ports:
+      - "127.0.0.1:8095:8095"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=3).status==200 else 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # The listener binds immediately (boot pip refresh is backgrounded);
+      # 60s is margin for a slow image start, not for PyPI.
+      start_period: 60s

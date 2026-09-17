@@ -8,10 +8,12 @@ export {
   TEXT_EXTS,
   TIKA_EXTS,
   INGESTABLE_EXTS,
+  MEDIA_EXTS,
   PREVIEWABLE_MARKDOWN_EXTS,
   EXPORT_REQUIRED_EXTS,
   exportHintForExt,
   parserRouteForExt,
+  isVisionImage,
   type ParserRoute,
 } from './slug';
 
@@ -23,7 +25,22 @@ export { extractPdfTextWithPassword, type PdfPasswordResult } from './pdf-passwo
 
 export { parseTikaBytes, tikaIsUp, tikaVersion } from './tika';
 
-export { MAX_UPLOAD_BYTES } from './limits';
+export {
+  mediaSidecarEnabled,
+  mediaSidecarHealth,
+  mediaProbe,
+  mediaCaptions,
+  mediaAudio,
+  mediaExtractAudio,
+  mediaVideo,
+  type MediaResult,
+  type MediaErrorCode,
+  type MediaProbe,
+  type MediaCaptions,
+  type MediaBytes,
+} from './media-sidecar';
+
+export { MAX_UPLOAD_BYTES, maxStreamedUploadBytes } from './limits';
 
 export {
   filesRoot,
@@ -53,6 +70,13 @@ export {
   renameFile,
   renameFolder,
   removeFolder,
+  spoolUpload,
+  discardSpooled,
+  adoptSpooled,
+  sweepSpool,
+  spoolDir,
+  UploadTooLargeError,
+  type SpooledUpload,
 } from './disk';
 
 export {
@@ -93,6 +117,7 @@ export {
   createFolder,
   ensureDatedUploadFolder,
   ensureExtractedImagesFolder,
+  ensureFolderPath,
   EXTRACTED_IMAGES_SLUG,
   updateFolderDescription,
   deleteFolder,
@@ -106,12 +131,37 @@ export {
   readFileById,
   countDerivedFromFile,
   deleteFileById,
+  drawsReferencingFile,
   renameFileById,
   bulkDeleteFiles,
   listFiles,
+  listRecentFiles,
   fileById,
   syncFileFromDisk,
   deleteFileByPath,
   type FolderRow,
   type FileRow,
 } from './ops';
+export {
+  ownIndexingMode,
+  resolveEffectiveIndexing,
+  metadataSpineText,
+  setIndexingMode,
+  type IndexingMode,
+  type IndexingSetting,
+  type EffectiveIndexing,
+} from './indexing';
+export {
+  isThumbable,
+  thumbnailFor,
+  deleteThumbnailsFor,
+  thumbsRoot,
+  THUMB_MAX_DIM,
+} from './thumbnail';
+export {
+  moveFileById,
+  moveFolderById,
+  copyFileById,
+  copyFolderById,
+  COPY_MAX_FILES,
+} from './move-copy';

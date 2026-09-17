@@ -68,7 +68,11 @@ fail=0; up=0
 if [[ "$PROJECT" != "mantle-dev" && -f "$ENV_FILE" && -f "$STACK_DIR/docker-compose.yml" ]]; then
   expected="$( {
     docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" config --services 2>/dev/null
-    if [[ -f "$STACK_DIR/docker-compose.client.yml" ]]; then
+    # A deliberately headless box (MANTLE_CLIENT_ENABLED=0, install.sh
+    # --no-client) runs no owner UI — expecting client-web there would report
+    # a chosen absence as a failure. Missing from .env means ON.
+    if [[ -f "$STACK_DIR/docker-compose.client.yml" ]] \
+      && [[ "$(grep -E '^MANTLE_CLIENT_ENABLED=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-)" != 0 ]]; then
       docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" \
         -f "$STACK_DIR/docker-compose.client.yml" config --services 2>/dev/null
     fi

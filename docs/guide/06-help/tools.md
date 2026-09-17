@@ -6,7 +6,7 @@ toolGroups: [toolsmith]
 ## Tools
 
 The registry of atomic capabilities. Every single thing any agent can do is a
-row here — reading a note, querying a table, sending mail, calling an external
+row here, reading a note, querying a table, sending mail, calling an external
 API.
 
 A tool on this screen is **not granted to anyone**. This is the catalogue, not
@@ -14,7 +14,7 @@ the permission system: agents receive capability through tool groups, and a tool
 nobody has bundled into a group is inert no matter what its row says.
 
 Two switches on a row matter. **Enabled** takes a tool out of circulation
-everywhere at once — the emergency brake. **Requires confirmation** routes every
+everywhere at once, the emergency brake. **Requires confirmation** routes every
 call through the pending-approvals queue, so the tool still works but never runs
 unseen.
 
@@ -29,7 +29,7 @@ the API's documentation, writes the request template, tests it against the live
 endpoint, and can put it in a group. What it hands back is a capability that
 didn't exist before.
 
-Built-in tools can't be rewritten this way — only their enabled and confirmation
+Built-in tools can't be rewritten this way, only their enabled and confirmation
 flags are editable, and shell tools are off-limits to agents entirely.
 
 ## Technical
@@ -49,7 +49,7 @@ gated tool writes a pending row and the turn continues without a result. There's
 no path where an agent reasons its way past it, because the check happens before
 the code that would run the tool.
 
-Slug squatting is blocked — an agent cannot mint a tool whose name shadows a
+Slug squatting is blocked, an agent cannot mint a tool whose name shadows a
 builtin, which would otherwise be a way to intercept calls meant for the real
 one. And an approval requirement set by you outranks the agent's own preference
 when it creates a tool.

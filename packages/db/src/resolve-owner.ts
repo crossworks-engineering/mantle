@@ -20,8 +20,8 @@
 import { eq } from 'drizzle-orm';
 import { db } from './client';
 import { authUsers } from './schema/auth-users';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { env } from '@mantle/config';
+import { UUID_RE } from '@mantle/std';
 
 /** Number of rows in auth.users. 0 ⇒ fresh install (signup is open). */
 export async function countUsers(): Promise<number> {
@@ -41,12 +41,12 @@ export async function countUsers(): Promise<number> {
  *   one, or set `ALLOWED_USER_ID` to disambiguate).
  */
 export async function resolveSingleOwnerId(): Promise<string | null> {
-  const env = process.env.ALLOWED_USER_ID?.trim();
-  if (env) {
-    if (!UUID_RE.test(env)) {
-      throw new Error(`ALLOWED_USER_ID '${env}' is not a valid UUID. Refusing to start.`);
+  const configured = env('ALLOWED_USER_ID')?.trim();
+  if (configured) {
+    if (!UUID_RE.test(configured)) {
+      throw new Error(`ALLOWED_USER_ID '${configured}' is not a valid UUID. Refusing to start.`);
     }
-    return env;
+    return configured;
   }
   const [anchor] = await db
     .select({ id: authUsers.id })

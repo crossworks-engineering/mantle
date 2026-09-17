@@ -29,6 +29,7 @@ import {
 import { assertSafeScript } from '@mantle/content/app-broker';
 import { resolveTool } from '@mantle/tools';
 import { runAppBuild } from '@/lib/app-build-run';
+import { errorMessage } from '@mantle/std';
 
 const Body = z.object({
   /** Update this app if given; otherwise create a new one (then `name` is required). */
@@ -110,7 +111,7 @@ export async function POST(req: Request) {
     try {
       assertSafeScript(b.schemaSql);
     } catch (err) {
-      return bad(err instanceof Error ? err.message : String(err));
+      return bad(errorMessage(err));
     }
     const app = await getApp(user.id, appId);
     const nextVersion = (app?.manifest.sqlite?.schemaVersion ?? 0) + 1;

@@ -12,11 +12,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mantle/config": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/std": "workspace:*",
     "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
-    "@types/node": "^22.20.1",
-    "typescript": "^5.7.2"
+    "@types/node": "^26.4.1",
+    "typescript": "^5.9.3"
   }
 }

@@ -1,7 +1,7 @@
 /**
  * Account data layer — owner-scoped reads/writes for email accounts.
  *
- * Lifted out of `apps/web` (the settings/accounts pages + IMAP form action) so
+ * Lifted out of `server/web` (the settings/accounts pages + IMAP form action) so
  * the same logic is reachable both in-process (SSR) and over HTTP (`/api/email`)
  * and by any non-Next consumer. Every function takes the owner `userId` and
  * scopes by it — a stolen account UUID can never touch another owner's row.
@@ -13,6 +13,11 @@ import { db, emailAccounts, syncRuns, type EmailAccount, type SyncRun } from '@m
 import { seal } from '@mantle/crypto';
 import { probeImapConnection, unsealImapPassword } from './providers/imap';
 import { probeSmtpConnection } from './send';
+import type { AccountFoldersResult } from '@mantle/client-types';
+import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
+
+export type { AccountFoldersResult };
 
 /** Immediate-rescan queue — must match the email-sync worker's queue name. */
 const SYNC_QUEUE = 'mantle.email.sync';
@@ -20,7 +25,7 @@ const SYNC_QUEUE = 'mantle.email.sync';
 let _boss: PgBoss | undefined;
 async function boss(): Promise<PgBoss> {
   if (_boss) return _boss;
-  const url = process.env.DATABASE_URL;
+  const url = env('DATABASE_URL');
   if (!url) throw new Error('DATABASE_URL must be set');
   _boss = new PgBoss({ connectionString: url, schema: 'pgboss' });
   await _boss.start();
@@ -51,6 +56,23 @@ export function accountBranchPath(address: string): string {
 
 /** An account with the sealed IMAP secret stripped — safe to send over HTTP. */
 export type PublicEmailAccount = Omit<EmailAccount, 'imapConfigEnc'>;
+
+// Key-set drift guards for the hand-mirrored wire DTOs in @mantle/client-types.
+// Dates are ISO strings on the wire but `Date` here, so value types can't be
+// compared — the key sets can, and renamed/added/removed columns fail here.
+type AssertSameKeys<A, B> = [Exclude<keyof A, keyof B>, Exclude<keyof B, keyof A>] extends [
+  never,
+  never,
+]
+  ? true
+  : { missingInDto: Exclude<keyof A, keyof B>; extraInDto: Exclude<keyof B, keyof A> };
+const _publicEmailAccountDrift: AssertSameKeys<
+  PublicEmailAccount,
+  import('@mantle/client-types').PublicEmailAccount
+> = true;
+void _publicEmailAccountDrift;
+const _syncRunDrift: AssertSameKeys<SyncRun, import('@mantle/client-types').SyncRun> = true;
+void _syncRunDrift;
 
 /** Drop the sealed credential before an account row crosses the HTTP boundary. */
 export function redactAccount(account: EmailAccount): PublicEmailAccount {
@@ -237,7 +259,7 @@ export async function saveImapAccount(
 
 /** Tighten a few common IMAP/SMTP errors into plain English. */
 export function explainImapError(err: unknown): string {
-  const raw = err instanceof Error ? err.message : String(err);
+  const raw = errorMessage(err);
   if (/authentication/i.test(raw))
     return 'Authentication failed — check the email address and app password.';
   if (/ENOTFOUND|EAI_AGAIN/i.test(raw)) return 'Could not resolve that host. Check the IMAP host.';
@@ -364,21 +386,6 @@ export async function connectImapAccount(
   return { intent: 'save', ok: true, id: saved.id };
 }
 
-export type AccountFoldersResult =
-  | {
-      ok: true;
-      address: string;
-      /** Every folder the server reports right now (the pick list). */
-      allFolders: string[];
-      /** The current explicit allow-list, or null = "scan all non-excluded". */
-      included: string[] | null;
-      /** Folders the operator opted OUT of (rendered disabled). */
-      excluded: string[];
-      /** Folders the sync has actually touched (per the cursor). */
-      scanned: string[];
-    }
-  | { ok: false; error: string };
-
 /**
  * List the live folder tree for one IMAP account, plus its current scan config.
  * Owner-scoped. Hits the IMAP server, so it can be slow/flaky — always returns
@@ -419,7 +426,7 @@ export async function listAccountFolders(
       scanned,
     };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 }
 

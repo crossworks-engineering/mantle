@@ -1,6 +1,6 @@
 # Realtime (live UI)
 
-Server-rendered screens that repaint the instant their data changes — no manual
+Server-rendered screens that repaint the instant their data changes, no manual
 refresh. Built on the Postgres `LISTEN/NOTIFY` Mantle already uses for ingest:
 migration 0018 fires `pg_notify('node_ingested', <id>)` on **every** `nodes`
 insert. We bridge that channel to the browser over SSE.
@@ -44,28 +44,36 @@ useEffect(() => setRows(initialRows), [initialRows]);
 
 ## Notes & guarantees
 
-- **Owner isolation** is enforced server-side in `/api/realtime` — a change for
+- **Owner isolation** is enforced server-side in `/api/realtime`, a change for
   another owner is never emitted.
 - **One DB connection total.** A single shared LISTENer serves every connected
   tab; the SSE route only adds an in-process subscriber. The listener is a
   `globalThis` singleton so Next.js dev HMR doesn't stack duplicates.
 - **Self-healing.** `EventSource` auto-reconnects on drop; a 25s heartbeat
   comment keeps idle connections off proxy/idle timeouts.
-- **Scope today:** two channels, both fanned out the same way —
+- **Scope today:** four node-flavoured channels, all fanned out the same way,
   `node_ingested` (migration 0018 trigger, every `nodes` insert: events, notes,
   files, emails, telegram, …) and `node_indexed` (the extractor's explicit
   `notifyNodeIndexed` after it writes `data.summary` + `embedding`). The second
-  is what makes a freshly-summarised file repaint live — the insert alone has no
+  is what makes a freshly-summarised file repaint live; the insert alone has no
   summary yet. Other pure column updates still won't notify; emit on
   `node_indexed` (or add a table+channel) from the code that does the update.
+  Tasks add two such table+channel pairs: `tasks_changed` (migration 0148
+  triggers on task UPDATE/DELETE — covers deletes and rank/tags-only edits,
+  which deliberately don't re-ingest; owner-id payload, broadcast typed
+  `task`) and `comments_changed` (migration 0149 triggers on `node_comments`;
+  JSON `{ownerId, nodeId}` payload, broadcast typed `comment` with the node id
+  so a thread invalidates precisely).
 
 ## Source of truth
 
 | Concern | File |
 |---|---|
 | The `node_ingested` trigger | `packages/db/migrations/0018_node_ingested_trigger.sql` |
+| The `tasks_changed` triggers | `packages/db/migrations/0148_tasks_changed_notify.sql` |
+| The `comments_changed` triggers | `packages/db/migrations/0149_comments_changed_notify.sql` |
 | The `node_indexed` notify (extractor) | `packages/db/src/notify.ts` (`notifyNodeIndexed`) |
-| LISTEN bridge + fan-out (both channels) | `apps/web/lib/realtime.ts` |
-| SSE endpoint | `apps/web/app/api/realtime/route.ts` |
-| Client hook | `apps/web/components/realtime/use-realtime.ts` |
-| Reference consumer | `apps/web/app/(app)/events/events-client.tsx` |
+| LISTEN bridge + fan-out (both channels) | `server/web/lib/realtime.ts` |
+| SSE endpoint | `server/web/app/api/realtime/route.ts` |
+| Client hook | `jackdaw/components/realtime/use-realtime.ts` |
+| Reference consumer | `jackdaw/app/(app)/events/events-client.tsx` |

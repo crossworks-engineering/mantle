@@ -10,6 +10,7 @@
  * what the peer granted us — the scoping is enforced on their side.
  */
 import { getOutboundToken, listPeers, markPeerContacted, type PeerRow } from './peers';
+import { errorMessage } from '@mantle/std';
 
 const FETCH_TIMEOUT_MS = 15_000;
 
@@ -65,7 +66,7 @@ async function callPeer(
     }
     return { ok: true, json };
   } catch (err) {
-    const m = err instanceof Error ? err.message : String(err);
+    const m = errorMessage(err);
     return { ok: false, error: `Could not reach ${peer.displayName} (${peer.baseUrl}): ${m}` };
   } finally {
     clearTimeout(timer);

@@ -21,6 +21,7 @@
 import { fileURLToPath } from 'node:url';
 import { applyManifest } from '../lib/system-manifest/seed';
 import { MANIFEST_TOOL_GROUPS } from '../lib/system-manifest/manifest';
+import { env } from '@mantle/config';
 
 export async function seedToolGroups(ownerId: string): Promise<void> {
   // Overwrite: sync the group ROWS to the canonical manifest membership (so an
@@ -35,7 +36,7 @@ export async function seedToolGroups(ownerId: string): Promise<void> {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const ownerId = process.env.ALLOWED_USER_ID;
+  const ownerId = env('ALLOWED_USER_ID');
   if (!ownerId) {
     console.error('ALLOWED_USER_ID env var required');
     process.exit(1);

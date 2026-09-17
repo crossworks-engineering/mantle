@@ -29,6 +29,15 @@ export function listBuiltins(): BuiltinToolDef[] {
   return Array.from(REGISTRY.values()).sort((a, b) => a.slug.localeCompare(b.slug));
 }
 
+/** The builtins that become rows in the owner's `tools` table — everything
+ *  except the `mcpOnly` operator surface, which is reachable over MCP only and
+ *  must never end up in a catalog an agent can be granted from. Seeding is the
+ *  ONLY place this distinction is applied, so it lives here where a test can
+ *  see it rather than inline in seed.ts. */
+export function listSeedableBuiltins(): BuiltinToolDef[] {
+  return listBuiltins().filter((d) => !d.mcpOnly);
+}
+
 /** Fields the named builtin marks sensitive. Empty array for everything
  *  else (or unknown slugs). Cheap O(1) lookup used by the tool-loop
  *  before recording call args to `trace_steps.input`. */
@@ -51,4 +60,27 @@ export function redactArgsForLogging(
     if (f in out) out[f] = '[REDACTED]';
   }
   return out;
+}
+
+/** Is this slug a builtin explicitly marked safe for a read-only turn?
+ *
+ *  DEFAULT-DENY, and that is load-bearing: an unknown slug, a user-defined
+ *  API/recipe tool, or a brand-new builtin whose author never considered the
+ *  question all answer `false`. The read-only preset therefore never has to be
+ *  told about a new write tool — it already excludes everything it has not
+ *  been told is safe. Mirrors `getBuiltinRedactFields`: an O(1) registry
+ *  lookup for one piece of per-tool metadata. */
+export function isBuiltinReadOnly(slug: string): boolean {
+  return REGISTRY.get(slug)?.readOnly === true;
+}
+
+/** Every registered builtin currently marked read-only, sorted. Used by the
+ *  drift test and by `tool_catalog`-style introspection — NOT by the turn
+ *  path, which filters the agent's own resolved allowlist through
+ *  {@link isBuiltinReadOnly} instead of intersecting with this set. */
+export function listReadOnlyBuiltinSlugs(): string[] {
+  return Array.from(REGISTRY.values())
+    .filter((d) => d.readOnly === true)
+    .map((d) => d.slug)
+    .sort();
 }

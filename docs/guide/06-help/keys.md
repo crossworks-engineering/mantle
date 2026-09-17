@@ -4,7 +4,7 @@ title: API keys
 
 ## API keys
 
-Where provider credentials live — the OpenRouter, OpenAI, Anthropic, ElevenLabs
+Where provider credentials live, the OpenRouter, OpenAI, Anthropic, ElevenLabs
 and Mapbox keys that everything else points at.
 
 A key is stored **sealed** and shown once. After you save it, this screen can
@@ -24,7 +24,7 @@ silently degrading a background worker at three in the morning.
 
 Rotating replaces the value in place and keeps the same row, so every agent,
 worker and tool pointing at it follows automatically. **Deleting** is the one to
-be careful with: it doesn't delete the things using it, it just unpins them —
+be careful with: it doesn't delete the things using it, it just unpins them,
 so an agent keeps working until its next call and then fails with no obvious
 connection to what you did.
 
@@ -38,7 +38,7 @@ Values are sealed with the brain's master key before they're written, and are
 decrypted only at the moment of a provider call. The row id is bound into the
 encryption, so a value cannot be lifted from one row and replayed in another.
 
-HTTP tools reference a key by placeholder rather than embedding it — the tool's
+HTTP tools reference a key by placeholder rather than embedding it, the tool's
 stored templates hold the reference, and substitution happens at call time
 inside the dispatcher. That's what makes a tool definition safe to read, share
 and let an agent author.

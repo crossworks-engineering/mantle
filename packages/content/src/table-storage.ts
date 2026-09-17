@@ -22,8 +22,9 @@ import {
   type WorkbookTabRef,
 } from '@mantle/tabledb';
 
-import { ensureTableDoc, type TableDoc } from './table-model';
+import { ensureTableDoc, type TableDoc } from '@mantle/content-core/table-model';
 import { tableToText } from './table-to-text';
+import { errorMessage } from '@mantle/std';
 
 /**
  * File-side plumbing for sqlite-native tables (Tables v2 P1) — the pieces
@@ -395,7 +396,7 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
     } catch (err) {
       report.failed.push({
         nodeId: r.nodeId,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       });
       continue;
     }
@@ -420,7 +421,7 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
       } catch (err) {
         report.failed.push({
           nodeId: r.nodeId,
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         });
       }
     }

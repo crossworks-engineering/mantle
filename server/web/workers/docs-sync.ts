@@ -29,11 +29,12 @@ import {
   upsertDocFromDisk,
 } from '@mantle/files';
 import { runWorker } from './_runner';
+import { env } from '@mantle/config';
 
 // Resolved in main() via waitForOwner — ALLOWED_USER_ID when set, else the sole
 // auth.users row. Left undefined until then so a fresh install boots and idles
 // until the first signup instead of exiting.
-let USER_ID: string | undefined = process.env.ALLOWED_USER_ID;
+let USER_ID: string | undefined = env('ALLOWED_USER_ID');
 
 const REFRESH_MS = 60_000;
 

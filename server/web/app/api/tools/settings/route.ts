@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import type { ToolSettings } from '@mantle/client-types';
 import { getOwnerOr401 } from '@/lib/auth';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** The two owner-level tool policy toggles (stored in profile preferences):
  *  agent-built-tool approval, and the unattended-heartbeat email/web egress gate. */
@@ -29,10 +30,7 @@ export async function PUT(req: Request) {
   if (user instanceof Response) return user;
   const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   await updateProfilePreferences(user.id, {
     ...(parsed.data.requireApproval !== undefined

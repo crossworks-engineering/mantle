@@ -32,18 +32,13 @@ import {
 import { enqueueBackfills } from '@mantle/email';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { notFound } from './errors';
-import { str } from './coerce';
+import { str, strOptTrim as strOpt, numOr as num } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 const CONTACT_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'contact', lookup: 'contact_find / contact_list' },
 ];
 
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
-}
-function num(v: unknown, dflt: number): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : dflt;
-}
 /**
  * Coerce an `emails` input to a clean string[] (or undefined to leave alone).
  * Intentionally NOT the shared `strArr`/`strArrOpt` from './coerce': emails must
@@ -86,6 +81,7 @@ function compact(c: ContactRow) {
 
 const contact_find: BuiltinToolDef = {
   slug: 'contact_find',
+  readOnly: true,
   name: 'Find a contact',
   description:
     "Look up one of the user's contacts by name OR email (substring, case-insensitive). Use this FIRST whenever the user refers to someone by name ('email Modular', 'text Sarah') — it returns the contact's id, email, and cell so you can pass them to email_send / sms_send. Returns up to `limit` matches, most-recently-updated first; if you get more than one back, pick the obvious match or ask the user to disambiguate.",
@@ -118,6 +114,7 @@ const contact_find: BuiltinToolDef = {
 
 const contact_list: BuiltinToolDef = {
   slug: 'contact_list',
+  readOnly: true,
   name: 'List contacts',
   description:
     "Browse the user's contacts, newest-updated first. Useful when the user asks 'who do I know?' or 'show me my contacts'. For finding a specific person, prefer `contact_find` — it's narrower.",
@@ -150,6 +147,7 @@ const contact_list: BuiltinToolDef = {
 
 const contact_get: BuiltinToolDef = {
   slug: 'contact_get',
+  readOnly: true,
   preconditions: CONTACT_ID_PRE,
   name: 'Read a contact',
   description: 'Fetch one contact by its node id. Returns the full record including counters.',
@@ -242,7 +240,7 @@ const contact_create: BuiltinToolDef = {
       ctx.step?.setOutput({ id: contact.id, title: contact.title });
       return { ok: true, output: compact(contact) };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -317,7 +315,7 @@ const contact_update: BuiltinToolDef = {
       ctx.step?.setOutput({ id: result.contact.id, title: result.contact.title });
       return { ok: true, output: compact(result.contact) };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

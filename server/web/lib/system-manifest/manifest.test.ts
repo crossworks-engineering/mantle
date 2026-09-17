@@ -5,6 +5,7 @@ import {
   MANIFEST_TOOL_GROUPS,
   MANIFEST_HTTP_TOOLS,
   MANIFEST_HTTP_TOOL_SLUGS,
+  MANIFEST_HEARTBEATS,
   MANIFEST_WORKERS,
   KNOWN_TOOL_SLUGS,
   KNOWN_TOOL_GROUP_SLUGS,
@@ -51,6 +52,56 @@ describe('system manifest integrity', () => {
     expect(MANIFEST_AGENTS.length).toBe(agentSlugs.size);
     const workerKinds = MANIFEST_WORKERS.map((w) => w.kind);
     expect(new Set(workerKinds).size).toBe(workerKinds.length);
+  });
+
+  it('every heartbeat references a real skill, a real tool group, and is uniquely slugged', () => {
+    const slugs = MANIFEST_HEARTBEATS.map((h) => h.slug);
+    expect(new Set(slugs).size).toBe(slugs.length);
+    for (const h of MANIFEST_HEARTBEATS) {
+      expect(skillSlugs.has(h.skillSlug), `${h.slug} → skill ${h.skillSlug}`).toBe(true);
+      expect(groupTools.has(h.requiresToolGroup), `${h.slug} → group ${h.requiresToolGroup}`).toBe(
+        true,
+      );
+    }
+  });
+
+  it('the persona holds every tool group its heartbeats need', () => {
+    // A heartbeat fires as the persona. Without the group it burns a turn and
+    // fails on the first tool call, which reads as a model fault, not a grant
+    // fault. `brain-health` shipped granted to NOBODY for exactly this reason.
+    const persona = MANIFEST_AGENTS.find((a) => a.isPersona)!;
+    for (const h of MANIFEST_HEARTBEATS) {
+      expect(
+        (persona.toolGroupSlugs ?? []).includes(h.requiresToolGroup),
+        `persona must hold '${h.requiresToolGroup}' for heartbeat '${h.slug}'`,
+      ).toBe(true);
+    }
+  });
+
+  it('every skill a default heartbeat binds declares its state shape', () => {
+    // A heartbeat's `state` is its running memory between fires, and the
+    // create form pre-fills "Initial state" from the bound skill's
+    // defaultState. Ship the skill without one and the operator stares at a
+    // bare `{}` with no clue what shape belongs there — which is exactly what
+    // happened when brain_health_check first moved into the manifest.
+    // Declaring `{}` explicitly is a valid answer; forgetting is not.
+    for (const h of MANIFEST_HEARTBEATS) {
+      const skill = MANIFEST_SKILLS.find((sk) => sk.slug === h.skillSlug)!;
+      expect(
+        Object.prototype.hasOwnProperty.call(skill, 'defaultState'),
+        `skill '${skill.slug}' backs heartbeat '${h.slug}' and must declare defaultState (even {})`,
+      ).toBe(true);
+    }
+  });
+
+  it('no heartbeat fires more often than daily, and every one jitters', () => {
+    // Scheduled spend the user never asked for. A tight interval multiplied
+    // across a fleet is the runaway-cost shape; jitter stops every brain in the
+    // fleet hitting the provider on the same second.
+    for (const h of MANIFEST_HEARTBEATS) {
+      expect(h.everyMinutes, `${h.slug} interval`).toBeGreaterThanOrEqual(1440);
+      expect(h.jitterMinutes, `${h.slug} jitter`).toBeGreaterThan(0);
+    }
   });
 
   it('every tool group bundles only known builtin tools, with unique slugs', () => {
@@ -121,7 +172,12 @@ describe('system manifest integrity', () => {
     // Every static builtin must be grantable via some group. (Runtime-only
     // affordances like heartbeat_* are registered outside BUILTIN_TOOLS and are
     // injected per-turn, never granted — so they're correctly absent here.)
-    const orphans = BUILTIN_TOOLS.map((t) => t.slug).filter((s) => !inAGroup.has(s));
+    // mcpOnly builtins are NOT grantable by construction (see the mcpOnly
+    // block below) — they are the owner's operator surface, reachable over MCP
+    // and never through a tool group.
+    const orphans = BUILTIN_TOOLS.filter((t) => !t.mcpOnly)
+      .map((t) => t.slug)
+      .filter((s) => !inAGroup.has(s));
     expect(orphans, 'these builtins are grantable but belong to no group').toEqual([]);
   });
 
@@ -189,7 +245,7 @@ describe('system manifest integrity', () => {
     // Deliberate exclusions (see team-read group description).
     for (const forbidden of [
       'export_node', // bulk exfiltration ease
-      'recall_window', // replays the OWNER's private conversations
+      'replay_window', // replays the OWNER's private conversations
       'invoke_agent', // no delegation
       'run_terminal',
       'sandbox_exec',
@@ -389,5 +445,38 @@ describe('system manifest integrity', () => {
     for (const kind of ['extractor', 'summarizer', 'reflector', 'document']) {
       expect(required, `worker '${kind}' must be required`).toContain(kind);
     }
+  });
+});
+
+/**
+ * `mcpOnly` builtins are the OWNER's operator surface — the approval queue, the
+ * runner panels, the Telegram inbox, the file/note deletes. They live in the
+ * builtin registry so the MCP transports run one tested implementation, and
+ * that is exactly what makes this guard necessary: a builtin is the thing a
+ * tool group grants. An agent holding `pending_approve` would approve its own
+ * gated call, which is the gate the pending row exists to impose.
+ *
+ * KNOWN_TOOL_SLUGS is the set a manifest group may name, so filtering these out
+ * of it makes a group that names one fail the drift test above rather than ship.
+ */
+describe('mcpOnly builtins are not grantable', () => {
+  const mcpOnly = BUILTIN_TOOLS.filter((t) => t.mcpOnly).map((t) => t.slug);
+
+  it('there are some — the flag has not been silently dropped', () => {
+    expect(mcpOnly.length).toBeGreaterThan(0);
+  });
+
+  it('none of them is a slug the manifest may reference', () => {
+    const leaked = mcpOnly.filter((slug) => KNOWN_TOOL_SLUGS.has(slug));
+    expect(leaked, `mcpOnly builtins a manifest group could name: ${leaked.join(', ')}`).toEqual(
+      [],
+    );
+  });
+
+  it('no manifest tool group actually bundles one', () => {
+    const bundled = MANIFEST_TOOL_GROUPS.flatMap((g) =>
+      g.toolSlugs.filter((slug) => mcpOnly.includes(slug)).map((slug) => `${g.slug}: ${slug}`),
+    );
+    expect(bundled).toEqual([]);
   });
 });

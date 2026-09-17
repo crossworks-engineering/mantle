@@ -33,67 +33,16 @@ import {
 import { resolveEffectivePersona } from './persona';
 // Type-only — erased at compile, so importing it doesn't pull @/ runtime code
 // into the pure (vitest) module graph.
-import type { AuditSeverity } from '@mantle/web-ui/types/integrity';
+import type { AuditSeverity } from '@mantle/client-types/types/integrity';
+import type { DiffStatus, FieldDiff, EntityDiff, ConfigDiffReport } from '@mantle/client-types';
+import type { EntityKind } from '@mantle/client-types';
+export type { EntityKind };
+export type { DiffStatus, FieldDiff, EntityDiff, ConfigDiffReport };
 
 // ─── result types ────────────────────────────────────────────────────────────
 
-export type DiffStatus =
-  /** Live matches the template (for tracked fields). */
-  | 'ok'
-  /** In the template, absent (or disabled) in the brain — a capability not landed. */
-  | 'missing'
-  /** In the brain, not in the template — operator-added, informational. */
-  | 'extra'
-  /** Present in both, but a tracked field diverges. */
-  | 'modified';
-
-export type EntityKind = 'persona' | 'agent' | 'skill' | 'tool-group' | 'worker';
-
-export type FieldDiff = {
-  /** 'toolGroupSlugs' | 'skillSlugs' | 'delegate_to' | 'instructions' |
-   *  'toolSlugs' | 'model' | 'systemPrompt' | 'enabled' */
-  field: string;
-  /** The template value — what an "adopt" would write. */
-  manifest: string | string[] | null;
-  /** The live value in the brain. */
-  live: string | string[] | null;
-  /** Set fields only: members in `live` but not `manifest` (operator-added). */
-  added?: string[];
-  /** Set fields only: members in `manifest` but not `live` (not landed). */
-  removed?: string[];
-  /** Informational-only diff (e.g. a specialist prompt) — shown, not weighted. */
-  info?: boolean;
-};
-
-export type EntityDiff = {
-  kind: EntityKind;
-  /** Agent/skill/group slug, or the worker kind. */
-  slug: string;
-  name: string;
-  status: DiffStatus;
-  severity: AuditSeverity;
-  /** One-line human summary of the difference. */
-  summary: string;
-  /** Tracked fields that differ (empty when status is 'ok'). */
-  fields: FieldDiff[];
-  /** Can the operator "Adopt from template" this item? True for missing/modified
-   *  (apply the manifest version); false for ok (nothing to do) and extra
-   *  (operator-added — adopting would mean deleting, which we never do). */
-  adoptable: boolean;
-};
-
 /** A diff before the (status-derived) `adoptable` flag is stamped on. */
 export type EntityDiffCore = Omit<EntityDiff, 'adoptable'>;
-
-export type ConfigDiffReport = {
-  generatedAt: string;
-  /** The shipped template version (APP_VERSION). */
-  appVersion: string;
-  /** The version the brain was last auto-reconciled to (null if never). */
-  lastReconciledVersion: string | null;
-  entities: EntityDiff[];
-  counts: { ok: number; missing: number; extra: number; modified: number };
-};
 
 // ─── live input rows (decoupled from the DB schema for testability) ──────────
 
@@ -453,7 +402,14 @@ function diffExtras(live: LiveConfig, m: ManifestSlices): EntityDiffCore[] {
       name: g.name || g.slug,
       status: 'extra',
       severity: 'low',
-      summary: 'operator-added (not in template)',
+      // Connector groups (`mcp-<slug>`) mirror an external MCP server; their
+      // membership is owned by the connector sync, so an "extra" here is the
+      // feature working, not drift.
+      summary: g.slug.startsWith('mcp-')
+        ? 'MCP connector group (external server mirror; membership owned by its sync)'
+        : g.slug.startsWith('openapi-')
+          ? 'OpenAPI connector group (spec-compiled tools; membership owned by its sync)'
+          : 'operator-added (not in template)',
       fields: [],
     });
   }

@@ -1,4 +1,4 @@
-# Handoff — file ingestion arc (2026-05-20)
+# Handoff: file ingestion arc (2026-05-20)
 
 Resume point after a long session that fixed `/assistant` vision, unified
 attachment ingestion across all surfaces, audited it for production, and
@@ -34,7 +34,7 @@ for the live reply via the shared `extractAttachmentForTurn`. Shared primitives:
 - Vision-500 fix, transcript-default, Telegram photo **and document** parity,
   HEIC transcode, decoupling (neutral index vs specific chat answer), unified
   ingestion, standardized 25 MB cap, audit fixes M1/M2/L2/L3/L4/L5.
-- **B1 (migration 0032)** — folder slugs were globally unique
+- **B1 (migration 0032)**: folder slugs were globally unique
   (`nodes_owner_slug_uq`), so a 2nd upload surface's same-day dated folder
   (`telegram-uploads/<date>` vs `assistant-uploads/<date>`) collided on slug,
   the INSERT was swallowed as a dup, and the file silently never saved.
@@ -42,19 +42,19 @@ for the live reply via the shared `extractAttachmentForTurn`. Shared primitives:
   and verified: Telegram photo → file saved under `files.telegram_uploads.<date>`
   → `photo_ingest`(extractor) → `extractor_run` → text+summary+embedding+fact.
 
-## ✅ Resolved (2026-05-21) — all three closed
+## ✅ Resolved (2026-05-21): all three closed
 
-1. **V1 — vision cost showed `$0`.** ✅ Fixed (`5ab55ed`). Added
+1. **V1; vision cost showed `$0`.** ✅ Fixed (`5ab55ed`). Added
    `recordStepUsage` to `@mantle/tracing` (attributes tokens+cost to the active
    trace/step from outside the step body); `runVisionWorker`
    (`packages/agent-runtime/src/attachments.ts`) calls it after `adapter.extract`,
    priced via `fallbackCostMicroUsd`. Also added the **bare** OpenAI ids
-   (`gpt-4o-mini`/`gpt-4o`) to `packages/tracing/src/pricing.ts` — the direct
+   (`gpt-4o-mini`/`gpt-4o`) to `packages/tracing/src/pricing.ts`, the direct
    adapters pass the bare model id, not the `openai/` slug, which was the
    "still reads 0" caveat. Regression test in `pricing.test.ts`. **Verified
    live:** 64×64 PNG → `photo_ingest` cost 1310µ$, `extract_vision` step carries
    model + cost.
-2. **V2 — `data.vision_model` ended up empty.** ✅ Fixed (`a390b3a`). The
+2. **V2, `data.vision_model` ended up empty.** ✅ Fixed (`a390b3a`). The
    `update_index` step in `apps/agent/src/extractor.ts` now MERGEs the index
    fields onto the live row (jsonb `||`) instead of replacing it from the stale
    in-memory snapshot, so the `vision_model` (+ `text`) that `persist_vision_text`
@@ -64,9 +64,9 @@ for the live reply via the shared `extractAttachmentForTurn`. Shared primitives:
    `apps/web` (matching `@mantle/files`' `^2.1.0`, already in the lockfile);
    it's already in `serverExternalPackages`, so Next now leaves its `.wasm`
    alone. `pnpm install` run + stack restarted; `apps/web/node_modules/heic-convert`
-   linked. (Telegram/extractor HEIC already worked — they're not bundled.)
+   linked. (Telegram/extractor HEIC already worked; they're not bundled.)
 
-## Deferred (by decision — see file-ingestion.md §4)
+## Deferred (by decision: see file-ingestion.md §4)
 - L1 orphan-file-on-partial-save (watcher reconciles coincidentally).
 - L6 HEIC doesn't render in the chat bubble (cosmetic).
 - Telegram `audio`/`video` *file* attachments (voice notes work via STT).
@@ -74,7 +74,7 @@ for the live reply via the shared `extractAttachmentForTurn`. Shared primitives:
 
 ## Git / deploy state
 - `main` is at `91cf43f` (V1 `5ab55ed` · V2 `a390b3a` · heic `91cf43f`, on top
-  of migration 0032 `7e06892`). **`origin/main` is several commits behind — not
+  of migration 0032 `7e06892`). **`origin/main` is several commits behind, not
   pushed yet.** Push when ready (`git push origin main`).
 - `pnpm install` run + stack restarted from `~/Projects/mantle`; the fixes are
   live and verified against the running DB.
@@ -102,10 +102,10 @@ Useful queries:
 - Confirm a migration applied: `SELECT indexdef FROM pg_indexes WHERE indexname='<name>';`
 
 ## Key files
-- `apps/agent/src/extractor.ts` — durable index; `visionIngestImageNode` (V2 here).
-- `packages/agent-runtime/src/attachments.ts` — `runVisionWorker` (V1 here),
+- `apps/agent/src/extractor.ts`, durable index; `visionIngestImageNode` (V2 here).
+- `packages/agent-runtime/src/attachments.ts`, `runVisionWorker` (V1 here),
   `extractAttachmentForTurn`.
-- `apps/web/app/api/assistant/turn/route.ts` — web upload + idempotency (L3).
-- `apps/agent/src/main.ts` — Telegram `handleMessage` attachment branch.
-- `packages/files/src/{ops,parse,transcode,limits,slug}.ts` — save + helpers.
-- `packages/db/src/notify.ts` — `notifyNodeIngested`.
+- `apps/web/app/api/assistant/turn/route.ts`, web upload + idempotency (L3).
+- `apps/agent/src/main.ts`, Telegram `handleMessage` attachment branch.
+- `packages/files/src/{ops,parse,transcode,limits,slug}.ts`, save + helpers.
+- `packages/db/src/notify.ts`, `notifyNodeIngested`.

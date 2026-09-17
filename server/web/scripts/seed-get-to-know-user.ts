@@ -20,11 +20,12 @@
 
 import { and, asc, eq } from 'drizzle-orm';
 import { db, agents, heartbeats, skills } from '@mantle/db';
-import { computeNextFireAt } from '@mantle/heartbeats';
+import { computeNextFireAt } from '@mantle/runtime/heartbeats';
+import { env } from '@mantle/config';
 
-const USER_ID = process.env.ALLOWED_USER_ID;
-const TG_CHAT_ID = process.env.TG_CHAT_ID;
-const AGENT_SLUG_OVERRIDE = process.env.AGENT_SLUG;
+const USER_ID = env('ALLOWED_USER_ID');
+const TG_CHAT_ID = env('TG_CHAT_ID');
+const AGENT_SLUG_OVERRIDE = env('AGENT_SLUG');
 
 if (!USER_ID) {
   console.error('ALLOWED_USER_ID env var required');
@@ -256,7 +257,7 @@ async function main() {
   // P6: the heartbeat-continuity tools (heartbeat_complete/snooze/update_state)
   // are no longer granted onto the agent — they're injected at runtime as a
   // per-turn affordance when an active heartbeat exists on the surface (see
-  // server/web/lib/assistant.ts + apps/agent/src/main.ts). Nothing to seed here.
+  // server/web/lib/assistant.ts + server/api/src/main.ts). Nothing to seed here.
   await upsertSkill();
   await upsertHeartbeat(agentSlug);
   console.log('[seed] done — single welcome-invitation fire scheduled ~6h from now.');

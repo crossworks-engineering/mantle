@@ -10,12 +10,14 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnvFiles } from './env';
+import { assertEnvShape } from '@mantle/config';
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 loadEnvFiles(webRoot);
+assertEnvShape();
 
 // Build identity. Next used to inline NEXT_PUBLIC_* at compile time; under tsx
-// the shared @mantle/web-ui/version module reads the same vars at import — so
+// the shared @mantle/client-types/version module reads the same vars at import — so
 // resolve them HERE, before anything imports it. Version comes from the ROOT
 // package.json (single source of truth); SHA + build time are stamped into the
 // image as MANTLE_* (Dockerfile build args).
@@ -30,6 +32,22 @@ try {
 process.env.NEXT_PUBLIC_GIT_SHA ??= process.env.MANTLE_GIT_SHA ?? '';
 process.env.NEXT_PUBLIC_BUILD_TIME ??= process.env.MANTLE_BUILD_TIME ?? '';
 
+// Recall's embedder, injected before anything can serve a request.
+// @mantle/content is storage and does not depend on the adapter layer, so the
+// process that owns the adapters registers one at boot (see
+// packages/content/src/embed-bridge.ts). This is the entrypoint that matters
+// most for Recall: the maps are authored in the editor, and a commit here is
+// what compiles them. Without the registration a map still compiles but its
+// prompt rows keep a null embedding, so recall_match silently returns nothing
+// — the bridge throws so it lands in the log instead.
+//
+// AWAITED, not top-level `import`: env files must load before @mantle/embeddings
+// initialises, exactly like the two imports below.
+// recall-embed-registration.test.ts pins this call in all three entrypoints.
+const { registerRecallEmbedder } = await import('@mantle/content');
+const { embedBatch } = await import('@mantle/embeddings');
+registerRecallEmbedder(embedBatch);
+
 const { serve } = await import('@hono/node-server');
 const { createApp } = await import('./app');
 
@@ -37,12 +55,7 @@ const { createApp } = await import('./app');
 // system manifest on every image update. Fire-and-forget — never delays or
 // blocks request serving; the reconcile self-guards (production-only,
 // provisioned-only, once per version, best-effort).
-if (!process.env.MANTLE_PUBLIC_URL && process.env.NEXT_PUBLIC_APP_URL) {
-  console.warn(
-    '[boot] MANTLE_PUBLIC_URL is unset — falling back to NEXT_PUBLIC_APP_URL for ' +
-      'server-side URLs (shares, Microsoft OAuth redirect). Set MANTLE_PUBLIC_URL.',
-  );
-}
+// (MANTLE_PUBLIC_URL / NEXT_PUBLIC_APP_URL fallback: @mantle/config warns once.)
 void import('../lib/system-manifest/reconcile')
   .then(({ reconcileManifestOnBoot }) => reconcileManifestOnBoot())
   .catch((err) => console.error('[boot] manifest reconcile failed:', err));

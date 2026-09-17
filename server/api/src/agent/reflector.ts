@@ -41,7 +41,7 @@ import {
   recordChatUsage,
   resolveChatKey,
   resolveChatRoutes,
-} from '@mantle/agent-runtime';
+} from '@mantle/runtime/agent';
 import { CONVERSATIONAL_ROLES, rankActiveAgents } from './agent-select.js';
 
 /** How many recent turns the reflector reviews per agent per run. */

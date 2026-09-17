@@ -1,9 +1,10 @@
+import { env } from '@mantle/config';
 /**
  * Apache Tika client — the third-tier document parser.
  *
- * The first tier is our in-process parsers (pdf-parse / mammoth / SheetJS in
+ * The first tier is our in-process parsers (pdf-parse / mammoth / exceljs in
  * `./pdf`, `./docx`, `./xlsx`). The second tier is the vision worker (OCR for
- * scanned PDFs and images, see apps/agent/src/extractor.ts `ocrIngestPdfNode`).
+ * scanned PDFs and images, see server/api/src/extractor.ts `ocrIngestPdfNode`).
  * This third tier handles the long tail of formats neither of those covers:
  * `.odt` / `.ods` / `.odp` (LibreOffice), `.pptx` / `.ppt` (PowerPoint),
  * `.doc` (legacy Word), `.rtf`, `.epub`, and whatever else Tika knows about.
@@ -13,7 +14,7 @@
  * crash/restart loses no state.
  *
  * Kept behind a separate entry point (`@mantle/files/tika`) with a lazy
- * dynamic import, so apps/web bundling doesn't pull this in for paths that
+ * dynamic import, so server/web bundling doesn't pull this in for paths that
  * never hit a Tika-needed format. The wrapper is **never-throws** — every
  * failure mode (Tika down, network blip, timeout, unsupported bytes, 4xx /
  * 5xx response) returns `''`, which the caller treats as "no extractable
@@ -41,8 +42,8 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_PARTIAL_BODY_BYTES = 5_000_000;
 
 function tikaUrl(): string {
-  const env = process.env.TIKA_URL?.trim();
-  return (env && env.length > 0 ? env : DEFAULT_TIKA_URL).replace(/\/$/, '');
+  const configured = env('TIKA_URL')?.trim();
+  return (configured && configured.length > 0 ? configured : DEFAULT_TIKA_URL).replace(/\/$/, '');
 }
 
 /**
@@ -65,16 +66,22 @@ function tikaUrl(): string {
  * auto-detects from magic bytes when omitted, but supplying the type when we
  * know it (from the file extension) helps disambiguation on tricky formats
  * like .doc vs .docx.
+ *
+ * `accept` picks Tika's rendering. The default `text/plain` is what every
+ * text-extraction caller wants. `text/html` asks for Tika's XHTML instead,
+ * which keeps document STRUCTURE — headings, and one `<table>` per sheet for
+ * spreadsheets. `./legacy-sheet.ts` uses that to rebuild a legacy `.xls` as a
+ * real workbook; nothing else should need it.
  */
 export async function parseTikaBytes(
   bytes: Buffer,
-  opts?: { mimeType?: string; timeoutMs?: number },
+  opts?: { mimeType?: string; timeoutMs?: number; accept?: 'text/plain' | 'text/html' },
 ): Promise<string> {
   const url = `${tikaUrl()}/tika`;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
-    const headers: Record<string, string> = { Accept: 'text/plain' };
+    const headers: Record<string, string> = { Accept: opts?.accept ?? 'text/plain' };
     if (opts?.mimeType) headers['Content-Type'] = opts.mimeType;
     // TS 5.9 made Uint8Array generic in `ArrayBufferLike`, which doesn't
     // structurally match the DOM lib's `BodyInit` (it expects

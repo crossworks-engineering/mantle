@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { BUILTIN_TOOLS } from '@mantle/tools';
 
@@ -37,29 +37,39 @@ const KNOWN_UNBRIDGED = [
   'table_get',
   'table_list',
   'table_rows_list',
-  // Awaiting an exported group in @mantle/tools.
-  'entity_facts',
-  'entity_mentions',
-  'entity_neighbors',
-  'entity_search',
+  // Schemas MCP clients already depend on: the builtins take `file_id` /
+  // `folder_id` and (tree_list) optional path+limit, the hand-written twins
+  // take `id` and, for the folder pair, a path as an alternative to the id.
+  // Bridging them would rename arguments under shipped connectors.
+  'tree_list',
   'file_get',
-  'file_list',
   'file_read',
   'file_rename',
   'folder_describe',
-  'folder_list',
   'folder_rename',
-  'graph_path',
-  'read_section',
-  'search_chunks',
-  'telegram_send',
-  'tree_list',
 ].sort();
 
-/** Slugs registered by a literal `server.tool('…')` call in build-server.ts. */
+/**
+ * Slugs registered by a literal `server.tool('…')` call anywhere on the MCP
+ * surface: build-server.ts itself plus every register/*.ts module.
+ *
+ * The directory is SWEPT rather than listed, so a new register module cannot
+ * carry a hand-written twin past this test by not being named here. That
+ * matters more since registerMantleTools was cut up: the hand-written blocks
+ * no longer all sit in one file, and a file-by-name check would have gone
+ * quietly green while finding nothing.
+ */
 function handWrittenSlugs(): string[] {
-  const src = readFileSync(new URL('./build-server.ts', import.meta.url), 'utf8');
-  return [...src.matchAll(/server\.tool\(\s*'([a-z0-9_]+)'/g)].map((m) => m[1]!);
+  const dir = new URL('./register/', import.meta.url);
+  const sources = [
+    readFileSync(new URL('./build-server.ts', import.meta.url), 'utf8'),
+    ...readdirSync(dir)
+      .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))
+      .map((f) => readFileSync(new URL(f, dir), 'utf8')),
+  ];
+  return sources.flatMap((src) => [
+    ...[...src.matchAll(/server\.tool\(\s*'([a-z0-9_]+)'/g)].map((m) => m[1]!),
+  ]);
 }
 
 describe('no slug is implemented twice', () => {

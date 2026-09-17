@@ -1,6 +1,6 @@
 /**
  * Thin re-export so existing imports (`@/lib/api-keys`) keep working. The
- * implementation lives in `@mantle/api-keys` so apps/agent and the MCP server
+ * implementation lives in `@mantle/api-keys` so server/api and the MCP server
  * can use the same helpers.
  */
 export {

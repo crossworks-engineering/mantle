@@ -1,27 +1,28 @@
 /**
  * Turn-cancel listener — the runner half of "stop a stream mid-flight".
  *
- * A user hitting Stop in `apps/web` publishes a `turn_cancel` NOTIFY (the cancel
- * route → `publishTurnCancel`). This process (apps/api), where the turn actually
+ * A user hitting Stop in `server/web` publishes a `turn_cancel` NOTIFY (the cancel
+ * route → `publishTurnCancel`). This process (server/api), where the turn actually
  * runs, LISTENs on that channel and aborts the matching turn's AbortController
  * (`abortTurn`), which the tool loop threaded into the streaming LLM call — so
  * generation halts upstream, keeping whatever partial reply already streamed.
  *
  * One dedicated single connection (a LISTEN monopolises its connection), mirroring
- * `apps/web/lib/realtime.ts`. Survives nothing fancy — if it can't start, turns
+ * `server/web/lib/realtime.ts`. Survives nothing fancy — if it can't start, turns
  * still run, they just can't be cancelled (the user's Stop becomes a no-op).
  */
 
 import postgres from 'postgres';
 import { abortTurn } from '@mantle/tracing';
 import { TURN_CANCEL_CHANNEL, type TurnCancelEnvelope } from '@mantle/turn-stream';
+import { env } from '@mantle/config';
 
 let sql: ReturnType<typeof postgres> | null = null;
 
 /** Start LISTENing for turn-cancel requests. Idempotent; returns once live. */
 export async function startTurnCancelListener(): Promise<void> {
   if (sql) return;
-  const url = process.env.DATABASE_URL;
+  const url = env('DATABASE_URL');
   if (!url) throw new Error('DATABASE_URL must be set');
   sql = postgres(url, { max: 1, prepare: false });
   await sql.listen(TURN_CANCEL_CHANNEL, (payload) => {

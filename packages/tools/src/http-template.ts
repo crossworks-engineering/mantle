@@ -146,10 +146,24 @@ export function buildHttpRequest(
   // URL: tokenize secrets, fill params (url-encoded), then restore secrets.
   let url = detokenize(substituteParams(tokenize(h.url), input, 'url', used));
 
-  // Query: explicit map first, with templating in values.
+  // Query: explicit map first, with templating in values. A pair whose
+  // template still carries an UNFILLED `{param}` after substitution is
+  // dropped entirely — that is how an optional declared query param stays
+  // off the wire when the input omits it (sending the literal brace string
+  // would corrupt the request). Placeholder-free literals always ship.
   const queryPairs: Array<[string, string]> = [];
   for (const [k, v] of Object.entries(h.query ?? {})) {
-    queryPairs.push([k, detokenize(substituteParams(tokenize(v), input, 'raw', used))]);
+    let unfilled = false;
+    const substituted = tokenize(v).replace(PARAM_PATTERN, (match, name: string) => {
+      if (!(name in input)) {
+        unfilled = true;
+        return match;
+      }
+      used.add(name);
+      return encodeParam(input[name], 'raw');
+    });
+    if (unfilled) continue;
+    queryPairs.push([k, detokenize(substituted)]);
   }
 
   // Headers.

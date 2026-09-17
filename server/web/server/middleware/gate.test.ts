@@ -27,7 +27,11 @@ function makeApp() {
   app.get('/api/auth/me', (c) => c.json({ me: true })); // public prefix
   app.get('/api/files/files/f1', (c) => c.json({ bytes: true }));
   app.get('/api/attachments/a1', (c) => c.json({ bytes: true }));
+  app.get('/api/export/e1', (c) => c.json({ bytes: true }));
   app.get('/s/tok123/bundle', (c) => c.json({ broker: true }));
+  app.get('/api/apps/a1/frame', (c) => c.text('<!doctype html>'));
+  app.post('/api/apps/a1/frame', (c) => c.text('nope'));
+  app.get('/api/apps/a1/bundle', (c) => c.text('js'));
   app.get('/settings', (c) => c.text('page'));
   return app;
 }
@@ -98,11 +102,32 @@ describe('gate: session & bearer', () => {
     const at = mint({ exp: future(), k: 'a' });
     expect((await app.request(`/api/files/files/f1?at=${at}`)).status).toBe(200);
     expect((await app.request(`/api/attachments/a1?at=${at}`)).status).toBe(200);
+    expect((await app.request(`/api/export/e1?at=${at}&format=md`)).status).toBe(200);
     // Wrong path
     expect((await app.request(`/api/notes?at=${at}`)).status).toBe(401);
     // Wrong kind
     const m = mint({ exp: future(), k: 'm' });
     expect((await app.request(`/api/files/files/f1?at=${m}`)).status).toBe(401);
+  });
+
+  it("accepts ?t= frame tickets only on the owner frame path, GET only, kind 'f' only", async () => {
+    const app = makeApp();
+    const t = mint({ exp: future(), k: 'f' });
+    expect((await app.request(`/api/apps/a1/frame?t=${t}`)).status).toBe(200);
+    // Wrong path — the ticket opens the frame document and nothing else.
+    expect((await app.request(`/api/apps/a1/bundle?t=${t}`)).status).toBe(401);
+    expect((await app.request(`/api/notes?t=${t}`)).status).toBe(401);
+    // Wrong method
+    expect((await app.request(`/api/apps/a1/frame?t=${t}`, { method: 'POST' })).status).toBe(401);
+    // Wrong kind / expired / forged
+    for (const bad of [
+      mint({ exp: future(), k: 'a' }),
+      mint({ exp: future() }),
+      mint({ exp: past(), k: 'f' }),
+      mint({ exp: future(), k: 'f' }, 'x'.repeat(48)),
+    ]) {
+      expect((await app.request(`/api/apps/a1/frame?t=${bad}`)).status, bad).toBe(401);
+    }
   });
 
   it('redirects an uncredentialed page nav to /login?next= via proxy headers', async () => {

@@ -4,7 +4,7 @@
  * the change *visible* wherever the operator might be looking:
  *
  *   - in-app  → pg_notify('pending_changed', ownerId). The web app's
- *               realtime bridge (apps/web/lib/realtime.ts) LISTENs and
+ *               realtime bridge (server/web/lib/realtime.ts) LISTENs and
  *               repaints the sidebar badge + /pending live, no refresh.
  *               The push-notify worker also LISTENs and (for `mobile`
  *               operators) sends a device push deep-linking to /pending.

@@ -9,7 +9,7 @@
  * reaches an existing brain (we hit this shipping 0.28.0: route_map/mapbox_directions
  * were added to the `location` group but the live group stayed stale).
  *
- * This runs from apps/web/instrumentation.ts on web-server boot (carried IN the
+ * This runs from server/web/instrumentation.ts on web-server boot (carried IN the
  * image, so a stale compose file can't skip it), and brings an already-provisioned
  * brain in line with the manifest, once per version:
  *   1. seedToolCapabilities(overwrite) — sync HTTP tools + tool-group MEMBERSHIP
@@ -50,7 +50,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { db, agents, skills, type AgentParams } from '@mantle/db';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
-import { APP_VERSION } from '@mantle/web-ui/version';
+import { APP_VERSION } from '@mantle/client-types/version';
 import { applyManifest, seedToolCapabilities, seedManifestWorkers } from './seed';
 import {
   MANIFEST_AGENTS,
@@ -59,12 +59,13 @@ import {
   PERSONA_TOOL_GROUP_SLUGS,
 } from './manifest';
 import { convergeManifestSkills, missingPersonaGroups } from './reconcile-util';
+import { env } from '@mantle/config';
 
 let ranThisProcess = false;
 
 /** Single-owner system: prefer the configured id, else the sole auth.users row. */
 async function resolveOwnerId(): Promise<string | null> {
-  const fromEnv = process.env.ALLOWED_USER_ID?.trim();
+  const fromEnv = env('ALLOWED_USER_ID')?.trim();
   if (fromEnv) return fromEnv;
   // Multi-admin (actor/anchor split, v0.111) leaves several rows in auth.users
   // on a fully-provisioned brain, but ALL content still hangs off ONE anchor
@@ -294,8 +295,8 @@ export async function reconcileManifestOnBoot(): Promise<void> {
   // Production update mechanism only — in dev you run `pnpm seed:*` by hand, and
   // dev may point at the prod DB (the tailnet workflow), which we must not mutate
   // on a `pnpm dev` boot.
-  if (process.env.NODE_ENV !== 'production') return;
-  if (process.env.MANTLE_DISABLE_BOOT_RECONCILE === '1') {
+  if (env('NODE_ENV') !== 'production') return;
+  if (env('MANTLE_DISABLE_BOOT_RECONCILE') === '1') {
     console.log('[reconcile] disabled via MANTLE_DISABLE_BOOT_RECONCILE');
     return;
   }
@@ -329,7 +330,11 @@ export async function reconcileManifestOnBoot(): Promise<void> {
     if (prefs.lastReconciledVersion === APP_VERSION) return;
 
     await seedToolCapabilities(ownerId, 'overwrite');
-    await applyManifest(ownerId, { only: [], mode: 'gap-fill', skillMode: 'overwrite' });
+    const { seededHeartbeats } = await applyManifest(ownerId, {
+      only: [],
+      mode: 'gap-fill',
+      skillMode: 'overwrite',
+    });
     const personaChanges = await reconcilePersonaCapabilitiesByRole(ownerId);
     const provisioned = await provisionMissingSpecialists(ownerId);
     const specialistGrants = await grantSpecialistCapabilities(ownerId);
@@ -347,7 +352,8 @@ export async function reconcileManifestOnBoot(): Promise<void> {
         (provisioned.length ? `; provisioned ${provisioned.join(', ')}` : '') +
         (specialistGrants.length ? `; specialists ${specialistGrants.join('; ')}` : '') +
         (defsSynced.length ? `; defs synced ${defsSynced.join(', ')}` : '') +
-        (workersCreated.length ? `; workers +${workersCreated.map((w) => w.kind).join(',')}` : ''),
+        (workersCreated.length ? `; workers +${workersCreated.map((w) => w.kind).join(',')}` : '') +
+        (seededHeartbeats.length ? `; heartbeats +${seededHeartbeats.join(',')}` : ''),
     );
   } catch (err) {
     // Best-effort: a reconcile failure must never take the server down.

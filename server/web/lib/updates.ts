@@ -16,12 +16,59 @@
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { APP_VERSION } from '@mantle/web-ui/version';
+import { APP_VERSION } from '@mantle/client-types/version';
+import type { ComposeStatus, UpdateCheck, UpdaterStatus } from '@mantle/client-types';
+import type {
+  UpdaterPhase,
+  UpdaterScriptState,
+  ComposeState,
+  ReleaseInfo,
+} from '@mantle/client-types';
+import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
+
+export type { UpdaterPhase, UpdaterScriptState, ComposeState, ReleaseInfo };
+export type { ComposeStatus, UpdateCheck, UpdaterStatus };
 
 export const RELEASES_REPO = 'crossworks-engineering/mantle';
 export const RELEASES_URL = `https://github.com/${RELEASES_REPO}/releases`;
+/** The owner UI ships from its own repo (and its own version stream) since
+ *  the 2026-08 split — the check watches BOTH, or UI releases are invisible. */
+export const CLIENT_RELEASES_REPO = 'crossworks-engineering/jackdaw';
+export const CLIENT_RELEASES_URL = `https://github.com/${CLIENT_RELEASES_REPO}/releases`;
 
-const SIGNAL_DIR = process.env.MANTLE_UPDATE_SIGNAL_DIR ?? '/signal';
+/** The jackdaw client tag this server build was released against — the
+ *  "release pair". Baked into the image beside the canonical compose files
+ *  (Dockerfile → /app/release/client-tag, from client-pair.tag at the repo
+ *  root); the updater sidecar reads the same file from the TARGET image when
+ *  it rolls. Null in dev checkouts without the file and on pre-pair images. */
+const RELEASE_CLIENT_TAG_PATH = env('MANTLE_RELEASE_CLIENT_TAG_PATH') ?? '/app/release/client-tag';
+let pairedTagCache: string | null | undefined;
+async function pairedClientTag(): Promise<string | null> {
+  if (pairedTagCache !== undefined) return pairedTagCache;
+  // Candidates: the baked image path, then the repo-root file for source
+  // checkouts — whose relative position depends on who is running (tsx dev
+  // serves from server/web, the test runner from the repo root).
+  for (const p of [
+    RELEASE_CLIENT_TAG_PATH,
+    path.resolve(process.cwd(), '../../client-pair.tag'),
+    path.resolve(process.cwd(), 'client-pair.tag'),
+  ]) {
+    try {
+      const tag = (await fs.readFile(p, 'utf8')).trim();
+      if (/^[A-Za-z0-9._-]+$/.test(tag)) {
+        pairedTagCache = tag;
+        return tag;
+      }
+    } catch {
+      // try the next candidate
+    }
+  }
+  pairedTagCache = null;
+  return null;
+}
+
+const SIGNAL_DIR = env('MANTLE_UPDATE_SIGNAL_DIR') ?? '/signal';
 /** How long a POSITIVE result (a newer release exists) stays cached. Once true
  *  it stays true until the box updates, so re-checking often buys nothing. */
 const CHECK_TTL_MS = 6 * 60 * 60 * 1000;
@@ -34,25 +81,6 @@ const CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 const STALE_TTL_MS = 30 * 60 * 1000;
 
 // ── release check ────────────────────────────────────────────────────────────
-
-export type ReleaseInfo = {
-  /** Tag as published, e.g. "v0.20.67". */
-  tag: string;
-  /** Bare version, e.g. "0.20.67". */
-  version: string;
-  name: string;
-  url: string;
-  publishedAt: string | null;
-};
-
-export type UpdateCheck = {
-  currentVersion: string;
-  latest: ReleaseInfo | null;
-  updateAvailable: boolean;
-  checkedAt: string;
-  /** Set when the check itself failed (network, rate limit, no releases yet). */
-  error: string | null;
-};
 
 /** Numeric segment-wise semver compare; pre-release suffixes (-alpha) are
  *  ignored for ordering. >0 when a > b. */
@@ -74,18 +102,15 @@ export function compareVersions(a: string, b: string): number {
 
 let cachedCheck: UpdateCheck | null = null;
 
-export async function checkForUpdate(force = false): Promise<UpdateCheck> {
-  if (!force && cachedCheck) {
-    // A confirmed update gets the long TTL; "no update" or an error gets the
-    // short one, so a freshly published release isn't masked for hours.
-    const ttl = cachedCheck.updateAvailable ? CHECK_TTL_MS : STALE_TTL_MS;
-    if (Date.now() - new Date(cachedCheck.checkedAt).getTime() < ttl) {
-      return cachedCheck;
-    }
-  }
-  const checkedAt = new Date().toISOString();
+/** Latest release of one repo via the GitHub API. Failure is a value, not a
+ *  throw — each stream degrades independently (a jackdaw rate-limit must not
+ *  hide a mantle release, or vice versa). */
+async function fetchLatestRelease(
+  repo: string,
+  fallbackUrl: string,
+): Promise<{ latest: ReleaseInfo | null; error: string | null }> {
   try {
-    const res = await fetch(`https://api.github.com/repos/${RELEASES_REPO}/releases/latest`, {
+    const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
       headers: {
         accept: 'application/vnd.github+json',
         'user-agent': `mantle/${APP_VERSION}`,
@@ -96,18 +121,13 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
     });
     if (!res.ok) {
       // 404 = no releases published yet — a state, not a failure worth a toast.
-      const error =
-        res.status === 404
-          ? 'No releases published yet.'
-          : `GitHub API: ${res.status} ${res.statusText}`;
-      cachedCheck = {
-        currentVersion: APP_VERSION,
+      return {
         latest: null,
-        updateAvailable: false,
-        checkedAt,
-        error,
+        error:
+          res.status === 404
+            ? 'No releases published yet.'
+            : `GitHub API: ${res.status} ${res.statusText}`,
       };
-      return cachedCheck;
     }
     const body = (await res.json()) as {
       tag_name?: string;
@@ -116,48 +136,51 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
       published_at?: string;
     };
     const tag = body.tag_name ?? '';
-    const latest: ReleaseInfo | null = tag
-      ? {
-          tag,
-          version: tag.replace(/^v/, ''),
-          name: body.name || tag,
-          url: body.html_url ?? RELEASES_URL,
-          publishedAt: body.published_at ?? null,
-        }
-      : null;
-    cachedCheck = {
-      currentVersion: APP_VERSION,
-      latest,
-      updateAvailable: !!latest && compareVersions(latest.version, APP_VERSION) > 0,
-      checkedAt,
-      error: latest ? null : 'Release response carried no tag.',
+    if (!tag) return { latest: null, error: 'Release response carried no tag.' };
+    return {
+      latest: {
+        tag,
+        version: tag.replace(/^v/, ''),
+        name: body.name || tag,
+        url: body.html_url ?? fallbackUrl,
+        publishedAt: body.published_at ?? null,
+      },
+      error: null,
     };
-    return cachedCheck;
   } catch (err) {
-    cachedCheck = {
-      currentVersion: APP_VERSION,
-      latest: null,
-      updateAvailable: false,
-      checkedAt,
-      error: err instanceof Error ? err.message : String(err),
-    };
-    return cachedCheck;
+    return { latest: null, error: errorMessage(err) };
   }
 }
 
+export async function checkForUpdate(force = false): Promise<UpdateCheck> {
+  if (!force && cachedCheck) {
+    // A confirmed update gets the long TTL; "no update" or an error gets the
+    // short one, so a freshly published release isn't masked for hours.
+    const ttl = cachedCheck.updateAvailable ? CHECK_TTL_MS : STALE_TTL_MS;
+    if (Date.now() - new Date(cachedCheck.checkedAt).getTime() < ttl) {
+      return cachedCheck;
+    }
+  }
+  const checkedAt = new Date().toISOString();
+  const [server, client, pairedTag] = await Promise.all([
+    fetchLatestRelease(RELEASES_REPO, RELEASES_URL),
+    fetchLatestRelease(CLIENT_RELEASES_REPO, CLIENT_RELEASES_URL),
+    pairedClientTag(),
+  ]);
+  cachedCheck = {
+    currentVersion: APP_VERSION,
+    latest: server.latest,
+    updateAvailable: !!server.latest && compareVersions(server.latest.version, APP_VERSION) > 0,
+    checkedAt,
+    error: server.error,
+    // Whether the INTERFACE is out of date is decided in the browser: only the
+    // client build knows its own version, so this just carries the facts.
+    client: { latest: client.latest, pairedTag, error: client.error },
+  };
+  return cachedCheck;
+}
+
 // ── updater signalling ───────────────────────────────────────────────────────
-
-export type UpdaterPhase =
-  'idle' | 'pulling' | 'rolling' | 'done' | 'error' | 'unconfigured' | 'requested';
-
-export type UpdaterStatus = {
-  phase: UpdaterPhase;
-  target: string;
-  startedAt: string | null;
-  finishedAt: string | null;
-  ok: boolean | null;
-  error: string | null;
-};
 
 /** Whether the signal volume is mounted and writable (i.e. the updater
  *  sidecar deployment shape is in place). */
@@ -209,43 +232,30 @@ export async function readUpdaterStatus(): Promise<UpdaterStatus | null> {
 // auto-refresh can't run. See infra/updater/updater.sh + docs/deploy.md.
 
 const RELEASE_COMPOSE_PATH =
-  process.env.MANTLE_RELEASE_COMPOSE_PATH ?? '/app/release/docker-compose.yml';
+  env('MANTLE_RELEASE_COMPOSE_PATH') ?? '/app/release/docker-compose.yml';
 const RELEASE_CLIENT_COMPOSE_PATH =
-  process.env.MANTLE_RELEASE_CLIENT_COMPOSE_PATH ?? '/app/release/docker-compose.client.yml';
-const RELEASE_UPDATER_PATH = process.env.MANTLE_RELEASE_UPDATER_PATH ?? '/app/release/updater.sh';
+  env('MANTLE_RELEASE_CLIENT_COMPOSE_PATH') ?? '/app/release/docker-compose.client.yml';
+const RELEASE_UPDATER_PATH = env('MANTLE_RELEASE_UPDATER_PATH') ?? '/app/release/updater.sh';
+const RELEASE_CADDYFILE_PATH = env('MANTLE_RELEASE_CADDYFILE_PATH') ?? '/app/release/Caddyfile';
+const RELEASE_SCRIPTS_DIR = env('MANTLE_RELEASE_SCRIPTS_DIR') ?? '/app/release/scripts';
 
-export type ComposeState =
-  | 'in-sync' // box compose == this release's canonical
-  | 'stale' // pristine (== baseline) but not this release's — refresh hasn't run
-  | 'modified' // hand-edited canonical file — auto-refresh disabled, needs adoption
-  | 'no-baseline' // pre-adoption box — run scripts/compose-adopt.sh once
-  | 'unknown'; // no stack.json (old updater.sh / no sidecar / dev)
-
-/** The updater SCRIPT's own currency. Deliberately not `ComposeState`: the
- *  script has no `no-baseline` standoff (it self-adopts, having no supported
- *  box-local variation), so a missing baseline is not a state an operator can
- *  act on — the only actionable state is `modified`. */
-export type UpdaterScriptState =
-  | 'in-sync' // box script == this release's canonical
-  | 'stale' // differs — self-refreshes on the next successful update
-  | 'modified' // differs from its baseline: hand-edited, refresh refused
-  | 'unknown'; // no stack.json, or a pre-v0.206 updater that reports no sha
-
-export type ComposeStatus = {
-  state: ComposeState;
-  /** The updater's last refresh outcome verbatim (e.g. 'refreshed',
-   *  'modified', 'no-baseline', 'unavailable'), for the details view. */
-  refresh: string | null;
-  /** The CLIENT stack's compose (v0.200 split). 'absent' state = a
-   *  server-only box (no docker-compose.client.yml — nothing to drift). */
-  client: { state: ComposeState | 'absent'; refresh: string | null };
-  /** The updater sidecar's own script (v0.206+). Before the self-refresh
-   *  landed this was the silent failure: a stale script rolled the server
-   *  stack, reported ok, and skipped the client stack with no error anywhere.
-   *  'unknown' on any box still running that script — it reports no sha. */
-  updater: { state: UpdaterScriptState; refresh: string | null };
-  checkedAt: string | null;
-};
+/** The operator scripts, in the order the updater hashes them. MUST match
+ *  SCRIPT_NAMES in infra/updater/updater.sh — the two fingerprints are
+ *  compared, so a different order or set makes every box read as drifted.
+ *
+ *  That includes RENAMING one: the name is hashed alongside the content, and
+ *  a rollout in which the old updater still writes the old list while this
+ *  build reads the new one reports drift on every box. It is why
+ *  scripts/install.sh keeps a name it shares with the root bootstrap
+ *  (2026-09-03 audit) — the two files carry disambiguating headers instead. */
+const RELEASE_SCRIPT_NAMES = [
+  'db-dump.sh',
+  'db-restore.sh',
+  'install.sh',
+  'sanity.sh',
+  'compose-adopt.sh',
+  'uninstall.sh',
+] as const;
 
 /** Canonical-compose hashes are constant for the life of the build. */
 const canonicalShaCache = new Map<string, string | null>();
@@ -261,6 +271,45 @@ async function canonicalSha(path_: string): Promise<string | null> {
     sha = null; // dev / pre-embed image
   }
   canonicalShaCache.set(path_, sha);
+  return sha;
+}
+
+/** Reproduce the updater's `scripts_sha_of`: sha256 over `name:<sha256 hex>`
+ *  lines in SCRIPT_NAMES order, one per line. The name tag is what keeps a
+ *  MISSING script visible — an untagged digest would drop it entirely, so a
+ *  half-installed box could hash identical to a complete one. Two
+ *  implementations of one hash is itself the risk, so
+ *  release-scripts-sha.test.ts runs the REAL shell function against this. */
+async function scriptsCanonicalSha(dir: string): Promise<string | null> {
+  const hit = canonicalShaCache.get(dir);
+  if (hit !== undefined) return hit;
+  let sha: string | null;
+  try {
+    const lines: string[] = [];
+    let sawAny = false;
+    for (const name of RELEASE_SCRIPT_NAMES) {
+      try {
+        const buf = await fs.readFile(path.join(dir, name));
+        lines.push(`${name}:${createHash('sha256').update(buf).digest('hex')}`);
+        sawAny = true;
+      } catch {
+        lines.push(`${name}:`); // absent, and the digest says so
+      }
+    }
+    // No script at all = a pre-v0.232.137 image; report 'unknown', not a
+    // hash of six blanks that every box would fail to match. The updater's
+    // scripts_sha_of applies the same rule, and it is load-bearing on the
+    // BASELINE side: emptiness is how a pre-adoption box ("stale, self-heals")
+    // is told apart from a hand-edited one ("modified, needs a human").
+    sha = sawAny
+      ? createHash('sha256')
+          .update(lines.map((l) => `${l}\n`).join(''))
+          .digest('hex')
+      : null;
+  } catch {
+    sha = null;
+  }
+  canonicalShaCache.set(dir, sha);
   return sha;
 }
 
@@ -293,15 +342,20 @@ export async function readComposeStatus(): Promise<ComposeStatus> {
     refresh: null,
     client: { state: 'unknown' as const, refresh: null },
     updater: { state: 'unknown' as const, refresh: null },
+    caddy: { state: 'unknown' as const, refresh: null },
+    scripts: { state: 'unknown' as const, refresh: null },
     checkedAt: null,
   };
   try {
-    const [raw, canonical, clientCanonical, updaterCanonical] = await Promise.all([
-      fs.readFile(path.join(SIGNAL_DIR, 'stack.json'), 'utf8'),
-      canonicalSha(RELEASE_COMPOSE_PATH),
-      canonicalSha(RELEASE_CLIENT_COMPOSE_PATH),
-      canonicalSha(RELEASE_UPDATER_PATH),
-    ]);
+    const [raw, canonical, clientCanonical, updaterCanonical, caddyCanonical, scriptsCanonical] =
+      await Promise.all([
+        fs.readFile(path.join(SIGNAL_DIR, 'stack.json'), 'utf8'),
+        canonicalSha(RELEASE_COMPOSE_PATH),
+        canonicalSha(RELEASE_CLIENT_COMPOSE_PATH),
+        canonicalSha(RELEASE_UPDATER_PATH),
+        canonicalSha(RELEASE_CADDYFILE_PATH),
+        scriptsCanonicalSha(RELEASE_SCRIPTS_DIR),
+      ]);
     const j = JSON.parse(raw) as Record<string, unknown>;
     const str = (k: string) => (typeof j[k] === 'string' ? (j[k] as string) : '');
     const refresh = str('refresh') || null;
@@ -321,7 +375,20 @@ export async function readComposeStatus(): Promise<ComposeStatus> {
       state: classifyUpdater(str('updater_sha'), str('updater_baseline_sha'), updaterCanonical),
       refresh: str('updater_refresh') || null,
     };
-    return { state, refresh, client, updater, checkedAt };
+    // Front door (v0.232.126+): the Caddyfile is release-owned like compose.
+    // An older updater reports no caddy fields at all, which reads 'unknown'.
+    const caddy = {
+      state: classify(str('caddy_sha'), str('caddy_baseline_sha'), caddyCanonical),
+      refresh: str('caddy_refresh') || null,
+    };
+    // Operator scripts (v0.232.137+). classifyUpdater, not classify: the
+    // refresh ADOPTS a box with no baseline, so 'no-baseline' would be a
+    // state no human ever has to act on.
+    const scripts = {
+      state: classifyUpdater(str('scripts_sha'), str('scripts_baseline_sha'), scriptsCanonical),
+      refresh: str('scripts_refresh') || null,
+    };
+    return { state, refresh, client, updater, caddy, scripts, checkedAt };
   } catch {
     return none;
   }
@@ -341,13 +408,22 @@ export async function readUpdaterLog(maxLines = 60): Promise<string> {
   }
 }
 
-/** Ask the sidecar to update to `target` (an image tag like "v0.20.68", or
- *  "latest"). Validation mirrors the sidecar's own whitelist. */
+/** Ask the sidecar to update. `target` is the SERVER image tag ("v0.20.68" or
+ *  "latest"); `clientTarget` is the owner-UI (jackdaw) tag. Either alone is
+ *  valid: target-only rolls the server and lets the sidecar pair the client
+ *  from the target image; clientTarget-only rolls just the interface.
+ *  Validation mirrors the sidecar's own whitelist. */
 export async function requestUpdate(
-  target: string,
+  target: string | null,
+  clientTarget?: string | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const tag = target.trim();
-  if (!/^[A-Za-z0-9._-]+$/.test(tag)) return { ok: false, error: `invalid tag '${target}'` };
+  const tag = target?.trim() ?? '';
+  const clientTag = clientTarget?.trim() ?? '';
+  if (!tag && !clientTag) return { ok: false, error: 'no update target given' };
+  if (tag && !/^[A-Za-z0-9._-]+$/.test(tag)) return { ok: false, error: `invalid tag '${target}'` };
+  if (clientTag && !/^[A-Za-z0-9._-]+$/.test(clientTag)) {
+    return { ok: false, error: `invalid client tag '${clientTarget}'` };
+  }
   if (!(await updaterAvailable())) {
     return { ok: false, error: 'updater sidecar not available on this deployment' };
   }
@@ -372,11 +448,17 @@ export async function requestUpdate(
   try {
     await fs.writeFile(
       path.join(SIGNAL_DIR, 'request.json'),
-      JSON.stringify({ target: tag, requested_at: new Date().toISOString() }),
+      JSON.stringify({
+        // Key absence IS the signal: the sidecar treats a missing target as
+        // "interface-only" when client_target is present.
+        ...(tag ? { target: tag } : {}),
+        ...(clientTag ? { client_target: clientTag } : {}),
+        requested_at: new Date().toISOString(),
+      }),
       'utf8',
     );
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 }

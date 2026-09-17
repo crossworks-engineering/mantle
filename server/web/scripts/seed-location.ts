@@ -30,6 +30,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { db, agents } from '@mantle/db';
 import { sql } from 'drizzle-orm';
 import { applyManifest } from '../lib/system-manifest/seed';
+import { env } from '@mantle/config';
 
 const LOCATION_GROUPS = ['location', 'profile'];
 const LOCATION_SKILLS = ['location_awareness', 'navigation'];
@@ -71,7 +72,7 @@ export async function seedLocation(ownerId: string): Promise<void> {
 }
 
 async function resolveOwnerId(): Promise<string> {
-  const fromEnv = process.env.ALLOWED_USER_ID?.trim();
+  const fromEnv = env('ALLOWED_USER_ID')?.trim();
   if (fromEnv) return fromEnv;
   // Single-user system: resolve the sole auth.users row (mirrors the workers).
   const res = (await db.execute(sql`select id from auth.users limit 2`)) as unknown;

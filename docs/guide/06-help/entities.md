@@ -12,7 +12,7 @@ extraction cannot always tell that "Sam Delport", "S. Delport" and "sam@acme.com
 are one person. This screen surfaces the pairs it suspects and asks you.
 
 Merging matters more than it looks. An entity is what ties a person to every
-mention of them across mail, notes, events and files — so a duplicate doesn't
+mention of them across mail, notes, events and files, so a duplicate doesn't
 just look untidy, it splits someone's history in half and makes "what do I know
 about Sam?" return the wrong answer with no sign anything is missing.
 
@@ -27,7 +27,7 @@ a dismissal is remembered.
 
 ## Technical
 
-Candidates come from name similarity combined with shared attributes — an email
+Candidates come from name similarity combined with shared attributes, an email
 address or phone number in common raises confidence considerably, which is why
 the strongest suggestions tend to involve contacts.
 
@@ -38,7 +38,7 @@ the history returns all of it.
 
 That also makes a merge hard to undo, which is the reason this is a review queue
 rather than something extraction does on its own confidence. The cost of a wrong
-merge — two people's records fused — is much higher than the cost of a duplicate
+merge (two people's records fused) is much higher than the cost of a duplicate
 sitting around for a week.
 
 Dismissals are recorded per pair, so the same suggestion doesn't return after

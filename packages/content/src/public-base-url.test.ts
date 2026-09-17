@@ -55,12 +55,18 @@ describe('publicBaseUrl', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it('accepts the NEXT_PUBLIC_APP_URL fallback without warning', async () => {
+  it('accepts the NEXT_PUBLIC_APP_URL fallback with only the one-time deprecation notice', async () => {
     process.env.NEXT_PUBLIC_APP_URL = 'https://app.example.com';
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { resetEnvAliasWarningsForTests } = await import('@mantle/config');
+    resetEnvAliasWarningsForTests();
     const { publicBaseUrl } = await import('./shares');
 
     expect(publicBaseUrl()).toBe('https://app.example.com');
-    expect(warn).not.toHaveBeenCalled();
+    expect(publicBaseUrl()).toBe('https://app.example.com');
+    // The legacy name is honoured, but @mantle/config says so once — and the
+    // "no public URL, minting localhost links" warning above must NOT fire.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toMatch(/NEXT_PUBLIC_APP_URL is deprecated/);
   });
 });

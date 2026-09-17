@@ -5,7 +5,7 @@ toolGroups: [journal]
 
 ## Journal
 
-Short, first-person notes about your life — what you did, how it went, how you
+Short, first-person notes about your life; what you did, how it went, how you
 felt. Each entry can carry a mood and a life area.
 
 This is the one place in Mantle written for *you* rather than about your work.
@@ -22,8 +22,8 @@ files.
 - "How was I feeling about the Acme project last month?"
 - "What have I been writing about most this year?"
 
-Ask it to journal *for* you after a conversation — "note that down as a journal
-entry" — and it will write it in your voice rather than summarising you in the
+Ask it to journal *for* you after a conversation, "note that down as a journal
+entry", and it will write it in your voice rather than summarising you in the
 third person.
 
 ## Technical
@@ -34,7 +34,7 @@ queried by feeling and life area rather than only by text.
 The identity block is the interesting part: rather than retrieving journal
 entries per question, a distillation of them is assembled into an always-on
 "about the user" section prepended to every agent turn. That happens **without
-an LLM call** — it is a deterministic roll-up, so it costs nothing per turn and
+an LLM call**; it is a deterministic roll-up, so it costs nothing per turn and
 cannot drift or hallucinate.
 
 Entries are also indexed normally, so a specific question ("what did I say about

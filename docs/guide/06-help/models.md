@@ -4,8 +4,8 @@ title: Models
 
 ## Models
 
-A live catalogue of every model your providers currently offer — id, context
-window, pricing, modality — searchable and sortable, one provider at a time.
+A live catalogue of every model your providers currently offer, id, context
+window, pricing, modality, searchable and sortable, one provider at a time.
 
 This is a **reference screen, not a settings screen**. Nothing you do here
 changes what your brain uses. It exists because choosing a model means comparing
@@ -19,7 +19,7 @@ you suspect it's moved on.
 
 ## When to use this
 
-Come here before changing a model anywhere else — and in particular before
+Come here before changing a model anywhere else, and in particular before
 changing one on a **worker**, where a wrong context window turns into truncated
 summaries rather than an error you'd notice.
 
@@ -38,7 +38,7 @@ provider has just published something. Providers that need a key show as
 unavailable until one is set.
 
 Pricing is normalised across providers into the same per-token shape, which is
-what makes the sort meaningful — providers publish in different units, and some
+what makes the sort meaningful, providers publish in different units, and some
 carry extra line items (image input, cached reads, web search) that appear
 separately on the detail pane rather than being folded into a single misleading
 figure.

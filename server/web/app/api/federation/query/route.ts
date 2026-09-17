@@ -4,6 +4,7 @@ import { queryForPeer } from '@mantle/content';
 import { embed } from '@mantle/embeddings';
 import { startTrace, step } from '@mantle/tracing';
 import { authenticatePeer } from '@/lib/federation-auth';
+import { firstIssue } from '@/lib/zod-issue';
 
 /**
  * Inbound federation query — a peer Mantle asking what we hold for it.
@@ -31,10 +32,7 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = QueryBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
 
   const hits = await startTrace(

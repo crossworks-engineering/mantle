@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { shareModeOf } from '@mantle/content';
-import { buildPageToc } from '@mantle/content/page-toc';
-import type { ShareViewPayload } from '@mantle/web-ui/share/view-payload';
+import { buildPageToc } from '@mantle/content-core/page-toc';
+import type { ShareViewPayload } from '@mantle/share-ui/view-payload';
 import { resolveActiveShareByToken, loadShareView, recordShareView } from '@/lib/shares';
 import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 import { renderPageDoc } from '@/lib/render-page-doc';
@@ -67,6 +67,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
   void recordShareView(share.id); // fire-and-forget, same as the HTML page
 
   const assetUrl = (fileId: string) => `/s/${token}/a/${fileId}`;
+  const drawUrl = (drawId: string) => `/s/${token}/draw/${encodeURIComponent(drawId)}`;
 
   let payload: ShareViewPayload;
   switch (view.kind) {
@@ -76,7 +77,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
         title: view.title,
         icon: view.icon,
         width: view.width,
-        html: renderPageDoc(view.doc, { assetUrl }),
+        html: renderPageDoc(view.doc, { assetUrl, drawUrl }),
         toc: buildPageToc(view.doc),
       };
       break;
@@ -100,6 +101,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
             filename: f.filename,
             mimeType: f.mimeType,
             sizeBytes: f.sizeBytes,
+            updatedAt: f.updatedAt,
           })),
         },
       };

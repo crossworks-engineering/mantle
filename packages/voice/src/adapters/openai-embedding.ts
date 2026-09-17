@@ -19,6 +19,7 @@ import type {
   EmbeddingModelInfo,
 } from './types';
 import type { DiscoveryResult } from '../discover';
+import { errorMessage } from '@mantle/std';
 
 const ENDPOINT = 'https://api.openai.com/v1/embeddings';
 const MODELS_URL = 'https://api.openai.com/v1/models';
@@ -177,7 +178,7 @@ export const openaiEmbedding: EmbeddingDispatcher = {
       return {
         available: [...STATIC_CATALOG],
         filtered: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       };
     }
   },

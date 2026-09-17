@@ -6,7 +6,7 @@ import { brainCounts, vectorCounts, pendingToolCount } from '@/lib/dashboard';
 /**
  * GET /api/dashboard/summary — compact headline metrics for the mobile
  * companion's landing dashboard. Mirrors the web dashboard's KPI cards
- * (apps/web/app/(app)/page.tsx): 7d spend (vs prior 7d), brain-graph counts,
+ * (server/web/app/(app)/page.tsx): 7d spend (vs prior 7d), brain-graph counts,
  * embedded-vector total, and the pending-approval count. Owner-gated, so it
  * works with a session cookie or a mobile bearer token.
  */

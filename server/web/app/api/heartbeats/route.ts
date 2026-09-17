@@ -2,6 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { createHeartbeat, listHeartbeats } from '@/lib/heartbeats';
 import { CreateHeartbeatBody, toCreateInput } from '@/lib/heartbeat-schema';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** List the owner's heartbeats (summaries). */
 export async function GET() {
@@ -19,7 +21,7 @@ export async function POST(req: Request) {
   const parsed = CreateHeartbeatBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'Invalid input.' },
+      { error: firstIssue(parsed.error, 'Invalid input.') },
       { status: 400 },
     );
   }
@@ -27,7 +29,7 @@ export async function POST(req: Request) {
     const heartbeat = await createHeartbeat(user.id, toCreateInput(parsed.data));
     return NextResponse.json({ heartbeat });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (msg.includes('heartbeats_owner_slug') || msg.includes('duplicate key')) {
       return NextResponse.json(
         { error: `A heartbeat with slug "${parsed.data.slug}" already exists.` },

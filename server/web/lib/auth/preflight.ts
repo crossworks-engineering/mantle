@@ -12,6 +12,7 @@
 import { NextResponse } from '../../server/http-compat';
 import type { RateLimitResult } from '../rate-limit';
 import { requestOrigin } from '../auth-constants';
+import { env } from '@mantle/config';
 
 /**
  * The shared 429 when any of `gates` is exhausted, else null — so a caller
@@ -44,6 +45,6 @@ export function rateLimited(...gates: RateLimitResult[]): NextResponse | null {
 export function isTrustedOrigin(req: Request): boolean {
   const origin = req.headers.get('origin');
   if (!origin || origin === 'null') return true;
-  const clientOrigin = (process.env.MANTLE_CLIENT_ORIGIN ?? '').replace(/\/+$/, '');
+  const clientOrigin = (env('MANTLE_CLIENT_ORIGIN') ?? '').replace(/\/+$/, '');
   return origin === requestOrigin(req) || origin === clientOrigin;
 }

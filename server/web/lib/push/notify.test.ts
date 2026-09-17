@@ -41,6 +41,7 @@ vi.mock('@mantle/db', () => {
       ownerId: 'am.ownerId',
       agentId: 'am.agentId',
       direction: 'am.direction',
+      status: 'am.status',
       createdAt: 'am.createdAt',
     },
   };
@@ -58,7 +59,7 @@ vi.mock('./store', () => ({
   deleteSubscriptionByRoutingToken: vi.fn(),
 }));
 
-import { pushOutbound, pushApproval } from './notify';
+import { pushOutbound, pushApproval, wantsOutboundPush } from './notify';
 import { countPending, listPendingCalls } from '@mantle/tools';
 import { loadProfilePreferences } from '@mantle/content';
 import { sealToDevice } from './seal';
@@ -199,6 +200,24 @@ describe('pushOutbound — delivery', () => {
     const res = await pushOutbound('owner', 'ada');
     expect(res).toEqual({ attempted: 2, delivered: 1, dropped: 0 });
     expect(relayNotify).toHaveBeenCalledTimes(1); // only the good device reached the relay
+  });
+});
+
+describe('wantsOutboundPush — which conversation_changed events push', () => {
+  it('pushes a finished outbound turn', () => {
+    expect(wantsOutboundPush({ direction: 'outbound', status: 'complete' })).toBe(true);
+  });
+  it('treats a payload without status (pre-0156 trigger) as complete', () => {
+    expect(wantsOutboundPush({ direction: 'outbound' })).toBe(true);
+  });
+  it('ignores the pending placeholder the durable runner inserts at turn start', () => {
+    expect(wantsOutboundPush({ direction: 'outbound', status: 'pending' })).toBe(false);
+  });
+  it('ignores a failed turn (there is no reply to teaser)', () => {
+    expect(wantsOutboundPush({ direction: 'outbound', status: 'failed' })).toBe(false);
+  });
+  it('never pushes inbound rows', () => {
+    expect(wantsOutboundPush({ direction: 'inbound', status: 'complete' })).toBe(false);
   });
 });
 

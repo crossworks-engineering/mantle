@@ -9,7 +9,7 @@ disk.
 
 Read the word **local** carefully, because it's the whole point of this screen.
 Mantle's job ends at producing verified, rotated dumps on this machine. Getting
-them somewhere else — another disk, another building, another country — is
+them somewhere else (another disk, another building, another country) is
 deliberately yours, done with whatever you already trust: rsync, restic, rclone,
 Syncthing, pointed at that directory.
 
@@ -35,7 +35,7 @@ insurance in the system.
 ## Technical
 
 Dumps are taken with `pg_dump` in its custom format, which is compressed and
-restorable selectively — you can pull back one table rather than the whole
+restorable selectively; you can pull back one table rather than the whole
 brain. The schedule is hosted by a background worker, so it runs whether or not
 anyone has the app open.
 

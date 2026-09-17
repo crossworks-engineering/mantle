@@ -9,7 +9,7 @@ Work the assistant is doing in the background, as a tree you can read.
 
 When a task is too big for one reply, the assistant plans a **run**: a structure
 of steps, some sequential, some parallel, each one a concrete piece of work. It
-then suspends. It is not sitting there holding the conversation in memory —
+then suspends. It is not sitting there holding the conversation in memory,
 it stops, the steps execute, and it resumes when they're done.
 
 That's why the tree is worth reading rather than glancing at. It's not a
@@ -26,7 +26,7 @@ asked.
 - "Cancel the research run."
 
 Two things follow from how runs work. A long run **keeps going if you close the
-page** — it's durable, not tied to your session. And a run that needs your input
+page**; it's durable, not tied to your session. And a run that needs your input
 will stop and ask rather than guess; those questions arrive on the pending
 screen.
 
@@ -42,7 +42,7 @@ alive while the steps ran, so a restart, a crash or a week's gap changes
 nothing about how a run finishes.
 
 Exactly one resume fires when a run completes, guaranteed by a counter each
-child increments under its parent's row lock — so of many steps finishing at
+child increments under its parent's row lock, so of many steps finishing at
 once, precisely one transaction observes the group as done and seals it.
 Several further guards stack behind that, because a duplicated resume would
 mean the assistant acting twice on the same result.

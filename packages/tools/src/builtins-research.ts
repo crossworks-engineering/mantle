@@ -18,6 +18,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import { OpenRouter } from '@openrouter/sdk';
+import { openrouterClientMeta } from '@mantle/voice';
 import {
   apiKeys,
   db,
@@ -30,20 +31,18 @@ import {
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import { captureLlmUsage } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
-import { str } from './coerce';
-
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
+import { str, strOpt } from './coerce';
+import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 /** Last-resort model when NO search worker is configured (fresh brain before the
  *  0087 backfill / onboarding provision runs). The worker is the real source of
  *  truth; this just keeps web_search functional rather than erroring. */
-const FALLBACK_SEARCH_MODEL = process.env.MANTLE_WEB_SEARCH_MODEL || 'perplexity/sonar-pro';
+const FALLBACK_SEARCH_MODEL = env('MANTLE_WEB_SEARCH_MODEL') || 'perplexity/sonar-pro';
 
 /** An OpenRouter key for this owner — prefers the 'default' label, falls back
  *  to any openrouter key on file. */
-async function resolveOpenRouterKey(ownerId: string): Promise<string | null> {
+export async function resolveOpenRouterKey(ownerId: string): Promise<string | null> {
   const k = await getApiKey(ownerId, 'openrouter');
   if (k) return k;
   const [row] = await db
@@ -150,8 +149,7 @@ async function runWebSearch(
 
   const client = new OpenRouter({
     apiKey,
-    httpReferer: 'https://mantle.crossworks.network',
-    appTitle: 'Mantle',
+    ...openrouterClientMeta(),
   });
 
   try {
@@ -199,7 +197,7 @@ async function runWebSearch(
     }
     return { ok: true, output: { query, model, answer, citations } };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 }
 

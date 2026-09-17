@@ -41,6 +41,7 @@ import {
 } from './openai-compat';
 import { scrubThinkBlocks } from './think-scrubber';
 import { copilotHeaders, resolveCopilotToken } from './copilot-auth';
+import { errorMessage } from '@mantle/std';
 
 /** Map our token-budget hint to Copilot's `reasoning_effort` tier. Any positive
  *  budget turns reasoning on; the magnitude picks the tier. Returns undefined
@@ -202,7 +203,7 @@ async function copilotDiscover(apiKey: string): Promise<DiscoveryResult<ChatMode
     return {
       available: [...COPILOT_CHAT_MODELS],
       filtered: false,
-      error: e instanceof Error ? e.message : String(e),
+      error: errorMessage(e),
     };
   }
 }

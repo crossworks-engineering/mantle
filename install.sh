@@ -1,5 +1,23 @@
 #!/usr/bin/env bash
 #
+# ── THIS IS THE PUBLIC BOOTSTRAP (repo root). ────────────────────────────────
+# There are two files called install.sh and they do different jobs:
+#
+#   install.sh          ← you are here. The URL people curl. Checks docker,
+#                         downloads the deploy bundle, hands over. Never
+#                         writes .env, never touches an existing box's config.
+#   scripts/install.sh  → THE CONFIGURATOR. Ships inside the bundle, writes
+#                         .env, brings the stack up, and is what an operator
+#                         re-runs later to reconfigure (--domain, --check).
+#
+# The names collide, and renaming either is not free: `scripts/install.sh` is
+# in the operator-script FINGERPRINT the updater and /settings/updates compare
+# (infra/updater/updater.sh SCRIPT_NAMES, server/web/lib/updates.ts
+# RELEASE_SCRIPT_NAMES — the name is part of the digest), so changing it makes
+# every box read as "scripts drifted" until its updater self-refreshes. The
+# 2026-09-03 audit weighed that against a naming papercut and kept the names.
+# ─────────────────────────────────────────────────────────────────────────────
+#
 # Mantle one-line installer — pulls the published Docker image and starts the
 # full stack with generated secrets. No manual .env editing needed for a
 # localhost install; a domain install is one env var.
@@ -13,12 +31,19 @@
 #   MANTLE_DOMAIN=m.example.com   serve this hostname with automatic HTTPS
 #                                 (DNS A record + open ports 80/443 first);
 #                                 omit for plain HTTP on :80 across this
-#                                 machine's network — http://<server-ip>. For
-#                                 loopback only, run scripts/install.sh
-#                                 --localhost from the bundle afterwards.
-#   MANTLE_CHANNEL=main           git ref to fetch the deploy bundle from
-#                                 (default: main; a release tag like v0.108.0
-#                                 pins compose+infra to that release)
+#                                 machine's network — http://<server-ip>.
+#                                 With a terminal the installer asks which
+#                                 access mode you want (domain, this machine
+#                                 only, or LAN).
+#   MANTLE_CHANNEL=v0.232.0       release tag to install (default: the latest
+#                                 release tag, verified against SHA256SUMS;
+#                                 MANTLE_CHANNEL=main fetches the files from
+#                                 the branch without verification)
+#   MANTLE_YES=1                  never prompt — take the defaults (the old
+#                                 behaviour). Without it, a terminal gets
+#                                 asked: how the brain is reached, and which
+#                                 components to install (shape, sandboxes,
+#                                 local embedder, owner UI).
 #
 # What it does — and nothing else:
 #   1. checks docker + the compose plugin exist
@@ -39,7 +64,13 @@ set -euo pipefail
 # http server in CI). MANTLE_SKIP_START=1 scaffolds + writes .env but skips
 # the pull/up — used to test the installer without launching a stack.
 REPO_RAW="${MANTLE_REPO_RAW:-https://raw.githubusercontent.com/crossworks-engineering/mantle}"
-CHANNEL="${MANTLE_CHANNEL:-main}"
+# Default to the LATEST RELEASE, not main: a `curl | bash` user gets the compose
+# that was tested with the images it names, downloaded as the signed deploy
+# bundle release.yml publishes (verified against SHA256SUMS). Set
+# MANTLE_CHANNEL=main (or any branch) to fall back to raw file-by-file fetch.
+CHANNEL="${MANTLE_CHANNEL:-}"
+REPO_RELEASES="${MANTLE_REPO_RELEASES:-https://github.com/crossworks-engineering/mantle/releases}"
+REPO_API="${MANTLE_REPO_API:-https://api.github.com/repos/crossworks-engineering/mantle}"
 HOME_DIR="${MANTLE_HOME:-./mantle}"
 DOMAIN="${MANTLE_DOMAIN:-}"
 SKIP_START="${MANTLE_SKIP_START:-}"
@@ -58,28 +89,55 @@ docker compose version >/dev/null 2>&1 || die "the docker compose plugin is miss
 docker info >/dev/null 2>&1 || die "the docker daemon isn't running (or you lack permission — add your user to the docker group)"
 
 # ── 2. scaffold + fetch the deploy bundle ────────────────────────────────────
+if [ -z "$CHANNEL" ]; then
+  CHANNEL="$(curl -fsSL "${REPO_API}/releases/latest" 2>/dev/null | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
+  [ -n "$CHANNEL" ] || { warn "could not resolve the latest release tag — falling back to main"; CHANNEL=main; }
+fi
 say "Installing Mantle into ${HOME_DIR} (bundle ref: ${CHANNEL})"
-mkdir -p "$HOME_DIR/infra/caddy" "$HOME_DIR/infra/postgres/init" "$HOME_DIR/infra/updater" "$HOME_DIR/scripts" "$HOME_DIR/data"
+# Every directory a fetch writes into, up front: `curl -o` creates none, so a
+# missing infra/caddy/shapes killed the raw-fetch path (and with it the
+# automatic fallback to main when the release lookup fails) on its first
+# shape download.
+mkdir -p "$HOME_DIR/infra/caddy/shapes" "$HOME_DIR/infra/caddy/conf.d" "$HOME_DIR/infra/postgres/init" "$HOME_DIR/infra/updater" "$HOME_DIR/scripts" "$HOME_DIR/data"
 cd "$HOME_DIR"
 
 fetch() { # fetch <repo-path> <local-path>
   curl -fsSL "${REPO_RAW}/${CHANNEL}/$1" -o "$2" || die "download failed: $1"
 }
 
+USE_BUNDLE=
+case "$CHANNEL" in
+  v[0-9]*)
+    say "Downloading the signed deploy bundle for ${CHANNEL}"
+    tmp="$(mktemp -d)"
+    curl -fsSL "${REPO_RELEASES}/download/${CHANNEL}/mantle-deploy-${CHANNEL}.tar.gz" -o "$tmp/bundle.tar.gz" || die "download failed: mantle-deploy-${CHANNEL}.tar.gz"
+    curl -fsSL "${REPO_RELEASES}/download/${CHANNEL}/SHA256SUMS" -o "$tmp/SHA256SUMS" || die "download failed: SHA256SUMS"
+    want="$(awk '{print $1}' "$tmp/SHA256SUMS" | head -1)"
+    if command -v sha256sum >/dev/null 2>&1; then have="$(sha256sum "$tmp/bundle.tar.gz" | awk '{print $1}')"; else have="$(shasum -a 256 "$tmp/bundle.tar.gz" | awk '{print $1}')"; fi
+    [ "$want" = "$have" ] || die "bundle checksum mismatch (expected $want, got $have) — refusing to install"
+    tar -xzf "$tmp/bundle.tar.gz" --strip-components=1 -C .
+    rm -rf "$tmp"
+    chmod +x scripts/*.sh
+    ok "bundle verified and unpacked"
+    USE_BUNDLE=1
+    ;;
+esac
+
+if [ -z "$USE_BUNDLE" ]; then
 fetch docker-compose.yml                 docker-compose.yml
 fetch docker-compose.client.yml          docker-compose.client.yml
-# Baselines for the release-owned compose contract: the updater sidecar
-# auto-refreshes these files on updates ONLY while each stays byte-identical
-# to its baseline (proof the box never hand-edited it — box-local changes go
-# in docker-compose.override.yml + .env instead).
-cp docker-compose.yml docker-compose.yml.release
-cp docker-compose.client.yml docker-compose.client.yml.release
+fetch docker-compose.core.yml            docker-compose.core.yml
 fetch .env.prod.example                  .env.prod.example
 fetch infra/caddy/Caddyfile              infra/caddy/Caddyfile
-# The same-origin front door (one domain path-routed to BOTH apps). This is
-# what scripts/install.sh installs by default — without it a fresh box serves
-# the server app only and the visitor can never reach signup.
-fetch infra/caddy/Caddyfile.same-origin  infra/caddy/Caddyfile.same-origin
+# The front door is ONE release-owned Caddyfile; the routing shape is a file
+# it imports per MANTLE_CADDY_SHAPE (scripts/install.sh writes same-origin,
+# one domain path-routed to BOTH apps: without a shape a fresh box routes
+# nothing and the visitor can never reach signup). conf.d/ holds box-local
+# drop-ins a roll never touches.
+fetch infra/caddy/shapes/same-origin.caddy infra/caddy/shapes/same-origin.caddy
+fetch infra/caddy/shapes/split.caddy       infra/caddy/shapes/split.caddy
+fetch infra/caddy/README.md                infra/caddy/README.md
+fetch infra/caddy/conf.d/README.md         infra/caddy/conf.d/README.md
 fetch infra/postgres/init/01-extensions.sql  infra/postgres/init/01-extensions.sql
 fetch infra/postgres/init/02-auth-schema.sql infra/postgres/init/02-auth-schema.sql
 # The updater sidecar's entrypoint script. Compose bind-mounts it at
@@ -99,6 +157,33 @@ fetch scripts/compose-adopt.sh           scripts/compose-adopt.sh
 # is the one that takes the data directory with it.
 fetch scripts/uninstall.sh               scripts/uninstall.sh
 chmod +x scripts/db-dump.sh scripts/db-restore.sh scripts/install.sh scripts/sanity.sh scripts/compose-adopt.sh scripts/uninstall.sh
+fi
+
+# Baselines for every release-owned file, seeded on BOTH paths: the bundle
+# ships none, and until this ran outside the raw-fetch block a bundle install
+# (the default since the bundle became the default) came up with zero
+# baselines. The updater sidecar auto-refreshes a file on updates ONLY while
+# it stays byte-identical to its .release baseline (proof the box never
+# hand-edited it; box-local changes go in docker-compose.override.yml, .env
+# and infra/caddy/conf.d/ instead), so a box without them reports no-baseline
+# on its first update and never takes a compose or Caddyfile change until an
+# operator runs compose-adopt by hand: the manual step this exists to remove.
+baseline() { # <file>: seed <file>.release (an older pinned bundle may lack a file)
+  if [ -f "$1" ]; then cp "$1" "$1.release"; else warn "no $1 in this bundle: baseline not seeded"; fi
+}
+baseline docker-compose.yml
+baseline docker-compose.client.yml
+baseline docker-compose.core.yml
+baseline infra/caddy/Caddyfile
+baseline infra/caddy/shapes/same-origin.caddy
+baseline infra/caddy/shapes/split.caddy
+# Operator scripts, same contract: a fresh box self-refreshes its tooling from
+# the very next release. Before this existed a box ran the scripts it was
+# installed with forever, and a stale compose-adopt.sh installed a compose it
+# did not understand (see infra/updater/updater.sh, refresh_scripts).
+for s in db-dump.sh db-restore.sh install.sh sanity.sh compose-adopt.sh uninstall.sh; do
+  cp "scripts/$s" "scripts/$s.release"
+done
 ok "deploy bundle fetched"
 
 # ── 3. configure + start + verify — ONE code path ────────────────────────────
@@ -107,8 +192,18 @@ ok "deploy bundle fetched"
 # up --wait through the migrate gate, and the per-service sanity check) lives
 # in scripts/install.sh — the same script used to reconfigure a box later
 # (e.g. `scripts/install.sh --domain m.example.com` to add HTTPS).
-ARGS=(--stack-dir "$(pwd -P)" --data-dir ./data -y)
-if [ -n "$DOMAIN" ]; then ARGS+=(--domain "$DOMAIN"); else ARGS+=(--no-domain); fi
+# Interactive when a terminal exists: scripts/install.sh reads its prompts
+# from /dev/tty precisely so `curl … | bash` can still ask questions (access
+# mode, what to install). Forcing -y here used to defeat that machinery and
+# silently install the defaults. MANTLE_YES=1 restores the old zero-question
+# behaviour for scripted runs; no controlling terminal means -y regardless.
+ARGS=(--stack-dir "$(pwd -P)" --data-dir ./data)
+if [ -n "${MANTLE_YES:-}" ] || [ ! -r /dev/tty ]; then ARGS+=(-y); fi
+if [ -n "$DOMAIN" ]; then
+  ARGS+=(--domain "$DOMAIN")
+elif [ -n "${MANTLE_YES:-}" ] || [ ! -r /dev/tty ]; then
+  ARGS+=(--no-domain)   # non-interactive default, unchanged
+fi
 # A release-tag channel pins the image to the same version as the bundle, so
 # compose + image can never drift apart.
 case "$CHANNEL" in v[0-9]*) ARGS+=(--image-tag "$CHANNEL") ;; esac

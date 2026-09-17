@@ -1,0 +1,64 @@
+import { NextResponse } from '@/server/http-compat';
+import { z } from 'zod';
+import { getOwnerOr401 } from '@/lib/auth';
+import { deleteMcpConnector } from '@mantle/tools';
+import {
+  getMcpConnector,
+  McpOAuthClientBody,
+  McpOAuthScopeBody,
+  updateMcpConnector,
+} from '@/lib/mcp-connectors';
+import { firstIssue } from '@/lib/zod-issue';
+
+export async function GET(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
+  const { slug } = await params;
+  const connector = await getMcpConnector(user.id, slug);
+  if (!connector) {
+    return NextResponse.json({ error: `MCP connector '${slug}' not found` }, { status: 404 });
+  }
+  return NextResponse.json({ connector });
+}
+
+const PatchBody = z.object({
+  name: z.string().min(1).max(120).optional(),
+  enabled: z.boolean().optional(),
+  url: z.string().min(1).max(2000).optional(),
+  /** '' clears the credential. */
+  secretRef: z.string().max(160).optional(),
+  authHeader: z.string().max(64).optional(),
+  authScheme: z.string().max(20).optional(),
+  /** Switch the OAuth app. A real change drops the old app's tokens; the
+   *  owner authorizes again. Re-sending the current app is a no-op. */
+  oauthClient: McpOAuthClientBody.optional(),
+  /** OAuth scope override; '' clears it. */
+  scope: McpOAuthScopeBody.optional(),
+});
+
+export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
+  const { slug } = await params;
+  const raw = await req.json().catch(() => ({}));
+  const parsed = PatchBody.safeParse(raw);
+  if (!parsed.success) {
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
+  }
+  const result = await updateMcpConnector(user.id, slug, parsed.data);
+  if ('error' in result) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+  return NextResponse.json(result);
+}
+
+export async function DELETE(_req: Request, { params }: { params: Promise<{ slug: string }> }) {
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
+  const { slug } = await params;
+  const deleted = await deleteMcpConnector(user.id, slug);
+  if (!deleted) {
+    return NextResponse.json({ error: `MCP connector '${slug}' not found` }, { status: 404 });
+  }
+  return NextResponse.json({ deleted: true });
+}

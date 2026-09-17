@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getChatAdapter } from './registry';
 import { localChatAdapter } from './local-chat';
 import './index'; // side-effect: register built-in adapters
@@ -88,5 +88,32 @@ describe('local-chat adapter', () => {
       messages: [{ role: 'user', content: 'hi' }],
     });
     expect(calls[0]!.body.tools).toBeUndefined();
+  });
+
+  it('gives the STREAMING path the same 300s connect budget as the one-shot path', async () => {
+    // The shared stream default is 60s, which suits a hosted provider. A local
+    // server loading a cold model into VRAM takes longer, and a connect timeout
+    // is classified RETRYABLE — so the default re-sent the whole prompt twice
+    // and then failed the turn on a box that was simply still warming up.
+    vi.useFakeTimers();
+    let captured: AbortSignal | undefined;
+    globalThis.fetch = ((_u: unknown, init: { signal?: AbortSignal }) => {
+      captured = init?.signal;
+      return new Promise<never>(() => {}); // never settles; we assert on the signal
+    }) as unknown as typeof fetch;
+
+    void localChatAdapter.chatStream!(
+      { apiKey: '', model: 'm', messages: [{ role: 'user', content: 'hi' }] },
+      () => {},
+    ).catch(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(captured).toBeDefined();
+
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(captured!.aborted, 'the 60s default must not govern the local route').toBe(false);
+
+    await vi.advanceTimersByTimeAsync(240_000);
+    expect(captured!.aborted, 'but 300s still bounds it — no unbounded hang').toBe(true);
+    vi.useRealTimers();
   });
 });

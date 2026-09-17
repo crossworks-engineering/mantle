@@ -19,7 +19,7 @@ import { deleteFileById } from '@mantle/files';
 
 import { evaluateLanded } from './evaluate-landed';
 import { rowsOf } from './sql-util';
-import type { LandedItem, ProbeFootprint } from '@mantle/web-ui/types/integrity';
+import type { LandedItem, ProbeFootprint } from '@mantle/client-types/types/integrity';
 
 export { evaluateLanded } from './evaluate-landed';
 
@@ -35,6 +35,10 @@ export const LANDED_TYPES = [
   'secret',
   'file',
   'email',
+  'table',
+  'journal',
+  'formula',
+  'draw',
 ] as const;
 
 /** A run is only meaningful once it has terminated. */
@@ -230,7 +234,9 @@ export async function deleteLandedNode(
           ? `file has ${res.derived?.total ?? 0} derived node(s) — delete it from /files, which confirms the cascade`
           : res.reason === 'attachment'
             ? 'file is an email attachment — delete it from the email'
-            : 'file delete failed';
+            : res.reason === 'in_drawing'
+              ? `image is used in ${res.drawings?.length ?? 0} drawing(s) — remove it from the drawing first`
+              : 'file delete failed';
       return { ok: false, type: row.type, error };
     }
     return { ok: true, type: row.type };

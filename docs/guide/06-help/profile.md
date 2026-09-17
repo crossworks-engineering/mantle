@@ -5,7 +5,7 @@ toolGroups: [profile]
 
 ## Profile
 
-Your own preferences — timezone, locale, and which agents are allowed to send
+Your own preferences, timezone, locale, and which agents are allowed to send
 you reminders.
 
 Timezone is the one that quietly matters most. It decides what "tomorrow
@@ -23,7 +23,7 @@ reminder.
 - "Remind me on Friday morning to send the invoice."
 
 Changing timezone in conversation is deliberately possible, because the moment
-you most need it changed is while travelling — and a wrong clock silently
+you most need it changed is while travelling, and a wrong clock silently
 mis-times every reminder you set from that point on. It's the only profile
 setting the assistant can adjust.
 
@@ -35,13 +35,13 @@ in one zone still refers to the same moment after you move; it just displays
 differently.
 
 Reminder permission is per agent, not a global switch. An agent not on the list
-can compute that something is due and cannot notify you about it — which is how
+can compute that something is due and cannot notify you about it, which is how
 a specialist stays useful without acquiring the ability to interrupt you.
 
 The zone also feeds heartbeat gating. A heartbeat with quiet hours and no zone
 of its own inherits this one, so setting your profile correctly is what makes
 "don't message me at night" mean your night.
 
-Locale affects formatting only — date order, number separators, first day of the
+Locale affects formatting only, date order, number separators, first day of the
 week. It doesn't change the language the assistant replies in; that follows the
 language you write in.

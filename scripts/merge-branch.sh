@@ -83,7 +83,7 @@ echo "→ version bump ($kind) on main"
 node scripts/bump-version.mjs "$kind"
 next="$(node -p "require('./package.json').version")"
 # README.md rides along: bump-version.mjs regenerates its counted stats block.
-git add package.json server/web/package.json client/web/package.json client/desktop/package.json README.md
+git add package.json server/web/package.json README.md
 git commit -m "release: v$next"
 
 cat <<EOF
@@ -91,5 +91,9 @@ cat <<EOF
 ✓ $branch merged, main is at v$next
     scripts/rm-worktree.sh ${branch##*/}   # tear the worktree down when done
     git branch -d $branch                  # then delete the branch
-    (push only when asked; pushing a v* TAG cuts a release)
+  To cut the release (pushing a v* tag is what triggers it):
+    scripts/tag-release.sh                 # asserts HEAD == the v$next release
+                                           # commit, then tags + pushes
+  Never chain this script with a tag by hand — a failed merge with the tag
+  still running is exactly how v0.232.59 shipped a stale tree to npm.
 EOF

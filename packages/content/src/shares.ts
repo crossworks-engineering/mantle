@@ -8,6 +8,10 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db, nodes, shares, type Share } from '@mantle/db';
+import type { ShareMode } from '@mantle/client-types';
+import { env } from '@mantle/config';
+
+export type { ShareMode };
 
 /** Node types that may be shared publicly. Sensitive types are excluded.
  *  `branch` = a FILES FOLDER only — sharing one shares every file under it,
@@ -26,6 +30,9 @@ export const SHAREABLE_TYPES = [
   // calculator — the point of sending someone a link is that they can put their
   // own numbers in and see the derivation, not just read the equations.
   'formula',
+  // A draw shares its COMMITTED SVG snapshot (validated by acceptSceneSvg at
+  // commit) — never the scene JSON, never the draft. Static pixels, no JS.
+  'draw',
   'branch',
 ] as const;
 export type ShareableType = (typeof SHAREABLE_TYPES)[number];
@@ -40,19 +47,6 @@ export function isShareable(type: string): type is ShareableType {
 export function isShareableFolderPath(path: string | null | undefined): boolean {
   return typeof path === 'string' && path.startsWith('files.');
 }
-
-/**
- * Who a share admits. Lives in `shares.settings.mode` (absent = 'public', so
- * every pre-existing share keeps its behavior).
- *
- *   public — anyone with the link (the original model).
- *   team   — the visitor must additionally present a live team credential
- *            (see @mantle/content/team-tokens). Enforced for every kind on
- *            the /s/ surface (page render, asset bytes, app brokers).
- *            Team-mode PAGE shares double as the /team hub's briefing
- *            sections (see ./team-hub).
- */
-export type ShareMode = 'public' | 'team';
 
 /** Read the mode off a raw share row (settings.mode, default public). */
 export function shareModeOf(s: Pick<Share, 'settings'>): ShareMode {
@@ -131,7 +125,7 @@ let warnedNoPublicUrl = false;
  *  reaches the process that does the writing — the agent runtime is not the web
  *  server — so warn here too, once, where the wrong URL is actually minted. */
 export function publicBaseUrl(): string {
-  const configured = process.env.MANTLE_PUBLIC_URL ?? process.env.NEXT_PUBLIC_APP_URL;
+  const configured = env('MANTLE_PUBLIC_URL');
   if (!configured && !warnedNoPublicUrl) {
     warnedNoPublicUrl = true;
     console.warn(
@@ -391,16 +385,24 @@ export async function revokeShareTree(ownerId: string, shareId: string): Promise
     .limit(1);
   if (!row) return revokeShare(ownerId, shareId); // already gone / not found — idempotent
 
-  if (shareCascadeOf(row)) {
-    const ids = await listPageDescendantIds(ownerId, row.nodeId);
+  // Descendants and the parent revoke in ONE transaction: a failure between
+  // the two used to leave the subtree revoked while the parent stayed live.
+  const ids = shareCascadeOf(row) ? await listPageDescendantIds(ownerId, row.nodeId) : [];
+  return db.transaction(async (tx) => {
+    const now = new Date();
     if (ids.length > 0) {
-      await db
+      await tx
         .update(shares)
-        .set({ revokedAt: new Date() })
+        .set({ revokedAt: now })
         .where(
           and(eq(shares.ownerId, ownerId), inArray(shares.nodeId, ids), isNull(shares.revokedAt)),
         );
     }
-  }
-  return revokeShare(ownerId, shareId);
+    const rows = await tx
+      .update(shares)
+      .set({ revokedAt: now })
+      .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
+      .returning({ id: shares.id });
+    return rows.length > 0;
+  });
 }

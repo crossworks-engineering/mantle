@@ -17,7 +17,7 @@ import {
   type CellValue,
   type Column,
   type TableDoc,
-} from './table-model';
+} from '@mantle/content-core/table-model';
 
 function escapeCell(s: string): string {
   // Keep the pipe table well-formed: escape pipes, flatten newlines.

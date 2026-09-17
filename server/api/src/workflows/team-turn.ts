@@ -1,5 +1,5 @@
 /**
- * Team-turn runner — wraps runTeamTurn (@mantle/assistant-runtime) as a durable
+ * Team-turn runner — wraps runTeamTurn (@mantle/runtime/assistant) as a durable
  * DBOS workflow on the shared `mantle` queue, exactly like assistant-turn.ts
  * does for the owner surface. A member's turn survives navigation and process
  * restarts; every LLM call + tool dispatch journals as its own step.
@@ -12,7 +12,8 @@ import {
   TEAM_TURN_WORKFLOW,
   type TeamTurnInput,
   type TeamTurnRunResult,
-} from '@mantle/assistant-runtime';
+} from '@mantle/runtime/assistant';
+import { errorMessage } from '@mantle/std';
 
 export type { TeamTurnInput, TeamTurnRunResult };
 
@@ -49,7 +50,7 @@ async function teamTurnImpl(input: TeamTurnInput): Promise<TeamTurnRunResult> {
       },
     );
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     DBOS.span?.setAttribute('mantle.error', msg);
     DBOS.logger.error(
       `[team_turn] FAILED (owner=${ownerId}, contact=${options.contactId}): ${msg}`,

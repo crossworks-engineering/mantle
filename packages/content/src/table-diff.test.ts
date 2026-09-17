@@ -9,7 +9,7 @@ import {
   type CellValue,
   type TableOp,
 } from '@mantle/tabledb';
-import { diffTableDocs, type TableDoc } from './table-model';
+import { diffTableDocs, type TableDoc } from '@mantle/content-core/table-model';
 
 function doc(): TableDoc {
   return {

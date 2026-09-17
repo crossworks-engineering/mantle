@@ -1,4 +1,5 @@
 import puppeteer from 'puppeteer-core';
+import { env } from '@mantle/config';
 
 /**
  * PDF rendering for Pages via the BROWSER SIDECAR — Mantle's Tika-for-browsers.
@@ -44,10 +45,11 @@ export class PdfRendererUnavailableError extends Error {
 
 /** The origin Chromium-in-the-sidecar uses to reach this app's /print route. */
 export function printOrigin(): string {
-  if (process.env.MANTLE_PRINT_ORIGIN) return process.env.MANTLE_PRINT_ORIGIN.replace(/\/+$/, '');
+  const configured = env('MANTLE_PRINT_ORIGIN');
+  if (configured) return configured.replace(/\/+$/, '');
   // Dev: the app is native node on the host; the sidecar reaches it through the
   // host-gateway alias baked into docker-compose.dev.yml.
-  return `http://host.docker.internal:${process.env.PORT || '3000'}`;
+  return `http://host.docker.internal:${env('PORT') || '3000'}`;
 }
 
 /**
@@ -65,7 +67,7 @@ export function printOrigin(): string {
 export async function browserHealth(
   timeoutMs = 1_500,
 ): Promise<{ up: boolean | null; version: string | null }> {
-  const endpoint = process.env.BROWSER_WS_ENDPOINT;
+  const endpoint = env('BROWSER_WS_ENDPOINT');
   if (!endpoint) return { up: null, version: null };
   try {
     const url = new URL(endpoint.replace(/^ws/, 'http'));
@@ -92,7 +94,7 @@ export async function browserHealth(
  * authenticates as the owner.
  */
 export async function renderUrlToPdf(url: string, cookie: string): Promise<Buffer> {
-  const endpoint = process.env.BROWSER_WS_ENDPOINT;
+  const endpoint = env('BROWSER_WS_ENDPOINT');
   if (!endpoint) throw new PdfRendererUnavailableError('BROWSER_WS_ENDPOINT is not set');
 
   // Connect per request: browserless pools/queues sessions on its side

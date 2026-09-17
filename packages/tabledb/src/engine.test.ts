@@ -6,12 +6,14 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
   MATERIALIZE_MAX,
   TableTooLargeError,
+  describeWorkbook,
   fileStats,
   readDocFile,
   shapeHashOf,
   snapshotFile,
   writeDocFile,
 } from './engine';
+import { aggregateWindow } from './window';
 import type { TableDocLike } from './doc-types';
 import { normalizeDate } from './cells';
 import { TableFileMissingError, openTableFile } from './sqlite';
@@ -218,5 +220,47 @@ describe('normalizeDate', () => {
     expect(normalizeDate('2026-07-15 10:30:00', true)).toBe('2026-07-15T10:30:00');
     expect(normalizeDate('July 3, 2026', false)).toBe('2026-07-03');
     expect(normalizeDate('garbage', false)).toBeNull();
+  });
+});
+
+describe('describeWorkbook carries the owner aggregates', () => {
+  // The share view builds a team member's footer totals from these, so a tab
+  // that reported no aggregates would silently drop every total the owner set.
+  it("reports the tab's _aggregates settings", () => {
+    const file = path.join(dir, 'aggs.sqlite');
+    writeDocFile(file, sampleDoc(), META);
+    const tabs = describeWorkbook(file);
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0]!.aggregates).toEqual({ 'c-qty': 'sum' });
+  });
+
+  it('is empty, not absent, for a tab the owner set nothing on', () => {
+    const file = path.join(dir, 'no-aggs.sqlite');
+    const doc = sampleDoc();
+    delete doc.aggregates;
+    writeDocFile(file, doc, META);
+    expect(describeWorkbook(file)[0]!.aggregates).toEqual({});
+  });
+
+  it('agrees with aggregateWindow, which is what actually computes the value', () => {
+    // The settings say WHICH total; the value has to come from SQL over every
+    // row. Both halves have to point at the same column for the footer to be
+    // right — qty is 3 + 1 + (empty) across the three sample rows.
+    const file = path.join(dir, 'agg-value.sqlite');
+    writeDocFile(file, sampleDoc(), META);
+    const [tab] = describeWorkbook(file);
+    const [colId, kind] = Object.entries(tab!.aggregates)[0]!;
+    expect(aggregateWindow(file, { columnId: colId, kind, tabId: tab!.tabId })).toBe(4);
+  });
+
+  it('returns null for a total a column cannot carry, rather than a zero', () => {
+    // A blank footer cell is honest; a 0 reads as "the sum of this text column
+    // is zero", which is a statement about data that was never made.
+    const file = path.join(dir, 'agg-text.sqlite');
+    writeDocFile(file, sampleDoc(), META);
+    const [tab] = describeWorkbook(file);
+    expect(
+      aggregateWindow(file, { columnId: 'c-name', kind: 'sum', tabId: tab!.tabId }),
+    ).toBeNull();
   });
 });

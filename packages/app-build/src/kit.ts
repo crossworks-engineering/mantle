@@ -3,7 +3,7 @@
  * app's `@/components/ui/*`, `@/lib/utils`, and `@host` imports to these sources
  * (served from memory by kitPlugin), so generated apps look native (same theme
  * tokens) and talk to the host over the bridge — with NO dependency on the
- * apps/web source tree or its node_modules at build time. React is bundled into
+ * server/web source tree or its node_modules at build time. React is bundled into
  * each app (each iframe is its own isolated document).
  *
  * These are SOURCE STRINGS (TSX/TS), not live modules. They are compiled ONCE
@@ -11,7 +11,7 @@
  * via the iframe import map — apps mark `react`/`@host`/`@/components/ui/*`
  * external rather than re-bundling them. Keep them dependency-light (only `react`
  * + `react-dom/client` in @host) and theme-token-only (never hardcode colours),
- * matching apps/web/CLAUDE.md.
+ * matching server/web/CLAUDE.md.
  */
 
 /** `cn` — minimal class joiner (no clsx/tailwind-merge dep). Generated apps
@@ -148,7 +148,7 @@ export function Separator({ className, orientation = 'horizontal', ...p }) {
  * host resolves them server-side. `__mount` (used by the generated entry) wires
  * the React root, an error boundary, the ready signal, and auto-resize.
  *
- * Mirrors apps/web/lib/app-bridge/protocol.ts — keep the message shapes in sync.
+ * Mirrors server/web/lib/app-bridge/protocol.ts — keep the message shapes in sync.
  */
 const HOST = `
 import * as React from 'react';

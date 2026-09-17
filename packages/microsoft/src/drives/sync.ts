@@ -12,6 +12,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db, msDriveItems, msDrives, nodes, type MsAccount, type MsDrive } from '@mantle/db';
 import { MAX_UPLOAD_BYTES } from '@mantle/files';
+import { deleteFileWithDerived } from '@mantle/content';
 import { getValidAccessToken } from '../token-store';
 import { graphFetchRaw, graphGetAll } from '../client';
 import { listScopes } from './scope';
@@ -23,6 +24,8 @@ export interface DriveSyncResult {
   scanned: number;
   ingested: number;
   removed: number;
+  /** Predecessor nodes retired because a re-sync replaced them. */
+  superseded: number;
 }
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
@@ -83,6 +86,49 @@ async function removeItem(driveDbId: string, itemId: string): Promise<number> {
   return 1;
 }
 
+/**
+ * Retire the node a re-sync just replaced. `storeRemoteFileAsNode` dedupes on
+ * sha256, so CHANGED bytes always insert a fresh node — and before this, the
+ * update branch below repointed the mapping and walked away, stranding the
+ * predecessor forever. The auto-table pass compounds it: its dedupe is keyed on
+ * `data.sourceFileId`, so a new file node is never recognised as the same
+ * document and earns a second table. One weekly-edited workbook was observed
+ * having accreted 47 file nodes and 47 identically-named tables this way.
+ *
+ * Two guards, both mirroring `removeItem`: never touch a node the sha256 dedupe
+ * just handed back unchanged (bytes reverted to an earlier version), and never
+ * touch one another drive item still maps to. Best-effort — `deleteFileWithDerived`
+ * reports refusals (email attachment, in-use drawing) rather than throwing, and a
+ * node left behind stays visible to the integrity audit, which beats aborting a
+ * whole sync run over cleanup.
+ *
+ * Call order matters: this runs AFTER the mapping update, so the row we just
+ * repointed no longer counts as another referrer.
+ *
+ * @internal Exported for `sync.retire.test.ts` only — the two guards below are
+ * the difference between cleanup and data loss, so they get direct coverage.
+ * Not re-exported from the package index.
+ */
+export async function retireSupersededNode(
+  ownerId: string,
+  oldNodeId: string,
+  newNodeId: string,
+): Promise<number> {
+  if (oldNodeId === newNodeId) return 0;
+  const [other] = await db
+    .select({ id: msDriveItems.id })
+    .from(msDriveItems)
+    .where(eq(msDriveItems.nodeId, oldNodeId))
+    .limit(1);
+  if (other) return 0;
+  try {
+    const res = await deleteFileWithDerived(ownerId, oldNodeId);
+    return res.ok ? 1 : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export async function syncDrive(account: MsAccount, drive: MsDrive): Promise<DriveSyncResult> {
   const ownerId = account.userId;
   const branchPath = `${account.branchPath}.${drive.branchLabel}`;
@@ -95,6 +141,7 @@ export async function syncDrive(account: MsAccount, drive: MsDrive): Promise<Dri
   let scanned = 0;
   let ingested = 0;
   let removed = 0;
+  let superseded = 0;
 
   for (const item of items) {
     // The per-item verdict (skip / remove / ingest) lives in classifyDriveItem
@@ -112,7 +159,7 @@ export async function syncDrive(account: MsAccount, drive: MsDrive): Promise<Dri
     if (action === 'skip-nonfile' || action === 'skip-oversize') continue;
 
     const [seen] = await db
-      .select({ id: msDriveItems.id, etag: msDriveItems.etag })
+      .select({ id: msDriveItems.id, etag: msDriveItems.etag, nodeId: msDriveItems.nodeId })
       .from(msDriveItems)
       .where(and(eq(msDriveItems.driveDbId, drive.id), eq(msDriveItems.itemId, item.id)))
       .limit(1);
@@ -146,6 +193,7 @@ export async function syncDrive(account: MsAccount, drive: MsDrive): Promise<Dri
           updatedAt: new Date(),
         })
         .where(eq(msDriveItems.id, seen.id));
+      superseded += await retireSupersededNode(ownerId, seen.nodeId, stored.nodeId);
     } else {
       await db
         .insert(msDriveItems)
@@ -174,5 +222,5 @@ export async function syncDrive(account: MsAccount, drive: MsDrive): Promise<Dri
     })
     .where(eq(msDrives.id, drive.id));
 
-  return { scanned, ingested, removed };
+  return { scanned, ingested, removed, superseded };
 }

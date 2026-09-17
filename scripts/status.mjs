@@ -29,7 +29,9 @@
 // The same file's `peers` entry lists the OTHER dev machines to ask about
 // stranded work — also hostnames, also never committed.
 // ─────────────────────────────────────────────────────────────────────────────
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
+const execFileAsync = promisify(execFile);
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -202,6 +204,55 @@ async function probePeer({ label, ssh, path }) {
   }
 }
 
+/**
+ * Optional per-box stack drift, over ssh. A fleet entry may carry `ssh` (the
+ * alias that logs in) and the updater's stack.json is read through the web
+ * container (`/signal` is root-owned on the host). Reports whether compose,
+ * the Caddyfile and the updater script are pristine against their release
+ * baselines, plus the last refresh outcome of each. The Caddyfile used to be
+ * invisible here: a hand-edited or stale front door only showed up when a
+ * release that changed it rolled and the change never arrived.
+ */
+async function probeStack({ label, ssh }) {
+  if (!ssh) return null;
+  try {
+    // Async on purpose: a synchronous ssh here blocks the event loop while the
+    // /api/version fetches are in flight, and their 8 s timeouts fire on an
+    // idle loop, so every box read "unreachable" the first time this ran.
+    const { stdout: out } = await execFileAsync(
+      'ssh',
+      [
+        '-o',
+        'BatchMode=yes',
+        '-o',
+        'ConnectTimeout=8',
+        ssh,
+        'docker exec mantle_web cat /signal/stack.json 2>/dev/null',
+      ],
+      { encoding: 'utf8', timeout: 25000 },
+    );
+    const j = JSON.parse(out);
+    const state = (sha, base, refresh) => {
+      if (refresh === 'absent') return 'absent';
+      if (!sha) return 'unknown';
+      if (!base) return 'no-baseline';
+      return sha === base ? 'pristine' : 'MODIFIED';
+    };
+    return {
+      label,
+      compose: `${state(j.compose_sha, j.baseline_sha, j.refresh)}/${j.refresh ?? '-'}`,
+      caddy: `${state(j.caddy_sha, j.caddy_baseline_sha, j.caddy_refresh)}/${j.caddy_refresh ?? '-'}`,
+      updater: `${state(j.updater_sha, j.updater_baseline_sha, j.updater_refresh)}/${j.updater_refresh ?? '-'}`,
+      // Operator scripts (v0.232.137+). A box on an older updater reports no
+      // scripts_* fields, which reads 'unknown' — correct: it is exactly the
+      // box that cannot refresh its own tooling.
+      scripts: `${state(j.scripts_sha, j.scripts_baseline_sha, j.scripts_refresh)}/${j.scripts_refresh ?? '-'}`,
+    };
+  } catch {
+    return { label, error: 'stack unreadable' };
+  }
+}
+
 async function probe({ label, url }) {
   const ctl = AbortSignal.timeout(8000);
   try {
@@ -222,10 +273,12 @@ async function probe({ label, url }) {
 
 const hosts = NO_FLEET || LOCAL_ONLY ? [] : fleetHosts();
 const machines = NO_PEERS || LOCAL_ONLY ? [] : peerMachines();
-const [fleet, peers] = await Promise.all([
+const [fleet, peers, stacks] = await Promise.all([
   hosts.length ? Promise.all(hosts.map(probe)) : [],
   machines.length ? Promise.all(machines.map(probePeer)) : [],
+  hosts.length ? Promise.all(hosts.map(probeStack)) : [],
 ]);
+const stackByLabel = new Map(stacks.filter(Boolean).map((s) => [s.label, s]));
 
 // ── output ───────────────────────────────────────────────────────────────────
 const report = {
@@ -314,6 +367,19 @@ if (!hosts.length && !NO_FLEET) {
     }
     const drift = f.version === version ? '' : `  (local is v${version})`;
     console.log(`  ${pad(f.label, 14)} ${pad('v' + f.version, 12)} ${f.gitSha}${drift}`);
+    const st = stackByLabel.get(f.label);
+    if (st?.error) console.log(`  ${pad('', 14)} stack: ${st.error}`);
+    else if (st) {
+      const flag = [st.compose, st.caddy, st.updater, st.scripts].some((v) =>
+        v?.startsWith('MODIFIED'),
+      )
+        ? '  ⚠ drift'
+        : '';
+      console.log(
+        `  ${pad('', 14)} compose ${st.compose} · caddy ${st.caddy} · updater ${st.updater}${flag}`,
+      );
+      console.log(`  ${pad('', 14)} scripts ${st.scripts ?? 'unknown/-'}`);
+    }
   }
   const versions = [...new Set(fleet.filter((f) => f.version).map((f) => f.version))];
   if (versions.length > 1) console.log(`  ⚠ fleet is NOT uniform: ${versions.sort().join(', ')}`);

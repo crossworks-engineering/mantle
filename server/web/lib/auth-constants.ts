@@ -1,3 +1,4 @@
+import { env } from '@mantle/config';
 /**
  * Constants shared between middleware (Edge runtime) and lib/auth.ts
  * (Node runtime). Both files validate the session cookie but can't share
@@ -30,13 +31,13 @@ export const PUBLIC_PATHS = [
   '/api/appearance',
   '/app-runtime',
   // The remote MCP endpoint self-authenticates with an OAuth bearer, so it must
-  // bypass the session-cookie gate. See apps/web/app/api/mcp/route.ts.
+  // bypass the session-cookie gate. See server/web/app/api/mcp/route.ts.
   '/api/mcp',
   // OAuth 2.1 authorization server for the MCP connector. register + token
   // self-authenticate; authorize is the exception — it USES the session but must
   // still bypass the middleware (it's a browser navigation that does its OWN
   // login redirect, where the gate would otherwise return 401 JSON). The
-  // discovery docs are public metadata. See apps/web/lib/mcp-oauth.ts.
+  // discovery docs are public metadata. See server/web/lib/mcp-oauth.ts.
   '/api/oauth',
   '/.well-known/oauth-authorization-server',
   '/.well-known/oauth-protected-resource',
@@ -119,5 +120,5 @@ export function requestOrigin(req: Request): string {
  * call from the Edge middleware. See docs/db-less-dev.md.
  */
 export function isDetachedDev(): boolean {
-  return process.env.NODE_ENV !== 'production' && !!process.env.MANTLE_DETACHED_DEV?.trim();
+  return env('NODE_ENV') !== 'production' && !!env('MANTLE_DETACHED_DEV')?.trim();
 }

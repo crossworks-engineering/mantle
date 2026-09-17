@@ -4,6 +4,593 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: MCP connectors sign in with pre-registered OAuth apps, so Power BI works (branch feat/mcp-entra-oauth)
+
+Connecting Microsoft's Power BI MCP server failed silently: the connector sat
+on "authorization pending" with no reason. Power BI signs in through Microsoft
+Entra ID, which offers no dynamic client registration, and the connector flow
+depended on it. An OAuth connector can now use a pre-registered app instead:
+`microsoft` borrows the Settings → Microsoft app and signs in at its tenant (a
+single-tenant app cannot use the `organizations` endpoint Power BI
+advertises); `manual` takes an app registered by hand, sealed in the vault.
+The Microsoft app always asks for `offline_access` (without it there is no
+refresh token, and the connection died within the hour), shows the account
+picker instead of the SDK's forced consent prompt (which blocks an
+already-consented app on tenants without user consent), sends no RFC 8707
+`resource` parameter, and posts the secret in the body. All through the SDK
+1.30 provider hooks, no fork. Power BI ships as a catalogue entry with its
+customer-side setup steps. Its redirect URI must be registered under the Web
+platform, not "Mobile and desktop" as Microsoft's desktop-client guide says.
+
+Bugs fixed on the way: a failed start, a refused consent or a failed code
+exchange no longer leaves a silent `pending`; the reason lands on
+`oauth.lastError`, with the cure appended for the common AADSTS codes. The
+code exchange keeps the first token error instead of the one from the SDK's
+own retry. A create whose authorization could not start now answers 201 with
+`oauthError`, not a misleading "create failed".
+
+API: `oauthClient` and `scope` on create and patch; the list also returns
+`oauthRedirectUri` and `microsoftApp`. Contract (`@crossworks/client-types`):
+optional `oauth.client` and `oauth.scope` on the MCP binding. 11 new tests
+against an in-process Entra-shaped authorization server, plus 5 parser cases.
+docs/mcp-connectors.md; help page extended.
+
+## Unreleased — MinIO images from quay.io: fresh installs pull again (branch feat/minio-quay)
+
+On 2026-09-14 MinIO removed `minio/minio` and `minio/mc` from Docker Hub, so
+every fresh install failed at `docker compose up` with "pull access denied for
+minio/minio". Both images now come from `quay.io/minio/*`, which carries the
+same pinned tags (`RELEASE.2025-09-07T16-13-09Z` / `RELEASE.2025-08-13T08-35-41Z`),
+so no data or version changes. Prod compose, dev compose and `scripts/up.sh`
+all moved. Existing boxes recreate the minio container once on their next
+update (the image reference changed); the data is a bind mount and stays put.
+`MINIO_IMAGE_TAG` / `MC_IMAGE_TAG` still override the tag only.
+
+## Unreleased — OpenAPI connectors: a service's spec as an http tool group (branch claude/zealous-leakey-73c34c)
+
+The raw-API twin of MCP connectors, per docs/plans/openapi-connector.md.
+Point the brain at an OpenAPI 3.x spec URL (JSON or YAML) and the selected
+operations compile into ordinary `http` tools inside an `openapi-<slug>`
+group; the dispatcher gained no new handler kind, and auth stays on the
+group's own baseUrl/secretRef/authTemplate (never from the spec, whose text
+is stripped of secret refs and whose per-operation server overrides are
+ignored). Explicit sync with the mcp disable-on-vanish asymmetry; hand-edits
+of mirrored tools are stamped and survive re-sync until overwriteEdited.
+Selection by tag/operation with a hard 80-tool cap and a no-create preview
+endpoint; `openapi-` namespace reserved across ensure/crud/generic routes;
+KNOWN_OPENAPI_APIS catalog ships Open-Meteo (no key). One shared-engine
+improvement: an http query pair whose optional `{param}` goes unfilled is
+now dropped instead of shipping the literal brace string. API at
+/api/openapi-connectors (+ preview, [slug], [slug]/sync);
+docs/openapi-connectors.md; help page extended; 45 new tests including an
+in-process spec-server end to end.
+
+## Unreleased — YouTube ingests from a VPS: the cookies-file escape hatch (branch claude/media-cookies)
+
+Live testing surfaced the expected wall: YouTube blocks datacenter IPs
+outright ("Sign in to confirm you're not a bot"), captions included, while
+every other extractor works from the same box. The sidecar now honours an
+optional operator-supplied `cookies.txt` mounted read-only at
+`${MANTLE_DATA_DIR}/media/` — picked up per-request (no restart, delete to
+disable), handed to yt-dlp as a per-run working copy so rotations never
+write back and concurrent jobs can't clobber each other, and surfaced on
+`/healthz` as `cookies: true/false`. This is the one deliberate exception to
+the sidecar's holds-nothing posture, and the docs say so plainly: a scoped
+browser-session export, some account-flag risk, goes stale on YouTube's
+schedule. docs/video-ingest.md ("YouTube and the bot check") carries the
+export recipe and the trade-offs.
+
+
+## Unreleased — client pair moves to jackdaw v0.6.5 (branch claude/client-pair-v0.6.5)
+
+Interface-only roll: the paired jackdaw client moves to v0.6.5, which adds
+the Media pill to the dashboard's system vitals (the yt-dlp/ffmpeg sidecar's
+health + running versions, beside Tika/Chromium/Sandboxes) and ships the
+files workspace's two-pane view series. No server-side changes beyond the
+pair record.
+
+
+## Unreleased — video ingest hardened: the audit pass (branch claude/video-ingest-audit-fixes)
+
+A three-way adversarial audit of the v0.232.32 video-ingestion release, with
+every confirmed finding fixed. The two showstoppers were on the happy path:
+the sidecar folded long video titles into multi-line HTTP headers that undici
+rejects wholesale (every normal YouTube title made the client report
+"unreachable" after paying for the full download), and the same encoding made
+the duration header permanently unreadable. Headers now travel as single-line
+percent-encoded tokens.
+
+### Data safety
+
+`syncFileFromDisk` replaced a node's `data` wholesale on any watcher-observed
+byte change — silently erasing the per-file `indexing: 'metadata'` privacy
+flag (a host-side re-save reverted a deliberately-excluded file to FULL
+indexing) and video-ingest provenance. It now merges, clearing only the
+extraction bookkeeping that genuinely must recompute. The file-node ingest
+path could overwrite its own source (an `.mp3` input re-encoded onto itself)
+or a same-named sibling; clips now save as `<base>-audio.mp3`, never
+overwriting. The watcher gained a 512 MB sync cap so a dropped `.mkv` can no
+longer OOM-kill the worker, and transcript pages point their `sourceFileId`
+at the video only — deleting a disposable clip can no longer reap the
+transcript. Migration 0151 backfills the pre-existing filename-only false
+successes for media (LLM-free by construction).
+
+### Sidecar protocol and process hygiene
+
+Error responses close the connection (an unread request body no longer
+poisons the keep-alive stream — a 429 on a 1 GB upload now arrives as a 429,
+not "unreachable"); negative Content-Length can no longer wedge the
+concurrency slots; subprocesses run in their own process group and the whole
+group dies on timeout (compose runs the container with `init: true` so tini
+reaps the orphans — SIGCHLD auto-reap was rejected because it silently zeroes
+every child's exit code); the sidecar re-checks resolved addresses against
+private/link-local ranges before yt-dlp fetches anything; live streams are
+refused up front; the merged video is re-measured against the cap
+(`--max-filesize` is per-stream); probe/captions gained their own concurrency
+bound; malformed numerics are 400s, not 500s; and a missing token now serves
+a degraded `/healthz` naming the problem instead of crash-looping.
+
+### Pipeline honesty
+
+Manual (human-authored) captions are exempt from the auto-caption garbage
+heuristics — a tersely-captioned four-hour talk is no longer thrown away on a
+vocabulary ratio. Google STT measures its 20 MB cap on the base64 wire size
+and fails loudly on MAX_TOKENS truncation instead of shipping six minutes of
+a forty-minute transcript as if complete, with `maxOutputTokens` raised to
+the model max. `keep_video` now restamps the audio clip's provenance to the
+video and is ignored (with a note) off the web surface, where a 25-minute
+download reads as a hang. `.html`/`.htm` route to Tika instead of regressing
+to unindexed. `file_node_id` gets a real precondition (teaching error, not a
+Postgres 22P02) and size/mime gates run BEFORE the bytes are read. The ops
+surface caught up too: `.env.prod.example` documents the profile with its
+update-first ordering (enabling on a pre-media tag broke `docker compose
+pull` for the whole stack), `docs/deploy.md` and the disposition catalogues
+cover the new skips, and forks can build the `mantle-media` image via
+`scripts/docker-build-push.sh`.
+
+
+## Unreleased — video ingestion: paste a link, get a searchable transcript (branch claude/mantle-video-extraction-650157)
+
+The brain can now ingest a video. `video_ingest` takes a link (or a video
+file already in Files), pulls the captions when the video has them — free and
+already timestamped — and only when it doesn't extracts a speech-grade audio
+clip and transcribes it through the owner's STT worker. The result is a real
+transcript page: summarised, embedded, chunked with `## [m:ss]` timestamp
+headings folded into each retrieval chunk, so "what did he say at 4:12" is
+answerable months later without the video. The audio clip is kept as a
+durable artifact beside its source, saved before transcription so a failed
+STT run is an explicit partial success with a retry path, never a silent
+nothing. Full design and caps: [docs/video-ingest.md](docs/video-ingest.md).
+
+### yt-dlp and ffmpeg live in their own container
+
+The fetch/transcode engine is a new sidecar (`infra/media-sidecar`, compose
+profile `media`, image `mantle-media`) with no database, secrets, or
+file-store access — because it runs the one dependency this repo refuses to
+pin. yt-dlp breaks whenever a site changes its player and upstream fixes land
+within days, so the sidecar refreshes it from PyPI at boot and daily, and the
+running version is surfaced on `/healthz`, the health panel, and the
+integrity readiness panel. URLs are SSRF-checked in the app before the
+sidecar ever sees them, and the tool is owner-only: the `video-ingest` group
+is never granted to the team responder.
+
+### The file layer stops lying about media
+
+When a media file's name cleared a 20-character length check, the extractor
+indexed the FILENAME as the document body and recorded success — the exact
+"filename-only false success" the `.mpp` handling exists to prevent, open for
+every other parserless format. A generalised hollow-body guard
+(`isHollowFilenameBody`, pure and tested) now closes it for all of them, and
+media specifically records an honest `unsupported_media` skip pointing at
+link ingestion. Building on v0.232.29's media MIME families and v0.232.30's
+metadata-only indexing: the clips this tool saves are stamped
+`indexing: 'metadata'` so they carry the deterministic name/type/tags spine,
+and the disk-sync watcher now stores dropped media instead of silently
+ignoring it — never transcribing on its own; transcription is only ever the
+explicit tool.
+
+
+
+SheetJS (`xlsx`) read every spreadsheet that entered the brain. It has not
+published to npm since 0.18.5, and that release carries a prototype-pollution
+and a ReDoS advisory — both reachable, because the code parses bytes a user
+uploaded. A vendor CDN tarball patched the advisories but left a dependency
+with no registry behind it, which is not a place to leave a parser.
+
+`exceljs` replaces it. It was already in the tree writing `.xlsx` on the export
+side, so this consolidates read and write onto one engine rather than adding
+anything.
+
+### The hang guard turned out to be unnecessary
+
+The caps in `parseXlsx` existed because SheetJS's `sheet_to_csv` walked a
+sheet's DECLARED dimension. Workbooks routinely declare a used range out to row
+1,048,576 / column XFD around a handful of real cells, so an unbounded parse
+iterated millions of phantom cells — two prod uploads hung ingest past the
+10-minute watchdog that way.
+
+`exceljs` builds rows from the cells that actually exist and ignores
+`<dimension>` entirely. A workbook declaring `A1:XFD1048576` around 4 real rows
+now loads in 6 ms. The row and column caps survive, but they are OUTPUT bounds
+now — what reaches the chunker and the embedder — not a defence against a
+stall, and a phantom range is no longer reported as truncation, because nothing
+was dropped.
+
+What did need replacing is the memory bound. `sheetRows` capped the read;
+`exceljs`'s `load()` has no equivalent, so `sheet-read.ts` pre-flights instead:
+sum the uncompressed worksheet XML straight from the zip directory, and refuse
+past 32 MB (measured blow-up is ~25x to RSS — 100k rows x 10 cols is 40.8 MB of
+XML and ~1 GB resident). Text extraction then falls through to Tika, which
+parses out-of-process in its own capped heap; a grid import raises instead,
+because a partial import that looks successful is worse than an error.
+
+### `.xls` and `.xlsb` convert on ingest
+
+`exceljs` reads OOXML only, and legacy auto-detection was the one thing SheetJS
+did that it does not. Rather than keep a second engine alive for two formats,
+those bytes are now converted to real `.xlsx` at the door and take the ordinary
+path from there — one reader, one set of caps, one output shape.
+
+The converter is Apache Tika, already a service in the compose stack: it is
+Apache POI underneath, so it reads BIFF properly, and using it costs no new
+container and no LibreOffice in the image. Honest about what it costs: Tika's
+XHTML is a rendering, so **boolean cells are lost** (they render empty, though
+column alignment survives) and **dates arrive as display text**. Numbers come
+through and re-infer cleanly. In practice this is theoretical — across the dev,
+prod and NATREF brains there is not a single `.xls` or `.xlsb` — and
+`legacy-sheet.ts` records exactly what degrades if one ever lands.
+
+### Smaller consequences
+
+- `parseSheetToGrid` and `parseTextToGrid` are **async** now (`load()` is
+  promise-based, and legacy conversion is a network call). Ingest paths should
+  call the new `parseSpreadsheetToGrid(bytes, ext)`, which handles the legacy
+  conversion, so the auto-table pass, the Tables import route and
+  `table_from_file` cannot drift apart.
+- Pasted and uploaded CSV/TSV parse with `fast-csv` rather than SheetJS —
+  quoted delimiters, doubled-quote escapes and newlines inside quoted fields
+  all keep working, and a tab inside a quoted CSV field no longer flips the
+  whole parse to TSV.
+- Dates in extracted text render ISO rather than whatever display format the
+  sheet happened to carry, so a date in a query can actually match one in a
+  spreadsheet.
+- The `parse_document` trace's `parser` field gains `exceljs` and
+  `legacy-sheet` in place of `sheetjs`.
+
+## Unreleased — a table exports as the workbook it actually is (branch feat/xlsx-export-polish)
+
+Downloading a table gave you one worksheet. Since Tables v2.1 a table has been
+a WORKBOOK — every sheet of an imported spreadsheet becomes a tab of the same
+table — so a six-tab table downloaded as its first tab, silently. Nothing said
+so. `renderXlsxWorkbook` now writes one worksheet per tab, in tab order.
+
+Markdown and CSV still export the open tab alone, on purpose: they are
+single-grid formats, and flattening six tabs into one CSV would interleave
+unrelated grids under one header.
+
+Tabs whose names collide after sanitising get a numeric suffix rather than
+throwing. Excel refuses duplicate sheet names, and `Q1/Q2` and `Q1?Q2` sanitise
+to the same thing, so the alternative was a download that never happened.
+
+### The file should be readable the moment it opens
+
+That is the only reason to prefer .xlsx over CSV, so the export now applies a
+house style instead of shipping bare data:
+
+- A frozen, filterable header on a slate band, white and bold.
+- Columns sized from their contents, floor 10 and ceiling 60 characters.
+- Alternate rows banded with a hairline tint.
+- Numbers right, checkboxes centred, text left.
+- Dates as real date cells formatted `yyyy-mm-dd`, so a shared export cannot be
+  read as 3 April in one office and 4 March in another.
+- `url` columns become real hyperlinks, when the value is actually navigable.
+- The totals row banded and ruled off from the data.
+
+Two constraints shaped the palette. It has to survive greyscale printing, and
+it cannot fight the reader's own dark mode, since a fill we write is fixed
+forever. So nothing carries meaning by colour, and the great majority of cells
+are left unfilled.
+
+### Three bugs the polish surfaced
+
+- **A money column showed `#######`.** Widths were measured from the STORED
+  value, so `12500` was sized as 5 characters when it displays as
+  `USD 12,500.00`, 13. Totals are wider still than any row they sum, so they
+  are computed before the widths are set now.
+- **A leading total was replaced by the word "Totals".** The label was written
+  on a falsy check, so a first column whose sum came to 0 lost it. The label
+  now goes to the first column that has no aggregate of its own.
+- **A row COUNT inherited its column's money format**, so `count` on a currency
+  column rendered the count as an amount.
+
+## Unreleased — an agent can build a spreadsheet, not just a table (branch feat/sheet-build)
+
+An agent could already produce a styled `.xlsx` in two steps: `table_create`
+then `export_node`. That is right when the thing being made is DATA. It is
+wrong when the thing being made is a DOCUMENT, because it creates a stored
+table nobody wanted in order to get a file.
+
+`sheet_build` writes straight to bytes and stores nothing. The line, for anyone
+extending either side: **a table is data you query, a sheet is a document you
+send.**
+
+### The spec is deliberately small
+
+The temptation was to expose exceljs. An agent given fonts, ARGB fills and a
+border API invents a different look every time, and a brain that emits ten
+differently-styled spreadsheets is worse than one that emits ten identical
+plain ones. So the spec carries CONTENT and INTENT (what the column means, what
+to total) and the renderer owns every visual decision.
+
+Styling is three presets and nothing else: `report` (default, for anything
+going to another person), `plain` (no fills, for a sheet the recipient will
+re-style or pivot), `compact` (dense reference data, where banding is noise).
+
+A sheet takes an optional `title`, written as a bold merged row above the grid
+with a spacer beneath it. The spacer is load-bearing: it stops Excel reading
+the title as part of the table the first time someone hits filter.
+
+### Rows are objects, not arrays
+
+Keyed by column, always. A positional array is rejected outright rather than
+accepted leniently, because a value omitted from an array shifts every column
+after it, and the result is a spreadsheet that is wrong in a way that looks
+completely fine. Keying turns that same mistake into a named error before a
+file is ever written.
+
+The whole spec is validated before any bytes are produced, and every message
+names the sheet and the key at fault: an agent that reads "unknown column key
+'amout' on sheet 'Revenue' (expected: client, amount)" fixes it next call.
+
+Capped at 10 sheets, 5,000 rows a sheet, 20,000 total. Past that you are not
+building a document, you are moving a database through a tool call, and the
+error says to import it as a table instead.
+
+### One house style, shared
+
+The palette, the sizing rules and the type-driven formatting moved to
+`packages/content/src/xlsx-style.ts`, and both spreadsheet writers import them.
+Two copies would have drifted, and the first person to notice would have been a
+client holding two files from the same brain that did not look related.
+
+Ships as a `spreadsheets` tool group granted to the persona and to Ledger, plus
+a `spreadsheet_authoring` skill on Ledger covering the sheet-versus-table call.
+
+## Unreleased — sheet_build reaches MCP clients too (branch feat/sheet-build-mcp)
+
+`sheet_build` shipped to the in-app agents but was never registered on the MCP
+surface, so a Claude Desktop or Claude Code session could not call it. That is
+the surface most likely to want it: the client is often the one holding the
+numbers, working through a costing, and wanting a file back at the end.
+
+One line next to `export_node`, which is on that surface for exactly the same
+reason. Both transports (stdio and the HTTP route) build from the same builder,
+so both get it.
+
+## Unreleased — the share presenters learn which shell they are in (branch feat/team-presenter-chrome)
+
+Every presenter in `@mantle/share-ui` was written for one surface: the
+anonymous public `/s` page, where the presenter *is* the page. `/team` then
+reused them inside a master-detail pane, and two of those choices became wrong
+at once.
+
+The pane draws the item's title in its own header, so the presenter's hero
+title was the second of three on screen. And the centred `max-w` cap meant
+dragging the pane divider only grew the empty margins while the content stayed
+a fixed narrow column — members read that as "the drag is broken". The handle
+was fine; the content was ignoring it. A non-previewable file was the worst of
+it: a `max-w-md` card, phone-width, marooned in the middle of a 2000px pane.
+
+### `chrome`, an optional prop on six presenters
+
+`chrome?: 'share' | 'embedded'` — Note, Event, Task, File, Table and Draw.
+
+`'share'` is the default and is byte-for-byte what shipped before, deliberately:
+the public page must not change because an embedder forgot a prop. `'embedded'`
+means the surrounding shell already owns the title and the padding, so the
+presenter drops its hero title, tightens the vertical rhythm, and stops
+centring.
+
+⚠ `'embedded'` is **not** a synonym for full-bleed. It means *the shell owns
+the chrome*; what to do with the width is still the content's call. A table, a
+media viewer and a file row all get better as they get wider, so they span the
+pane. A note does not — a 2000px line is unreadable in anyone's pane — so prose
+keeps its measure and simply stops being centred under a title it no longer
+draws. The bug was a floating box, not a reading measure.
+
+Event and Task also drop their card frame when embedded. On an empty page that
+border is what tells a reader where the item begins; inside a pane that already
+has a header rule and a border of its own, it is the box.
+
+### The folder listing can carry a Modified column
+
+`ShareFolderListing.files[]` gains an optional `updatedAt`, populated by
+`GET /s/[token]/view`. `FileRow` already carried it — it was simply not being
+passed on, so no consumer could show when a file last changed. Optional, so a
+client pinned to an older server still parses the payload.
+
+## Unreleased — a member can see the drawing the reply is talking about (branch feat/team-forum-drawings)
+
+`![alt](draw:<node-id>)` in a reply now resolves, on both member surfaces.
+Pictures have worked since v0.4.1; drawings were the marker in the Forum plan's
+§5 table listed simply as "broken".
+
+Two routes, `forum/drawing/[nodeId]` and `messages/drawing/[nodeId]`, siblings
+of the media pair rather than a widening of it: `serveTeamMedia` streams file
+bytes and refuses any mime that is not an image, which a draw node is not. Same
+door, same gate, different thing behind it.
+
+**Authorization is the media routes', unchanged.** The question is asked of the
+POSTS — "is this node attached to something this member can already read?" —
+never of the drawings tree, because that second question answers "any drawing
+the responder ever touched". Absent, forbidden and malformed all answer 404.
+
+The hardened SVG response lives in `lib/team-media.ts` as `serveTeamDrawing`
+rather than in the two routes, so the Forum's copy and Team Chat's cannot drift
+apart on a security header. An SVG is markup: served as an image it is a
+separate script-disabled document, but this URL can also be opened directly, and
+the `sandbox` CSP is what makes that case inert. Copied from
+`/s/[token]/draw/route.ts` — if one changes, change both.
+
+Both surfaces get it, deliberately. A marker that rendered in the Forum and
+broke in Team Chat would be worse than not having one: the reply text does not
+know which surface it will be read on.
+## Unreleased — a shared table gets the owner's totals, and they are RIGHT (branch feat/team-tables-grid)
+
+`/team` tables were a centred `max-w-6xl` reader: a plain table, a "Load more"
+button every 200 rows, and no totals at all. The owner grid has had per-column
+aggregates and a sticky footer for a long time; none of it reached the people
+the table was shared with.
+
+### The totals had to come from the server, and that is the whole design
+
+A file-backed workbook pages 200 rows at a time. A sum computed from the rows a
+reader happens to be holding is not a smaller number — it is a **wrong** one,
+and it looks exactly as authoritative as a right one. So:
+
+- The share view now carries each tab's `aggregates` (the owner's settings) AND
+  `aggregateValues`, computed server-side by `aggregateWindow` in SQL across
+  every row. `describeWorkbook` grew an `aggregates` field to read the
+  workbook's `_aggregates` table.
+- **`GET /s/[token]/aggregate?tab=&col=&kind=`** answers a total the READER
+  picks. View-local, never persisted — nothing on this surface writes. `kind` is
+  validated against `AGGREGATE_KINDS` rather than cast, because it reaches a SQL
+  expression builder. Authorization and the uniform 404 are the rows route's,
+  verbatim.
+- Legacy JSONB tables are the one exception, and only because they genuinely
+  arrive whole: there the reader computes locally and no round trip happens.
+
+A column that cannot carry a total — a formula target, a sum over text —
+returns `null`, and the footer draws a blank. A `0` would be a statement about
+the data that nobody made.
+
+### The grid
+
+Embedded (`chrome="embedded"`, v0.231.0) the presenter now owns its height: the
+header and tab strip are fixed and the table scrolls in a bounded box, so the
+**sticky header and sticky footer have something to stick to**. Column headers
+carry the owner grid's own type icons. The "Load more" button is gone —
+an IntersectionObserver sentinel fetches the next page as the reader
+approaches it, and the header reads "N of M rows" so nobody wonders whether
+there is more.
+
+The footer row renders even when nothing is set, because the row IS the
+affordance: a member who wants a total needs somewhere to ask for one.
+
+The standalone `/s` page keeps its centred, growing, non-sticky layout.
+## Unreleased — an event listing that says when, not when it was edited (branch feat/team-list-event-time)
+
+`TeamVisibleShare` gains an optional `startsAt`, read from `nodes.data.starts_at`
+and null for every non-event type.
+
+Every other field on that DTO describes the SHARE. This one describes the thing
+shared, and it is carried because for an event the two are not interchangeable.
+The `/team` section cards show `updatedAt` — right for a note or a table, and
+useless for an event. A member scanning what is coming up needs when it
+*happens*; an event edited this morning has no business sorting above one that
+starts tomorrow.
+
+The row query already selected `nodes.data`; the mapper simply read `icon` and
+`summary` out of it and dropped the rest, so no query changed. Optional on the
+type, so a client pinned to an older server still parses the payload.
+
+## Unreleased — Tasks grows up: a board, a lifecycle, and somewhere to put finished work (branch claude/handover-tasks-kanban-04d026)
+
+`/tasks` was a checklist. It is now a project surface: a Kanban board, four
+states instead of two, a checklist inside each task, and comments from logins,
+team members and agents.
+
+### The board shows three columns, not four
+
+Blocked is a flag on work already under way, not a further stage, and a fourth
+column cost more width than it earned. Blocked tasks render under **In
+progress** with a badge, and you set the flag from the task form.
+
+Reordering a blocked card inside that column no longer clears the flag. The
+column a card lands in and the status written are two different things now,
+which they were not before — tidying a column used to unblock tasks as a side
+effect.
+
+### Archive: where a thousand finished tasks go
+
+A Done column grows forever. Archiving files a task away without deleting it:
+`data.archived_at` on the node, excluded from **every** list, count, board and
+tool unless asked for (`?archived=only|all`, `task_list`'s `archived`). The
+exclusion lives in `taskConds`, the one place every query already goes through,
+so no caller can forget it.
+
+Archive is orthogonal to status: an archived task keeps the status it had. And
+archiving is metadata — deliberately absent from `updateTask`'s
+`contentChanged` check, so filing a thousand tasks away costs zero embeddings
+and zero LLM calls.
+
+### Smaller things you will notice
+
+- The checkbox no longer flattens four states into two. Ticking a Blocked task
+  and unticking it restores **Blocked**, not To do.
+- The comment composer sits above the thread, newest comment first.
+- The task form, the detail view, the task list, the nav rail and the activity
+  column are all resizable, and each remembers its width.
+
+## Unreleased: Four fonts, one library, every face variable (branch claude/variable-font-refactor)
+
+**A typeface library is not a list of decorations.** The old one had grown into
+two registries with different rules: twenty-two display faces for the wordmark,
+twelve for the interface, most of them chosen to be striking for two words of
+header. Anything you would actually set a document in was accidental.
+
+There is now one library of sixteen families, and every one is a variable font
+with at least two axes. One file carries every weight, and where a family has a
+slant axis, its italic too.
+
+### Four things you can set
+
+Settings and Appearance now offers a face and a size for each of the interface,
+the wordmark, the peer name, and a new one: **Pages and Notes**. That last is
+the only typography choice in the product that leaves the browser, because it
+typesets the PDF export as well as the editor and the share page.
+
+Each row opens the same chooser rather than spilling the whole library down the
+page: filtered by kind, previewing every face in your own text. The peer name
+and Pages/Notes default to "same as interface", so a brain that picks one font
+still looks deliberate. Sizes gained an Extra small, and the three new ones
+scale only what they name; Interface size still scales the whole shell.
+
+### The ranges are read out of the files, not typed
+
+`scripts/fonts-import.mjs` parses each font's own `fvar` table for its real axis
+ranges, converts to woff2, installs into both apps with the licence, and prints
+the registry row. It refuses a face with fewer than two axes.
+
+This is not tidiness. A variable font declared without its weight range makes
+the browser treat the file as a single regular and fake the bold, which shows up
+as smeared headings across every screen. Hand-typing sixteen sets of ranges is
+sixteen chances to introduce that quietly.
+
+Faces stay lazily fetched: a file downloads only when something actually paints
+in it, so the library costs nothing until you choose from it.
+
+### Two things that were already broken
+
+The interface font never reached share links or `/print` at all. Only the two
+header faces were stamped into those documents, so a share always rendered in
+Inter no matter what the brain had chosen. Both surfaces now carry every font
+the app does, which is what makes the Pages/Notes choice reach a PDF.
+
+Separately, the Appearance screen showed Inter as the selected interface font
+however you had it set. The face was applied correctly; the attribute the picker
+reads its state back from was never rendered.
+
+### What went away
+
+Bukhari Script and the twenty-two decorative faces are gone. An existing brain
+that had chosen one falls back to the new default rather than stranding, which
+is what the registry contract has always promised. The default wordmark is now
+Bricolage Grotesque, and Mantle's own mark in the footer follows it.
+
+Only one monospace family survives the two-axis floor (Inconsolata). More can be
+added at any time: that is now one command and one pasted row.
+
 ## Unreleased — The models you pinned, and whether they still exist (branch feat/model-drift)
 
 **A pinned model is a decision, not a subscription.** It was right the day it
@@ -46,6 +633,35 @@ then the genuine delisting goes unread too.
 One judgement is stated wherever the output is read rather than buried in the
 source: version segments compare as integers, so `4.20` is newer than `4.5`,
 matching how these vendors number releases rather than how decimals sort.
+
+## Unreleased — Links that survive the split (branch feat/companion-split-fix)
+
+**A stored link is permanent, so it has to be right on the day it is written.**
+`nodeUrl()` mints `${MANTLE_PUBLIC_URL}/n/<id>` and hands it to the assistant on
+every tool result; the assistant writes those links into chat replies, pages,
+forum answers and outbound email, and nothing ever re-resolves them. But
+`MANTLE_PUBLIC_URL` has to be the **server** origin — `/s/<token>` share links
+and the Microsoft OAuth callback are served there — while `/n/[id]` itself moved
+to `client/web` in the v0.200.0 split. On a deployment that gives the owner app
+its own vhost, every one of those links was a 404, and each one was written into
+the brain to stay.
+
+`/n/*` now forwards to `MANTLE_CLIENT_ORIGIN`, joining the `/login`, `/hub` and
+`/team` stubs. Keeping the minted link canonical and redirecting at the edge is
+what makes one stored URL correct under either topology; rewriting the minter to
+point at the client origin would have broken it the other way. With no client
+origin configured it explains itself instead of looping, same as its siblings.
+
+Single-host installs — where one hostname fronts both stacks — never saw this,
+which is exactly why it stayed hidden.
+
+Also: `GET /api/assistant/thread` takes `?withMessages=0`, returning the agent
+picker list and the resolved active agent without the 100-message thread. The
+mobile companion needs both at launch — it holds no agent cookie, so the
+server's resolution *is* its default, and that resolution is what now respects
+`agents.assigned_user_id` — but it pages its own history from the local cache,
+so the thread was fetched and dropped on every cold start. Opt-out, so every
+existing caller is untouched.
 
 ## Unreleased — An assistant that answers to its own name (branch feat/agent-name-token)
 

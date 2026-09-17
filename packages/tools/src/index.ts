@@ -16,7 +16,10 @@ export {
   getBuiltin,
   getBuiltinHandler,
   listBuiltins,
+  listSeedableBuiltins,
   getBuiltinRedactFields,
+  isBuiltinReadOnly,
+  listReadOnlyBuiltinSlugs,
   redactArgsForLogging,
 } from './registry';
 
@@ -39,9 +42,37 @@ export {
   type DynamicSchemaPatch,
   type DynamicSchemaFn,
 } from './dynamic-schema';
+export {
+  renderDelegateRoster,
+  buildDelegateRoster,
+  ROSTER_GROUP_STOPLIST,
+  ROSTER_GROUP_CLIP,
+  ROSTER_LINE_MAX,
+  ROSTER_TOTAL_MAX,
+  type RosterDelegate,
+  type RosterGroup,
+} from './delegate-roster';
 
-export { BUILTIN_TOOLS } from './builtins';
+export {
+  BUILTIN_TOOLS,
+  FILE_MANAGE_TOOLS,
+  NODE_READ_TOOLS,
+  FILE_CREATE_TOOLS,
+  CONTENT_CURATION_TOOLS,
+  INGEST_TOOLS,
+  SECRET_TOOLS,
+  DELEGATION_TOOLS,
+  SEARCH_TOOLS,
+  ENTITY_TOOLS,
+  FILE_TOOLS,
+  TELEGRAM_TOOLS,
+  TELEGRAM_OPERATOR_TOOLS,
+  PENDING_TOOLS,
+  WORKER_GROUP_TOOLS,
+  FILE_OPERATOR_TOOLS,
+} from './builtins';
 export { PAGE_TOOLS, PAGE_TOOL_SLUGS } from './builtins-pages';
+export { DRAW_TOOLS, DRAW_TOOL_SLUGS } from './builtins-draws';
 export { APP_TOOLS, APP_TOOL_SLUGS, APP_DATA_TOOLS, APP_DATA_TOOL_SLUGS } from './builtins-apps';
 export { TABLE_TOOLS, TABLE_TOOL_SLUGS } from './builtins-tables';
 export { TOOL_RESULT_TOOLS, TOOL_RESULT_TOOL_SLUGS } from './builtins-tool-results';
@@ -64,7 +95,8 @@ export {
 } from './tool-results';
 export { PERSONA_TOOLS, PERSONA_TOOL_SLUGS } from './builtins-persona';
 export { TASK_TOOLS, TASK_TOOL_SLUGS } from './builtins-tasks';
-export { NOTE_TOOLS } from './builtins-notes';
+export { NOTE_TOOLS, NOTE_OPERATOR_TOOLS } from './builtins-notes';
+export { RECALL_TOOLS } from './builtins-recall';
 export { EVENT_TOOLS } from './builtins-events';
 export { PEER_TOOLS } from './builtins-peers';
 export { EMAIL_TOOLS } from './builtins-email';
@@ -73,6 +105,7 @@ export { SANDBOX_TOOLS, SANDBOX_TOOL_SLUGS } from './builtins-sandbox';
 export { CONTACT_TOOLS, CONTACT_AUTO_GRANT_SLUGS } from './builtins-contacts';
 export { WORKER_DELEGATION_TOOLS } from './builtins-workers';
 export { EXPORT_TOOLS } from './builtins-export';
+export { SHEET_TOOLS, SHEET_TOOL_SLUGS } from './builtins-sheets';
 export { TOOLSMITH_TOOLS, TOOLSMITH_TOOL_SLUGS } from './builtins-toolsmith';
 export { JOURNAL_TOOLS, JOURNAL_TOOL_SLUGS, JOURNAL_AUTO_GRANT_SLUGS } from './builtins-journal';
 export { FORMULA_TOOLS, FORMULA_TOOL_SLUGS, FORMULA_AUTO_GRANT_SLUGS } from './builtins-formulas';
@@ -80,6 +113,15 @@ export { CALCULATE_TOOLS, CALCULATE_TOOL_SLUGS } from './builtins-calculate';
 export { LOCATION_TOOLS, LOCATION_TOOL_SLUGS } from './builtins-locations';
 export { PROFILE_TOOLS, PROFILE_TOOL_SLUGS } from './builtins-profile';
 export { RUN_TOOLS, BANNED_ITEM_TOOLS, parsePlan } from './builtins-runs';
+export { REPLAY_TOOLS } from './builtins-replay';
+export { IMAGE_TOOLS } from './builtins-images';
+export { TEAM_TOOLS } from './builtins-team';
+export { RESEARCH_TOOLS } from './builtins-research';
+export { CURATION_TOOLS } from './builtins-curation';
+export { CRAWL_TOOLS } from './builtins-crawl';
+export { VIDEO_TOOLS } from './builtins-video';
+export { SHARE_TOOLS } from './builtins-share';
+export { EVAL_TOOLS } from './builtins-eval';
 // Re-exported so MCP/route layers can pin their input caps to the SAME
 // contract the plan parser validates against (they already depend on us).
 export { ASK_HUMAN_FORM_LIMITS } from '@mantle/client-types';
@@ -163,3 +205,85 @@ export {
   type DepthCheckResult,
   type AllowlistCheckResult,
 } from './invoke-agent-guards';
+
+export { KNOWN_MCP_SERVERS, knownMcpServer, type KnownMcpServer } from './mcp-catalog';
+export {
+  closeMcpClient,
+  MCP_CALL_TIMEOUT_MS,
+  mcpCallRemoteTool,
+  mcpListRemoteTools,
+  type McpCallOutcome,
+  type McpRemoteTool,
+} from './mcp-client';
+export {
+  createMcpConnector,
+  deleteMcpConnector,
+  MCP_GROUP_PREFIX,
+  mcpGroupDescription,
+  mcpGroupSlug,
+  mcpToolSlug,
+  planMcpSync,
+  syncMcpConnector,
+  type CreateMcpConnectorInput,
+  type CreateMcpConnectorResult,
+  type McpSyncPlan,
+  type McpSyncResult,
+  type McpSyncRowState,
+} from './mcp-sync';
+export { parseMcpBinding, type ToolGroupMcpBinding } from './integration-meta';
+export {
+  clearMcpOAuthSecrets,
+  completeMcpOAuth,
+  dbMcpOAuthStore,
+  findConnectorByOAuthState,
+  loadMcpOAuthTokens,
+  MCP_OAUTH_SECRET_LABELS,
+  runtimeMcpOAuthProvider,
+  startMcpOAuth,
+  setMcpOAuthClient,
+  explainMcpOAuthError,
+  abandonMcpOAuth,
+  type McpOAuthStore,
+  type McpOAuthClientInput,
+  type MicrosoftOAuthApp,
+  type StartMcpOAuthResult,
+} from './mcp-oauth';
+export { isMcpManagedSecretService, MCP_VAULT_SERVICE_PREFIX } from './integration-meta';
+
+export { KNOWN_OPENAPI_APIS, knownOpenapiApi, type KnownOpenapiApi } from './openapi-catalog';
+export {
+  compileOperations,
+  extractInventory,
+  OPENAPI_SPEC_MAX_BYTES,
+  OPENAPI_TOOL_HARD_CAP,
+  OPENAPI_TOOL_WARN_THRESHOLD,
+  operationKeyOf,
+  operationSelected,
+  parseOpenapiDocument,
+  stripSecretRefs,
+  type CompiledOperation,
+  type CompileResult,
+  type OpenapiSelection,
+  type SpecInventory,
+} from './openapi-spec';
+export {
+  createOpenapiConnector,
+  deleteOpenapiConnector,
+  fetchSpecText,
+  isOpenapiMirrorHandler,
+  OPENAPI_GROUP_PREFIX,
+  openapiGroupDescription,
+  openapiGroupSlug,
+  openapiToolSlug,
+  planOpenapiSync,
+  previewOpenapiSpec,
+  syncOpenapiConnector,
+  type CreateOpenapiConnectorInput,
+  type CreateOpenapiConnectorResult,
+  type OpenapiMirrorHandler,
+  type OpenapiPreview,
+  type OpenapiSyncPlan,
+  type OpenapiSyncResult,
+  type OpenapiSyncRowState,
+} from './openapi-sync';
+export { parseOpenapiBinding, type ToolGroupOpenapiBinding } from './integration-meta';

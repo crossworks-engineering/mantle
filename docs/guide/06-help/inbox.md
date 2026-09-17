@@ -5,7 +5,7 @@ toolGroups: [email, memory-core]
 
 ## Email
 
-Your ingested mail, organised by account and folder — readable here, and
+Your ingested mail, organised by account and folder, readable here, and
 searchable as part of the brain rather than as a separate silo.
 
 Only mail from **contacts** is ingested. That's the gate: adding someone to
@@ -20,7 +20,7 @@ Sending goes out through your own mailbox, to contacts only.
 - "Summarise this week's mail from Acme."
 - "Reply to Sam confirming Tuesday works."
 
-Ask about *content*, not about your inbox — "what was quoted for the roof?" is a
+Ask about *content*, not about your inbox, "what was quoted for the roof?" is a
 better question than "find the email from Sam", because the answer may be in an
 attachment rather than the message body.
 
@@ -35,7 +35,7 @@ Threads are reconstructed and stored as `email_thread` nodes so a conversation
 retrieves as a unit rather than as scattered messages.
 
 Sending uses your provider's **SMTP submission** with the same app password the
-IMAP account already holds — Mantle never runs a mail server and never relays on
+IMAP account already holds, Mantle never runs a mail server and never relays on
 port 25, which would land in spam and is blocked on most hosts anyway.
 
 Attachment bytes are the one thing not on the ordinary files disk: they live in

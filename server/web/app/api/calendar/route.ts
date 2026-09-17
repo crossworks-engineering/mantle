@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { addIcsFeed, listCalendarAccounts } from '@mantle/calendar';
 import type { CalendarAccountDTO } from '@mantle/client-types';
 import { getOwnerOr401 } from '@/lib/auth';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** Subscribed calendar feeds for /settings/calendar. Maps each row to the wire
  *  DTO — the sealed `feedUrlEnc` credential / `ownerId` / `syncState` never reach
@@ -38,10 +39,7 @@ export async function POST(req: Request) {
   if (user instanceof Response) return user;
   const parsed = FeedSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'Invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error, 'Invalid input') }, { status: 400 });
   }
   await addIcsFeed(user.id, { displayName: parsed.data.displayName, url: parsed.data.url });
   return NextResponse.json({ ok: true });

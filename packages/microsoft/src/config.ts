@@ -1,3 +1,4 @@
+import { env } from '@mantle/config';
 /**
  * Microsoft Graph integration — OAuth config shape, scopes, and endpoints.
  *
@@ -49,6 +50,13 @@ export function msScopeString(): string {
   return MS_SCOPES.join(' ');
 }
 
+/** The tenant's v2 authority — the OAuth issuer an MCP connector signs in
+ *  against when it borrows this app. Tenant-specific on purpose: a
+ *  single-tenant app cannot use `organizations` / `common` (AADSTS50194). */
+export function microsoftAuthority(tenant: string): string {
+  return `${AUTHORITY}/${tenant}/v2.0`;
+}
+
 export function authorizeEndpoint(tenant: string): string {
   return `${AUTHORITY}/${tenant}/oauth2/v2.0/authorize`;
 }
@@ -70,15 +78,15 @@ export function defaultRedirectUri(origin: string): string {
  * MS_REDIRECT_URI isn't set explicitly.
  */
 export function oauthConfigFromEnv(): MsOAuthConfig | null {
-  const clientId = process.env.MS_CLIENT_ID;
-  const clientSecret = process.env.MS_CLIENT_SECRET;
+  const clientId = env('MS_CLIENT_ID');
+  const clientSecret = env('MS_CLIENT_SECRET');
   if (!clientId || !clientSecret) return null;
-  const tenant = process.env.MS_TENANT || 'common';
+  const tenant = env('MS_TENANT') || 'common';
   // Server-side base URL: MANTLE_PUBLIC_URL is canonical; NEXT_PUBLIC_APP_URL
   // remains a DEPRECATED fallback (it's a client-namespace var that leaked into
   // server logic — instrumentation warns at boot when only the fallback is set).
-  const appUrl = process.env.MANTLE_PUBLIC_URL || process.env.NEXT_PUBLIC_APP_URL || '';
-  const redirectUri = process.env.MS_REDIRECT_URI || (appUrl ? defaultRedirectUri(appUrl) : '');
+  const appUrl = env('MANTLE_PUBLIC_URL') || '';
+  const redirectUri = env('MS_REDIRECT_URI') || (appUrl ? defaultRedirectUri(appUrl) : '');
   if (!/^https?:\/\//.test(redirectUri)) return null;
   return { clientId, clientSecret, tenant, redirectUri };
 }

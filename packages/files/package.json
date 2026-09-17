@@ -16,27 +16,35 @@
     "./embedded-images": "./src/embedded-images.ts",
     "./image-probe": "./src/image-probe.ts",
     "./ooxml-media": "./src/ooxml-media.ts",
-    "./mspdi": "./src/mspdi.ts"
+    "./mspdi": "./src/mspdi.ts",
+    "./dwf": "./src/dwf.ts",
+    "./dwg": "./src/dwg.ts",
+    "./dxf": "./src/dxf.ts",
+    "./legacy-sheet": "./src/legacy-sheet.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fast-csv/parse": "^5.0.7",
+    "@mantle/config": "workspace:*",
     "@mantle/db": "workspace:*",
-    "@napi-rs/canvas": "^1.0.2",
+    "@mantle/std": "workspace:*",
+    "@mantle/storage": "workspace:*",
+    "@napi-rs/canvas": "1.0.2",
     "drizzle-orm": "^0.45.2",
+    "exceljs": "^4.4.0",
     "heic-convert": "^2.1.0",
     "jszip": "^3.10.1",
-    "mammoth": "^1.12.0",
+    "mammoth": "^1.12.2",
     "pdf-parse": "^2.4.5",
-    "pdf-to-png-converter": "^4.1.1",
-    "pdfjs-dist": "^6.1.200",
-    "saxes": "^6.0.0",
-    "xlsx": "^0.18.5"
+    "pdf-to-png-converter": "^4.2.1",
+    "pdfjs-dist": "6.2.108",
+    "saxes": "^6.0.0"
   },
   "devDependencies": {
     "@types/heic-convert": "^2.1.1",
-    "@types/node": "^22.20.1",
-    "typescript": "^5.7.2"
+    "@types/node": "^26.4.1",
+    "typescript": "^5.9.3"
   }
 }

@@ -18,18 +18,20 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { db, nodes, appDatabases } from '@mantle/db';
+import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
 /** Root dir for per-app SQLite files. A dedicated volume in prod (see compose);
  *  one file per app: <root>/<owner>/<app>.sqlite. When APP_DB_DIR is unset
  *  (bare full-stack dev) anchor to a SINGLE monorepo-root `.app-dbs` so every
  *  workspace process resolves the same directory — a cwd-relative default
- *  splits web (cwd apps/web) and api (cwd apps/api) into two roots, the same
+ *  splits web (cwd server/web) and api (cwd server/api) into two roots, the same
  *  split-brain that hit table-dbs (see packages/tabledb/src/paths.ts). */
 let cachedRoot: string | undefined;
 function appDbRoot(): string {
   if (cachedRoot) return cachedRoot;
-  const env = process.env.APP_DB_DIR;
-  if (env) return (cachedRoot = env);
+  const configured = env('APP_DB_DIR');
+  if (configured) return (cachedRoot = configured);
   let dir: string;
   try {
     dir = path.dirname(fileURLToPath(import.meta.url));
@@ -248,7 +250,16 @@ export async function ensureAppDatabase(
   return reg;
 }
 
-/** Run a read query against the app's own database. Returns row objects. */
+/** Run a read query against the app's own database. Returns row objects.
+ *
+ *  Opens READ-ONLY. This is load-bearing, not an optimisation: SQLite happily
+ *  executes DML through `prepare(sql).all()`, and both db-broker routes map
+ *  op:'query' here — including for PUBLIC share visitors, whose op:'exec' is
+ *  rejected with a "shared apps are read-only" promise. A read-write open would
+ *  let `{op:'query', sql:'DELETE FROM t'}` mutate the owner's app database
+ *  anyway. Engine-level read-only closes that for any SQL (same rationale as
+ *  openSqliteReadOnly: no SELECT-only regex to outsmart). Writes go through
+ *  appDbExec (op:'exec'), which the routes gate. */
 export async function appDbQuery(
   ownerId: string,
   appNodeId: string,
@@ -258,7 +269,15 @@ export async function appDbQuery(
 ): Promise<DbRows> {
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
-  const handle = await openSqlite(reg.storagePath);
+  // A read-only open never creates the file. On an app's very first query
+  // (no declared DDL applied, nothing written yet) provision the empty DB
+  // with a normal open first, so the read-only open has a file to attach.
+  try {
+    await stat(reg.storagePath);
+  } catch {
+    (await openSqlite(reg.storagePath)).close();
+  }
+  const handle = await openSqliteReadOnly(reg.storagePath);
   try {
     const rows = handle.prepare(sql).all(...params);
     return rows as DbRows;
@@ -609,7 +628,7 @@ export async function snapshotAllAppDatabases(destDir: string): Promise<AppDbSna
       report.failed.push({
         ownerId: r.ownerId,
         appNodeId: r.appNodeId,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       });
     }
   }

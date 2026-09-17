@@ -9,7 +9,7 @@
 
 import { and, eq } from 'drizzle-orm';
 import { db, tools, type ToolHandler } from '@mantle/db';
-import { listBuiltins } from './registry';
+import { listSeedableBuiltins } from './registry';
 
 /**
  * Close a builtin's top-level schema: `additionalProperties: false` unless the
@@ -45,7 +45,10 @@ export async function seedBuiltinTools(ownerId: string): Promise<{
 }> {
   let inserted = 0;
   let updated = 0;
-  const defs = listBuiltins();
+  // mcpOnly defs are owner-operator surface reachable only over MCP. Seeding
+  // them would put grantable rows in the catalog for tools no agent may hold —
+  // and `pending_approve` in an agent's hands defeats the approval gate itself.
+  const defs = listSeedableBuiltins();
   for (const def of defs) {
     const handler: ToolHandler = { kind: 'builtin', ref: def.slug };
     const inputSchema = closeToolInputSchema(def.inputSchema);

@@ -98,9 +98,9 @@ runQueueWorker('microsoft-sync', async ({ boss }) => {
 
       try {
         const t0 = Date.now();
-        const { scanned, ingested, removed } = await syncDrive(account, drive);
+        const { scanned, ingested, removed, superseded } = await syncDrive(account, drive);
         console.log(
-          `[ms-sync] ${drive.name} done in ${Date.now() - t0}ms — scanned=${scanned} ingested=${ingested} removed=${removed}`,
+          `[ms-sync] ${drive.name} done in ${Date.now() - t0}ms — scanned=${scanned} ingested=${ingested} removed=${removed} superseded=${superseded}`,
         );
       } catch (err) {
         console.error('[ms-sync] error on', drive.name, err);

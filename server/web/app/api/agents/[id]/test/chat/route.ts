@@ -4,6 +4,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { getAgent } from '@/lib/agents';
 import { getApiKeyById } from '@mantle/api-keys';
 import { getChatAdapter } from '@mantle/voice';
+import { errorMessage } from '@mantle/std';
 
 const Body = z.object({ prompt: z.string().default('') });
 
@@ -72,9 +73,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       tokensOut: result.tokensOut ?? null,
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
   }
 }

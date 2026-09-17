@@ -59,6 +59,16 @@ describe('foldEmbeddedText', () => {
     expect(out).not.toContain('c.png');
   });
 
+  it('labels an item by its kind — drawings announce themselves as drawings', () => {
+    const out = foldEmbeddedText([
+      { title: 'quote.pdf', text: 'R12 000 total' },
+      { title: 'Gantry sketch', text: 'crane rail detail', label: 'Embedded drawing' },
+    ]);
+    expect(out).toBe(
+      '[Embedded file: quote.pdf]\nR12 000 total\n\n[Embedded drawing: Gantry sketch]\ncrane rail detail',
+    );
+  });
+
   it('exposes sane default bounds', () => {
     expect(EMBED_TEXT_PER_FILE).toBe(4000);
     expect(EMBED_TEXT_TOTAL).toBe(16000);

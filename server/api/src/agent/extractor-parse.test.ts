@@ -20,6 +20,7 @@ import {
   isValidEntity,
   isValidFact,
   isValidRelation,
+  isHollowFilenameBody,
   parseExtractorOutput,
   parseOccurredAt,
   sanitiseFactEntities,
@@ -470,5 +471,155 @@ describe('parseOccurredAt + episodic occurred_at', () => {
       occurred_at: '2026-05-17',
     } as unknown as ExtractedFact);
     expect(fact.occurredAt).toBeUndefined(); // non-episodic → no event date
+  });
+});
+
+describe('isHollowFilenameBody (the filename-only false-success guard)', () => {
+  it("catches the 'dwf' route: it has no recovery tier, so an empty parse is hollow", () => {
+    // A 3D eModel DWF or a renamed DWFx sniffs/parses to '' by design;
+    // readNodeBodyRaw then falls back to the title. Without this carve-out
+    // the route being non-'none' would skip the guard and the filename would
+    // index as the document with disposition success.
+    expect(
+      isHollowFilenameBody({
+        mime: 'model/vnd.dwf',
+        parserRoute: 'dwf',
+        rawBody: 'circuitization-set-rev-13.dwf',
+        title: 'circuitization-set-rev-13.dwf',
+      }),
+    ).toBe(true);
+  });
+
+  it('a dwf whose parse produced real text is NOT hollow', () => {
+    expect(
+      isHollowFilenameBody({
+        mime: 'model/vnd.dwf',
+        parserRoute: 'dwf',
+        rawBody: 'DWF drawing set — 9 sheets. …',
+        title: 'circuitization-set-rev-13.dwf',
+      }),
+    ).toBe(false);
+  });
+
+  it("catches the 'dwg' route: a sniff miss parses to '' by design, same as dwf", () => {
+    expect(
+      isHollowFilenameBody({
+        mime: 'application/acad',
+        parserRoute: 'dwg',
+        rawBody: '90-10-01.dwg',
+        title: '90-10-01.dwg',
+      }),
+    ).toBe(true);
+  });
+
+  it('a dwg whose parse produced a real digest is NOT hollow', () => {
+    expect(
+      isHollowFilenameBody({
+        mime: 'application/acad',
+        parserRoute: 'dwg',
+        rawBody: 'AutoCAD DWG drawing (AC1027) — 42 model-space entities…',
+        title: '90-10-01.dwg',
+      }),
+    ).toBe(false);
+  });
+
+  it('a client-supplied image mime cannot shield a routed CAD sniff-miss', () => {
+    // Uploaders send `image/vnd.dwg` for DWGs; the image exemption must not
+    // beat the dwf/dwg carve-out or the sniff-miss would index its filename.
+    expect(
+      isHollowFilenameBody({
+        mime: 'image/vnd.dwg',
+        parserRoute: 'dwg',
+        rawBody: '90-10-01.dwg',
+        title: '90-10-01.dwg',
+      }),
+    ).toBe(true);
+  });
+
+  it("catches the 'dxf' route: sniff miss + image/vnd.dxf mime both stay hollow", () => {
+    // dxf mirrors dwg: '' on a sniff miss by design, and the registered
+    // image/vnd.dxf alias must not shield it via the image-mime exemption.
+    expect(
+      isHollowFilenameBody({
+        mime: 'application/dxf',
+        parserRoute: 'dxf',
+        rawBody: '90-10-02.dxf',
+        title: '90-10-02.dxf',
+      }),
+    ).toBe(true);
+    expect(
+      isHollowFilenameBody({
+        mime: 'image/vnd.dxf',
+        parserRoute: 'dxf',
+        rawBody: '90-10-02.dxf',
+        title: '90-10-02.dxf',
+      }),
+    ).toBe(true);
+  });
+
+  it('a dxf whose parse produced a real digest is NOT hollow', () => {
+    expect(
+      isHollowFilenameBody({
+        mime: 'application/dxf',
+        parserRoute: 'dxf',
+        rawBody: 'AutoCAD DXF drawing (AC1027) — 42 model-space entities…',
+        title: '90-10-02.dxf',
+      }),
+    ).toBe(false);
+  });
+
+  it('catches the descriptive-recording case that defeated the 20-char check', () => {
+    expect(
+      isHollowFilenameBody({
+        mime: 'video/mp4',
+        parserRoute: 'none',
+        rawBody: 'standup-recording-2026-08-20.mp4',
+        title: 'standup-recording-2026-08-20.mp4',
+      }),
+    ).toBe(true);
+  });
+
+  it('trims before comparing (readNodeBodyRaw may not)', () => {
+    expect(
+      isHollowFilenameBody({
+        mime: 'application/octet-stream',
+        parserRoute: 'none',
+        rawBody: '  weird-format.bin ',
+        title: 'weird-format.bin',
+      }),
+    ).toBe(true);
+  });
+
+  it('leaves routed formats alone — a title-body PDF has its own OCR recovery path', () => {
+    expect(
+      isHollowFilenameBody({
+        mime: 'application/pdf',
+        parserRoute: 'pdf-parse',
+        rawBody: 'scan.pdf',
+        title: 'scan.pdf',
+      }),
+    ).toBe(false);
+  });
+
+  it('leaves images alone — the vision path owns them and records its own skip', () => {
+    expect(
+      isHollowFilenameBody({
+        mime: 'image/svg+xml',
+        parserRoute: 'none',
+        rawBody: 'icon.svg',
+        title: 'icon.svg',
+      }),
+    ).toBe(false);
+  });
+
+  it('passes a real body through even when the route is none', () => {
+    expect(
+      isHollowFilenameBody({
+        mime: 'video/mp4',
+        parserRoute: 'none',
+        rawBody: 'A transcript someone stamped onto the node earlier.',
+        title: 'clip.mp4',
+      }),
+    ).toBe(false);
   });
 });

@@ -20,8 +20,9 @@
 
 import { db, agents } from '@mantle/db';
 import { and, eq, inArray, lt, sql } from 'drizzle-orm';
+import { env } from '@mantle/config';
 
-const OWNER_ID = process.env.ALLOWED_USER_ID;
+const OWNER_ID = env('ALLOWED_USER_ID');
 if (!OWNER_ID) {
   console.error('widen-content-hits: ALLOWED_USER_ID must be set');
   process.exit(1);

@@ -1,73 +1,41 @@
 /**
  * Mantle MCP server builder — the single source of truth for the MCP tool
  * surface, shared by BOTH transports:
- *   - the stdio entry (`apps/mcp/src/server.ts`), spawned by Claude Desktop /
+ *   - the stdio entry (`server/mcp/src/server.ts`), spawned by Claude Desktop /
  *     Code over JSON-RPC on a trusted local machine;
- *   - the remote HTTP endpoint (`apps/web/app/api/mcp/route.ts`), reached as a
+ *   - the remote HTTP endpoint (`server/web/app/api/mcp/route.ts`), reached as a
  *     claude.ai custom connector behind OAuth.
  *
- * `registerMantleTools(server, ownerId)` registers every tool onto a given
+ * `registerMantleTools(server, ownerId, opts)` registers every tool onto a given
  * `McpServer`, scoped to `ownerId`; `buildMantleMcpServer(ownerId)` creates a
  * fresh server and registers them. The owner is a TRUSTED input here — each
  * transport authenticates and resolves it (stdio: the single local owner; HTTP:
- * the OAuth bearer) BEFORE calling in. No tool is more dangerous over HTTP than
- * over stdio (no shell tool is exposed); the new exposure is purely that the
- * surface is reachable over the network, which the transport's auth gates.
+ * the OAuth bearer) BEFORE calling in.
+ *
+ * FULL PARITY is the rule: every tool an in-brain agent can be granted is on
+ * this surface. A desktop client is not a lesser citizen than an agent running
+ * inside the brain — it is the owner, authenticated, driving their own data.
+ * The surface used to be a hand-picked subset, and every gap read to the client
+ * as a missing capability it could not even name (the CLI sandboxes were
+ * enabled on a box and the client still reported it had no such tool).
+ *
+ * ONE tool is transport-dependent: `run_terminal` runs a shell in the brain's
+ * OWN container — postgres, minio, the file store, the master key. Over stdio
+ * that is no escalation at all (spawning the process already grants the owner's
+ * full data access on a machine you control), so it ships. Over HTTP the
+ * surface is reachable from the network and a stolen OAuth token would become a
+ * root shell on the box, so it is OFF unless the operator sets
+ * MANTLE_MCP_TERMINAL=1. `sandbox_exec` — the contained shell, in a container
+ * with no route to any of that — is unconditional on both.
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
+import {} from '@mantle/files';
 import {
-  db,
-  agentGroups,
-  agents,
-  channels,
-  nodes,
-  telegramAccounts,
-  telegramChats,
-  telegramMessages,
-} from '@mantle/db';
-import {
-  entityFacts,
-  entityMentions,
-  entityNeighbors,
-  graphPath,
-  searchEntities,
-  searchNodes,
-  searchChunks,
-  readSection,
-} from '@mantle/search';
-import { embed } from '@mantle/embeddings';
-import { runSimulatedResponderTurn } from '@mantle/assistant-runtime';
-import { accountForChat, editMessage, reactToMessage, sendMessage } from '@mantle/telegram';
-import {
-  createFolder,
-  deleteFileById,
-  deleteFolder,
-  ensureFilesRootBranch,
-  fileById,
-  folderByPath,
-  listAllFolders,
-  listFiles,
-  listFolders,
-  readFileById,
-  renameFileById,
-  renameFolderById,
-  updateFolderDescription,
-  upsertFile,
-  MAX_UPLOAD_BYTES,
-} from '@mantle/files';
-import {
-  ASK_HUMAN_FORM_LIMITS as FORM_LIMITS,
-  approvePendingCall,
-  getPendingCall,
-  listPendingCalls,
-  rejectPendingCall,
-  checkToolPreconditions,
   CONTACT_TOOLS,
   WORKER_DELEGATION_TOOLS,
   EXPORT_TOOLS,
-  PAGE_TOOLS,
-  TABLE_TOOLS,
+  SHEET_TOOLS,
+  DRAW_TOOLS,
   APP_TOOLS,
   TOOLSMITH_TOOLS,
   NOTE_TOOLS,
@@ -76,20 +44,49 @@ import {
   JOURNAL_TOOLS,
   PEER_TOOLS,
   EMAIL_TOOLS,
+  RECALL_TOOLS,
+  SANDBOX_TOOLS,
+  NODE_READ_TOOLS,
+  SEARCH_TOOLS,
+  ENTITY_TOOLS,
+  FILE_TOOLS,
+  TELEGRAM_TOOLS,
+  TELEGRAM_OPERATOR_TOOLS,
+  NOTE_OPERATOR_TOOLS,
+  PENDING_TOOLS,
+  WORKER_GROUP_TOOLS,
+  FILE_CREATE_TOOLS,
+  CONTENT_CURATION_TOOLS,
+  INGEST_TOOLS,
+  SECRET_TOOLS,
+  DELEGATION_TOOLS,
+  CALCULATE_TOOLS,
+  FORMULA_TOOLS,
+  APP_DATA_TOOLS,
+  REPLAY_TOOLS,
+  IMAGE_TOOLS,
+  TEAM_TOOLS,
+  RESEARCH_TOOLS,
+  CURATION_TOOLS,
+  CRAWL_TOOLS,
+  VIDEO_TOOLS,
+  LOCATION_TOOLS,
+  PERSONA_TOOLS,
+  PROFILE_TOOLS,
+  SHARE_TOOLS,
+  RUN_TOOLS,
+  TOOL_RESULT_TOOLS,
+  EVAL_TOOLS,
+  TERMINAL_TOOLS,
 } from '@mantle/tools';
-import type { BuiltinToolDef } from '@mantle/tools';
-import {
-  deleteFileWithDerived,
-  deleteNote,
-  describeDerivedCounts,
-  getPage,
-  getTable,
-  listPages,
-  listTables,
-  listRows,
-  ensureTableDoc,
-} from '@mantle/content';
-import { and, asc, eq } from 'drizzle-orm';
+import {} from '@mantle/content';
+import { env } from '@mantle/config';
+import { makeRegisterContext } from './register/context';
+import { registerSearchTools } from './register/search';
+import { registerFileTools } from './register/files';
+import { registerPageTools } from './register/pages';
+import { registerTableTools } from './register/tables';
+import { registerResponderTools } from './register/responder';
 
 /** Mutating Toolsmith tools — gated behind MANTLE_MCP_TOOLSMITH_WRITE (default
  *  ON). Module-scope (env is process-stable) so the gate is evaluated once, not
@@ -107,9 +104,7 @@ const TOOLSMITH_WRITE_SLUGS = new Set([
   'api_docs_set',
   'api_skill_set',
 ]);
-const toolsmithWriteEnabled = !/^(0|false|off|no)$/i.test(
-  process.env.MANTLE_MCP_TOOLSMITH_WRITE ?? '',
-);
+const toolsmithWriteEnabled = !/^(0|false|off|no)$/i.test(env('MANTLE_MCP_TOOLSMITH_WRITE') ?? '');
 if (!toolsmithWriteEnabled) {
   console.error(
     '[mantle-mcp] MANTLE_MCP_TOOLSMITH_WRITE is off — exposing Toolsmith read-only ' +
@@ -117,934 +112,36 @@ if (!toolsmithWriteEnabled) {
   );
 }
 
+/** Which transport is registering. Only `run_terminal` reads it (see the file
+ *  header); everything else is identical on both. */
+export type MantleMcpTransport = 'stdio' | 'http';
+
 /** Register every Mantle MCP tool onto `server`, scoped to `ownerId`. Both the
  *  stdio entry and the HTTP route call this; `ownerId` is already authenticated
- *  by the caller. */
-export function registerMantleTools(server: McpServer, ownerId: string): void {
-  // ─── response hygiene ───────────────────────────────────────────────────────
-  // MCP tool results are serialised straight into the model's context, so they
-  // must NOT leak raw DB internals. A `select()` row carries `embedding` (768
-  // floats ≈ 9 KB) and `searchTsv` (the full tsvector ≈ 50 KB on a big doc) —
-  // pure noise to a reader that blows the context budget (a single `search` hit
-  // measured 125 KB, an `entity_search` for one name 76 KB, ~98% vectors). Strip
-  // those keys from every row before it goes out. See docs/recall-eval.md and the
-  // audit that motivated this.
-  const STRIP_KEYS = new Set(['embedding', 'searchTsv', 'search_tsv']);
-  function stripVectors<T>(value: T): T {
-    if (Array.isArray(value)) return value.map((v) => stripVectors(v)) as unknown as T;
-    if (value && typeof value === 'object') {
-      const out: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        if (STRIP_KEYS.has(k)) continue;
-        out[k] = stripVectors(v);
-      }
-      return out as T;
-    }
-    return value;
-  }
+ *  by the caller. `transport` defaults to the SAFER of the two: a caller that
+ *  forgets to say gets the network posture, never the trusted-local one. */
+export function registerMantleTools(
+  server: McpServer,
+  ownerId: string,
+  opts: { transport?: MantleMcpTransport } = {},
+): void {
+  const transport = opts.transport ?? 'http';
+  const ctx = makeRegisterContext(server, ownerId, transport);
+  const { exposeTerminal, registerBuiltinTools } = ctx;
 
-  /** Standard JSON tool reply, with vectors/tsvector stripped. */
-  function jsonReply(value: unknown) {
-    return {
-      content: [{ type: 'text' as const, text: JSON.stringify(stripVectors(value), null, 2) }],
-    };
-  }
+  registerSearchTools(ctx);
+  registerFileTools(ctx);
 
-  /** Lean projection of a node for list/search results: the "spine" (title, tags,
-   *  summary), never the full body (`data.content`) or the index internals. Use
-   *  node_read / file_read to fetch a body on demand. Mirrors the in-process
-   *  `search_nodes` builtin so the two tool surfaces don't drift. */
-  function leanNode(n: {
-    id: string;
-    type: string;
-    title: string;
-    path: string | null;
-    tags: string[] | null;
-    data: unknown;
-    updatedAt: Date;
-  }) {
-    const data = (n.data ?? {}) as Record<string, unknown>;
-    return {
-      id: n.id,
-      type: n.type,
-      title: n.title,
-      path: n.path,
-      tags: n.tags,
-      summary: typeof data.summary === 'string' ? data.summary : null,
-      updatedAt: n.updatedAt instanceof Date ? n.updatedAt.toISOString() : n.updatedAt,
-    };
-  }
-
-  server.tool(
-    'tree_list',
-    'List children of a branch in the Mantle tree. Pass no path for top-level branches.',
-    { path: z.string().optional() },
-    async ({ path }) => {
-      const rows = await db
-        .select({ id: nodes.id, title: nodes.title, type: nodes.type, path: nodes.path })
-        .from(nodes)
-        .where(
-          and(eq(nodes.ownerId, ownerId), path ? eq(nodes.path, path) : eq(nodes.type, 'branch')),
-        )
-        .limit(200);
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'search',
-    "Hybrid semantic + full-text search over the user's Mantle — ranks by meaning (vector) with keyword as a booster, so vague/natural queries work, not just exact words. Use `branch` (ltree path) to scope, `type` to filter. Returns the spine (title, tags, summary) — use node_read / file_read / email_get for a full body.",
-    {
-      q: z.string().optional(),
-      branch: z.string().optional(),
-      type: z
-        .enum([
-          'branch',
-          'email',
-          'email_thread',
-          'file',
-          'note',
-          'page',
-          'sermon',
-          'contact',
-          'secret',
-          'task',
-          'event',
-          'printer_project',
-          'telegram_message',
-          'documentation',
-          'formula',
-        ])
-        .optional(),
-      tags: z.array(z.string()).optional(),
-      since: z.string().datetime().optional(),
-      limit: z.number().int().min(1).max(200).optional(),
-    },
-    async ({ q, branch, type, tags, since, limit }) => {
-      // Embed the query so searchNodes runs its hybrid (vector-led) ranker. The
-      // legacy FTS-only path recalled ~8% on natural-language queries
-      // (docs/recall-eval.md); a failed embed degrades to FTS, not an error.
-      let queryEmbedding: number[] | undefined;
-      if (q && q.trim()) {
-        try {
-          queryEmbedding = await embed(ownerId, q);
-        } catch (err) {
-          console.error('[search] query embed failed, falling back to FTS:', err);
-        }
-      }
-      const results = await searchNodes({
-        ownerId: ownerId,
-        q,
-        branch,
-        type,
-        tags,
-        since: since ? new Date(since) : undefined,
-        limit,
-        queryEmbedding,
-      });
-      return jsonReply(results.map(leanNode));
-    },
-  );
-
-  server.tool(
-    'search_chunks',
-    "Hybrid (semantic + keyword) search over document passages — finds the most relevant *sections* inside pages, files, emails, notes (not just whole-node keyword hits). Reach for this FIRST on a content question: it returns the exact passages, so you answer without loading whole documents into context. Fall back to `search` (whole-node) or reading the full file only when the passages are insufficient or the user wants an exhaustive read. `branch` scopes by ltree path (e.g. 'files' or 'pages').",
-    {
-      q: z.string(),
-      branch: z.string().optional(),
-      limit: z.number().int().min(1).max(50).optional(),
-    },
-    async ({ q, branch, limit }) => {
-      const embedding = await embed(ownerId, q);
-      const hits = await searchChunks({
-        ownerId: ownerId,
-        embedding,
-        q,
-        branch,
-        limit: limit ?? 10,
-      });
-      return jsonReply(hits);
-    },
-  );
-
-  server.tool(
-    'read_section',
-    "Read one SECTION of a long document in full and in order — the rung between `search_chunks` (scattered passages) and reading the whole file. Use once you know WHERE the answer lives (search_chunks returns each passage's nodeId, heading, ordinal). Pass ONLY `node_id` for the OUTLINE (heading ranges); pass `heading` for every passage under that heading; or `from_ordinal`/`to_ordinal` for a contiguous range. Output is capped (~24k chars) with a `next_ordinal` to continue from. Only read the whole file for short documents or when the outline shows no indexed passages.",
-    {
-      node_id: z.string().uuid(),
-      heading: z.string().optional(),
-      from_ordinal: z.number().int().min(0).optional(),
-      to_ordinal: z.number().int().min(0).optional(),
-      max_chars: z.number().int().min(2000).max(60000).optional(),
-    },
-    async ({ node_id, heading, from_ordinal, to_ordinal, max_chars }) => {
-      const res = await readSection({
-        ownerId,
-        nodeId: node_id,
-        heading,
-        fromOrdinal: from_ordinal,
-        toOrdinal: to_ordinal,
-        maxChars: max_chars,
-      });
-      if ('error' in res) return { content: [{ type: 'text', text: res.error }], isError: true };
-      return jsonReply(res);
-    },
-  );
-
-  // ─── files / folders ──────────────────────────────────────────────────────
-
-  server.tool(
-    'folder_list',
-    "List folders in the user's host-mirrored filesystem. Pass `parent` (ltree path, e.g. 'files.work') to list immediate children of that folder; pass `tree: true` to get every folder in the subtree at once. With no args, returns the immediate children of the root.",
-    {
-      parent: z.string().optional(),
-      tree: z.boolean().optional(),
-    },
-    async ({ parent, tree }) => {
-      await ensureFilesRootBranch(ownerId);
-      if (tree) {
-        const all = await listAllFolders(ownerId);
-        return jsonReply(all);
-      }
-      const rows = await listFolders({ ownerId: ownerId, parentPath: parent ?? 'files' });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'folder_create',
-    "Create a folder under `parent_path` (ltree, e.g. 'files.work'). Slug must be lowercase + dashes — anything else gets normalised. Description is optional but recommended so future agents know what the folder is for. Creates the directory on disk and the DB row in lockstep.",
-    {
-      parent_path: z.string().min(1).max(500),
-      slug: z.string().min(1).max(64),
-      description: z.string().max(2000).optional(),
-    },
-    async ({ parent_path, slug, description }) => {
-      await ensureFilesRootBranch(ownerId);
-      try {
-        const folder = await createFolder({
-          ownerId: ownerId,
-          parentPath: parent_path,
-          slug,
-          description,
-        });
-        return jsonReply(folder);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { content: [{ type: 'text', text: `folder_create failed: ${msg}` }], isError: true };
-      }
-    },
-  );
-
-  server.tool(
-    'folder_describe',
-    "Set or clear a folder's description. Useful for agents that just created a folder and want to document what goes in it.",
-    {
-      folder_id: z.string().uuid().optional(),
-      path: z.string().optional(),
-      description: z.string().max(2000),
-    },
-    async ({ folder_id, path, description }) => {
-      let id = folder_id ?? null;
-      if (!id && path) {
-        const found = await folderByPath({ ownerId: ownerId, path });
-        id = found?.id ?? null;
-      }
-      if (!id) {
-        return {
-          content: [{ type: 'text', text: 'folder_describe: pass folder_id or path' }],
-          isError: true,
-        };
-      }
-      const updated = await updateFolderDescription({
-        ownerId: ownerId,
-        folderId: id,
-        description,
-      });
-      if (!updated) {
-        return { content: [{ type: 'text', text: 'folder not found' }], isError: true };
-      }
-      return jsonReply(updated);
-    },
-  );
-
-  server.tool(
-    'folder_rename',
-    'Rename a folder in place. `new_name` is lowercased + sanitised. Every file and sub-folder inside moves with it (their paths update). Pass `folder_id` or `path`. Cannot rename the `files` root.',
-    {
-      folder_id: z.string().uuid().optional(),
-      path: z.string().optional(),
-      new_name: z.string().min(1).max(64),
-    },
-    async ({ folder_id, path, new_name }) => {
-      let id = folder_id ?? null;
-      if (!id && path) {
-        const found = await folderByPath({ ownerId: ownerId, path });
-        id = found?.id ?? null;
-      }
-      if (!id) {
-        return {
-          content: [{ type: 'text', text: 'folder_rename: pass folder_id or path' }],
-          isError: true,
-        };
-      }
-      try {
-        const updated = await renameFolderById({
-          ownerId: ownerId,
-          folderId: id,
-          newSlug: new_name,
-        });
-        if (!updated) {
-          return { content: [{ type: 'text', text: 'folder not found' }], isError: true };
-        }
-        return jsonReply(updated);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { content: [{ type: 'text', text: `folder_rename failed: ${msg}` }], isError: true };
-      }
-    },
-  );
-
-  server.tool(
-    'folder_delete',
-    'Delete a folder. Refuses unless the folder is empty — clear its children first. Cannot delete the `files` root.',
-    { folder_id: z.string().uuid() },
-    async ({ folder_id }) => {
-      const res = await deleteFolder({ ownerId: ownerId, folderId: folder_id });
-      if (!res.ok) {
-        return { content: [{ type: 'text', text: `folder_delete: ${res.reason}` }], isError: true };
-      }
-      return { content: [{ type: 'text', text: 'deleted' }] };
-    },
-  );
-
-  server.tool(
-    'file_list',
-    "List files in a folder. `parent_path` is the ltree path of the containing folder (e.g. 'files.work.lister-printer').",
-    {
-      parent_path: z.string().min(1).max(500),
-    },
-    async ({ parent_path }) => {
-      const rows = await listFiles({ ownerId: ownerId, parentPath: parent_path });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'file_upload',
-    "Create or overwrite a file in a folder. Pass either `content_text` (utf-8) or `content_base64` (binary). Filename is lowercased + sanitised. The extractor agent will pick up text files (md/txt/json/yaml) automatically via pg_notify('node_ingested').",
-    {
-      parent_path: z.string().min(1).max(500),
-      filename: z.string().min(1).max(200),
-      content_text: z.string().optional(),
-      content_base64: z.string().optional(),
-      overwrite: z.boolean().optional(),
-    },
-    async ({ parent_path, filename, content_text, content_base64, overwrite }) => {
-      if (content_text == null && content_base64 == null) {
-        return {
-          content: [{ type: 'text', text: 'file_upload: pass content_text or content_base64' }],
-          isError: true,
-        };
-      }
-      const bytes =
-        content_text != null
-          ? Buffer.from(content_text, 'utf8')
-          : Buffer.from(content_base64!, 'base64');
-      if (bytes.byteLength > MAX_UPLOAD_BYTES) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `file_upload: too large (${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB > ${MAX_UPLOAD_BYTES / 1024 / 1024} MB)`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      try {
-        const row = await upsertFile({
-          ownerId: ownerId,
-          parentPath: parent_path,
-          filename,
-          bytes,
-          overwrite,
-        });
-        return jsonReply(row);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { content: [{ type: 'text', text: `file_upload failed: ${msg}` }], isError: true };
-      }
-    },
-  );
-
-  server.tool(
-    'file_read',
-    'Read a file by id. For text files returns the content as a utf-8 string; for binaries returns base64-encoded bytes (only call this on small files).',
-    { file_id: z.string().uuid() },
-    async ({ file_id }) => {
-      const res = await readFileById({ ownerId: ownerId, fileId: file_id });
-      if (!res) {
-        return { content: [{ type: 'text', text: 'file not found' }], isError: true };
-      }
-      const isText = res.row.isText;
-      const out = {
-        file: res.row,
-        ...(isText
-          ? { content_text: res.bytes.toString('utf8') }
-          : { content_base64: res.bytes.toString('base64') }),
-      };
-      return jsonReply(out);
-    },
-  );
-
-  server.tool(
-    'file_get',
-    "Fetch a file's metadata by id without loading bytes. Useful for resolving a uuid surfaced by search before deciding what to do with it.",
-    { file_id: z.string().uuid() },
-    async ({ file_id }) => {
-      const row = await fileById({ ownerId: ownerId, fileId: file_id });
-      if (!row) {
-        return { content: [{ type: 'text', text: 'file not found' }], isError: true };
-      }
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'file_rename',
-    'Rename a file in place — its folder and extension are kept, only the basename changes. `new_stem` is the new name WITHOUT the extension (e.g. `huntsman-report` → `customerx-report`).',
-    { file_id: z.string().uuid(), new_stem: z.string().min(1).max(200) },
-    async ({ file_id, new_stem }) => {
-      try {
-        const row = await renameFileById({ ownerId: ownerId, fileId: file_id, newStem: new_stem });
-        if (!row) {
-          return { content: [{ type: 'text', text: 'file not found' }], isError: true };
-        }
-        return jsonReply(row);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { content: [{ type: 'text', text: `file_rename failed: ${msg}` }], isError: true };
-      }
-    },
-  );
-
-  server.tool(
-    'file_delete',
-    'Delete a file by id. Removes both the DB row and the on-disk file. If ingest derived nodes from the file (extracted images, imported tables, pages, notes), the call reports their counts instead of deleting; confirm with the user, then call again with delete_derived: true to remove them too.',
-    { file_id: z.string().uuid(), delete_derived: z.boolean().optional() },
-    async ({ file_id, delete_derived }) => {
-      if (delete_derived) {
-        const res = await deleteFileWithDerived(ownerId, file_id);
-        if (!res.ok) {
-          const text =
-            res.reason === 'attachment'
-              ? "can't delete — this file is an email attachment; delete it from the email instead"
-              : 'file not found';
-          return { content: [{ type: 'text', text }], isError: true };
-        }
-        const skipped = res.skipped > 0 ? ` (${res.skipped} derived node(s) skipped)` : '';
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `deleted, along with ${describeDerivedCounts(res.reaped)} derived from it${skipped}`,
-            },
-          ],
-        };
-      }
-      const res = await deleteFileById({ ownerId: ownerId, fileId: file_id });
-      if (!res.ok) {
-        if (res.reason === 'has_derived' && res.derived) {
-          // Not an error: a count-and-confirm preview. Nothing was deleted.
-          return {
-            content: [
-              {
-                type: 'text',
-                text: `this file produced ${describeDerivedCounts(res.derived)} — nothing was deleted; call again with delete_derived: true to remove the file and everything derived from it`,
-              },
-            ],
-          };
-        }
-        const text =
-          res.reason === 'attachment'
-            ? "can't delete — this file is an email attachment; delete it from the email instead"
-            : 'file not found';
-        return { content: [{ type: 'text', text }], isError: true };
-      }
-      return { content: [{ type: 'text', text: 'deleted' }] };
-    },
-  );
-
-  // ─── pending tool calls (operator approvals) ─────────────────────────────
-
-  server.tool(
-    'pending_list',
-    "List operator-approval-required tool calls an agent has queued. By default returns the still-pending queue; pass `status` ('pending'|'approved'|'rejected'|'expired') to filter, and `limit` to cap.",
-    {
-      status: z.enum(['pending', 'approved', 'rejected', 'expired']).optional(),
-      limit: z.number().int().min(1).max(500).optional(),
-    },
-    async ({ status, limit }) => {
-      const rows = await listPendingCalls(ownerId, { status: status ?? 'pending', limit });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'pending_approve',
-    'Approve a queued tool call by id. The handler runs immediately under a fresh `manual` trace; the result is stored on the pending row and returned. For a runner `ask_human` question, approval completes the run step and `answer` carries the free-text reply the run continues with (omit it for a plain yes / option-pick approval). When the row carries a `form` (see its args), answer per sub-question with `answers` instead.',
-    {
-      id: z.string().uuid(),
-      answer: z.string().max(4000).optional(),
-      answers: z
-        .array(
-          z.object({
-            question: z.string().max(200).describe("The form question's id, e.g. 'env'"),
-            selected: z
-              .array(z.string().max(FORM_LIMITS.maxLabelChars))
-              .max(FORM_LIMITS.maxOptions)
-              .describe('Chosen option labels'),
-            other: z
-              .string()
-              .max(FORM_LIMITS.maxOtherChars)
-              .optional()
-              .describe('Free text when no option fits'),
-          }),
-        )
-        .max(FORM_LIMITS.maxQuestions)
-        .optional()
-        .describe("Structured answers, one entry per question in the row's `form`"),
-    },
-    async ({ id, answer, answers }) => {
-      const row = await approvePendingCall(
-        ownerId,
-        id,
-        answer || answers?.length
-          ? { ...(answer ? { answer } : {}), ...(answers?.length ? { answers } : {}) }
-          : undefined,
-      );
-      if (!row) {
-        return { content: [{ type: 'text', text: 'not found or already decided' }], isError: true };
-      }
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'pending_reject',
-    "Reject a queued tool call by id. No execution; just flips status to 'rejected'. A runner `ask_human` question completes its run step failed(rejected) so the run advances instead of waiting forever.",
-    { id: z.string().uuid() },
-    async ({ id }) => {
-      const row = await rejectPendingCall(ownerId, id);
-      if (!row) {
-        return { content: [{ type: 'text', text: 'not found or already decided' }], isError: true };
-      }
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'worker_group_list',
-    'List worker groups (panels) for runner queues. A run step with group:<slug> fans out into one attempt per member worker plus a panel audit.',
-    {},
-    async () => {
-      const rows = await db.select().from(agentGroups).where(eq(agentGroups.ownerId, ownerId));
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'worker_group_ensure',
-    "Create or update a worker group (panel) by slug. `members` are enabled worker-agent slugs — each must exist (agent_list shows agents; role 'worker'). Idempotent upsert.",
-    {
-      slug: z.string().min(1).max(64),
-      name: z.string().max(200).optional(),
-      members: z.array(z.string().min(1)).min(1).max(10),
-      enabled: z.boolean().optional(),
-    },
-    async ({ slug, name, members, enabled }) => {
-      const workers = await db
-        .select({ slug: agents.slug })
-        .from(agents)
-        .where(
-          and(eq(agents.ownerId, ownerId), eq(agents.role, 'worker'), eq(agents.enabled, true)),
-        );
-      const have = new Set(workers.map((w) => w.slug));
-      const missing = members.filter((m) => !have.has(m));
-      if (missing.length > 0) {
-        const available = workers.map((w) => w.slug).join(', ') || '(none yet)';
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `unknown worker(s): ${missing.join(', ')} — enabled worker agents: ${available}. Create workers first (settings → agents, role 'worker').`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      const [existing] = await db
-        .select({ id: agentGroups.id })
-        .from(agentGroups)
-        .where(and(eq(agentGroups.ownerId, ownerId), eq(agentGroups.slug, slug)));
-      const values = {
-        name: name ?? slug,
-        memberSlugs: members,
-        ...(enabled !== undefined ? { enabled } : {}),
-        updatedAt: new Date(),
-      };
-      const [row] = existing
-        ? await db
-            .update(agentGroups)
-            .set(values)
-            .where(eq(agentGroups.id, existing.id))
-            .returning()
-        : await db
-            .insert(agentGroups)
-            .values({ ownerId, slug, ...values })
-            .returning();
-      return jsonReply(row);
-    },
-  );
-
-  server.tool(
-    'pending_get',
-    'Fetch a pending tool call by id — useful to inspect the args before deciding.',
-    { id: z.string().uuid() },
-    async ({ id }) => {
-      const row = await getPendingCall(ownerId, id);
-      if (!row) {
-        return { content: [{ type: 'text', text: 'not found' }], isError: true };
-      }
-      return jsonReply(row);
-    },
-  );
-
-  // ─── entities ─────────────────────────────────────────────────────────────
-
-  server.tool(
-    'entity_search',
-    "Resolve a name or alias to entities in the user's memory. Exact name/alias matches return similarity=1; otherwise trigram fuzzy match. Optional `kind` filter (person, project, place, org, event, ...).",
-    {
-      q: z.string().min(1),
-      kind: z.string().optional(),
-      limit: z.number().int().min(1).max(50).optional(),
-    },
-    async ({ q, kind, limit }) => {
-      const hits = await searchEntities({ ownerId: ownerId, q, kind, limit });
-      return jsonReply(hits);
-    },
-  );
-
-  server.tool(
-    'entity_neighbors',
-    "Walk the entity graph one hop from a given entity. Returns connected entities via entity_edges in both directions by default. Optional `relation` filter (e.g. 'married_to', 'works_at', 'mentioned_in'), `direction` ('in'|'out'|'both'), and `current_only` to drop edges with valid_to set.",
-    {
-      entity_id: z.string().uuid(),
-      relation: z.string().optional(),
-      direction: z.enum(['in', 'out', 'both']).optional(),
-      current_only: z.boolean().optional(),
-      limit: z.number().int().min(1).max(200).optional(),
-    },
-    async ({ entity_id, relation, direction, current_only, limit }) => {
-      const rows = await entityNeighbors({
-        ownerId: ownerId,
-        entityId: entity_id,
-        relation,
-        direction,
-        currentOnly: current_only,
-        limit,
-      });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'graph_path',
-    "Multi-hop traversal of the entity knowledge graph (relationships BETWEEN entities). Pass from_id + to_id for the shortest path(s) between two entities ('how is Sarah connected to Acme?'); pass from_id only for everything reachable within max_depth ('what's within 2 hops of Lister?'). `relations` limits which verbs to follow; `directed:true` follows subject→object only (default undirected). For a single hop use entity_neighbors.",
-    {
-      from_id: z.string().uuid(),
-      to_id: z.string().uuid().optional(),
-      max_depth: z.number().int().min(1).max(6).optional(),
-      relations: z.array(z.string()).optional(),
-      directed: z.boolean().optional(),
-      limit: z.number().int().min(1).max(200).optional(),
-    },
-    async ({ from_id, to_id, max_depth, relations, directed, limit }) => {
-      const rows = await graphPath({
-        ownerId: ownerId,
-        fromId: from_id,
-        toId: to_id,
-        maxDepth: max_depth,
-        relations,
-        directed,
-        limit,
-      });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'entity_facts',
-    'All facts attached to an entity. By default returns currently-valid facts only; set `include_retired=true` to see superseded history too. Use after entity_search to get \'"what do I know about Sarah?"\' answers.',
-    {
-      entity_id: z.string().uuid(),
-      include_retired: z.boolean().optional(),
-      limit: z.number().int().min(1).max(200).optional(),
-    },
-    async ({ entity_id, include_retired, limit }) => {
-      const rows = await entityFacts({
-        ownerId: ownerId,
-        entityId: entity_id,
-        includeRetired: include_retired,
-        limit,
-      });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'entity_mentions',
-    'Content_store nodes that mention this entity, newest first. Walks entity_edges where source_kind=entity, target_kind=node, relation=mentioned_in. Returns node id, title, type, and the per-node summary if the extractor has populated one.',
-    {
-      entity_id: z.string().uuid(),
-      limit: z.number().int().min(1).max(200).optional(),
-    },
-    async ({ entity_id, limit }) => {
-      const rows = await entityMentions({ ownerId: ownerId, entityId: entity_id, limit });
-      return jsonReply(rows);
-    },
-  );
-
-  // ─── telegram ─────────────────────────────────────────────────────────────
-
-  server.tool(
-    'telegram_pending',
-    'Unanswered Telegram DMs, oldest first. Call after each turn (or via /loop) to see what needs a reply. Returns the row id (for mark_processed), telegram_message_id (for reply threading), chat_id, sender, text, and sent_at.',
-    {
-      chat_id: z.string().optional(),
-      limit: z.number().int().min(1).max(50).optional(),
-    },
-    async ({ chat_id, limit }) => {
-      const conds = [eq(telegramMessages.processed, false)];
-      if (chat_id) {
-        // chat_id is the *Telegram* chat id; resolve to our internal pk first.
-        const [chat] = await db
-          .select({ id: telegramChats.id })
-          .from(telegramChats)
-          .where(eq(telegramChats.telegramChatId, chat_id))
-          .limit(1);
-        if (!chat) return { content: [{ type: 'text', text: '[]' }] };
-        conds.push(eq(telegramMessages.chatId, chat.id));
-      }
-      const rows = await db
-        .select({
-          id: telegramMessages.id,
-          telegram_message_id: telegramMessages.telegramMessageId,
-          chat_id: telegramChats.telegramChatId,
-          from_user_id: telegramMessages.fromUserId,
-          from_username: telegramMessages.fromUsername,
-          from_name: telegramMessages.fromName,
-          text: telegramMessages.text,
-          sent_at: telegramMessages.sentAt,
-          attachments: telegramMessages.attachments,
-        })
-        .from(telegramMessages)
-        .innerJoin(telegramChats, eq(telegramMessages.chatId, telegramChats.id))
-        .where(and(...conds))
-        .orderBy(asc(telegramMessages.sentAt))
-        .limit(limit ?? 20);
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'telegram_send',
-    'Send a Telegram message to a chat. Pass chat_id from a telegram_pending row. Optionally pass reply_to (telegram_message_id) for threading. Long text is split into 4096-char chunks.',
-    {
-      chat_id: z.string(),
-      text: z.string().min(1),
-      reply_to: z.string().optional(),
-      markdown: z.boolean().optional(),
-    },
-    async ({ chat_id, text, reply_to, markdown }) => {
-      const account = await accountForChat(chat_id);
-      if (!account) {
-        return { content: [{ type: 'text', text: 'no enabled telegram account' }], isError: true };
-      }
-      // Outbound gate: only send to chats we already know (i.e. they DM'd us
-      // and were allowlisted). Prevents Claude from spamming arbitrary chat
-      // ids on its own initiative.
-      const [chat] = await db
-        .select()
-        .from(telegramChats)
-        .where(
-          and(eq(telegramChats.accountId, account.id), eq(telegramChats.telegramChatId, chat_id)),
-        )
-        .limit(1);
-      if (!chat || chat.allowlistStatus !== 'allowed') {
-        return {
-          content: [{ type: 'text', text: `chat ${chat_id} is not allowlisted` }],
-          isError: true,
-        };
-      }
-      try {
-        const ids = await sendMessage(account, chat_id, text, {
-          replyTo: reply_to,
-          markdown,
-        });
-        return {
-          content: [
-            {
-              type: 'text',
-              text:
-                ids.length === 1
-                  ? `sent (id: ${ids[0]})`
-                  : `sent ${ids.length} parts (ids: ${ids.join(', ')})`,
-            },
-          ],
-        };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { content: [{ type: 'text', text: `send failed: ${msg}` }], isError: true };
-      }
-    },
-  );
-
-  server.tool(
-    'telegram_react',
-    'Add an emoji reaction to a Telegram message. Telegram accepts only a fixed whitelist (👍 👎 ❤ 🔥 👀 🎉 etc).',
-    {
-      chat_id: z.string(),
-      message_id: z.string(),
-      emoji: z.string(),
-    },
-    async ({ chat_id, message_id, emoji }) => {
-      const account = await accountForChat(chat_id);
-      if (!account) {
-        return { content: [{ type: 'text', text: 'no enabled telegram account' }], isError: true };
-      }
-      try {
-        await reactToMessage(account, chat_id, message_id, emoji);
-        return { content: [{ type: 'text', text: 'reacted' }] };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { content: [{ type: 'text', text: `react failed: ${msg}` }], isError: true };
-      }
-    },
-  );
-
-  server.tool(
-    'telegram_edit',
-    'Edit a previously-sent Telegram message in place. Useful for progress updates. Edits do not trigger push notifications — send a new reply when a long task completes.',
-    {
-      chat_id: z.string(),
-      message_id: z.string(),
-      text: z.string().min(1),
-      markdown: z.boolean().optional(),
-    },
-    async ({ chat_id, message_id, text, markdown }) => {
-      const account = await accountForChat(chat_id);
-      if (!account) {
-        return { content: [{ type: 'text', text: 'no enabled telegram account' }], isError: true };
-      }
-      try {
-        await editMessage(account, chat_id, message_id, text, { markdown });
-        return { content: [{ type: 'text', text: 'edited' }] };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return { content: [{ type: 'text', text: `edit failed: ${msg}` }], isError: true };
-      }
-    },
-  );
-
-  server.tool(
-    'telegram_mark_processed',
-    'Mark a telegram message as answered so it stops appearing in telegram_pending. Pass the row id from telegram_pending.',
-    { id: z.string().uuid() },
-    async ({ id }) => {
-      const rows = await db
-        .update(telegramMessages)
-        .set({ processed: true, processedAt: new Date() })
-        .where(eq(telegramMessages.id, id))
-        .returning({ id: telegramMessages.id });
-      if (rows.length === 0) {
-        return { content: [{ type: 'text', text: 'no such message' }], isError: true };
-      }
-      return { content: [{ type: 'text', text: 'marked processed' }] };
-    },
-  );
-
-  server.tool(
-    'telegram_pair',
-    'Approve a pending Telegram pairing code. The chat gets allowlisted and a confirmation DM is sent.',
-    { code: z.string().regex(/^[a-f0-9]{6}$/i) },
-    async ({ code }) => {
-      const [chat] = await db
-        .select()
-        .from(telegramChats)
-        .where(and(eq(telegramChats.pairingCode, code), eq(telegramChats.userId, ownerId)))
-        .limit(1);
-      if (!chat) {
-        return {
-          content: [{ type: 'text', text: 'no pending pairing with that code' }],
-          isError: true,
-        };
-      }
-      if (chat.allowlistStatus === 'allowed') {
-        return { content: [{ type: 'text', text: 'already paired' }] };
-      }
-      if (chat.pairingExpiresAt && chat.pairingExpiresAt.getTime() < Date.now()) {
-        return {
-          content: [{ type: 'text', text: 'code expired — ask them to DM again' }],
-          isError: true,
-        };
-      }
-      await db
-        .update(telegramChats)
-        .set({
-          allowlistStatus: 'allowed',
-          pairingCode: null,
-          pairingExpiresAt: null,
-          pairingReplies: 0,
-          updatedAt: new Date(),
-        })
-        .where(eq(telegramChats.id, chat.id));
-
-      const [account] = await db
-        .select()
-        .from(telegramAccounts)
-        .where(eq(telegramAccounts.id, chat.accountId))
-        .limit(1);
-      if (account) {
-        let name = 'your assistant';
-        if (account.channelId) {
-          const [agentRow] = await db
-            .select({ name: agents.name })
-            .from(agents)
-            .innerJoin(channels, eq(channels.agentId, agents.id))
-            .where(eq(channels.id, account.channelId))
-            .limit(1);
-          if (agentRow?.name) name = agentRow.name;
-        }
-        try {
-          await sendMessage(account, chat.telegramChatId, `Paired! Say hi to ${name}.`);
-        } catch (err) {
-          // The chat is paired in the DB; the confirmation DM is best-effort.
-          console.error('[mantle-mcp] pair confirm DM failed:', err);
-        }
-      }
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `paired chat ${chat.telegramChatId} (${chat.title ?? chat.username ?? 'unnamed'})`,
-          },
-        ],
-      };
-    },
-  );
+  // ─── owner-operator surface: approvals, panels, the Telegram inbox ────────
+  // Bridged from `mcpOnly` builtins since tier 3 of the 2026-09-02 audit; they
+  // were hand-written here until then, which made them the one part of the
+  // surface with no in-repo test and no shared implementation. `mcpOnly` keeps
+  // the exposure identical: registered here, never seeded, never grantable —
+  // an agent that could call `pending_approve` would approve its own gated
+  // call, which is the gate these rows exist to impose.
+  registerBuiltinTools(PENDING_TOOLS);
+  registerBuiltinTools(WORKER_GROUP_TOOLS);
+  registerBuiltinTools(TELEGRAM_OPERATOR_TOOLS);
 
   // ─── Notes / Tasks / Events / Journal / Email / Peers ──────────────────────
   //
@@ -1063,142 +160,188 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
   // permalinks and teaching errors on read, and `isError` actually set on a
   // failure rather than a bare "not found" the client reads as success.
   //
-  // `only` restricts each group to the slugs MCP ALREADY exposed. Bridging is a
-  // deduplication, not a widening: NOTE_TOOLS also carries note_from_file /
-  // note_from_page, PEER_TOOLS carries peer_search_chunks, and EMAIL_TOOLS
-  // carries email_send / email_page — exposing outbound email over MCP is a
-  // product decision, and emphatically not a side effect of a refactor.
-  registerBuiltinTools(NOTE_TOOLS, {
-    only: new Set(['note_list', 'note_get', 'note_create', 'note_update']),
-  });
+  // These groups were once restricted with `only` to the slugs MCP already had,
+  // so that bridging stayed a deduplication rather than a widening. The widening
+  // has since been made deliberately (see "Full parity" above), so the whole
+  // group goes out: note_from_file / note_from_page here, peer_search_chunks and
+  // email_send / email_page below.
+  registerBuiltinTools(NOTE_TOOLS);
+  registerBuiltinTools(NOTE_OPERATOR_TOOLS);
   registerBuiltinTools(TASK_TOOLS);
   registerBuiltinTools(EVENT_TOOLS);
+
+  // ─── Recall — the memory-map system (docs/recall.md) ─────────────────────
+  // The tier-1 hook for external agents: these four read-only tools plus the
+  // server instructions (MANTLE_MCP_INSTRUCTIONS) are the only surfaces an
+  // MCP client auto-loads, so their descriptions carry the "enter the map /
+  // match your task" nudge. Serving rows are compiled at page commit; every
+  // read here is one indexed row.
+  registerBuiltinTools(RECALL_TOOLS);
   registerBuiltinTools(JOURNAL_TOOLS);
-  registerBuiltinTools(PEER_TOOLS, {
-    only: new Set(['peer_list', 'peer_query', 'peer_node_get']),
-  });
-  registerBuiltinTools(EMAIL_TOOLS, { only: new Set(['email_list', 'email_get']) });
+  registerBuiltinTools(PEER_TOOLS);
+  // Outbound email included: email_send is gated by the contacts allowlist the
+  // same way it is for the responder, so the allowlist stays the boundary on
+  // every surface rather than the surface being its own second boundary.
+  registerBuiltinTools(EMAIL_TOOLS);
 
   // The one exception: there is no note_delete builtin — the in-app agent
   // cannot delete notes — so MCP's own registration is not a duplicate and
   // stays hand-written.
-  server.tool('note_delete', 'Delete a note by id.', { id: z.string() }, async ({ id }) => {
-    const ok = await deleteNote(ownerId, id);
-    return { content: [{ type: 'text', text: ok ? 'deleted' : 'not found' }] };
-  });
+  registerPageTools(ctx);
 
-  // ─── Pages (read-only) ─────────────────────────────────────────────────────
-  //
-  // Rich TipTap documents (type='page'). Read-only over MCP for now — pages are
-  // authored in the web editor; the assistant finds and reads them. page_list
-  // omits the document body; page_get returns the full ProseMirror JSON.
-
-  server.tool(
-    'page_list',
-    "List the owner's pages. Optional `query` substring-matches title/body/summary; `tag` filters to pages carrying that tag. Bodies are omitted — use page_get for the full document.",
-    {
-      query: z.string().optional(),
-      tag: z.string().optional(),
-    },
-    async ({ query, tag }) => {
-      const rows = await listPages(ownerId, { query, tag });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'page_get',
-    'Get a single page by id, including its full ProseMirror/TipTap document.',
-    { id: z.string() },
-    async ({ id }) => {
-      const row = await getPage(ownerId, id);
-      if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-      return jsonReply(row);
-    },
-  );
-
-  // ─── Pages (write) ───────────────────────────────────────────────────────────
-  // The rich-document authoring surface — create pages (blank / from a file,
-  // note(s), or journal), edit metadata + draft body, and do block-level edits
-  // (list/get/update/insert/delete/split/extract/move blocks) plus mention/share.
-  // Bridged from the in-app PAGE_TOOLS so an MCP client authors with the exact
-  // same tested handlers the `pages` agent uses. page_list/page_get are skipped:
-  // they're already hand-wired above (those return the raw ProseMirror document;
-  // the builtin read tools return plaintext + block ids — left as the read path
-  // for the in-app agent to avoid changing the existing MCP read shape).
-  const PAGE_READ_SLUGS = new Set(['page_list', 'page_get']);
-  registerBuiltinTools(PAGE_TOOLS, { skip: (def) => PAGE_READ_SLUGS.has(def.slug) });
-
-  // ─── Tables (read-only) ────────────────────────────────────────────────────
-  //
-  // Typed database grids (type='table'). Read-only over MCP — tables are authored
-  // in the web grid editor + by the Tables agent. table_list omits the grid;
-  // table_get returns columns + a row window; table_rows_list is the addressable
-  // row snapshot.
-
-  server.tool(
-    'table_list',
-    "List the owner's tables. Optional `query` substring-matches title/body/summary; `tag` filters. Grids are summarised (column + row counts) — use table_get for content.",
-    {
-      query: z.string().optional(),
-      tag: z.string().optional(),
-    },
-    async ({ query, tag }) => {
-      const rows = await listTables(ownerId, { query, tag });
-      return jsonReply(rows);
-    },
-  );
-
-  server.tool(
-    'table_get',
-    'Get a single table by id: its columns and a window of rows (formula columns resolved). `offset`/`limit` page large grids.',
-    { id: z.string(), offset: z.number().optional(), limit: z.number().optional() },
-    async ({ id, offset, limit }) => {
-      const row = await getTable(ownerId, id);
-      if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-      const doc = ensureTableDoc(row.data);
-      const listed = listRows(doc, { offset: offset ?? 0, limit: limit ?? 100 });
-      const out = {
-        id: row.id,
-        title: row.title,
-        tags: row.tags,
-        summary: row.summary,
-        columns: doc.columns.map((c) => ({ id: c.id, name: c.name, type: c.type })),
-        rows: listed.rows,
-        total_rows: listed.total,
-        aggregates: doc.aggregates ?? {},
-      };
-      return jsonReply(out);
-    },
-  );
-
-  server.tool(
-    'table_rows_list',
-    "Windowed snapshot of a table's rows — each a stable id + short per-cell text. Page via offset/limit.",
-    { table_id: z.string(), offset: z.number().optional(), limit: z.number().optional() },
-    async ({ table_id, offset, limit }) => {
-      const row = await getTable(ownerId, table_id);
-      if (!row) return { content: [{ type: 'text', text: 'not found' }] };
-      const listed = listRows(ensureTableDoc(row.data), {
-        offset: offset ?? 0,
-        limit: limit ?? 50,
-      });
-      return jsonReply(listed);
-    },
-  );
-
-  // ─── Tables (write) ───────────────────────────────────────────────────────────
-  // Build + operate typed data grids: create (blank / from a file or text),
-  // update metadata, edit rows (add/update/delete + per-cell set), edit columns
-  // (add/update/delete), set aggregates + views, query/aggregate over rows, and
-  // commit drafts. Bridged from the in-app TABLE_TOOLS so an MCP client uses the
-  // same tested handlers the Tables agent uses. table_list/table_get/
-  // table_rows_list are skipped — already hand-wired above (read-only) — to keep
-  // the existing MCP read shape unchanged.
-  const TABLE_READ_SLUGS = new Set(['table_list', 'table_get', 'table_rows_list']);
-  registerBuiltinTools(TABLE_TOOLS, { skip: (def) => TABLE_READ_SLUGS.has(def.slug) });
+  // ─── Draw (read-only) ──────────────────────────────────────────────────────
+  // Whiteboard scenes (type='draw'). Read-only over MCP — drawings are
+  // authored on the canvas; agents read the committed scene as text (frame
+  // headings, shape labels, `A -> B: label` relations). Bridged from the
+  // in-app DRAW_TOOLS: same tested handlers, plaintext read shape.
+  registerBuiltinTools(DRAW_TOOLS);
+  registerTableTools(ctx);
 
   // ── Federation: query other people's Mantles for data they've shared ─────────
+
+  // ─── Contacts ────────────────────────────────────────────────────────────────
+  // The email allowlist (nodes of type='contact'). Exposing these closes the gap
+  // where an MCP client could read the brain but not extend the assistant's reach:
+  // contact_create is what lets email_send target a new recipient (and kicks off
+  // the 90-day inbound history backfill). Bridged from the in-app CONTACT_TOOLS so
+  // both surfaces share one tested handler (incl. the enqueueBackfills side effect).
+  registerBuiltinTools(CONTACT_TOOLS);
+
+  // ─── Workers (modality delegation) ───────────────────────────────────────────
+  // extract_from_image / summarize_text / generate_image run headless: they read
+  // from the file store or take inline text and return text (or, for image gen, a
+  // file node whose id is in the output — the base64 artifact is dropped over MCP
+  // but the saved /files node is retrievable via file_read). synthesize_speech is
+  // omitted: it structurally needs a live delivery surface (Telegram chat / web
+  // reply stream) the MCP bridge can't supply, so it would only ever error here.
+  registerBuiltinTools(WORKER_DELEGATION_TOOLS, {
+    skip: (def) => def.slug === 'synthesize_speech',
+  });
+  registerResponderTools(ctx);
+
+  // ─── Export (Word / Excel) ───────────────────────────────────────────────────
+  // Renders a page/note → .docx or a table → .xlsx into /files/exports and returns
+  // the new file's id/path. Pure (no surface, no artifact) — bridges as-is.
+  registerBuiltinTools(EXPORT_TOOLS);
+
+  // ─── Spreadsheet authoring ───────────────────────────────────────────────────
+  // `sheet_build` composes a formatted .xlsx from data the client already holds
+  // and saves it under /files. Belongs on this surface for the same reason
+  // `export_node` does: an MCP client is often the one holding the numbers (a
+  // Claude Desktop session working through a costing) and wants a file back.
+  // Pure — writes one file node, no surface, no artifact.
+  registerBuiltinTools(SHEET_TOOLS);
+
+  // ─── Apps (mini-app builder) ──────────────────────────────────────────────────
+  // Author Mantle mini-apps end-to-end from an MCP client: create, write the TSX
+  // source tree (app_file_write per file or app_source_set for the whole tree at
+  // once), declare the data tools the app may broker (app_tools_set) + per-app
+  // SQLite schema (app_db_schema_set), compile server-side via esbuild (app_build
+  // returns file/line/column diagnostics to iterate on), preview, and publish.
+  // The app reaches owner data only through its declared tool allowlist — pair
+  // this with the Toolsmith tools below to mint the data-access tools an app needs.
+  registerBuiltinTools(APP_TOOLS);
+
+  // ─── CLI sandboxes ────────────────────────────────────────────────────────────
+  // Isolated Ubuntu containers the client can work in: clone a repo and explain
+  // it, evaluate a package, build and run a small service. This is the ONE place
+  // an MCP client gets command execution, and it is deliberately the contained
+  // one: `run_terminal` (the brain's own shell) stays off this surface, while
+  // `sandbox_exec` runs inside a container on an egress-only network with no
+  // route to postgres, minio or the web tier (docs/sandboxes.md).
+  //
+  // Bridged unconditionally, exactly as the in-app coder agent holds them: the
+  // handlers already answer "sandboxes are not enabled on this box" when the
+  // `sandboxes` compose profile is off, so a box without sandboxd gives the
+  // client a clear reason instead of a missing tool it cannot ask about.
+  registerBuiltinTools(SANDBOX_TOOLS);
+
+  // ─── Full parity: the rest of the in-app catalog ─────────────────────────────
+  // Everything below was agent-only until the parity rule above. Grouped by what
+  // it does, with a note only where the exposure is worth a second thought.
+
+  // Reads. node_read fetches any node by id (the typed getters cover one type
+  // each); brain_capacity is the corpus-vs-split-policy self-check.
+  registerBuiltinTools(NODE_READ_TOOLS);
+  // 2026-09-02 (audit): the search / entity / file-read / telegram groups now
+  // exist in @mantle/tools, so their MCP twins are bridged from the one tested
+  // handler each. Deliberately still hand-written (read-shape divergence, or a schema MCP
+  // clients already depend on): tree_list, file_get/file_read/file_rename (id
+  // vs file_id), folder_describe/folder_rename (accept a path as well as an
+  // id). `search_nodes` is skipped here because MCP registers it under its
+  // shipped name `search` in register/search.ts — a REGISTRATION alias since
+  // v0.232.171, not a second implementation: it runs this same def through
+  // callBuiltin.
+  registerBuiltinTools(SEARCH_TOOLS, {
+    skip: (def) => def.slug === 'search_nodes' || def.slug === 'tree_list',
+  });
+  registerBuiltinTools(ENTITY_TOOLS);
+  registerBuiltinTools(FILE_TOOLS, { only: new Set(['folder_list', 'file_list']) });
+  registerBuiltinTools(TELEGRAM_TOOLS);
+  registerBuiltinTools(TOOL_RESULT_TOOLS);
+  registerBuiltinTools(IMAGE_TOOLS);
+  registerBuiltinTools(APP_DATA_TOOLS);
+
+  // Pure computation — no I/O, no spend.
+  registerBuiltinTools(CALCULATE_TOOLS);
+  registerBuiltinTools(FORMULA_TOOLS);
+
+  // Files: create-from-text and resolve-a-folder-by-path, the two the
+  // hand-written file surface never had.
+  registerBuiltinTools(FILE_CREATE_TOOLS);
+
+  // Content lifecycle. content_supersede down-weights, never deletes;
+  // process_extraction spends model budget, which is the point of asking for it.
+  registerBuiltinTools(CONTENT_CURATION_TOOLS);
+  registerBuiltinTools(INGEST_TOOLS);
+
+  // Replay reads the owner's OWN past conversations. Private, but the caller is
+  // the authenticated owner — the same person those conversations belong to.
+  registerBuiltinTools(REPLAY_TOOLS);
+
+  // Owner-side Team Chat: read members, threads and the access log, and file a
+  // member-to-member notification. This is the OWNER's view over the team
+  // surface, never the team responder's own tools.
+  registerBuiltinTools(TEAM_TOOLS);
+
+  // Outbound and spend. web_search / video_ingest / web_map / web_crawl all
+  // reach the open internet and bill the owner's keys, so they are real actions
+  // rather than reads — exposed because a client asked to research something
+  // should be able to, and refusing quietly is worse than spending on request.
+  registerBuiltinTools(RESEARCH_TOOLS);
+  registerBuiltinTools(VIDEO_TOOLS);
+  registerBuiltinTools(CRAWL_TOOLS);
+  registerBuiltinTools(LOCATION_TOOLS);
+
+  // Owner state: persona calibration, timezone, stored credentials.
+  registerBuiltinTools(PERSONA_TOOLS);
+  registerBuiltinTools(PROFILE_TOOLS);
+  registerBuiltinTools(SECRET_TOOLS);
+
+  // node_share PUBLISHES outward (mints a public link). It is confirm-gated in
+  // the in-app loop and keeps that gate here — the bridge runs the same def.
+  registerBuiltinTools(SHARE_TOOLS);
+
+  // Delegation + durable runs. invoke_agent hands work to an in-brain
+  // specialist; the run tools plan and drive background queues (creation is
+  // additionally gated by MANTLE_RUNS on the box, docs/runs.md).
+  registerBuiltinTools(DELEGATION_TOOLS);
+  registerBuiltinTools(RUN_TOOLS);
+
+  // Model curation (OpenRouter reads + the curated pools) and the retrieval
+  // eval. recall_eval embeds a query set, so it costs — advisory tools, none of
+  // which change what any agent actually runs.
+  registerBuiltinTools(CURATION_TOOLS);
+  registerBuiltinTools(EVAL_TOOLS);
+
+  // ─── The brain's own shell ────────────────────────────────────────────────────
+  // The one transport-dependent tool on this surface. See the file header: over
+  // stdio it grants nothing that spawning the process did not already grant;
+  // over HTTP it turns a stolen bearer into a root shell on the box, so it needs
+  // MANTLE_MCP_TERMINAL=1. `sandbox_exec` above is the contained alternative and
+  // is always available.
+  if (exposeTerminal) registerBuiltinTools(TERMINAL_TOOLS);
+
   /* ───────────────────────── Toolsmith over MCP ──────────────────────────
    *
    * The api_tool_* / tool_group_* / agent_* / web_fetch / api_key_refs set
@@ -1222,284 +365,6 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
    * 0/false/off on a shared or headless deployment to expose Toolsmith
    * read-only while keeping tool authoring + granting to the in-app agent.
    */
-
-  /** Convert one JSON-Schema property def into a zod type. Honors `items` for
-   *  arrays, `integer` (vs number), nested object `properties`, `[T,'null']`
-   *  nullable unions, and the size bounds (`minLength`/`maxLength`,
-   *  `minimum`/`maximum`, `minItems`/`maxItems`) — so validation isn't silently
-   *  dropped if a def grows past the original string/number/boolean/array
-   *  vocabulary.
-   *
-   *  The bounds matter as much as the types: `validate-args` enforces them for
-   *  the in-app agent, so dropping them here would leave the MCP surface the
-   *  only one that accepts a 10 000-character title. */
-  function zodForDef(def: Record<string, unknown>): z.ZodTypeAny {
-    const type = def.type;
-    if (Array.isArray(def.enum) && def.enum.every((v) => typeof v === 'string')) {
-      return z.enum(def.enum as [string, ...string[]]);
-    }
-    if (Array.isArray(type)) {
-      const base = type.find((x) => x !== 'null');
-      const inner = base ? zodForDef({ ...def, type: base }) : z.unknown();
-      return type.includes('null') ? inner.nullable() : inner;
-    }
-    const bound = (key: string): number | undefined =>
-      typeof def[key] === 'number' ? (def[key] as number) : undefined;
-    /** Apply a `[min, max]` pair, skipping the ends the schema left open. */
-    const bounded = <T extends { min(n: number): T; max(n: number): T }>(
-      t: T,
-      minKey: string,
-      maxKey: string,
-    ): T => {
-      const min = bound(minKey);
-      const max = bound(maxKey);
-      let out = t;
-      if (min !== undefined) out = out.min(min);
-      if (max !== undefined) out = out.max(max);
-      return out;
-    };
-    switch (type) {
-      case 'string':
-        return bounded(z.string(), 'minLength', 'maxLength');
-      case 'number':
-        return bounded(z.number(), 'minimum', 'maximum');
-      case 'integer':
-        return bounded(z.number().int(), 'minimum', 'maximum');
-      case 'boolean':
-        return z.boolean();
-      case 'array': {
-        const items = (def.items ?? {}) as Record<string, unknown>;
-        const inner = 'type' in items || 'enum' in items ? zodForDef(items) : z.unknown();
-        return bounded(z.array(inner), 'minItems', 'maxItems');
-      }
-      case 'object': {
-        const props = (def.properties ?? {}) as Record<string, Record<string, unknown>>;
-        // zod 4 requires the key type explicitly (`z.record(z.string(), z.unknown())` was
-        // zod 3). JSON object keys are always strings, so this is the same shape.
-        if (Object.keys(props).length === 0) return z.record(z.string(), z.unknown());
-        return z.object(buildZodShape(def));
-      }
-      default:
-        return z.unknown();
-    }
-  }
-
-  /** Build a zod raw shape from a JSON-Schema object node (properties + required). */
-  function buildZodShape(schema: Record<string, unknown>): Record<string, z.ZodTypeAny> {
-    const props = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
-    const required = new Set((schema.required as string[]) ?? []);
-    const shape: Record<string, z.ZodTypeAny> = {};
-    for (const [key, def] of Object.entries(props)) {
-      let t = zodForDef(def);
-      if (typeof def.description === 'string') t = t.describe(def.description);
-      if (!required.has(key)) t = t.optional();
-      shape[key] = t;
-    }
-    return shape;
-  }
-
-  function zodShapeFromJsonSchema(schema: Record<string, unknown>): Record<string, z.ZodTypeAny> {
-    return buildZodShape(schema);
-  }
-
-  /** Bridge a set of in-app `BuiltinToolDef`s onto the MCP server, reusing the
-   *  exact same handlers the in-app agent runs so the two surfaces never drift.
-   *  Handlers get the minimal context `{ ownerId }` — every other `ctx` field
-   *  (`step`, `surface`, `agent`) is optional and the handler degrades on its
-   *  own (e.g. a worker tool that needs a Telegram chat refuses cleanly here).
-   *  Binary `artifacts` are dropped (MCP results are text/JSON); tools that also
-   *  persist their output to a node — e.g. `generate_image` → /files — still
-   *  surface the node id in `output`.
-   *
-   *  `opts.skip` gates a def out; `opts.only` restricts to an explicit slug set,
-   *  which is how a group is bridged for DEDUPLICATION without also widening the
-   *  MCP surface with its other members. */
-  function registerBuiltinTools(
-    defs: readonly BuiltinToolDef[],
-    opts?: { skip?: (def: BuiltinToolDef) => boolean; only?: ReadonlySet<string> },
-  ) {
-    for (const def of defs) {
-      if (opts?.only && !opts.only.has(def.slug)) continue;
-      if (opts?.skip?.(def)) continue;
-      server.tool(
-        def.slug,
-        def.description,
-        zodShapeFromJsonSchema(def.inputSchema),
-        async (args: Record<string, unknown>) => {
-          const input = args ?? {};
-          // Declared referential preconditions run first, exactly as
-          // dispatch.ts does for the in-app agent. Without this the MCP surface
-          // is the only one where an id pointing at a missing — or wrong-type —
-          // node reaches the handler and comes back as a bare "not found",
-          // hiding the actual mistake.
-          if (def.preconditions?.length) {
-            const failure = await checkToolPreconditions(def.preconditions, input, ownerId);
-            if (failure && !failure.ok) {
-              return {
-                content: [{ type: 'text' as const, text: `Error: ${failure.error}` }],
-                isError: true,
-              };
-            }
-          }
-          const result = await def.handler(input, { ownerId: ownerId });
-          if (!result.ok) {
-            return {
-              content: [{ type: 'text' as const, text: `Error: ${result.error}` }],
-              isError: true,
-            };
-          }
-          return jsonReply(result.output);
-        },
-      );
-    }
-  }
-
-  // ─── Contacts ────────────────────────────────────────────────────────────────
-  // The email allowlist (nodes of type='contact'). Exposing these closes the gap
-  // where an MCP client could read the brain but not extend the assistant's reach:
-  // contact_create is what lets email_send target a new recipient (and kicks off
-  // the 90-day inbound history backfill). Bridged from the in-app CONTACT_TOOLS so
-  // both surfaces share one tested handler (incl. the enqueueBackfills side effect).
-  registerBuiltinTools(CONTACT_TOOLS);
-
-  // ─── Workers (modality delegation) ───────────────────────────────────────────
-  // extract_from_image / summarize_text / generate_image run headless: they read
-  // from the file store or take inline text and return text (or, for image gen, a
-  // file node whose id is in the output — the base64 artifact is dropped over MCP
-  // but the saved /files node is retrievable via file_read). synthesize_speech is
-  // omitted: it structurally needs a live delivery surface (Telegram chat / web
-  // reply stream) the MCP bridge can't supply, so it would only ever error here.
-  registerBuiltinTools(WORKER_DELEGATION_TOOLS, {
-    skip: (def) => def.slug === 'synthesize_speech',
-  });
-
-  // ─── Responder simulation ─────────────────────────────────────────────────────
-  // Talk to a responder agent over MCP with the REAL pipeline (persona +
-  // retrieval + real tool execution) but NOTHING persisted to its conversation
-  // store. Input caps mirror the web Studio sandbox (40 turns, 8000 chars each).
-  const SIM_MAX_HISTORY = 40;
-  const SIM_MAX_CONTENT = 8000;
-  const SIM_ARGS_CLIP = 500;
-  server.tool(
-    'respond_as_agent',
-    "Talk to one of the user's responder agents as if you were the user, and get its reply. " +
-      "Runs ONE real turn of that agent's pipeline — composed persona (identity + skills), real " +
-      'memory retrieval, and its real granted tools, which EXECUTE: side effects happen and ' +
-      'confirm-gated calls land on /pending (returned as `pending_ids`). Writes NOTHING to the ' +
-      "agent's conversation history, so it's safe to probe repeatedly. Multi-turn is caller-held " +
-      '— keep the transcript yourself and resend it in `history` every call. Omit `agent_slug` ' +
-      'for the default responder; set `include_tool_calls` false to drop the per-call trail.',
-    {
-      message: z.string().min(1),
-      agent_slug: z.string().optional(),
-      history: z
-        .array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() }))
-        .optional(),
-      exclude_tools: z.array(z.string()).optional(),
-      max_iterations: z.number().int().min(1).max(30).optional(),
-      include_tool_calls: z.boolean().optional(),
-    },
-    async ({ message, agent_slug, history, exclude_tools, max_iterations, include_tool_calls }) => {
-      // Cap the caller-held transcript before it reaches the model — an
-      // unbounded resend would blow the context budget. Reject with a corrective
-      // (say the limit + the fix) rather than silently truncating history.
-      if (message.length > SIM_MAX_CONTENT) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                `respond_as_agent: message is ${message.length} chars (max ${SIM_MAX_CONTENT}) — ` +
-                'shorten it, or put the bulk in a file/page and reference it.',
-            },
-          ],
-          isError: true,
-        };
-      }
-      if (history && history.length > SIM_MAX_HISTORY) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                `respond_as_agent: history has ${history.length} turns (max ${SIM_MAX_HISTORY}) — ` +
-                'drop the oldest turns and resend, or start a fresh transcript.',
-            },
-          ],
-          isError: true,
-        };
-      }
-      const tooLong = (history ?? []).findIndex((t) => t.content.length > SIM_MAX_CONTENT);
-      if (tooLong >= 0) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                `respond_as_agent: history entry ${tooLong} is ${history![tooLong]!.content.length} ` +
-                `chars (max ${SIM_MAX_CONTENT}) — shorten or summarise that turn and resend.`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      try {
-        const res = await runSimulatedResponderTurn(ownerId, {
-          message,
-          ...(agent_slug ? { agentSlug: agent_slug } : {}),
-          ...(history ? { history } : {}),
-          ...(exclude_tools ? { excludeToolSlugs: exclude_tools } : {}),
-          ...(typeof max_iterations === 'number' ? { maxIterations: max_iterations } : {}),
-        });
-        const withCalls = include_tool_calls !== false;
-        return jsonReply({
-          reply: res.reply,
-          agent: res.agent,
-          ...(withCalls
-            ? {
-                tool_calls: res.toolCalls.map((tc) => ({
-                  slug: tc.slug,
-                  status: tc.status,
-                  duration_ms: tc.durationMs,
-                  // Clip args so a large payload doesn't blow the reply budget.
-                  args:
-                    tc.argsJson.length > SIM_ARGS_CLIP
-                      ? `${tc.argsJson.slice(0, SIM_ARGS_CLIP)}…`
-                      : tc.argsJson,
-                  ...(tc.error ? { error: tc.error } : {}),
-                })),
-              }
-            : {}),
-          tool_stats: res.toolStats,
-          pending_ids: res.pendingIds,
-          trace_id: res.traceId,
-          empty_reply_substituted: res.emptyReplySubstituted,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return {
-          content: [{ type: 'text' as const, text: `respond_as_agent failed: ${msg}` }],
-          isError: true,
-        };
-      }
-    },
-  );
-
-  // ─── Export (Word / Excel) ───────────────────────────────────────────────────
-  // Renders a page/note → .docx or a table → .xlsx into /files/exports and returns
-  // the new file's id/path. Pure (no surface, no artifact) — bridges as-is.
-  registerBuiltinTools(EXPORT_TOOLS);
-
-  // ─── Apps (mini-app builder) ──────────────────────────────────────────────────
-  // Author Mantle mini-apps end-to-end from an MCP client: create, write the TSX
-  // source tree (app_file_write per file or app_source_set for the whole tree at
-  // once), declare the data tools the app may broker (app_tools_set) + per-app
-  // SQLite schema (app_db_schema_set), compile server-side via esbuild (app_build
-  // returns file/line/column diagnostics to iterate on), preview, and publish.
-  // The app reaches owner data only through its declared tool allowlist — pair
-  // this with the Toolsmith tools below to mint the data-access tools an app needs.
-  registerBuiltinTools(APP_TOOLS);
-
   // ─── Toolsmith ───────────────────────────────────────────────────────────────
   // Writes gated behind MANTLE_MCP_TOOLSMITH_WRITE (see TOOLSMITH_WRITE_SLUGS).
   registerBuiltinTools(TOOLSMITH_TOOLS, {
@@ -1507,11 +372,28 @@ export function registerMantleTools(server: McpServer, ownerId: string): void {
   });
 }
 
+/** What every connecting MCP client auto-loads alongside the tool list — the
+ *  ONLY automatic surface the protocol gives a server, so it carries Recall's
+ *  tier-1 hook (docs/recall.md §"Automatic, honestly bounded"). Static by
+ *  design: the live catalog is one cheap `recall_index` call away, and a
+ *  static string can never go stale against it. */
+export const MANTLE_MCP_INSTRUCTIONS = [
+  'This brain carries Recall: owner-authored memory maps and prompts for agents.',
+  'Before starting a distinct task, call recall_match with one line describing it and apply a strong match.',
+  'When working in a domain the owner has mapped, recall_index lists the maps — recall_open the relevant one and follow its options instead of searching blind.',
+  "Pass intent= on recall_* calls (one line on why you came) so the owner's recall log can show it.",
+].join(' ');
+
 /** Create a fresh `McpServer` with the full Mantle tool surface, scoped to
- *  `ownerId`. Used by the stdio entry; the HTTP route registers onto the
- *  adapter-provided server via `registerMantleTools`. */
+ *  `ownerId`. This is the STDIO entry's builder — no port, no token, spawned by
+ *  a client on a machine the owner controls — so it registers the stdio
+ *  posture. The HTTP route registers onto the adapter-provided server via
+ *  `registerMantleTools` with `transport: 'http'`. */
 export function buildMantleMcpServer(ownerId: string): McpServer {
-  const server = new McpServer({ name: 'mantle', version: '0.0.1' });
-  registerMantleTools(server, ownerId);
+  const server = new McpServer(
+    { name: 'mantle', version: '0.0.1' },
+    { instructions: MANTLE_MCP_INSTRUCTIONS },
+  );
+  registerMantleTools(server, ownerId, { transport: 'stdio' });
   return server;
 }

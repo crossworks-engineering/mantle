@@ -19,6 +19,24 @@ import {
   telegramChats,
   telegramMessages,
 } from '@mantle/db';
+import type {
+  BrainCounts,
+  GraphIntegrity,
+  VectorCounts,
+  EmailStats,
+  HeartbeatStats,
+  TelegramStats,
+  IngestDay,
+} from '@mantle/client-types';
+export type {
+  BrainCounts,
+  GraphIntegrity,
+  VectorCounts,
+  EmailStats,
+  HeartbeatStats,
+  TelegramStats,
+  IngestDay,
+};
 
 /**
  * Brain + operations metrics for the dashboard at `/`. All owner-scoped,
@@ -41,17 +59,6 @@ function sum(rows: { count: number }[]): number {
 }
 
 // ─── Brain counts (memory graph shape) ───────────────────────────────────────
-
-export type BrainCounts = {
-  nodesTotal: number;
-  nodesByType: Bucket[];
-  factsTotal: number;
-  factsByKind: Bucket[];
-  entitiesTotal: number;
-  entitiesByKind: Bucket[];
-  edgesTotal: number;
-  edgesByRelation: Bucket[];
-};
 
 export async function brainCounts(userId: string): Promise<BrainCounts> {
   const [nodesByType, factsByKind, entitiesByKind, edgesByRelation] = await Promise.all([
@@ -95,20 +102,6 @@ export async function brainCounts(userId: string): Promise<BrainCounts> {
 
 // ─── Graph integrity (duplicate-edge guard) ──────────────────────────────────
 
-/** A health check, not a fixer. Counts active edges that share the same
- *  (source, target, relation) — i.e. duplicates. The extractor's
- *  delete-then-rebuild discipline (see architecture §9k) means this should
- *  stay 0; a non-zero value flags a regression in edge writing. The remedy is
- *  the one-shot `pnpm dedupe:edges --apply`, NOT a recurring auto-clean (which
- *  would mask the regression). */
-export type GraphIntegrity = {
-  /** Distinct (source, target, relation) groups with more than one row. */
-  duplicateEdgeGroups: number;
-  /** Total redundant rows across those groups (Σ count-1) — how many
-   *  `dedupe:edges --apply` would remove. */
-  redundantEdgeRows: number;
-};
-
 export { corpusCapacity, type BrainCapacity, type CapacityZone } from '@mantle/content';
 
 export async function graphIntegrity(userId: string): Promise<GraphIntegrity> {
@@ -136,19 +129,6 @@ export async function graphIntegrity(userId: string): Promise<GraphIntegrity> {
 }
 
 // ─── Vector / index coverage ─────────────────────────────────────────────────
-
-export type VectorCounts = {
-  nodesIndexed: number;
-  nodesTotal: number;
-  factsIndexed: number;
-  factsTotal: number;
-  entitiesIndexed: number;
-  entitiesTotal: number;
-  /** The headline: total embedded vectors across nodes + facts + entities. */
-  vectorsTotal: number;
-  /** Global content-addressed embedding cache (not owner-scoped). */
-  embeddingCacheRows: number;
-};
 
 export async function vectorCounts(userId: string): Promise<VectorCounts> {
   const indexed = sql<number>`count(*) filter (where embedding is not null)::int`;
@@ -189,12 +169,6 @@ export async function vectorCounts(userId: string): Promise<VectorCounts> {
 
 // ─── Ingest time series (zero-filled, mirrors metrics.spendByDay) ────────────
 
-export type IngestDay = {
-  day: string; // YYYY-MM-DD
-  total: number;
-  byType: Record<string, number>;
-};
-
 export async function nodesCreatedByDay(userId: string, daysBack: number): Promise<IngestDay[]> {
   const since = new Date(Date.now() - daysBack * 86_400_000);
   const rows = await db
@@ -228,22 +202,6 @@ export async function nodesCreatedByDay(userId: string, daysBack: number): Promi
 }
 
 // ─── Email ops ───────────────────────────────────────────────────────────────
-
-export type EmailStats = {
-  total: number;
-  unread: number;
-  withAttachments: number;
-  byAccount: { accountId: string; address: string; total: number; unread: number }[];
-  latestSync: {
-    accountId: string;
-    address: string;
-    status: string;
-    finishedAt: string | null;
-    ingested: number;
-    scanned: number;
-    error: string | null;
-  }[];
-};
 
 type SyncRow = {
   account_id: string;
@@ -312,12 +270,6 @@ export async function emailStats(userId: string): Promise<EmailStats> {
 
 // ─── Telegram ops ────────────────────────────────────────────────────────────
 
-export type TelegramStats = {
-  messagesTotal: number;
-  unprocessed: number;
-  chatsByStatus: Bucket[];
-};
-
 export async function telegramStats(userId: string): Promise<TelegramStats> {
   const [msgTotals, chatsByStatus] = await Promise.all([
     db
@@ -343,11 +295,6 @@ export async function telegramStats(userId: string): Promise<TelegramStats> {
 }
 
 // ─── Heartbeats ──────────────────────────────────────────────────────────────
-
-export type HeartbeatStats = {
-  byStatus: Bucket[];
-  recentFiresByDisposition: Bucket[];
-};
 
 export async function heartbeatStats(userId: string, daysBack = 7): Promise<HeartbeatStats> {
   const since = new Date(Date.now() - daysBack * 86_400_000);

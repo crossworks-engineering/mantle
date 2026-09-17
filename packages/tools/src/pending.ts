@@ -14,9 +14,13 @@ import {
   RUN_BUDGET_TOOL_SLUG,
   type HumanFormAnswer,
 } from '@mantle/runs';
-import { dispatchTool } from './dispatch';
+// Via the bridge, not './dispatch' directly: builtins-pending.ts imports this
+// module, and dispatch.ts imports the registry, which imports every builtin —
+// closing the cycle back onto builtins-pending.ts. See dispatch-bridge.ts.
+import { dispatchViaBridge as dispatchTool } from './dispatch-bridge';
 import { notifyPendingChanged } from './pending-notify';
 import { startTrace, step } from '@mantle/tracing';
+import { errorMessage } from '@mantle/std';
 
 export type PendingSummary = {
   id: string;
@@ -173,7 +177,7 @@ async function settleAskHuman(
       ...(answers?.length ? { answers } : {}),
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     return revertToPending(
       row.id,
       `the decision did not apply (${msg}) — the question is pending again; please decide once more`,
@@ -238,7 +242,7 @@ async function settleBudget(
     // Same recovery as settleAskHuman: revert so the operator can retry —
     // a stranded 'approved' on a run_budget row would leave the run paused
     // forever with nothing left to approve.
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     return revertToPending(
       row.id,
       `the decision did not apply (${msg}) — the budget question is pending again; please decide once more`,

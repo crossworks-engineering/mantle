@@ -1,8 +1,8 @@
-# Models — live provider model-catalog explorer
+# Models: live provider model-catalog explorer
 
 > **Status: BUILT.** A read-only Review-group page (`/models`) that, for a chosen
 > provider, hits that provider's public "list models" API and shows pricing,
-> context window, type, and modality per model — plus the **verbatim raw JSON**
+> context window, type, and modality per model, plus the **verbatim raw JSON**
 > the API returned. "As much information as the API returns."
 
 Pick a provider from the dropdown; the page fetches its catalog server-side
@@ -21,32 +21,32 @@ supported provider so you can compare pricing/context/capabilities in one place.
 
 | Concern | Where |
 |---|---|
-| Per-provider fetch + parse + cache | [`apps/web/lib/model-explorer.ts`](../apps/web/lib/model-explorer.ts) |
-| API route (`GET /api/models?provider=&refresh=1`) | [`apps/web/app/api/models/route.ts`](../apps/web/app/api/models/route.ts) |
-| Server page (`?provider=` → SSR fetch) | [`apps/web/app/(app)/models/page.tsx`](../apps/web/app/(app)/models/page.tsx) |
-| Master-detail UI + raw-JSON pane | [`apps/web/app/(app)/models/models-client.tsx`](../apps/web/app/(app)/models/models-client.tsx) |
-| Nav entry (Review group) | [`apps/web/components/layout/sidebar-nav.tsx`](../apps/web/components/layout/sidebar-nav.tsx) |
+| Per-provider fetch + parse + cache | [`server/web/lib/model-explorer.ts`](../server/web/lib/model-explorer.ts) |
+| API route (`GET /api/models?provider=&refresh=1`) | [`server/web/app/api/models/route.ts`](../server/web/app/api/models/route.ts) |
+| Server page (`?provider=` → SSR fetch) | [`jackdaw/app/(app)/models/page.tsx`](../jackdaw/app/(app)/models/page.tsx) |
+| Master-detail UI + raw-JSON pane | [`jackdaw/app/(app)/models/models-client.tsx`](../jackdaw/app/(app)/models/models-client.tsx) |
+| Nav entry (Review group) | [`jackdaw/components/layout/sidebar-nav.tsx`](../jackdaw/components/layout/sidebar-nav.tsx) |
 | Provider catalog (ids = `api_keys.service`) | [`packages/voice/src/providers.ts`](../packages/voice/src/providers.ts) |
 
 ## Per-provider coverage
 
 Provider ids are the canonical `@mantle/voice` `SUPPORTED_PROVIDERS` ids, which
-double as the `api_keys.service` strings — so the key lookup is a 1:1 match.
+double as the `api_keys.service` strings, so the key lookup is a 1:1 match.
 Each provider exposes a different amount through its list API; the normalised
 columns are best-effort and the raw pane always shows everything.
 
 | Provider | Endpoint | Key? | Rich fields returned |
 |---|---|---|---|
-| OpenRouter | `/api/v1/models` | none | id, name, description, context, prompt/completion + extra pricing, modality, created |
+| OpenRouter | `/api/v1/models?output_modalities=all` | none | id, name, description, context, prompt/completion + extra pricing, modality, created; `kind` comes from `output_modalities` |
 | Google (Gemini) | `/v1beta/models` | key | displayName, description, input/output token limits, methods → type |
 | Mistral | `/v1/models` | key | id, description, max_context_length, vision capability |
 | Cohere | `/v1/models` | key | name, context_length, endpoints → type |
 | xAI | `/v1/language-models` | key | id, modalities, per-token prices (surfaced verbatim) |
 | Anthropic | `/v1/models` | key | id, display_name, created_at |
-| OpenAI | `/v1/models` | key | id, created (sparse — no pricing/context via API) |
+| OpenAI | `/v1/models` | key | id, created (sparse, no pricing/context via API) |
 | DeepSeek | `/models` | key | id (sparse) |
 | Hugging Face | router `/v1/models` | key | id (sparse) |
-| Deepgram / ElevenLabs / AssemblyAI | — | — | voice/transcription only → reported "no catalog" |
+| Deepgram / ElevenLabs / AssemblyAI |, |, | voice/transcription only → reported "no catalog" |
 
 ## Notes
 
@@ -57,7 +57,15 @@ columns are best-effort and the raw pane always shows everything.
   (input/output); other priced dimensions (image, web_search, cache) surface
   verbatim under "Other pricing". xAI's integer prices are shown as-is to avoid
   a wrong unit conversion.
+- **The type filter is catalog data, not a name guess.** For OpenRouter, `kind`
+  is read from `architecture.output_modalities` (`speech` → tts,
+  `transcription` → stt, `embeddings`, `rerank`, `video`, `image`, else chat).
+  The slug-substring heuristic remains only for the providers whose list API
+  returns bare ids (OpenAI, DeepSeek, Hugging Face). `output_modalities=all`
+  is what makes the non-chat buckets appear at all — the bare call returns the
+  text-out slice, and it also made the separate `/v1/embeddings/models` fetch
+  (and its hardcoded kind override) unnecessary: `all` is a superset.
 - **Security:** the route is owner-scoped (`requireOwner`); stored API keys are
   resolved server-side and never reach the client.
 - Adding a provider with a list API is one entry in `FETCHERS` + a pure parser
-  (unit-tested in [`apps/web/lib/model-explorer.test.ts`](../apps/web/lib/model-explorer.test.ts)).
+  (unit-tested in [`server/web/lib/model-explorer.test.ts`](../server/web/lib/model-explorer.test.ts)).

@@ -9,6 +9,7 @@
 
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { db, toolGroups, agents, type ToolGroup, type ToolGroupIntegration } from '@mantle/db';
+import { deleteMcpConnector, deleteOpenapiConnector } from '@mantle/tools';
 import type { ToolGroupDTO } from '@mantle/client-types';
 
 /** The API/wire shape (see @mantle/client-types). Aliased so `toSummary`'s output
@@ -129,6 +130,17 @@ export async function updateToolGroup(
 export async function deleteToolGroup(ownerId: string, id: string): Promise<boolean> {
   const existing = await getToolGroup(ownerId, id);
   if (!existing) return false;
+  // An MCP CONNECTOR group owns more than the row: mirrored `mcp` tool rows
+  // and (for OAuth) vault-sealed tokens. Deleting it here the generic way
+  // would orphan both — delegate to the connector-aware delete instead.
+  if (existing.integration?.mcp) {
+    return deleteMcpConnector(ownerId, existing.slug);
+  }
+  // Same reasoning for an OPENAPI connector group: its mirrored http rows
+  // must go with it, so delegate to the connector-aware delete.
+  if (existing.integration?.openapi) {
+    return deleteOpenapiConnector(ownerId, existing.slug);
+  }
   await db.transaction(async (tx) => {
     await tx.delete(toolGroups).where(and(eq(toolGroups.id, id), eq(toolGroups.ownerId, ownerId)));
     // Remove the slug from any agent that granted it.

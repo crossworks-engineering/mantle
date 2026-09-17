@@ -19,7 +19,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getDbosClient } from '@/lib/dbos-client';
-import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
+import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
+import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/client-types/assistant-limits';
 import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller, teamCallerName, mintTeamTurnId } from '@/lib/team-chat-gate';
 import { forumDailySpend, FORUM_DAILY_CAP } from '@/lib/forum-gate';
@@ -29,7 +30,7 @@ import {
   type TeamTurnInput,
   type TeamTurnRunResult,
   type RunTeamTurnOptions,
-} from '@mantle/assistant-runtime';
+} from '@mantle/runtime/assistant';
 import { recordTeamAccess } from '@mantle/content';
 import {
   ensureDatedUploadFolder,
@@ -42,8 +43,21 @@ import {
 import { db, nodes, type ConversationAttachment } from '@mantle/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { recordIngest } from '@mantle/tracing';
+import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
-const Body = z.object({ text: z.string().min(1).max(20_000) });
+// Same shared ceiling as the assistant turn route — a plain-language message,
+// because the raw zod default is what team members would see beside the box.
+const tooLong = (length: number) =>
+  `message too long: ${length.toLocaleString('en-US')} characters, the limit per turn is ` +
+  `${ASSISTANT_TURN_MAX_CHARS.toLocaleString('en-US')}`;
+const Body = z.object({
+  text: z
+    .string()
+    .min(1)
+    .max(ASSISTANT_TURN_MAX_CHARS, { error: (iss) => tooLong(String(iss.input).length) }),
+});
 
 const TEAM_UPLOADS_SLUG = 'team-uploads';
 
@@ -54,7 +68,7 @@ const TEAM_UPLOADS_SLUG = 'team-uploads';
 // and (b) leaves the forum as the SINGLE spend path, so the shared daily cap
 // can't be exceeded by splitting turns across two surfaces. Set
 // TEAM_CHAT_POST_ENABLED=1 to reopen (e.g. to reactivate the MS Teams seam).
-const TEAM_CHAT_POST_ENABLED = process.env.TEAM_CHAT_POST_ENABLED === '1';
+const TEAM_CHAT_POST_ENABLED = env('TEAM_CHAT_POST_ENABLED') === '1';
 
 export async function POST(req: Request): Promise<NextResponse> {
   const caller = await resolveTeamChatCaller(req);
@@ -103,10 +117,13 @@ export async function POST(req: Request): Promise<NextResponse> {
     if (contentType.includes('multipart/form-data')) {
       const form = await req.formData().catch(() => null);
       if (!form) return NextResponse.json({ error: 'invalid multipart body' }, { status: 400 });
-      // Clamp to the same bound as the JSON path — the multipart branch would
-      // otherwise accept an unbounded `text` field, defeating the per-turn cost
-      // assumption behind the rate + daily caps.
-      userText = ((form.get('text') as string | null) ?? '').trim().slice(0, 20_000);
+      userText = ((form.get('text') as string | null) ?? '').trim();
+      // Reject, don't clamp: the silent `.slice(0, 20_000)` this replaces cut a
+      // long message off mid-sentence with no error anywhere — the agent then
+      // answered a truncated question as if it were the whole thing.
+      if (userText.length > ASSISTANT_TURN_MAX_CHARS) {
+        return NextResponse.json({ error: tooLong(userText.length) }, { status: 400 });
+      }
       const file = form.get('file') ?? form.get('image');
       if (file instanceof Blob && file.size > 0) {
         if (file.size > MAX_UPLOAD_BYTES) {
@@ -126,7 +143,7 @@ export async function POST(req: Request): Promise<NextResponse> {
             {
               error:
                 `unsupported file type '${file.type || ext || 'unknown'}'. ` +
-                'Supported: images, and documents (pdf, docx, xlsx, csv, txt, md, json, yaml).',
+                'Supported: images, and documents (pdf, docx, xlsx, csv, txt, md, json, yaml, dwf, dwg, dxf).',
             },
             { status: 415 },
           );
@@ -188,10 +205,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     } else {
       const parsed = Body.safeParse(await req.json().catch(() => ({})));
       if (!parsed.success) {
-        return NextResponse.json(
-          { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-          { status: 400 },
-        );
+        return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
       }
       userText = parsed.data.text;
     }
@@ -244,7 +258,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       reply,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     console.error('[team/turn]', msg);
     // Uniform message — internals (agent config, provider errors) stay
     // owner-side; the member sees a clean failure, the admin sees traces.

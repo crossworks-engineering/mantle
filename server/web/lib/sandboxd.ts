@@ -1,3 +1,4 @@
+import { env } from '@mantle/config';
 /**
  * Server-side sandboxd client for the Sandboxes UI surface — the web tier's
  * sibling of the tool layer's `sandboxd()` helper (packages/tools/src/
@@ -23,12 +24,12 @@ export type SandboxdList = {
 /** Is the feature wired on this box? (sandboxd runs behind the `sandboxes`
  *  compose profile; both env vars arrive with it.) */
 export function sandboxdEnabled(): boolean {
-  return Boolean(process.env.SANDBOXD_URL && process.env.SANDBOXD_TOKEN);
+  return Boolean(env('SANDBOXD_URL') && env('SANDBOXD_TOKEN'));
 }
 
 async function call(method: string, path: string): Promise<Record<string, unknown> | null> {
-  const base = process.env.SANDBOXD_URL;
-  const token = process.env.SANDBOXD_TOKEN;
+  const base = env('SANDBOXD_URL');
+  const token = env('SANDBOXD_TOKEN');
   if (!base || !token) return null;
   try {
     const res = await fetch(`${base}${path}`, {

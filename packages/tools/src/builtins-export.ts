@@ -2,15 +2,21 @@
  * Export builtins — render a content node to an Office document and save it
  * under /files/exports. The rendering itself (and the page/note/table → format
  * mapping) lives in `@mantle/content`'s `resolveExport`, the same code the web
- * `/api/export/[id]` download button uses, so the assistant and the UI produce
- * identical files. Page images are embedded by reading their bytes from the
- * file store via the injected `loadImage` callback.
+ * `/api/export/[id]` download button uses. Page images are embedded by reading
+ * their bytes from the file store via the injected `loadImage` callback.
+ *
+ * One documented difference from that button: an embedded DRAWING degrades to
+ * `[drawing: alt]` here. Word takes no SVG, so a snapshot has to be rastered in
+ * the browser sidecar, and the sidecar is reachable only from `server/web` —
+ * this package is imported by every process that runs a tool loop, including
+ * workers that have no browser. See docs/draw.md §9.
  */
 import { resolveExport } from '@mantle/content';
 import { ensureDatedUploadFolder, readFileById, upsertFile } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 // Referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an existing node the owner holds.
@@ -57,7 +63,7 @@ const export_node: BuiltinToolDef = {
     } catch (err) {
       return {
         ok: false,
-        error: `export failed: ${err instanceof Error ? err.message : String(err)}`,
+        error: `export failed: ${errorMessage(err)}`,
       };
     }
     if (!result) {
@@ -110,7 +116,7 @@ const export_node: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

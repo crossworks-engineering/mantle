@@ -40,7 +40,8 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, agents, nodes, type Agent } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import { searchNodes, searchChunks } from '@mantle/search';
-import { loadConversationContext } from '@mantle/agent-runtime';
+import { loadConversationContext } from '@mantle/runtime/agent';
+import { env } from '@mantle/config';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // `fts` = legacy FTS-only searchNodes (the pre-(b) baseline, kept as a reference
@@ -272,7 +273,7 @@ function pct(x: number): string {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const ownerId = process.env.ALLOWED_USER_ID;
+  const ownerId = env('ALLOWED_USER_ID');
   if (!ownerId) {
     console.error('eval-recall: ALLOWED_USER_ID must be set');
     process.exit(1);
@@ -289,7 +290,22 @@ async function main() {
     process.exit(1);
   }
 
-  let cases: GoldCase[] = JSON.parse(readFileSync(args.casesPath, 'utf8'));
+  // The gold set is deliberately NOT in the repo: a case pins node ids from ONE
+  // brain, so a shared set is both personal and useless elsewhere. Say how to
+  // make one rather than dying on ENOENT.
+  let raw: string;
+  try {
+    raw = readFileSync(args.casesPath, 'utf8');
+  } catch {
+    console.error(
+      `No gold cases at ${args.casesPath}.\n` +
+        'The set is local-only and gitignored — it names your own pages by id, so it cannot ship.\n' +
+        'Write a JSON array of { id, query, expectNodeIds?|expectNodeTitleIncludes? } there, ' +
+        'or point elsewhere with --cases=<path>. See docs/recall-eval.md.',
+    );
+    process.exit(1);
+  }
+  let cases: GoldCase[] = JSON.parse(raw);
   if (args.onlyCase) cases = cases.filter((c) => c.id === args.onlyCase);
   if (cases.length === 0) {
     console.error('eval-recall: no cases to run');
@@ -355,7 +371,7 @@ async function main() {
   if (avoidCases.length) {
     const prodPolluted = avoidCases.filter((r) => r.prodJunk).length;
     const searchPolluted = avoidCases.filter((r) => r.searchJunk).length;
-    const lam = process.env.MANTLE_SALIENCE_LAMBDA ?? '0.15';
+    const lam = env('MANTLE_SALIENCE_LAMBDA') ?? '0.15';
     console.log(
       `  pollution (λ=${lam}): bulk/marketing reached the prompt in ${prodPolluted}/${avoidCases.length} avoid-cases (prod), ` +
         `${searchPolluted}/${avoidCases.length} (search). Lower is better.`,

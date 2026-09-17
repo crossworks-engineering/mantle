@@ -14,6 +14,7 @@
 
 import { lookup } from 'node:dns/promises';
 import net from 'node:net';
+import { env } from '@mantle/config';
 
 function ipv4ToInt(ip: string): number | null {
   const parts = ip.split('.');
@@ -92,7 +93,7 @@ export function isBlockedIp(ip: string): boolean {
  * security boundary — stop and take it to the owner first.
  */
 function isSandboxProxyUrl(u: URL): boolean {
-  const base = process.env.SANDBOXD_URL;
+  const base = env('SANDBOXD_URL');
   if (!base) return false;
   try {
     return u.origin === new URL(base).origin && u.pathname.startsWith('/svc/');

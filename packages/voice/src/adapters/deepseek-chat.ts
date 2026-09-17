@@ -43,6 +43,7 @@ import {
   type OpenAICompatChatResponse,
 } from './openai-compat';
 import { scrubThinkBlocks } from './think-scrubber';
+import { errorMessage } from '@mantle/std';
 
 /** DeepSeek's chat response shape — the shared OpenAI-compat envelope
  *  with the cache-hit fields hung off `usage` as top-level keys
@@ -151,7 +152,7 @@ async function deepseekDiscover(apiKey: string): Promise<DiscoveryResult<ChatMod
     return {
       available: [...DEEPSEEK_CHAT_MODELS],
       filtered: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }

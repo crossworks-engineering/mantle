@@ -98,13 +98,13 @@ vi.mock('@mantle/runs', () => ({
 
 vi.mock('@mantle/telegram', () => ({ sendMessage: (...a: unknown[]) => h.sendMessage(...a) }));
 
-vi.mock('@mantle/agent-runtime', () => ({
+vi.mock('@mantle/runtime/agent', () => ({
   buildChatMessages: () => [],
   loadConversationContext: async () => ({ history: [] }),
   recordTurn: (...a: unknown[]) => h.recordTurn(...a),
 }));
 
-vi.mock('@mantle/assistant-runtime', () => ({
+vi.mock('@mantle/runtime/assistant', () => ({
   assembleResponderTurn: async () => {
     h.seq.push('assemble');
     return { effectiveSystemPrompt: 'sys', volatileContext: '' };

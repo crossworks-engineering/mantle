@@ -12,6 +12,10 @@
  */
 import { and, eq, gt, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { apps, db, nodes, pages, shares } from '@mantle/db';
+import type { CuratedTeamSection } from '@mantle/client-types';
+import type { TeamVisibleShare } from '@mantle/client-types';
+export type { TeamVisibleShare };
+export type { CuratedTeamSection };
 
 export type TeamHubSection = {
   /** Share token — the hub links to /s/<token>. */
@@ -187,6 +191,7 @@ export const TEAM_HUB_STAT_TYPES = [
   'note',
   'file',
   'table',
+  'draw',
   'task',
   'event',
   'journal',
@@ -225,28 +230,13 @@ export const TEAM_WORKSPACE_TYPES = [
   'note',
   'page',
   'table',
+  'draw',
   'app',
   'task',
   'event',
   'branch',
 ] as const;
 export type TeamWorkspaceType = (typeof TEAM_WORKSPACE_TYPES)[number];
-
-export type TeamVisibleShare = {
-  /** Share token — the workspace opens /s/<token>. */
-  token: string;
-  nodeId: string;
-  title: string;
-  icon: string | null;
-  summary: string | null;
-  updatedAt: string;
-  /** 'team' or 'public' — a member may open both, the badge tells them apart. */
-  mode: 'team' | 'public';
-  /** Parent node id — lets the pages section rebuild the sub-page tree over
-   *  the SHARED subset (an unshared parent leaves its children as roots). */
-  parentId: string | null;
-  tags: string[];
-};
 
 /** Sort orders offered by the /team section list. `newest`/`oldest` rank by
  *  when the OWNER shared (share createdAt); `updated` by the node's last edit;
@@ -292,6 +282,12 @@ const teamShareColumns = {
   // head of the published plaintext rendering. NULL for non-page types (left
   // join misses) and for pages with no committed text.
   docTextHead: sql<string | null>`LEFT(${pages.docText}, ${DOC_TEXT_HEAD_CHARS})`,
+  // An app's description is the one the OWNER typed at creation, and it lives
+  // in apps.manifest — not in nodes.data where every other type's summary is
+  // read from. Without this the /team app cards had no line under the title at
+  // all: `data.summary` is only ever written by the extractor, and apps are not
+  // extracted. NULL for every other type (left join misses).
+  appDescription: sql<string | null>`${apps.manifest} ->> 'description'`,
 } as const;
 
 /** Reduce the head of a page's doc_text to a one-liner excerpt: markdown
@@ -331,11 +327,17 @@ function mapTeamShareRow(r: {
   parentId: string | null;
   tags: string[] | null;
   docTextHead: string | null;
+  appDescription: string | null;
 }): TeamVisibleShare {
+  // The app description leads because it is AUTHORED — the owner wrote it to
+  // say what the app is for — where the other two are derived: an extractor's
+  // summary, then the head of the page text. It is null for every non-app row,
+  // so the existing order is untouched everywhere else.
   const summary =
-    typeof r.data?.summary === 'string' && r.data.summary.trim() !== ''
+    r.appDescription?.trim() ||
+    (typeof r.data?.summary === 'string' && r.data.summary.trim() !== ''
       ? (r.data.summary as string)
-      : excerptFromDocText(r.docTextHead);
+      : excerptFromDocText(r.docTextHead));
   return {
     token: r.token,
     nodeId: r.nodeId,
@@ -346,6 +348,9 @@ function mapTeamShareRow(r: {
     mode: (r.settings as Record<string, unknown>)?.mode === 'team' ? 'team' : 'public',
     parentId: r.parentId,
     tags: r.tags ?? [],
+    // Only events carry one; `data.starts_at` is the same key the share view
+    // and packages/content/src/events.ts read.
+    startsAt: typeof r.data?.starts_at === 'string' ? (r.data.starts_at as string) : null,
   };
 }
 
@@ -369,6 +374,7 @@ export async function listTeamVisibleShares(
     .from(shares)
     .innerJoin(nodes, eq(shares.nodeId, nodes.id))
     .leftJoin(pages, eq(pages.nodeId, nodes.id))
+    .leftJoin(apps, eq(apps.nodeId, nodes.id))
     .where(teamShareVisiblePredicate(ownerId, nodeType))
     .orderBy(sql`${shares.createdAt} DESC`);
   return rows.map(mapTeamShareRow);
@@ -420,6 +426,7 @@ export async function pageTeamVisibleShares(
       .from(shares)
       .innerJoin(nodes, eq(shares.nodeId, nodes.id))
       .leftJoin(pages, eq(pages.nodeId, nodes.id))
+      .leftJoin(apps, eq(apps.nodeId, nodes.id))
       .where(where)
       .orderBy(orderBy)
       .limit(limit)
@@ -462,14 +469,6 @@ export async function listTeamShareTags(
 
 /** Items per curated Dashboard tag section. */
 export const TEAM_CURATED_SECTION_LIMIT = 5;
-
-export type CuratedTeamSection = {
-  /** The curated tag — the section heading (display-cased by the UI). */
-  tag: string;
-  /** Up to {@link TEAM_CURATED_SECTION_LIMIT} team-visible page shares carrying
-   *  the tag, newest node update first. */
-  items: TeamVisibleShare[];
-};
 
 /**
  * The member Dashboard's curated sections: one per owner-picked tag

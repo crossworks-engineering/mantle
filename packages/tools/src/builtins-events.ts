@@ -1,7 +1,7 @@
 /**
  * Builtin event tools — Saskia's calendar surface.
  *
- * Mirrors the MCP event tools in apps/mcp/src/server.ts so Saskia
+ * Mirrors the MCP event tools in server/mcp/src/server.ts so Saskia
  * (responder / assistant) can read and write to the same events
  * Claude Code can, without going through MCP. Same underlying
  * @mantle/content helpers; same data shape.
@@ -31,8 +31,9 @@ import {
   type RecurFreq,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerResult, ToolPrecondition } from './types';
-import { str, strArrOpt } from './coerce';
+import { str, strArrOpt, strOpt, numOpt as num } from './coerce';
 import { notFound } from './errors';
+import { errorMessage } from '@mantle/std';
 
 // Shared referential precondition (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING event the owner holds.
@@ -42,13 +43,6 @@ const EVENT_ID_PRE: readonly ToolPrecondition[] = [
 
 const RECUR_VALUES: readonly RecurFreq[] = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
 
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.length > 0 ? v : undefined;
-}
-function num(v: unknown, dflt?: number): number | undefined {
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  return dflt;
-}
 /** Validated RecurFreq, or undefined to leave unchanged on update. */
 function recurOpt(v: unknown): RecurFreq | undefined {
   return typeof v === 'string' && (RECUR_VALUES as readonly string[]).includes(v)
@@ -58,6 +52,7 @@ function recurOpt(v: unknown): RecurFreq | undefined {
 
 const event_list: BuiltinToolDef = {
   slug: 'event_list',
+  readOnly: true,
   name: 'List calendar events',
   description:
     "List the user's calendar events, **date-windowed**. `window` defaults to 'upcoming' — pass 'past' to look back or 'all' to include both. `query` substring-matches title/body/location/summary; `tag` narrows to events with that tag. Returns full event rows. " +
@@ -93,13 +88,14 @@ const event_list: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
 
 const event_get: BuiltinToolDef = {
   slug: 'event_get',
+  readOnly: true,
   name: 'Get a calendar event',
   description:
     'Read one event by id — full row including body, location, starts_at, ends_at. ' +
@@ -220,7 +216,7 @@ const event_create: BuiltinToolDef = {
       ctx.step?.setMeta({ eventId: row.id, title, startsAt, timezone });
       return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -300,7 +296,7 @@ const event_update: BuiltinToolDef = {
       ctx.step?.setMeta({ eventId: id });
       return { ok: true, output: { ...row, url: nodeUrl(row.id) } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

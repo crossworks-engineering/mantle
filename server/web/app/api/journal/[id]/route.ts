@@ -2,13 +2,13 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { deleteJournal, getJournal, updateJournal } from '@/lib/journal';
+import { firstIssue } from '@/lib/zod-issue';
 
 const PatchBody = z.object({
   body: z.string().max(20_000).optional(),
   title: z.string().max(200).optional(),
-  // Empty string clears the field (mood/category/entryDate are optional).
-  mood: z.string().max(40).optional(),
-  category: z.string().max(40).optional(),
+  // Empty string clears the field (kind/entryDate are optional).
+  kind: z.string().max(40).optional(),
   entryDate: z.string().max(40).optional(),
   tags: z.array(z.string().max(40)).max(20).optional(),
 });
@@ -29,10 +29,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   let row;
   try {

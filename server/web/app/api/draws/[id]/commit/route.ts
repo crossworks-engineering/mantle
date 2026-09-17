@@ -1,0 +1,74 @@
+import { NextResponse } from '@/server/http-compat';
+import { z } from 'zod';
+import { getOwnerOr401 } from '@/lib/auth';
+import { commitDraw, sceneToText, sceneWithinLimits, SCENE_SVG_MAX_BYTES } from '@/lib/draws';
+import { recordIngest } from '@mantle/tracing';
+
+const Body = z.object({
+  scene: z
+    .record(z.string(), z.unknown())
+    .refine(sceneWithinLimits, { message: 'scene too large' }),
+  /** exportToSvg output captured by the committing editor. Validated
+   *  server-side (acceptSceneSvg); dropped, never fatal, on any doubt.
+   *  Bounded in BYTES to match acceptSceneSvg: zod's .max() counts UTF-16 code
+   *  units, so a multibyte payload up to 3x the cap used to pass here, get
+   *  dropped downstream, and silently clear a good stored snapshot. */
+  svg: z
+    .string()
+    .refine((s) => Buffer.byteLength(s, 'utf8') <= SCENE_SVG_MAX_BYTES, {
+      message: 'svg too large',
+    })
+    .optional(),
+  /** BinaryFile id → file node id (scene images in the files pipeline). */
+  file_refs: z.record(z.string(), z.string().uuid()).optional(),
+  if_rev: z.number().int().nonnegative().optional(),
+});
+
+/**
+ * Commit: publish the scene and index it. The only moment a draw body
+ * reaches the brain (extractor: summary + embedding + facts), so it opens a
+ * content_ingest trace. `if_rev` semantics identical to the pages commit:
+ * stale rev returns 409 and NOTHING is published.
+ */
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
+  const { id } = await ctx.params;
+  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    const tooLarge = parsed.error.issues.some((i) => i.message.endsWith('too large'));
+    return NextResponse.json(
+      { error: tooLarge ? 'payload too large' : 'invalid input' },
+      { status: tooLarge ? 413 : 400 },
+    );
+  }
+  const result = await commitDraw(user.id, id, parsed.data.scene, {
+    ...(parsed.data.if_rev !== undefined ? { baseRev: parsed.data.if_rev } : {}),
+    ...(parsed.data.svg !== undefined ? { svg: parsed.data.svg } : {}),
+    ...(parsed.data.file_refs !== undefined ? { fileRefs: parsed.data.file_refs } : {}),
+  });
+  if (!result.ok) {
+    if ('conflict' in result) {
+      return NextResponse.json(
+        {
+          error: 'draft changed since you loaded it — refetch and re-apply',
+          current_rev: result.rev,
+        },
+        { status: 409 },
+      );
+    }
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
+  const draw = result.draw;
+
+  const snippet = sceneToText(draw.scene);
+  void recordIngest({
+    source: 'draw_commit',
+    ownerId: user.id,
+    nodeId: draw.id,
+    summary: `Drawing committed: ${draw.title.slice(0, 80)}`,
+    payload: { title: draw.title, tags: draw.tags, textChars: snippet.length, via: 'web_api' },
+    snippet,
+  });
+  return NextResponse.json({ draw });
+}

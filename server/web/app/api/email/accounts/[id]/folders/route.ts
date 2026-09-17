@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { listAccountFolders, setIncludedFolders } from '@mantle/email';
 import { getOwnerOr401 } from '@/lib/auth';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** Live IMAP folder tree + current scan config for one account. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -22,10 +23,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params;
   const parsed = FoldersBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const ok = await setIncludedFolders(user.id, id, parsed.data.folders);
   if (!ok) return NextResponse.json({ error: 'Account not found.' }, { status: 404 });

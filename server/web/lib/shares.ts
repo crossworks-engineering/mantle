@@ -10,6 +10,7 @@ import { db, nodes, tables, type Share } from '@mantle/db';
 import {
   getPage,
   getApp,
+  getDrawSvg,
   referencedFileIds,
   ensureTableDoc,
   emptyTableDoc,
@@ -17,6 +18,7 @@ import {
   checkLookupCoverage,
   checkDimensions,
   signatureOf,
+  type AggregateKind,
   type Column,
   type Row,
   type FormulaSpec,
@@ -24,7 +26,7 @@ import {
   type CoverageGap,
   type DimensionIssue,
 } from '@mantle/content';
-import { describeWorkbook, resolveStoragePath } from '@mantle/tabledb';
+import { aggregateWindow, describeWorkbook, resolveStoragePath } from '@mantle/tabledb';
 import { fileById, folderById } from '@/lib/files';
 
 export {
@@ -60,6 +62,8 @@ export type ShareView =
       status: string;
       priority: string;
       dueAt: string | null;
+      /** Read-only checklist snapshot — mirrors share-ui's view-payload. */
+      todos?: { text: string; done: boolean }[];
     }
   | {
       kind: 'event';
@@ -68,6 +72,9 @@ export type ShareView =
       startsAt: string | null;
       endsAt: string | null;
       location: string | null;
+      recur?: string | null;
+      recurUntil?: string | null;
+      tags?: string[];
     }
   | { kind: 'file'; fileId: string; filename: string; mimeType: string; size: number }
   | { kind: 'app'; appId: string; title: string }
@@ -84,9 +91,21 @@ export type ShareView =
         name: string;
         rowCount: number;
         columns: Array<{ id: string; name: string; type: string }>;
+        /** The owner's footer totals: which kind per column, and the value
+         *  computed HERE over every row. The value cannot be left to the
+         *  reader — it holds one 200-row window, so a total taken from it is
+         *  a wrong number wearing a right number's clothes. */
+        aggregates: Record<string, AggregateKind>;
+        aggregateValues: Record<string, number | null>;
       }> | null;
-      /** Legacy JSONB tables (pre-registry, small): the whole doc inline. */
-      legacyDoc: { columns: Column[]; rows: Row[] } | null;
+      /** Legacy JSONB tables (pre-registry, small): the whole doc inline.
+       *  Aggregate SETTINGS only — these arrive whole, so the reader can
+       *  compute its own totals and no round trip is involved. */
+      legacyDoc: {
+        columns: Column[];
+        rows: Row[];
+        aggregates: Record<string, AggregateKind>;
+      } | null;
     }
   | {
       kind: 'formula';
@@ -99,11 +118,16 @@ export type ShareView =
       coverageGaps: CoverageGap[];
       dimensionIssues: DimensionIssue[];
     }
-  | { kind: 'folder'; folderId: string; title: string; path: string };
+  | { kind: 'folder'; folderId: string; title: string; path: string }
+  // Only WHETHER a committed snapshot exists (false when the last commit
+  // carried none; the presenter shows a placeholder rather than 404ing a link
+  // that was legitimately minted). The bytes are served separately, as an
+  // image, by /s/<token>/draw.
+  | { kind: 'draw'; title: string; hasSvg: boolean; hasImage?: boolean };
 
 async function loadNode(ownerId: string, nodeId: string) {
   const [row] = await db
-    .select({ title: nodes.title, data: nodes.data })
+    .select({ title: nodes.title, data: nodes.data, tags: nodes.tags })
     .from(nodes)
     .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
     .limit(1);
@@ -141,6 +165,11 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
         status: typeof d.status === 'string' ? d.status : 'open',
         priority: typeof d.priority === 'string' ? d.priority : 'normal',
         dueAt: typeof d.due_at === 'string' ? d.due_at : null,
+        todos: Array.isArray(d.todos)
+          ? (d.todos as Array<Record<string, unknown>>)
+              .filter((t) => typeof t?.text === 'string' && t.text)
+              .map((t) => ({ text: t.text as string, done: t.done === true }))
+          : [],
       };
     }
     case 'event': {
@@ -154,6 +183,11 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
         startsAt: typeof d.starts_at === 'string' ? d.starts_at : null,
         endsAt: typeof d.ends_at === 'string' ? d.ends_at : null,
         location: typeof d.location === 'string' ? d.location : null,
+        // Recurrence + tags travel too — the team/share reader shows the same
+        // "nice details" as the owner pane. Reminders stay owner-private.
+        recur: typeof d.recur === 'string' ? d.recur : null,
+        recurUntil: typeof d.recur_until === 'string' ? d.recur_until : null,
+        tags: n.tags ?? [],
       };
     }
     case 'file': {
@@ -193,11 +227,26 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
       if (row.storagePath) {
         let tabs: NonNullable<Extract<ShareView, { kind: 'table' }>['tabs']>;
         try {
-          tabs = describeWorkbook(resolveStoragePath(row.storagePath)).map((t) => ({
+          const abs = resolveStoragePath(row.storagePath);
+          tabs = describeWorkbook(abs).map((t) => ({
             id: t.tabId,
             name: t.name,
             rowCount: t.rowCount,
             columns: t.columns.map((c) => ({ id: c.colId, name: c.name, type: c.type })),
+            aggregates: t.aggregates,
+            // Computed HERE, in SQL over every row, because the reader only
+            // ever holds one 200-row window. A client-side sum over a partial
+            // page is not a smaller number, it is a wrong one — and wrong
+            // silently, which is the failure mode worth paying a query to
+            // avoid. `aggregateWindow` returns null for a column it cannot
+            // total (a formula column, or a non-numeric asked for a sum), and
+            // the footer leaves that cell blank rather than guessing.
+            aggregateValues: Object.fromEntries(
+              Object.entries(t.aggregates).map(([colId, kind]) => [
+                colId,
+                aggregateWindow(abs, { columnId: colId, kind, tabId: t.tabId }),
+              ]),
+            ),
           }));
         } catch {
           // Published file missing/unreadable (e.g. never committed) — treat
@@ -213,7 +262,9 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
         title: row.title,
         icon,
         tabs: null,
-        legacyDoc: { columns: doc.columns, rows: doc.rows },
+        // A legacy table arrives whole, so the reader computes its own totals
+        // with `computeAggregate` and no endpoint is involved. Settings only.
+        legacyDoc: { columns: doc.columns, rows: doc.rows, aggregates: doc.aggregates ?? {} },
       };
     }
     case 'formula': {
@@ -233,6 +284,23 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
         signature: signatureOf(spec),
         coverageGaps: checkLookupCoverage(spec),
         dimensionIssues: checkDimensions(spec),
+      };
+    }
+    case 'draw': {
+      // The share surface renders the COMMITTED snapshot only — the scene
+      // JSON and any working draft never cross the share boundary (same rule
+      // as page drafts / table draft files).
+      const n = await loadNode(ownerId, nodeId);
+      if (!n) return null;
+      const svg = await getDrawSvg(ownerId, nodeId);
+      return {
+        kind: 'draw',
+        title: n.title,
+        hasSvg: svg !== null,
+        // A raster <image> in the scene vetoes the dark-mode invert filter
+        // (one flat filter would show photos as negatives) — same rule the
+        // owner previews apply via snapshotPlacesImage().
+        hasImage: svg !== null && /<image[\s>]/i.test(svg),
       };
     }
     case 'branch': {

@@ -30,7 +30,7 @@ import type {
   ChatToolCall,
 } from './types';
 import { ChatHttpError, parseRetryAfterMs } from './retry';
-import { readSSE, safeDelta } from './sse';
+import { STREAM_IDLE_TIMEOUT_MS, readSSE, safeDelta, streamAbort } from './sse';
 import { StreamingThinkScrubber } from './think-scrubber';
 
 // ─── Wire types ──────────────────────────────────────────────────────────────
@@ -276,6 +276,14 @@ export type OpenAICompatStreamConfig = {
   /** Override the fetch implementation (e.g. the local adapter's `tailnetFetch`
    *  to reach a NAT'd box). Defaults to global `fetch`. */
   fetchImpl?: typeof fetch;
+  /** How long headers may take to arrive, in ms. Defaults to
+   *  {@link STREAM_CONNECT_TIMEOUT_MS} (60s), which suits a hosted provider that
+   *  answers in under a second. A self-hosted server loading a cold model into
+   *  VRAM routinely takes longer, and a connect timeout is CLASSIFIED RETRYABLE
+   *  — so the 60s default made the local route re-send the whole prompt twice
+   *  and then fail, on a box that was working. The local adapter passes the same
+   *  300s its one-shot path has always allowed. (2026-09-03 audit.) */
+  connectMs?: number;
   /** Read cache-read tokens out of the terminal chunk's usage, for a provider
    *  that doesn't use `prompt_tokens_details.cached_tokens`. Defaults to that
    *  standard field.
@@ -324,13 +332,15 @@ export async function streamOpenAICompatChat(
   // Stopped before we even sent — don't spend the request.
   if (opts.signal?.aborted) return { text: '', model: opts.model };
 
+  const abort = streamAbort(opts.signal, cfg.connectMs);
   const doFetch = cfg.fetchImpl ?? fetch;
   const res = await doFetch(cfg.url, {
     method: 'POST',
     headers: cfg.headers,
     body: JSON.stringify(body),
-    ...(opts.signal ? { signal: opts.signal } : {}),
+    signal: abort.signal,
   });
+  abort.connected();
   if (!res.ok || !res.body) {
     const errBody = await res.text().catch(() => '');
     throw new ChatHttpError({
@@ -353,7 +363,9 @@ export async function streamOpenAICompatChat(
   const scrubber = new StreamingThinkScrubber();
 
   try {
-    for await (const payload of readSSE(res.body, opts.signal)) {
+    for await (const payload of readSSE(res.body, opts.signal, {
+      idleMs: STREAM_IDLE_TIMEOUT_MS,
+    })) {
       if (opts.signal?.aborted) break;
       if (payload === '[DONE]') break;
       let chunk: OpenAICompatStreamChunk;

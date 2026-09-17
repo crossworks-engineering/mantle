@@ -16,6 +16,7 @@
 import { loadProfilePreferences, updateProfilePreferences, isValidTimezone } from '@mantle/content';
 import type { BuiltinToolDef } from './types';
 import { str } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 const set_timezone: BuiltinToolDef = {
   slug: 'set_timezone',
@@ -73,7 +74,7 @@ const set_timezone: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

@@ -17,11 +17,14 @@ export async function sendMessage(
   options?: { replyTo?: string; markdown?: boolean },
 ): Promise<number[]> {
   const bot = await botFor(account);
-  const chunks = chunkText(text, MAX_CHUNK);
+  const chunks = splitForTelegram(text, MAX_CHUNK);
   const replyTo = options?.replyTo != null ? Number(options.replyTo) : undefined;
   const parseMode = options?.markdown ? ('MarkdownV2' as const) : undefined;
   const ids: number[] = [];
   for (let i = 0; i < chunks.length; i++) {
+    // No withTelegramRetry here: botFor installs it as an api transformer, so
+    // every Bot API call in this file already waits out a 429. Wrapping again
+    // would multiply the attempt budget (3 x 3) against a rate limit.
     const sent = await bot.api.sendMessage(chatId, chunks[i]!, {
       ...(replyTo != null && i === 0
         ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } }
@@ -399,7 +402,18 @@ export async function accountById(id: string): Promise<TelegramAccount | null> {
   return account ?? null;
 }
 
-function chunkText(text: string, limit: number): string[] {
+/**
+ * Split a reply into Telegram-sized messages, cutting at the friendliest
+ * boundary within reach: a paragraph break, else a line break, else a space.
+ *
+ * NOT the `chunkText` in @mantle/tools, which the 2026-09 audit paired this
+ * with as a duplicate. That one windows text for RETRIEVAL — fixed size, with
+ * overlap so a match spanning a boundary survives, dropping empty pieces. This
+ * one must lose nothing and must not repeat itself, because every piece is a
+ * message a person reads. Same name, opposite requirements; renamed so the
+ * next sweep does not pair them again.
+ */
+function splitForTelegram(text: string, limit: number): string[] {
   if (text.length <= limit) return [text];
   const out: string[] = [];
   let rest = text;

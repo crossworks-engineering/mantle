@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { listVoices } from '@/lib/ai-worker-rpc';
+import { firstIssue } from '@/lib/zod-issue';
 
 const Body = z.object({
   apiKeyId: z.string(),
@@ -15,10 +16,7 @@ export async function POST(req: Request) {
   if (gate instanceof Response) return gate;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { apiKeyId, providerId, modelId } = parsed.data;
   return NextResponse.json(await listVoices(apiKeyId, providerId, modelId));

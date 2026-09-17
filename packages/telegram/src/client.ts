@@ -2,6 +2,7 @@ import { Bot } from 'grammy';
 import { eq } from 'drizzle-orm';
 import { open } from '@mantle/crypto';
 import { channels, db, type TelegramAccount } from '@mantle/db';
+import { installTelegramRetry } from './retry';
 
 /**
  * Cache one `Bot` instance per account so we share HTTP keepalive across
@@ -41,6 +42,14 @@ export async function botFor(account: TelegramAccount): Promise<Bot> {
   if (cached) return cached;
   const token = await tokenForAccount(account);
   const bot = new Bot(token);
+  // 429 handling belongs at the TRANSPORT, not at each call site. It first
+  // landed around one call — the text-chunk send in outbound.ts — which left
+  // eleven others (sendPhoto, sendVoice, editMessageText, setMessageReaction,
+  // answerCallbackQuery, sendChatAction, getFile …) to fail the turn on a rate
+  // limit they could have waited out. A grammY transformer sits under every
+  // Bot API call this instance makes, including ones grammY issues itself, so
+  // a new call site is covered by construction. (2026-09-03 audit.)
+  installTelegramRetry(bot);
   cache.set(account.id, bot);
   return bot;
 }

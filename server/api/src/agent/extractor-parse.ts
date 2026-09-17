@@ -278,3 +278,45 @@ export function parseExtractorOutput(
       : [],
   };
 }
+
+/**
+ * The hollow-filename-body predicate — THE guard behind the "false success"
+ * defect. readNodeBodyRaw falls back to the node TITLE for any file no parser
+ * handles; before this predicate existed, the only downstream gate was a
+ * ≥20-char length check, so a file with a descriptive name
+ * ("standup-recording-2026-08-20.mp4") indexed its own filename as if it were
+ * the document, and the trace said success. Pure + exported so the decision is
+ * unit-testable without the DB: true means "this body is just the filename and
+ * no parser could ever have produced more — record an honest terminal skip".
+ *
+ * Deliberately narrow: routed formats (pdf/docx/…) are excluded even when the
+ * body equals the title, because for THOSE a title-body means a parse failure
+ * with its own recovery paths (OCR, passwords) handled elsewhere. Images are
+ * excluded because the vision path owns them and records its own skip.
+ *
+ * The `dwf` route is the exception among routed formats: it has NO recovery
+ * path (no OCR tier, no Tika fallback), and its parser returns '' by design
+ * for a container with no 2D sheets — a 3D eModel, or a renamed DWFx that
+ * fails the sniff. For those a title-body means "nothing was extracted", the
+ * same situation as an unrouted file, so it takes the same honest skip
+ * instead of indexing its own filename as the document.
+ */
+export function isHollowFilenameBody(opts: {
+  mime: string;
+  parserRoute: string;
+  rawBody: string;
+  title: string;
+}): boolean {
+  // dwg and dxf join dwf in the carve-out: all three routes return '' on a
+  // sniff miss (a renamed DWFx, a mislabelled non-DWG/DXF) instead of parsing
+  // junk. Checked BEFORE the image-mime exemption: uploaders send
+  // `image/vnd.dwg` / `image/vnd.dxf` for these, and a client-supplied mime
+  // must not shield a routed CAD sniff-miss from its honest skip (extension
+  // routing wins over claimed mime throughout).
+  if (opts.parserRoute === 'dwf' || opts.parserRoute === 'dwg' || opts.parserRoute === 'dxf') {
+    return opts.rawBody.trim() === opts.title.trim();
+  }
+  if (opts.parserRoute !== 'none') return false;
+  if (opts.mime.startsWith('image/')) return false;
+  return opts.rawBody.trim() === opts.title.trim();
+}

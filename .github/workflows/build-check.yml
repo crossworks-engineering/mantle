@@ -12,9 +12,14 @@
 #   - push to main — re-validate the merge result (the automated "merge then
 #     build" safety net; deploy is still a separate manual tag)
 #
-# Hermetic — no Postgres/MinIO needed: `next build` runs DB-less (same as the
-# Dockerfile image build), and the vitest suite is designed to pass without
-# infra (e.g. resolver.test.ts deletes DATABASE_URL on purpose).
+# Mostly hermetic: `next build` runs DB-less (same as the Dockerfile image
+# build), and the vitest suite passes without infra (e.g. resolver.test.ts
+# deletes DATABASE_URL on purpose). Since 2026-09-02 the job ALSO brings up a
+# throwaway Postgres (pgvector/pg18, same image family as compose), replays
+# every migration 0000→latest into it, and runs the DB-gated suites against
+# it: the schema-drift check (packages/db) and the runs engine. DATABASE_URL
+# itself is NOT exported to the test step — only the *_TEST_DATABASE_URL vars
+# — so the tests that assert DB-less behaviour keep meaning what they say.
 #
 # Note: this does NOT build or push the Docker image — that's release.yml, which
 # fires on a version tag. This is purely a pre-merge correctness gate.
@@ -37,6 +42,20 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      CI_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
 
@@ -66,50 +85,31 @@ jobs:
       - name: Format check
         run: pnpm format:check
 
+      # Every repo path a live doc names must exist (docs are indexed into the
+      # brain, so a dead path misleads the assistant too).
+      - name: Docs paths
+        run: pnpm docs:check
+
+      # Replay every migration from scratch. This is the only place the full
+      # 0000→latest path runs (boxes only ever apply the increment), so a
+      # migration that cannot replay, or is missing from the journal, fails
+      # here rather than on a fresh install.
+      - name: Init + migrate the throwaway database
+        env:
+          DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+        run: |
+          pnpm -C packages/db init-scratch
+          pnpm -C packages/db migrate
+
       - name: Test
+        env:
+          MANTLE_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
+          RUNS_TEST_DATABASE_URL: ${{ env.CI_DATABASE_URL }}
         run: pnpm test
 
       # The real edge/webpack gate. Runs without a DB, same as the image build.
       - name: Build (server/web)
         run: pnpm -C server/web build
 
-  # The e2e regression net for the server/client split (e2e/). Boots the
-  # hermetic throwaway stack (pg + minio + browser sidecar on shifted ports),
-  # runs the web app on :3900, and drives the same-origin Playwright project —
-  # real signup/onboarding, pages CRUD, SSE, ?at= assets, share, team token,
-  # PDF export, /app-runtime CORS. The split project runs off-CI against a
-  # two-origin stack (see e2e/README.md).
-  e2e:
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.1.2
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 26
-          cache: pnpm
-
-      - name: Install
-        run: pnpm install --frozen-lockfile
-
-      - name: Install Playwright chromium
-        run: pnpm -C e2e exec playwright install --with-deps chromium
-
-      - name: Run e2e (same-origin, hermetic stack)
-        run: bash e2e/scripts/run-local.sh
-
-      - name: Upload traces on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-artifacts
-          path: |
-            e2e/.artifacts/web.log
-            e2e/test-results/
-          retention-days: 7
+  # The UI e2e suite moved to the jackdaw repo with the frontend (2026-08-13
+  # split); its CI job left with it. Server-side coverage stays in `verify`.

@@ -17,6 +17,7 @@ import { str } from './coerce';
 
 const calculate_tool: BuiltinToolDef = {
   slug: 'calculate',
+  readOnly: true,
   name: 'Calculate',
   description:
     'Evaluate a mathematical expression exactly and return the result, with units when the expression carries them. **Use this for any arithmetic you would otherwise do mentally** — multi-step sums, powers, roots, logs, percentages, unit conversions — because a mis-computed number reads exactly like a correct one. Understands units (`2 ft + 3 in`, `100 lbf/in^2` with `to: "kPa"`), and a dimensionally impossible request is an error rather than a plausible answer. For a stored calculation model, use `formula_evaluate` instead; for arithmetic across rows of a table, use `table_aggregate` or `table_sql`.',

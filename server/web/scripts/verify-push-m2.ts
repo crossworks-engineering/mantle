@@ -1,8 +1,11 @@
 /**
- * M2 end-to-end verification. Run against local Mantle (.env.local DB) + the
- * LIVE relay (https://push.crossworks.network, mock provider):
+ * M2 end-to-end verification. Run against local Mantle (.env.local DB) + a LIVE
+ * relay (mock provider). VERIFY_OWNER_ID is required — this seeds and deletes
+ * push rows, so it must name the brain you meant, not whichever id a default
+ * happened to carry (this repo is public; an owner uuid does not belong in it).
  *
- *   pnpm -C server/web exec tsx scripts/verify-push-m2.ts
+ *   VERIFY_OWNER_ID=<uuid> MANTLE_PUSH_RELAY_URL=https://<relay> \
+ *     pnpm -C server/web exec tsx scripts/verify-push-m2.ts
  *
  * Proves: (1) libsodium sealed-box round-trips; (2) Mantle's instance/ticket/
  * notify wire format is accepted by the deployed relay; (3) the DB-driven
@@ -18,10 +21,23 @@ import { mintTicket } from '../lib/push/ticket';
 import { registerInstance, relayNotify } from '../lib/push/relay-client';
 import { deleteAllSubscriptions, insertSubscription, savePushInstance } from '../lib/push/store';
 import { pushOutbound } from '../lib/push/notify';
+import { env } from '@mantle/config';
 
-const OWNER = process.env.VERIFY_OWNER_ID ?? 'bc505da9-c323-43c7-bafb-6c06a2d443de';
-const AGENT_SLUG = process.env.VERIFY_AGENT_SLUG ?? 'assistant';
-const RELAY = process.env.MANTLE_PUSH_RELAY_URL ?? 'https://push.crossworks.network';
+/** Exit rather than guess. Both of these used to carry a default, which meant
+ *  the script silently targeted one particular brain and one particular relay
+ *  — a uuid and a hostname living in a public repo. */
+function required(name: 'VERIFY_OWNER_ID' | 'MANTLE_PUSH_RELAY_URL', what: string): string {
+  const value = env(name)?.trim();
+  if (!value) {
+    console.error(`${name} is required — ${what}.`);
+    process.exit(1);
+  }
+  return value;
+}
+
+const OWNER = required('VERIFY_OWNER_ID', 'the uuid of the brain to verify against');
+const RELAY = required('MANTLE_PUSH_RELAY_URL', 'the relay to verify against');
+const AGENT_SLUG = env('VERIFY_AGENT_SLUG') ?? 'assistant';
 
 let passed = 0;
 function ok(cond: boolean, msg: string): asserts cond {

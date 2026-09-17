@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { listDocCollections, setCollectionEnabled } from '@mantle/files';
 import { getOwnerOr401 } from '@/lib/auth';
+import { errorMessage } from '@mantle/std';
 
 const Body = z.object({ enabled: z.boolean() });
 
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
   } catch (err) {
     return NextResponse.json({
       ok: false,
-      message: err instanceof Error ? err.message : String(err),
+      message: errorMessage(err),
     });
   }
 }

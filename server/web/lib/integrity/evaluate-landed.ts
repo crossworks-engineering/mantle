@@ -10,7 +10,11 @@
  * *correct* skip is neutral and surfaces its disposition; red is reserved for
  * genuine bugs (success-but-no-summary, dimension drift, duplicate edges).
  */
-import type { CheckResult, LandedState, ProbeFootprint } from '@mantle/web-ui/types/integrity';
+import type {
+  CheckResult,
+  LandedState,
+  ProbeFootprint,
+} from '@mantle/client-types/types/integrity';
 
 /** Every brain vector is `vector(768)` (EmbeddingGemma, migration 0060). A
  *  landed embedding with any other dim is a drift bug. */
@@ -32,7 +36,7 @@ export function evaluateLanded(
             label: 'Trace',
             status: 'fail',
             detail:
-              'no extractor_run settled — is apps/agent running and an extractor worker configured?',
+              'no extractor_run settled — is server/api running and an extractor worker configured?',
           },
         ],
       };

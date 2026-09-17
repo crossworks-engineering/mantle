@@ -9,6 +9,7 @@ import {
 import type { Readable } from 'node:stream';
 import { getSignedUrl as awsGetSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createHash } from 'node:crypto';
+import { env } from '@mantle/config';
 
 /**
  * Thin wrapper around an S3-compatible object store. In dev/prod we point this
@@ -20,15 +21,15 @@ import { createHash } from 'node:crypto';
 let _client: S3Client | undefined;
 function client(): S3Client {
   if (_client) return _client;
-  const endpoint = process.env.S3_ENDPOINT;
-  const accessKeyId = process.env.S3_ACCESS_KEY;
-  const secretAccessKey = process.env.S3_SECRET_KEY;
+  const endpoint = env('S3_ENDPOINT');
+  const accessKeyId = env('S3_ACCESS_KEY');
+  const secretAccessKey = env('S3_SECRET_KEY');
   if (!endpoint || !accessKeyId || !secretAccessKey) {
     throw new Error('S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY must be set');
   }
   _client = new S3Client({
     endpoint,
-    region: process.env.S3_REGION ?? 'us-east-1',
+    region: env('S3_REGION') ?? 'us-east-1',
     credentials: { accessKeyId, secretAccessKey },
     // MinIO uses path-style addressing (http://host/bucket/key) rather than
     // virtual-hosted style (http://bucket.host/key). Required for MinIO.
@@ -38,7 +39,7 @@ function client(): S3Client {
 }
 
 function bucket(): string {
-  const b = process.env.S3_BUCKET;
+  const b = env('S3_BUCKET');
   if (!b) throw new Error('S3_BUCKET must be set');
   return b;
 }

@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 /**
@@ -7,14 +8,20 @@ import { defineConfig } from 'vitest/config';
  * + manual smoke for the time being.
  */
 export default defineConfig({
-  test: {
-    include: [
-      'packages/**/src/**/*.test.ts',
-      'server/**/*.test.ts',
-      'client/**/*.test.ts',
-      'e2e/lib/**/*.test.ts',
-      'eslint-rules/**/*.test.ts',
+  resolve: {
+    // server/web imports its own modules as `@/lib/...` (tsconfig paths).
+    // Tests that build the real app (server/web/server/auth-sweep.test.ts)
+    // need the same mapping here. A regex, so `@mantle/*` packages are
+    // untouched.
+    alias: [
+      {
+        find: /^@\/(.*)$/,
+        replacement: fileURLToPath(new URL('./server/web/$1', import.meta.url)),
+      },
     ],
+  },
+  test: {
+    include: ['packages/**/src/**/*.test.ts', 'server/**/*.test.ts', 'eslint-rules/**/*.test.ts'],
     environment: 'node',
     globals: false,
     // The 5s default assumes a test only times its own logic. Several tests

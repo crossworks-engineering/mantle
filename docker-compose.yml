@@ -6,12 +6,12 @@ name: mantle
 # where everything runs in containers.
 #
 # Required env (drop in .env next to this file — see .env.prod.example):
-#   POSTGRES_PASSWORD       (default: postgres)
+#   POSTGRES_PASSWORD       (REQUIRED — compose refuses to start without it)
 #   SESSION_SECRET          (mandatory — used by middleware to verify cookies)
 #   MANTLE_MASTER_KEY       (mandatory — AES-256 key, base64 32 random bytes)
 #   ALLOWED_USER_ID         (optional — blank on a fresh install; auto-resolves
 #                            to the sole auth.users row after you sign up)
-#   S3_ACCESS_KEY / S3_SECRET_KEY (default: minio/minio12345)
+#   S3_ACCESS_KEY / S3_SECRET_KEY (REQUIRED — compose refuses to start without them)
 #   MANTLE_PUBLIC_URL       (recommended — public origin for share/email links,
 #                            e.g. https://mantle.crossworks.network)
 #   MANTLE_SITE_ADDRESS     (the address Caddy serves — a hostname gets automatic
@@ -24,7 +24,7 @@ name: mantle
 #   OLLAMA_KEEP_ALIVE       (default: 5m — set to -1 to keep the embedder always
 #                            resident instead of unloading when idle)
 #   MINIO_IMAGE_TAG / MC_IMAGE_TAG / OLLAMA_IMAGE_TAG (optional — pin the minio,
-#                            minio/mc, and ollama images. Defaults are the newest
+#                            minio/mc (both from quay.io), and ollama images. Defaults are the newest
 #                            stable tags at time of writing; pinned (like
 #                            tailscale) so the in-app update path can't pull a
 #                            breaking upstream `:latest` mid-update.)
@@ -58,9 +58,10 @@ name: mantle
 #   Deploy on VPS: docker compose pull && docker compose up -d --wait
 #
 # Optional — reach models on a box you own behind NAT (home GPU / LAN server):
-#   docker compose --profile tailnet up -d   (off by default)
-#   TS_AUTHKEY              (Tailscale auth key — generate in the TS admin console)
-#   TS_HOSTNAME             (default: mantle-vps — this node's name on the tailnet)
+#   the `tailscale` service is NOT a profile: it starts with every `up` and sits
+#   unauthenticated until you activate it from the UI (/settings/network with an
+#   auth key from the TS admin console). Nothing else waits on it.
+#   TS_IMAGE_TAG            (pin override for the tailscale image)
 #   See docs/tailscale.md.
 #
 # Embedding is ONLINE by default — configured in onboarding (text-embedding-3-large,
@@ -86,7 +87,7 @@ volumes:
   # so there's no Let's Encrypt re-issuance / rate-limit risk.
   #
   # The ONLY named volume is the tailscaled IPC socket dir below: a live unix
-  # socket shared web↔tailscale (optional `tailnet` profile), not durable data
+  # socket shared web↔tailscale (the always-on sidecar), not durable data
   # — a host bind there buys nothing and risks breaking the socket.
   mantle_tailscale_sock:
 
@@ -144,7 +145,7 @@ x-worker-healthcheck: &worker-healthcheck
 # Shared env block for app services — anchor + alias keeps the app
 # services in lockstep.
 x-app-env: &app-env
-  DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/postgres
+  DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:?set it in .env — scripts/install.sh writes one}@postgres:5432/postgres
   SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
   MANTLE_MASTER_KEY: ${MANTLE_MASTER_KEY:?MANTLE_MASTER_KEY is required}
   # Blank on a fresh install — the runtime auto-resolves the sole auth.users
@@ -155,8 +156,8 @@ x-app-env: &app-env
   S3_ENDPOINT: http://minio:9000
   S3_REGION: us-east-1
   S3_BUCKET: mantle
-  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minio}
-  S3_SECRET_KEY: ${S3_SECRET_KEY:-minio12345}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set it in .env — scripts/install.sh writes one}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:?set it in .env — scripts/install.sh writes one}
   S3_FORCE_PATH_STYLE: 'true'
   NODE_ENV: production
   MANTLE_EMBEDDING_MODEL: ${MANTLE_EMBEDDING_MODEL:-}
@@ -170,6 +171,33 @@ x-app-env: &app-env
   # with the profile off (or the token unset) they refuse cleanly.
   SANDBOXD_URL: ${SANDBOXD_URL:-http://sandboxd:8090}
   SANDBOXD_TOKEN: ${SANDBOXD_TOKEN:-}
+  # MCP surface dials (packages/mcp-core/src/build-server.ts). Both are read by
+  # `web`, which serves the HTTP/OAuth connector, so they belong on this shared
+  # anchor and nowhere narrower — setting a flag on one service and not the
+  # runtime that actually reads it is the deploy footgun MANTLE_RUNS warns about
+  # further down. Unset is the safe posture for both, so a box that never heard
+  # of them behaves exactly as before.
+  #
+  # MANTLE_MCP_TERMINAL=1 puts `run_terminal` — a shell in THIS container, with
+  # postgres, minio, the file store and the master key — on the network-reachable
+  # connector. That makes a stolen OAuth bearer a root shell on the box, so it is
+  # off unless an operator opts in per box. Over stdio the tool ships regardless
+  # (spawning that process already grants full owner access). =0 turns it off
+  # there too. `sandbox_exec` is the contained alternative and needs none of this.
+  MANTLE_MCP_TERMINAL: ${MANTLE_MCP_TERMINAL:-}
+  # Toolsmith WRITES over MCP (default on; =0 exposes the kit read-only).
+  MANTLE_MCP_TOOLSMITH_WRITE: ${MANTLE_MCP_TOOLSMITH_WRITE:-}
+  # Media sidecar (compose profile `media`) — yt-dlp + ffmpeg for video_ingest.
+  # Same posture as sandboxd above: always present so the tool can say "not
+  # enabled on this box" cleanly; with the profile off (or the token unset) it
+  # refuses instead of guessing.
+  MEDIA_SIDECAR_URL: ${MEDIA_SIDECAR_URL:-http://media:8095}
+  MEDIA_SIDECAR_TOKEN: ${MEDIA_SIDECAR_TOKEN:-}
+  # DWF sheet-render resolution (50-600, default 300) — pair 600 with a
+  # tile-reading vision worker on drawing-heavy boxes; see packages/files/src/dwf.ts.
+  DWF_RENDER_DPI: ${DWF_RENDER_DPI:-}
+  # Same dial for DWG model-space renders; see packages/files/src/dwg.ts.
+  DWG_RENDER_DPI: ${DWG_RENDER_DPI:-}
   # Runner queues (docs/runs.md) — DARK unless MANTLE_RUNS=1 in the host .env.
   # Read by THREE services off this shared anchor: web (run_* tools),
   # worker_runs (engine + sweep + claims), and api (the DBOS worker-turn
@@ -228,6 +256,10 @@ x-app-env: &app-env
   # would key on a spoofable hop.
   MANTLE_TRUSTED_PROXIES: ${MANTLE_TRUSTED_PROXIES:-}
   MANTLE_FILES_ROOT: /data/files
+  # Cap for the streamed /files uploader (POST /api/files/files), in MB. Bytes
+  # spool to disk as they arrive, so this is a disk/UX number, not a memory
+  # one. Keep it under the proxy's MANTLE_MAX_BODY_SIZE (default 1GB).
+  MANTLE_MAX_UPLOAD_MB: ${MANTLE_MAX_UPLOAD_MB:-512}
   # Per-app SQLite databases for the /apps mini-app builder. One file per app
   # (<root>/<owner>/<app>.sqlite, see packages/content/src/app-broker.ts). MUST be
   # on a persistent host bind-mount — without this the SQLite files land in the
@@ -290,7 +322,7 @@ services:
     command: ["postgres", "-c", "max_connections=200"]
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env — scripts/install.sh writes one}
       POSTGRES_DB: postgres
       # REQUIRED for pg18+. The 18+ official/pgvector images moved the default
       # PGDATA to a versioned subdir and REFUSE to init into a mount at the classic
@@ -313,7 +345,10 @@ services:
   minio:
     # Pinned (was :latest) — the in-app update path re-pulls images, so a
     # breaking upstream release would land mid-update. Override via env.
-    image: minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
+    # From quay.io, not Docker Hub: on 2026-09-14 MinIO pulled minio/minio and
+    # minio/mc from Docker Hub, so every fresh install failed at the pull. The
+    # quay.io mirror carries the same pinned tags.
+    image: quay.io/minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
     container_name: mantle_minio
     restart: unless-stopped
     logging: *default-logging
@@ -324,8 +359,8 @@ services:
     mem_limit: 512m
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minio}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minio12345}
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set it in .env — scripts/install.sh writes one}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set it in .env — scripts/install.sh writes one}
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/minio:/data
     healthcheck:
@@ -344,14 +379,15 @@ services:
   # service that writes object bytes depends_on this completing.
   createbuckets:
     # Pinned (was :latest) — same reason as minio above: the update path re-pulls.
-    image: minio/mc:${MC_IMAGE_TAG:-RELEASE.2025-08-13T08-35-41Z}
+    # quay.io for the same reason as minio above too.
+    image: quay.io/minio/mc:${MC_IMAGE_TAG:-RELEASE.2025-08-13T08-35-41Z}
     container_name: mantle_createbuckets
     restart: "no"
     depends_on:
       minio: { condition: service_healthy }
     environment:
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minio}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:-minio12345}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set it in .env — scripts/install.sh writes one}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set it in .env — scripts/install.sh writes one}
       S3_BUCKET: ${S3_BUCKET:-mantle}
     entrypoint: ["sh", "-c"]
     command:
@@ -427,6 +463,61 @@ services:
       retries: 12
       start_period: 20s
 
+  # Media sidecar (yt-dlp + ffmpeg) — the video_ingest fetch/transcode engine,
+  # behind the `media` profile (opt-in, like sandboxes). This is the ONE
+  # container allowed to run an auto-updating, network-facing binary that
+  # parses hostile input from the open web, and that is exactly why it is a
+  # sidecar: no DB, no secrets, no file-store mounts, no published ports — it
+  # takes a URL (or raw video bytes) and hands back captions/audio/video over
+  # a bearer-authed internal-only HTTP interface. yt-dlp refreshes from PyPI
+  # at boot + daily (see infra/media-sidecar/entrypoint.sh for why "always
+  # latest" is a hard requirement); the running version is on /healthz.
+  media:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-media:${MANTLE_IMAGE_TAG:-latest}
+    container_name: mantle_media
+    restart: unless-stopped
+    # tini as PID 1: a timed-out yt-dlp's group-killed ffmpeg reparents to
+    # init, which must reap it — the python server deliberately does NOT
+    # (SIGCHLD auto-reap would destroy subprocess return codes).
+    init: true
+    logging: *default-logging
+    profiles: ["media"]
+    # Transcodes stream through temp files, never RAM; 1g covers ffmpeg
+    # peaks. DWF renders (v0.232.92+) run in a group-killed child whose
+    # per-sheet canvas is pixel-capped, and the JSON reply is assembled in
+    # a single buffer (<=64 MB) — bounded, but the one RAM-shaped payload
+    # this container now carries. ⚠ ezdwf 0.0.3's PARSER is the real ceiling:
+    # reading a 630 KB real plot set peaks at ~1.3 GB transient RSS (measured
+    # 2026-08-31; upstream inefficiency, child dies cleanly and the brain
+    # falls back to thumbnails). Boxes ingesting DWFs should set
+    # MEDIA_MEM_LIMIT=3g until upstream slims the parse.
+    mem_limit: ${MEDIA_MEM_LIMIT:-1g}
+    environment:
+      MEDIA_TOKEN: ${MEDIA_SIDECAR_TOKEN:-}
+      MEDIA_MAX_CONCURRENT: ${MEDIA_MAX_CONCURRENT:-2}
+    volumes:
+      # Optional YouTube cookies (datacenter-IP bot check): drop an exported
+      # cookies.txt at ${MANTLE_DATA_DIR}/media/cookies.txt and it is used
+      # read-only on the next request — no restart needed, remove the file to
+      # turn it off. The ONE operator-supplied credential this container may
+      # hold; see docs/video-ingest.md ("YouTube and the bot check").
+      - ${MANTLE_DATA_DIR:-./data}/media:/etc/media:ro
+    healthcheck:
+      # python-slim has no curl/wget; probe with the interpreter itself.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=3).status==200 else 1)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # The listener binds immediately (boot pip refresh is backgrounded);
+      # 60s is margin for a slow image start, not for PyPI.
+      start_period: 60s
+
   # Ollama — serves the bundled local embedder (EmbeddingGemma, 768-dim) over an
   # OpenAI-compatible API. CPU-only; a small encoder (~300MB) that fits on the
   # base VPS. Self-hosted — the text the brain embeds never leaves the box.
@@ -468,7 +559,7 @@ services:
       OLLAMA_HOST: http://ollama:11434
     entrypoint: ["ollama", "pull", "${MANTLE_EMBEDDING_PULL_MODEL:-embeddinggemma}"]
 
-  # ── Tailscale (OPTIONAL — `tailnet` profile) ──────────────────────────────
+  # ── Tailscale (always-on sidecar, idle until activated) ───────────────────
   # Reaches capable chat/vision models running on a box you own (home GPU, LAN
   # server) behind NAT — without port-forwarding. Joins your tailnet; the app
   # then reaches `http://<magicdns-name>:<port>` for that box. See docs/tailscale.md.
@@ -658,8 +749,23 @@ services:
       # every box (found on the first production roll). Unset ⇒ :8080, which
       # serves nothing and costs nothing on a server-only box.
       MANTLE_CLIENT_SITE_ADDRESS: ${MANTLE_CLIENT_SITE_ADDRESS:-:8080}
+      # Request-body ceiling at the front door (Caddy size, e.g. 1GB, 800MB).
+      # Backstop above the app's own streamed upload cap (MANTLE_MAX_UPLOAD_MB).
+      MANTLE_MAX_BODY_SIZE: ${MANTLE_MAX_BODY_SIZE:-1GB}
+      # Routing shape, picks infra/caddy/shapes/<shape>.caddy: same-origin (one
+      # domain, path-routed; the default and what every fleet box runs) or
+      # split (owner UI on its own vhost). See infra/caddy/README.md.
+      MANTLE_CADDY_SHAPE: ${MANTLE_CADDY_SHAPE:-same-origin}
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Release-owned routing shapes, imported by the Caddyfile per
+      # MANTLE_CADDY_SHAPE. Refreshed by the updater like compose.
+      - ./infra/caddy/shapes:/etc/caddy/shapes:ro
+      # Box-local Caddy drop-ins (*.caddy), imported inside the site block by the
+      # shipped Caddyfile. Routes a box needs beyond the release (a client's MCP
+      # bridge, say) live here and survive every roll; the Caddyfile itself is
+      # never hand-edited. Tracked README only; *.caddy files are gitignored.
+      - ./infra/caddy/conf.d:/etc/caddy/conf.d:ro
       - ${MANTLE_DATA_DIR:-./data}/caddy/data:/data
       - ${MANTLE_DATA_DIR:-./data}/caddy/config:/config
 
@@ -718,6 +824,14 @@ services:
       SANDBOX_DEFAULT_IMAGE: ${SANDBOX_DEFAULT_IMAGE:-titanwest/mantle-sandbox:24.04-v2}
       SANDBOX_MAX_COUNT: ${SANDBOX_MAX_COUNT:-3}
       SANDBOX_EGRESS_ALLOW: ${SANDBOX_EGRESS_ALLOW:-}
+      # Read-only inbox mounts (docs/sandboxes.md). HOST-absolute, for the same
+      # reason MANTLE_SANDBOXES_HOST_DIR is: sandboxd hands the bind SOURCE to
+      # the host daemon. Unset = the feature is off and sandbox_create says so.
+      # Deliberately NOT also mounted into sandboxd: the folder's existence is
+      # checked by `web`, which already has the file store, and binding a
+      # DEFAULTED path here would have Docker create a stray root-owned
+      # directory on every box that never sets the variable.
+      SANDBOX_INBOX_ROOT: ${MANTLE_FILES_HOST_DIR:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}:${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}
@@ -796,7 +910,12 @@ services:
     container_name: mantle_api
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 1.5g
+    # 1.5g fits an ordinary box. One carrying large Tables workbooks next to
+    # heavy extraction can spike past it: a cgroup OOM measured 2026-09-09 at
+    # ~1.46 GB anon-rss killed the runtime mid-extract and left extract jobs
+    # stranded 'active'. Such boxes set API_MEM_LIMIT=3g; the default is
+    # deliberately unchanged so no other box moves.
+    mem_limit: ${API_MEM_LIMIT:-1.5g}
     # Heartbeat-based liveness (no HTTP port; DBOS admin server off by default).
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe

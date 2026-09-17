@@ -1,12 +1,26 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { deleteFolder, folderById, renameFolderById, updateFolderDescription } from '@/lib/files';
+import {
+  deleteFolder,
+  folderById,
+  renameFolderById,
+  setIndexingMode,
+  updateFolderDescription,
+} from '@/lib/files';
+import { copyFolderById, moveFolderById } from '@mantle/files';
+import { firstIssue } from '@/lib/zod-issue';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([
   z.object({ description: z.string().max(2000) }),
   z.object({ rename: z.string().min(1).max(64) }),
+  // 'inherit' clears the folder's own flag; descendants fall back to the
+  // nearest flagged ancestor (or full). Setting it re-queues extraction for
+  // every descendant file whose effective mode changed.
+  z.object({ indexing: z.enum(['full', 'metadata', 'inherit']) }),
+  // Move this folder (subtree included) under another parent.
+  z.object({ move: z.string().min(1).max(500) }),
 ]);
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -31,12 +45,27 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   try {
+    if ('move' in parsed.data) {
+      const { folder, requeued } = await moveFolderById({
+        ownerId: user.id,
+        folderId: idParsed.data.id,
+        destParentPath: parsed.data.move,
+      });
+      return NextResponse.json({ folder, requeued });
+    }
+    if ('indexing' in parsed.data) {
+      const { requeued } = await setIndexingMode({
+        ownerId: user.id,
+        nodeId: idParsed.data.id,
+        mode: parsed.data.indexing,
+      });
+      const folder = await folderById({ ownerId: user.id, folderId: idParsed.data.id });
+      if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
+      return NextResponse.json({ folder, requeued });
+    }
     if ('rename' in parsed.data) {
       const folder = await renameFolderById({
         ownerId: user.id,
@@ -56,6 +85,33 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'rename failed' },
+      { status: 400 },
+    );
+  }
+}
+
+/** Copy this folder (subtree included) under another parent. Capped —
+ *  every copied file re-extracts, so a big copy is a deliberate act. */
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const user = await getOwnerOr401();
+  if (user instanceof Response) return user;
+  const idParsed = IdParams.safeParse(await ctx.params);
+  if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
+  const raw = await req.json().catch(() => ({}));
+  const body = z.object({ copy_to: z.string().min(1).max(500) }).safeParse(raw);
+  if (!body.success) {
+    return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
+  }
+  try {
+    const result = await copyFolderById({
+      ownerId: user.id,
+      folderId: idParsed.data.id,
+      destParentPath: body.data.copy_to,
+    });
+    return NextResponse.json(result, { status: 201 });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'copy failed' },
       { status: 400 },
     );
   }

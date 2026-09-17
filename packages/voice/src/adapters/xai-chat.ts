@@ -39,6 +39,7 @@ import {
   type OpenAICompatChatResponse,
 } from './openai-compat';
 import { scrubThinkBlocks } from './think-scrubber';
+import { errorMessage } from '@mantle/std';
 
 /** xAI's chat response shape — the shared OpenAI-compat envelope plus
  *  one xAI-specific quirk: some routes return `choices[].text` as a
@@ -141,7 +142,7 @@ async function xaiDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInf
     return {
       available: [...XAI_CHAT_MODELS],
       filtered: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }

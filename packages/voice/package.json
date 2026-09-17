@@ -13,14 +13,16 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mantle/api-keys": "workspace:*",
-    "@openrouter/sdk": "^1.2.7",
-    "undici": "^8.8.0"
+    "@mantle/config": "workspace:*",
+    "@mantle/std": "workspace:*",
+    "@mantle/voice-client": "workspace:*",
+    "@openrouter/sdk": "^1.2.107",
+    "undici": "^8.10.2"
   },
   "devDependencies": {
-    "@types/node": "^22.20.1",
-    "typescript": "^5.7.2",
-    "vite": "^8.1.5",
-    "vitest": "^4.1.10"
+    "@types/node": "^26.4.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
   }
 }

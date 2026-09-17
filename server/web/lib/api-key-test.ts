@@ -11,22 +11,21 @@
  */
 import { getApiKeyById } from '@mantle/api-keys';
 import { getChatAdapter, getProvider, getSttAdapter, getTtsAdapter } from '@mantle/voice';
+import type { TestApiKeyResult } from '@mantle/client-types';
+import { errorMessage } from '@mantle/std';
 
-export type TestApiKeyResult = {
-  ok: boolean;
-  /** One-line summary for the UI — e.g. '13 models accessible' or
-   *  'OpenAI rejected the key (401)'. */
-  message: string;
-  /** Provider label for the result line. Empty when we can't resolve the
-   *  provider from the key's service. */
-  provider: string;
-  /** Which adapter ran the probe ('openai-tts', 'anthropic-chat', …). */
-  adapter: string;
-  /** Number of models accessible to this key, if discovery succeeded. */
-  modelsFound?: number;
-};
+export type { TestApiKeyResult };
 
 export async function probeApiKey(keyId: string, service: string): Promise<TestApiKeyResult> {
+  // Connector-sealed OAuth state, not a provider key — nothing to probe.
+  if (service.startsWith('mcp-')) {
+    return {
+      ok: false,
+      message: `'${service}' rows hold MCP connector OAuth state, not a provider key — there is nothing to test here; manage the connector under Settings → Connectors.`,
+      provider: service,
+      adapter: '',
+    };
+  }
   const provider = getProvider(service);
   const providerLabel = provider?.label ?? service;
 
@@ -92,7 +91,7 @@ export async function probeApiKey(keyId: string, service: string): Promise<TestA
   } catch (err) {
     return {
       ok: false,
-      message: err instanceof Error ? err.message : String(err),
+      message: errorMessage(err),
       provider: providerLabel,
       adapter: adapter.adapterName,
     };

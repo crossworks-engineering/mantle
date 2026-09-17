@@ -15,6 +15,7 @@ import { eq, sql } from 'drizzle-orm';
 import { db, traces, traceSteps } from '@mantle/db';
 import { truncateJson } from './truncate';
 import { runDurableStep } from './durable';
+import { errorMessage } from '@mantle/std';
 
 export type TraceKind =
   | 'responder_turn'
@@ -191,7 +192,7 @@ export function allocateTurnSeq(turnId: string): number {
 // ─── Per-turn abort registry (stop a streamed turn mid-flight) ───────────────
 //
 // A turn's LLM streaming call needs to be cancellable across the process
-// boundary: the user hits Stop in `apps/web`, which NOTIFYs `apps/api`, which
+// boundary: the user hits Stop in `server/web`, which NOTIFYs `server/api`, which
 // must abort the in-flight generation. The runner registers an AbortController
 // per turn (keyed by the streamId/turnId); the cancel listener calls `abortTurn`
 // and the chat dispatcher threads the signal into the adapter via
@@ -240,7 +241,7 @@ let stepObserver: StepObserver | null = null;
 
 /**
  * Register a single global step observer (or clear it with null). The runner
- * (apps/api) installs one to publish live turn events; every other process
+ * (server/api) installs one to publish live turn events; every other process
  * leaves it unset and pays nothing. Generic by design — tracing only ever hands
  * back the step's identity + the trace's `turnId`/`ownerId`.
  */
@@ -315,15 +316,21 @@ export function isTurnStreaming(): boolean {
 
 /** Emit one streamed token delta for the current turn. No-op unless streaming is
  *  active. Shares the trace's `streamSeq` so deltas + status events interleave on
- *  one monotonic cursor. NEVER throws — a publish fault must not break the turn. */
-export function emitTurnDelta(round: number, kind: 'text' | 'reasoning', text: string): void {
+ *  one monotonic cursor. NEVER throws — a publish fault must not break the turn.
+ *
+ *  Returns whether the delta actually REACHED a client. The tool loop needs that
+ *  answer to decide whether a failed round may be replayed on the backup route:
+ *  once the user has seen tokens, re-running the round appends a second answer
+ *  to the first. The suppressed cases (no observer, a delegated sub-agent) are
+ *  exactly the ones where a replay is invisible and therefore safe. */
+export function emitTurnDelta(round: number, kind: 'text' | 'reasoning', text: string): boolean {
   const obs = turnDeltaObserver;
   const trace = currentTrace();
   // Only the ROOT turn streams reply text — a delegated sub-agent's tokens are
   // intermediate (its result is folded back into the persona's own reply), so
   // they must not append to the visible reply buffer. Sub-agent STATUS still
   // surfaces via the step observer above.
-  if (!obs || !trace?.turnId || !trace.isStreamRoot) return;
+  if (!obs || !trace?.turnId || !trace.isStreamRoot) return false;
   try {
     obs({
       turnId: trace.turnId,
@@ -333,8 +340,12 @@ export function emitTurnDelta(round: number, kind: 'text' | 'reasoning', text: s
       kind,
       text,
     });
+    return true;
   } catch (err) {
     logErr('turn delta observer', err);
+    // The observer threw, so nothing was published: report it as not emitted
+    // rather than blocking a failover the user would never see double.
+    return false;
   }
 }
 
@@ -431,7 +442,7 @@ function genId(): string {
 }
 
 function logErr(scope: string, err: unknown): void {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = errorMessage(err);
   console.error(`[tracing] ${scope}: ${msg}`);
 }
 
@@ -517,7 +528,7 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
       return result;
     } catch (err) {
       ctx.status = 'error';
-      ctx.failedError = err instanceof Error ? err.message : String(err);
+      ctx.failedError = errorMessage(err);
       throw err;
     } finally {
       // The root turn owns the per-turn seq cursor. When a lifecycle observer is
@@ -650,7 +661,7 @@ export async function step<T>(
     let errMsg: string | null = null;
     try {
       // Route the actual work through the durable executor when a workflow has
-      // one active (apps/api): this exact boundary becomes a journaled step, so
+      // one active (server/api): this exact boundary becomes a journaled step, so
       // a crash-resume returns the recorded result instead of re-running the
       // LLM call / tool dispatch. Inert (pure passthrough) otherwise. The trace
       // bookkeeping around it stays best-effort and engine-agnostic.
@@ -667,7 +678,7 @@ export async function step<T>(
       return result;
     } catch (err) {
       status = 'error';
-      errMsg = err instanceof Error ? err.message : String(err);
+      errMsg = errorMessage(err);
       stepInfo.meta = {
         ...stepInfo.meta,
         stack: err instanceof Error ? err.stack?.split('\n').slice(0, 8).join('\n') : undefined,

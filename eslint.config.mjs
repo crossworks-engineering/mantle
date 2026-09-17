@@ -29,13 +29,13 @@ export default tseslint.config(
       // gitignored) — not ours to lint.
       '**/next-env.d.ts',
       'server/web/public/app-runtime/**',
+      // Same bundles under the client tree. `.gitignore` has covered this path
+      // since the kit landed, but the lint ignore only ever named server/web —
+      // so any checkout that had built the client once could not push: the
+      // pre-push `pnpm verify` walked 19 minified files and produced ~750
+      // errors in code nobody wrote. Untracked here in any case; the client
+      // lives in the jackdaw repo and lints itself there.
       'client/web/public/app-runtime/**',
-      // The desktop shell's STAGED copy of the built owner UI — a whole
-      // Next standalone tree (gitignored). CI never sees it because it
-      // lints a fresh checkout, but anyone who runs `build:ui` locally and
-      // then `pnpm verify` gets hundreds of errors from minified vendor
-      // bundles that are not ours to lint.
-      'client/desktop/ui/**',
       // Generated share-surface bundle + route manifest (gitignored).
       'server/web/public/share-runtime/**',
       'server/web/server/route-manifest.gen.ts',
@@ -109,14 +109,10 @@ export default tseslint.config(
     // the share presenters — were silently unlinted. A missing `tint` dep in
     // the avatar component shipped a picker whose previews never repainted:
     // the state changed, the memo did not.
-    files: [
-      'server/web/**/*.{ts,tsx}',
-      'client/web/**/*.{ts,tsx}',
-      'packages/web-ui/**/*.{ts,tsx}',
-    ],
+    files: ['server/web/**/*.{ts,tsx}', 'packages/share-ui/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks, '@next/next': nextPlugin },
     rules: {
-      'react-hooks/rules-of-hooks': 'warn',
+      'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'error',
       '@next/next/no-img-element': 'warn',
     },
@@ -127,13 +123,41 @@ export default tseslint.config(
     // v0.206.1) — found by a user, not CI. See eslint-rules/ for why the rule is
     // deliberately narrow: the common `text-muted-foreground hover:bg-accent
     // hover:text-accent-foreground` idiom is CORRECT and must not be flagged.
-    files: [
-      'client/web/**/*.{ts,tsx}',
-      'server/web/**/*.{ts,tsx}',
-      'packages/web-ui/**/*.{ts,tsx}',
-    ],
+    files: ['server/web/**/*.{ts,tsx}', 'packages/share-ui/**/*.{ts,tsx}'],
     plugins: { mantle: mantlePlugin },
     rules: { 'mantle/pair-fill-foreground': 'error', 'mantle/use-ink-for-text': 'error' },
+  },
+  {
+    // Environment reads go through @mantle/config (typed names, legacy-alias
+    // fallbacks, one inventory — see packages/config/src/index.ts). Bare
+    // `process.env` as a whole object (spawning a child with the inherited
+    // env) is fine; member reads are not. Excepted: the config package itself,
+    // packages/client-types (published to the frontend, where NEXT_PUBLIC_* is
+    // a build-time contract), server/sandboxd (standalone image, own config
+    // block), the dotenv loader and the boot file that bridges MANTLE_* into
+    // the client-types names, plus tests and scripts.
+    files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}'],
+    ignores: [
+      'packages/config/**',
+      'packages/client-types/**',
+      'server/sandboxd/**',
+      'server/web/server/env.ts',
+      'server/web/server/main.ts',
+      '**/*.test.ts',
+      '**/*.test.tsx',
+      '**/scripts/**',
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "MemberExpression[object.type='MemberExpression'][object.object.name='process'][object.property.name='env']",
+          message:
+            'Read environment through @mantle/config (env, envInt, envFlag, envDynamic), not process.env.X.',
+        },
+      ],
+    },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.
@@ -143,59 +167,67 @@ export default tseslint.config(
     },
   },
   {
-    // ── The split boundary ──────────────────────────────────────────────────
-    // client/web + packages/web-ui are the ZERO-SECRET tier: server packages
-    // may be imported as TYPES only (erased at compile); values would drag
-    // Postgres/node into the browser bundle. The content BARREL is banned as a
-    // value even server-side of the fence — clients use its runtime-pure
-    // subpaths. `@server/*` and `@/…`-fallback resolution exist for TYPE
-    // reach-through only.
-    files: ['client/web/**/*.{ts,tsx}', 'packages/web-ui/**/*.{ts,tsx}'],
+    // share-ui sits one layer up: it may consume the zero-dep contract
+    // packages but nothing else @mantle — in particular NOT web-ui, or the
+    // published package would drag the whole UI kit into the server image.
+    files: ['packages/share-ui/**/*.{ts,tsx}'],
     rules: {
-      '@typescript-eslint/no-restricted-imports': [
+      'no-restricted-imports': [
         'error',
         {
-          paths: [
-            ...[
-              '@mantle/db',
-              '@mantle/agent-runtime',
-              '@mantle/assistant-runtime',
-              '@mantle/tools',
-              '@mantle/runs',
-              '@mantle/email',
-              '@mantle/microsoft',
-              '@mantle/telegram',
-              '@mantle/storage',
-              '@mantle/files',
-              '@mantle/search',
-              '@mantle/embeddings',
-              '@mantle/rules',
-              '@mantle/heartbeats',
-              '@mantle/calendar',
-              '@mantle/crypto',
-              '@mantle/api-keys',
-              '@mantle/mcp-core',
-              '@mantle/tracing',
-              '@mantle/tabledb',
-              '@mantle/turn-stream',
-            ].map((name) => ({
-              name,
-              allowTypeImports: true,
-              message: 'server-only package — the client tier may import types only',
-            })),
-            {
-              name: '@mantle/content',
-              allowTypeImports: true,
-              message:
-                'import a runtime-pure subpath (e.g. @mantle/content/markdown), never the barrel',
-            },
-          ],
           patterns: [
             {
-              group: ['@server/*'],
-              allowTypeImports: true,
+              group: [
+                '@mantle/*',
+                '!@mantle/client-types',
+                '!@mantle/client-types/*',
+                '!@mantle/content-core',
+                '!@mantle/content-core/*',
+              ],
               message:
-                '@server/* is a TYPE-only reach-through into server/web — values would bundle server code',
+                'share-ui may import only @mantle/{client-types,content-core} (jackdaw split boundary)',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Every PUBLISHED contract package may depend only on its published
+    // siblings. Any other @mantle/* import is a private workspace name that
+    // does not exist on npm: the v0.232.122-153 app-build tarballs shipped
+    // @mantle/std@0.0.1 and @mantle/config@0.0.1 dependencies and could not
+    // be installed. scripts/publish-contract.mjs refuses the same at publish
+    // time; this catches it at lint time, before the tag.
+    files: [
+      'packages/client-types/**/*.{ts,tsx}',
+      'packages/content-core/**/*.{ts,tsx}',
+      'packages/voice-client/**/*.{ts,tsx}',
+      'packages/app-build/**/*.{ts,tsx}',
+    ],
+    // Repo-internal build scripts are not packed (see each package's "files").
+    ignores: ['**/scripts/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@mantle/*',
+                '!@mantle/client-types',
+                '!@mantle/client-types/*',
+                '!@mantle/content-core',
+                '!@mantle/content-core/*',
+                '!@mantle/voice-client',
+                '!@mantle/voice-client/*',
+                '!@mantle/share-ui',
+                '!@mantle/share-ui/*',
+                '!@mantle/app-build',
+                '!@mantle/app-build/*',
+              ],
+              message:
+                'Contract packages may import only the five published @mantle contract packages; anything else is private and does not exist on npm.',
             },
           ],
         },

@@ -6,6 +6,7 @@ import { db, authUsers, agents, asc, eq, sql } from '@mantle/db';
 import { getOwnerOr401 } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
+import { errorMessage } from '@mantle/std';
 
 /**
  * Co-admin login management (Settings → Logins). Logins are NOT tenants: every
@@ -112,7 +113,7 @@ export async function POST(req: Request) {
       isOwner: false,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     // 23505 = unique_violation (concurrent create of the same email).
     if (msg.includes('duplicate key') || msg.includes('users_email_key')) {
       return NextResponse.json(

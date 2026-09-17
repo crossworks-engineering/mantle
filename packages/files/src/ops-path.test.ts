@@ -36,7 +36,8 @@ describe('renamedFolderPath', () => {
  * this package's tests are pure by design.
  */
 describe('filename handling: sanitise on write, preserve on sync', () => {
-  const SRC = readFileSync(new URL('./ops.ts', import.meta.url), 'utf8');
+  // These three live in ops/files.ts since the ops.ts split; ops.ts is now a barrel.
+  const SRC = readFileSync(new URL('./ops/files.ts', import.meta.url), 'utf8');
   const bodyOf = (fn: string) => {
     const start = SRC.indexOf(`export async function ${fn}(`);
     expect(start, `${fn} not found`).toBeGreaterThan(-1);

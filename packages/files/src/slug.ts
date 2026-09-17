@@ -101,9 +101,15 @@ export const TIKA_EXTS = new Set<string>([
   // to work (matching `<title>` rather than titles). Project's MSPDI export is
   // recognised by content before this fallback — see parseDocumentBytes.
   'xml',
+  // Saved web pages. Same shape as .xml: mostly markup, real content inside,
+  // Tika strips the tags cleanly. Without this, .html routed 'none' and — once
+  // the hollow-body guard landed — went from degraded filename-indexing to a
+  // no_parser skip, which is a regression for a folder of saved articles.
+  'html',
+  'htm',
 ]);
 /** TEXT_EXTS + every binary type the extractor can pull readable text from.
- *  In-process: pdf-parse, mammoth, SheetJS. Tika-routed: TIKA_EXTS. Each
+ *  In-process: pdf-parse, mammoth, exceljs. Tika-routed: TIKA_EXTS. Each
  *  in-process binary type has a parser module under packages/files/src/
  *  and a branch in the extractor's readNodeBodyRaw; Tika-routed ones go
  *  through parseDocumentBytes → tika.ts. */
@@ -115,7 +121,47 @@ export const INGESTABLE_EXTS = new Set<string>([
   'xls',
   'xlsm',
   'xlsb',
+  // Autodesk DWF drawing sets (published plots). In-process parser — see
+  // ./dwf.ts. Yields the metadata + layer/label digest, not vector geometry.
+  'dwf',
+  // AutoCAD DWG drawings. Sidecar-parsed — see ./dwg.ts. No local parser:
+  // boxes without the media CAD tier get an honest extract error, not a
+  // filename index.
+  'dwg',
+  // AutoCAD DXF drawings (the DWG interchange twin). Same sidecar route and
+  // machinery — see ./dxf.ts. Deliberately NOT in TEXT_EXTS even though
+  // ASCII DXF is text: raw group codes would index as garbage.
+  'dxf',
   ...TIKA_EXTS,
+]);
+
+/**
+ * Audio + video containers Mantle STORES and PLAYS but does not (yet) index.
+ * Deliberately NOT in INGESTABLE_EXTS: no parser can pull text from these, and
+ * transcription is an explicit, paid action (the `video_ingest` tool) — never
+ * something the extract sweep triggers on its own. Mirrors the media families
+ * `mimeForExt` maps below. What this set drives:
+ *   - the extractor records an honest `unsupported_media` terminal skip
+ *     instead of indexing the filename as if it were the document;
+ *   - the disk-sync watcher stores these instead of silently skipping them;
+ *   - the upload-cap rejections point media at link ingestion.
+ */
+export const MEDIA_EXTS = new Set<string>([
+  // video
+  'mp4',
+  'mov',
+  'webm',
+  'mkv',
+  'avi',
+  // audio
+  'mp3',
+  'm4a',
+  'wav',
+  'ogg',
+  'oga',
+  'opus',
+  'flac',
+  'aac',
 ]);
 
 /**
@@ -146,6 +192,14 @@ export const EXPORT_REQUIRED_EXTS = new Map<string, string>([
     'mpt',
     "Microsoft Project templates are a proprietary binary format Mantle can't read. Open it in Project and use File → Save As → XML (*.xml), then upload that instead.",
   ],
+  // DWFx is the XPS-based successor to DWF. Mantle reads classic DWF (.dwf);
+  // the DWFx package is a different container and stream format that this
+  // parser does not decode. Re-publishing is a one-click choice in the plot
+  // dialog, so the honest move is to name it.
+  [
+    'dwfx',
+    'DWFx drawings use a different container than the classic DWF Mantle can read. In AutoCAD plot/publish again choosing the "DWF" (not DWFx) format and upload that — or upload the source DWG or DXF directly, both ingest.',
+  ],
 ]);
 
 /** The recovery hint for a format that needs exporting, or undefined when the
@@ -160,14 +214,47 @@ export function exportHintForExt(ext: string): string | undefined {
  *  (extractor + live conversational attachment) read from one source and
  *  the routing is unit-testable. `none` = no parser will try this ext (the
  *  caller will fall through to title fallback / `no_text_layer` skip). */
-export type ParserRoute = 'pdf-parse' | 'mammoth' | 'sheetjs' | 'utf8' | 'tika' | 'none';
+export type ParserRoute =
+  | 'pdf-parse'
+  | 'mammoth'
+  | 'exceljs'
+  /** Legacy .xls/.xlsb: converted to .xlsx via Tika, then read by exceljs. */
+  | 'legacy-sheet'
+  | 'utf8'
+  /** Autodesk DWF container: sheets/layers/labels digest (./dwf.ts). */
+  | 'dwf'
+  /** AutoCAD DWG: sidecar-converted registry digest (./dwg.ts). */
+  | 'dwg'
+  /** AutoCAD DXF: same sidecar registry digest, read natively (./dxf.ts). */
+  | 'dxf'
+  | 'tika'
+  | 'none';
 export function parserRouteForExt(ext: string): ParserRoute {
   if (ext === 'pdf') return 'pdf-parse';
   if (ext === 'docx') return 'mammoth';
-  if (ext === 'xlsx' || ext === 'xls' || ext === 'xlsm' || ext === 'xlsb') return 'sheetjs';
+  if (ext === 'xls' || ext === 'xlsb') return 'legacy-sheet';
+  if (ext === 'xlsx' || ext === 'xlsm') return 'exceljs';
+  if (ext === 'dwf') return 'dwf';
+  if (ext === 'dwg') return 'dwg';
+  if (ext === 'dxf') return 'dxf';
   if (TEXT_EXTS.has(ext)) return 'utf8';
   if (TIKA_EXTS.has(ext)) return 'tika';
   return 'none';
+}
+
+/**
+ * Should this attachment be handled as an IMAGE (vision worker) rather than a
+ * routed document? EXT routing wins over the client-supplied MIME: uploaders
+ * send `image/vnd.dwg` for a DWG (a registered alias), and letting that mime
+ * steer would ship a CAD binary to the vision worker — an empty read and a
+ * false terminal skip — instead of the format's real parser. No ingestable
+ * extension maps to an image format, so the exclusion is exact. Files with no
+ * or an unrouted extension still follow the mime (email attachments whose
+ * filename lives in the title).
+ */
+export function isVisionImage(ext: string, mime: string): boolean {
+  if (INGESTABLE_EXTS.has(ext)) return false;
+  return mime.startsWith('image/') || mimeForExt(ext).startsWith('image/');
 }
 
 /** Map an extension to a sensible MIME type. Falls back to octet-stream. */
@@ -201,6 +288,7 @@ export function mimeForExt(ext: string): string {
     case 'svg':
       return 'image/svg+xml';
     case 'html':
+    case 'htm':
       return 'text/html; charset=utf-8';
     case 'xml':
       return 'application/xml; charset=utf-8';
@@ -236,6 +324,68 @@ export function mimeForExt(ext: string): string {
       return 'application/vnd.ms-visio.drawing';
     case 'vsd':
       return 'application/vnd.visio';
+    case 'dwf':
+      return 'model/vnd.dwf';
+    case 'dwfx':
+      return 'model/vnd.dwfx+xps';
+    case 'dwg':
+      // Deliberately NOT the also-registered image/vnd.dwg: a DWG is not a
+      // viewable raster, and every mime.startsWith('image/') path (hollow
+      // guard, previews, vision ingest) would mishandle it.
+      return 'application/acad';
+    case 'dxf':
+      // Same reasoning as dwg: NEVER the also-registered image/vnd.dxf —
+      // every image-mime path would misroute the drawing.
+      return 'application/dxf';
+    // ── Audio. These arrive constantly (Telegram voice notes are ogg/opus,
+    // the transcriber's clips are m4a) and all fell through to octet-stream,
+    // which made every media file render as a generic binary in the client.
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'm4a':
+      return 'audio/mp4';
+    case 'wav':
+      return 'audio/wav';
+    case 'ogg':
+    case 'oga':
+    case 'opus':
+      return 'audio/ogg';
+    case 'flac':
+      return 'audio/flac';
+    case 'aac':
+      return 'audio/aac';
+    // ── Video.
+    case 'mp4':
+      return 'video/mp4';
+    case 'mov':
+      return 'video/quicktime';
+    case 'webm':
+      return 'video/webm';
+    case 'mkv':
+      return 'video/x-matroska';
+    case 'avi':
+      return 'video/x-msvideo';
+    // ── Archives.
+    case 'zip':
+      return 'application/zip';
+    case 'tar':
+      return 'application/x-tar';
+    case 'gz':
+      return 'application/gzip';
+    case '7z':
+      return 'application/x-7z-compressed';
+    case 'rar':
+      return 'application/vnd.rar';
+    // ── Images the map missed.
+    case 'bmp':
+      return 'image/bmp';
+    case 'tif':
+    case 'tiff':
+      return 'image/tiff';
+    case 'ico':
+      return 'image/x-icon';
+    case 'avif':
+      return 'image/avif';
     default:
       return 'application/octet-stream';
   }

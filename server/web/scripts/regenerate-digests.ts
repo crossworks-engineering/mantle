@@ -2,7 +2,7 @@
  * One-off repair for conversation-digest notes whose summary was
  * clobbered by the extractor.
  *
- * The bug (now fixed in apps/agent): the summarizer wrote the digest to
+ * The bug (now fixed in server/api): the summarizer wrote the digest to
  * data.summary with no data.content and no embedding, so the extractor
  * re-ran, found no body, summarised the *title*, and overwrote
  * data.summary with a useless paraphrase. The real digest was lost from
@@ -23,10 +23,11 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { db, nodes, telegramMessages, getDefaultWorker } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
-import { buildChatMessages, flattenChatMessagesForAdapter } from '@mantle/agent-runtime';
+import { buildChatMessages, flattenChatMessagesForAdapter } from '@mantle/runtime/agent';
 import { getChatAdapter } from '@mantle/voice';
+import { env } from '@mantle/config';
 
-const OWNER_ID = process.env.ALLOWED_USER_ID;
+const OWNER_ID = env('ALLOWED_USER_ID');
 
 const REGEN_PROMPT = `You are a memory compressor for an ongoing Telegram conversation. You will be given a chronological transcript of a chat between the user and an AI assistant, each line prefixed by its turn number.
 

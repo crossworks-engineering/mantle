@@ -4,7 +4,7 @@
  * under the per-run concurrency cap, run-row lock serializing cap decisions);
  * the TURN itself — route resolution incl. the `'inherit'` sentinel, the
  * agent tool-loop, mechanical evidence, spill, completion — moved to the
- * durable DBOS runner (`apps/api/src/workflows/runs-worker-turn.ts`), where
+ * durable DBOS runner (`server/api/src/workflows/runs-worker-turn.ts`), where
  * every LLM call and tool dispatch is a journaled step and a crash mid-turn
  * resumes instead of re-running wholesale.
  *
@@ -26,6 +26,7 @@ import { claimWorkerItem, completeItem } from '@mantle/runs';
 
 import { enqueueRunsWorkerTurn } from './dbos-enqueue';
 import type { ExecuteItemOutcome } from './execute-item';
+import { errorMessage } from '@mantle/std';
 
 export async function executeWorkerInvoke(itemId: string): Promise<ExecuteItemOutcome> {
   const { item, capped } = await claimWorkerItem(db, itemId);
@@ -39,7 +40,7 @@ export async function executeWorkerInvoke(itemId: string): Promise<ExecuteItemOu
     // now with the true cause instead of letting it rot to a lying
     // `timeout` (plan §8). completeItem drives the counter; the run
     // completes degraded and the responder reports it.
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     console.error(`[runs] worker-turn enqueue failed (item ${item.id}): ${message}`);
     const { actions } = await completeItem(db, {
       itemId: item.id,

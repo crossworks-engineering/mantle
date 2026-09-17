@@ -25,6 +25,7 @@ import { resolveActiveShareByToken } from '@/lib/shares';
 import { getApp, recordAppAccess } from '@mantle/content';
 import { resolveTool, dispatchTool, isPublicToolAllowed } from '@mantle/tools';
 import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
+import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 const Body = z.object({
   slug: z.string().min(1).max(120),
@@ -33,6 +34,18 @@ const Body = z.object({
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
+
+  const { ok, retryAfterSec } = rateLimit(`share-tool-broker:${clientIp(req)}`, {
+    max: 60,
+    windowMs: 60_000,
+  });
+  if (!ok) {
+    return NextResponse.json(
+      { ok: false, error: 'too many requests' },
+      { status: 429, headers: { 'retry-after': String(retryAfterSec) } },
+    );
+  }
+
   const share = await resolveActiveShareByToken(token);
   if (!share || share.nodeType !== 'app') {
     return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });

@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { deletePage, getPage, updatePage } from '@/lib/pages';
+import { firstIssue } from '@/lib/zod-issue';
 
 const DocSchema = z.record(z.string(), z.unknown());
 
@@ -33,10 +34,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const raw = await req.json().catch(() => ({}));
   const parsed = PatchBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { reindex, ...fields } = parsed.data;
   const row = await updatePage(user.id, id, fields, { reindex });

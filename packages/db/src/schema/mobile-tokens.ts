@@ -5,7 +5,7 @@ import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
  * Per-device bearer tokens for the mobile companion app.
  *
  * The token handed to the device is an HMAC-signed string (same scheme as the
- * session cookie, see apps/web/lib/auth.ts) whose payload embeds this row's
+ * session cookie, see server/web/lib/auth.ts) whose payload embeds this row's
  * `id` as the `jti`. The signature lets the Edge middleware accept the token
  * statelessly; this row is what makes it *revocable*: clearing it (or setting
  * `revoked_at`) makes the next request from that device fail in

@@ -56,6 +56,19 @@ export type ManifestSkill = {
   slug: string;
   name: string;
   description: string;
+  /** Seed value for `skills.default_state` — the template the heartbeat form
+   *  pre-fills its "Initial state" box from when an operator binds this skill.
+   *  A heartbeat's `state` is its running memory between fires; this declares
+   *  the SHAPE so the first fire starts from something rather than `{}`.
+   *
+   *  Only meaningful for task-shaped skills (a heartbeat's job). Behaviour
+   *  packs like `tool_grounding` have no state and omit it.
+   *
+   *  Converged on reconcile when declared, like the instructions body. Omitted
+   *  means "the manifest has no opinion", so an existing value is left alone
+   *  rather than wiped — which also means the manifest cannot REMOVE a
+   *  default_state, only set one. */
+  defaultState?: Record<string, unknown>;
   /** The skill body rendered into the system prompt (verbatim, from ./prompts).
    *  Skills are PURE TEACHING — they carry no tools (the skills.tool_slugs column
    *  was dropped in P4; capability lives on agents + tool groups). */
@@ -139,6 +152,39 @@ export type ManifestWorker = {
   altParams?: AiWorkerParams;
 };
 
+/** A heartbeat the product ships: a scheduled, self-directed agent turn.
+ *
+ *  Unlike every other manifest section this one is **create-only**. A heartbeat
+ *  is the only manifest item that SPENDS on a timer, and its row carries
+ *  operator decisions (paused? rescheduled? muted at night?) plus live runtime
+ *  state (`next_fire_at`, `fire_count`). Converging it on every boot reconcile
+ *  would silently un-pause a heartbeat the owner switched off, and re-arming
+ *  `next_fire_at` each boot would mean a box that redeploys weekly never fires
+ *  at all. So: seed it if absent, then never touch it again except to re-point
+ *  a `skill_slug` the manifest renamed. See seedManifestHeartbeats. */
+export type ManifestHeartbeat = {
+  slug: string;
+  name: string;
+  description: string;
+  /** The skill body the fire loop composes for this turn. Loaded BY SLUG from
+   *  the skills table at fire time (fire.ts), so it does NOT need to be
+   *  attached to the agent — and should not be, or it would ride along on
+   *  every ordinary turn too. Must name a MANIFEST_SKILLS slug. */
+  skillSlug: string;
+  /** Tool group the answering agent needs for this heartbeat to do its job.
+   *  Checked by the integrity probe: a heartbeat whose agent lacks the group
+   *  fires and then fails on the first tool call. */
+  requiresToolGroup: string;
+  scheduleKind: 'interval';
+  /** Minutes between fires, plus the jitter that stops a fleet of brains all
+   *  firing on the same second. */
+  everyMinutes: number;
+  jitterMinutes: number;
+  minIdleMinutes: number;
+  quietHours: { from: string; to: string };
+  cooldownMinutes: number;
+};
+
 // ── Derived tool lists (match the seed scripts exactly) ──────────────────────
 
 /** Page authoring set for the `pages` group: every page tool except the
@@ -168,6 +214,16 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     name: 'Tool grounding',
     description: 'Search/verify before answering — never answer from memory alone.',
     instructions: SKILL_INSTRUCTIONS['tool_grounding']!,
+  },
+  {
+    slug: 'brain_health_check',
+    name: 'Brain health check',
+    description:
+      'The weekly self-check: capacity against the split policy plus a retrieval-quality eval, reported ONLY when something needs attention.',
+    instructions: SKILL_INSTRUCTIONS['brain_health_check']!,
+    // The skill's own state contract (see its instructions): last_run_at is
+    // absent until the first fire writes one, so only the status seeds.
+    defaultState: { last_status: 'green' },
   },
   {
     slug: 'formula_use',
@@ -237,11 +293,25 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     instructions: SKILL_INSTRUCTIONS['table_authoring']!,
   },
   {
+    slug: 'spreadsheet_authoring',
+    name: 'Spreadsheet authoring',
+    description:
+      'Build a formatted .xlsx as a deliverable: sheet vs table, typed columns, totals, the house style.',
+    instructions: SKILL_INSTRUCTIONS['spreadsheet_authoring']!,
+  },
+  {
     slug: 'app_authoring',
     name: 'App authoring',
     description:
       'The mini-app sandbox contract: allowed imports, the host bridge, sqlite, draft→build→publish.',
     instructions: SKILL_INSTRUCTIONS['app_authoring']!,
+  },
+  {
+    slug: 'diagram_design',
+    name: 'Diagram design',
+    description:
+      'Draw presentation-grade SVG diagrams + charts into pages: the spec-block contract, the editorial design system, and per-type guide retrieval.',
+    instructions: SKILL_INSTRUCTIONS['diagram_design']!,
   },
   {
     slug: 'mantle-ops',
@@ -255,6 +325,13 @@ export const MANIFEST_SKILLS: readonly ManifestSkill[] = [
     description:
       'When and how to use CLI sandboxes: the terminal/sandbox trust boundary, /files persistence, exec vs toolbelt, egress tiers, publishing and export (for the coder agent).',
     instructions: SKILL_INSTRUCTIONS['sandbox-work']!,
+  },
+  {
+    slug: 'gap_questions',
+    name: 'Gap questions',
+    description:
+      'The gap loop: ask an open journal question when it fits the conversation, log a gap when knowledge is missing, and file every answer with journal_resolve_gap.',
+    instructions: SKILL_INSTRUCTIONS['gap_questions']!,
   },
   {
     slug: 'location_awareness',
@@ -441,6 +518,16 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'file_rename',
       'folder_rename',
       'folder_describe',
+      // The metadata-only switch: control whether a file/subtree's CONTENT
+      // is indexed, without touching storage or sharing. Non-destructive.
+      'file_set_indexing',
+      'folder_set_indexing',
+      // Relocation + duplication (P4). Non-destructive: a move keeps the id,
+      // a copy makes a new file; neither deletes anything.
+      'file_move',
+      'file_copy',
+      'folder_move',
+      'folder_copy',
       // Showing a stored image is a file READ that happens to render rather
       // than return text — it delegates to no worker and generates nothing,
       // so it belongs here rather than in `media-workers`.
@@ -452,7 +539,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     name: 'Notes',
     description:
       'Create/edit/list/read notes + import a file or page as a note. note_update covers the ' +
-      'recurring append-to-a-log flow (NATREF 2026-07-18 gap); note_delete stays out — deliberate.',
+      'recurring append-to-a-log flow (client-site gap, 2026-07-18); note_delete stays out — deliberate.',
     toolSlugs: [
       'note_create',
       'note_update',
@@ -471,8 +558,16 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
     slug: 'tasks',
     name: 'Tasks',
-    description: 'Task CRUD.',
-    toolSlugs: ['task_list', 'task_get', 'task_create', 'task_update', 'task_delete'],
+    description: 'Task CRUD + the per-task comment thread.',
+    toolSlugs: [
+      'task_list',
+      'task_get',
+      'task_create',
+      'task_update',
+      'task_delete',
+      'task_comments_list',
+      'task_comment_add',
+    ],
   },
   {
     slug: 'pages',
@@ -592,6 +687,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['export_node'],
   },
   {
+    slug: 'spreadsheets',
+    name: 'Spreadsheet authoring',
+    description:
+      'Compose a formatted .xlsx from data in hand and save it under /files — for a spreadsheet that IS the deliverable, as opposed to a table the user will keep querying. Creates a file, changes nothing else.',
+    toolSlugs: ['sheet_build'],
+  },
+  {
     slug: 'curation',
     name: 'Content curation',
     description:
@@ -650,6 +752,13 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['formula_list', 'formula_get', 'formula_evaluate'],
   },
   {
+    slug: 'draw-read',
+    name: 'Draw (read)',
+    description:
+      'List + read whiteboard drawings as text (committed scenes only). No authoring — the canvas is the only writer; agent authoring is a future, separate decision.',
+    toolSlugs: ['draw_list', 'draw_get'],
+  },
+  {
     slug: 'calculator',
     name: 'Calculator',
     description:
@@ -663,19 +772,29 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['formula_delete'],
   },
   {
-    slug: 'recall',
-    name: 'Recall',
-    description: 'Replay a past conversation window (the responder-facing half of recall).',
+    // Renamed from `recall` 2026-08-23 (migration 0154 converges live rows):
+    // "Recall" now names the memory-map system (docs/recall.md); Remy's
+    // conversation-replay feature is "Replay" (docs/replay.md).
+    slug: 'replay',
+    name: 'Replay',
+    description: 'Replay a past conversation window (the responder-facing half of Replay).',
     // Just the replay tool — the persona holds this so it can quote past
     // conversations. Finding the window (find_window) is Remy's specialist job
-    // and rides the separate `recall-search` group (it's denied to the persona).
-    toolSlugs: ['recall_window'],
+    // and rides the separate `replay-search` group (it's denied to the persona).
+    toolSlugs: ['replay_window'],
   },
   {
-    slug: 'recall-search',
-    name: 'Recall search',
+    slug: 'replay-search',
+    name: 'Replay search',
     description: 'Locate the right past-conversation window to replay (Remy only).',
     toolSlugs: ['find_window'],
+  },
+  {
+    slug: 'recall-read',
+    name: 'Recall',
+    description:
+      "Walk the brain's Recall maps and match its prompts — the owner-authored memory-map system (docs/recall.md). Read-only: the four tools serve compiled rows and never write.",
+    toolSlugs: ['recall_index', 'recall_open', 'recall_go', 'recall_match'],
   },
   {
     slug: 'research',
@@ -722,6 +841,43 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['synthesize_speech', 'extract_from_image', 'summarize_text', 'generate_image'],
   },
   {
+    slug: 'video-ingest',
+    name: 'Video ingest',
+    description:
+      'Fetch a video by URL (or read a stored video file), extract the audio and produce a ' +
+      'searchable transcript page via the media sidecar. Owner-only: this is an outbound ' +
+      'fetch of an arbitrary URL — NEVER granted to the team responder.',
+    toolSlugs: ['video_ingest'],
+  },
+  {
+    slug: 'crawl',
+    name: 'Web crawl',
+    description:
+      'Ingest whole websites via the Firecrawl cloud API: web_map discovers URLs, web_crawl ' +
+      'fetches pages as markdown into a per-site documentation collection. Owner-only: ' +
+      "outbound fetches that spend the operator's Firecrawl credits — NEVER granted to the " +
+      'team responder, and never wired to a cron or trigger.',
+    toolSlugs: ['web_map', 'web_crawl'],
+  },
+  {
+    slug: 'model-curation',
+    name: 'Model curation',
+    description:
+      'The Curator’s kit: OpenRouter Data API reads (usage rankings, benchmarks, task ' +
+      'classifications, the priced model catalog) plus write access to the curated model ' +
+      'pools behind /models/pools. Advisory only — no tool here can change what any agent ' +
+      'or worker actually runs. Owner-side; never granted to the team responder.',
+    toolSlugs: [
+      'openrouter_rankings',
+      'openrouter_benchmarks',
+      'openrouter_task_classes',
+      'model_catalog',
+      'model_pool_list',
+      'model_pool_set',
+      'model_pool_remove',
+    ],
+  },
+  {
     slug: 'delegation',
     name: 'Delegation',
     description: 'Invoke specialist sub-agents.',
@@ -759,6 +915,9 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'sandbox_stop',
       'sandbox_rm',
       'sandbox_export',
+      'sandbox_import',
+      'sandbox_ls',
+      'sandbox_autostart',
       'sandbox_publish',
       'sandbox_mcp_tools',
       'sandbox_mcp_call',
@@ -805,7 +964,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'team-read',
     name: 'Team Chat (member-facing)',
     description:
-      "The team responder's entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, app data) plus its ONE write action — filing a team change request into the specialist review queue. email_*/journal_* are ALSO granted here but gated at runtime by the owner's `teamPrivateReads` switch (default OFF — see run-team-turn.ts / TEAM_PRIVATE_READ_SLUGS), so the owner's private corpus is off-limits unless explicitly opted in. Deliberately excludes export_node (bulk exfiltration ease), recall_window (replays the OWNER's private conversations), all other writes, delegation, terminal, http, and send tools. Non-private reads are brain-wide BY DESIGN (brain = the trust boundary).",
+      "The team responder's entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, app data) — including `show_image`, which renders a file the member could already read — plus its ONE write action — filing a team change request into the specialist review queue. email_*/journal_* are ALSO granted here but gated at runtime by the owner's `teamPrivateReads` switch (default OFF — see run-team-turn.ts / TEAM_PRIVATE_READ_SLUGS), so the owner's private corpus is off-limits unless explicitly opted in. Deliberately excludes export_node (bulk exfiltration ease), replay_window (replays the OWNER's private conversations), all other writes, delegation, terminal, http, and send tools. Non-private reads are brain-wide BY DESIGN (brain = the trust boundary).",
     toolSlugs: [
       // memory-core reads
       'search_nodes',
@@ -825,6 +984,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'file_get',
       'file_read',
       'folder_describe',
+      // Showing a stored image is a file READ that renders instead of
+      // returning text (see the `files` group). A member could already
+      // file_read every one of these bytes; without this they simply could
+      // not be SHOWN one, so an illustrated answer degraded to prose. The
+      // narrow grant is deliberate: granting the whole `files` group would
+      // hand a member-facing responder file_create/file_rename/folder_rename
+      // — writes it has never had and does not need to show a picture.
+      'show_image',
       // content-surface reads
       'note_list',
       'note_get',
@@ -906,7 +1073,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // delegated to the Pages / Ledger specialists (no `pages`/`tables`/
     // `page-admin`; `page-share` kept so it can publish). The specialist_routing
     // skill carries the light-vs-heavy policy. NOT granted: the `*-admin`
-    // deletes (deliberate-only), `recall-search`/`research`/`terminal`
+    // deletes (deliberate-only), `replay-search`/`research`/`terminal`
     // (specialist — research/reader stay delegated ON PURPOSE: web content is
     // untrusted input, and the no-write-tools child is the injection firewall).
     // `federation` IS granted: peer reads are scoped by the answering side's
@@ -922,10 +1089,13 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'tasks',
       'contacts',
       'journal',
-      'recall',
+      'replay',
+      'recall-read',
       'email',
       'persona',
       'media-workers',
+      'video-ingest',
+      'crawl',
       'delegation',
       'messaging',
       'secrets',
@@ -936,6 +1106,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'location',
       'profile',
       'export',
+      'spreadsheets',
       'curation',
       'tables-import',
       'tables-read',
@@ -943,9 +1114,17 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'formulas',
       'calculator',
       'pages-draft',
+      'draw-read',
       'app-data',
       'team-admin',
       'federation',
+      // Powers the brain_health heartbeat (brain_capacity + recall_eval). The
+      // group existed from the start and was granted to NOBODY, so its own
+      // description ("grant to the agent that runs the brain-health
+      // heartbeat") pointed at an agent that did not exist. Both tools are
+      // read-only self-inspection, so holding them costs nothing on an
+      // ordinary turn.
+      'brain-health',
     ],
     skillSlugs: [
       'tool_grounding',
@@ -965,6 +1144,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       // makes it happen: show the picture instead of narrating it.
       'visual_answers',
       'writing_style',
+      // The gap loop: ask an open journal question when it fits the
+      // conversation, and file every answer with journal_resolve_gap.
+      'gap_questions',
     ],
     params: { temperature: 0.7, max_tokens: 16000 },
     // Context budgets for the generalist responder. Onboarding seeds these
@@ -981,6 +1163,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       // Kept in sync with the runtime CHUNK_LIMIT_DEFAULT.
       chunk_limit: 8,
       inject_journal: true,
+      inject_working_notes: true,
       delegate_to: [],
       // The generalist isn't only a read-then-reply chat agent: real tasks are
       // "read N source docs → compile → author a page/note", which needs more
@@ -1036,17 +1219,44 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // P6: `tables` is the authoring subset (no `table-admin`/table_delete);
     // `files`/`memory-core` cover source reads + cross-context lookups. Page
     // sharing is Pages' job, not Ledger's — no `page-share` here.
-    toolGroupSlugs: ['tables', 'files', 'memory-core', 'export'],
-    skillSlugs: ['table_authoring', 'writing_style'],
+    toolGroupSlugs: ['tables', 'files', 'memory-core', 'export', 'spreadsheets'],
+    skillSlugs: ['table_authoring', 'spreadsheet_authoring', 'writing_style'],
     isDelegate: true,
     params: { temperature: 0.3, max_tokens: 16000 },
     // Grid work is tool-call heavy the same way page work is: a data load is a
     // read + N row writes, and the flat defaults (40/turn, 15/tool) cut it
-    // short (NATREF 2026-07-28 — a 101-row append needed 6 delegation retries
+    // short (client site, 2026-07-28 — a 101-row append needed 6 delegation retries
     // and wasted 128 capped calls). table_rows_add is the primary fix; these
     // caps are the belt-and-braces so a legitimately call-heavy edit still
     // fits in one turn. Mirrors the Pages budget; runtime hard-caps at 200/100.
     memoryConfig: { max_iterations: 30, max_tool_calls: 100, max_calls_per_tool: 40 },
+    priority: 100,
+  },
+  {
+    slug: 'diagrammer',
+    // ⚠ DISPLAY NAME IS JASON'S CALL — "Draftsman" is this plan's placeholder,
+    // chosen to sit alongside Remy / Ledger / Reader. Confirm before release.
+    name: 'Draftsman',
+    description:
+      'Diagram + chart specialist — hand-draws editorial SVG into pages beside a readable spec block (38 visual types).',
+    role: 'custom',
+    model: 'anthropic/claude-sonnet-5',
+    envModelVar: 'DIAGRAMMER_MODEL',
+    systemPrompt: AGENT_PROMPTS['diagrammer']!,
+    // `pages` for the spec block + embed edits, `files` for the SVG upload
+    // (file_create) + source reads, `memory-core` for type-guide retrieval
+    // (search_chunks/read_section on the diagram-guides docs collection) and
+    // for sourcing chart data from the brain. No page-admin/page-share:
+    // deletes and sharing stay deliberate human acts.
+    toolGroupSlugs: ['pages', 'files', 'memory-core'],
+    skillSlugs: ['diagram_design', 'page_editing', 'writing_style'],
+    isDelegate: true,
+    // A single hand-drawn SVG easily runs thousands of tokens; match the
+    // Pages output budget so a two-diagram task doesn't truncate mid-path.
+    params: { temperature: 0.3, max_tokens: 32000 },
+    // Guide retrieval (search + section reads) + draft writes add up; give it
+    // headroom over the flat default.
+    memoryConfig: { max_iterations: 25 },
     priority: 100,
   },
   {
@@ -1057,9 +1267,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     model: 'anthropic/claude-sonnet-5',
     envModelVar: 'REMY_MODEL',
     systemPrompt: AGENT_PROMPTS['remy']!,
-    // P6: `recall` (replay) + `recall-search` (find_window, Remy's specialty) +
+    // P6: `replay` (replay_window) + `replay-search` (find_window, Remy's specialty) +
     // `memory-core` for the node lookups it cites.
-    toolGroupSlugs: ['recall', 'recall-search', 'memory-core'],
+    toolGroupSlugs: ['replay', 'replay-search', 'memory-core'],
     skillSlugs: [],
     isDelegate: true,
     params: { temperature: 0.2 },
@@ -1078,6 +1288,23 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     skillSlugs: [],
     isDelegate: true,
     params: { temperature: 0.3 },
+    priority: 100,
+  },
+  {
+    slug: 'curator',
+    name: 'Curator',
+    description:
+      'Model-market analyst — refreshes the curated model pools at /models/pools from live ' +
+      'OpenRouter usage rankings, benchmarks, and pricing. Advisory shortlists only; never ' +
+      'changes what any agent or worker runs.',
+    role: 'custom',
+    model: 'anthropic/claude-sonnet-5',
+    envModelVar: 'CURATOR_MODEL',
+    systemPrompt: AGENT_PROMPTS['curator']!,
+    toolGroupSlugs: ['model-curation'],
+    skillSlugs: [],
+    isDelegate: true,
+    params: { temperature: 0.2 },
     priority: 100,
   },
   {
@@ -1201,12 +1428,27 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // Not a delegate, no assist surface — it is resolved explicitly by the team
     // turn pipeline and nothing else.
     toolGroupSlugs: ['team-read', 'formulas-eval'],
-    skillSlugs: ['tool_grounding', 'chat_writing', 'formula_use', 'writing_style'],
+    // `visual_answers` rides on the `show_image` grant in `team-read`: the
+    // documents a team shares are full of extracted diagrams and screenshots,
+    // and describing one when it could be shown is the weaker answer on the
+    // member surfaces exactly as it is on the owner's. The skill's page-authoring
+    // and generate_image paragraphs are inert here — this responder holds
+    // neither tool, and `tool_grounding` already forbids claiming what it
+    // cannot do.
+    skillSlugs: [
+      'tool_grounding',
+      'chat_writing',
+      'formula_use',
+      'visual_answers',
+      'writing_style',
+    ],
     params: { temperature: 0.4, max_tokens: 16000 },
-    // No owner-personal context: inject_journal OFF (the identity context is
-    // the OWNER's self-knowledge), no digests (those summarize the owner's own
-    // conversations). History comes from the member's team thread, loaded by
-    // the team context loader — history_limit budgets that window.
+    // No owner-personal context: inject_journal AND inject_working_notes OFF
+    // (the identity context is the OWNER's self-knowledge, the working notes
+    // are the owner's agents' internal learning), no digests (those summarize
+    // the owner's own conversations). History comes from the member's team
+    // thread, loaded by the team context loader — history_limit budgets that
+    // window.
     memoryConfig: {
       history_limit: 20,
       digest_limit: 0,
@@ -1214,6 +1456,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       content_hit_limit: 5,
       chunk_limit: 8,
       inject_journal: false,
+      inject_working_notes: false,
       delegate_to: [],
       max_iterations: 15,
     },
@@ -1259,6 +1502,34 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
 // params are the single source — onboarding and reconcile both seed from here
 // (see resolveWorkerRoute + seedManifestWorkers). The tts `voice` is the female
 // default ('ara' = voiceForGender('female')); the personality step retunes it.
+/** Heartbeats every provisioned brain gets. Create-only — see ManifestHeartbeat.
+ *
+ *  Deliberately ONE entry. A heartbeat is recurring LLM spend that the user did
+ *  not ask for on the day it fires, so the bar for adding another is: it must
+ *  watch something the user cannot reasonably watch themselves, and it must be
+ *  silent unless that thing has actually moved. */
+export const MANIFEST_HEARTBEATS: readonly ManifestHeartbeat[] = [
+  {
+    slug: 'brain_health',
+    name: 'Brain health',
+    description:
+      'Weekly: corpus capacity against the split policy, plus a retrieval-quality eval. Silent unless something needs attention.',
+    skillSlug: 'brain_health_check',
+    requiresToolGroup: 'brain-health',
+    scheduleKind: 'interval',
+    // Weekly. Capacity moves over months and retrieval drift over weeks, so
+    // anything tighter spends more than it learns.
+    everyMinutes: 10_080,
+    // ±6h so a fleet of brains does not stampede the same OpenRouter minute.
+    jitterMinutes: 360,
+    minIdleMinutes: 15,
+    quietHours: { from: '22:00', to: '07:00' },
+    cooldownMinutes: 60,
+  },
+];
+
+export const MANIFEST_HEARTBEAT_SLUGS: readonly string[] = MANIFEST_HEARTBEATS.map((h) => h.slug);
+
 export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
   {
     kind: 'extractor',
@@ -1395,7 +1666,7 @@ export const DELEGATE_SLUGS: readonly string[] = MANIFEST_AGENTS.filter((a) => a
 /**
  * Tool slugs that exist as real handlers but are registered OUTSIDE the static
  * BUILTIN_TOOLS array (heartbeat controls register only in the agent process via
- * @mantle/heartbeats). The validator treats these as known so a future manifest
+ * @mantle/runtime/heartbeats). The validator treats these as known so a future manifest
  * entry referencing them doesn't false-fail; none are referenced today.
  */
 export const KNOWN_EXTERNAL_TOOL_SLUGS: readonly string[] = [
@@ -1410,7 +1681,10 @@ export const KNOWN_EXTERNAL_TOOL_SLUGS: readonly string[] = [
  *  runtime-only externals, and the seeded HTTP tools (so a group may bundle
  *  mapbox_* without false-failing the drift test). */
 export const KNOWN_TOOL_SLUGS: ReadonlySet<string> = new Set<string>([
-  ...BUILTIN_TOOLS.map((t) => t.slug),
+  // mcpOnly builtins are deliberately absent: a manifest tool group naming one
+  // would be granting an agent the owner's own operator controls, so the drift
+  // test should fail on it rather than wave it through.
+  ...BUILTIN_TOOLS.filter((t) => !t.mcpOnly).map((t) => t.slug),
   ...KNOWN_EXTERNAL_TOOL_SLUGS,
   ...MANIFEST_HTTP_TOOL_SLUGS,
 ]);

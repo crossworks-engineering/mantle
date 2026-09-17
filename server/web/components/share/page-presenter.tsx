@@ -1,6 +1,6 @@
-import { buildPageToc } from '@mantle/content/page-toc';
+import { buildPageToc } from '@mantle/content-core/page-toc';
 import { renderPageDoc } from '@/lib/render-page-doc';
-import { PageOutline } from '@mantle/web-ui/page-outline';
+import { PageOutline } from '@mantle/share-ui/page-outline';
 
 /**
  * Public page render. Server-rendered sanitized HTML (see render-page-doc.ts)
@@ -12,6 +12,7 @@ import { PageOutline } from '@mantle/web-ui/page-outline';
 export function PagePresenter({
   view,
   assetUrl,
+  drawUrl,
 }: {
   view: {
     title: string;
@@ -20,8 +21,10 @@ export function PagePresenter({
     doc: Record<string, unknown>;
   };
   assetUrl: (fileId: string) => string;
+  /** Embedded drawings resolve through the share's own draw route. */
+  drawUrl?: (drawId: string) => string;
 }) {
-  const html = renderPageDoc(view.doc, { assetUrl });
+  const html = renderPageDoc(view.doc, { assetUrl, ...(drawUrl ? { drawUrl } : {}) });
   const toc = buildPageToc(view.doc);
   const widthClass = view.width === 'wide' ? 'max-w-5xl' : 'max-w-3xl';
   // The page name is intentionally NOT rendered on the public surface — a
@@ -41,7 +44,7 @@ export function PagePresenter({
       <div className="min-w-0 flex-1">
         <article className={`mx-auto w-full ${widthClass}`}>
           <div
-            className="ProseMirror prose dark:prose-invert prose-accent max-w-none"
+            className="ProseMirror prose dark:prose-invert prose-accent prose-document max-w-none"
             dangerouslySetInnerHTML={{ __html: html }}
           />
         </article>

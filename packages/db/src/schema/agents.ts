@@ -46,6 +46,13 @@ export const agentRole = pgEnum('agent_role', [
 export type AgentAvatar = {
   style: string;
   seed: string;
+  /** Explicit component choices layered over the seed (avatar builder):
+   *  component name → pinned variant, or null to hide an optional component.
+   *  Validated per-style at RENDER time, not here — a choice saved under one
+   *  brain style must survive the brain switching styles (stale entries are
+   *  ignored by the renderer, never an error). Absent = seed-only, the
+   *  pre-builder behaviour. */
+  parts?: Record<string, string | null>;
 };
 
 export type AgentMemoryConfig = {
@@ -76,6 +83,12 @@ export type AgentMemoryConfig = {
    *  set false on a utility/persona-light agent that shouldn't carry it.
    *  Deterministic, no LLM — a no-op when the user has no journal entries. */
   inject_journal?: boolean;
+  /** Responder/assistant-only: inject the per-agent "# Working notes" block —
+   *  the Journal's agent lane (lessons, expectations, open gap questions; see
+   *  @mantle/content buildWorkingNotesContext) into the cached system prompt.
+   *  Default true for conversational agents; false on the team responder
+   *  (owner-internal context) and utility agents. Deterministic, no LLM. */
+  inject_working_notes?: boolean;
   /** Summarizer-only: undigested-turn count that triggers a summarization.
    *  Default 30, capped at max(history_limit, summarize_batch) so no turn
    *  can age out of the live history window while still undigested. */
@@ -145,7 +158,7 @@ export type AgentParams = {
    *  ChatOptions.maxRetries by the tool loop; honored by withChatRetry for
    *  direct-provider adapters (OpenRouter retries via its own SDK). */
   max_retries?: number;
-  /** Voice-reply config. Used by `apps/agent` when an inbound message
+  /** Voice-reply config. Used by `server/api` when an inbound message
    *  came in as a Telegram voice note: the agent's reply gets piped
    *  through OpenAI TTS and sent as `sendVoice` instead of plain text.
    *  All fields optional — sensible defaults applied at the call site

@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { probeEmbeddingRoute } from '@mantle/embeddings';
 import { getOwnerOr401 } from '@/lib/auth';
+import { errorMessage } from '@mantle/std';
 
 const Body = z.object({
   provider: z.string(),
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
   } catch (err) {
     return NextResponse.json({
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     });
   }
 }

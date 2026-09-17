@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  appDbExec,
+  appDbQuery,
   assertSafe,
   assertSafeScript,
   appDbFiles,
@@ -7,6 +9,29 @@ import {
   vacuumIntoStatement,
   snapshotDestPath,
 } from './app-broker';
+
+const h = vi.hoisted(() => ({ storagePath: '' }));
+
+/** Minimal registry: one app whose SQLite file lives in a temp dir. Everything
+ *  appDbQuery/appDbExec need from Postgres is the existing-row lookup (plus the
+ *  best-effort size update), so the mock keeps the whole test on-disk-only. */
+vi.mock('@mantle/db', async () => {
+  const { mkdtemp } = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'app-broker-ro-'));
+  h.storagePath = path.join(dir, 'app.sqlite');
+  const registryRow = { id: 'reg-1', storagePath: h.storagePath, schemaVersion: 0 };
+  return {
+    db: {
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => [registryRow] }) }) }),
+      insert: () => ({ values: () => ({ onConflictDoNothing: async () => undefined }) }),
+      update: () => ({ set: () => ({ where: async () => undefined }) }),
+    },
+    nodes: {},
+    appDatabases: {},
+  };
+});
 
 /**
  * `assertSafe` is the runtime guard on SQL a sandboxed mini app sends through
@@ -130,6 +155,45 @@ describe('PRAGMA table_info through node:sqlite', () => {
     } finally {
       db.close();
     }
+  });
+});
+
+/**
+ * appDbQuery is what BOTH db-broker routes run for op:'query' — including for
+ * PUBLIC share visitors, whose op:'exec' is rejected with a "shared apps are
+ * read-only" promise. SQLite executes DML through `prepare(sql).all()`, so the
+ * read-only guarantee must come from the ENGINE (read-only open), not from the
+ * op name. These tests pin that: a write through op:'query' dies inside SQLite
+ * while op:'exec' (appDbExec, which the routes gate) still works.
+ */
+describe('appDbQuery opens the database read-only', () => {
+  const owner = 'owner-1';
+  const app = 'app-1';
+
+  it('provisions an empty db on the very first query and still answers reads', async () => {
+    // Read-only open never creates a file; the broker must first-touch it.
+    const rows = await appDbQuery(owner, app, 'SELECT 1 AS x');
+    expect(rows).toEqual([{ x: 1 }]);
+  });
+
+  it('appDbExec (the gated write path) still writes', async () => {
+    await appDbExec(owner, app, 'CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)');
+    const res = await appDbExec(owner, app, "INSERT INTO t (name) VALUES ('keep')");
+    expect(res.changes).toBe(1);
+  });
+
+  it('rejects INSERT/DELETE through the query path at the engine level', async () => {
+    await expect(appDbQuery(owner, app, 'DELETE FROM t')).rejects.toThrow(/readonly/i);
+    await expect(
+      appDbQuery(owner, app, "INSERT INTO t (name) VALUES ('smuggled')"),
+    ).rejects.toThrow(/readonly/i);
+    // DML wrapped in a CTE is why a SELECT-only regex could never be the guard.
+    await expect(
+      appDbQuery(owner, app, 'WITH doomed AS (SELECT id FROM t) DELETE FROM t'),
+    ).rejects.toThrow(/readonly/i);
+    // Nothing above touched the data.
+    const rows = await appDbQuery(owner, app, 'SELECT name FROM t ORDER BY id');
+    expect(rows).toEqual([{ name: 'keep' }]);
   });
 });
 

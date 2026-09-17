@@ -6,7 +6,7 @@
  * Mantle DB. Re-running updates rather than duplicates.
  *
  * Usage:
- *   cd apps/web && node --env-file=./.env.local --import tsx \
+ *   cd server/web && node --env-file=./.env.local --import tsx \
  *     scripts/seed-telegram.ts [--legacy-state-dir=PATH]
  *
  * Required env: DATABASE_URL, MANTLE_MASTER_KEY, ALLOWED_USER_ID.
@@ -17,16 +17,22 @@ import { join } from 'node:path';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { agents, db, telegramAccounts, telegramChats } from '@mantle/db';
 import { upsertTelegramChannel } from '@mantle/telegram';
+import { env } from '@mantle/config';
 
-if (!process.env.ALLOWED_USER_ID) {
+if (!env('ALLOWED_USER_ID')) {
   console.error('ALLOWED_USER_ID must be set.');
   process.exit(1);
 }
-if (!process.env.MANTLE_MASTER_KEY) {
+if (!env('MANTLE_MASTER_KEY')) {
   console.error('MANTLE_MASTER_KEY must be set.');
   process.exit(1);
 }
-const ownerId: string = process.env.ALLOWED_USER_ID;
+const configuredOwner = env('ALLOWED_USER_ID');
+if (!configuredOwner) {
+  console.error('ALLOWED_USER_ID must be set.');
+  process.exit(1);
+}
+const ownerId: string = configuredOwner;
 
 const legacyArg = process.argv.find((a) => a.startsWith('--legacy-state-dir='));
 const legacyDir = legacyArg

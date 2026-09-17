@@ -46,8 +46,19 @@ const FALLBACK_CONTEXT_LIMITS: Record<string, number> = {
   'x-ai/grok-4': 256_000,
 };
 
-/** OpenRouter's public model catalog — no API key required. */
-const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
+/**
+ * OpenRouter's public model catalog — no API key required.
+ *
+ * `output_modalities=all` matters: the BARE `/api/v1/models` call is not the
+ * whole catalog, it is the text-out slice (430 of 581 rows on 2026-09-07).
+ * Image generators (41 of 52), every video model, all 18 speech engines, all
+ * 20 transcription engines and the embedding/rerank routes are absent from it
+ * — so `catalogModalities()` returned null for exactly the models the pool-fit
+ * guards exist to catch, and fail-open let them through. `all` is the union
+ * (430 + 41 + 28 + 18 + 20 + 37 + 7 = 581) in ONE request; valid values are
+ * text, image, embeddings, audio, video, rerank, speech, transcription, all.
+ */
+const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models?output_modalities=all';
 /** Re-fetch the live catalog at most this often. */
 const CATALOG_TTL_MS = 6 * 60 * 60 * 1000; // 6h
 /** Abort the catalog fetch if it stalls — must never hang a caller. */
@@ -55,10 +66,21 @@ const CATALOG_FETCH_TIMEOUT_MS = 8_000;
 
 /** What we keep per model from the live catalog. */
 export type LiveModelInfo = {
-  /** Total context window (input + output) for the default route. */
+  /** Total context window (input + output) for the default route. **0 means
+   *  the catalog gave none** — every speech/transcription route reports
+   *  `context_length: 0`, and those rows are kept for their modalities and
+   *  pricing. Read it through {@link contextLimitFor}, which treats 0 as
+   *  unknown and falls through to the static table. */
   contextLength: number;
   /** Whether the model accepts image input (architecture.input_modalities). */
   vision: boolean;
+  /** Whether the model PRODUCES images (architecture.output_modalities). An
+   *  image generator accepts images too, so `vision` alone cannot tell a
+   *  reader from a generator — this is the half that can. */
+  imageOutput: boolean;
+  /** Raw catalog modalities, for pool/worker fit checks. */
+  inputModalities: string[];
+  outputModalities: string[];
   /** USD per 1M input/prompt tokens, when OpenRouter returns pricing. 0 is a
    *  legitimate value (free routes); undefined means "the provider didn't
    *  return a pricing field" and the UI should render "pricing unavailable"
@@ -69,6 +91,10 @@ export type LiveModelInfo = {
 };
 
 let liveModels: Record<string, LiveModelInfo> | null = null;
+/** EVERY id the catalog listed, unfiltered — {@link parseCatalog} drops
+ *  entries without a context window, but for existence checks (does this
+ *  model id exist at all?) the raw roster is the truth. */
+let liveModelIds: Set<string> | null = null;
 let liveFetchedAt = 0;
 let inFlight: Promise<void> | null = null;
 
@@ -76,7 +102,10 @@ type OpenRouterModel = {
   id?: string;
   context_length?: number | null;
   top_provider?: { context_length?: number | null } | null;
-  architecture?: { input_modalities?: string[] | null } | null;
+  architecture?: {
+    input_modalities?: string[] | null;
+    output_modalities?: string[] | null;
+  } | null;
   /** OpenRouter encodes pricing as **strings in USD per single token** —
    *  e.g. `"0.0000025"` for $2.50 per 1M. Multiply by 1e6 for the per-million
    *  view the UI shows. Other fields (`request`, `image`, `web_search`, …)
@@ -117,12 +146,40 @@ export function parseCatalog(models: OpenRouterModel[]): Record<string, LiveMode
     const base = m.context_length;
     const ctx =
       typeof top === 'number' && top > 0 ? top : typeof base === 'number' && base > 0 ? base : 0;
-    if (ctx <= 0) continue;
+    // A zero/absent window is NOT a reason to drop the row any more. Speech
+    // and transcription routes all report 0 (they bill per character/minute,
+    // not per context window) and they are precisely the rows the tts/stt
+    // pools need to see. contextLength 0 reads as "unknown" downstream.
     const mods = m.architecture?.input_modalities;
-    const vision = Array.isArray(mods) && mods.includes('image');
-    const inputPricePerM = parsePerMillion(m.pricing?.prompt);
-    const outputPricePerM = parsePerMillion(m.pricing?.completion);
-    out[id] = { contextLength: ctx, vision, inputPricePerM, outputPricePerM };
+    const outMods = m.architecture?.output_modalities;
+    const inputModalities = Array.isArray(mods) ? mods.filter((x) => typeof x === 'string') : [];
+    const outputModalities = Array.isArray(outMods)
+      ? outMods.filter((x) => typeof x === 'string')
+      : [];
+    const vision = inputModalities.includes('image');
+    const imageOutput = outputModalities.includes('image');
+    // Pricing is per-1M-TOKENS only for rows that are token-billed, and the
+    // published context window is the tell: every row WITH one prices between
+    // $1 and $16 per 1M, while the windowless ones span $3 to $360,000 because
+    // their `pricing.prompt` is a per-MINUTE (or per-second) audio/video rate.
+    // `openai/whisper-1` at "0.006" is OpenAI's $0.006 per minute;
+    // `deepgram/nova-3` at "0.0043" is Deepgram's. Multiplying those by 1e6
+    // yields a confident, wrong number — worse than none — so windowless rows
+    // report pricing as undefined ("unavailable") and keep only their
+    // modalities. This costs nothing: embeddings and rerank all publish
+    // windows, and no row in the text-out catalog lacks one.
+    const tokenBilled = ctx > 0;
+    const inputPricePerM = tokenBilled ? parsePerMillion(m.pricing?.prompt) : undefined;
+    const outputPricePerM = tokenBilled ? parsePerMillion(m.pricing?.completion) : undefined;
+    out[id] = {
+      contextLength: ctx,
+      vision,
+      imageOutput,
+      inputModalities,
+      outputModalities,
+      inputPricePerM,
+      outputPricePerM,
+    };
   }
   return out;
 }
@@ -152,6 +209,11 @@ export async function refreshModelCatalog(force = false): Promise<void> {
       // response shouldn't wipe good data.
       if (Object.keys(parsed).length > 0) {
         liveModels = parsed;
+        liveModelIds = new Set(
+          (body.data ?? [])
+            .map((m) => (typeof m.id === 'string' ? m.id.toLowerCase() : ''))
+            .filter(Boolean),
+        );
         liveFetchedAt = Date.now();
       }
     } catch (err) {
@@ -171,18 +233,23 @@ export type ContextSource = 'live' | 'fallback' | 'unknown';
 
 /** Total context window for a model slug: live OpenRouter data if cached,
  *  else the static fallback, else null. Sync — call
- *  {@link refreshModelCatalog} first if you want guaranteed-fresh data. */
+ *  {@link refreshModelCatalog} first if you want guaranteed-fresh data.
+ *  A live entry with contextLength 0 (speech/transcription routes) means the
+ *  catalog published no window — it falls through to the static table. */
 export function contextLimitFor(modelSlug: string | null | undefined): number | null {
   if (!modelSlug) return null;
   const key = modelSlug.toLowerCase();
-  return liveModels?.[key]?.contextLength ?? FALLBACK_CONTEXT_LIMITS[key] ?? null;
+  const live = liveModels?.[key]?.contextLength;
+  if (live != null && live > 0) return live;
+  return FALLBACK_CONTEXT_LIMITS[key] ?? null;
 }
 
 /** Provenance of a slug's limit — for showing the user where it came from. */
 export function contextSourceFor(modelSlug: string | null | undefined): ContextSource {
   if (!modelSlug) return 'unknown';
   const key = modelSlug.toLowerCase();
-  if (liveModels?.[key] != null) return 'live';
+  const live = liveModels?.[key]?.contextLength;
+  if (live != null && live > 0) return 'live';
   if (FALLBACK_CONTEXT_LIMITS[key] != null) return 'fallback';
   return 'unknown';
 }
@@ -192,7 +259,11 @@ export function contextSourceFor(modelSlug: string | null | undefined): ContextS
 export function contextLimitMap(): Record<string, number> {
   const live: Record<string, number> = {};
   if (liveModels) {
-    for (const [k, v] of Object.entries(liveModels)) live[k] = v.contextLength;
+    // Skip windowless rows (speech/transcription) — a 0 here would override a
+    // good fallback with "no context at all".
+    for (const [k, v] of Object.entries(liveModels)) {
+      if (v.contextLength > 0) live[k] = v.contextLength;
+    }
   }
   return { ...FALLBACK_CONTEXT_LIMITS, ...live };
 }
@@ -298,4 +369,59 @@ export function maxImageBytesFor(modelSlug: string | null | undefined): number {
   if (!modelSlug) return ANTHROPIC_LIMIT;
   if (modelSlug.toLowerCase().startsWith('openai/')) return OPENAI_LIMIT;
   return ANTHROPIC_LIMIT;
+}
+
+// ─── catalog membership (worker-config validation) ────────────────────
+
+/**
+ * Does the live OpenRouter catalog list this exact model id?
+ *
+ * Three-valued on purpose: `null` means the catalog has never loaded
+ * (unreachable network, first boot) — UNKNOWN, which callers must treat as
+ * "allow", never as "invalid". Existence checks gate CONFIG SAVES, and a
+ * provider outage must not block an operator from saving a worker.
+ * `~`-prefixed auto-updating aliases are real catalog entries and count.
+ */
+export function catalogHasModel(id: string): boolean | null {
+  if (!liveModelIds) return null;
+  return liveModelIds.has(id.trim().toLowerCase());
+}
+
+/**
+ * The live catalog's modalities for a slug, or null when the catalog never
+ * loaded or does not list it. Three-valued for the same reason
+ * {@link catalogHasModel} is: callers gate CONFIG SAVES with it, so UNKNOWN
+ * must read as "allow".
+ */
+export function catalogModalities(id: string): { input: string[]; output: string[] } | null {
+  const hit = liveModels?.[id.trim().toLowerCase()];
+  if (!hit) return null;
+  return { input: hit.inputModalities, output: hit.outputModalities };
+}
+
+/**
+ * Closest catalog ids to a miss, for "did you mean" in a save error. Cheap
+ * scoring, not fuzzy matching: an id that CONTAINS the query (the classic
+ * missing `-preview` suffix), then longest shared prefix. Returns [] when
+ * the catalog is unloaded.
+ */
+export function catalogSuggestions(id: string, limit = 3): string[] {
+  if (!liveModelIds) return [];
+  const q = id.trim().toLowerCase();
+  const scored: Array<{ id: string; score: number }> = [];
+  for (const known of liveModelIds) {
+    let score: number;
+    if (known.includes(q) || q.includes(known)) {
+      score = 1000 + Math.min(q.length, known.length);
+    } else {
+      let i = 0;
+      while (i < q.length && i < known.length && q[i] === known[i]) i += 1;
+      score = i;
+    }
+    if (score >= 8) scored.push({ id: known, score });
+  }
+  return scored
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+    .slice(0, limit)
+    .map((s) => s.id);
 }

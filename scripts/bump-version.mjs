@@ -14,7 +14,8 @@
 // tag — pass it back explicitly (e.g. `0.20.0-alpha`) to keep it. See
 // docs/versioning.md.
 //
-// Then commit and tag:  git tag v<new>
+// Then commit, and tag with scripts/tag-release.sh (it asserts the release
+// commit before tagging — never `git tag` by hand chained onto a merge).
 //
 // GUARD: refuses to run on any branch other than main (--force overrides).
 // Bumping on a feature branch was the old ritual, and it made every concurrent
@@ -30,12 +31,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 // client/desktop rides too: its version is what the packaged app reports
 // (app.getVersion) and what electron-updater compares against releases — a
 // drift there would stall or loop desktop auto-updates.
-const targets = [
-  'package.json',
-  'server/web/package.json',
-  'client/web/package.json',
-  'client/desktop/package.json',
-].map((p) => join(root, p));
+const targets = ['package.json', 'server/web/package.json'].map((p) => join(root, p));
 
 const args = process.argv.slice(2);
 const force = args.includes('--force');
@@ -99,4 +95,5 @@ try {
   console.warn('⚠ README stats not regenerated (run `pnpm readme:stats` by hand)');
 }
 
-console.log(`  Next:  git commit -am "release: v${next}" && git tag v${next}`);
+console.log(`  Next:  git commit -am "release: v${next}"`);
+console.log('         scripts/tag-release.sh   (asserts the release commit, then tags + pushes)');

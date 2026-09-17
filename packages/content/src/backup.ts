@@ -39,44 +39,13 @@ import { db, profiles } from '@mantle/db';
 import { loadProfilePreferences } from './profile-preferences';
 import { snapshotAllTableDatabases } from './table-storage';
 import { snapshotAllAppDatabases } from './app-broker';
+import type { BackupConfig, BackupFile, BackupStatus } from '@mantle/client-types';
+import type { BackupFrequency } from '@mantle/client-types';
+import { env } from '@mantle/config';
+import { errorMessage } from '@mantle/std';
 
-export type BackupFrequency = 'daily' | 'weekly';
-
-export type BackupConfig = {
-  enabled: boolean;
-  frequency: BackupFrequency;
-  /** Hour of day (0-23) in the USER's timezone (profiles.preferences.timezone). */
-  hour: number;
-  /** Newest N dumps retained in the directory. */
-  keep: number;
-  /** Absolute destination directory. Empty/unset → resolveBackupDir default. */
-  location?: string;
-};
-
-export type BackupStatus = {
-  lastRunAt: string;
-  ok: boolean;
-  /** Set when ok=false. */
-  error?: string;
-  file?: string;
-  bytes?: number;
-  durationMs?: number;
-  /** 'schedule' | 'manual' — what triggered the run. */
-  trigger: string;
-  /** When the last SUCCESSFUL run finished — preserved across failed runs,
-   *  so the /debug/integrity staleness check can tell "failing for a week"
-   *  from "failed once after last night's good dump". */
-  lastSuccessAt?: string;
-  /** Sqlite-native table workbooks snapshotted beside the dump (durability
-   *  gate 2). failed>0 is surfaced in the settings card — a backup that
-   *  silently skips a workbook is the gap this closes. */
-  tableDbs?: { snapshotted: number; missing: number; failed: number };
-  /** Per-app mini-app SQLite databases snapshotted beside the dump. Same
-   *  durability gate as tableDbs: these live on their own volume, so pg_dump
-   *  alone misses them and a scheduled backup would silently omit all app
-   *  data (e.g. a Team Hub app's DB) without this pass. */
-  appDbs?: { snapshotted: number; missing: number; failed: number };
-};
+export type { BackupFrequency };
+export type { BackupConfig, BackupFile, BackupStatus };
 
 export const DEFAULT_BACKUP_CONFIG: BackupConfig = {
   enabled: false,
@@ -91,7 +60,7 @@ export const DEFAULT_BACKUP_CONFIG: BackupConfig = {
 export function resolveBackupDir(cfg?: Pick<BackupConfig, 'location'> | null): string {
   const raw =
     (cfg?.location ?? '').trim() ||
-    (process.env.MANTLE_BACKUP_DIR ?? '').trim() ||
+    (env('MANTLE_BACKUP_DIR') ?? '').trim() ||
     path.join(process.cwd(), 'data', 'backups');
   const expanded = raw.startsWith('~') ? path.join(os.homedir(), raw.slice(1)) : raw;
   return path.resolve(expanded);
@@ -301,7 +270,7 @@ async function writeBackupStatus(userId: string, status: BackupStatus): Promise<
  *  highest version is the only always-safe pick.
  *  Null when nothing runs — the caller turns that into an actionable error. */
 async function resolvePgDump(): Promise<string | null> {
-  const explicit = (process.env.MANTLE_PG_DUMP ?? '').trim();
+  const explicit = (env('MANTLE_PG_DUMP') ?? '').trim();
   if (explicit) return explicit;
   const candidates = [
     // The newest pgdg client comes BEFORE the bare PATH name on purpose: a
@@ -330,8 +299,6 @@ function canRun(bin: string): Promise<boolean> {
     child.on('close', (code) => resolve(code === 0));
   });
 }
-
-export type BackupFile = { name: string; bytes: number; mtime: string };
 
 const DUMP_RE = /^mantle-\d{8}-\d{6}\.dump$/;
 
@@ -396,7 +363,7 @@ async function runBackupInner(
     return status;
   };
 
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = env('DATABASE_URL');
   if (!databaseUrl) return fail('DATABASE_URL is not set in this process');
 
   const cfg = await loadBackupConfig(userId);
@@ -617,5 +584,5 @@ export async function maybeRunScheduledBackups(): Promise<void> {
 }
 
 function msg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return errorMessage(err);
 }

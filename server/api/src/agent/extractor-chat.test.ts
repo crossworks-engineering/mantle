@@ -44,7 +44,7 @@ vi.mock('@mantle/api-keys', async (importOriginal) => {
 });
 
 import { chatComplete } from './extractor';
-import type { ChatRoutes } from '@mantle/agent-runtime';
+import type { ChatRoutes } from '@mantle/runtime/agent';
 
 const ROUTES: ChatRoutes = {
   primary: {

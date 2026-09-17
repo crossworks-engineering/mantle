@@ -27,6 +27,7 @@ import {
   verifyMobileToken,
   verifySessionCookie,
 } from './tokens';
+import { env } from '@mantle/config';
 
 /**
  * Fresh install? (empty `auth.users`). Drives the login screen's
@@ -84,12 +85,14 @@ export async function getOwnerForAsset(req: Request): Promise<SessionUser | Next
     // The signature proves the server minted this for `uid`; the route scopes to
     // it. No DB lookup — the token is short-lived and email isn't needed here.
     // Byte-serving is GET-only, so the synthetic actor never reaches the
-    // mutation/audit choke point.
+    // mutation/audit choke point. `act` names the LOGIN the token was minted
+    // for, so per-login asset routes (the profile photo) can address that
+    // row; absent, the actor is the anchor itself — the pre-claim behavior.
     if (claims) {
       return {
         id: claims.uid,
         email: '',
-        actor: { id: claims.uid, email: '', displayName: null, isOwner: false },
+        actor: { id: claims.act ?? claims.uid, email: '', displayName: null, isOwner: false },
       };
     }
   }
@@ -153,11 +156,11 @@ async function getBearerUser(): Promise<SessionUser | null> {
  */
 function detachedDevUser(): SessionUser | null {
   if (!isDetachedDev()) return null;
-  const token = process.env.NEXT_PUBLIC_MANTLE_API_TOKEN?.trim();
+  const token = env('MANTLE_API_TOKEN')?.trim();
   if (!token) return null;
   const claims = decodeUnverifiedClaims(token);
   if (!claims || typeof claims.uid !== 'string') return null;
-  const email = process.env.MANTLE_DEV_EMAIL?.trim() || 'dev@localhost';
+  const email = env('MANTLE_DEV_EMAIL')?.trim() || 'dev@localhost';
   return {
     id: claims.uid,
     email,

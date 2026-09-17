@@ -25,7 +25,7 @@
  * by its id directly.
  */
 
-import { BLOCK_NODE_TYPES, mintBlockId } from './block-ids';
+import { BLOCK_NODE_TYPES, mintBlockId } from '@mantle/content-core/block-ids';
 
 /** Loose PM node shape — exported so tool handlers that pre-parse via
  *  markdownToDoc can cast their `content` array to the right type before

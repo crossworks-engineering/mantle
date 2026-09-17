@@ -3,7 +3,7 @@
  *
  * Adding a contact email/domain should pull that sender's recent history into
  * the brain (mirrors the old approve→backfill). The work runs in the email-sync
- * worker (`apps/web/workers/email-sync.ts`); this is just the publisher, shared
+ * worker (`server/web/workers/email-sync.ts`); this is just the publisher, shared
  * by every caller that adds a contact entry: the web contacts API, the
  * discover-senders page, and the `contact_*` agent builtins. Keeping it here
  * (next to `backfillMatch`, with `@mantle/db` already available) means one
@@ -12,6 +12,7 @@
 import { PgBoss } from 'pg-boss';
 import { and, eq } from 'drizzle-orm';
 import { db, emailAccounts } from '@mantle/db';
+import { env } from '@mantle/config';
 
 /** Queue name — must match the email-sync worker's `BACKFILL_QUEUE`. */
 export const BACKFILL_QUEUE = 'mantle.email.backfill';
@@ -23,7 +24,7 @@ export const MS_BACKFILL_QUEUE = 'mantle.microsoft.backfill';
 let _boss: PgBoss | undefined;
 async function boss(): Promise<PgBoss> {
   if (_boss) return _boss;
-  const url = process.env.DATABASE_URL;
+  const url = env('DATABASE_URL');
   if (!url) throw new Error('DATABASE_URL must be set to enqueue a backfill');
   _boss = new PgBoss({ connectionString: url, schema: 'pgboss' });
   await _boss.start();

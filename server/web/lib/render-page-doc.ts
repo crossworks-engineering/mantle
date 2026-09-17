@@ -15,14 +15,14 @@ import katex from 'katex';
 import { common, createLowlight } from 'lowlight';
 import { toHtml } from 'hast-util-to-html';
 // Relative (not `@/`) so the vitest unit test, which has no path-alias, resolves it.
-import { highlightColor } from '@mantle/web-ui/highlight-colors';
-import { textColor } from '@mantle/web-ui/text-colors';
+import { highlightColor } from '@mantle/client-types/highlight-colors';
+import { textColor } from '@mantle/client-types/text-colors';
 import {
   asideBackground,
   asideBorderColor,
   normalizeAsideAngle,
   normalizeAsideColor,
-} from '@mantle/web-ui/aside-style';
+} from '@mantle/client-types/aside-style';
 
 const lowlight = createLowlight(common);
 
@@ -38,6 +38,10 @@ type PMNode = {
 export type RenderOptions = {
   /** Build the public URL for an embedded file node id. */
   assetUrl: (fileId: string) => string;
+  /** Build the URL for an embedded DRAWING's committed snapshot. Optional so
+   *  existing callers keep compiling; without it an embedded drawing renders
+   *  as a labelled `[drawing: alt]` placeholder rather than disappearing. */
+  drawUrl?: (drawId: string) => string;
 };
 
 function esc(s: string): string {
@@ -188,8 +192,23 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
       return `<td>${renderBlocks(node.content, opts)}</td>`;
     case 'image': {
       const fileId = str(node.attrs?.nodeId);
-      const src = fileId ? opts.assetUrl(fileId) : str(node.attrs?.src);
+      // An embedded drawing is an image whose bytes come from a draw's
+      // committed snapshot. Always an <img>, never inline markup — the
+      // snapshot is third-party-shaped SVG and image context is what makes it
+      // inert (see docs/draw-audit-findings.md §2).
+      const drawId = str(node.attrs?.drawId);
       const alt = escAttr(str(node.attrs?.alt));
+      if (drawId) {
+        const drawSrc = opts.drawUrl?.(drawId);
+        // A caller that can't serve drawings says so, rather than dropping the
+        // drawing out of the document without a trace. Matches how the docx
+        // renderer degrades, and keeps a surface from quietly losing content.
+        if (!drawSrc) {
+          return `<p><em>[drawing: ${esc(str(node.attrs?.alt)) || 'untitled'}]</em></p>`;
+        }
+        return `<img src="${escAttr(drawSrc)}" alt="${alt}" loading="lazy">`;
+      }
+      const src = fileId ? opts.assetUrl(fileId) : str(node.attrs?.src);
       return src ? `<img src="${escAttr(src)}" alt="${alt}" loading="lazy">` : '';
     }
     case 'fileEmbed': {
@@ -199,9 +218,9 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
       return `<a class="file-embed" href="${escAttr(href || '#')}" target="_blank" rel="noopener">${name}</a>`;
     }
     case 'diagram': {
-      // Slice-1 degrade: the diagram's Mermaid source as an escaped code block
-      // (never a blank). Slice 2 swaps this for cached, sanitized server-rendered
-      // SVG; until then no markup from the source can pass through.
+      // LEGACY diagram node (Mermaid retired 2026-08): the stored source as an
+      // escaped, labelled code block (never a blank). This is the terminal
+      // render — no client script upgrades it anymore.
       const source = str(node.attrs?.source);
       const id = str(node.attrs?.id);
       const idAttr = id ? ` id="${escAttr(id)}"` : '';

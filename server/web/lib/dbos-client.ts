@@ -1,10 +1,10 @@
 import { DBOSClient } from '@dbos-inc/dbos-sdk';
-import { resolveSystemDatabaseUrl } from '@mantle/assistant-runtime';
+import { resolveSystemDatabaseUrl } from '@mantle/runtime/assistant';
 
 /**
  * Cached DBOSClient for enqueueing durable runner workflows (assistant turns,
  * …) from the Next.js server WITHOUT registering or running them here — the
- * apps/api process executes them. The client opens a Postgres pool against the
+ * server/api process executes them. The client opens a Postgres pool against the
  * DBOS system database, so it's cached on globalThis like @mantle/db's client
  * (one pool per process, survives HMR in dev).
  *

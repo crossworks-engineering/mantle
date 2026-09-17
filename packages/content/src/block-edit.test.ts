@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { ensureBlockIds } from './block-ids';
+import { ensureBlockIds } from '@mantle/content-core/block-ids';
 import {
   appendBlocks,
   deleteBlock,

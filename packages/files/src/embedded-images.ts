@@ -43,7 +43,7 @@
 
 import { createHash } from 'node:crypto';
 import { sniffImage } from './image-probe';
-import { slugifyFolder, TIKA_EXTS } from './slug';
+import { extOf, slugifyFolder, TIKA_EXTS } from './slug';
 
 /** Where the image sits in its source document. Which field is populated
  *  depends on what the format can tell us: PDFs know pages, decks know
@@ -77,6 +77,18 @@ export type EmbeddedImage = {
   /** sha256 of `bytes`, computed once here because both the intra-document
    *  dedupe and the caller's cross-document dedupe want it. */
   sha256: string;
+  /** The FORMAT guarantees this is a real content raster, not decoration —
+   *  e.g. a DWF sheet thumbnail: exactly one per published sheet, and the
+   *  only raster the drawing has. The decoration heuristics (dimension and
+   *  no-dimensions size floors) don't apply; renderability, the absolute
+   *  byte floor and dedupe still do. Set it only where the format itself
+   *  proves content-ness — never from within a generic media scan. */
+  essential?: boolean;
+  /** Which tier produced the bytes, for formats with more than one (DWF:
+   *  a sidecar vector render vs the container's small preview). Persisted
+   *  onto the image node so "which drawings are still on the low-res tier"
+   *  is a query, and an upgrade pass has a safe predicate. */
+  provenance?: 'sidecar_render' | 'embedded_thumbnail';
 };
 
 /** Minimum edge length, in pixels, for an image to be worth keeping. Bullets,
@@ -130,7 +142,7 @@ export type GateResult = { keep: true } | { keep: false; reason: GateRejection }
  * logo repeated on all sixty slides collapses to a single node.
  */
 export function passesGate(
-  img: { bytes: Buffer; ext: string; sha256: string },
+  img: { bytes: Buffer; ext: string; sha256: string; essential?: boolean },
   seenHashes: Set<string>,
 ): GateResult {
   if (SKIPPED_IMAGE_EXTS.has(img.ext)) return { keep: false, reason: 'metafile' };
@@ -151,6 +163,11 @@ export function passesGate(
   // SVG scripts never execute regardless. Rejecting it here would only lose
   // the crispest diagrams — vector is the BEST case for a technical figure.
   if (!probed) return { keep: false, reason: 'unrenderable' };
+
+  // An `essential` image (see the EmbeddedImage field) is content by the
+  // format's own guarantee — a DWF sheet thumbnail is 262×170 and would fail
+  // the dimension floor below, yet it is the only raster the sheet has.
+  if (img.essential) return { keep: true };
 
   // Dimensions are the real filter — icons, bullets and rule lines all fail
   // here while a diagram or screenshot passes comfortably.
@@ -204,8 +221,8 @@ export async function extractEmbeddedImages(
   ext: string,
   opts?: { maxImages?: number },
 ): Promise<ExtractEmbeddedImagesResult> {
-  const raw = await extractRaw(bytes, ext.toLowerCase());
   const cap = Math.max(0, opts?.maxImages ?? MAX_EMBEDDED_IMAGES_PER_DOC);
+  const raw = await extractRaw(bytes, ext.toLowerCase(), { maxImages: cap });
 
   const seen = new Set<string>();
   const rejected: ExtractEmbeddedImagesResult['rejected'] = {};
@@ -305,6 +322,32 @@ export function buildImageTitles(images: EmbeddedImage[], sourceTitle: string): 
 }
 
 /**
+ * The per-document slug that names BOTH the extracted-images folder and every
+ * image filename inside it — the extractor's one source of identity for a
+ * document's pictures.
+ *
+ * The extension is part of the slug, not stripped from it. A drawing ingested
+ * as both `90-10-01.dwg` and `90-10-01.dxf` (cross-format twins are routine in
+ * CAD hand-offs) used to slugify to the same folder AND the same image
+ * filenames, so the second document's saves all collided with the first's and
+ * every image was silently lost. `90-10-01-dwg` vs `90-10-01-dxf` can never
+ * share a path.
+ *
+ * The extension is appended AFTER the stem is slugged (and capped), so a stem
+ * long enough to hit `slugifyFolder`'s 64-char cap cannot truncate the
+ * extension away and re-collide. Existing folders from older extractions keep
+ * their names — the extractor's `sourceFileId` dedupe means an already
+ * extracted document is never renamed, only new extractions use this scheme.
+ */
+export function buildSourceSlug(filename: string): string {
+  const ext = extOf(filename);
+  const stem = ext ? filename.slice(0, -(ext.length + 1)) : filename;
+  const stemSlug = slugifyFolder(stem) ?? 'document';
+  const extSlug = ext ? slugifyFolder(ext) : null;
+  return extSlug ? `${stemSlug}-${extSlug}` : stemSlug;
+}
+
+/**
  * On-disk filename — mechanical, stable, and sortable, which is exactly what
  * the title is not.
  *
@@ -329,7 +372,11 @@ export function buildImageFilename(img: EmbeddedImage, sourceSlug: string, ext =
 
 /** Format dispatch. Each branch returns candidates in document order with a
  *  provisional ordinal; gating and renumbering happen above. */
-async function extractRaw(bytes: Buffer, ext: string): Promise<EmbeddedImage[]> {
+async function extractRaw(
+  bytes: Buffer,
+  ext: string,
+  opts?: { maxImages?: number },
+): Promise<EmbeddedImage[]> {
   if (ext === 'docx') return (await import('./docx')).extractDocxImages(bytes);
   if (ext === 'pdf') return (await import('./pdf')).extractPdfImages(bytes);
   if (ext === 'pptx' || ext === 'xlsx' || ext === 'xlsm') {
@@ -337,6 +384,21 @@ async function extractRaw(bytes: Buffer, ext: string): Promise<EmbeddedImage[]> 
   }
   if (ext === 'odt' || ext === 'ods' || ext === 'odp') {
     return (await import('./ooxml-media')).extractOdfImages(bytes);
+  }
+  // DWF plot sets: one raster per published sheet, marked essential (the
+  // format guarantees content-ness; see extractDwfImages). The caller's cap
+  // is forwarded so the sidecar never renders sheets the gate would discard.
+  if (ext === 'dwf') {
+    return (await import('./dwf')).extractDwfImages(bytes, { maxSheets: opts?.maxImages });
+  }
+  // DWG drawings: one essential model-space render from the sidecar; no
+  // fallback tier inside the file (see extractDwgImages).
+  if (ext === 'dwg') {
+    return (await import('./dwg')).extractDwgImages(bytes);
+  }
+  // DXF drawings: same single render off the same sidecar exchange.
+  if (ext === 'dxf') {
+    return (await import('./dxf')).extractDxfImages(bytes);
   }
   // Tier 2 — the legacy binaries. `xlsb` is a zip but an undocumented binary
   // one, so it goes to Tika too rather than getting a bespoke reader.

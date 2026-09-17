@@ -38,16 +38,17 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
 import { configureDBOS } from './config';
+import { env } from '@mantle/config';
 
-const MARKER = process.env.CRASH_MARKER || 'crashtest';
-const CRASH = process.env.MANTLE_CRASH_TEST === '1';
+const MARKER = env('CRASH_MARKER') || 'crashtest';
+const CRASH = env('MANTLE_CRASH_TEST') === '1';
 /** 'resume' runs the WP2-shaped variant (preflight + claim_resume +
  *  record_outbound steps) — the slice-3 acceptance gate for the resume-loss
  *  claim. Default: the original single-step shape. */
-const SHAPE = process.env.CRASH_TEST_SHAPE === 'resume' ? 'resume' : 'basic';
+const SHAPE = env('CRASH_TEST_SHAPE') === 'resume' ? 'resume' : 'basic';
 /** Where the resume-shape crash lands (see header): 'post_claim' = the loss
  *  window, 'post_outbound' = the double-post window (default). */
-const CRASH_POINT = process.env.CRASH_POINT === 'post_claim' ? 'post_claim' : 'post_outbound';
+const CRASH_POINT = env('CRASH_POINT') === 'post_claim' ? 'post_claim' : 'post_outbound';
 
 async function crashTestImpl(marker: string): Promise<string> {
   // A real, countable side effect — journaled as a step. On recovery DBOS must

@@ -2,6 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { cancelRun, forkRun, getRunDetail, resumeRun, restartRun } from '@/lib/runners';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** GET /api/runners/[id] — one run with its steps + (truncated) input/output,
  *  or 404. Drives the detail pane. Owner-gated. */
@@ -37,7 +39,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const parsed = ActionBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid action' },
+      { error: firstIssue(parsed.error, 'invalid action') },
       { status: 400 },
     );
   }
@@ -57,7 +59,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         return NextResponse.json({ ok: true, newWorkflowID: await forkRun(id, body.startStep) });
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     console.error(`[api/runners] ${body.action} failed for ${id}:`, msg);
     return NextResponse.json({ error: msg }, { status: 500 });
   }

@@ -24,21 +24,22 @@ import { z } from 'zod';
 import { getOwnerOr401WithSource } from '@/lib/auth';
 import { getAssignedAgent } from '@/lib/agents';
 import { getDbosClient } from '@/lib/dbos-client';
-import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
+import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/client-types/assistant-limits';
+import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
 import {
   ASSISTANT_TURN_WORKFLOW,
   RUNNER_QUEUE,
   type AssistantTurnInput,
   type AssistantTurnRunResult,
   type RunAssistantTurnOptions,
-} from '@mantle/assistant-runtime';
+} from '@mantle/runtime/assistant';
 import {
   sanitizeLocationPing,
   loadProfilePreferences,
   isStreamThoughtsEnabled,
   type LocationPing,
 } from '@mantle/content';
-import { extractAttachmentForTurn } from '@mantle/agent-runtime';
+import { extractAttachmentForTurn } from '@mantle/runtime/agent';
 import {
   ensureDatedUploadFolder,
   extOf,
@@ -49,9 +50,25 @@ import {
 } from '@mantle/files';
 import type { ToolArtifact } from '@mantle/tools';
 import { recordIngest, startTrace, step } from '@mantle/tracing';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
+
+/** Human-readable over-limit error — zod's default ("Too big: expected string
+ *  to have <=20000 characters") reaches real users through clients without the
+ *  composer's note-offload (the companion app, the dock), so say it plainly. */
+function tooLongError(length: number): string {
+  return (
+    `message too long: ${length.toLocaleString('en-US')} characters, the limit per turn is ` +
+    `${ASSISTANT_TURN_MAX_CHARS.toLocaleString('en-US')}. Send the overflow as an attachment ` +
+    'or split the message.'
+  );
+}
 
 const Body = z.object({
-  text: z.string().min(1).max(20_000),
+  text: z
+    .string()
+    .min(1)
+    .max(ASSISTANT_TURN_MAX_CHARS, { error: (iss) => tooLongError(String(iss.input).length) }),
   agentSlug: z.string().optional(),
   // Device location the companion app attaches to each message. Validated by
   // sanitizeLocationPing (tolerant: bad fields drop, never fatal), not zod —
@@ -257,6 +274,11 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
       const form = await req.formData().catch(() => null);
       if (!form) return { status: 400, body: { error: 'invalid multipart body' } };
       userText = ((form.get('text') as string | null) ?? '').trim();
+      // Same ceiling as the JSON branch — an uncapped multipart path meant the
+      // limit was two different numbers depending on whether a file rode along.
+      if (userText.length > ASSISTANT_TURN_MAX_CHARS) {
+        return { status: 400, body: { error: tooLongError(userText.length) } };
+      }
       agentSlug = ((form.get('agentSlug') as string | null) ?? '').trim() || undefined;
       location = locationFromForm(form.get('location'));
       // Images arrive under 'image', documents under 'file'; accept either.
@@ -283,7 +305,7 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
             body: {
               error:
                 `unsupported file type '${file.type || ext || 'unknown'}'. ` +
-                'Supported: images, and documents (pdf, docx, xlsx, csv, txt, md, json, yaml).',
+                'Supported: images, and documents (pdf, docx, xlsx, csv, txt, md, json, yaml, dwf, dwg, dxf).',
             },
           };
         }
@@ -311,7 +333,7 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
       const raw = await req.json().catch(() => ({}));
       const parsed = Body.safeParse(raw);
       if (!parsed.success) {
-        return { status: 400, body: { error: parsed.error.issues[0]?.message ?? 'invalid input' } };
+        return { status: 400, body: { error: firstIssue(parsed.error) } };
       }
       userText = parsed.data.text;
       agentSlug = parsed.data.agentSlug?.trim() || undefined;
@@ -368,8 +390,8 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
     };
     const input: AssistantTurnInput = { ownerId: user.id, text: userText, options };
 
-    // Run the turn on the dedicated apps/api runner: enqueue the durable
-    // workflow, then await its result. The work EXECUTES in apps/api (off this
+    // Run the turn on the dedicated server/api runner: enqueue the durable
+    // workflow, then await its result. The work EXECUTES in server/api (off this
     // request, journaled by DBOS), so it survives a web-process restart and a
     // client disconnect — if this await is abandoned (the user navigates away),
     // the workflow still completes and persists, and the client reconciles via
@@ -388,7 +410,7 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
     // Non-blocking delivery. When live streaming is on AND the client minted a
     // turn id (the idempotency-key — both the workflow id and the live-stream
     // correlation id), return 202 immediately with just that id. The turn keeps
-    // running in apps/api; the client types the reply out off the live stream and
+    // running in server/api; the client types the reply out off the live stream and
     // reconciles to the durable row on `done`/`error`. This frees the request
     // from holding a minutes-long connection and lets a turn truly survive
     // navigation/backgrounding. The durable outbound row (inserted 'pending' by
@@ -433,7 +455,7 @@ async function runTurn(req: Request, idempotencyKey: string | null): Promise<Tur
       },
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     console.error('[assistant/turn]', msg);
     return { status: 500, body: { error: msg } };
   }

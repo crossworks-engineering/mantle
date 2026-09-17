@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BRAIN_PREFERENCE_KEYS } from './profile-preferences';
+import { BRAIN_PREFERENCE_KEYS, projectNeatBackground } from './profile-preferences';
 
 /**
  * Mantle is multi-trusted-admin: a handful of peers, no privilege tiers. So a
@@ -84,7 +84,37 @@ describe('BRAIN_PREFERENCE_KEYS', () => {
     expect(BRAIN_PREFERENCE_KEYS).toContain('onboardingModels');
   });
 
+  it('shares the generated background — the look of the product', () => {
+    // Rendered by /api/appearance for every visitor's first paint (and the
+    // login screen), so it lives with backgrounds/colorTheme on the anchor row.
+    expect(BRAIN_PREFERENCE_KEYS).toContain('neatBackground');
+  });
+
   it('has no duplicates', () => {
     expect(new Set(BRAIN_PREFERENCE_KEYS).size).toBe(BRAIN_PREFERENCE_KEYS.length);
+  });
+});
+
+describe('projectNeatBackground', () => {
+  it('passes a well-formed spec through untouched', () => {
+    const spec = '{"v":1,"seed":123456,"tone":"auto","speed":2}';
+    expect(projectNeatBackground(spec)).toBe(spec);
+  });
+
+  it('stores garbage as unset, never as an error', () => {
+    for (const bad of [
+      undefined,
+      42,
+      '',
+      'not json',
+      '{"v":2,"seed":1,"tone":"auto","speed":2}', // unknown version
+      '{"v":1,"seed":-1,"tone":"auto","speed":2}', // negative seed
+      '{"v":1,"seed":1.5,"tone":"auto","speed":2}', // fractional seed
+      '{"v":1,"seed":1,"tone":"loud","speed":2}', // unknown tone
+      '{"v":1,"seed":1,"tone":"auto","speed":-3}', // negative speed
+      `{"v":1,"seed":1,"tone":"auto","speed":2,"pad":"${'x'.repeat(300)}"}`, // over cap
+    ]) {
+      expect(projectNeatBackground(bad), String(bad).slice(0, 40)).toBeUndefined();
+    }
   });
 });

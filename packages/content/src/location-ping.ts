@@ -124,7 +124,7 @@ function fmt(n: number, digits = 0): string {
 
 /**
  * Render a one-line "Current location" block for the per-turn volatile context
- * (sits beside the time line — see apps/web/lib/assistant.ts). Returns '' for a
+ * (sits beside the time line — see server/web/lib/assistant.ts). Returns '' for a
  * null ping so callers can `.filter(Boolean)` it out. Written for the model to
  * reason over, not for display: it names the units and tells the agent how to
  * act on the fix (resolve an address / find nearby places only when relevant).

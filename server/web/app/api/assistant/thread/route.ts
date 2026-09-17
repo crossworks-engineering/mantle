@@ -6,6 +6,7 @@ import {
   resolveAgentForActor,
 } from '@/lib/assistant';
 import { getAssignedAgentSummary } from '@/lib/agents';
+import { getAgentExperience } from '@/lib/agent-experience';
 
 /**
  * GET /api/assistant/thread?agent=<slug> — the initial /assistant bundle: the
@@ -18,24 +19,40 @@ import { getAssignedAgentSummary } from '@/lib/agents';
  * browser that already holds a `mantle_assistant_agent` cookie for the old
  * shared agent — i.e. exactly the co-admins this feature is for. The client
  * compares `assignedAt` against a local watermark and overrides the cookie once.
+ *
+ * `?withMessages=0` returns the same bundle with `messages: []`. The mobile
+ * companion needs the picker list and the resolved agent at launch — it has no
+ * agent cookie, so `agent` IS its resolution — but it pages its own thread
+ * through the Drift cache on /api/assistant/messages, so the 100 rows would be
+ * fetched and thrown away on every cold start.
  */
 
 export async function GET(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const slug = new URL(req.url).searchParams.get('agent') ?? undefined;
+  const params = new URL(req.url).searchParams;
+  const slug = params.get('agent') ?? undefined;
+  // Opt-OUT, so an absent/garbled param keeps the full bundle every existing
+  // caller expects. Only the explicit falsy spellings skip the thread.
+  const withMessages = !['0', 'false', 'no'].includes(
+    (params.get('withMessages') ?? '').trim().toLowerCase(),
+  );
 
   const [agents, agent, assigned] = await Promise.all([
     listAssistantAgents(user.id),
     resolveAgentForActor(user, slug),
     getAssignedAgentSummary(user.id, user.actor.id),
   ]);
-  const messages = agent ? await recentAssistantMessages(user.id, agent.id, 100) : [];
+  const [messages, experience] = await Promise.all([
+    agent && withMessages ? recentAssistantMessages(user.id, agent.id, 100) : [],
+    // The header shows the active agent's level badge; one scoped rollup.
+    agent ? getAgentExperience(user.id, agent.id) : null,
+  ]);
 
   return NextResponse.json(
     {
       agents,
-      agent,
+      agent: agent ? { ...agent, experience } : null,
       messages,
       assigned: assigned ? { slug: assigned.slug, assignedAt: assigned.assignedAt } : null,
     },

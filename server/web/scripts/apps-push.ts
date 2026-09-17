@@ -2,7 +2,7 @@
  * apps:push — push a local directory of mini-app source into Mantle, build it,
  * and (optionally) publish. The headless counterpart to the /api/apps/import
  * route, for a single-user box: the owner is resolved at boot from
- * ALLOWED_USER_ID / the sole auth.users row (same trust model as apps/mcp), so
+ * ALLOWED_USER_ID / the sole auth.users row (same trust model as server/mcp), so
  * no session/API-key auth is needed — you must already have shell access.
  *
  * Usage:
@@ -32,6 +32,7 @@ import {
 import { assertSafeScript } from '@mantle/content/app-broker';
 import { resolveTool } from '@mantle/tools';
 import { runAppBuild } from '../lib/app-build-run';
+import { errorMessage } from '@mantle/std';
 
 function die(msg: string): never {
   console.error(`apps-push: ${msg}`);
@@ -84,7 +85,7 @@ function walk(abs: string) {
 try {
   walk(srcDir);
 } catch (err) {
-  die(`cannot read '${srcDir}': ${err instanceof Error ? err.message : String(err)}`);
+  die(`cannot read '${srcDir}': ${errorMessage(err)}`);
 }
 if (Object.keys(files).length === 0) die(`no source files found in '${dir}'`);
 
@@ -160,7 +161,7 @@ if (manifest.schemaSql?.trim()) {
   try {
     assertSafeScript(manifest.schemaSql);
   } catch (err) {
-    die(err instanceof Error ? err.message : String(err));
+    die(errorMessage(err));
   }
   const app = await getApp(ownerId, id);
   const nextVersion = (app?.manifest.sqlite?.schemaVersion ?? 0) + 1;

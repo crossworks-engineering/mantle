@@ -2,12 +2,29 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { listApiKeys, setApiKey } from '@/lib/api-keys';
+import { KNOWN_KEY_SERVICES } from '@mantle/api-keys';
+import { isMcpManagedSecretService } from '@mantle/tools';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const keys = await listApiKeys(user.id);
-  return NextResponse.json({ keys });
+  // Rows under the reserved 'mcp-' namespace are connector-sealed OAuth state
+  // (tokens, registrations) written by the MCP connector flow, not keys the
+  // owner typed in. They are hidden here — deleting one from the keys screen
+  // would break a connector while it still claims connected; the connector's
+  // own delete purges them.
+  const keys = (await listApiKeys(user.id)).filter((k) => !isMcpManagedSecretService(k.service));
+  // Known non-LLM services ride along so the UI can show an empty
+  // placeholder row per unconfigured service (discoverability — the user
+  // shouldn't need to know the slug to learn the capability exists).
+  const configured = new Set(keys.map((k) => k.service));
+  const knownServices = KNOWN_KEY_SERVICES.map((s) => ({
+    ...s,
+    configured: configured.has(s.service),
+  }));
+  return NextResponse.json({ keys, knownServices });
 }
 
 const CreateBody = z.object({
@@ -26,7 +43,7 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
-    const message = parsed.error.issues[0]?.message ?? 'Invalid input.';
+    const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
   }
   try {
@@ -43,7 +60,7 @@ export async function POST(req: Request) {
       createdAt: row.createdAt,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     // 23505 = unique_violation
     if (msg.includes('api_keys_user_service_label_uq') || msg.includes('duplicate key')) {
       return NextResponse.json(

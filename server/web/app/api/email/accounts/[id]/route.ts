@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { connectImapAccount, getAccount, redactAccount } from '@mantle/email';
 import { getOwnerOr401 } from '@/lib/auth';
+import { firstIssue } from '@/lib/zod-issue';
 
 /** One owner-scoped account (credential stripped). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -35,10 +36,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const parsed = EditBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const { intent, ...input } = parsed.data;
   const result = await connectImapAccount(user.id, intent, { ...input, accountId: id });

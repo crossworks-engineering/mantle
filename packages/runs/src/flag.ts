@@ -1,3 +1,4 @@
+import { env } from '@mantle/config';
 /**
  * The runner-queue feature gate. DARK BY DEFAULT — a brain opts in with
  * `MANTLE_RUNS=1` (dogfood on dev first; Jason gates each slice release).
@@ -10,6 +11,6 @@
  * inspect or stop what already exists.
  */
 export function isRunsEnabled(): boolean {
-  const v = process.env.MANTLE_RUNS?.trim().toLowerCase();
+  const v = env('MANTLE_RUNS')?.trim().toLowerCase();
   return v === '1' || v === 'true' || v === 'on' || v === 'yes';
 }

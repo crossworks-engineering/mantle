@@ -1,11 +1,11 @@
-# Mobile Companion — backend additions
+# Mobile Companion: backend additions
 
-_Last updated: 2026-07-19._
+_Last updated: 2026-08-06._
 
 API + schema added to Mantle to support the **Mantle Companion** mobile app
 (Flutter; repo `~/Projects/mantle-companion`). Single-user/self-hosted, so the
 only auth scope is the owner. Everything here is **owner-gated via
-`requireOwner()`**, which accepts the session cookie *or* a mobile bearer token —
+`requireOwner()`**, which accepts the session cookie *or* a mobile bearer token,
 so each route works unchanged from web and mobile.
 
 > Status: **DEPLOYED TO PROD (2026-06-14, v0.24.0).** Migrations 0089/0090/0091
@@ -15,25 +15,25 @@ so each route works unchanged from web and mobile.
 > **401** from `getOwnerOr401`, and `mobile-login` 401s bad creds. Pre-migration
 > brain dump taken first (`backups/mantle-20260614-172127.dump`).
 >
-> Previously: smoke-tested end-to-end on local dev (2026-06-13) — all four route
+> Previously: smoke-tested end-to-end on local dev (2026-06-13), all four route
 > groups verified with a mobile bearer; the avatar route needed a fix (see its
 > section).
 
-## Auth — per-device bearer tokens
+## Auth: per-device bearer tokens
 
 - `packages/db/src/schema/mobile-tokens.ts` + migration `0090_…`'s predecessor
-  `0089_mobile_tokens.sql` — `mobile_tokens` table (revocable, expiry).
-- `apps/web/lib/auth.ts` — `buildMobileToken` / `verifyMobileToken` /
+  `0089_mobile_tokens.sql`, `mobile_tokens` table (revocable, expiry).
+- `server/web/lib/auth.ts`, `buildMobileToken` / `verifyMobileToken` /
   `mobileTokenJti` / `getBearerUser`; `getSessionUser()` falls back to
   `Authorization: Bearer`.
-- `apps/web/middleware.ts` — accepts a valid mobile bearer (stateless verify),
+- `jackdaw/middleware.ts`, accepts a valid mobile bearer (stateless verify),
   401s a malformed one (wrapped in try/catch).
 - Routes: `POST /api/auth/mobile-login` `{email, password, deviceName}` →
   `{token, expiresIn}`; `POST /api/auth/mobile-logout` (revokes by `jti`).
 - **Client contract:** a revoked/expired token still passes the stateless Edge
   gate (revocation is enforced in the Node layer). The JSON API routes below gate
   with **`getOwnerOr401()`**, which returns a clean **401 `{error:'unauthorized'}`**
-  in that case — not a redirect. (HTML *page* routes still use `requireOwner()` →
+  in that case, not a redirect. (HTML *page* routes still use `requireOwner()` →
   **307 → /login**.) The app treats **401 OR 3xx→/login** as "session invalid".
 - **`getOwnerOr401()`** (`lib/auth.ts`) is the gate for programmatic JSON routes:
   it returns `SessionUser | NextResponse`, so the handler does
@@ -42,7 +42,7 @@ so each route works unchanged from web and mobile.
 
 ## Dashboard summary
 
-- `GET /api/dashboard/summary` (`app/api/dashboard/summary/route.ts`) — mirrors the
+- `GET /api/dashboard/summary` (`app/api/dashboard/summary/route.ts`), mirrors the
   web dashboard KPIs by composing existing `lib/dashboard.ts` / `lib/metrics.ts`
   functions: `{ spend: {last7MicroUsd, prior7MicroUsd}, brain: {nodesTotal,
   entitiesTotal, edgesTotal, factsTotal}, vectors: {vectorsTotal, …}, pendingCount }`.
@@ -51,30 +51,30 @@ so each route works unchanged from web and mobile.
 ## Conversations inbox + read state
 
 - Schema `packages/db/src/schema/assistant-read-cursors.ts` + migration
-  `0090_assistant_read_cursors.sql` — `assistant_read_cursors(owner_id, agent_id,
+  `0090_assistant_read_cursors.sql`, `assistant_read_cursors(owner_id, agent_id,
   last_read_at)` (composite PK, FK → agents). Mantle had **no** read/unread concept
   before this.
-- `apps/web/lib/assistant-inbox.ts` — `getReadCursors`, `markAssistantRead`
+- `server/web/lib/assistant-inbox.ts`, `getReadCursors`, `markAssistantRead`
   (upsert), `assistantConversations` (per chat-capable agent: latest message
   preview + `unreadCount` = outbound messages newer than the cursor; sorted by
   recency).
 - `GET /api/assistant/conversations` → `{ conversations: [{ agentId, slug, name,
   avatar, lastMessage: {text, direction, createdAt} | null, unreadCount }] }`.
-- `POST /api/assistant/read` `{ agentSlug?, at? }` — marks an agent's thread read
+- `POST /api/assistant/read` `{ agentSlug?, at? }`, marks an agent's thread read
   (clears unread). Omitting `agentSlug` marks the default agent. Body is
   `safeParse`d → **400 `{error:'invalid_body'}`** on a malformed/mistyped body
   (not a 500); unknown agent → 404.
 
 ## Live chat (SSE)
 
-- **`GET /api/assistant/stream`** (`app/api/assistant/stream/route.ts`) — a
+- **`GET /api/assistant/stream`** (`app/api/assistant/stream/route.ts`): a
   per-owner Server-Sent Events stream. Each turn (any channel) emits
   `data: {agentSlug, direction}`; the client refetches that thread + the inbox on
   receipt (the same "ping-to-refetch" model as `/api/realtime`). Heartbeat
   comment every 25s. Owner-gated with `getOwnerOr401` → clean 401 before the
   stream opens. Mirrors `/api/realtime` exactly (verified byte-identical
   `: connected` framing).
-- **Migration `0091_conversation_changed_notify.sql`** — an `AFTER INSERT` trigger
+- **Migration `0091_conversation_changed_notify.sql`**: an `AFTER INSERT` trigger
   on `assistant_messages` that `pg_notify('conversation_changed', …)` with a JSON
   payload `{ownerId, agentSlug, direction}` (the slug via an indexed PK subquery
   on `agents`, so the client needs no id→slug lookup). Distinct from the existing
@@ -82,30 +82,30 @@ so each route works unchanged from web and mobile.
 - **`lib/realtime.ts`** gained a `conversation_changed` LISTEN on its shared
   bridge connection + `subscribeConversations()` (parallel to `subscribeRealtime`).
   Since `assistant_messages` aren't `nodes`, they don't flow through the existing
-  `node_ingested` path — this is a separate channel on the same bridge.
+  `node_ingested` path; this is a separate channel on the same bridge.
 - Verified live: trigger→NOTIFY→bridge→subscriber delivers `{ownerId, agentSlug,
   direction}` end-to-end (fresh-eval). Note: a *running* dev server's bridge is a
   `globalThis` singleton that survives HMR, so a newly-added LISTEN needs a server
-  restart to register — a dev-only artifact; prod evaluates the module once.
+  restart to register, a dev-only artifact; prod evaluates the module once.
 
 ## Agent avatar image
 
-- `GET /api/agents/[id]/avatar?size=` (`app/api/agents/[id]/avatar/route.ts`) —
+- `GET /api/agents/[id]/avatar?size=` (`app/api/agents/[id]/avatar/route.ts`),
   server-renders the agent's avatar SVG so non-web clients can show the same
   avatar. `runtime = 'nodejs'`. Returns `image/svg+xml`; **404** when the agent
   has no `avatar` (client falls back to initials). The key resolves as a **uuid
-  when it looks like one, else as a slug** — so the companion's
+  when it looks like one, else as a slug**, so the companion's
   `/api/agents/<slug>/avatar` calls work unchanged.
-- It calls the SHARED generator, `@mantle/web-ui/avatar` — the very same module
+- It calls the SHARED generator, `@mantle/web-ui/avatar`, the very same module
   the browser renders with, so the companion and the web app cannot drift.
 - The **style** is the brain's (Settings → Appearance), not the agent's: the
   per-agent `avatar.style` is legacy and ignored. The **seed** is what makes each
   agent's avatar its own.
 - Palette is the **hex** Clean-Slate chart ramp, applied to the BACKGROUND only.
-  Hex because DiceBear validates colours as hex and rejects anything else — which
+  Hex because DiceBear validates colours as hex and rejects anything else, which
   also keeps SVG consumers like `flutter_svg` happy, since they can't parse
   `oklch()`.
-- **Two gotchas hit during smoke-testing — one still live, one now designed out:**
+- **Two gotchas hit during smoke-testing, one still live, one now designed out:**
   1. **Segment-name conflict (still live).** The route was first added at
      `[slug]/avatar`, but `agents/[id]/…` already exists. Next forbids two
      different dynamic slug names at one level and silently 404s *both*. Fix:
@@ -138,33 +138,42 @@ enrollment ticket), `POST|GET /api/push/subscriptions`, `DELETE
 LISTENs `conversation_changed` (migration 0091) and forwards each outbound turn's
 **libsodium-sealed** teaser to the relay's `/notify`. Full design +
 relay/app halves: `../../mantle-companion/docs/push-notifications.md`. The relay
-is live at `https://push.crossworks.network` (mock provider until APNs/FCM creds).
+is live at `https://push.crossworks.network` and **now on real providers** —
+`/healthz` reports `{"ok":true,"provider":"live"}` (checked 2026-08-06); the
+"mock provider until APNs/FCM creds" caveat this line used to carry is retired.
+
+The split left this path alone: `worker_push` still runs from the server image
+(`server/web/workers/push-notify.ts`) and the relay URL is per-instance state
+in `push_instance`, not env. Nothing here is keyed by app package or bundle id
+— `push_subscriptions` stores `platform` + `routing_token` only — so a client
+rename never reaches the server. What is not portable is the relay's FCM
+service account, which is scoped to one Firebase **project**.
 
 ## Location (v0.27.0)
 
-The app can attach a device **location** to each chat turn — there's no new
+The app can attach a device **location** to each chat turn; there's no new
 endpoint; it rides on `POST /api/assistant/turn` (JSON `location` key, or a
 `location` form field on multipart). The server stores it on the inbound message,
 makes the agent location-aware, and lazily reverse-geocodes (Mapbox) into a cached
 `location` node. Full mobile integration contract (fields, Flutter mapping,
-permissions, verify steps): **[`handover-companion-location.md`](./handover-companion-location.md)**.
+permissions, verify steps): **[`handover-companion-location.md`](_archive/handover-companion-location.md)**.
 Shipped + deployed in v0.27.0.
 
-## Navigation — routes + inline maps (next release)
+## Navigation: routes + inline maps (next release)
 
 Building on Location: the assistant can now **find a route** to a place and
 **plot it on an inline map** with a short driving/walking overview (not live
-turn-by-turn). **No new endpoint and no app changes** — the map comes back as an
+turn-by-turn). **No new endpoint and no app changes**: the map comes back as an
 ordinary **image artifact** on the existing chat-turn response, which the
 companion already renders. The companion keeps sending location exactly as before.
 Full contract + how it works server-side:
-**[`handover-navigation.md`](./handover-navigation.md)**. Dormant until a `mapbox`
+**[`handover-navigation.md`](_archive/handover-navigation.md)**. Dormant until a `mapbox`
 key is added; lands in the next release.
 
-## Companion v1.4–1.6 — streaming + knowledge surfaces (2026-07)
+## Companion v1.4–1.6: streaming + knowledge surfaces (2026-07)
 
 Companion **1.4.0–1.6.0** (shipped 2026-07-19, verified against dev v0.147.0)
-consume **existing** owner-gated routes — no new backend was added this cycle.
+consume **existing** owner-gated routes; no new backend was added this cycle.
 For the app-side architecture see
 `../../mantle-companion/docs/architecture.md`. What the app now relies on:
 
@@ -172,42 +181,45 @@ For the app-side architecture see
   `TurnEvent`s; the turn id = the client idempotency-key) and `POST
   /api/assistant/turn/:id/cancel`. The client pins
   `TURN_EVENT_SCHEMA_VERSION` (= 1): it ends the stream on a higher `v`
-  rather than mis-parse — **bump `v` only on breaking shape changes** so old
+  rather than mis-parse, **bump `v` only on breaking shape changes** so old
   clients degrade to refetch instead of breaking. The thought trail renders
   `status` events (upsert by `stepId`) and, with trail-persistence on, the
   persisted `thoughts`/`toolStats` on the outbound row.
 - **Pages (read-only, 1.5).** `GET /api/pages` (tree/list modes),
-  `GET /api/pages/:id`, `GET /api/pages/:id/backlinks`, and — key choice —
+  `GET /api/pages/:id`, `GET /api/pages/:id/backlinks`, and (key choice)
   **`GET /api/export/:id?format=md`** for content, so the app renders markdown
   and needs no ProseMirror. In-page images fetch through the authed files
   route with the Bearer header.
-- **Tasks (1.5).** `GET/POST /api/tasks`, `PATCH /api/tasks/:id`
-  (`status: open|done`), `DELETE`. The app renders in server order (open →
-  done, due asc, recency).
+- **Tasks (1.5).** `GET/POST /api/tasks`, `PATCH /api/tasks/:id`, `DELETE`.
+  Since the Kanban upgrade `status` is `open|in_progress|blocked|done`
+  (+ filter values `active`/`all`); the companion's binary done-toggle still
+  works (any not-done → done → open), and it flattens the two new states to
+  "not done" until it grows a status picker. Server order is not-done →
+  done, then board rank, due asc, recency.
 - **Journal (1.5).** `GET/POST /api/journal`; server derives the title.
   Voice capture reuses `POST /api/assistant/transcribe`.
 - **Events (1.6).** `GET/POST /api/events` (`window=upcoming|past|all`),
   `GET/PATCH/DELETE /api/events/:id`. **Contract quirks the app depends on:**
   1. "Done" is the reserved **`done` tag**, persisted via `PATCH {tags: […]}`
-     (full replacement) — there is **no event status field**. A first-class
+     (full replacement); there is **no event status field**. A first-class
      status column + worker skip would be a clean follow-up; until then the
      tag is load-bearing for the app.
   2. The app **mirrors `startsAt` + `remindAt` into on-device OS alarms**
      (exact, offline, boot-persistent) and reconciles them after every
-     fetch/mutation — the same fields the events-reminders worker pings on.
+     fetch/mutation, the same fields the events-reminders worker pings on.
      Changing `remindAt` computation or rolling behaviour for recurring
      events (server advances the row to the next occurrence) changes what
      rings on phones.
 
-## Companion v1.8 — `GET /api/search` (added v0.148.0, 2026-07)
+## Companion v1.8: `GET /api/search` (added v0.148.0, 2026-07)
 
 The one backend addition of the v1.7–v1.11 companion cycle: an owner-facing
 HTTP twin of the `search_nodes` / `search_chunks` MCP tools, so the app can
 offer a real search screen without routing queries through a chat turn.
 
-- **Route:** `apps/web/app/api/search/route.ts`, gated by `getOwnerOr401`
+- **Route:** `server/web/app/api/search/route.ts`, gated by `getOwnerOr401`
   (mobile bearer works unchanged). Param parsing is pure and unit-tested in
-  `apps/web/lib/search-query.ts`.
+  `packages/client-types/src/search-query.ts`.
 - **Params:** `q` (required, ≤500 chars) · `mode=nodes|chunks` (default
   `nodes`) · `type` (node-type filter; same enum the `search_nodes` tool
   advertises) · `branch` (ltree prefix, regex-validated so the `::ltree`
@@ -224,9 +236,70 @@ offer a real search screen without routing queries through a chat turn.
   failed embed is an explicit **503** here, not degraded results. Response
   rows: `{nodeId, nodeTitle, nodeType, ordinal, heading, text, url,
   supersededBy?}` (`heading` is nullable; `supersededBy {id, title, url}`
-  carries the living successor, same as nodes mode — v0.148.1).
+  carries the living successor, same as nodes mode, v0.148.1).
   `type`/`tags` are ignored in this mode.
 - **Client contract:** results are relevance-ranked, NOT date-sorted (use
   the list endpoints for time-windowed queries); treat `supersededBy` as
   "show the successor"; expect FTS-quality results when the embedding
   worker is down rather than an error (nodes mode).
+
+## The frontend/server split (v0.200.0–v0.202.0) — what it means here
+
+`apps/*` became `server/*`, the owner UI was carved into `jackdaw`, and the
+routes moved off Next onto Hono. **The companion's contract is unchanged**, and
+that is deliberate rather than lucky: the mobile bearer was the mechanism the
+split was designed around (`frontend-backend-split.md` §Auth). Specifically:
+
+- **Every route above still exists at the same path**, served by `server/web`.
+- `server/web/server/middleware/gate.ts` is a faithful port of the old Edge
+  middleware. It accepts `Authorization: Bearer <mobile token>`, and an
+  `/api/**` request without (or with an invalid) credential gets a clean
+  **401 `{error:'unauthorized'}`** — never an HTML redirect. The app's
+  "401 OR 3xx→/login" rule still holds; in practice only the 401 arm fires now.
+- **CORS does not apply to the app.** It engages only when a request carries an
+  `Origin` header, which a native client doesn't send. `MANTLE_API_CORS_ORIGINS`
+  is for the detached web/Electron client.
+- **`POST /api/auth/mobile-login` is frozen** — path, response shape and the
+  original 1-year TTL — because every shipped companion build depends on it.
+  The web client got `/api/auth/token` (30-day + `/refresh`) instead; the
+  companion deliberately does not use it.
+- **`TURN_EVENT_SCHEMA_VERSION` is still `1`.** The app's `v` tripwire is
+  untouched by the seam swap.
+
+**Two vhosts, and which one the app wants.** The shipped Caddyfile serves the
+server on `MANTLE_SITE_ADDRESS` and the owner UI on `MANTLE_CLIENT_SITE_ADDRESS`
+(`app.<domain>`). **The companion must point at the SERVER address** — the
+client origin carries no `/api` at all. The setup screen detects a client origin
+and recovers the right one: `jackdaw` serves `/env.js` (public) advertising
+`serverOrigin`, so the app names the brain instead of just failing.
+
+A **single-host** install — one hostname path-routing `/api` to the server and
+everything else to the client, which is how `dev` and `jason-prod` run — needs
+none of this: `/api/version` answers on the address the user typed. Note those
+boxes still set `MANTLE_SERVER_ORIGIN` to their own hostname, so `/env.js`
+advertises the same origin it is served from; the app rejects a self-pointing
+(or empty) `serverOrigin` rather than re-probing an address it just found dead.
+
+**`/n/<id>` links.** `nodeUrl()` builds against `MANTLE_PUBLIC_URL` (the server
+origin), but `/n/[id]` lives in the client app — so `server/web` forwards
+`/n/*` to `MANTLE_CLIENT_ORIGIN`. This matters to the companion twice: the `url`
+on every `/api/search` hit (the "Open in Mantle" action) and every node link the
+assistant writes into a chat reply. **Set `MANTLE_CLIENT_ORIGIN` on any box
+running a separate client vhost**, or both go nowhere.
+
+## `GET /api/assistant/thread?withMessages=0` — the app's launch bundle
+
+The route returns `{agents, agent, messages, assigned}`. `?withMessages=0`
+suppresses only `messages` (opt-out, so existing callers are unaffected); the
+companion uses it at launch for the two rules it must not re-implement:
+
+- **`agents`** is `listAssistantAgents` — conversational roles **and**
+  `enabled`. `GET /api/agents` filters roles but **not** `enabled`, so an agent
+  disabled in the web picker would otherwise still appear on the phone. The app
+  keeps the rich `/api/agents` rows (avatar) and intersects on these slugs.
+- **`agent`** is `resolveAgentForActor`, which since v0.224 prefers the agent
+  bound to this login (`agents.assigned_user_id`, migration 0143) over the
+  brain-wide priority default. The web needs the `assigned.assignedAt`
+  watermark because it holds a sticky `mantle_assistant_agent` cookie; the app
+  holds no such cookie, so the resolved agent is simply its default — and a
+  turn that omits `agentSlug` resolves the same way server-side.

@@ -6,6 +6,7 @@
  * stays free of DB concerns and is trivially testable.
  */
 import { getValidAccessToken } from './token-store';
+import { sleep } from '@mantle/std';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 const MAX_429_RETRIES = 4;
@@ -18,10 +19,6 @@ function graphError(status: number, message: string): GraphError {
   const err = new Error(message) as GraphError;
   err.status = status;
   return err;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Low-level call against an absolute Graph URL with an already-resolved token.

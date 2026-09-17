@@ -5,7 +5,7 @@ import {
   tokeniseSourceName,
   uniqueAgentSlug,
 } from './agent-clone';
-import { AGENT_NAME_TOKEN } from '@mantle/agent-runtime';
+import { AGENT_NAME_TOKEN } from '@mantle/runtime/agent';
 import type { AgentDTO } from '@mantle/client-types';
 
 /**

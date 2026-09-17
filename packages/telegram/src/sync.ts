@@ -14,6 +14,7 @@ import { botFor } from './client';
 import { gate } from './gate';
 import { answerCallback, editApprovalCard, parseApprovalCallback } from './outbound';
 import type { InboundMessage, PollHandlers } from './types';
+import { errorMessage } from '@mantle/std';
 
 /**
  * One pass of getUpdates for a single account. Long-polls up to `timeout`
@@ -43,7 +44,7 @@ export async function pollOnce(
       allowed_updates: ['message', 'callback_query'],
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     await db
       .update(telegramAccounts)
       .set({

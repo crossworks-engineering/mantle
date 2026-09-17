@@ -3,8 +3,8 @@
 How Mantle records what its agents do. Companion to
 [`architecture.md`](./architecture.md) and [`memory.md`](./memory.md);
 this file is the durable reference for the tracing layer. For the
-human-readable view of the same traces — *what action you took and which
-brain layers reacted* — see [`journey.md`](./journey.md) and the
+human-readable view of the same traces, *what action you took and which
+brain layers reacted*, see [`journey.md`](./journey.md) and the
 **Journey** tab at `/debug/journey`.
 
 Status: **live.** Every responder turn, extractor run, summarizer
@@ -25,8 +25,8 @@ file but I have no idea what happened" un-debuggable.
 ## 1. Why it's its own layer
 
 Mantle has been multi-process and multi-agent for a while now. When
-something goes wrong — or you just want to understand "what did the
-system *do* the last time I sent a DM?" — console logs aren't enough.
+something goes wrong, or you just want to understand "what did the
+system *do* the last time I sent a DM?"; console logs aren't enough.
 You need:
 
 - Every unit of work as a queryable row.
@@ -34,7 +34,7 @@ You need:
 - Aggregates across runs (cost per agent, top errors, cache hit rate).
 - A visual that makes the flow obvious to a human.
 
-That's what the tracing layer does. It's **not** memory — the
+That's what the tracing layer does. It's **not** memory, the
 responder doesn't read traces back into its prompts. It's pure
 operator observability, separate from the six memory layers.
 
@@ -44,8 +44,8 @@ operator observability, separate from the six memory layers.
 
 Two tables:
 
-- **`traces`** — one row per *unit of work*. Always owner-scoped.
-- **`trace_steps`** — ordered tree under each trace. Each step has
+- **`traces`**: one row per *unit of work*. Always owner-scoped.
+- **`trace_steps`**: ordered tree under each trace. Each step has
   a parent (or is a root), an ordinal within its parent, a `kind`
   (db_read / db_write / llm_call / embed / http / notify / compute /
   send), inputs / outputs / meta / error, and timing.
@@ -55,21 +55,21 @@ A trace is one of seven kinds (the `trace_kind` enum):
 | Kind | When it fires | Subject |
 |---|---|---|
 | `responder_turn` | Inbound DM → reply (Telegram) **AND** web /assistant turn (distinguished by `data.surface`) | `telegram_message` id / `assistant_message` id |
-| `extractor_run` | New `nodes` row of an extractable type — **runs even on early-return paths** (marked `skipped`) | `node` id |
+| `extractor_run` | New `nodes` row of an extractable type, **runs even on early-return paths** (marked `skipped`) | `node` id |
 | `summarizer_run` | Chat crosses the undigested-turn threshold | `chat` id |
-| `reflector_run` | 10-minute timer fires — **runs even when no new activity** (marked `skipped`) | `agent_tick` (subject_id null) |
-| `content_ingest` | Every data entry moment — file upload, note create, image upload via /assistant, Telegram photo → file, agent-tool file write | the resulting `node` id |
+| `reflector_run` | 10-minute timer fires, **runs even when no new activity** (marked `skipped`) | `agent_tick` (subject_id null) |
+| `content_ingest` | Every data entry moment, file upload, note create, image upload via /assistant, Telegram photo → file, agent-tool file write | the resulting `node` id |
 | `photo_ingest` | Image → save file + vision-transcribe pipeline. Fires from the Telegram photo branch (subject = `telegram_message`, reply is a separate `responder_turn`) AND from the extractor for images dropped into `/files` outside the chat (subject = `node`, `data.source='extractor'`) | `telegram_message` or `node` id |
 | `manual` | Reserved for scripts + the `invoke_agent` builtin's child agent runs | (whatever) |
 
 Each trace rolls up totals from its steps:
-- `tokens_in`, `tokens_out`, `tokens_cache_read` — sum of LLM step usage.
-- `cost_micro_usd` — sum of LLM step costs in 10⁻⁶ USD.
-- `step_count` — total steps under this trace.
-- `duration_ms` — wall-clock from start to finish.
-- `status` — `running` (open), `success`, `error`, or `skipped`.
+- `tokens_in`, `tokens_out`, `tokens_cache_read`, sum of LLM step usage.
+- `cost_micro_usd`; sum of LLM step costs in 10⁻⁶ USD.
+- `step_count`, total steps under this trace.
+- `duration_ms`, wall-clock from start to finish.
+- `status`, `running` (open), `success`, `error`, or `skipped`.
 
-`skipped` is for **pipelines that consciously decline to run** — the
+`skipped` is for **pipelines that consciously decline to run**: the
 extractor finding a node it's already processed, the reflector
 finding no new activity, etc. The disposition string in `data`
 explains why (`already_extracted`, `body_too_short`,
@@ -125,14 +125,14 @@ await recordIngest({
 ```
 
 Both `startTrace` and `step` propagate via `AsyncLocalStorage`. No
-need to thread a `traceCtx` argument — `step()` automatically nests
+need to thread a `traceCtx` argument, `step()` automatically nests
 under whichever `step()` is currently running, and reads from the
 ambient `startTrace` context. `recordSkippedTrace` and `recordIngest`
 do single-INSERT writes without changing the ambient context (they're
 "this happened, period" facts, not work scopes).
 
 **No trace, no overhead.** If `step()` is called outside a trace
-(e.g. from the backfill script), it just runs the function — zero
+(e.g. from the backfill script), it just runs the function, zero
 database writes, zero allocations.
 
 **Writes are fire-and-forget for inner steps.** `INSERT INTO
@@ -145,13 +145,13 @@ violation, enum violation, network error), we log via
 `console.error('[tracing] ...')` and continue. The user-visible
 behaviour is preserved; the operator sees an error trail to debug
 later. This is how the May-2026 agent_id-FK bug went undetected for
-weeks — see "Soft-failing trace inserts swallow real bugs" below.
+weeks, see "Soft-failing trace inserts swallow real bugs" below.
 
 **Truncation.** `input`, `output`, and `meta` jsonb fields cap at
 **64 KB serialised** per field; longer values get a `{ truncated,
 originalBytes, head }` shape with the first 32 KB. Arrays cap at
 200 items per slot. Operators have explicitly chosen "show me
-everything" over compact traces — 64 KB comfortably fits the full
+everything" over compact traces, 64 KB comfortably fits the full
 body of a 30-50 KB markdown file's `body_preview`, all extracted
 entities + facts, and per-mention embed previews. The cap is still
 real for catching a 1 MB Telegram webhook payload or accidentally-
@@ -161,7 +161,7 @@ stringified embedding vectors.
 
 ## 4. How LLM cost + tokens get captured
 
-`apps/agent/src/llm-usage.ts` exposes `captureLlmUsage(handle,
+`packages/tracing/src/llm-usage.ts` exposes `captureLlmUsage(handle,
 result, model)`. Every site that calls OpenRouter wraps the call in
 a `step('llm_call', …)` and feeds the raw response to this helper.
 It reads `usage.promptTokens`, `usage.completionTokens`,
@@ -185,27 +185,27 @@ roll-up at each level.
 
 | Flow | File | Trace kind | Top-level steps |
 |---|---|---|---|
-| Telegram responder turn | `apps/agent/src/main.ts handleMessage` | `responder_turn` (`subjectKind=telegram_message`) | load_context · build_messages · openrouter_chat · send_telegram · persist_outbound |
-| Web /assistant turn | `apps/web/lib/assistant.ts runAssistantTurn` | `responder_turn` (`subjectKind=assistant_message`, `data.surface=web`) | openrouter_chat + per-tool steps from the tool loop |
-| Extractor run | `apps/agent/src/extractor.ts extractNode` | `extractor_run` | llm_extract · update_index · reconcile_entities · process_facts |
-| Extractor skip | (same) | `extractor_run` (status `skipped`) | (none — disposition + details in `data`) |
-| Summarizer run | `apps/agent/src/summarizer.ts summarizeChat` | `summarizer_run` | load_batch · load_chat_account · llm_summarize · insert_digest_node · mark_turns_digested |
-| Reflector run | `apps/agent/src/reflector.ts reflect` | `reflector_run` | load_recent_turns · llm_reflect · append_notes |
-| Telegram photo ingest | `apps/agent/src/main.ts (photo branch)` | `photo_ingest` | download_photo · persist_file · extract_vision |
+| Telegram responder turn | `server/api/src/main.ts handleMessage` | `responder_turn` (`subjectKind=telegram_message`) | load_context · build_messages · openrouter_chat · send_telegram · persist_outbound |
+| Web /assistant turn | `server/web/lib/assistant.ts runAssistantTurn` | `responder_turn` (`subjectKind=assistant_message`, `data.surface=web`) | openrouter_chat + per-tool steps from the tool loop |
+| Extractor run | `server/api/src/extractor.ts extractNode` | `extractor_run` | llm_extract · update_index · reconcile_entities · process_facts |
+| Extractor skip | (same) | `extractor_run` (status `skipped`) | (none, disposition + details in `data`) |
+| Summarizer run | `server/api/src/summarizer.ts summarizeChat` | `summarizer_run` | load_batch · load_chat_account · llm_summarize · insert_digest_node · mark_turns_digested |
+| Reflector run | `server/api/src/reflector.ts reflect` | `reflector_run` | load_recent_turns · llm_reflect · append_notes |
+| Telegram photo ingest | `server/api/src/main.ts (photo branch)` | `photo_ingest` | download_photo · persist_file · extract_vision |
 | Content ingest | various entry points | `content_ingest` | `received` step with content snippet |
 | Embedder | `packages/embeddings/src/index.ts embedBatch` | (sub-step) | `embed_batch` step appears under whatever parent called it |
 
 The embedder shows up as a nested `embed_batch` step inside the
 parent it was called from (`reconcile_entities`'s per-mention embed,
 `process_facts`'s per-fact embed, etc.). Each one captures the
-**full preview of every input** as `input.preview` — so the
+**full preview of every input** as `input.preview`, so the
 10-identical-cards problem in the graph view is solved: each
 `embed_batch` row shows the actual mention names / entity refs /
 fact texts it embedded. Cache hit / miss / api_call counts land in
 its `meta`.
 
 **No silent skips, by design.** Pipeline early-returns record
-`skipped` traces with disposition strings — see Section 6 for the
+`skipped` traces with disposition strings, see Section 6 for the
 full disposition catalog. Telegram-photo-ingest skips configuration
 problems too (no vision worker, no api key) so the user gets a
 clear ack-with-hint instead of silence.
@@ -230,71 +230,90 @@ joins against to answer "where did this thing come from?".
 
 ---
 
-## 6. Disposition catalog — why something skipped
+## 6. Disposition catalog: why something skipped
 
 When `recordSkippedTrace` fires, `data.disposition` names the
 reason. The current catalog (extend as new pipelines land):
 
 ### Extractor
-- `fact_cost_cap` — **step-level, not trace-level.** The per-node fact
+- `fact_cost_cap`, **step-level, not trace-level.** The per-node fact
   budget (`extract_cost_cap_micro_usd`) was exhausted, so facts the LLM
   already produced were discarded before reaching the profile. The
   `process_facts` step is marked `status=skipped`; meta carries
   `fact_cost_cap=true` + `dropped` (count) + `model` so `/debug`'s "Facts
   dropped to cost cap" widget groups without a join. The enclosing
   `extractor_run` still finishes `success` (summary/embedding/entities did
-  land) — this is the one place a partial-loss event lives on a step, not
+  land); this is the one place a partial-loss event lives on a step, not
   the trace. A cap of `0` / negative reads as **unlimited**; only a positive
   cap can drop facts.
-- `no_extractor_worker` — no default extractor configured at /settings/ai-workers.
-- `node_not_found` — race: notify fired but the row was already deleted.
-- `hard_skip_type` — transient/internal type the extractor refuses by design.
-- `type_not_in_allowlist` — node type isn't in the worker's `target_types`.
-- `no_api_key_id` — worker exists but no API key attached.
-- `api_key_not_decryptable` — key was deleted / KEK rotated.
-- `already_extracted` — node has both `summary` and `embedding` already.
-- `body_too_short` — body < 20 chars; usually a title-only node.
-- `no_text_layer` — a PDF with no extractable text layer (scanned/image-only)
-  where the OCR fallback also produced nothing (no/unwired vision worker, an
-  unrenderable PDF, or a blank scan). Replaces the old silent failure where the
+- `no_extractor_worker`, no default extractor configured at /settings/ai-workers.
+- `node_not_found`, race: notify fired but the row was already deleted.
+- `hard_skip_type`, transient/internal type the extractor refuses by design.
+- `type_not_in_allowlist`; node type isn't in the worker's `target_types`.
+- `no_api_key_id`, worker exists but no API key attached.
+- `api_key_not_decryptable`; key was deleted / KEK rotated.
+- `already_extracted`; node has both `summary` and `embedding` already.
+- `body_too_short`, body < 20 chars; usually a title-only node.
+- `no_text_layer`, a PDF with no extractable text layer (scanned/image-only)
+  where the OCR fallback also produced nothing (no/unwired vision worker, or a
+  blank scan). Replaces the old silent failure where the
   filename fallback (≥20 chars) slipped past `body_too_short` and indexed a
-  filename-only summary as `success`.
-- `bytes_unavailable` — the file's bytes couldn't be retrieved at all: no disk
-  path AND the object isn't in storage (a metadata-only node — e.g. an email
+  filename-only summary as `success`. A PDF that failed to RENDER is
+  `pdf_unreadable`, not this.
+- `bytes_unavailable`, the file's bytes couldn't be retrieved at all: no disk
+  path AND the object isn't in storage (a metadata-only node, e.g. an email
   attachment indexed from headers whose body was never fetched). Distinct from
   `no_text_layer` (we HAVE the file but it's an unreadable scan): the fix is to
   re-fetch the source, not to OCR. `details` carries the sha256.
-- `encrypted_pdf` — a password-protected PDF. The reader (native document
+- `unsupported_media`, an audio/video file (by extension OR mime). Stored and
+  playable but no parser reads it; transcription is only ever the explicit
+  `video_ingest` tool, never this sweep (cost-safety). Hint points at link
+  ingestion.
+- `no_parser`, any OTHER parserless non-image format whose body fell back to
+  its own filename (the generalised hollow-body guard, `isHollowFilenameBody`).
+  Before v0.232.32 a descriptive filename cleared `body_too_short` and indexed
+  as a filename-only `success` — the same false-success family as
+  `needs_export`, now closed for every extension, current and future.
+- `pdf_unreadable`, rasterizing the PDF for OCR THREW. This is a fault in the
+  PDF pipeline, not a verdict on the document — the file may be perfectly
+  good — so it is deliberately not `no_text_layer`, whose hint would send you
+  to the vision-worker settings for something that isn't broken. `details.error`
+  carries the message and is the whole diagnosis: an API/Worker version
+  mismatch means the process holds two pdfjs copies and **every** later PDF in
+  that worker will fail until it restarts (see
+  `packages/files/src/pdf-stack.test.ts`, the gate that keeps one pdfjs in the
+  tree); anything else is usually a corrupt file or a broken native binding.
+- `encrypted_pdf`, a password-protected PDF. The reader (native document
   worker + raster fallback) reports "password protected" / "No password given",
-  so we record this distinct skip rather than the misleading `no_text_layer` —
+  so we record this distinct skip rather than the misleading `no_text_layer`,
   it's LOCKED, not blank. Hint points at supplying a password / re-saving
-  without one. (Bytes read fine — from disk OR object storage; the lock is the
+  without one. (Bytes read fine, from disk OR object storage; the lock is the
   only blocker.)
 
 ### Summarizer
-- `no_summarizer_worker` — no default summarizer configured.
-- `no_api_key_id` — same as above.
-- (Threshold-not-met skips are NOT traced — they fire on every Telegram message
+- `no_summarizer_worker`, no default summarizer configured.
+- `no_api_key_id`, same as above.
+- (Threshold-not-met skips are NOT traced; they fire on every Telegram message
   and would flood the table; this is a deliberate exception to the "trace
   everything" rule.)
 
 ### Reflector
 - `no_reflector_worker`
 - `no_api_key_id`
-- `no_responder_agent` — reflector edits persona_notes on the responder, so
+- `no_responder_agent`, reflector edits persona_notes on the responder, so
   one must exist.
-- `no_new_activity` — nothing happened since the last successful run.
+- `no_new_activity`; nothing happened since the last successful run.
 - `api_key_not_decryptable`
 
 ### Tool-loop (step-level, not trace-level)
-- `duplicate_in_response` — the model emitted multiple byte-identical
+- `duplicate_in_response`, the model emitted multiple byte-identical
   `tool_use` blocks for the same call in one response. First was
   dispatched; this duplicate was suppressed to prevent write amplification.
   Meta carries `first_call_id` (the call that did dispatch) + `model` (so
   `/debug`'s "Duplicates suppressed by model" widget can group without a
   join). Step name is `tool: <slug>` (uniform with successful dispatches)
   + `kind=compute` + `status=skipped`. See [architecture.md §9n](./architecture.md#9n-in-response-duplicate-tool-call-guard).
-- `requires_confirm` — tool was flagged `requiresConfirm: true`; a
+- `requires_confirm`; tool was flagged `requiresConfirm: true`; a
   `pending_tool_calls` row was queued for the operator to approve at
   `/pending`. Meta carries `pendingId` + `requiresConfirm: true`.
 
@@ -304,7 +323,7 @@ param to extract it.").
 
 ---
 
-## 7. Visual rendering — `/traces/[id]`
+## 7. Visual rendering: `/traces/[id]`
 
 The detail page is a React Server Component for the header + a
 client component (`trace-detail.tsx`) for the body. The body uses
@@ -324,7 +343,7 @@ rollout, those fields show full content: the LLM prompt + body the
 extractor saw, the entity/fact JSON the model produced, the
 verbatim mention names each embed_batch processed.
 
-No drag, no connect — read-only flowchart. Pan and zoom via
+No drag, no connect, read-only flowchart. Pan and zoom via
 reactflow's built-in controls.
 
 When the trace's subject is a node, the header's "Subject" field is
@@ -333,7 +352,7 @@ trace failed" to "everything that touched this node."
 
 ---
 
-## 8. Node biography — `/nodes/[id]/history`
+## 8. Node biography: `/nodes/[id]/history`
 
 The Layer-B answer to "what did the system do with my upload?".
 Joins:
@@ -341,7 +360,7 @@ Joins:
 - The node row itself (current state: summary, embedding, content
   preview, tags).
 - Every trace where `subject_id = node.id` ordered by `started_at`
-  ascending — reads top-to-bottom as a story.
+  ascending, reads top-to-bottom as a story.
 - For each trace, the full `trace_steps` tree with all
   input/output/meta jsonb shown in collapsible `<details>` blocks.
 
@@ -351,7 +370,7 @@ render the trace-level data + each step with three collapsibles
 (Input / Output / Meta). Errors render in destructive-red with the
 error message above the steps.
 
-Server-rendered, no client JS dependency — the page works when
+Server-rendered, no client JS dependency, the page works when
 other things are broken (which is when you most need a debug
 surface). Native `<details>` elements for collapsibles.
 
@@ -362,28 +381,28 @@ Discoverable from:
 
 ---
 
-## 9. Dashboard widgets — `/debug`
+## 9. Dashboard widgets: `/debug`
 
 Five widget sections at the top of `/debug`, computed via
-`apps/web/lib/metrics.ts`:
+`server/web/lib/metrics.ts`:
 
-- **Last 24h** — total traces, success rate, avg duration.
-- **Token spend (7d)** — total + top-2 spending agents.
-- **Embed cache (7d)** — hit rate %, hits/misses/api_calls.
-- **Failures (7d)** — total failed traces + distinct error
+- **Last 24h**: total traces, success rate, avg duration.
+- **Token spend (7d)**: total + top-2 spending agents.
+- **Embed cache (7d)**: hit rate %, hits/misses/api_calls.
+- **Failures (7d)**: total failed traces + distinct error
   signatures.
-- **Top errors (7d)** — table grouped by first 80 chars of the
+- **Top errors (7d)**: table grouped by first 80 chars of the
   error message, count + most-recent trace link.
-- **Recent failed traces** — last 10 failures with one-click
+- **Recent failed traces**: last 10 failures with one-click
   jump to the trace detail.
-- **Daily spend (14d)** — bar strip of `traces.cost_micro_usd`
+- **Daily spend (14d)**: bar strip of `traces.cost_micro_usd`
   bucketed by `date_trunc('day')`. Today is highlighted; empty
   days are zero-filled so the strip stays continuous.
-- **Spend by model (7d)** — table joining `trace_steps` on
+- **Spend by model (7d)**: table joining `trace_steps` on
   `meta->>'model'`, summing `meta->>'cost_micro_usd'`. Includes
   both LLM chat calls and embedding calls, so you can spot
   which model is eating the budget.
-- **Spend by agent (7d)** — table: runs, tokens in/out, cache
+- **Spend by agent (7d)**: table: runs, tokens in/out, cache
   reads, total cost.
 
 All queries hit the `traces` + `trace_steps` indexes from the
@@ -399,11 +418,11 @@ When a new flow goes live (e.g. a future research agent), add it:
    ```sql
    ALTER TYPE trace_kind ADD VALUE IF NOT EXISTS 'research_agent_run';
    ```
-   (in its own breakpoint=true migration — see 0017_reflector_role for
+   (in its own breakpoint=true migration, see 0017_reflector_role for
    the pattern.)
 2. Update `packages/db/src/schema/traces.ts` to include the new value.
 3. Wrap the new flow's entrypoint in `startTrace({ kind: 'research_agent_run', … }, …)`.
-4. Add a row to `KIND_LABEL` in `apps/web/app/(app)/traces/page.tsx`
+4. Add a row to `KIND_LABEL` in `jackdaw/app/(app)/traces/page.tsx`
    so the filter chip + table cells render the friendly name.
 
 That's it. The list view, detail view, and dashboard widgets all
@@ -414,7 +433,7 @@ pick up the new kind automatically.
 ## 11. What we deliberately don't do
 
 - **No auto-prune.** Single-user / single-VPS context; disk is cheap.
-  Operator has explicitly chosen "show me everything" — that
+  Operator has explicitly chosen "show me everything", that
   preference also drives the generous 64 KB / 200-item truncation
   budgets. If traces ever hit operational pain we can add a retention
   job pruning rows older than N days.
@@ -440,7 +459,7 @@ pick up the new kind automatically.
 ## 12. Soft-failing trace inserts swallow real bugs
 
 The tracing layer catches DB errors with `console.error('[tracing]
-...')` and continues — by design, so a broken tracing layer can't
+...')` and continues, by design, so a broken tracing layer can't
 take down the agent. But this means **a category of inserts can fail
 silently for a long time before anyone notices.** Two real incidents
 worth committing to memory:
@@ -457,7 +476,7 @@ worth committing to memory:
 2. **The enum-missing bug** (also May 2026). Migration 0029 added
    `'skipped'` to `trace_status` and `'content_ingest'` to
    `trace_kind`. Drizzle's migration runner only picks up files
-   listed in `meta/_journal.json` — hand-written SQL files need
+   listed in `meta/_journal.json`, hand-written SQL files need
    the journal entry added too. The Postgres enum stayed at the
    old values, every `recordSkippedTrace` / `recordIngest` insert
    FK-violated against the enum constraint, and Layer A appeared
@@ -478,16 +497,16 @@ If you only read four files in the observability layer, read in this
 order:
 
 1. [`packages/db/src/schema/traces.ts`](../packages/db/src/schema/traces.ts) +
-   [`trace-steps.ts`](../packages/db/src/schema/trace-steps.ts) —
+   [`trace-steps.ts`](../packages/db/src/schema/trace-steps.ts),
    the shape of the data.
-2. [`packages/tracing/src/store.ts`](../packages/tracing/src/store.ts) —
+2. [`packages/tracing/src/store.ts`](../packages/tracing/src/store.ts),
    `AsyncLocalStorage` propagation, `startTrace` + `step`, the
    fire-and-forget writers.
-3. [`apps/agent/src/llm-usage.ts`](../apps/agent/src/llm-usage.ts) —
+3. [`packages/tracing/src/llm-usage.ts`](../packages/tracing/src/llm-usage.ts),
    how OpenRouter usage gets normalised + rolled up.
-4. [`apps/web/app/(app)/traces/[id]/trace-detail.tsx`](../apps/web/app/(app)/traces/%5Bid%5D/trace-detail.tsx) —
+4. [`jackdaw/app/(app)/traces/[id]/trace-detail.tsx`](../jackdaw/app/(app)/traces/%5Bid%5D/trace-detail.tsx),
    how `trace_steps` rows become a reactflow graph (`dagre` layout,
    status-driven styling).
 
-Aggregates at [`apps/web/lib/metrics.ts`](../apps/web/lib/metrics.ts);
-list + detail queries at [`apps/web/lib/traces.ts`](../apps/web/lib/traces.ts).
+Aggregates at [`server/web/lib/metrics.ts`](../server/web/lib/metrics.ts);
+list + detail queries at [`server/web/lib/traces.ts`](../server/web/lib/traces.ts).

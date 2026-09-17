@@ -49,6 +49,7 @@
 import { PgBoss } from 'pg-boss';
 import { resolveEmbeddingConfig } from '@mantle/embeddings';
 import { extractNode } from './extractor.js';
+import { env } from '@mantle/config';
 
 const EXTRACT_QUEUE = 'mantle.extract';
 const DEAD_LETTER_QUEUE = 'mantle.extract.dead';
@@ -63,7 +64,7 @@ const MAX_CONCURRENCY = 8;
  *  slow box it mostly thrashes). 60 min gives a big extraction room to complete
  *  in one clean pass; raise via `MANTLE_EXTRACT_EXPIRE_MIN` on very slow
  *  hardware (a GPU/upgraded box can leave it at the default). */
-const EXTRACT_EXPIRE_MIN = Number(process.env.MANTLE_EXTRACT_EXPIRE_MIN) || 60;
+const EXTRACT_EXPIRE_MIN = Number(env('MANTLE_EXTRACT_EXPIRE_MIN')) || 60;
 
 /** Retry policy lives on the queue so every job inherits it. With backoff the
  *  delays grow ~30s → 60s → 120s → 240s → 480s, spreading rate-limit retries
@@ -89,9 +90,7 @@ const inflightByNode = new Map<string, Promise<unknown>>();
  *  config's `extractionConcurrency` (DB, passed as `override`) → `EXTRACT_CONCURRENCY`
  *  env → DEFAULT_CONCURRENCY. */
 function resolveConcurrency(override?: number | null): number {
-  const envN = process.env.EXTRACT_CONCURRENCY
-    ? Number.parseInt(process.env.EXTRACT_CONCURRENCY, 10)
-    : NaN;
+  const envN = Number.parseInt(env('EXTRACT_CONCURRENCY') ?? '', 10);
   const candidate = override != null ? override : envN;
   if (!Number.isFinite(candidate) || candidate < 1) return DEFAULT_CONCURRENCY;
   return Math.min(candidate, MAX_CONCURRENCY);

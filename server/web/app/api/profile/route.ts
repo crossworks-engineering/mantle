@@ -19,6 +19,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { AvatarPartsSchema } from '@/lib/avatar-schema';
 import {
   DEFAULT_PREFERENCES,
   isPurposeArchetype,
@@ -30,19 +31,24 @@ import {
   HOUSE_STYLE_MAX,
 } from '@mantle/content';
 import { listReminderCapableAgents } from '@/lib/agents';
+import { errorMessage } from '@mantle/std';
 
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
+  // Personal preferences are the ACTOR's own (per-login avatar/photo/timezone);
+  // loadPreferencesFor routes the brain-level keys to the anchor row either
+  // way. Agents stay owner-scoped (they belong to the brain, not a login).
   const [preferences, reminderAgents] = await Promise.all([
-    loadPreferencesFor(user.id),
+    loadPreferencesFor(user.actor.id),
     listReminderCapableAgents(user.id),
   ]);
   return NextResponse.json({
     preferences,
     reminderAgents,
     fallback: DEFAULT_PREFERENCES,
-    userId: user.id,
+    // The avatar fallback seed — per-login, like the avatar it seeds.
+    userId: user.actor.id,
   });
 }
 
@@ -56,6 +62,11 @@ const Body = z.object({
   // clear it, which is why it is spread conditionally below.
   avatarStyle: z.string().max(64).optional(),
   avatarSeed: z.string().max(200).optional(),
+  // Avatar-builder choices for THIS user's avatar (component → variant | null).
+  // Applied only when SENT (an older client must not clear a saved build);
+  // send {} to clear — it projects to unset. Shape is re-checked in
+  // projectAvatarParts, so this only bounds the payload.
+  avatarParts: AvatarPartsSchema.optional(),
   // Empty = "most recent chat" (unset).
   reminderAgentSlug: z.string().max(120).optional(),
   reminderChannel: z.string().max(32).optional(),
@@ -93,6 +104,7 @@ export async function PUT(req: Request) {
     locale,
     avatarStyle,
     avatarSeed,
+    avatarParts,
     reminderAgentSlug,
     reminderChannel,
     purpose,
@@ -116,11 +128,19 @@ export async function PUT(req: Request) {
   const purposeTrimmed = (purpose ?? '').trim();
   const archetype = (purposeArchetype ?? '').trim();
   try {
-    const preferences = await savePreferencesFor(user.id, {
+    // The ACTOR's id: personal keys land on this login's own row, brain keys
+    // (siteName, houseStyle, purpose…) are routed to the anchor by the split
+    // in savePreferencesFor — this is what makes avatars per-login.
+    const preferences = await savePreferencesFor(user.actor.id, {
       ...(tz ? { timezone: tz } : {}),
       ...(loc ? { locale: loc } : {}),
       ...(avatarStyle !== undefined ? { avatarStyle: avatarStyle.trim() } : {}),
-      avatarSeed: (avatarSeed ?? '').trim(),
+      // Applied only when SENT, like avatarParts: an omitted key must leave
+      // the stored seed alone (a stale tab saving its timezone used to wipe
+      // the seed another tab had just rolled). '' — sent — is still the
+      // explicit clear (back to initials).
+      ...(avatarSeed !== undefined ? { avatarSeed: avatarSeed.trim() } : {}),
+      ...(avatarParts !== undefined ? { avatarParts } : {}),
       reminderAgentSlug: (reminderAgentSlug ?? '').trim(),
       ...(isReminderChannel((reminderChannel ?? '').trim())
         ? { reminderChannel: (reminderChannel ?? '').trim() as 'telegram' | 'mobile' }
@@ -145,9 +165,6 @@ export async function PUT(req: Request) {
     });
     return NextResponse.json({ preferences });
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
   }
 }

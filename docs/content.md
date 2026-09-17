@@ -7,13 +7,13 @@
 > create / update / delete them on your behalf.
 >
 > For richer, structured documents (callouts, columns, tables, embeds) see
-> the heavier [`pages.md`](./pages.md) surface — a TipTap editor with a
+> the heavier [`pages.md`](./pages.md) surface, a TipTap editor with a
 > draft/commit model. Notes remain the lightweight markdown quick-capture.
 > For first-person self-knowledge (who you are, how you feel) that also feeds
 > the assistant's always-on identity context, see [`journal.md`](./journal.md)
-> — a fourth `nodes.data` sibling that rides this same shape.
+>, a fourth `nodes.data` sibling that rides this same shape.
 >
-> Any of the three can be shared read-only via a public link (`/s/[token]`) —
+> Any of the three can be shared read-only via a public link (`/s/[token]`),
 > see [`sharing.md`](./sharing.md).
 
 ---
@@ -58,20 +58,50 @@ task lists). Search is substring against title / body / summary.
 ```ts
 data = {
   body?: string,
-  status: 'open' | 'done',
+  status: 'open' | 'in_progress' | 'blocked' | 'done',
   priority: 'low' | 'normal' | 'high',
   due_at?: string,    // ISO timestamp
+  todos?: [{ id, text, done }],  // checklist inside the task (≤100 × ≤500 chars)
+  rank?: string,      // fractional board-order key (packages/content/src/rank.ts)
+  archived_at?: string,  // ISO timestamp; absent while the task is live
 }
 ```
 
-List sort order is `open` first, then `due_at` ascending (nulls last),
-then `updated_at` descending. The `/tasks` screen is **master-detail**
-(see [`ui-style-guide.md`](./ui-style-guide.md) §8): a filterable list
-on the left (search + status + priority; a checkbox toggles done
-optimistically) and a create / edit / detail pane on the right. Search,
-filters, and pagination are URL-driven (SSR) — same for `/events` and
-`/secrets` — via `listTasks`/`countTasks` (and the `events`/`secrets`
-equivalents) with `limit`/`offset`.
+**Archive is orthogonal to status.** An archived task keeps the status it
+had — it is "filed away", not a fifth lifecycle state. `taskConds` excludes
+archived rows from **every** list and count unless the caller passes
+`archived: 'only' | 'all'`, which is the single door that keeps a Done
+column from growing without bound (`GET /api/tasks?archived=only|all`,
+`task_list`'s `archived`). `PATCH` and `task_update` take a boolean
+`archived` and the SERVER stamps the timestamp, so a client cannot backdate
+it. Archiving is metadata: like rank and tags it is deliberately absent from
+`updateTask`'s `contentChanged` check, so filing a thousand finished tasks
+away costs zero embeddings and zero LLM calls.
+
+List sort order is not-done first, then `rank` ascending (nulls last —
+board order carries into the list), then `due_at` ascending (nulls
+last), then `updated_at` descending. The `/tasks` screen is
+**master-detail** (see `jackdaw/docs/ui-style-guide.md` §8)
+plus a **Kanban board** view (one column per status; a drag PATCHes
+`{status, rank}` — rank/tags-only edits deliberately do NOT re-index,
+so a drag can never trigger an LLM pass). Search, filters, and
+pagination are URL-driven (SSR), same for `/events` and `/secrets`, via
+`listTasks`/`countTasks` (and the `events`/`secrets` equivalents) with
+`limit`/`offset`. `GET /api/tasks` takes `pageSize` (≤500) so the board
+loads every column in one call; `status=active` = every not-done state
+(the list default in the client); unknown `status`/`priority` filter
+values are a 400, not a silent widen.
+
+**Comments** hang off any node via the `node_comments` table (migration
+0147; tasks are the first surface). Three author voices — `owner` (an
+admin login), `member` (a team contact), `agent` — attributed
+server-side from the session/surface, never from a request body.
+Owner routes: `GET/POST /api/nodes/[id]/comments`,
+`PATCH/DELETE /api/comments/[id]` (edit is author-only; delete is any
+admin login). Member routes: `GET/POST /api/team/comments` (gated on an
+ACTIVE share — what a member may read, a member may comment on). Agent
+tools: `task_comments_list` / `task_comment_add`. `TaskRow.commentCount`
+rides on every list row; the thread DTO computes `mine` per viewer.
 
 ### Events (`type='event'`)
 
@@ -100,21 +130,21 @@ a muted "ended" after) and a day-grouped list (Today / Tomorrow / This
 week / Later / Past) with live relative-time badges. Each event has an
 **Add to calendar (.ics)** button, and date entry uses the shadcn
 `DateTimePicker` (calendar popover + time), not the native control. The
-live-time helpers are pure + tested in [`apps/web/lib/event-time.ts`].
+live-time helpers are pure + tested in [`packages/client-types/src/lib/event-time.ts`].
 
 ---
 
 ## 3. Extractor handoff
 
 All three are in `DEFAULT_EXTRACT_TYPES` in
-`apps/agent/src/extractor.ts`. The default body resolution is:
+`server/api/src/agent/extractor.ts`. The default body resolution is:
 
-- **note**: `data.content` — the markdown verbatim.
+- **note**: `data.content`, the markdown verbatim.
 - **task**: title + `Status:` + `Priority:` + `Due:` + body. Surfaces
   the structured metadata so a summary can say *"OPEN, due tomorrow:
   ship the events feature"* instead of just the title.
 - **event**: title + `Starts:` + `Ends:` + `Location:` + body. Same
-  reason — the assistant searching for "meeting with Alex on Tuesday"
+  reason, the assistant searching for "meeting with Alex on Tuesday"
   needs to find the row by its date.
 
 Every meaningful edit (title, body, status, priority, due, starts_at,
@@ -125,7 +155,7 @@ fires `pg_notify('node_ingested', id)` so the extractor re-runs.
 
 ## 4. The reminder worker
 
-`apps/web/workers/events-reminders.ts`. Runs as the `events` lane in
+`server/web/workers/events-reminders.ts`. Runs as the `events` lane in
 `pnpm dev`. Loop:
 
 ```
@@ -145,11 +175,11 @@ every 30s:
 already (`remind_at` + `reminder_sent_at`); a restart loses nothing.
 30s granularity is good enough for human-scale meetings. If you move
 a meeting earlier, the next tick picks up the new `remind_at`
-automatically — no schedule to cancel + re-enqueue.
+automatically, no schedule to cancel + re-enqueue.
 
 **At-least-once delivery**: we mark sent *after* the Telegram API
 call returns. If the worker crashes between send + mark, the next
-tick re-sends. Single-user, low-traffic — duplicate reminders are
+tick re-sends. Single-user, low-traffic; duplicate reminders are
 better than missed ones.
 
 **No target chat?** If no allowed private Telegram chat exists for
@@ -162,12 +192,12 @@ section under `/settings/agents` and the next tick will drain the backlog.
 ## 5. The MCP surface
 
 The assistant in Claude Desktop can drive all three end-to-end via
-the new tools (apps/mcp/src/server.ts):
+the new tools (server/mcp/src/server.ts):
 
 | Surface | Tools                                                            |
 |---------|------------------------------------------------------------------|
 | notes   | `note_list`, `note_get`, `note_create`, `note_update`, `note_delete` |
-| tasks   | `task_list`, `task_get`, `task_create`, `task_update`, `task_delete` |
+| tasks   | `task_list`, `task_get`, `task_create`, `task_update`, `task_delete`, `task_comments_list`, `task_comment_add` |
 | events  | `event_list`, `event_get`, `event_create`, `event_update`, `event_delete` |
 
 Typical flows the assistant can now do without any custom plumbing:
@@ -200,7 +230,7 @@ Same owner-scoping as the rest of the MCP surface
   local). The DB stores UTC ISO.
 - **No two-way calendar sync.** Events offer a one-shot **.ics**
   "Add to calendar" (per-event in the detail, and on shared events), but
-  there's no Google/CalDAV bridge — events live in Mantle.
+  there's no Google/CalDAV bridge, events live in Mantle.
 - **Reminder target is whichever DM you last spoke in.** Multi-bot
   setups would want per-event override; we picked the recommended
   default for simplicity.

@@ -13,16 +13,19 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "migrate": "tsx --env-file-if-exists=../../server/web/.env.local src/migrate.ts",
-    "studio": "node --env-file-if-exists=../../server/web/.env.local --import tsx node_modules/drizzle-kit/bin.cjs studio"
+    "studio": "node --env-file-if-exists=../../server/web/.env.local --import tsx node_modules/drizzle-kit/bin.cjs studio",
+    "init-scratch": "tsx src/init-scratch.ts"
   },
   "dependencies": {
+    "@mantle/config": "workspace:*",
+    "@mantle/std": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "postgres": "^3.4.5"
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@types/node": "^22.20.1",
+    "@types/node": "^26.4.1",
     "drizzle-kit": "^0.31.10",
-    "tsx": "^4.23.1",
-    "typescript": "^5.7.2"
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3"
   }
 }

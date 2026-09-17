@@ -17,7 +17,7 @@
  *     can't be replayed against another even if an attacker swaps the
  *     bytea column.
  *   - All new secret nodes land under the `secrets` ltree root, which
- *     the extractor reads as metadata-only (`apps/agent/src/extractor.ts`
+ *     the extractor reads as metadata-only (`server/api/src/extractor.ts`
  *     special-cases `type='secret'` to feed title + description + tags
  *     and nothing else to the LLM).
  */

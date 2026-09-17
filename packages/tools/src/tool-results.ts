@@ -23,6 +23,7 @@ import { randomBytes } from 'node:crypto';
 import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
 import { db, toolResults, toolResultChunks } from '@mantle/db';
 import { embed, embedBatch } from '@mantle/embeddings';
+import { envDynamic } from '@mantle/config';
 
 // ─── Configuration ──────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ export type ResultHandlingConfig = {
 };
 
 function envInt(name: string, def: number): number {
-  const v = process.env[name];
+  const v = envDynamic(name);
   const n = v ? parseInt(v, 10) : NaN;
   return Number.isFinite(n) && n > 0 ? n : def;
 }

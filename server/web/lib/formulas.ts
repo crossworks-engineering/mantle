@@ -23,9 +23,9 @@ export {
   type FormulaSpec,
   type FormulaValue,
   type CoverageGap,
-} from '@mantle/content/formula-spec';
+} from '@mantle/content-core/formula-spec';
 
-export { evaluateSpec, type EvalResult, type TraceStep } from '@mantle/content/formula-eval';
+export { evaluateSpec, type EvalResult, type TraceStep } from '@mantle/content-core/formula-eval';
 
 export {
   signatureOf,
@@ -34,10 +34,10 @@ export {
   type TargetSignature,
   type SignatureInput,
   type SignatureBranch,
-} from '@mantle/content/formula-signature';
+} from '@mantle/content-core/formula-signature';
 
 export {
   checkDimensions,
   normaliseUnit,
   type DimensionIssue,
-} from '@mantle/content/formula-dimensions';
+} from '@mantle/content-core/formula-dimensions';

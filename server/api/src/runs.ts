@@ -20,7 +20,7 @@ export type RunnerRun = {
   /** ENQUEUED | PENDING | SUCCESS | ERROR | CANCELLED | … */
   status: string;
   queue?: string;
-  /** Which apps/api process executed it (helps when scaled out). */
+  /** Which server/api process executed it (helps when scaled out). */
   executorId?: string;
   appVersion?: string;
   createdAt: number;

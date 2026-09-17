@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { create, all, type FactoryFunctionMap } from 'mathjs';
-import { evalFormula } from './table-formula';
-import { evalFormulaMath } from './table-formula-mathjs';
-import type { Row, TableDoc } from './table-model';
+import { evalFormula } from '@mantle/content-core/table-formula';
+import { evalFormulaMath } from '@mantle/content-core/table-formula-mathjs';
+import type { Row, TableDoc } from '@mantle/content-core/table-model';
 
 /**
  * Differential harness: every expression runs through BOTH engines.

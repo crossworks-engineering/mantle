@@ -26,7 +26,7 @@ import {
   NoGreenBuildError,
   type AppDetail,
 } from '@mantle/content';
-import { buildApp } from '@mantle/app-build';
+import { buildApp, loadRuntimeExports } from '@mantle/app-build';
 import {
   assertSafeScript,
   appDbReadQuery,
@@ -34,11 +34,17 @@ import {
   appDbSeedRows,
   listAppDatabaseSummaries,
 } from '@mantle/content/app-broker';
+import {
+  createAppTableExport,
+  removeAppTableExport,
+  scheduleAppTableExportSync,
+} from '@mantle/content/app-table-exports';
 import { putContent } from '@mantle/storage';
 import { recordIngest } from '@mantle/tracing';
-import { resolveTool } from './dispatch';
+import { resolveTool } from './resolve';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
+import { errorMessage } from '@mantle/std';
 
 const APP_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'app', lookup: 'app_list' },
@@ -115,13 +121,14 @@ const app_create: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
 
 const app_get: BuiltinToolDef = {
   slug: 'app_get',
+  readOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Get a mini app',
   description:
@@ -197,7 +204,7 @@ const app_file_write: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -230,7 +237,7 @@ const app_file_delete: BuiltinToolDef = {
       };
     } catch (err) {
       if (err instanceof CannotDeleteEntryError) return { ok: false, error: err.message };
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -297,7 +304,7 @@ const app_source_set: BuiltinToolDef = {
       };
     } catch (err) {
       if (err instanceof AppSourceLimitError) return { ok: false, error: err.message };
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -320,11 +327,15 @@ const app_build: BuiltinToolDef = {
     if (!app) return { ok: false, error: `app ${id} not found` };
     const source = workingSource(app);
     try {
-      const res = await buildApp(source, { declaredToolSlugs: app.manifest.toolSlugs ?? [] });
+      const res = await buildApp(source, {
+        declaredToolSlugs: app.manifest.toolSlugs ?? [],
+        runtimeExports: await loadRuntimeExports(),
+      });
       ctx.step?.setMeta({ ok: res.ok, errors: res.errors.length, warnings: res.warnings.length });
       if (res.ok && res.code) {
         const buf = Buffer.from(res.code, 'utf8');
         const put = await putContent(buf, 'application/javascript');
+        const cssPut = res.css ? await putContent(Buffer.from(res.css, 'utf8'), 'text/css') : null;
         await setDraftBuild(ctx.ownerId, id, {
           storageKey: put.key,
           sha256: put.sha256,
@@ -333,6 +344,9 @@ const app_build: BuiltinToolDef = {
           bytes: put.size,
           ok: true,
           ...(res.warnings.length ? { warnings: res.warnings.map((w) => w.text) } : {}),
+          ...(cssPut
+            ? { css: { storageKey: cssPut.key, sha256: cssPut.sha256, bytes: cssPut.size } }
+            : {}),
         });
       }
       if (!res.ok) {
@@ -363,7 +377,7 @@ const app_build: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -436,7 +450,7 @@ const app_db_schema_set: BuiltinToolDef = {
     try {
       assertSafeScript(schemaSql);
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
     const app = await getApp(ctx.ownerId, id);
     if (!app) return { ok: false, error: `app ${id} not found` };
@@ -513,6 +527,8 @@ const app_db_seed: BuiltinToolDef = {
         app.manifest.sqlite,
       );
       ctx.step?.setOutput({ id, table, inserted: res.inserted, deleted: res.deleted });
+      // A seed may feed a linked app-table export — debounced, hash-gated.
+      scheduleAppTableExportSync(ctx.ownerId, id);
       return {
         ok: true,
         output: {
@@ -524,13 +540,14 @@ const app_db_seed: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
 
 const app_list: BuiltinToolDef = {
   slug: 'app_list',
+  readOnly: true,
   name: 'List mini apps',
   description:
     "List the owner's mini apps, newest first. Optional `query` substring-matches name/source/summary; `tag` filters. Source is omitted to stay small.",
@@ -576,7 +593,7 @@ const app_publish: BuiltinToolDef = {
   preconditions: APP_ID_PRE,
   name: 'Publish a mini app',
   description:
-    'Publish the app draft: promote the draft source + its build to the live app. Refuses if the draft has no successful build (run app_build until ok first). Use after the user has reviewed the preview and approved.',
+    'Publish the app draft: promote the draft source + its build to the live app. Refuses if the draft has no successful build (run app_build until ok first). Use after the user has reviewed the preview and approved. With NO draft staged this promotes a rebuild instead — `app_build` compiles the published source when there is no draft, so app_build then app_publish refreshes a stale bundle (e.g. one predating per-app CSS) without touching the code.',
   inputSchema: {
     type: 'object',
     properties: { id: { type: 'string', description: "The app's id (UUID) — from `app_list`." } },
@@ -592,7 +609,7 @@ const app_publish: BuiltinToolDef = {
       return { ok: true, output: { id, url: nodeUrl(id), name: app.title, published: true } };
     } catch (err) {
       if (err instanceof NoGreenBuildError) return { ok: false, error: err.message };
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -618,7 +635,7 @@ const app_delete: BuiltinToolDef = {
       ctx.step?.setOutput({ id, deleted: true });
       return { ok: true, output: { id, deleted: true } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -631,6 +648,7 @@ const app_delete: BuiltinToolDef = {
 
 const app_db_list: BuiltinToolDef = {
   slug: 'app_db_list',
+  readOnly: true,
   name: 'List app databases',
   description:
     "List the user's mini apps that have their OWN database, each with its tables (the CREATE statements reveal the columns). Use this FIRST to discover what app data exists, then `app_db_query` to read rows. Read-only.",
@@ -646,13 +664,14 @@ const app_db_list: BuiltinToolDef = {
       ctx.step?.setOutput({ count: out.length });
       return { ok: true, output: { apps: out } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
 
 const app_db_query: BuiltinToolDef = {
   slug: 'app_db_query',
+  readOnly: true,
   preconditions: APP_DB_ID_PRE,
   name: 'Query an app database',
   description:
@@ -668,7 +687,18 @@ const app_db_query: BuiltinToolDef = {
         type: 'string',
         description: 'a read-only SELECT query; use ? placeholders for values',
       },
-      params: { type: 'array', description: 'values bound to the ? placeholders, in order' },
+      // `items` is mandatory, not decoration: Google validates every function
+      // declaration before the model runs and 400s the WHOLE request when an
+      // array property omits it, so one itemless schema takes down every tool
+      // the agent has (NATREF, 2026-09-16). Enforced by
+      // schema-provider-compat.test.ts.
+      params: {
+        type: 'array',
+        items: {
+          anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }, { type: 'null' }],
+        },
+        description: 'values bound to the ? placeholders, in order',
+      },
     },
     required: ['app_id', 'sql'],
   },
@@ -692,8 +722,88 @@ const app_db_query: BuiltinToolDef = {
       }
       return { ok: true, output: { rows, row_count: rows.length } };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
+  },
+};
+
+const app_table_export_set: BuiltinToolDef = {
+  slug: 'app_table_export_set',
+  preconditions: APP_ID_PRE,
+  name: "Export an app's table to Tables",
+  description:
+    "Create (or refresh) a brain Table as a live, read-only view of one table inside the app's own SQLite database; returns the Table's id. The APP stays the master: after app writes the Table re-materializes automatically, and while linked it refuses direct grid edits — data changes in the app only (title/tags/sharing stay editable). Use when the assistant or the Tables surface should see app-managed data; for data managed in Tables, keep an ordinary table and grant the app read tools instead. Idempotent per (app, table): calling again re-syncs. `app_table_export_remove` dissolves the link.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      table: {
+        type: 'string',
+        description: "The app's SQLite table to export, e.g. 'tasks' (see `app_db_list`).",
+      },
+      title: {
+        type: 'string',
+        description: "Display title for the new Table, e.g. 'Sprint tasks (live)'.",
+      },
+    },
+    required: ['id', 'table'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id).trim();
+    const table = str(input.table).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    if (!table)
+      return { ok: false, error: 'table is required — see app_db_list for the app tables' };
+    try {
+      const res = await createAppTableExport(ctx.ownerId, id, table, {
+        title: str(input.title).trim() || undefined,
+      });
+      ctx.step?.setOutput({ table_id: res.tableId, rows: res.rows, created: res.created });
+      return {
+        ok: true,
+        output: {
+          table_id: res.tableId,
+          rows: res.rows,
+          created: res.created,
+          hint: res.created
+            ? 'The Table now mirrors the app table and refreshes after app writes.'
+            : 'Link already existed — re-synced from the current app data.',
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
+const app_table_export_remove: BuiltinToolDef = {
+  slug: 'app_table_export_remove',
+  preconditions: APP_ID_PRE,
+  name: 'Remove an app-table export',
+  description:
+    'Dissolve the export link between an app table and its brain Table; returns whether a link existed. The Table survives as an ordinary editable table holding the last synced rows — it stops refreshing and its grid unlocks. The app and its own database are untouched. Use before deleting a linked Table, or when the data should become hand-managed in Tables; re-create later with `app_table_export_set` (the next sync replaces the grid).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', description: "The app's id (UUID) — from `app_list`." },
+      table: { type: 'string', description: "The exported SQLite table name, e.g. 'tasks'." },
+    },
+    required: ['id', 'table'],
+  },
+  handler: async (input, ctx) => {
+    const id = str(input.id).trim();
+    const table = str(input.table).trim();
+    if (!id) return { ok: false, error: 'id is required' };
+    if (!table) return { ok: false, error: 'table is required' };
+    const removed = await removeAppTableExport(ctx.ownerId, id, table);
+    if (!removed) {
+      return {
+        ok: false,
+        error: `no export link exists for app ${id} table '${table}' — nothing to remove`,
+      };
+    }
+    ctx.step?.setOutput({ id, table, removed: true });
+    return { ok: true, output: { id, table, removed: true } };
   },
 };
 
@@ -711,6 +821,8 @@ export const APP_TOOLS: BuiltinToolDef[] = [
   app_tools_set,
   app_db_schema_set,
   app_db_seed,
+  app_table_export_set,
+  app_table_export_remove,
   app_list,
   app_publish,
   app_delete,

@@ -24,6 +24,7 @@ import {
   deleteFileById,
   deleteFolder,
   derivedBucketForType,
+  drawsReferencingFile,
   emptyDerivedCounts,
   EXTRACTED_IMAGES_SLUG,
   FILES_ROOT_LABEL,
@@ -146,7 +147,14 @@ export async function reapDerivedFromFile(
 
 export type CascadeDeleteResult =
   | { ok: true; reaped: DerivedCounts; skipped: number }
-  | { ok: false; reason: 'not_found' | 'attachment'; reaped: DerivedCounts; skipped: number };
+  | {
+      ok: false;
+      reason: 'not_found' | 'attachment' | 'in_drawing';
+      reaped: DerivedCounts;
+      skipped: number;
+      /** Populated on in_drawing so the caller can name the drawings. */
+      drawings?: { id: string; title: string }[];
+    };
 
 /**
  * The confirmed-cascade orchestration used by every delete surface once the
@@ -158,6 +166,19 @@ export async function deleteFileWithDerived(
   ownerId: string,
   fileId: string,
 ): Promise<CascadeDeleteResult> {
+  // Checked BEFORE reaping. deleteFileById refuses a file a drawing still
+  // uses, and the reap below is irreversible — running it first would destroy
+  // the derived nodes and then decline to delete the file they came from.
+  const inDrawings = await drawsReferencingFile(ownerId, fileId);
+  if (inDrawings.length > 0) {
+    return {
+      ok: false,
+      reason: 'in_drawing',
+      drawings: inDrawings,
+      reaped: emptyDerivedCounts(),
+      skipped: 0,
+    };
+  }
   const { reaped, skipped } = await reapDerivedFromFile(ownerId, fileId);
   const res = await deleteFileById({ ownerId, fileId, deleteDerived: true });
   if (!res.ok) {

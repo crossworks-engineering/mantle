@@ -1,105 +1,63 @@
-# server/web — UI conventions
+# server/web: the HTTP API, workers, and render surfaces
 
-**Before any styling/UI work, read [`docs/ui-style-guide.md`](../../docs/ui-style-guide.md).**
-It's the rulebook; match existing screens (Notes + the settings screens) when unsure.
+This tier is the brain's public face over HTTP. The owner UI is **not** here:
+it lives in the jackdaw repo (`crossworks-engineering/jackdaw`) since the
+2026-08-13 split and consumes this repo's published contract packages
+(`@crossworks/{client-types,content-core,voice-client,share-ui,app-build}`).
+UI conventions, the style guide and the shadcn/Tailwind rules live there —
+`jackdaw/docs/ui-style-guide.md` is authoritative for anything visual.
 
-Non-negotiables (full detail in the guide):
+What is here:
 
-- **Master-detail is the standard** for any list+editor screen (Notes, Traces, and all
-  settings: Accounts/Agents/AI-workers/Heartbeats/Skills/Tools/Keys). Full-height
-  `md:grid md:grid-cols-[340px_1fr]`; left = accent-card list, right = detail/form;
-  Enabled/flags as header `Switch`es top-right + ghost Delete; auto-select first row.
-  **Every scroll pane needs `min-h-0`** or `<main>` double-scrolls. See guide §8.
+- **`app/api/**`** — 345 route handlers (Next-style `route.ts` files) served by
+  the Hono app in `server/web/server/app.ts` through the generated route manifest.
+  Auth: the gate (`server/web/server/middleware/gate.ts`) answers 401 to any `/api/**`
+  request without a credential unless the path is in `PUBLIC_PATHS`
+  (`lib/auth-constants.ts`); every handler then re-authenticates with
+  `getOwnerOr401()` (owner), `resolveTeamChatCaller()` (team token) or
+  `resolveShareVisitor*()` (share token). `server/web/server/auth-sweep.test.ts` drives
+  every route credential-less and pins that contract. Bodies are validated
+  with zod; report the first problem with `firstIssue()` (`lib/zod-issue.ts`).
+  Errors: throw and let `app.onError` answer an opaque 500, or return a
+  4xx with `{ error }`; never echo `err.message` to the client.
+- **`lib/**`** — the HTTP-side domain adapters (agents, heartbeats, runs,
+  shares, model pools, onboarding, integrity, maintenance …). Business logic
+  belongs in `packages/*`; a `lib/` module is the thin layer between a route
+  and a package.
+- **`lib/system-manifest/`** — what a brain ships with (agents, skills, tool
+  groups, workers, persona). ONE source of truth; read its `CLAUDE.md` before
+  touching defaults. Never hardcode a model, prompt or grant elsewhere.
+- **`workers/`** — the background processes (extract, telegram, files, docs,
+  events, maintenance, runs, calendar, microsoft, push). All run through
+  `workers/_runner.ts` (heartbeat, pg-boss lifecycle, bounded shutdown).
+- **`server/`** — the Hono server itself: `main.ts` (boot: env files,
+  `assertEnvShape()`, manifest reconcile), `app.ts`, the gate, the route
+  loader, and the two render surfaces that still live on the brain because
+  they need the database: **`/s/<token>`** (public shares, `server/web/server/pages/share.tsx`)
+  and **`/print`** (PDF export via the Chromium sidecar). Their React islands
+  under `server/web/server/islands/` and `components/share/` are the only `.tsx` left in
+  this tier; they are bundled by `server/web/scripts/build-share-runtime.ts`.
+- **`scripts/`** — operator CLIs (`maintain`, `seed-agent <slug>`, backfills,
+  `eval-recall`). Each is a `pnpm -C server/web <alias>`.
 
-- **shadcn-first** — compose from `components/ui/*`; avoid raw `<button>`/`<input>`/`<select>`.
-- **Theme tokens only** — `bg-background`, `text-foreground`, `text-muted-foreground`,
-  `bg-card`, `border-border`, `bg-primary`, `bg-accent`, `bg-destructive`; status =
-  `success`/`warning`/`info` (+`-ink` for text); `chart-1..5` = chart data ONLY (3:1,
-  not legible as text — use the `-ink` roles or `code-*` instead).
-  **Never hardcode colors**; opacity via `/NN`. Hardcoded colors break the ~40 themes.
-  The theme CSS is GENERATED from `packages/web-ui/themes/seeds.mjs` (`pnpm themes:build`,
-  docs/themes.md) — never edit `themes.css` by hand.
-  **Pair every fill with its OWN `-foreground`** (`bg-accent`+`text-accent-foreground`,
-  `bg-primary`+`text-primary-foreground`, …) — never mix pairs like `bg-accent text-foreground`
-  (no contrast guarantee; breaks on light-accent themes). Same for hover/active fills. On a
-  `bg-sidebar` surface use `hover:bg-foreground/[0.06]` (muted == sidebar in some themes). See
-  style guide §2. Themed markdown: add `prose-accent` beside `prose` (§10).
-- **No `window.prompt/confirm/alert`** — create/edit → `Dialog`; destructive confirm →
-  `AlertDialog` (red action); feedback → `useToast()` (not inline error banners).
-- **Bare icons inside `<Button>`** — no `mr-*`/`h-*/w-*` (base gives `gap-2` + `size-4`).
-  `Button size="sm"` is `h-9`; match it with `ToggleGroup size="default"`.
-- **Form submits use `<SubmitButton>`** (never bare `<Button type="submit">`) — descriptive
-  verb+noun label ("Save agent", "Create event"; not "Save"), no "Saving…" text-swap; pass
-  `pending={…}` for client forms, nothing for server-action forms. See style guide §6.
-- **Reuse shared patterns** — `<BackLink>` (detail back link), `<SetPageTitle>` (centered
-  top-bar title; no duplicate on-page `<h1>`), `<TagInput>`/`<TagPill>` (tags as `string[]`,
-  themed colors), `<MarkdownEditor>` (edit) / `ReactMarkdown`+`prose` (render),
-  `<ShareControl nodeId>` (read-only public-link toggle on any shareable detail header;
-  pass `beforeEnable` to publish first — pages pass `commit`). See [`docs/sharing.md`](../../docs/sharing.md).
-- **List search/filter/pagination is URL-driven (SSR)** — server page reads `q`/`page`/filters,
-  calls `list({…,limit,offset})` + `count*()`; client uses `useListNav()` (`go(patch)`) +
-  `<ListPager>`. Don't client-filter a loaded list. Reference: `/pages` (mirrored by tasks/events/secrets).
-- **Public surface (`/s/[token]`)** lives outside the `(app)` group — no app shell, and it
-  must scroll itself (`h-dvh overflow-y-auto`) because globals.css pins `html/body` to
-  `overflow:hidden` for the shell. Pages render via the server `renderPageDoc` (sanitized
-  HTML), not the client editor.
-- **Fonts**: Inter is the DEFAULT UI body font, and the only one that is always
-  loaded (next/font). It is no longer pinned: the **interface font** is
-  user-selectable too (Settings → Appearance → Interface font), as are the
-  **wordmark + header page-title**, from the same display-font library. A UI
-  choice overrides `--font-sans` on `<html>` — which is why the next/font
-  variable CLASSES live on `<html>` and not `<body>`, since inline style only
-  outranks a class on the SAME element. Alongside it, **Interface size**
-  (small/medium/large) sets the ROOT font-size via `html[data-font-size]` in
-  `app.css`, so the rem-based shell scales whole rather than just the type.
-  Every selectable UI face is a VARIABLE font and MUST carry a `weight` range in
-  the registry, or the browser synthesises bold across the entire app.
-  The single registry is
-  `packages/web-ui/src/display-fonts.ts` — it drives the `@font-face` block, both
-  pickers, and the runtime CSS-var override. To add a face: drop it in
-  `public/fonts/library/`, run `node scripts/fonts-to-woff2.mjs --prune <file>`,
-  mirror the `.woff2` into **both** apps' public dirs (`client/web` + `server/web`
-  each serve their own), then add a row keyed `<key>.woff2`. **woff2 only** — a
-  `.ttf` left behind fails `display-fonts.test.ts`, which asserts registry and
-  shipped files agree in both directions, per app. Defaults: Bukhari wordmark,
-  sans title.
-- **Tailwind v4**: no dynamically built class names (use literal-string arrays).
-- **Editing CSS in `packages/web-ui/styles/` needs a dev-server RESTART.** HMR
-  does not reliably pick up changes to the shared stylesheets, and the failure is
-  silent: the app keeps serving the PREVIOUS build of `app.css`/`themes.css`, so
-  a new rule simply does nothing while the source plainly contains it. Symptom is
-  always "my CSS change had no effect". Confirm before you go debugging the
-  feature — `curl` the `/_next/static/**.css` chunk and grep for your selector,
-  or check `document.styleSheets` in the console. If it is absent there but
-  present on disk, it is staleness: restart `pnpm dev` (clear `.next` if it
-  persists), don't rewrite the rule.
-- **Workflow**: `pnpm --filter @mantle/web run typecheck` before commit; commit on `main`
-  with **no agent co-authorship trailers** (repo rule — see the root CLAUDE.md; a
-  commit-msg hook strips them); don't push unless asked. `pnpm dev:fe` now runs the
-  owner UI (`client/web`) detached against a deployed brain
-  ([docs/db-less-dev.md](../../docs/db-less-dev.md)) — so it browser-checks **client**
-  changes, not this tier. `server/web` runs under `tsx` (`pnpm -C server/web dev`, no
-  `next build`); its own render surfaces (`/s` shares, `/print`) need a running brain
-  with a DB to view.
-- **Detached dev is a `client/web` concern now**: `server/web` is the backend + render-surface
-  tier — its `/s` and `/print` renderers run on the brain **with** the DB, so the old
-  "gate DB reads behind `isDetachedDev()` or `pnpm dev:fe` 500s" rule no longer applies
-  here. The zero-secret owner UI in `client/web` has no server-side DB path at all; it
-  fetches every screen over HTTP via `apiFetch`/`apiSend`/`apiEventStream` (never raw
-  same-origin `fetch` for data) against `MANTLE_SERVER_ORIGIN`.
+Rules that matter here:
 
-**Team surfaces** — since the member carve, the `/team` + `/hub` + `/team-admin`
-UI lives in `client/web` (this app keeps redirect stubs + the `/api/team*` data
-plane and the `/s` share brokers; member credential model:
-[`docs/team-chat.md`](../../docs/team-chat.md) topology note). The hub-app
-authoring contract (thin `host.hub` SDK, sandbox rules, fallback chain) is
-[`docs/team-hub-app-sdk.md`](../../docs/team-hub-app-sdk.md); the bridge
-protocol (`@mantle/web-ui/app-bridge/protocol`) and the `@host` kit string
-(`packages/app-build/src/kit.ts`) MUST stay mirrored (tripwire: `kit.test.ts`).
+- **Environment through `@mantle/config`** (`env('NAME')`), never
+  `process.env.X` — ESLint refuses it. Add new names to `KnownEnvName` and to
+  `.env.example`. See `docs/configuration.md`.
+- **Small helpers from `@mantle/std`** (`errorMessage`, `isUuid`, `sleep`);
+  do not re-declare them.
+- **No personal data or hostnames** in code, comments, docs or examples; the
+  repo is public. Client detail lives in the dev brain.
+- **Workflow**: `pnpm -C server/web typecheck` before commit; feature work in
+  a worktree; land with `scripts/merge-branch.sh`; no agent co-authorship
+  trailers (root `CLAUDE.md`); push only when asked. `pnpm -C server/web dev`
+  runs this tier under `tsx`; `/s` and `/print` need a running brain with a
+  DB. Detached (DB-less) development is a jackdaw concern, see
+  `docs/db-less-dev.md`.
 
-**Changing what a brain ships with** (default agents, skills, tool groups, workers,
-the persona) — there is ONE source of truth: the system manifest. Read
-[`lib/system-manifest/CLAUDE.md`](lib/system-manifest/CLAUDE.md) first. Never
-hardcode a model, prompt, grant, or worker in onboarding, a seed script, or the
-runtime; change `lib/system-manifest/` and it propagates to fresh AND existing
-brains.
+Team surfaces: `/team`, `/hub` and `/team-admin` UI live in jackdaw; this tier
+keeps the redirect stubs, the `/api/team*` data plane and the `/s` share
+brokers (`docs/team-chat.md`). The hub-app contract is `docs/team-hub-app-sdk.md`;
+the bridge protocol (`@mantle/share-ui/app-bridge-protocol`) and the `@host`
+kit string (`packages/app-build/src/kit.ts`) MUST stay mirrored (`kit.test.ts`).

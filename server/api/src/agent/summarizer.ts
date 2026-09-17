@@ -34,7 +34,7 @@ import {
   recordChatUsage,
   resolveChatKey,
   resolveChatRoutes,
-} from '@mantle/agent-runtime';
+} from '@mantle/runtime/agent';
 
 /** Default seeded into the UI when role flips to `summarizer`. The user can
  *  edit it on the agent row at any time. */

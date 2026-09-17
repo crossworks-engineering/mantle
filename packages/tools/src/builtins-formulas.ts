@@ -30,19 +30,14 @@ import {
   type FormulaValue,
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
-import { str } from './coerce';
+import { str, strOptTrim as strOpt, numOr as num } from './coerce';
 import { notFound } from './errors';
+import { errorMessage } from '@mantle/std';
 
 const FORMULA_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'formula', lookup: 'formula_list / search_nodes' },
 ];
 
-function strOpt(v: unknown): string | undefined {
-  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
-}
-function num(v: unknown, dflt: number): number {
-  return typeof v === 'number' && Number.isFinite(v) ? v : dflt;
-}
 function tagList(v: unknown): string[] {
   return Array.isArray(v) ? (v as unknown[]).filter((t): t is string => typeof t === 'string') : [];
 }
@@ -77,6 +72,7 @@ function targetsOf(n: FormulaRow) {
 
 const formula_list: BuiltinToolDef = {
   slug: 'formula_list',
+  readOnly: true,
   name: 'List formulas',
   description:
     'List the stored calculation models — id, title, source standard and tags — ordered by title. Returns `total` alongside `formulas`, so a clipped page is never mistaken for the whole set; page with `offset`. Use to find a formula before `formula_get` or `formula_evaluate`. For a conceptual question about what a standard says, `search_nodes` / `search_chunks` search the indexed text instead; this returns the models themselves.',
@@ -130,6 +126,7 @@ const formula_list: BuiltinToolDef = {
 
 const formula_get: BuiltinToolDef = {
   slug: 'formula_get',
+  readOnly: true,
   name: 'Read a formula',
   description:
     'Return one formula in full: the spec (variables, equations, branches, lookup tables, rating criteria) and `targets` — every evaluable id with what it produces and **the exact inputs `formula_evaluate` needs**, each marked required or defaulted, carrying its unit and, for a rating or lookup key, its legal values. Read the input list from there rather than inferring one from the spec. Also `coverage_gaps` — key combinations a lookup declares as legal but has no row for — and `dimension_issues`, where a declared unit disagrees with the arithmetic that produces it. **A non-empty `coverage_gaps` means the source table is incomplete, not that the spec is wrong**; say so rather than inventing a value for the missing case.',
@@ -166,6 +163,7 @@ const formula_get: BuiltinToolDef = {
 
 const formula_evaluate: BuiltinToolDef = {
   slug: 'formula_evaluate',
+  readOnly: true,
   name: 'Evaluate a formula',
   description:
     'Compute one target of a formula and return the value plus a `trace` — which branch was taken, which lookup row matched, and what every symbol resolved to. Quote the trace when reporting a number so it can be checked. **Symbols are case-sensitive** (`k` and `K` are different quantities) and a missing or misspelled input is an error, never a zero. Get valid `target` ids and required inputs from `formula_get`.',
@@ -198,7 +196,7 @@ const formula_evaluate: BuiltinToolDef = {
     try {
       spec = await readFormulaSpec(ctx.ownerId, id);
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
     const inputs = (
       typeof input.inputs === 'object' && input.inputs !== null ? input.inputs : {}
@@ -271,7 +269,7 @@ const formula_create: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };
@@ -314,7 +312,7 @@ const formula_update: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      return { ok: false, error: errorMessage(err) };
     }
   },
 };

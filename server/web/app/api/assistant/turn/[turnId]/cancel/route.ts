@@ -1,14 +1,15 @@
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { publishTurnCancel } from '@mantle/turn-stream';
-import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
-import { markTurnSuperseded } from '@mantle/agent-runtime';
+import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
+import { markTurnSuperseded } from '@mantle/runtime/agent';
+import { UUID_RE } from '@mantle/std';
 
 /**
  * POST /api/assistant/turn/[turnId]/cancel — stop an in-flight streamed turn.
  *
  * The user hit Stop. We publish a `turn_cancel` NOTIFY keyed on (owner, turnId);
- * the runner (apps/api) LISTENs, aborts that turn's LLM stream, and finalizes the
+ * the runner (server/api) LISTENs, aborts that turn's LLM stream, and finalizes the
  * outbound row with whatever partial reply had streamed. The turn then ends
  * normally (a `done` event), so the client reconciles the same way it does for a
  * completed turn — no special client teardown needed beyond firing this.
@@ -38,7 +39,6 @@ type CancelBody = {
 /** The row ids hit a uuid column — reject non-uuids up front (400, not a
  *  Postgres cast error). `newTurnId` is the client-minted idempotency key,
  *  also a uuid. */
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function POST(
   req: Request,

@@ -1,27 +1,32 @@
-# Self-hosting Mantle — install & update from the published image
+# Self-hosting Mantle: install & update from the published image
 
 The consumer path: run Mantle from the published Docker image with one
 command, configure everything else in the interface, and update by pulling.
 No checkout, no build, no hand-edited env.
 
-This is the **standard way to run Mantle**. The companion docs serve other
+This is the **standard way to run Mantle**. The install itself (prompts, env
+vars, requirements, sandboxes, media, the manual path) is on the one canonical
+install page, [`guide/01-installation.md`](./guide/01-installation.md); this
+page carries the operational detail. The companion docs serve other
 audiences: [`getting-started.md`](./getting-started.md) is the developer
 checkout, [`deploy.md`](./deploy.md) is the operator reference for building
-*your own* image and migrating data between machines, and
+_your own_ image and migrating data between machines, and
 [`update-prod.md`](./update-prod.md) is the maintainer's registry-pull update loop.
 
 ## Requirements
 
 - Docker Engine + the compose plugin (`docker compose version` works)
-- ~4 GB RAM / 2 vCPU / 40 GB disk to be comfortable (measured sizing:
-  [`deploy.md`](./deploy.md) §0a)
+- RAM depends on the shape: the **full** stack's memory caps sum to about
+  15 GB and it wants 8 GB or more under real ingest load; the **core** shape
+  (`--core`) fits 2 vCPU / 4 GB. 40 GB of disk is comfortable. Measured
+  sizing: [`deploy.md`](./deploy.md) §0a
 - Optional, for HTTPS: a domain with an A record pointing at the box and
   ports 80/443 open
 
 ## Install (one line)
 
 > **Installing with an AI agent?** Point it at
-> **https://mantle-ai.tech/ai-install.md** — a machine-oriented runbook of
+> **https://mantle-ai.tech/ai-install.md**: a machine-oriented runbook of
 > exactly this procedure (env contract, non-interactive flags, domain vs
 > plain-IP, health checks, and the hard rules).
 
@@ -35,29 +40,34 @@ With a domain (automatic HTTPS via the bundled Caddy):
 MANTLE_DOMAIN=mantle.example.com bash -c "$(curl -fsSL https://raw.githubusercontent.com/crossworks-engineering/mantle/main/install.sh)"
 ```
 
-What it does — and all it does: checks Docker, downloads the deploy bundle
-(both compose files, env template, Caddy + Postgres init files, backup + install
-scripts) into `./mantle`, then delegates to the bundled
-**`scripts/install.sh`** — the single configurator. That **generates the
+What it does, and all it does: checks Docker, downloads the deploy bundle
+(the three compose files, env template, Caddy + Postgres init files, backup +
+install scripts) into `./mantle`, then delegates to the bundled
+**`scripts/install.sh`**: the single configurator. That **generates the
 secrets** (`SESSION_SECRET`, `MANTLE_MASTER_KEY`, DB + object-store
 passwords) into a mode-600 `.env` (re-runs never rotate an existing master
 key), **verifies your domain's DNS points at the box before enabling
 HTTPS**, then `docker compose pull && docker compose up -d --wait` and a
 **per-service sanity check** (every container's health + the app answering).
-First boot downloads ~4 GB of images and runs DB migrations (the one-shot
+First boot downloads ~2 GB of images and runs DB migrations (the one-shot
 `migrate` service gates every app service).
 
 Before the pull it also checks free disk and memory and whether ports 80/443
-are already held — the failures that otherwise surface halfway through a 2 GB
+are already held, the failures that otherwise surface halfway through a 2 GB
 download. And the health check's verdict is the installer's verdict: when it
 fails you get **"Installation incomplete"** and a non-zero exit, not a URL that
 won't answer.
 
 ### Where it serves
 
-The one-line command is non-interactive. Without `MANTLE_DOMAIN` it serves
-**plain HTTP on :80 across the machine's network** — reach it at
-`http://<server-ip>`. Run the configurator directly and it asks instead:
+The one-line command asks its questions on your terminal (it reads
+`/dev/tty`, so `curl | bash` still prompts): how the brain is reached, then
+which components to install on a fresh box — shape (full or small core), CLI
+sandboxes, the bundled local embedder, and the owner web UI. Set
+`MANTLE_YES=1` (or run without a terminal, as CI does) for the old
+zero-question behaviour: plain HTTP on :80 across the machine's network
+without `MANTLE_DOMAIN`, full shape, sandboxes on, UI on. Run the
+configurator directly and the first question looks like:
 
 ```bash
 cd mantle && bash scripts/install.sh
@@ -74,18 +84,18 @@ cd mantle && bash scripts/install.sh
 Same three choices as flags: `--domain <host>`, `--localhost`, `--lan`
 (`--no-domain` remains an alias for the last), plus `--behind-proxy` for a box
 that already runs a web server. **`--localhost` binds the front door to
-`127.0.0.1`** via `MANTLE_BIND_ADDR` — worth knowing that this is the only
+`127.0.0.1`** via `MANTLE_BIND_ADDR`; worth knowing that this is the only
 thing that actually keeps a brain off the network, because a published Docker
 port bypasses the host firewall (Docker installs its own DNAT rules ahead of
 it).
 
 **If ports 80/443 are already taken**, what happens depends on whether a
 certificate is involved. Without one (`--localhost`, `--lan`) the front door
-just moves — 8080, 8081, … — and every address it prints carries the port. With
+just moves (8080, 8081, …) and every address it prints carries the port. With
 a domain it stops instead: Let's Encrypt answers HTTP-01 on port **80** and
 TLS-ALPN-01 on **443**, so on any other port a certificate can never be issued,
 and quietly moving would build an install that only looks finished. You're
-offered a re-check after freeing the port, or `--behind-proxy` — Caddy on a
+offered a re-check after freeing the port, or `--behind-proxy`, Caddy on a
 loopback port with your existing nginx/apache keeping :443 and forwarding to
 `http://127.0.0.1:8080`. Both ports are overridable directly as
 `MANTLE_HTTP_PORT` / `MANTLE_HTTPS_PORT`; Caddy always listens on 80/443 inside
@@ -94,37 +104,37 @@ its container, so nothing in the Caddyfile changes.
 A domain is checked before TLS is enabled: every A **and** AAAA record is
 compared against the box's public and local addresses (a NAT'd VPS legitimately
 answers on a private one). If it doesn't point here you're offered a re-check,
-plain HTTP for now, a different domain, or a clean stop — and under `-y` it
+plain HTTP for now, a different domain, or a clean stop, and under `-y` it
 falls back to HTTP rather than letting Caddy burn that hostname's Let's Encrypt
 rate limit on a request that cannot succeed.
 
 Mantle runs as **two stacks**: the server (API, agent, workers, share/print
-surfaces) and the owner UI — a separate zero-secret app. The installer brings
+surfaces) and the owner UI, a separate zero-secret app. The installer brings
 up both and points Caddy at them on ONE domain, path-routed, so there is
 nothing extra to configure: `/api`, `/s` and `/print` go to the server, and
-everything else — including sign-up — goes to the UI. You'd only split them
+everything else (including sign-up) goes to the UI. You'd only split them
 across two hostnames deliberately; see
 [`upgrading-to-v0.202.md`](./upgrading-to-v0.202.md).
 
-Then open the URL the installer prints when it finishes — `http://<server-ip>`
+Then open the URL the installer prints when it finishes, `http://<server-ip>`
 for the default one-liner, `http://localhost` for a `--localhost` install, or
-your domain — **create your account**, and
-let the onboarding wizard do the rest — it starts with its own system-status
+your domain, **create your account**, and
+let the onboarding wizard do the rest; it starts with its own system-status
 check, then walks you through your API key, model choices, voice, and
 memory-search (embeddings) setup. Everything is configured in the
 interface, not in files.
 
 > **Embeddings:** semantic search uses an online embedder by default
-> (`text-embedding-3-large`, chosen in the wizard's Memory step — it can
+> (`text-embedding-3-large`, chosen in the wizard's Memory step; it can
 > reuse the same OpenRouter key as chat). The fully-local embedder
 > (bundled Ollama + EmbeddingGemma, ~3.3GB of image + model) is opt-in for
-> air-gapped setups — nothing of it is pulled, started, or downloaded
+> air-gapped setups; nothing of it is pulled, started, or downloaded
 > otherwise.
 >
 > ⚠️ **The local embedder needs a big box.** This is a deliberate default,
 > not an oversight: under real ingest load (several files uploaded at once,
 > each fanning out into many embedding calls) the CPU embedder degrades the
-> whole stack on a standard VPS — tested to misbehave on a 16 GB / 8-core
+> whole stack on a standard VPS, tested to misbehave on a 16 GB / 8-core
 > server. Only enable it on hardware comfortably above that (or a GPU), and
 > keep `EXTRACT_CONCURRENCY=1` on CPU-only boxes. For everything
 > else, online embedding is cheaper than the RAM it would take.
@@ -132,16 +142,75 @@ interface, not in files.
 > Enable it **persistently** with `scripts/install.sh --local-embedder` (or
 > `MANTLE_LOCAL_EMBEDDER=1` on the one-line installer): that adds
 > `local-embedder` to `COMPOSE_PROFILES` in `.env`, so every later
-> `docker compose pull/up` — including the built-in updater — keeps it. Then
+> `docker compose pull/up` (including the built-in updater) keeps it. Then
 > select provider `local` in Settings → Embedding. A one-off
 > `docker compose --profile local-embedder up -d` also works but does NOT
 > survive updates; prefer the flag. Turn it back off with
 > `scripts/install.sh --no-local-embedder`.
 
-> **Back up two things:** the `data/` directory (it IS your brain — DB,
+> **Back up two things:** the `data/` directory (it IS your brain, DB,
 > object store, files) and the `.env` file (`MANTLE_MASTER_KEY` decrypts
 > your stored API keys; lose it and the vault is unrecoverable).
 > Scheduled DB backups are built in: `/settings/backups`.
+
+### Brain-core shape (small headless memory core)
+
+The default install starts every service: ~17 node processes whose memory
+caps sum to ~15 GB. Caps are guardrails, not reservations, so a 4 GB box
+boots, but it cannot carry that resident set under load. For a **dedicated
+memory core** (say, a box that only ingests meeting recordings and answers
+`search` over MCP, queried by a main brain over federation), install with:
+
+```bash
+scripts/install.sh --core --domain core.example.com -y
+```
+
+(or `MANTLE_CORE=1` on the one-line installer). A core keeps the full brain
+contract: the HTTP API + MCP + share pages, the owner UI (sign-up and
+settings live there), the ingest pipeline (`api` + the file/docs workers),
+reminders + scheduled backups, and nightly maintenance. It sheds the
+channel workers (email, telegram, microsoft, calendar, push, runs) and the
+**doc helpers**: `tika` (parse fallback for .odt/.pptx/.doc/.rtf — common
+formats like pdf/docx/txt/md parse in-process without it) and the
+PDF-export `browser` (~2 GB chromium image; share pages still serve HTML).
+The exact split, and the reasoning per service, is the header of
+`docker-compose.core.yml`.
+
+A core that needs exotic-format ingest or PDF export takes the helpers
+back with:
+
+```bash
+scripts/install.sh --core --helpers
+```
+
+(`--helpers` / `--no-helpers` toggle the `helpers` entry in
+`COMPOSE_PROFILES`, same persistence as `--local-embedder`; the full shape
+always runs both, so the flag only matters on a core.)
+
+The core choice itself persists via `COMPOSE_FILE` in `.env` (absolute
+paths — the in-app updater needs them), so updates keep the shape.
+Sandboxes default OFF on a fresh core box; the local embedder stays opt-in
+and does NOT fit a core box — use online embeddings (the onboarding
+default). Turn any shed service on ad hoc with
+`docker compose up -d <service>` (naming a service overrides its profile
+gate), or return to the full shape with `scripts/install.sh --no-core`.
+
+### Sandboxes and the media sidecar
+
+**CLI sandboxes are on by default on a fresh full install** (off on a core
+box): the `sandboxes` profile adds the `sandboxd` service, and the installer
+generates `SANDBOXD_TOKEN`, sets `MANTLE_SANDBOXES_HOST_DIR` and pre-pulls the
+sandbox base image. Nothing is installed on the host. Turn them off with
+`--no-sandboxes`; an existing box only gains them with an explicit
+`scripts/install.sh --sandboxes`. Details: [`sandboxes.md`](./sandboxes.md).
+
+**Video ingest and CAD drawing ingest are off until you enable the `media`
+profile.** It runs the `titanwest/mantle-media` sidecar (yt-dlp, ffmpeg and
+the DWG tools) behind `MEDIA_SIDECAR_TOKEN`; the installer sets neither. Add
+`media` to `COMPOSE_PROFILES` in `.env`, set the token
+(`openssl rand -hex 32`), then `docker compose --profile media up -d --wait`.
+The image exists from v0.232.34, so update first on an older box. Guide:
+[`video-ingest.md`](./video-ingest.md).
 
 ### Manual install (no script)
 
@@ -160,61 +229,92 @@ bash scripts/install.sh --check     # health-check an existing install
 Fully by hand instead: `cp .env.prod.example .env`, fill in the two
 mandatory secrets (each has its `openssl rand` one-liner next to it), set
 **`MANTLE_STACK_DIR`** to this directory's host-absolute path
-(`MANTLE_STACK_DIR=$(pwd -P)` — without it the in-app updater can't run),
+(`MANTLE_STACK_DIR=$(pwd -P)`, without it the in-app updater can't run),
 set `MANTLE_SERVER_ORIGIN` to your public origin (the owner UI reaches the
 API over HTTP and needs an absolute address), then bring up **both** stacks
 and the front door:
 
 ```bash
-cp infra/caddy/Caddyfile.same-origin infra/caddy/Caddyfile
+# front door shape: MANTLE_CADDY_SHAPE in .env, default same-origin (no copy needed)
 docker compose up -d --wait
 docker compose -f docker-compose.client.yml --project-directory . up -d --wait
 docker compose up -d --force-recreate caddy   # now that client-web exists
 ```
 
-Skipping the second stack leaves a healthy backend with **no interface** —
+Skipping the second stack leaves a healthy backend with **no interface**,
 sign-up lives in the owner UI, so the server app alone will only show you a
-"this has moved" card. The bundle and the images are versioned together — a
-release's compose always matches its images, and the two images are lockstep
-on one `MANTLE_IMAGE_TAG`.
+"this has moved" card. The bundle and the server image are versioned together
+(a release's compose always matches `MANTLE_IMAGE_TAG`); the client image has
+its own tag, `MANTLE_CLIENT_IMAGE_TAG`, which the in-app updater sets from the
+`client-pair.tag` baked into each server release (recorded in
+`client-tag.auto`). A hand-pinned value is respected.
 
 ## Updating
 
-Releases are tagged `vX.Y.Z`; every release publishes the image to Docker
-Hub (`titanwest/mantle:vX.Y.Z` + `latest`, amd64 + arm64) and attaches the
-matching deploy bundle.
+Releases are tagged `vX.Y.Z`; every release publishes the server image to
+Docker Hub (`titanwest/mantle-server:vX.Y.Z` + `latest`, amd64 + arm64),
+the media sidecar (`titanwest/mantle-media`, same tags) and attaches the
+matching deploy bundle. The owner UI image (`titanwest/mantle-client`) is
+published by the jackdaw repo on its own stream.
 
-> **Two upgrades need their own runbook — a routine `pull` will not do them:**
+> **Two upgrades need their own runbook, a routine `pull` will not do them:**
 >
-> - **v0.202.x — the server/client split.** Mantle now ships TWO images
+> - **v0.202.x, the server/client split.** Mantle now ships TWO images
 >   (`mantle-server` + `mantle-client`) and the front door gains routing.
 >   Follow [`upgrading-to-v0.202.md`](./upgrading-to-v0.202.md) (env, compose
 >   adoption, start order, Caddy).
 > - **PostgreSQL 17 → 18.** A new major refuses to start on an old major's
 >   data directory. Follow [`postgres-18-upgrade.md`](./postgres-18-upgrade.md)
->   — and note its warning about scheduled backups needing v0.202.1+.
+>   , and note its warning about scheduled backups needing v0.202.1+.
 >
 > Do them on separate days, verifying in between.
 
-**Routine update** (image only — the common case):
+**The recommended path is the in-app updater** (Settings → Updates): it
+pulls the release, refreshes the release-owned compose files, runs
+migrations, rolls the server stack, then rolls the owner-UI stack to the
+client tag **paired** with that release, and finally refreshes its own
+script. One button, both stacks, tested pairings.
+
+**Routine MANUAL update** — since the 2026-08 repo split there are TWO
+stacks, and a plain `docker compose pull` only touches the first. The
+owner UI lives in `docker-compose.client.yml`, which the default project
+never loads; skip the second command and every container reports healthy
+while your UI silently stays old:
 
 ```bash
 cd mantle
-docker compose pull && docker compose up -d --wait
+bash scripts/db-dump.sh                                   # cheap insurance
+docker compose pull && docker compose up -d --wait        # server stack
+docker compose -f docker-compose.client.yml --project-directory . pull \
+  && docker compose -f docker-compose.client.yml --project-directory . up -d --wait   # owner UI
 ```
 
 Migrations run automatically before the app services restart (the `migrate`
 gate), so a schema-bearing release applies itself. The whole roll is
 ~a minute of downtime.
 
+**Versions: two streams, one pairing.** The server image
+(`mantle-server`) is released from the mantle repo (`vX.Y.Z`); the owner
+UI (`mantle-client`) is released from the
+[jackdaw repo](https://github.com/crossworks-engineering/jackdaw) on its
+own stream (`vA.B.C`). Each server release embeds the client tag it was
+tested with; the in-app updater applies that pairing automatically. For
+manual updates: set `MANTLE_CLIENT_IMAGE_TAG` in `.env` to the paired tag
+from the release notes (leaving it on `latest` takes whatever jackdaw
+built most recently — usually fine, never guaranteed tested against your
+server).
+
 **Pinned versions** (recommended once you depend on it): set
 `MANTLE_IMAGE_TAG=v0.108.0` in `.env`, and update by editing the tag +
 `pull` + `up -d --wait`. `latest` is convenience; pins are reproducible.
+A hand-set `MANTLE_CLIENT_IMAGE_TAG` is honoured by the in-app updater
+too (it only manages the value when it wrote it), so a pinned UI stays
+pinned until you move it.
 
 **When release notes say the compose changed** (new service, new mount):
 download that release's bundle and replace `docker-compose.yml` + `infra/`
 (your `.env` and `data/` are never part of the bundle), then `pull` +
-`up -d --wait`. Re-running `install.sh` does the same thing — it never
+`up -d --wait`. Re-running `install.sh` does the same thing; it never
 overwrites an existing `.env`.
 
 **Before any update**, cheap insurance:
@@ -230,7 +330,7 @@ bash scripts/db-dump.sh        # → backups/mantle-<ts>.dump
 docker compose pull && docker compose up -d --wait
 ```
 
-Code rolls back instantly. **Schema does not** — migrations are
+Code rolls back instantly. **Schema does not**: migrations are
 forward-only, so rolling back across a migration means restoring the
 pre-update dump (`scripts/db-restore.sh`, see [`deploy.md`](./deploy.md)
 §3b–c). This is why the dump-first habit matters.
@@ -245,23 +345,23 @@ Reports every container in both stacks, then proves the app is actually
 serving. Worth knowing what that means, because the obvious version of this
 check is misleading:
 
-- It probes the **front door** — the address you'd actually open — not the
+- It probes the **front door** (the address you'd actually open) not the
   loopback debug port. An install whose Caddy serves nothing can otherwise pass
   on a port only reachable from the box itself.
 - It confirms **Mantle** is what answered, by reading `/api/auth/bootstrap-state`
   rather than trusting a status code. A leftover container or a stray dev server
-  on the same port answers a bare probe happily — and Mantle's own root response
+  on the same port answers a bare probe happily, and Mantle's own root response
   is a `307` to `/login`, so a status code cannot tell them apart.
 - It fails a container that is running but **attached to no network**, or one
   whose **published port never bound**. Docker abandons a container's entire
   network setup when it can't program a published port, and the container keeps
   running while being unable to reach postgres or be reached by Caddy. The web
-  container's own healthcheck now catches this too — it asks whether it has a
-  network interface before asking whether it answers HTTP — so `docker ps` and
+  container's own healthcheck now catches this too; it asks whether it has a
+  network interface before asking whether it answers HTTP, so `docker ps` and
   this check agree instead of disagreeing silently.
 - It names services that were **never created at all**. Everything above can
   only judge containers that exist, so a service that failed to be created used
-  to vanish from the report — and a stack missing its web container read as
+  to vanish from the report, and a stack missing its web container read as
   "all good" over the ones that did start. The expected list comes from compose
   using your own `.env`, so `COMPOSE_PROFILES` is honoured: an opted-out local
   embedder isn't reported missing, and `sandboxd` is expected once sandboxes
@@ -278,21 +378,23 @@ bash scripts/uninstall.sh --purge      # erase everything, including the data
 Two deliberately separate operations, because only one of them is reversible.
 
 **The default removes containers, networks and named volumes and leaves your
-data alone** — `scripts/install.sh` afterwards brings the same brain back, same
+data alone**, `scripts/install.sh` afterwards brings the same brain back, same
 keys and all. Nothing of value is in what it removes: postgres, the object
-store, files and backups are all bind-mounted into `MANTLE_DATA_DIR`, and the
-only named volumes are a tailscale socket and Caddy's certificate cache.
+store, files, backups and Caddy's certificates are all bind-mounted into
+`MANTLE_DATA_DIR`, and the only named volumes are the tailscale socket and the
+standalone client Caddy's cache (unused on a single-box install).
 
 **`--purge` additionally deletes the data directory and `.env`.** That is the
-brain itself, plus `MANTLE_MASTER_KEY` — and without that key the API keys and
-mailbox passwords in your vault cannot be decrypted, *including from a backup
-taken later*. It asks you to type `PURGE` rather than press `y`, and `--dry-run`
+brain itself, plus `MANTLE_MASTER_KEY`, and without that key the API keys and
+mailbox passwords in your vault cannot be decrypted, _including from a backup
+taken later_. It asks you to type `PURGE` rather than press `y`, and `--dry-run`
 prints the blast radius (paths, sizes, container counts) without touching
-anything. `--images` also drops the pulled images, freeing ~4 GB.
+anything. `--images` also drops the pulled images (the ~2 GB the installer
+downloaded).
 
 The data directory is read from `.env`, never guessed. Directories the
 containers created are root-owned, so it removes them via `sudo` where
-available, and otherwise through a throwaway container — which needs no
+available, and otherwise through a throwaway container, which needs no
 password and works on a box where you don't have one.
 
 ## Adding HTTPS later
@@ -308,11 +410,11 @@ bash scripts/install.sh --domain mantle.example.com -y
 It verifies the records actually point at this server **before** letting
 Caddy request a certificate (so a DNS typo can't burn Let's Encrypt
 attempts), sets `MANTLE_SITE_ADDRESS` + `MANTLE_PUBLIC_URL`, restarts what
-changed, and re-runs the sanity check. Your secrets are untouched — re-runs
+changed, and re-runs the sanity check. Your secrets are untouched, re-runs
 never rotate an existing key.
 
-Going the other way — a domain back to loopback, say for a box you'll only
-tunnel into — is the same command with `--localhost`.
+Going the other way, a domain back to loopback, say for a box you'll only
+tunnel into, is the same command with `--localhost`.
 
 <details><summary>Manual alternative (edit .env by hand)</summary>
 
@@ -325,10 +427,10 @@ then `docker compose up -d caddy web`. Caddy fetches the certificate
 automatically.
 </details>
 
-## For maintainers — cutting a release
+## For maintainers: cutting a release
 
 ```bash
-pnpm version:bump patch          # bumps package.json (root + apps/web)
+pnpm version:bump patch          # bumps package.json (root + server/web)
 git commit -am "release: v0.108.1"
 git tag v0.108.1
 git push origin main v0.108.1    # ← the tag push triggers .github/workflows/release.yml
@@ -353,22 +455,22 @@ Requirements (the installer sets all of this up):
 - `MANTLE_STACK_DIR` in `.env` = the stack directory's **host-absolute**
   path. Existing installs add one line, e.g. `MANTLE_STACK_DIR=/opt/mantle`,
   then `docker compose up -d updater`.
-- The sidecar mounts the Docker socket — that is root-equivalent on the
+- The sidecar mounts the Docker socket, that is root-equivalent on the
   host, which is why it exposes **no ports** and executes exactly one
   hardcoded operation; the only input it accepts from the app is the image
   tag, validated against a character whitelist
   ([`infra/updater/updater.sh`](../infra/updater/updater.sh)). If that
-  tradeoff isn't for you: don't start the `updater` service — the Updates
+  tradeoff isn't for you: don't start the `updater` service, the Updates
   page degrades to showing the two CLI commands.
 
 Compose-file changes (a new service/mount in a release) still need the
-release bundle swap described above — the sidecar updates *images*, not the
+release bundle swap described above, the sidecar updates _images_, not the
 compose file itself; release notes call it out when it applies.
 
 ## What's deliberately NOT here
 
 - **Multi-tenancy.** Mantle is one brain per install. It takes more than one
-  **login** (Settings → Logins) — a second way *in*, not a second world: every
+  **login** (Settings → Logins): a second way _in_, not a second world: every
   login is a peer with identical access to the same brain, the same data and
   the same settings, distinguished only by the audit trail. Anyone who needs
   their own content gets their own stack.
@@ -377,7 +479,7 @@ compose file itself; release notes call it out when it applies.
   treating a login as an account with its own world gave us per-login brand
   preferences written to a row nothing read (v0.205.4), and per-login
   onboarding that walked an added login into the first-run wizard (v0.205.5).
-  A new preference must answer "does this describe the BRAIN or the PERSON?" —
+  A new preference must answer "does this describe the BRAIN or the PERSON?",
   `BRAIN_PREFERENCE_KEYS` + `packages/content/src/brain-preferences.test.ts`
   force the question. The trust boundary that DOES separate people is
   contacts/members ([team-chat.md](team-chat.md)), not logins.

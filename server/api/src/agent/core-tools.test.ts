@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { CORE_AUTO_GRANT_GROUP_SLUGS, computeFloorGroupAdditions } from './core-tools';
 
 /**
- * The boot self-heal floor (apps/agent ensureCoreToolsOnConversationalAgents).
+ * The boot self-heal floor (server/api ensureCoreToolsOnConversationalAgents).
  * These pin two things the audit flagged (docs/audit-brief-tools-skills.md R5):
  *   1. the floor is SUFFICIENT to stand up a correct persona — it must confer
  *      `invoke_agent` (else the integrity persona check fails) and `memory-core`
@@ -16,7 +16,10 @@ const GROUP_TOOLS = new Map<string, readonly string[]>([
   ['persona', ['update_persona']],
   ['tasks', ['task_list', 'task_get', 'task_create', 'task_update', 'task_delete']],
   ['contacts', ['contact_create', 'contact_find', 'contact_get', 'contact_list', 'contact_update']],
-  ['journal', ['journal_create', 'journal_get', 'journal_list', 'journal_update']],
+  [
+    'journal',
+    ['journal_create', 'journal_get', 'journal_list', 'journal_update', 'journal_resolve_gap'],
+  ],
   ['notes', ['note_create', 'note_list', 'note_get']],
   ['email', ['email_send', 'email_page', 'email_list', 'email_get']],
   ['page-share', ['page_share', 'page_unshare']],
@@ -24,7 +27,7 @@ const GROUP_TOOLS = new Map<string, readonly string[]>([
   ['delegation', ['invoke_agent']],
   // A few non-floor groups, to exercise the coverage path.
   ['files', ['file_list', 'file_get', 'file_read', 'file_create']],
-  ['recall', ['recall_window']],
+  ['replay', ['replay_window']],
 ]);
 
 describe('CORE_AUTO_GRANT_GROUP_SLUGS — floor membership', () => {
@@ -47,7 +50,7 @@ describe('CORE_AUTO_GRANT_GROUP_SLUGS — floor membership', () => {
   it('stays lean — no email/secrets/media over-grant beyond the functional minimum', () => {
     // The floor must NOT pull in the richer generalist groups (those are opt-in /
     // manifest-seeded), so a locked-down custom responder isn't blasted with them.
-    for (const g of ['secrets', 'ingest', 'media-workers', 'events', 'recall', 'files']) {
+    for (const g of ['secrets', 'ingest', 'media-workers', 'events', 'replay', 'files']) {
       expect(CORE_AUTO_GRANT_GROUP_SLUGS).not.toContain(g);
     }
   });

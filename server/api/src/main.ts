@@ -1,9 +1,9 @@
 /**
- * Mantle runner service (apps/api) — the dedicated, always-on process that runs
+ * Mantle runner service (server/api) — the dedicated, always-on process that runs
  * durable LLM/agent work server-side so a turn never dies when the user
  * navigates away. It hosts the durable assistant-turn runner AND the absorbed
  * agent runtime (the Telegram responder, summarize/extract/heartbeat listeners,
- * and the reflector/heartbeat/extract-sweep ticks — formerly apps/agent). The
+ * and the reflector/heartbeat/extract-sweep ticks — formerly server/api). The
  * HTTP API stays in Next.js for now (runners-first).
  *
  * On launch DBOS auto-creates its system database (if absent) and AUTO-RECOVERS
@@ -13,10 +13,13 @@
  */
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { startProcessHeartbeat } from '@mantle/content';
+import { registerRecallEmbedder, startProcessHeartbeat } from '@mantle/content';
+import { embedBatch } from '@mantle/embeddings';
 import { runTableStorageProbes } from '@mantle/tabledb';
+import { registerLogSink } from '@mantle/tracing';
 import { configureDBOS, RUNNER_QUEUE, runnerConcurrency, runsTurnConcurrency } from './config';
-import { FORUM_QUEUE } from '@mantle/assistant-runtime';
+import { assertEnvShape } from '@mantle/config';
+import { FORUM_QUEUE } from '@mantle/runtime/assistant';
 import { RUNS_TURN_QUEUE } from '@mantle/runs';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
 import { installTurnStreamObserver } from './turn-stream-observer';
@@ -25,12 +28,44 @@ import { startTurnCancelListener, stopTurnCancelListener } from './turn-cancel';
 // Import workflow modules for their registration side-effects (registerWorkflow
 // runs at import, before launch).
 import './workflows/ping';
+
+assertEnvShape();
+
+// Recall's embedder. @mantle/content is storage and does not depend on the
+// adapter layer, so the process that owns the adapters injects one at boot
+// (packages/content/src/embed-bridge.ts). Without this, a page write that
+// compiles a Recall map leaves its prompt rows un-embedded and recall_match
+// silently stops finding them; the bridge throws so that shows up in the log.
+// recall-embed-registration.test.ts pins this call in all three entrypoints.
+registerRecallEmbedder(embedBatch);
+
+// Route every `log(scope)` line through DBOS's logger. Inside a workflow that
+// stamps the workflow id and step onto the line, which is the context you
+// actually want when a durable turn goes wrong; outside one it is still the
+// runner's structured logger. Processes that register nothing keep console,
+// which is what a script or the web tier wants.
+//
+// Registered here rather than inside the agent runtime because it is a
+// PROCESS-wide choice: packages/tracing is imported by the workers and the
+// packages too, and they should all land in the same place.
+registerLogSink(DBOS.logger);
 import './workflows/assistant-turn';
 import './workflows/team-turn';
 import './workflows/forum-turn';
 import './workflows/runs-worker-turn';
 import './workflows/runs-resume-turn';
 import { enqueueTelegramTurn } from './workflows/telegram-turn';
+import { env } from '@mantle/config';
+
+// Backstop: every LISTEN handler and setInterval above already routes its
+// errors through .catch() (the reflector + heartbeat ticks even back off),
+// but a rejection that slips past should log and keep the process alive rather
+// than crash-loop on a transient PostgresError (e.g. Postgres restarted and
+// briefly dropped connections). Docker would bounce us anyway; staying up is
+// strictly better — the listeners auto-resubscribe and the next tick recovers.
+process.on('unhandledRejection', (reason) => {
+  console.error('[agent] unhandledRejection (kept alive):', reason);
+});
 
 async function main(): Promise<void> {
   // Liveness: the api runner exposes no HTTP port (the DBOS admin server is off
@@ -55,14 +90,14 @@ async function main(): Promise<void> {
   // Dual-mount tripwire: tool handlers run in THIS process too, so the
   // table-dbs volume must be writable here, not just in web (a tag-only
   // update that missed the compose refresh fails exactly this way).
-  if (process.env.TABLE_DB_DIR) {
+  if (env('TABLE_DB_DIR')) {
     void import('node:fs/promises').then(async (fsp) => {
       try {
-        await fsp.mkdir(process.env.TABLE_DB_DIR!, { recursive: true });
-        await fsp.access(process.env.TABLE_DB_DIR!, 2 /* W_OK */);
+        await fsp.mkdir(env('TABLE_DB_DIR')!, { recursive: true });
+        await fsp.access(env('TABLE_DB_DIR')!, 2 /* W_OK */);
       } catch {
         console.error(
-          `[api] TABLE_DB_DIR (${process.env.TABLE_DB_DIR}) is not writable in the api container — ` +
+          `[api] TABLE_DB_DIR (${env('TABLE_DB_DIR')}) is not writable in the api container — ` +
             `agent table edits will fail. Refresh docker-compose.yml (table-dbs must be mounted into web AND api).`,
         );
       }
@@ -77,13 +112,13 @@ async function main(): Promise<void> {
   // Pure registration; every real guard lives inside suggestFollowUp.
   installTurnSuggestionHook();
   // LISTEN for user "stop" requests so an in-flight streamed turn can be aborted
-  // (apps/web publishes the cancel; this process runs the turn). Best-effort.
+  // (server/web publishes the cancel; this process runs the turn). Best-effort.
   await startTurnCancelListener().catch((err) =>
     console.error('[api] turn-cancel listener failed to start (Stop will no-op):', err),
   );
   await DBOS.launch();
   // The shared runner queue — concurrency caps total in-flight runs across all
-  // apps/api processes (LLM-provider backpressure).
+  // server/api processes (LLM-provider backpressure).
   await DBOS.registerQueue(RUNNER_QUEUE, { concurrency: runnerConcurrency() });
   // Partitioned forum queue: concurrency 1 PER PARTITION (partition key =
   // topicId) serializes turns within a topic while different topics run in

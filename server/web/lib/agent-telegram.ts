@@ -12,14 +12,8 @@
 import { and, eq } from 'drizzle-orm';
 import { agents, channels, db, telegramAccounts, telegramChats } from '@mantle/db';
 import { disableTelegramChannel, sendMessage, upsertTelegramChannel } from '@mantle/telegram';
-
-export type AgentTelegramBinding = {
-  accountId: string;
-  botUsername: string;
-  enabled: boolean;
-  lastPollAt: string | null;
-  lastPollError: string | null;
-};
+import type { AgentTelegramBinding, AgentTelegramChat } from '@mantle/client-types';
+export type { AgentTelegramBinding, AgentTelegramChat };
 
 /** Thrown for user-fixable problems (bad token, username already taken). The
  *  API layer surfaces `.message` to the form. */
@@ -197,14 +191,6 @@ export async function disconnectAgentTelegram(ownerId: string, agentId: string):
       .where(eq(telegramAccounts.id, found.account.id));
   }
 }
-
-export type AgentTelegramChat = {
-  id: string;
-  telegramChatId: string;
-  label: string;
-  status: 'pending' | 'allowed' | 'denied';
-  lastMessageAt: string | null;
-};
 
 const STATUS_ORDER: Record<AgentTelegramChat['status'], number> = {
   pending: 0,

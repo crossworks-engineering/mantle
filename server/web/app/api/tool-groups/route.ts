@@ -2,6 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { createToolGroup, listToolGroups, listToolGroupBackrefs } from '@/lib/tool-groups';
+import { errorMessage } from '@mantle/std';
+import { firstIssue } from '@/lib/zod-issue';
 
 export async function GET() {
   const user = await getOwnerOr401();
@@ -34,16 +36,13 @@ export async function POST(req: Request) {
   const raw = await req.json().catch(() => ({}));
   const parsed = CreateBody.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   try {
     const row = await createToolGroup(user.id, parsed.data);
     return NextResponse.json({ group: row });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (msg.includes('tool_groups_owner_slug_uq') || msg.includes('duplicate key')) {
       return NextResponse.json(
         { error: `A tool group with slug "${parsed.data.slug}" already exists.` },

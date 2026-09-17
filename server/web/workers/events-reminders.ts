@@ -34,11 +34,11 @@ import {
   type TelegramAccount,
 } from '@mantle/db';
 import { sendMessage } from '@mantle/telegram';
-import { recordTurn } from '@mantle/agent-runtime';
+import { recordTurn } from '@mantle/runtime/agent';
 import { loadProfilePreferences, maybeRunScheduledBackups } from '@mantle/content';
 import { maybeSweep } from '@mantle/tools';
 import { runWorker } from './_runner';
-import { pickWebDefaultAgent } from '@mantle/assistant-runtime';
+import { pickWebDefaultAgent } from '@mantle/runtime/assistant';
 import {
   listDueReminders,
   markReminderSent,

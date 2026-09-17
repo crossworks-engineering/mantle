@@ -9,7 +9,7 @@
  *   pnpm extract:backfill --limit=100            # cap total per run
  *   pnpm extract:backfill --rate=2               # seconds between notifies
  *
- * The agent (apps/agent) must be running — it's the LISTENer that picks
+ * The agent (server/api) must be running — it's the LISTENer that picks
  * up each notify and runs the extractor. This script just feeds the queue.
  *
  * Idempotent: nodes that already have data.summary + embedding are
@@ -17,8 +17,9 @@
  */
 
 import postgres from 'postgres';
+import { env } from '@mantle/config';
 
-const DATABASE_URL = process.env.DATABASE_URL;
+const DATABASE_URL = env('DATABASE_URL');
 if (!DATABASE_URL) {
   console.error('extract-backfill: DATABASE_URL must be set');
   process.exit(1);

@@ -8,11 +8,11 @@
  *   mantle.run.tool   — tool_call / note items (fast, some concurrency)
  *   mantle.run.worker — worker_invoke items: claim under the per-run cap,
  *                       then hand the whole agent turn to the durable DBOS
- *                       runner in apps/api (slice 3 WP1 — the workflow
+ *                       runner in server/api (slice 3 WP1 — the workflow
  *                       completes the item; this process never runs the LLM)
  *   mantle.run.resume — resume wake-ups: relay to the durable DBOS runner
  *                       (slice 3 WP2 — the LLM turn + claimResume live in
- *                       apps/api; dedup keeps one queued resume per group)
+ *                       server/api; dedup keeps one queued resume per group)
  *   sweep cron        — every minute: deadline timeouts, lost-dispatch and
  *                       lost-resume healing (the engine's immune system)
  *
@@ -25,7 +25,7 @@
  */
 import { eq, sql } from 'drizzle-orm';
 import { db, runItems } from '@mantle/db';
-import { registerHeartbeatTools } from '@mantle/heartbeats';
+import { registerHeartbeatTools } from '@mantle/runtime/heartbeats';
 import {
   enqueueRunActionsSafe,
   ensureRunQueues,
@@ -36,6 +36,9 @@ import {
   sweepRuns,
 } from '@mantle/runs';
 
+import { registerRecallEmbedder } from '@mantle/content';
+import { embedBatch } from '@mantle/embeddings';
+
 import { executeRunItem } from '../lib/runs/execute-item';
 import { enqueueRunsResumeTurn } from '../lib/runs/dbos-enqueue';
 import { createBoss, runWorker, stopBoss } from './_runner';
@@ -45,9 +48,20 @@ const SWEEP_CRON = '* * * * *'; // every minute — the sweep is the immune syst
 
 // Run-item tool handlers execute in THIS process via dispatchTool; builtins
 // register at @mantle/tools import (transitively via execute-item). The
-// heartbeat-control builtins live in @mantle/heartbeats and need an explicit
+// heartbeat-control builtins live in @mantle/runtime/heartbeats and need an explicit
 // registration, same as the web/agent processes.
 registerHeartbeatTools();
+
+// Run items execute tools in THIS process, page_create among them, and a page
+// write kicks off `embedPendingRecallPrompts` fire-and-forget. Without an
+// embedder registered here that call throws inside the bridge and recall.ts
+// swallows it: the page saves, the map compiles, and its prompt rows keep a
+// null embedding, so recall_match silently finds nothing on a MANTLE_RUNS=1
+// box. Registered unconditionally — the flag gates the queues, not the writes.
+// A static import is safe here where server/web/server/main.ts needs an awaited
+// one: the worker scripts pass --env-file, so env is set before any module runs.
+// recall-embed-registration.test.ts pins this call. (2026-09-03 audit.)
+registerRecallEmbedder(embedBatch);
 
 type DispatchJob = { itemId: string };
 type ResumeJob = { runId: string; groupId: string };
@@ -105,7 +119,7 @@ runWorker('runs', async () => {
   });
 
   // Resume lane (slice 3 WP2): claim-context only. The LLM turn runs as a
-  // durable DBOS workflow in apps/api (claimResume journaled AFTER its
+  // durable DBOS workflow in server/api (claimResume journaled AFTER its
   // preconditions there); this handler just relays the wake-up. The old
   // batchSize-1 serialization stops mattering — RUNNER_QUEUE's concurrency
   // is the LLM backpressure cap now. An enqueue failure just acks: the row

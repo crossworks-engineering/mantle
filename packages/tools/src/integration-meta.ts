@@ -15,16 +15,20 @@
  * carries no ref.
  */
 
-import type { ToolGroupIntegration } from '@mantle/db';
+import type {
+  ToolGroupIntegration,
+  ToolGroupMcpBinding,
+  ToolGroupOpenapiBinding,
+} from '@mantle/db';
+import { UUID_RE } from '@mantle/std';
 
-export type { ToolGroupIntegration };
+export type { ToolGroupIntegration, ToolGroupMcpBinding, ToolGroupOpenapiBinding };
 
 /** `service/label`, matching the api_keys column charset + the ref pattern in
  *  http-template.ts (kept in sync by `integration-meta.test.ts`). */
 const SECRET_REF_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const SERVICE_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 const HTTP_URL_RE = /^https?:\/\/\S+$/i;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SKILL_SLUG_RE = /^[a-z0-9_-]{1,120}$/;
 /** A header/query name that carries a credential — flagged when its value has
  *  no `{{secret:…}}` ref (mirrors the API Console's baked-credential warning). */
@@ -194,6 +198,20 @@ export function parseIntegrationMeta(raw: unknown): ParsedIntegration | Integrat
     value.skillSlug = skillSlug;
   }
 
+  const mcpRaw = r.mcp;
+  if (mcpRaw !== undefined && mcpRaw !== null) {
+    const parsedMcp = parseMcpBinding(mcpRaw);
+    if (!parsedMcp.ok) return parsedMcp;
+    value.mcp = parsedMcp.value;
+  }
+
+  const openapiRaw = r.openapi;
+  if (openapiRaw !== undefined && openapiRaw !== null) {
+    const parsedOpenapi = parseOpenapiBinding(openapiRaw);
+    if (!parsedOpenapi.ok) return parsedOpenapi;
+    value.openapi = parsedOpenapi.value;
+  }
+
   const sourceUrlRaw = pick('docsSourceUrl', 'docs_source_url');
   if (sourceUrlRaw !== undefined && sourceUrlRaw !== null && String(sourceUrlRaw).trim() !== '') {
     value.docsSourceUrl = String(sourceUrlRaw).trim().slice(0, 2000);
@@ -222,6 +240,346 @@ export function parseIntegrationMeta(raw: unknown): ParsedIntegration | Integrat
   }
 
   return { ok: true, value, warnings };
+}
+
+const AUTH_HEADER_RE = /^[A-Za-z0-9-]{1,64}$/;
+const MAX_AUTH_SCHEME_CHARS = 20;
+
+/**
+ * The vault namespace MCP connectors seal their OAuth state under (service =
+ * the connector's `mcp-<slug>` group slug). RESERVED: these rows hold live
+ * bearer tokens and sometimes a registration client_secret nobody ever typed
+ * in, so they must never be usable as `{{secret:…}}` template refs, listed by
+ * `api_key_refs`, probed/shown as ordinary keys, or named as a binding's
+ * `secret_ref`. Enforced in the dispatcher, `api_key_refs`, the keys API, and
+ * `parseMcpBinding` below.
+ */
+export const MCP_VAULT_SERVICE_PREFIX = 'mcp-';
+export function isMcpManagedSecretService(service: string): boolean {
+  return service.startsWith(MCP_VAULT_SERVICE_PREFIX);
+}
+
+/**
+ * Validate + normalise the `integration.mcp` connector binding. Accepts camel
+ * and snake case, unwraps a full `{{secret:svc/label}}` handed as `secret_ref`,
+ * and carries the sync-bookkeeping fields (`lastSyncAt`, `toolCount`,
+ * `serverInfo`) through so a validated round-trip of a DB row doesn't drop
+ * the connector's sync state.
+ */
+/** Longest OAuth scope string a connector may ask for. */
+const MAX_OAUTH_SCOPE_CHARS = 1000;
+
+export function parseMcpBinding(
+  raw: unknown,
+): { ok: true; value: ToolGroupMcpBinding } | IntegrationParseError {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {
+      ok: false,
+      error:
+        'integration.mcp must be an object like { url, secret_ref?, auth_header?, auth_scheme? }',
+    };
+  }
+  const r = raw as Record<string, unknown>;
+  const pick = (camel: string, snake: string): unknown => r[camel] ?? r[snake];
+
+  const url = String(r.url ?? '').trim();
+  if (!HTTP_URL_RE.test(url)) {
+    return {
+      ok: false,
+      error: `integration.mcp.url '${url}' must be the server's streamable-HTTP endpoint, starting with http(s):// and containing no spaces — e.g. https://mcp.firecrawl.dev/v2/mcp`,
+    };
+  }
+  const value: ToolGroupMcpBinding = { url };
+
+  const secretRefRaw = pick('secretRef', 'secret_ref');
+  if (secretRefRaw !== undefined && secretRefRaw !== null && String(secretRefRaw).trim() !== '') {
+    const secretRef = String(secretRefRaw)
+      .trim()
+      .replace(/^\{\{\s*secret:/i, '')
+      .replace(/\s*\}\}$/, '')
+      .trim();
+    if (!SECRET_REF_RE.test(secretRef)) {
+      return {
+        ok: false,
+        error: `integration.mcp.secret_ref '${secretRef}' must be 'service/label' (list the real ones with api_key_refs; the key itself is added by the owner under Settings → API keys)`,
+      };
+    }
+    if (isMcpManagedSecretService(secretRef)) {
+      return {
+        ok: false,
+        error: `integration.mcp.secret_ref '${secretRef}' points into the reserved 'mcp-' namespace (connector-sealed OAuth state) — reference a key the owner added under Settings → API keys instead`,
+      };
+    }
+    value.secretRef = secretRef;
+  }
+
+  const authHeaderRaw = pick('authHeader', 'auth_header');
+  if (
+    authHeaderRaw !== undefined &&
+    authHeaderRaw !== null &&
+    String(authHeaderRaw).trim() !== ''
+  ) {
+    const authHeader = String(authHeaderRaw).trim();
+    if (!AUTH_HEADER_RE.test(authHeader)) {
+      return {
+        ok: false,
+        error: `integration.mcp.auth_header '${authHeader}' must be a plain header name (letters/digits/dash) — e.g. Authorization or X-API-Key`,
+      };
+    }
+    value.authHeader = authHeader;
+  }
+
+  const authSchemeRaw = pick('authScheme', 'auth_scheme');
+  if (authSchemeRaw !== undefined && authSchemeRaw !== null) {
+    const authScheme = String(authSchemeRaw);
+    if (authScheme.length > MAX_AUTH_SCHEME_CHARS || HAS_SECRET_REF.test(authScheme)) {
+      return {
+        ok: false,
+        error: `integration.mcp.auth_scheme must be a short prefix like 'Bearer ' (or '' to send the credential bare) — the credential itself stays in the vault as secret_ref`,
+      };
+    }
+    value.authScheme = authScheme;
+  }
+
+  // Sync bookkeeping — written by the connector sync; validated lightly so a
+  // round-trip of a stored row preserves it without letting junk grow.
+  const lastSyncRaw = pick('lastSyncAt', 'last_sync_at');
+  if (lastSyncRaw !== undefined && lastSyncRaw !== null && String(lastSyncRaw).trim() !== '') {
+    value.lastSyncAt = String(lastSyncRaw).trim().slice(0, 40);
+  }
+  const toolCountRaw = pick('toolCount', 'tool_count');
+  if (toolCountRaw !== undefined && toolCountRaw !== null) {
+    const n = Number(toolCountRaw);
+    if (Number.isInteger(n) && n >= 0) value.toolCount = n;
+  }
+  const serverInfoRaw = pick('serverInfo', 'server_info');
+  if (serverInfoRaw && typeof serverInfoRaw === 'object' && !Array.isArray(serverInfoRaw)) {
+    const si = serverInfoRaw as Record<string, unknown>;
+    const serverInfo: NonNullable<ToolGroupMcpBinding['serverInfo']> = {};
+    if (typeof si.name === 'string' && si.name.trim())
+      serverInfo.name = si.name.trim().slice(0, 200);
+    if (typeof si.version === 'string' && si.version.trim()) {
+      serverInfo.version = si.version.trim().slice(0, 60);
+    }
+    if (Object.keys(serverInfo).length > 0) value.serverInfo = serverInfo;
+  }
+
+  // OAuth bookkeeping — non-secret state only (tokens/registration/verifier
+  // live sealed in the vault). Validated so a round-trip preserves it and a
+  // model can never smuggle junk or a credential into the row.
+  const oauthRaw = r.oauth;
+  if (oauthRaw !== undefined && oauthRaw !== null) {
+    if (typeof oauthRaw !== 'object' || Array.isArray(oauthRaw)) {
+      return {
+        ok: false,
+        error:
+          'integration.mcp.oauth must be an object — set { enabled: true } to mark the connector as OAuth-authenticated (the flow itself is driven via the connectors API, not by editing this field)',
+      };
+    }
+    const o = oauthRaw as Record<string, unknown>;
+    const pickO = (camel: string, snake: string): unknown => o[camel] ?? o[snake];
+    if (o.enabled !== true) {
+      return {
+        ok: false,
+        error:
+          'integration.mcp.oauth.enabled must be exactly true — to drop OAuth from a connector, clear the whole oauth object instead',
+      };
+    }
+    const status = String(o.status ?? 'pending');
+    if (!['pending', 'connected', 'needs_reconnect'].includes(status)) {
+      return {
+        ok: false,
+        error: `integration.mcp.oauth.status '${status}' must be pending | connected | needs_reconnect`,
+      };
+    }
+    const oauth: NonNullable<ToolGroupMcpBinding['oauth']> = {
+      enabled: true,
+      status: status as 'pending' | 'connected' | 'needs_reconnect',
+    };
+    const clientIdRaw = pickO('clientId', 'client_id');
+    if (typeof clientIdRaw === 'string' && clientIdRaw.trim()) {
+      oauth.clientId = clientIdRaw.trim().slice(0, 300);
+    }
+    const pendingRaw = o.pending;
+    if (pendingRaw && typeof pendingRaw === 'object' && !Array.isArray(pendingRaw)) {
+      const p = pendingRaw as Record<string, unknown>;
+      const state = String(p.state ?? '').trim();
+      const redirectUri = String(p.redirectUri ?? p.redirect_uri ?? '').trim();
+      const startedAt = String(p.startedAt ?? p.started_at ?? '').trim();
+      if (state && HTTP_URL_RE.test(redirectUri)) {
+        oauth.pending = {
+          state: state.slice(0, 100),
+          redirectUri: redirectUri.slice(0, 2000),
+          startedAt: startedAt.slice(0, 40),
+        };
+      }
+    }
+    const redirectUriRaw = pickO('redirectUri', 'redirect_uri');
+    if (typeof redirectUriRaw === 'string' && HTTP_URL_RE.test(redirectUriRaw.trim())) {
+      oauth.redirectUri = redirectUriRaw.trim().slice(0, 2000);
+    }
+    for (const [camel, snake] of [
+      ['tokenExpiresAt', 'token_expires_at'],
+      ['connectedAt', 'connected_at'],
+    ] as const) {
+      const v = pickO(camel, snake);
+      if (typeof v === 'string' && v.trim()) oauth[camel] = v.trim().slice(0, 40);
+    }
+    const lastErrorRaw = pickO('lastError', 'last_error');
+    if (typeof lastErrorRaw === 'string' && lastErrorRaw.trim()) {
+      oauth.lastError = lastErrorRaw.trim().slice(0, 500);
+    }
+    // Pre-registered app — only WHERE it comes from lives here; a manual
+    // app's secret is sealed in the vault by the connectors API.
+    const clientRaw = o.client;
+    if (clientRaw !== undefined && clientRaw !== null) {
+      if (typeof clientRaw !== 'object' || Array.isArray(clientRaw)) {
+        return {
+          ok: false,
+          error:
+            "integration.mcp.oauth.client must be { source: 'microsoft' } or { source: 'manual', authorization_server? } — set it via the connectors API, which also seals a manual app's secret",
+        };
+      }
+      const c = clientRaw as Record<string, unknown>;
+      if (c.source === 'microsoft') {
+        oauth.client = { source: 'microsoft' };
+      } else if (c.source === 'manual') {
+        const asRaw = c.authorizationServer ?? c.authorization_server;
+        const as = asRaw === undefined || asRaw === null ? '' : String(asRaw).trim();
+        if (as && !/^https:\/\/\S+$/i.test(as)) {
+          return {
+            ok: false,
+            error: `integration.mcp.oauth.client.authorization_server '${as}' must be an https:// URL — e.g. https://login.microsoftonline.com/<tenant-id>/v2.0`,
+          };
+        }
+        oauth.client = as
+          ? { source: 'manual', authorizationServer: as.slice(0, 2000) }
+          : { source: 'manual' };
+      } else {
+        return {
+          ok: false,
+          error: `integration.mcp.oauth.client.source '${String(c.source)}' must be microsoft | manual (leave client out for an app that registers itself)`,
+        };
+      }
+    }
+    const scopeRaw = o.scope;
+    if (typeof scopeRaw === 'string' && scopeRaw.trim()) {
+      const scope = scopeRaw.trim().replace(/\s+/g, ' ');
+      if (scope.length > MAX_OAUTH_SCOPE_CHARS || HAS_SECRET_REF.test(scope)) {
+        return {
+          ok: false,
+          error: `integration.mcp.oauth.scope must be a space-separated list of scopes (max ${MAX_OAUTH_SCOPE_CHARS} characters), e.g. "https://api.fabric.microsoft.com/.default"`,
+        };
+      }
+      oauth.scope = scope;
+    }
+    value.oauth = oauth;
+  }
+
+  return { ok: true, value };
+}
+
+const SELECTION_MAX_TAGS = 40;
+const SELECTION_MAX_OPERATIONS = 200;
+const SELECTION_ITEM_MAX_CHARS = 200;
+
+/**
+ * Validate + normalise the `integration.openapi` connector binding. Accepts
+ * camel and snake case and carries the sync-bookkeeping fields (`specHash`,
+ * `apiTitle`, `apiVersion`, `lastSyncAt`, `toolCount`) through so a validated
+ * round-trip of a stored row doesn't drop the connector's sync state.
+ */
+export function parseOpenapiBinding(
+  raw: unknown,
+): { ok: true; value: ToolGroupOpenapiBinding } | IntegrationParseError {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {
+      ok: false,
+      error: 'integration.openapi must be an object like { spec_url, selection? }',
+    };
+  }
+  const r = raw as Record<string, unknown>;
+  const pick = (camel: string, snake: string): unknown => r[camel] ?? r[snake];
+
+  const specUrl = String(pick('specUrl', 'spec_url') ?? '').trim();
+  if (!HTTP_URL_RE.test(specUrl)) {
+    return {
+      ok: false,
+      error: `integration.openapi.spec_url '${specUrl}' must be the URL of the service's OpenAPI 3.x document, starting with http(s):// and containing no spaces — e.g. https://example.com/openapi.json`,
+    };
+  }
+  const value: ToolGroupOpenapiBinding = { specUrl };
+
+  const selectionRaw = r.selection;
+  if (selectionRaw !== undefined && selectionRaw !== null) {
+    if (typeof selectionRaw !== 'object' || Array.isArray(selectionRaw)) {
+      return {
+        ok: false,
+        error:
+          'integration.openapi.selection must be an object with `tags` and/or `operations` string arrays — e.g. { "operations": ["getForecast"] }; omit it to include every operation (only legal under the per-connector tool cap)',
+      };
+    }
+    const sel = selectionRaw as Record<string, unknown>;
+    const unknownKeys = Object.keys(sel).filter((k) => k !== 'tags' && k !== 'operations');
+    if (unknownKeys.length > 0) {
+      return {
+        ok: false,
+        error: `integration.openapi.selection may only carry \`tags\` and \`operations\` (got ${unknownKeys.join(', ')})`,
+      };
+    }
+    const selection: NonNullable<ToolGroupOpenapiBinding['selection']> = {};
+    for (const [key, cap] of [
+      ['tags', SELECTION_MAX_TAGS],
+      ['operations', SELECTION_MAX_OPERATIONS],
+    ] as const) {
+      const arr = sel[key];
+      if (arr === undefined || arr === null) continue;
+      if (!Array.isArray(arr) || arr.some((v) => typeof v !== 'string')) {
+        return {
+          ok: false,
+          error: `integration.openapi.selection.${key} must be an array of strings`,
+        };
+      }
+      const items = [
+        ...new Set(
+          (arr as string[]).map((s) => s.trim().slice(0, SELECTION_ITEM_MAX_CHARS)).filter(Boolean),
+        ),
+      ];
+      if (items.length > cap) {
+        return {
+          ok: false,
+          error: `integration.openapi.selection.${key} carries ${items.length} entries (max ${cap}) — select with tags, or narrow the list`,
+        };
+      }
+      if (items.length > 0) selection[key] = items;
+    }
+    if (Object.keys(selection).length > 0) value.selection = selection;
+  }
+
+  // Sync bookkeeping — written by the connector sync; validated lightly so a
+  // round-trip of a stored row preserves it without letting junk grow.
+  const specHashRaw = pick('specHash', 'spec_hash');
+  if (typeof specHashRaw === 'string' && /^[0-9a-f]{16,64}$/i.test(specHashRaw.trim())) {
+    value.specHash = specHashRaw.trim().toLowerCase();
+  }
+  const titleRaw = pick('apiTitle', 'api_title');
+  if (typeof titleRaw === 'string' && titleRaw.trim()) {
+    value.apiTitle = titleRaw.trim().slice(0, 200);
+  }
+  const versionRaw = pick('apiVersion', 'api_version');
+  if (typeof versionRaw === 'string' && versionRaw.trim()) {
+    value.apiVersion = versionRaw.trim().slice(0, 60);
+  }
+  const lastSyncRaw = pick('lastSyncAt', 'last_sync_at');
+  if (lastSyncRaw !== undefined && lastSyncRaw !== null && String(lastSyncRaw).trim() !== '') {
+    value.lastSyncAt = String(lastSyncRaw).trim().slice(0, 40);
+  }
+  const toolCountRaw = pick('toolCount', 'tool_count');
+  if (toolCountRaw !== undefined && toolCountRaw !== null) {
+    const n = Number(toolCountRaw);
+    if (Number.isInteger(n) && n >= 0) value.toolCount = n;
+  }
+  return { ok: true, value };
 }
 
 /** Naming convention for an integration's usage skill — one skill per group, so

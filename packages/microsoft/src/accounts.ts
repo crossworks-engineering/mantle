@@ -22,6 +22,21 @@ export type PublicMsAccount = Omit<MsAccount, 'accessTokenEnc' | 'refreshTokenEn
   hasRefreshToken: boolean;
 };
 
+// Key-set drift guard for the hand-mirrored wire DTO in @mantle/client-types
+// (same idiom as @mantle/email's PublicEmailAccount guard — dates differ in
+// value type across the wire, so only the key sets are comparable).
+type AssertSameKeys<A, B> = [Exclude<keyof A, keyof B>, Exclude<keyof B, keyof A>] extends [
+  never,
+  never,
+]
+  ? true
+  : { missingInDto: Exclude<keyof A, keyof B>; extraInDto: Exclude<keyof B, keyof A> };
+const _publicMsAccountDrift: AssertSameKeys<
+  PublicMsAccount,
+  import('@mantle/client-types').PublicMsAccount
+> = true;
+void _publicMsAccountDrift;
+
 /** Strip the sealed OAuth tokens before an account row leaves the process. */
 export function redactMsAccount(account: MsAccount): PublicMsAccount {
   const { accessTokenEnc, refreshTokenEnc, ...rest } = account;

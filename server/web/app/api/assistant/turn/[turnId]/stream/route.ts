@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { getBufferedTurnEvents, makeReplayMerger } from '@mantle/turn-stream';
 import { getOwnerOr401 } from '@/lib/auth';
 import { subscribeTurnStream } from '@/lib/realtime';
-import { isTurnStreamingEnabled } from '@mantle/web-ui/turn-streaming';
+import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
 import { loadProfilePreferences, isStreamThoughtsEnabled } from '@mantle/content';
 
 /**
@@ -17,8 +17,8 @@ import { loadProfilePreferences, isStreamThoughtsEnabled } from '@mantle/content
  * (the NOTIFY envelope's owner must match the authenticated session, so a
  * `turnId` guessed from another owner yields nothing).
  *
- * **Cross-process by necessity:** the turn executes in apps/api (the DBOS
- * runner), which publishes deltas via Postgres `NOTIFY`; this handler (apps/web,
+ * **Cross-process by necessity:** the turn executes in server/api (the DBOS
+ * runner), which publishes deltas via Postgres `NOTIFY`; this handler (server/web,
  * a different process) LISTENs through the realtime bridge and relays them.
  *
  * **Flagged:** 404s until `MANTLE_TURN_STREAMING` is set. No producer is wired

@@ -10,7 +10,7 @@
  * data (plus invariant assertions) — it must stay importable from CLI, worker,
  * and Next.js contexts alike, so no side effects and no app imports.
  */
-import type { TaskCost, TaskKind, TaskStatus } from '@mantle/web-ui/types/maintenance';
+import type { TaskCost, TaskKind, TaskStatus } from '@mantle/client-types/types/maintenance';
 export type { TaskCost, TaskKind, TaskStatus };
 
 /** What a LIVE run of the task spends. `sql` and `io` are free; `imap` costs
@@ -96,6 +96,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
   },
 
   {
+    slug: 'turns-reap',
+    title: 'Reap stuck assistant turns (all owners)',
+    description:
+      "Fails assistant turns still 'pending' past MANTLE_TURN_STALE_MIN (default 30). An outbound row is written 'pending' when a turn starts and settled only at the end; a provider call that neither returns nor throws, or a runner killed mid-turn, strands it forever. Until 2026-09-09 nothing swept this surface — the only symptom was a composer stuck on \"Thinking…\", with no error, no failed status and nothing for a failure count to see.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/turns-reap.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      "Idempotent; a no-op once clean. Threshold sits well clear of the adapters' own guards (60s connect, 120s idle, 90s SDK retry envelope) and of a long tool-loop turn.",
+  },
+  {
     slug: 'traces-reap',
     title: 'Reap abandoned traces (all owners)',
     description:
@@ -165,7 +180,24 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     cwd: 'server/web',
     extraFlags: ['--types=<list>', '--since=<date>', '--limit=<n>', '--rate=<seconds>'],
     notes:
-      'Indirect chat + embedding spend via the extractor; requires the agent (apps/api) to be running. No dry-run flag — it prints the candidate count before firing.',
+      'Indirect chat + embedding spend via the extractor; requires the agent (server/api) to be running. No dry-run flag — it prints the candidate count before firing.',
+  },
+  {
+    slug: 'draws-re-render',
+    title: 'Re-render drawing snapshots',
+    description:
+      'Regenerates draws.scene_svg for drawings whose snapshot is missing or was drawn by a different Excalidraw version, using the browser sidecar. The snapshot is a cache of a render, so this is how an upstream bump heals the corpus and how agent-authored drawings get a preview at all.',
+    kind: 'ops',
+    status: 'live',
+    // Browser time, not tokens: the write path never notifies the extractor.
+    cost: 'io',
+    schedulable: false,
+    script: 'scripts/draws-re-render.ts',
+    cwd: 'server/web',
+    dryRunFlag: '--dry-run',
+    extraFlags: ['--all', '--limit=<n>'],
+    notes:
+      'Costs browser time, not tokens — it never re-runs the extractor. Requires the browser sidecar (BROWSER_WS_ENDPOINT). --all re-renders every drawing, not just stale ones.',
   },
   {
     slug: 'rotate-master-key',
@@ -443,6 +475,22 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     requiresEnv: ['MANTLE_MASTER_KEY'],
     notes:
       'Lists each provider once (5-min cached) and invokes no model, so there is no token spend; the master key is needed only for providers whose list endpoint requires a key — OpenRouter, the common case, is keyless. Exits 0 even when drift is found. Everything it cannot see is reported as "not checked" with a reason, never as missing: a provider with no list API, an absent key, and a catalogue that does not cover the pin\'s modality all say nothing about whether the pin is valid. That distinction is the whole report — the naive version marked a healthy fleet as three models retired, because OpenRouter\'s /models enumerates chat only and its alias ids carry a leading tilde.',
+  },
+  {
+    slug: 'pool-fit',
+    title: 'Pool-fit report',
+    description:
+      'Checks every curated pool entry, enabled agent and enabled worker on an OpenRouter route against what that pool actually needs the model to DO, and reports the ones that cannot do it. The case it was built for: "Read images" and "Image generation" both accept image input, so an image GENERATOR passes every input-side check and then bills image-generation tokens and returns a picture where a text answer was expected. `architecture.output_modalities` is the half that separates them. Complements pinned-model-drift, which asks whether a model still EXISTS — this asks whether it belongs. Report-only: removing a curated entry is the owner\'s curation and repointing a live row is a cost decision.',
+    kind: 'recurring',
+    status: 'live',
+    cost: 'io',
+    schedulable: true,
+    script: 'scripts/pool-fit.ts',
+    cwd: 'server/web',
+    readOnly: true,
+    extraFlags: ['--all', '--json'],
+    notes:
+      "Keyless — OpenRouter's catalog is public, fetched once per run and cached 6h, and no model is invoked. Exits 0 even when a misfit is found. Only OpenRouter routes are subjects: the modality facts come from OpenRouter's catalog, so a direct-provider slug ('claude-opus-5') is out of scope rather than a finding, and the meta-routers (openrouter/auto*) are reported unchecked because their modalities are the union over everything they might route to. Same rule as the four write guards (`poolModelIssue`), so the report and the guards can never disagree.",
   },
   {
     slug: 'models-drift',

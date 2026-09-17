@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { evaluateSpec, readFormulaSpec, type FormulaValue } from '@/lib/formulas';
+import { firstIssue } from '@/lib/zod-issue';
 
 const Body = z.object({
   target: z.string().min(1).max(200),
@@ -23,10 +24,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const raw = await req.json().catch(() => ({}));
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   let spec;
   try {

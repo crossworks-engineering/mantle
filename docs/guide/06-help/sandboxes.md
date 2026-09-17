@@ -8,8 +8,8 @@ toolGroups: [sandboxes]
 Persistent containers the assistant can run commands in, and the history of
 every command it ran.
 
-A sandbox exists so the assistant can do work that needs a real machine —
-converting a file, running a script, trying a command — without that work
+A sandbox exists so the assistant can do work that needs a real machine,
+converting a file, running a script, trying a command, without that work
 touching your brain's host. It's a container: things installed inside it stay
 inside it, and destroying it destroys everything it accumulated.
 
@@ -30,7 +30,7 @@ none of it is invisible. Reading the history is how you audit it.
 
 Isolation is the container boundary. A sandbox has its own filesystem and
 process space, and it does not have your database credentials or your master
-key — so a command run inside one cannot read your sealed data, whatever it
+key, so a command run inside one cannot read your sealed data, whatever it
 does.
 
 Command history is stored per sandbox with its output, so the record survives

@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { createApp, listApps, countApps, type AppSort } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
+import { firstIssue } from '@/lib/zod-issue';
 
 const PAGE_SIZE = 50;
 
@@ -37,10 +38,7 @@ export async function POST(req: Request) {
   if (user instanceof Response) return user;
   const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? 'invalid input' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
   const app = await createApp(user.id, { title: parsed.data.name, ...parsed.data });
   void recordIngest({

@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { testStt } from '@/lib/ai-worker-rpc';
+import { errorMessage } from '@mantle/std';
 
 const Body = z.object({
   audioBase64: z.string().min(1),
@@ -20,9 +21,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       await testStt(user.id, id, parsed.data.audioBase64, parsed.data.mimeType),
     );
   } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: errorMessage(err) }, { status: 400 });
   }
 }

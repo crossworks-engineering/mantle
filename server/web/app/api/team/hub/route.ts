@@ -18,7 +18,7 @@ import {
   teamHubContentCounts,
 } from '@mantle/content';
 import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
-import { APP_VERSION } from '@mantle/web-ui/version';
+import { APP_VERSION } from '@mantle/client-types/version';
 
 export async function GET(req: Request) {
   const caller = await resolveTeamChatCaller(req);

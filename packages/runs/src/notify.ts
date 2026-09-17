@@ -74,7 +74,7 @@ export async function notifyPendingCreated(notice: PendingCreatedNotice): Promis
  * notify is only correct until the next path forgets one.
  *
  * Named here anyway so the SQL producer and its only consumer — the web app's
- * LISTEN bridge in `apps/web/lib/realtime.ts`, which turns it into the
+ * LISTEN bridge in `server/web/lib/realtime.ts`, which turns it into the
  * client-visible `run` change type — are joined by one symbol rather than two
  * copies of a string literal. Payload is the owner id, per the
  * `pending_changed` convention.
