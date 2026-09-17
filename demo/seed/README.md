@@ -22,6 +22,32 @@ which is how v1 died.
 | extraction | **server/api** — the `node_ingested` listener, not this script |
 | assertions | `verify.ts` — waits for the queue, then checks the minimums |
 
+## Seeding one kind at a time
+
+```sh
+DEMO_SEED_ONLY=tables,draws demo/scripts/seed.sh --keep
+```
+
+`DEMO_SEED_ONLY` names the kinds to seed into an EXISTING brain
+(`contacts`, `simple`, `pages`, `recall` = the Recall map's pages only,
+`tables`, `oddments`, `heartbeats`, `draws`, `docs`, `files`, `emails`). It
+exists for iterating on one content type without a wipe-and-refill; it does
+not reconcile, so running it twice adds the kind twice. The full seed is
+still one command.
+
+## Tables travel as a grid and land as a document
+
+The generator writes tables the way a person would: column names, positional
+rows, aggregates and views keyed by column NAME (`GenTable` in
+`lib/types.ts`). The app stores a `TableDoc`: columns with ids, rows as
+`{id, cells: {<columnId>: value}}`, select options as `{id, label}` with the
+cell holding the label, aggregates and views keyed by column id, formula
+cells never stored. `tableDocFromGen` in `seed.ts` does that translation
+once, before the POST. Until 2026-09-17 the grid was posted as-is and
+`ensureTableDoc`, tolerant by design, kept every row with an empty cells
+map — eleven tables with columns and no data, on the public demo. A date
+cell is a day offset like every other date here; the seeder resolves it.
+
 ## Real product paths, and the two deliberate exceptions
 
 Content is created over the HTTP API, and markdown becomes ProseMirror through

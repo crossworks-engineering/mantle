@@ -274,8 +274,53 @@ async function seedHeartbeats(m: Manifest) {
   return n;
 }
 
-// Draws: Excalidraw scenes, through the real endpoint (which whitelists what
-// it stores and renders the scene to text for the index).
+// Draws: Excalidraw scenes, through the real endpoints. Create takes the
+// scene; COMMIT is what gives the list its preview, the share page its
+// picture and the export its file, and it takes the SVG the committing editor
+// exported. No editor commits on a seed run, so the snapshot is rendered here
+// for the three element kinds the generator uses (rectangle, text, arrow) —
+// plain shapes in the theme's neutral ink, which is what the preview is for.
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function sceneToSvg(scene: { elements: unknown[] }): string {
+  const els = scene.elements as Array<Record<string, unknown>>;
+  const xs = els.map((e) => Number(e.x)), ys = els.map((e) => Number(e.y));
+  const xe = els.map((e) => Number(e.x) + Number(e.width ?? 0)), ye = els.map((e) => Number(e.y) + Number(e.height ?? 0));
+  const pad = 24;
+  const minX = Math.min(...xs) - pad, minY = Math.min(...ys) - pad;
+  const w = Math.max(...xe) - minX + pad, h = Math.max(...ye) - minY + pad;
+  const parts: string[] = [];
+  for (const e of els) {
+    const x = Number(e.x), y = Number(e.y), ew = Number(e.width ?? 0), eh = Number(e.height ?? 0);
+    const stroke = String(e.strokeColor ?? '#1e1e1e');
+    if (e.type === 'rectangle') {
+      parts.push(`<rect x="${x}" y="${y}" width="${ew}" height="${eh}" rx="8" fill="none" stroke="${stroke}" stroke-width="2"/>`);
+    } else if (e.type === 'text') {
+      const size = Number(e.fontSize ?? 16);
+      const lines = String(e.text ?? '').split('\n');
+      const anchor = e.textAlign === 'center' ? 'middle' : 'start';
+      const tx = e.textAlign === 'center' ? x + ew / 2 : x;
+      const ty = e.verticalAlign === 'middle' ? y + eh / 2 - ((lines.length - 1) * size * 1.25) / 2 + size * 0.35 : y + size;
+      parts.push(
+        `<text x="${tx}" y="${ty}" font-family="Helvetica, Arial, sans-serif" font-size="${size}" fill="${stroke}" text-anchor="${anchor}">` +
+          lines.map((l, i) => `<tspan x="${tx}" dy="${i === 0 ? 0 : size * 1.25}">${esc(l)}</tspan>`).join('') +
+          `</text>`,
+      );
+    } else if (e.type === 'arrow') {
+      const pts = (e.points as number[][]) ?? [[0, 0], [ew, eh]];
+      const abs = pts.map(([px, py]) => [x + px, y + py] as const);
+      const d = abs.map(([px, py], i) => `${i === 0 ? 'M' : 'L'}${px} ${py}`).join(' ');
+      parts.push(`<path d="${d}" fill="none" stroke="${stroke}" stroke-width="2" marker-end="url(#arrowhead)"/>`);
+    }
+  }
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${w} ${h}" width="${w}" height="${h}">` +
+    `<defs><marker id="arrowhead" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0,0 L10,4 L0,8 z" fill="#1e1e1e"/></marker></defs>` +
+    `<rect x="${minX}" y="${minY}" width="${w}" height="${h}" fill="#ffffff"/>` +
+    parts.join('') +
+    `</svg>`
+  );
+}
+
 async function seedDraws(m: Manifest) {
   let n = 0;
   for (const d of m.draws ?? []) {
@@ -284,7 +329,13 @@ async function seedDraws(m: Manifest) {
       id?: string;
     };
     const id = r.draw?.id ?? r.id;
-    if (id) created.set(d.id, id);
+    if (!id) throw new Error(`draw ${d.id}: no id came back`);
+    created.set(d.id, id);
+    const res = await api(`/api/draws/${id}/commit`, {
+      method: 'POST',
+      body: JSON.stringify({ scene: d.scene, svg: sceneToSvg(d.scene) }),
+    });
+    if (!res.ok) throw new Error(`draw ${d.id}: commit → ${res.status} ${(await res.text()).slice(0, 200)}`);
     n++;
   }
   return n;
@@ -324,8 +375,11 @@ function tableDocFromGen(t: Manifest['tables'][number]) {
     columns.forEach((col, i) => {
       const v = values[i] ?? null;
       if (v === null || col.type === 'formula') return; // formula cells are derived on read
-      if (col.type === 'select' && typeof v === 'string' && col.options) {
-        cells[col.id] = col.options.find((o) => o.label === v)?.id ?? optionId(v);
+      if (col.type === 'select' && typeof v === 'string') {
+        // The grid renders the stored value as-is (the option's id is for
+        // identity and colour), so a select cell holds the LABEL, exactly as
+        // the editor stores it when a person picks an option.
+        cells[col.id] = v;
       } else if (col.type === 'date' && typeof v === 'number') {
         // Dates in a table are day OFFSETS like every other date in the
         // manifest, resolved against seed time so a fresh seed looks current.
