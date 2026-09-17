@@ -12,12 +12,23 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 DEMO="demo"; ART="$DEMO/.run"; mkdir -p "$ART"
 
-# TWO apps. server/web is the API and has ZERO pages; ALL 94 screens live in
-# client/web. Pointing the edge at server/web alone yields a working /api/* and
-# a 404 for every actual page — which is exactly what happened the first time.
-API_PORT=3903          # server/web — the API
-UI_PORT=3904           # client/web — the 94 screens a visitor sees
+# TWO apps. server/web is the API and has ZERO pages; every screen lives in
+# the CLIENT, which since the 2026-08-13 split is the jackdaw repo and reaches
+# this bench only as its published image (titanwest/mantle-client) — exactly
+# what the site box runs. Pointing the edge at server/web alone yields a
+# working /api/* and a 404 for every actual page — which is exactly what
+# happened the first time.
+API_PORT=3903          # server/web — the API, from THIS checkout
+UI_PORT=3904           # the client image — every screen a visitor sees
 EDGE_PORT=56080        # Caddy — this is what a visitor would hit
+# Which client. The pair file names the jackdaw release this server tree was
+# tested with; DEMO_UI_IMAGE overrides it entirely (a locally built image from
+# a jackdaw checkout: `docker build --target client -t mantle-client:local .`),
+# which is how an unreleased client is walked against the demo brain.
+DEMO_CLIENT_TAG="${DEMO_CLIENT_TAG:-$(tr -d '[:space:]' < client-pair.tag)}"
+DEMO_UI_IMAGE="${DEMO_UI_IMAGE:-${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-client:$DEMO_CLIENT_TAG}"
+# The guided tour the client opens once per browser (jackdaw docs/tour.md).
+DEMO_TOUR="${DEMO_TOUR:-demo}"
 export DATABASE_URL="postgres://demo_reader:demo_reader_not_a_secret@127.0.0.1:56432/postgres"
 export S3_ENDPOINT="http://127.0.0.1:56900"
 export S3_REGION="us-east-1"; export S3_ACCESS_KEY="minio"; export S3_SECRET_KEY="minio12345"; export S3_BUCKET="mantle"
@@ -53,15 +64,13 @@ export PORT="$API_PORT"
 unset MANTLE_DETACHED_DEV NEXT_PUBLIC_MANTLE_API_BASE NEXT_PUBLIC_MANTLE_API_TOKEN MANTLE_DEMO MANTLE_RUNS || true
 
 web_pid_file="$ART/serve-web.pid"; web_log="$ART/serve-web.log"
-ui_pid_file="$ART/serve-ui.pid";   ui_log="$ART/serve-ui.log"
 cleanup() {
-  for f in "$web_pid_file" "$ui_pid_file"; do
-    [ -f "$f" ] || continue
-    pgid=$(ps -o pgid= -p "$(cat "$f")" 2>/dev/null | tr -d ' ')
+  if [ -f "$web_pid_file" ]; then
+    pgid=$(ps -o pgid= -p "$(cat "$web_pid_file")" 2>/dev/null | tr -d ' ')
     [ -n "${pgid:-}" ] && kill -TERM -"$pgid" 2>/dev/null
-    rm -f "$f"
-  done
-  docker rm -f mantle_demo_edge >/dev/null 2>&1 || true
+    rm -f "$web_pid_file"
+  fi
+  docker rm -f mantle_demo_ui mantle_demo_edge >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -86,6 +95,23 @@ fi
 mkdir -p "$MANTLE_DOCS_ROOT/guide"
 cp -a docs/guide/06-help "$MANTLE_DOCS_ROOT/guide/"
 echo "  $(find "$MANTLE_DOCS_ROOT" -name '*.md' | wc -l | tr -d ' ') markdown files ($(ls "$MANTLE_DOCS_ROOT/guide/06-help" | wc -l | tr -d ' ') help topics)"
+
+echo "→ schema — bring the seed brain up to this checkout"
+# The brain was seeded on one release and this checkout is a later one, so
+# its migrations may be missing — the API then 500s on any screen whose query
+# names a new column (GET /api/tasks did, 13 migrations behind). The same
+# trio the production migrate gate runs, as the OWNER: the reader role could
+# not, and the seed stack is throwaway by design. Idempotent, so a bench
+# already at this schema pays a second of checks.
+DATABASE_URL="postgres://postgres:postgres@127.0.0.1:56432/postgres" \
+  pnpm -s -C packages/db migrate >"$ART/serve-migrate.log" 2>&1 \
+  || { echo "✗ migrate failed:"; tail -20 "$ART/serve-migrate.log"; exit 1; }
+DATABASE_URL="postgres://postgres:postgres@127.0.0.1:56432/postgres" \
+  pnpm -s -C server/web pgboss:init >>"$ART/serve-migrate.log" 2>&1 \
+  && DATABASE_URL="postgres://postgres:postgres@127.0.0.1:56432/postgres" \
+  pnpm -s -C server/api provision >>"$ART/serve-migrate.log" 2>&1 \
+  || { echo "✗ pgboss:init / provision failed:"; tail -20 "$ART/serve-migrate.log"; exit 1; }
+echo "  $(grep -oE 'applied [0-9]+ migration' "$ART/serve-migrate.log" | tail -1 || echo 'up to date')"
 
 echo "→ read-only Postgres role"
 docker exec -i mantle_demo_pg psql -U postgres -d postgres -q < "$DEMO/deploy/readonly-role.sql"
@@ -138,44 +164,33 @@ for i in $(seq 1 120); do
 done
 echo "  ready"
 
-# Safe alongside a running dev stack: Next's one-dev-server-per-project-DIRECTORY
-# limit matches by CWD, and this worktree's client/web is a different directory
-# with its own .next (see the repo CLAUDE.md on worktrees).
-echo "→ UI (client/web) on :$UI_PORT — this is where the 94 screens live"
-# MANTLE_SERVER_ORIGIN is baked into env.js and tells the BROWSER where to
-# send its fetches. It must be the EDGE, not the API: point it at the API and
-# the browser bypasses Caddy entirely, gets no injected cookie, and every
-# screen spins forever behind a 401 while the pages themselves render fine.
-# One origin is the whole design — /api/* and the UI share a host so there is
-# no CORS and the edge can authenticate every call.
+echo "→ UI ($DEMO_UI_IMAGE) on :$UI_PORT — this is where every screen lives"
+# The published client image, run the way the site box runs it, with one
+# difference: host networking, so that ONE origin can serve both callers of
+# MANTLE_SERVER_ORIGIN. The variable is read twice — baked into /env.js for
+# the BROWSER, and used by the client's own server-side fetches (appearance,
+# the login mark). Both must reach the EDGE, never the API: point the browser
+# at the API and it bypasses Caddy, gets no injected cookie, and every screen
+# spins forever behind a 401 while the pages render fine. On the box the
+# public URL resolves from both places; here the edge is a loopback port on
+# THIS host, which only a host-networked container also sees as 127.0.0.1.
+# The image's command binds :3000, so it is overridden to this bench's port.
 #
-# PRODUCTION build, not `next dev` — the demo is served from behind the edge on
-# a DIFFERENT port to the one Next itself listens on, and `next dev` treats that
-# as cross-origin: it refuses its own dev resources ("Blocked cross-origin
-# request to Next.js dev resource /_next/webpack-hmr"), the client never
-# hydrates, and every screen renders the nav shell with an EMPTY <main> holding
-# an unresolved React placeholder. The API is fine and the HTML is complete —
-# it just never becomes an app, which is precisely v1's blank-screen failure.
-# The documented dev workaround (allowedDevOrigins) lives in client/web's
-# next.config and would break the demo/-only invariant. Production mode needs
-# no app change AND is what the site box runs, so the gate measures what a
-# visitor gets rather than a dev-server artefact.
-UI_MODE="${DEMO_UI_MODE:-prod}"
-if [ "$UI_MODE" = "prod" ]; then
-  echo "  building (production — set DEMO_UI_MODE=dev to skip, but see the note above)"
-  MANTLE_SERVER_ORIGIN="http://127.0.0.1:$EDGE_PORT" pnpm -C client/web build >"$ui_log" 2>&1 \
-    || { echo "✗ client/web build failed:"; tail -25 "$ui_log"; exit 1; }
-  ui_cmd=start
-else
-  ui_cmd=dev
-fi
-( setsid env PORT="$UI_PORT" MANTLE_SERVER_ORIGIN="http://127.0.0.1:$EDGE_PORT" \
-    pnpm -C client/web "$ui_cmd" >>"$ui_log" 2>&1 & echo $! >"$ui_pid_file" )
-for i in $(seq 1 180); do
+# This used to build client/web from THIS checkout. That directory left with
+# the split; the image is the client now, and a bench that runs it measures
+# what a visitor gets rather than a build only this machine has.
+docker rm -f mantle_demo_ui >/dev/null 2>&1 || true
+docker pull -q "$DEMO_UI_IMAGE" >/dev/null 2>&1 || true   # a local image has nothing to pull
+docker run -d --name mantle_demo_ui --network host \
+  -e MANTLE_SERVER_ORIGIN="http://127.0.0.1:$EDGE_PORT" \
+  -e MANTLE_TOUR="$DEMO_TOUR" \
+  -e NODE_ENV=production \
+  "$DEMO_UI_IMAGE" pnpm -C client/web exec next start -H 0.0.0.0 -p "$UI_PORT" >/dev/null
+for i in $(seq 1 90); do
   curl -sf "http://127.0.0.1:$UI_PORT/env.js" >/dev/null 2>&1 && break
-  sleep 1; [ "$i" = 180 ] && { echo "✗ UI not ready:"; tail -25 "$ui_log"; exit 1; }
+  sleep 1; [ "$i" = 90 ] && { echo "✗ UI not ready:"; docker logs mantle_demo_ui 2>&1 | tail -25; exit 1; }
 done
-echo "  ready"
+echo "  ready ($(docker inspect -f '{{.Config.Image}}' mantle_demo_ui))"
 
 echo "→ edge on :$EDGE_PORT"
 docker rm -f mantle_demo_edge >/dev/null 2>&1 || true
@@ -201,5 +216,5 @@ echo "demo serving at http://127.0.0.1:$EDGE_PORT  (ctrl-c to stop)"
 # the EXIT trap's teardown with it, or (with the trap removed) leaving a stack
 # nobody is watching. Poll the app instead, and tear down when it goes away.
 while kill -0 "$(cat "$web_pid_file" 2>/dev/null)" 2>/dev/null \
-   && kill -0 "$(cat "$ui_pid_file" 2>/dev/null)" 2>/dev/null; do sleep 5; done
-echo "app exited — tearing down the edge"
+   && [ "$(docker inspect -f '{{.State.Running}}' mantle_demo_ui 2>/dev/null)" = "true" ]; do sleep 5; done
+echo "app exited — tearing down the UI and the edge"
