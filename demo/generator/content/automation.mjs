@@ -17,7 +17,6 @@
 //    fixed strings so the scene is byte-identical run to run.
 import { first } from '../lib/world.mjs';
 
-const B = 'studio';
 
 function box(id, x, y, w, h, text, seed) {
   const el = {
