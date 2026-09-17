@@ -139,58 +139,60 @@ export function generate(rngRoot) {
   extraPages.forEach(([id, branch, title, body], i) =>
     nodes.push({ id, kind: 'page', branch, title, body: `# ${title}\n\n${body}`, offset: -120 + i * 12 + rng.int(0, 4), tags: ['reference'], meta: {} }));
 
-  // ── Extra tables ──────────────────────────────────────────────────────────
+  // ── Two more tables, not five ─────────────────────────────────────────────
+  // The transmittal register, the CPD log and a bare risk register used to
+  // live here too. They were thin, nobody asks about them, and a demo with
+  // five ordinary tables beside two good ones reads as five ordinary tables.
+  // What stays is what the scripted turns ask about: hours by project and the
+  // risks the studio carries, each made properly.
+  const PROJECT_OPTIONS = ['PUMPHOUSE', 'STOREFRONT', 'ISLAND', 'Studio'];
+  const RATES = { 'rowan-mercer': 110, 'tessa-okafor': 110, 'dana-whitfield': 105, 'felix-arendse': 85, 'june-castellanos': 75 };
   tables.push({
-    id: 'traffic-transmittal-register', branch: 'work.pumphouse', title: 'Transmittal register',
+    id: 'traffic-timesheet', branch: 'studio.finance', title: 'Time by project — month', icon: '⏱️',
     columns: [
-      { name: 'Transmittal', type: 'text' }, { name: 'Document', type: 'text' },
-      { name: 'Rev', type: 'select', options: ['A', 'B', 'C'] },
-      { name: 'Purpose', type: 'select', options: PURPOSES },
-      { name: 'Issued (offset days)', type: 'number' },
+      { name: 'Person', type: 'select', options: STAFF.map(first) },
+      { name: 'Project', type: 'select', options: PROJECT_OPTIONS },
+      { name: 'Hours', type: 'number', format: { decimals: 1 } },
+      { name: 'Rate', type: 'currency', format: { decimals: 0 } },
+      { name: 'Value', type: 'formula', formula: '{Hours} * {Rate}', format: { decimals: 0 } },
+      { name: 'Billable', type: 'checkbox' },
     ],
-    rows: Array.from({ length: 18 }, (_, i) => [`T-${String(i + 1).padStart(3, '0')}`, `PS3-DRG-${100 + i}`, rng.pick(['A', 'B', 'C']), rng.pick(PURPOSES), -140 + i * 7]),
-    aggregates: {}, offset: -142,
+    rows: STAFF.flatMap((s) => PROJECT_OPTIONS.map((p) => [first(s), p, p === 'Studio' ? rng.int(4, 14) : rng.int(8, 70), RATES[s], null, p !== 'Studio'])),
+    aggregates: { Hours: 'sum', Value: 'sum' },
+    views: [
+      { name: 'Billable, by project', filters: [{ column: 'Billable', op: 'eq', value: true }], sort: [{ column: 'Project', dir: 'asc' }, { column: 'Hours', dir: 'desc' }] },
+      { name: 'PUMPHOUSE only', filters: [{ column: 'Project', op: 'eq', value: 'PUMPHOUSE' }] },
+    ],
+    offset: -25,
   });
   tables.push({
-    id: 'traffic-timesheet', branch: 'studio.finance', title: 'Time by project — month',
+    id: 'traffic-risk-register', branch: 'studio', title: 'Studio risk register', icon: '⚠️',
     columns: [
-      { name: 'Person', type: 'text' }, { name: 'Project', type: 'select', options: ['PUMPHOUSE', 'STOREFRONT', 'ISLAND', 'Studio'] },
-      { name: 'Hours', type: 'number' }, { name: 'Rate', type: 'currency' },
-      { name: 'Value', type: 'formula', formula: '{Hours} * {Rate}' },
-    ],
-    rows: STAFF.flatMap((s) => ['PUMPHOUSE', 'STOREFRONT', 'ISLAND'].map((p) => [first(s), p, rng.int(8, 70), 95, null])),
-    aggregates: { Hours: 'sum', Value: 'sum' }, offset: -25,
-  });
-  tables.push({
-    id: 'traffic-risk-register', branch: 'studio', title: 'Studio risk register',
-    columns: [
-      { name: 'Risk', type: 'text' }, { name: 'Project', type: 'select', options: ['PUMPHOUSE', 'STOREFRONT', 'ISLAND', 'Studio'] },
-      { name: 'Likelihood', type: 'select', options: ['low', 'medium', 'high'] },
-      { name: 'Impact', type: 'select', options: ['low', 'medium', 'high'] },
-      { name: 'Owner', type: 'text' },
+      { name: 'Risk', type: 'text' },
+      { name: 'Project', type: 'select', options: PROJECT_OPTIONS },
+      { name: 'Likelihood (1-5)', type: 'number' },
+      { name: 'Impact (1-5)', type: 'number' },
+      { name: 'Score', type: 'formula', formula: '{Likelihood (1-5)} * {Impact (1-5)}' },
+      { name: 'Owner', type: 'select', options: ['Alex Carter', ...STAFF.map(first)] },
+      { name: 'Mitigation', type: 'text' },
+      { name: 'Reviewed', type: 'date' },
     ],
     rows: [
-      ['Panel enclosure lead time slips again', 'PUMPHOUSE', 'medium', 'high', first('tessa-okafor')],
-      ['Commissioning window clashes with plant shutdown', 'PUMPHOUSE', 'low', 'high', 'Alex Carter'],
-      ['Store 214 dispute delays certificate and invoice', 'STOREFRONT', 'high', 'medium', first('dana-whitfield')],
-      ['Install crew double-booked in peak weeks', 'STOREFRONT', 'medium', 'medium', first('june-castellanos')],
-      ['Utility application lead time exceeds study window', 'ISLAND', 'high', 'medium', 'Alex Carter'],
-      ['Demand tariff changes again before report issue', 'ISLAND', 'low', 'medium', first('felix-arendse')],
-      ['Calibrator certificate lapses mid-commissioning', 'Studio', 'low', 'high', first('rowan-mercer')],
-      ['Key person unavailable during commissioning fortnight', 'Studio', 'medium', 'high', 'Alex Carter'],
+      ['Panel enclosure lead time slips again', 'PUMPHOUSE', 3, 5, null, first('tessa-okafor'), 'Weekly call with Sam Pruitt; alternative enclosure priced', -6],
+      ['Commissioning window clashes with plant shutdown', 'PUMPHOUSE', 2, 5, null, 'Alex Carter', 'Window confirmed in writing with the control room', -6],
+      ['Store 214 dispute delays certificate and invoice', 'STOREFRONT', 4, 3, null, first('dana-whitfield'), 'Retention proposed against the panel swap', -13],
+      ['Install crew double-booked in peak weeks', 'STOREFRONT', 3, 3, null, first('june-castellanos'), 'Crew calendar shared with Marcus Bell', -13],
+      ['Utility application lead time exceeds study window', 'ISLAND', 4, 3, null, 'Alex Carter', 'Application lodged early; study caveated', -20],
+      ['Demand tariff changes again before report issue', 'ISLAND', 2, 3, null, first('felix-arendse'), 'Tariff sensitivity in the report', -20],
+      ['Calibrator certificate lapses mid-commissioning', 'Studio', 1, 5, null, first('rowan-mercer'), 'Loaner booked; recal scheduled', -6],
+      ['Key person unavailable during commissioning fortnight', 'Studio', 3, 4, null, 'Alex Carter', 'Cover plan in the crew planning note', -6],
     ],
-    aggregates: {}, offset: -45,
-  });
-  tables.push({
-    id: 'traffic-cpd-log', branch: 'studio', title: 'CPD log',
-    columns: [
-      { name: 'Person', type: 'text' }, { name: 'Activity', type: 'text' },
-      { name: 'Hours', type: 'number' }, { name: 'Date (offset days)', type: 'number' },
+    aggregates: { Score: 'max', Risk: 'count' },
+    views: [
+      { name: 'By score', sort: [{ column: 'Score', dir: 'desc' }] },
+      { name: 'PUMPHOUSE', filters: [{ column: 'Project', op: 'eq', value: 'PUMPHOUSE' }], sort: [{ column: 'Score', dir: 'desc' }] },
     ],
-    rows: [...STAFF, 'alex-carter'].flatMap((s, i) => [
-      [s === 'alex-carter' ? 'Alex Carter' : first(s), rng.pick(['Functional safety refresher', 'Water industry telemetry seminar', 'Storage systems webinar', 'CAD standards update', 'First aid renewal']), rng.int(2, 16), -150 + i * 22],
-    ]),
-    aggregates: { Hours: 'sum' }, offset: -150,
+    offset: -45,
   });
 
   // ── Extra files: transmittal PDFs + registers ─────────────────────────────

@@ -31,35 +31,44 @@ export function generate(rngRoot) {
   // ── Load-profile tables with formula columns ──────────────────────────────
   const hours = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00'];
   tables.push({
-    id: 'island-load-profile', branch: B, title: 'Campus load profile — weekday design day',
+    id: 'island-load-profile', branch: B, title: 'Campus load profile — weekday design day', icon: '📈',
     columns: [
       { name: 'Hour', type: 'text' },
       { name: 'Load (kW)', type: 'number' },
       { name: 'Shed (kW)', type: 'number' },
       { name: 'Net (kW)', type: 'formula', formula: '{Load (kW)} - {Shed (kW)}' },
+      { name: 'Shed share', type: 'formula', formula: '{Shed (kW)} / {Load (kW)}', format: { decimals: 2 } },
+      { name: 'Source', type: 'select', options: ['metered', 'interpolated', 'estimated'] },
     ],
     rows: hours.map((h, i) => {
       const load = [420, 520, 600, 640, 610, 580, 560, 540, 500][i];
-      return [h, load, Math.round(load * 0.5), null];
+      return [h, load, Math.round(load * 0.5), null, null, i % 4 === 3 ? 'interpolated' : 'metered'];
     }),
-    aggregates: { 'Load (kW)': 'max' }, offset: -40,
+    aggregates: { 'Load (kW)': 'max', 'Net (kW)': 'avg' },
+    views: [{ name: 'Peak first', sort: [{ column: 'Load (kW)', dir: 'desc' }] }],
+    offset: -40,
   });
   tables.push({
-    id: 'island-storage-options', branch: B, title: 'Storage sizing options',
+    id: 'island-storage-options', branch: B, title: 'Storage sizing options', icon: '🔋',
     columns: [
       { name: 'Option', type: 'text' },
       { name: 'Islanding scheme', type: 'select', options: ['breaker-level', 'feeder-level'] },
       { name: 'Capacity (kWh)', type: 'number' },
       { name: 'Inverter (kW)', type: 'number' },
       { name: 'Usable @ 90% DoD (kWh)', type: 'formula', formula: '{Capacity (kWh)} * 0.9' },
-      { name: 'Ride-through (h)', type: 'formula', formula: '{Capacity (kWh)} * 0.9 / 285' },
+      { name: 'Ride-through (h)', type: 'formula', formula: '{Capacity (kWh)} * 0.9 / 285', format: { decimals: 1 } },
+      { name: 'Budget', type: 'currency', format: { decimals: 0 } },
+      { name: 'Cost per usable kWh', type: 'formula', formula: '{Budget} / ({Capacity (kWh)} * 0.9)', format: { decimals: 0 } },
+      { name: 'Recommended', type: 'checkbox' },
     ],
     rows: [
-      ['Full ride-through', 'breaker-level', 1200, 700, null, null],
-      ['Staged shedding (recommended)', 'feeder-level', 800, 400, null, null],
-      ['Essential only', 'feeder-level', 600, 300, null, null],
+      ['Full ride-through', 'breaker-level', 1200, 700, null, null, 610000, null, false],
+      ['Staged shedding', 'feeder-level', 800, 400, null, null, 395000, null, true],
+      ['Essential only', 'feeder-level', 600, 300, null, null, 305000, null, false],
     ],
-    aggregates: {}, offset: -35,
+    aggregates: { Budget: 'min' },
+    views: [{ name: 'Longest ride-through', sort: [{ column: 'Ride-through (h)', dir: 'desc' }] }],
+    offset: -35,
   });
 
   // ── Notes ─────────────────────────────────────────────────────────────────

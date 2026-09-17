@@ -59,22 +59,37 @@ export function generate(rngRoot) {
   latheNotes.forEach(([id, title, body], i) =>
     nodes.push({ id, kind: 'note', branch: 'personal.lathe', title, body, offset: -150 + i * 35, tags: ['lathe'], meta: {} }));
 
+  // The parts list Alex and Jamie keep on the workshop wall, as a table: what
+  // is ordered, what has arrived, what it all adds up to. Formula + sum is the
+  // point; the checkboxes are what make the "still to order" view worth having.
   tables.push({
-    id: 'lathe-parts', branch: 'personal.lathe', title: 'Lathe restoration — parts & costs',
+    id: 'lathe-parts', branch: 'personal.lathe', title: 'Lathe restoration — parts & costs', icon: '🔩',
     columns: [
-      { name: 'Item', type: 'text' }, { name: 'Source', type: 'text' },
-      { name: 'Cost', type: 'currency' }, { name: 'Qty', type: 'number' },
-      { name: 'Line total', type: 'formula', formula: '{Cost} * {Qty}' },
+      { name: 'Item', type: 'text' },
+      { name: 'Source', type: 'select', options: ['Brightpath contact', 'model shop', 'machine supplies', 'hardware', 'bearing supplier', 'online auction'] },
+      { name: 'Cost', type: 'currency', format: { decimals: 2 } },
+      { name: 'Qty', type: 'number' },
+      { name: 'Line total', type: 'formula', formula: '{Cost} * {Qty}', format: { decimals: 2 } },
+      { name: 'Ordered', type: 'checkbox' },
+      { name: 'Arrived', type: 'checkbox' },
+      { name: 'Notes', type: 'text' },
     ],
     rows: [
-      ['Headstock taper roller bearing', 'via Brightpath contact', 86, 1, null],
-      ['Felt sheet (way wipers)', 'model shop', 12, 2, null],
-      ['Way oil (1L)', 'machine supplies', 18, 2, null],
-      ['Machine grey enamel', 'hardware', 22, 1, null],
-      ['Drive belt', 'bearing supplier', 31, 1, null],
-      ['HSS tool blanks', 'machine supplies', 9, 6, null],
+      ['Headstock taper roller bearing (pair)', 'Brightpath contact', 86, 2, null, true, true, 'Sam Pruitt found the last two in the country; the saga is in the journal'],
+      ['Felt sheet (way wipers)', 'model shop', 12, 2, null, true, true, ''],
+      ['Way oil (1L)', 'machine supplies', 18, 2, null, true, true, ''],
+      ['Machine grey enamel', 'hardware', 22, 1, null, true, false, 'colour-matched to the original under the chuck guard'],
+      ['Drive belt', 'bearing supplier', 31, 1, null, true, false, ''],
+      ['HSS tool blanks', 'machine supplies', 9, 6, null, false, false, 'wait for the headstock to run true first'],
+      ['Half-nut (leadscrew)', 'online auction', 64, 1, null, false, false, 'watching two listings'],
+      ['Chuck key', 'online auction', 14, 1, null, false, false, 'the original went with the previous owner'],
     ],
-    aggregates: { 'Line total': 'sum' }, offset: -60,
+    aggregates: { 'Line total': 'sum', Arrived: 'filled' },
+    views: [
+      { name: 'Still to order', filters: [{ column: 'Ordered', op: 'eq', value: false }] },
+      { name: 'On the way', filters: [{ column: 'Ordered', op: 'eq', value: true }, { column: 'Arrived', op: 'eq', value: false }] },
+    ],
+    offset: -60,
   });
   for (let i = 0; i < 12; i++) {
     filesOut.push({

@@ -25,8 +25,9 @@ import * as studio from './content/studio.mjs';
 import * as traffic from './content/traffic.mjs';
 import * as turns from './content/turns.mjs';
 import * as showcase from './content/showcase.mjs';
+import * as automation from './content/automation.mjs';
 
-const MODULES = { studio, pumphouse, storefront, island, handbook, personal, traffic, turns, showcase };
+const MODULES = { studio, pumphouse, storefront, island, handbook, personal, traffic, turns, showcase, automation };
 
 const args = process.argv.slice(2);
 const argVal = (flag, dflt) => { const i = args.indexOf(flag); return i === -1 ? dflt : args[i + 1]; };
@@ -36,7 +37,7 @@ const OUT = join(here, argVal('--out', 'out'));
 
 export function generateAll(seed = 1) {
   const rng = makeRng(seed);
-  const all = { nodes: [], tables: [], emails: [], files: [], docs: [], turns: [] };
+  const all = { nodes: [], tables: [], emails: [], files: [], docs: [], turns: [], heartbeats: [], draws: [] };
   for (const [name, mod] of Object.entries(MODULES)) {
     const r = mod.generate(rng);
     for (const key of Object.keys(all)) for (const item of r[key] ?? []) all[key].push({ ...item, _module: name });
@@ -110,12 +111,13 @@ function main() {
         file: all.files.length,
         table: all.tables.length,
         documentation: all.docs.length,
+        draw: all.draws.length,
       },
-      emails: all.emails.length, turns: all.turns.length,
+      emails: all.emails.length, turns: all.turns.length, heartbeats: all.heartbeats.length,
     },
     nodes: all.nodes, tables: all.tables, emails: all.emails,
     files: fileIndex, docs: all.docs.map(({ collection, relpath, title }) => ({ collection, relpath, title })),
-    turns: all.turns,
+    turns: all.turns, heartbeats: all.heartbeats, draws: all.draws,
   };
   writeFileSync(join(OUT, 'manifest.json'), JSON.stringify(manifest, null, 2));
 

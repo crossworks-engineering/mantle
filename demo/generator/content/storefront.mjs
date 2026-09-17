@@ -20,27 +20,75 @@ export function generate(rngRoot) {
   const nodes = [], tables = [], emails = [], filesOut = [], turns = [];
   const B = 'work.storefront';
 
-  // ── The pipeline table (currency + select + sum aggregate) ────────────────
+  // ── The pipeline table: the flagship ──────────────────────────────────────
+  // The single source of truth for the programme, and the table the demo
+  // points at when the question is "what can a table do": select stages with
+  // a lead per store, currency with a sum, a retention percentage feeding a
+  // formula, real dates (offsets, resolved at seed time), a checkbox that the
+  // "surveyed, not yet drawn" view depends on, and two saved views a
+  // programme manager would actually keep.
+  const STAGES = ['survey', 'drawings', 'procurement', 'install', 'practical completion', 'snag dispute'];
+  const LEADS = ['Dana Whitfield', 'June Castellanos', 'Alex Carter'];
+  const stageIndex = (s) => STAGES.indexOf(s);
   tables.push({
-    id: 'store-pipeline', branch: B, title: 'Tranche 2 fit-out pipeline',
+    id: 'store-pipeline', branch: B, title: 'Tranche 2 fit-out pipeline', icon: '🏬',
     columns: [
-      { name: 'Store', type: 'text' }, { name: 'City', type: 'text' },
-      { name: 'Stage', type: 'select', options: ['survey', 'drawings', 'procurement', 'install', 'practical completion', 'snag dispute'] },
-      { name: 'Contract value', type: 'currency' },
-      { name: 'PC (offset days)', type: 'number' },
+      { name: 'Store', type: 'text' },
+      { name: 'City', type: 'text' },
+      { name: 'Stage', type: 'select', options: STAGES },
+      { name: 'Lead', type: 'select', options: LEADS },
+      { name: 'Contract value', type: 'currency', format: { decimals: 0 } },
+      { name: 'Retention', type: 'percent' },
+      { name: 'Retained', type: 'formula', formula: '{Contract value} * {Retention} / 100', format: { decimals: 0 } },
+      { name: 'Surveyed', type: 'checkbox' },
+      { name: 'Site start', type: 'date' },
+      { name: 'PC target', type: 'date' },
+      { name: 'Days on site', type: 'number' },
     ],
-    rows: STORES.map((s) => [`Store ${s.no}`, s.city, s.stage, s.value, s.stage === 'practical completion' ? -rng.int(5, 40) : rng.int(10, 60)]),
-    aggregates: { 'Contract value': 'sum' }, offset: -88,
+    rows: STORES.map((s, i) => {
+      const idx = stageIndex(s.stage);
+      const surveyed = idx >= 1;
+      // Earlier stores started earlier; a store still at survey has no start.
+      const start = idx >= 3 ? -100 + i * 12 : idx >= 1 ? 20 + i * 9 : null;
+      const pc = start === null ? null : start + 55 + rng.int(0, 10);
+      return [
+        `Store ${s.no}`, s.city, s.stage, LEADS[i % 2], s.value,
+        s.stage === 'snag dispute' ? 10 : 5,
+        null, surveyed, start, pc,
+        idx >= 3 ? rng.int(30, 62) : null,
+      ];
+    }),
+    aggregates: { 'Contract value': 'sum', Retained: 'sum', Store: 'count', 'Days on site': 'avg' },
+    views: [
+      { name: 'On site', filters: [{ column: 'Stage', op: 'eq', value: 'install' }], sort: [{ column: 'PC target', dir: 'asc' }] },
+      { name: 'Not yet on site', filters: [{ column: 'Site start', op: 'empty' }] },
+      { name: 'By value', sort: [{ column: 'Contract value', dir: 'desc' }] },
+    ],
+    offset: -88,
   });
 
   // ── Finishes schedule table ───────────────────────────────────────────────
+  // Small on purpose: seven lines is the whole standard. Lead time is what
+  // Dana sorts by, so that view exists; the spec code column is what the
+  // drawings cite.
   tables.push({
-    id: 'store-finishes', branch: B, title: 'Finishes schedule — tranche 2 standard',
+    id: 'store-finishes', branch: B, title: 'Finishes schedule — tranche 2 standard', icon: '🎨',
     columns: [
-      { name: 'Item', type: 'text' }, { name: 'Spec', type: 'text' }, { name: 'Supplier', type: 'text' }, { name: 'Lead time (weeks)', type: 'number' },
+      { name: 'Item', type: 'text' },
+      { name: 'Spec', type: 'text' },
+      { name: 'Supplier', type: 'select', options: ['Brightpath Components', 'programme supplier', 'store contractor'] },
+      { name: 'Lead time (weeks)', type: 'number' },
+      { name: 'Unit cost', type: 'currency', format: { decimals: 2 } },
+      { name: 'Approved', type: 'checkbox' },
     ],
-    rows: FINISHES.map((f, i) => [f, `VR-T2-${String(i + 1).padStart(2, '0')}`, i % 3 === 0 ? 'Brightpath Components' : 'programme supplier', rng.int(2, 8)]),
-    aggregates: {}, offset: -80,
+    rows: FINISHES.map((f, i) => [
+      f, `VR-T2-${String(i + 1).padStart(2, '0')}`,
+      i % 3 === 0 ? 'Brightpath Components' : i % 3 === 1 ? 'programme supplier' : 'store contractor',
+      rng.int(2, 8), [42.5, 18, 66, 31.25, 12.8, 54, 88][i], i !== 6,
+    ]),
+    aggregates: { 'Lead time (weeks)': 'max', 'Unit cost': 'avg' },
+    views: [{ name: 'Longest lead first', sort: [{ column: 'Lead time (weeks)', dir: 'desc' }] }],
+    offset: -80,
   });
 
   // ── Pages ─────────────────────────────────────────────────────────────────

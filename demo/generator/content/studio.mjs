@@ -270,21 +270,45 @@ export function generate(rngRoot) {
     nodes.push({ id, kind: 'note', branch: 'studio.ops', title, body, offset: -110 + i * 18 + rng.int(0, 4), tags: ['ops'], meta: {} }));
 
   // ── Finance: invoice tracker ──────────────────────────────────────────────
+  // Felix's invoice tracker: the one table the studio looks at every Friday.
+  // Real dates (as offsets), a paid checkbox that drives the outstanding view,
+  // and a formula that says what is still owed rather than making Felix add
+  // it up. "Which invoices are unpaid, and is anything heading to overdue?" is
+  // a scripted assistant turn, so the data has to make that answerable.
+  const INVOICE_CLIENTS = ['Meridian Waterworks', 'Vantage Retail', 'Copperline Energy'];
+  const INVOICE_LINES = [
+    'PUMPHOUSE — procedure revision A', 'STOREFRONT — store 208 design', 'ISLAND — study kickoff',
+    'PUMPHOUSE — FAT attendance', 'STOREFRONT — store 211 design', 'ISLAND — load profile data',
+    'PUMPHOUSE — procedure revision B', 'STOREFRONT — stores 214 & 217', 'ISLAND — draft report',
+    'PUMPHOUSE — commissioning plan', 'STOREFRONT — store 219 design', 'ISLAND — final report (draft)',
+  ];
   tables.push({
-    id: 'studio-invoices', branch: 'studio.finance', title: 'Invoice tracker',
+    id: 'studio-invoices', branch: 'studio.finance', title: 'Invoice tracker', icon: '🧾',
     columns: [
-      { name: 'Invoice', type: 'text' }, { name: 'Client', type: 'select', options: ['Meridian Waterworks', 'Vantage Retail', 'Copperline Energy'] },
-      { name: 'Amount', type: 'currency' }, { name: 'Status', type: 'select', options: ['draft', 'sent', 'paid', 'overdue'] },
-      { name: 'Due (offset days)', type: 'number' },
+      { name: 'Invoice', type: 'text' },
+      { name: 'Client', type: 'select', options: INVOICE_CLIENTS },
+      { name: 'For', type: 'text' },
+      { name: 'Amount', type: 'currency', format: { decimals: 0 } },
+      { name: 'Paid', type: 'currency', format: { decimals: 0 } },
+      { name: 'Outstanding', type: 'formula', formula: '{Amount} - {Paid}', format: { decimals: 0 } },
+      { name: 'Status', type: 'select', options: ['draft', 'sent', 'part paid', 'paid', 'overdue'] },
+      { name: 'Issued', type: 'date' },
+      { name: 'Due', type: 'date' },
+      { name: 'Settled', type: 'checkbox' },
     ],
-    rows: Array.from({ length: 12 }, (_, i) => [
-      `HL-${2300 + i}`,
-      ['Meridian Waterworks', 'Vantage Retail', 'Copperline Energy'][i % 3],
-      [48000, 61500, 22000, 53200, 47800, 18500][i % 6],
-      i < 8 ? 'paid' : i < 10 ? 'sent' : ['draft', 'overdue'][i - 10],
-      -150 + i * 15,
-    ]),
-    aggregates: { Amount: 'sum' }, offset: -140,
+    rows: Array.from({ length: 12 }, (_, i) => {
+      const amount = [48000, 61500, 22000, 53200, 47800, 18500][i % 6];
+      const issued = -150 + i * 13;
+      const status = i < 8 ? 'paid' : i === 8 ? 'part paid' : i === 9 ? 'overdue' : i === 10 ? 'sent' : 'draft';
+      const paid = status === 'paid' ? amount : status === 'part paid' ? Math.round(amount / 2) : 0;
+      return [`HL-${2300 + i}`, INVOICE_CLIENTS[i % 3], INVOICE_LINES[i], amount, paid, null, status, issued, issued + 30, status === 'paid'];
+    }),
+    aggregates: { Amount: 'sum', Paid: 'sum', Outstanding: 'sum' },
+    views: [
+      { name: 'Outstanding', filters: [{ column: 'Settled', op: 'eq', value: false }], sort: [{ column: 'Due', dir: 'asc' }] },
+      { name: 'By client', sort: [{ column: 'Client', dir: 'asc' }, { column: 'Issued', dir: 'desc' }] },
+    ],
+    offset: -140,
   });
 
   // ── Recurring standups + studio events ────────────────────────────────────

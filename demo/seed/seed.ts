@@ -26,6 +26,7 @@
  * starts a server first. Direct use needs tsx and a running server:
  *   pnpm -C server/web exec tsx ../../demo/seed/seed.ts
  */
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,7 +35,9 @@ import type { GenNode, Manifest, Sql } from './lib/types.ts';
 // The app's own markdown dialect — imported by relative path because the demo
 // tree is not a workspace member (joining it would edit a main-owned file);
 // each package still resolves its own deps from its own node_modules.
-import { markdownToDoc } from '../../packages/content/src/markdown-to-doc.ts';
+// Moved from packages/content to packages/content-core on main (db47fd61,
+// "delete the content-core shims"); the seed followed it on 2026-09-17.
+import { markdownToDoc } from '../../packages/content-core/src/markdown-to-doc.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MANIFEST = join(here, '..', 'generator', 'out', 'manifest.json');
@@ -218,6 +221,144 @@ async function seedPages(m: Manifest) {
     done.add(p.id);
   };
   for (const p of pages) await emit(p);
+
+  // Recall maps: a node's Options list links SIBLINGS by page id, and a page
+  // cannot link a page that does not exist yet — so the tree is created
+  // first (above) and the options are written afterwards, by real id, with a
+  // PATCH that commits the body and recompiles the map.
+  for (const p of pages) {
+    const opts = p.meta?.recall_options;
+    if (!opts?.length || !created.has(p.id)) continue;
+    const lines = opts.map((o) => {
+      const target = created.get(o.target);
+      if (!target) throw new Error(`recall: option "${o.label}" on ${p.id} targets unknown page ${o.target}`);
+      return `- [${o.label}](page:${target}) — use when ${o.use_when}`;
+    });
+    const res = await api(`/api/pages/${created.get(p.id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ doc: markdownToDoc(`${p.body}\n\n## Options\n\n${lines.join('\n')}`) }),
+    });
+    if (!res.ok) throw new Error(`recall: PATCH ${p.id} → ${res.status} ${(await res.text()).slice(0, 200)}`);
+  }
+}
+
+// Heartbeats: scheduled skill→agent triggers. Created through the real
+// endpoint; `earliest_offset` is a day offset like every other date, so a
+// fresh seed's heartbeats are always "due tomorrow", never overdue — and on
+// the public demo (no worker) they never fire at all, which is honest: the
+// screen shows configured automation, not a simulation of it.
+async function seedHeartbeats(m: Manifest) {
+  let n = 0;
+  for (const h of m.heartbeats ?? []) {
+    const res = await api('/api/heartbeats', {
+      method: 'POST',
+      body: JSON.stringify({
+        slug: h.slug,
+        name: h.name,
+        agentSlug: h.agent,
+        skillSlug: h.skill,
+        schedule: h.schedule,
+        surface: h.surface,
+        description: h.description,
+        quietHours: h.quiet_hours ?? null,
+        cooldownMinutes: h.cooldown_minutes ?? null,
+        minIdleMinutes: h.min_idle_minutes ?? null,
+        earliestAt: h.earliest_offset != null ? iso(h.earliest_offset) : null,
+      }),
+    });
+    if (!res.ok) throw new Error(`heartbeat ${h.slug}: ${res.status} ${await res.text()}`);
+    const r = (await res.json()) as { heartbeat?: { id?: string } };
+    if (r.heartbeat?.id) created.set(h.id, r.heartbeat.id);
+    n++;
+  }
+  return n;
+}
+
+// Draws: Excalidraw scenes, through the real endpoint (which whitelists what
+// it stores and renders the scene to text for the index).
+async function seedDraws(m: Manifest) {
+  let n = 0;
+  for (const d of m.draws ?? []) {
+    const r = (await post('/api/draws', { title: d.title, scene: d.scene, tags: d.tags ?? ['demo'] })) as {
+      draw?: { id?: string };
+      id?: string;
+    };
+    const id = r.draw?.id ?? r.id;
+    if (id) created.set(d.id, id);
+    n++;
+  }
+  return n;
+}
+
+/** The option id the app itself would mint for a select label
+ *  (`addSelectOption` in packages/content-core/src/table-model.ts). */
+const optionId = (label: string) =>
+  label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || randomUUID();
+
+/**
+ * Tables travel in the manifest as a GRID — column names, positional rows,
+ * aggregates and views keyed by column NAME — because that is what a
+ * generator can write by hand. The app stores a TableDoc: columns with ids,
+ * rows as `{id, cells: {<columnId>: value}}`, select options as
+ * `{id, label}` with the cell holding the option id, and aggregates/views
+ * keyed by column id. Until 2026-09-17 the grid was POSTed as-is and
+ * `ensureTableDoc` (tolerant by design) quietly kept every row with an empty
+ * cells map: eleven tables with columns and no data, on the public demo, for
+ * seven weeks. Build the document shape here, once, and the tolerant coercion
+ * has nothing to forgive.
+ */
+function tableDocFromGen(t: Manifest['tables'][number]) {
+  const columns = t.columns.map((c) => {
+    const col: Record<string, unknown> = { id: randomUUID(), name: c.name, type: c.type };
+    if (c.options) col.options = c.options.map((label) => ({ id: optionId(label), label }));
+    if (c.formula) col.formula = c.formula;
+    if (c.format) col.format = c.format;
+    return col as { id: string; name: string; type: string; options?: Array<{ id: string; label: string }> };
+  });
+  const idOf = new Map(columns.map((c) => [c.name, c.id]));
+  const rows = t.rows.map((values) => {
+    const cells: Record<string, string | number | boolean | null> = {};
+    columns.forEach((col, i) => {
+      const v = values[i] ?? null;
+      if (v === null || col.type === 'formula') return; // formula cells are derived on read
+      if (col.type === 'select' && typeof v === 'string' && col.options) {
+        cells[col.id] = col.options.find((o) => o.label === v)?.id ?? optionId(v);
+      } else if (col.type === 'date' && typeof v === 'number') {
+        // Dates in a table are day OFFSETS like every other date in the
+        // manifest, resolved against seed time so a fresh seed looks current.
+        cells[col.id] = iso(v).slice(0, 10);
+      } else {
+        cells[col.id] = v;
+      }
+    });
+    return { id: randomUUID(), cells };
+  });
+  const colId = (name: string): string => {
+    const id = idOf.get(name);
+    if (!id) throw new Error(`table "${t.title}": no column named "${name}"`);
+    return id;
+  };
+  const aggregates = Object.fromEntries(
+    Object.entries(t.aggregates ?? {}).map(([name, kind]) => [colId(name), kind]),
+  );
+  const views = (t.views ?? []).map((v) => ({
+    id: randomUUID(),
+    name: v.name,
+    ...(v.sort ? { sort: v.sort.map((s) => ({ colId: colId(s.column), dir: s.dir })) } : {}),
+    ...(v.filters
+      ? {
+          filters: v.filters.map((f) => ({
+            colId: colId(f.column),
+            op: f.op,
+            ...(f.value !== undefined ? { value: f.value } : {}),
+          })),
+        }
+      : {}),
+  }));
+  return { columns, rows, aggregates, views };
 }
 
 async function seedTables(m: Manifest) {
@@ -225,11 +366,8 @@ async function seedTables(m: Manifest) {
     const r = (await post('/api/tables', {
       title: t.title,
       tags: ['demo'],
-      data: {
-        columns: t.columns,
-        rows: t.rows,
-        aggregates: t.aggregates ?? {},
-      },
+      ...(t.icon ? { icon: t.icon } : {}),
+      data: tableDocFromGen(t),
     })) as { table?: { id?: string }; id?: string };
     const id = r.table?.id ?? r.id;
     if (id) created.set(t.id, id);
@@ -381,19 +519,40 @@ async function main() {
   const ownerId = ownerRows[0]?.id;
   if (!ownerId) throw new Error('seed: owner row not found after bootstrap');
 
-  console.log('· contacts');   await seedContacts(manifest);
-  console.log('· notes, journals, tasks, events'); await seedSimple(manifest);
-  console.log('· pages (parents first)'); await seedPages(manifest);
-  console.log('· tables');     await seedTables(manifest);
-  console.log('· secrets, formulas'); await seedOddments(manifest);
-  console.log('· documentation collections (disk-backed, indexed in place)');
-  const cols = await seedDocCollections(manifest);
-  console.log(`  ${cols} registered`);
-  console.log('· files (real multipart uploads → Tika runs for real)');
-  const files = await seedFiles(manifest);
-  console.log(`  ${files}/${manifest.files.length} uploaded`);
-  console.log('· emails (no API — written as the sync worker would)');
-  const mails = await seedEmails(sql, manifest, String(ownerId));
+  // DEMO_SEED_ONLY=tables,recall,heartbeats,draws — seed just those kinds into
+  // an EXISTING brain (`seed.sh --keep`), for iterating on one content type
+  // without a fifteen-minute wipe-and-refill. Unset = everything. `recall`
+  // means the pages of the Recall map only (branch `studio.recall`).
+  const only = new Set((process.env.DEMO_SEED_ONLY ?? '').split(',').map((s) => s.trim()).filter(Boolean));
+  const want = (kind: string) => only.size === 0 || only.has(kind);
+  if (only.size) console.log(`· DEMO_SEED_ONLY: ${[...only].join(', ')}`);
+
+  if (want('contacts')) { console.log('· contacts');   await seedContacts(manifest); }
+  if (want('simple')) { console.log('· notes, journals, tasks, events'); await seedSimple(manifest); }
+  if (want('pages')) { console.log('· pages (parents first)'); await seedPages(manifest); }
+  else if (want('recall')) {
+    console.log('· pages: the Recall map only');
+    await seedPages({ ...manifest, nodes: manifest.nodes.filter((n) => n.branch === 'studio.recall') });
+  }
+  if (want('tables')) { console.log('· tables');     await seedTables(manifest); }
+  if (want('oddments')) { console.log('· secrets, formulas'); await seedOddments(manifest); }
+  if (want('heartbeats')) console.log(`· heartbeats: ${await seedHeartbeats(manifest)}`);
+  if (want('draws')) console.log(`· draws: ${await seedDraws(manifest)}`);
+  if (want('docs')) {
+    console.log('· documentation collections (disk-backed, indexed in place)');
+    const cols = await seedDocCollections(manifest);
+    console.log(`  ${cols} registered`);
+  }
+  if (want('files')) {
+    console.log('· files (real multipart uploads → Tika runs for real)');
+    const files = await seedFiles(manifest);
+    console.log(`  ${files}/${manifest.files.length} uploaded`);
+  }
+  let mails = 0;
+  if (want('emails')) {
+    console.log('· emails (no API — written as the sync worker would)');
+    mails = await seedEmails(sql, manifest, String(ownerId));
+  }
   console.log('· backdating the timeline');
   const dated = await backdate(sql, manifest);
 

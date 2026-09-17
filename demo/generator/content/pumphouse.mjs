@@ -210,22 +210,45 @@ export function generate(rngRoot) {
     'Generator changeover contact chatter', 'Spare gland plate not fitted', 'Antenna feeder not weatherproofed', 'Label schedule incomplete for analogue rack',
     'Trip hazard: cable tray offcut in walkway',
   ];
-  for (let i = 0; i < 34; i++) {
+  // One snag list, kept the way June actually keeps it: every column typed so
+  // the views mean something (open items by severity is the commissioning-walk
+  // list; closed items stay for the record). Dates are day offsets from seed
+  // time — the seeder resolves them, like every other date in the manifest.
+  const raisers = ['tessa-okafor', 'rowan-mercer', 'lena-marsh', 'june-castellanos'].map(first);
+  for (let i = 0; i < 24; i++) {
     const d = snagDescs[i % snagDescs.length] + (i >= snagDescs.length ? ` (${AREAS[i % AREAS.length]})` : '');
+    const status = rng.pick(['open', 'open', 'closed', 'closed', 'closed', 'in progress']);
+    const raised = rng.int(-70, -3);
     snagRows.push([
       `SNG-${String(i + 1).padStart(3, '0')}`, rng.pick(AREAS), d,
-      first(rng.pick(['tessa-okafor', 'rowan-mercer', 'lena-marsh'])),
-      rng.pick(['open', 'open', 'closed', 'closed', 'closed', 'in progress']),
-      rng.int(-30, 14),
+      rng.pick(raisers),
+      rng.pick(['low', 'medium', 'medium', 'high']),
+      status,
+      raised,
+      raised + rng.int(7, 35),
+      status === 'closed',
     ]);
   }
   tables.push({
-    id: 'pump-snag-list', branch: B, title: 'PS3 snag list',
+    id: 'pump-snag-list', branch: B, title: 'PS3 snag list', icon: '🧰',
     columns: [
-      { name: 'Ref', type: 'text' }, { name: 'Area', type: 'select' }, { name: 'Description', type: 'text' },
-      { name: 'Raised by', type: 'text' }, { name: 'Status', type: 'select' }, { name: 'Due (offset days)', type: 'number' },
+      { name: 'Ref', type: 'text' },
+      { name: 'Area', type: 'select', options: AREAS },
+      { name: 'Description', type: 'text' },
+      { name: 'Raised by', type: 'select', options: raisers },
+      { name: 'Severity', type: 'select', options: ['low', 'medium', 'high'] },
+      { name: 'Status', type: 'select', options: ['open', 'in progress', 'closed'] },
+      { name: 'Raised', type: 'date' },
+      { name: 'Due', type: 'date' },
+      { name: 'Closed', type: 'checkbox' },
     ],
-    rows: snagRows, aggregates: { Status: 'count' }, offset: -60,
+    rows: snagRows,
+    aggregates: { Ref: 'count', Closed: 'filled' },
+    views: [
+      { name: 'Open, by severity', filters: [{ column: 'Status', op: 'neq', value: 'closed' }], sort: [{ column: 'Severity', dir: 'desc' }, { column: 'Due', dir: 'asc' }] },
+      { name: 'Comms cabinet', filters: [{ column: 'Area', op: 'eq', value: 'comms cabinet' }] },
+    ],
+    offset: -60,
   });
 
   // ── Tasks ─────────────────────────────────────────────────────────────────
