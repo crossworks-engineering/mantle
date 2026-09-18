@@ -34,13 +34,13 @@
     "@mantle/voice": "workspace:*",
     "@mantle/voice-client": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@openrouter/sdk": "^1.2.107",
+    "@openrouter/sdk": "^1.2.119",
     "drizzle-orm": "^0.45.2",
-    "firecrawl": "^4.38.0",
-    "yaml": "^2.9.0"
+    "firecrawl": "^4.39.0",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.5.1",
     "typescript": "^5.9.3"
   }
 }

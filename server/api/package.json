@@ -31,11 +31,11 @@
     "@mantle/turn-stream": "workspace:*",
     "@mantle/voice": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "pg-boss": "^12.30.0",
+    "pg-boss": "^12.31.0",
     "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.5.1",
     "tsx": "^4.23.13",
     "typescript": "^5.9.3"
   }

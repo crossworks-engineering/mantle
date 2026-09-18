@@ -41,12 +41,12 @@
     "docx": "^9.7.1",
     "drizzle-orm": "^0.45.2",
     "exceljs": "^4.4.0",
-    "marked": "^18.0.11",
+    "marked": "^18.0.12",
     "mathjs": "15.2.0",
     "tz-lookup": "^6.1.25"
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.5.1",
     "typescript": "^5.9.3"
   }
 }
