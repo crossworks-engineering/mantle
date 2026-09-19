@@ -6,10 +6,10 @@
  * The one write it performs is `persistBlockIdBackfill` — maintenance, not an
  * edit: no version bump, no re-index, fire-and-forget.
  */
-import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { db, entityEdges, nodes, pages } from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
-import type { Backlink, PageRow, PageSort } from '@mantle/client-types';
+import type { Backlink, PageListRow, PageRow, PageSort } from '@mantle/client-types';
 import { EMPTY_DOC, detailOf, rowOf, type PageDetail } from './shared';
 
 type ListPagesOpts = { query?: string; tag?: string; sort?: PageSort };
@@ -59,6 +59,48 @@ export async function listPages(
     .limit(opts.limit ?? 500)
     .offset(opts.offset ?? 0);
   return rows.map((r) => rowOf(r.nodes));
+}
+
+/**
+ * Place each row in the hierarchy: its direct sub-page count and its parent's
+ * title. For the /pages list, where a search or tag filter returns only the
+ * hits and the client therefore cannot work either out from the rows it holds.
+ *
+ * Two small queries whatever the row count: one grouped count over the owner's
+ * pages (served by `nodes_parent_idx`), and one title lookup for the parents
+ * that are not already among `rows` (none at all in tree mode, which loads the
+ * whole hierarchy).
+ */
+export async function withPagePlacement(ownerId: string, rows: PageRow[]): Promise<PageListRow[]> {
+  if (rows.length === 0) return [];
+  const isPage = and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'page'));
+
+  const counts = await db
+    .select({ parentId: nodes.parentId, n: sql<number>`count(*)::int` })
+    .from(nodes)
+    .where(and(isPage, isNotNull(nodes.parentId)))
+    .groupBy(nodes.parentId);
+  const childCount = new Map(counts.map((c) => [c.parentId, c.n]));
+
+  const titles = new Map(rows.map((r) => [r.id, r.title]));
+  const missing = [
+    ...new Set(rows.map((r) => r.parentId).filter((id): id is string => !!id && !titles.has(id))),
+  ];
+  if (missing.length > 0) {
+    // `type = 'page'` on purpose: a top-level page's parent is the `pages`
+    // branch root, which is plumbing and not somewhere a page "lives".
+    const parents = await db
+      .select({ id: nodes.id, title: nodes.title })
+      .from(nodes)
+      .where(and(isPage, inArray(nodes.id, missing)));
+    for (const p of parents) titles.set(p.id, p.title);
+  }
+
+  return rows.map((r) => ({
+    ...r,
+    childCount: childCount.get(r.id) ?? 0,
+    parentTitle: r.parentId ? (titles.get(r.parentId) ?? null) : null,
+  }));
 }
 
 /** Total pages matching the same filters as `listPages` (drives pagination). */

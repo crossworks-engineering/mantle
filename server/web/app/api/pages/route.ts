@@ -8,6 +8,7 @@ import {
   listPageTags,
   listPages,
   ParentPageNotFoundError,
+  withPagePlacement,
   type PageSort,
 } from '@/lib/pages';
 import { recordIngest } from '@mantle/tracing';
@@ -39,6 +40,11 @@ const CreateBody = z.object({
  *   - otherwise: the whole hierarchy (`mode: 'tree'`, up to TREE_LIMIT), built
  *     client-side from parent_id.
  * Always returns the tag facet counts so the filter UI needs no second request.
+ *
+ * Every row carries its place in the hierarchy (`childCount`, `parentTitle`) in
+ * BOTH shapes. The flat shape needs it: it returns only the hits, so without it
+ * a hit that has sub-pages offers no way into them and a sub-page hit cannot
+ * say where it lives.
  */
 export async function GET(req: Request) {
   const user = await getOwnerOr401();
@@ -55,18 +61,20 @@ export async function GET(req: Request) {
   const tagsPromise = listPageTags(user.id);
 
   if (filtering) {
-    const [pages, total, tags] = await Promise.all([
+    const [hits, total, tags] = await Promise.all([
       listPages(user.id, { query, tag, sort, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
       countPages(user.id, { query, tag }),
       tagsPromise,
     ]);
+    const pages = await withPagePlacement(user.id, hits);
     return NextResponse.json({ mode: 'list', pages, total, page, pageSize: PAGE_SIZE, tags });
   }
 
-  const [pages, tags] = await Promise.all([
+  const [rows, tags] = await Promise.all([
     listPages(user.id, { sort, limit: TREE_LIMIT }),
     tagsPromise,
   ]);
+  const pages = await withPagePlacement(user.id, rows);
   return NextResponse.json({
     mode: 'tree',
     pages,

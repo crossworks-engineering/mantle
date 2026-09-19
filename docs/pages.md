@@ -280,6 +280,11 @@ cache + `extract_cost_cap_micro_usd`.
   `/api/pages/[id]/draft` (PUT), `/api/pages/[id]/commit` (POST),
   `/api/mentions/search` (mention/link autocomplete, pages, notes, entities;
   read-only).
+  The list response (`GET /api/pages`) places every row in the hierarchy:
+  `childCount` (direct sub-pages, counted over the whole hierarchy) and
+  `parentTitle`. The flat search/tag shape returns only the hits, so the client
+  cannot derive either; without them a hit with sub-pages has no way in and a
+  sub-page hit cannot say where it lives (`withPagePlacement`, `PageListRow`).
 - **MCP (read-only for pages):** `page_list`, `page_get`, plus `search_chunks`
   (passage-level vector search across all content).
 - **In-app agent (read + write):** the web assistant's builtins include

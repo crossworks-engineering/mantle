@@ -5,6 +5,7 @@ export {
   listPages,
   countPages,
   listPageTags,
+  withPagePlacement,
   listChildPages,
   countPageDescendants,
   getPage,

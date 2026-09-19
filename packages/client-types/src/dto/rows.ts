@@ -130,6 +130,21 @@ export type PageRow = {
   updatedAt: string;
 };
 
+/**
+ * A row of the /pages LIST response (`GET /api/pages`): a `PageRow` plus where
+ * it sits in the hierarchy. The list needs this per row because a search or tag
+ * filter returns only the HITS, so the client cannot derive it from the rows it
+ * holds: a hit's children and its parent are usually not among them.
+ */
+export type PageListRow = PageRow & {
+  /** Direct sub-pages, counted across the whole hierarchy (not just this
+   *  response), so a search hit can offer the way into its sub-pages. */
+  childCount: number;
+  /** The parent page's title, or null for a top-level page, so a hit can say
+   *  where it lives. */
+  parentTitle: string | null;
+};
+
 export type AppRow = {
   id: string;
   title: string;

@@ -37,6 +37,7 @@ export {
   listPages,
   countPages,
   listPageTags,
+  withPagePlacement,
   getPage,
   listChildPages,
   countPageDescendants,
