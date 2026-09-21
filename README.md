@@ -261,7 +261,7 @@ provably stale, never a number someone typed once.
 | --- | --- |
 | 📐 &nbsp;TypeScript (excl. tests) | **197,394** lines in 1,303 files |
 | 🧪 &nbsp;Test suite | **4,997+** cases declared in 437 files |
-| ⚖️ &nbsp;Test weight | 76,972 lines — 1 for every 2.6 of source |
+| ⚖️ &nbsp;Test weight | 76,973 lines — 1 for every 2.6 of source |
 | 🗂️ &nbsp;Tracked files | 2,617 |
 | 🐘 &nbsp;SQL migrations | 158, replayed in order on every boot |
 | 📚 &nbsp;Docs | 93 engineering docs, 79 user-guide pages, 224 changelog entries (58,017 lines) |
@@ -278,15 +278,15 @@ provably stale, never a number someone typed once.
 | 💾 &nbsp;Datastores | **1** (Postgres — vectors, graph, FTS, queues, realtime, auth) |
 | 🧊 &nbsp;Idle footprint | ~2.5 GB RAM, whole stack |
 
-**Velocity** — v0.232.206, 3,075 commits and 300 releases since 2026-05-14 (130 days, ~23.7 commits/day).
+**Velocity** — v0.232.207, 3,077 commits and 300 releases since 2026-05-14 (130 days, ~23.7 commits/day).
 
 ```
-commits/week, last 19 weeks   ▁▇▆▇▂▂█▄▃▅▆▇▅▃▄▂▅▁▂   peak 342
+commits/week, last 19 weeks   ▁▇▆▇▂▂█▄▃▅▆▇▅▄▄▂▅▁▂   peak 342
 ```
 
 ```mermaid
 pie showData title Lines of TypeScript by area
-    "packages/*" : 195098
+    "packages/*" : 195099
     "server/web" : 62790
     "server/api + mcp" : 14623
     "elsewhere" : 1855
