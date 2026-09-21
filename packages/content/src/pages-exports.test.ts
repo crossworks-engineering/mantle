@@ -49,6 +49,7 @@ const PUBLIC_VALUE_EXPORTS = [
   'splitPage',
   'updatePage',
   'withPageLock',
+  'withPagePlacement',
 ];
 
 /** Helpers the split made cross-module. None of them is API. */
