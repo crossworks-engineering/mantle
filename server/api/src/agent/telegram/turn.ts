@@ -110,6 +110,9 @@ export async function runTelegramTurn(args: {
     logPrefix: '[agent]',
     systemPromptSuffix: audioTagInstructions,
     heartbeatSurface: { kind: 'telegram', chatId: row.telegramChatId },
+    // Decider delegation hint (see assemble-turn). No previous-turn context
+    // on this surface yet; the hint is skipped for short messages anyway.
+    inboundText: row.text,
   });
   // Replay the open-heartbeats check as a step so /traces keeps its
   // "influenced by heartbeat X" pivot (meta.related_slugs) — the query

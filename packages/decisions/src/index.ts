@@ -23,4 +23,14 @@ export {
   type PassageScoring,
   type ScorablePassage,
 } from './passage-scoring';
+export {
+  MIN_WORDS_FOR_HINT,
+  delegationCriteria,
+  delegationHintLine,
+  loadDelegates,
+  suggestDelegate,
+  wordCount,
+  type Delegate,
+  type DelegationHint,
+} from './delegation-hint';
 export { DecisionCache } from './cache';

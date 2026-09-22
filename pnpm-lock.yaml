@@ -295,6 +295,9 @@ importers:
       '@mantle/voice':
         specifier: workspace:*
         version: link:../voice
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(pg@8.22.0)(postgres@3.4.9)
     devDependencies:
       '@types/node':
         specifier: ^26.4.1

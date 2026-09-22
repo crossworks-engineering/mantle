@@ -277,6 +277,10 @@ export type DecisionUse =
   /** Group retrieved passages that state the same fact so code can keep the
    *  newest by date. Not implemented yet (needs its own spike first). */
   | 'version_grouping'
+  /** Before a responder turn: which delegate (or none) should take this
+   *  message. Live = one hint line in the volatile system context; the
+   *  responder still decides and the allowlist stays code-enforced. */
+  | 'delegation_hint'
   /** Fact reconcile: let a confident ADD skip the chat classifier. */
   | 'fact_add_prefilter'
   /** Per-request model routing (complexity / needs tools / sensitive). */

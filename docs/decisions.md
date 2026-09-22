@@ -129,6 +129,34 @@ the true gain before anyone flips `live`. Freshness is **not** in the score:
 a stale passage reads as a perfect answer; the supersede annotation stays in
 charge.
 
+### `delegation_hint` (built; ships `shadow`)
+
+Before a responder turn, one `choice` over the agent's `delegate_to` roster
+plus `none`, with each agent's description as the criterion (`remy` and
+`none` carry tightened contrastive wording). State: the message and the
+previous user message, nothing else. Skipped for messages under 8 words, for
+surfaces that cannot delegate (team, forum), and when the roster is empty.
+
+Wired in `assembleResponderTurn` (`packages/runtime/src/assistant/assemble-turn.ts`),
+so every delegating surface gets it through the same door; the web turn
+passes the previous user message, Telegram passes the message only.
+
+- `shadow`: the pick and confidence land on the `decide_delegation_hint`
+  step; the same trace shows what the responder then did (`invoke_agent`
+  steps), so the shadow week reads "hint given / right / wrong" per agent.
+- `live`: when the pick is not `none` and confidence ≥ `defer_below`, one
+  line joins the **volatile** system context: "Delegation hint: this message
+  looks like work for `pages` (confidence 84%). Use your own judgment…". It
+  is a hint. The tool loop's allowlist is still what delegation is checked
+  against, and the responder can ignore it.
+
+Spike (NATREF, 2026-09-22, 83 real turns): with that policy, 36 hints, 31
+right, 4 wrong (2 arguable), 1 on a turn the responder answered itself —
+86% precision, 296 ms, ~$0.00004 per turn. Jev said `none` on 15 of 30
+direct turns; the chat baseline delegated 29 of them. Next improvement: put
+the open page/app title in the state (the UI knows it); most misses were
+short instructions about what the user had open.
+
 ### Declared, not built
 
 - `version_grouping`: nouls over the top hits, "do `p3` and `p7` state the same

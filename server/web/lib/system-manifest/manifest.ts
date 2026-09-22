@@ -1668,6 +1668,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
       act_alone_at: 0.9,
       uses: {
         passage_scoring: { enabled: false, mode: 'shadow', threshold: 1.5 },
+        delegation_hint: { enabled: false, mode: 'shadow' },
       },
     },
   },

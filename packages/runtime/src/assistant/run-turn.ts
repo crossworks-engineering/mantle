@@ -384,6 +384,10 @@ export async function runAssistantTurn(
     logPrefix: '[assistant]',
     volatileExtras: [locationContextLine, timezoneSwitchNote],
     heartbeatSurface: { kind: 'web' },
+    // For the decider's delegation hint: this message + the previous user
+    // turn (history is newest-last; the inbound itself is not in it yet).
+    inboundText: trimmed,
+    previousUserText: [...filteredHistory].reverse().find((h) => h.role === 'user')?.text ?? null,
   });
   const { effectiveSystemPrompt, volatileContext, relatedHeartbeatSlugs, allowedTools } = assembled;
 

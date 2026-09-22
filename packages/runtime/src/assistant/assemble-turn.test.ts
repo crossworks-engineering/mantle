@@ -22,6 +22,14 @@ const h = vi.hoisted(() => ({
   thinkingBudget: 2048,
 }));
 
+vi.mock('@mantle/decisions', () => ({
+  // The decider is off by default; the assembler must behave exactly as
+  // before when it answers nothing.
+  loadDelegates: vi.fn(async () => []),
+  suggestDelegate: vi.fn(async () => null),
+  delegationHintLine: vi.fn(() => null),
+}));
+
 vi.mock('../agent', () => ({
   // Arbitrary stand-in so these tests can control the split: '-tool-a' reads,
   // everything else writes. The REAL classification is tested where it lives,

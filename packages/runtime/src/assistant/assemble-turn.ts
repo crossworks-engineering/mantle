@@ -27,6 +27,7 @@
  */
 
 import type { Agent } from '@mantle/db';
+import { delegationHintLine, loadDelegates, suggestDelegate } from '@mantle/decisions';
 import {
   composeSystemPromptWithSkills,
   effectiveToolSlugs,
@@ -113,6 +114,13 @@ export type AssembleResponderTurnOptions = {
   /** Honour memory_config.delegate_to. Team turns pass false — the team
    *  responder never delegates (fail closed). */
   allowDelegation?: boolean;
+  /** The user's message for this turn (plus the previous user message as
+   *  context). Enables the decider's `delegation_hint` use: one typed
+   *  decision picks which delegate (or none) the message looks like, and in
+   *  live mode a hint line joins the volatile context. Omit on surfaces that
+   *  cannot delegate; the hint is skipped when `delegateTo` is empty. */
+  inboundText?: string;
+  previousUserText?: string | null;
   /** Slugs removed AFTER group resolution — the team private-reads gate.
    *  Enforced here at tool resolution so a manifest change that re-adds the
    *  slugs to a group can't bypass the switch. */
@@ -243,9 +251,36 @@ export async function assembleResponderTurn(
   // slot instead.
   const effectiveSystemPrompt =
     identityBlock + workingNotesBlock + promptWithSkills + (opts.systemPromptSuffix ?? '');
+
+  // Decider, use `delegation_hint` (experimental, owner-switched): which
+  // delegate does this message look like work for. Null (off / short
+  // message / no delegates / failed) = no line. In shadow the answer only
+  // lands in the trace; in live one hint line rides in the volatile slot —
+  // a hint, never a route: the tool loop's allowlist is what delegation is
+  // checked against. Best-effort like the blocks above.
+  const delegateTo = (opts.allowDelegation ?? true) ? (memoryConfig.delegate_to ?? []) : [];
+  let delegationHint: string | null = null;
+  if (opts.inboundText && delegateTo.length > 0) {
+    try {
+      const hint = await suggestDelegate({
+        ownerId,
+        message: opts.inboundText,
+        previousUserMessage: opts.previousUserText ?? null,
+        delegates: await loadDelegates(ownerId, delegateTo),
+      });
+      delegationHint = delegationHintLine(hint);
+    } catch (err) {
+      console.error(
+        `${logPrefix} delegation hint skipped:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
   const volatileContext = [
     timeContextLine,
     ...(opts.volatileExtras ?? []),
+    delegationHint,
     openHeartbeatBlock.trim(),
   ]
     .filter(Boolean)
@@ -317,7 +352,7 @@ export async function assembleResponderTurn(
     // undefined ⇒ omit the field so mandatory-reasoning models don't see a
     // rejected `none`.
     thinkingEffort: (opts.withThinking ?? true) ? resolveThinkingEffort(prefs) : undefined,
-    delegateTo: (opts.allowDelegation ?? true) ? (memoryConfig.delegate_to ?? []) : [],
+    delegateTo,
     resultHandling: agent.memoryConfig?.result_handling ?? null,
     loopOverrides,
   };

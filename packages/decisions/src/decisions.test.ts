@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DecisionCache } from './cache';
 import { resolveUse, summarizeAnswers } from './decide';
 import { applyPassageScores } from './passage-scoring';
+import { delegationCriteria, delegationHintLine, wordCount } from './delegation-hint';
 
 describe('resolveUse', () => {
   it('a use missing from params is OFF', () => {
@@ -96,5 +97,42 @@ describe('applyPassageScores', () => {
     const r = applyPassageScores(items, (x) => x.id, { scores, threshold: 0 });
     expect(r.kept.map((x) => x.id)).toEqual(['p2', 'p3', 'p1', 'p4']);
     expect(r.dropped).toEqual([]);
+  });
+});
+
+describe('delegation hint', () => {
+  const base = {
+    pick: 'pages',
+    confidence: 0.84,
+    probabilities: { pages: 0.84, none: 0.1 },
+    mode: 'live' as const,
+    deferBelow: 0.6,
+    cached: false,
+    ms: 300,
+  };
+
+  it('criteria: descriptions as given, remy tightened, none appended', () => {
+    const c = delegationCriteria([
+      { slug: 'pages', description: 'Document specialist.' },
+      { slug: 'remy', description: 'Memory-recall agent.' },
+      { slug: 'coder', description: null },
+    ]);
+    expect(Object.keys(c)).toEqual(['pages', 'remy', 'coder', 'none']);
+    expect(c.pages).toBe('Document specialist.');
+    expect(c.remy).toMatch(/PAST CONVERSATIONS only/);
+    expect(c.coder).toMatch(/'coder' specialist/);
+  });
+
+  it('shows a line only in live mode, above the floor, and never for none', () => {
+    expect(delegationHintLine(base)).toMatch(/work for `pages` \(confidence 84%\)/);
+    expect(delegationHintLine({ ...base, mode: 'shadow' })).toBeNull();
+    expect(delegationHintLine({ ...base, confidence: 0.55 })).toBeNull();
+    expect(delegationHintLine({ ...base, pick: 'none', confidence: 0.99 })).toBeNull();
+    expect(delegationHintLine(null)).toBeNull();
+  });
+
+  it('counts words', () => {
+    expect(wordCount('  yes   but shorter ')).toBe(3);
+    expect(wordCount('')).toBe(0);
   });
 });
