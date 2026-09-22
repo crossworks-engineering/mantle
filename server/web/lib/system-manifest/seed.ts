@@ -52,7 +52,7 @@ import {
   type ManifestToolGroup,
 } from './manifest';
 import { convergeManifestSkills } from './reconcile-util';
-import { resolveWorkerRoute } from './worker-route';
+import { adoptWorkerParams, resolveWorkerRoute } from './worker-route';
 import { resolveEffectivePersona } from './persona';
 import { seedCuratedModelPools } from '../model-pools-seed';
 import type { AdoptKind } from '@mantle/client-types';
@@ -696,7 +696,8 @@ async function adoptWorker(ownerId: string, kind: AiWorkerKind): Promise<void> {
       provider: route.provider,
       model: route.model,
       apiKeyId: keys[route.keyService]!,
-      params: route.params,
+      // The decider keeps its operator switchboard (uses, gates); see adoptWorkerParams.
+      params: adoptWorkerParams(kind, existing.params, route.params),
     });
   } else {
     await createAiWorker({

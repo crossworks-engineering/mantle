@@ -11,7 +11,7 @@
  */
 
 import type { ManifestWorker } from './manifest';
-import type { AiWorkerParams } from '@mantle/db';
+import type { AiWorkerParams, DeciderParams } from '@mantle/db';
 
 export type WorkerRoute = {
   provider: string;
@@ -47,4 +47,26 @@ export function resolveWorkerRoute(
   const keyService = serviceForProvider(w.provider);
   if (!keyServices.has(keyService)) return null;
   return { provider: w.provider, model: w.model, params: w.params, keyService };
+}
+
+/**
+ * The params an "adopt" (/settings/config) writes onto an EXISTING worker.
+ *
+ * Most workers take the manifest's params as-is: adopt means "reset to the
+ * template". The decider is the exception. Its params are the operator's
+ * switchboard (which uses are on, shadow vs live, thresholds, confidence gates,
+ * zdr), not part of the route, and a reset would silently switch every use OFF
+ * because the manifest seeds them disabled. So for the decider the operator's
+ * values win; the manifest only contributes keys the row lacks, e.g. a use
+ * added in a later release (which arrives disabled, in shadow).
+ */
+export function adoptWorkerParams(
+  kind: string,
+  live: AiWorkerParams | null | undefined,
+  manifest: AiWorkerParams | undefined,
+): AiWorkerParams | undefined {
+  if (kind !== 'decider' || !live) return manifest;
+  const m = (manifest ?? {}) as DeciderParams;
+  const l = live as DeciderParams;
+  return { ...m, ...l, uses: { ...m.uses, ...l.uses } };
 }
