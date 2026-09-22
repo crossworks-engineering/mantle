@@ -126,6 +126,28 @@ export async function suggestDelegate(args: {
 }
 
 /**
+ * Pure: the compact record for the turn's trace `data`. On the web and MCP
+ * surfaces the assembly runs BEFORE the turn's trace opens, so `decide()`
+ * cannot leave a step there; this is how a shadow week still sees the pick.
+ */
+export function delegationHintTraceData(hint: DelegationHint | null): {
+  pick: string;
+  confidence: number;
+  mode: 'shadow' | 'live';
+  ms: number;
+  cached: boolean;
+} | null {
+  if (!hint) return null;
+  return {
+    pick: hint.pick,
+    confidence: Math.round(hint.confidence * 100) / 100,
+    mode: hint.mode,
+    ms: hint.ms,
+    cached: hint.cached,
+  };
+}
+
+/**
  * Pure: the one line for the volatile system context, or null when nothing
  * should be shown — shadow mode, `none`, or under the floor. The wording
  * keeps the responder in charge.

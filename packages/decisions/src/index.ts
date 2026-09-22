@@ -27,6 +27,7 @@ export {
   MIN_WORDS_FOR_HINT,
   delegationCriteria,
   delegationHintLine,
+  delegationHintTraceData,
   loadDelegates,
   suggestDelegate,
   wordCount,

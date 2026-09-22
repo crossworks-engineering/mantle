@@ -27,7 +27,12 @@
  */
 
 import type { Agent } from '@mantle/db';
-import { delegationHintLine, loadDelegates, suggestDelegate } from '@mantle/decisions';
+import {
+  delegationHintLine,
+  loadDelegates,
+  suggestDelegate,
+  type DelegationHint,
+} from '@mantle/decisions';
 import {
   composeSystemPromptWithSkills,
   effectiveToolSlugs,
@@ -148,6 +153,11 @@ export type AssembledResponderTurn = {
   thinkingBudget: number | undefined;
   thinkingEffort: ThinkingEffort | undefined;
   delegateTo: string[];
+  /** The decider's delegation hint for this turn (null = use off / short
+   *  message / no delegates / failed). Callers put its compact form into the
+   *  turn's trace `data` (`delegationHintTraceData`) so shadow mode leaves a
+   *  record even though the assembly ran before the trace opened. */
+  delegationHint: DelegationHint | null;
   resultHandling: NonNullable<Agent['memoryConfig']>['result_handling'] | null;
   loopOverrides: ResponderLoopOverrides;
 };
@@ -259,16 +269,17 @@ export async function assembleResponderTurn(
   // a hint, never a route: the tool loop's allowlist is what delegation is
   // checked against. Best-effort like the blocks above.
   const delegateTo = (opts.allowDelegation ?? true) ? (memoryConfig.delegate_to ?? []) : [];
-  let delegationHint: string | null = null;
+  let delegationHint: DelegationHint | null = null;
+  let delegationHintText: string | null = null;
   if (opts.inboundText && delegateTo.length > 0) {
     try {
-      const hint = await suggestDelegate({
+      delegationHint = await suggestDelegate({
         ownerId,
         message: opts.inboundText,
         previousUserMessage: opts.previousUserText ?? null,
         delegates: await loadDelegates(ownerId, delegateTo),
       });
-      delegationHint = delegationHintLine(hint);
+      delegationHintText = delegationHintLine(delegationHint);
     } catch (err) {
       console.error(
         `${logPrefix} delegation hint skipped:`,
@@ -280,7 +291,7 @@ export async function assembleResponderTurn(
   const volatileContext = [
     timeContextLine,
     ...(opts.volatileExtras ?? []),
-    delegationHint,
+    delegationHintText,
     openHeartbeatBlock.trim(),
   ]
     .filter(Boolean)
@@ -353,6 +364,7 @@ export async function assembleResponderTurn(
     // rejected `none`.
     thinkingEffort: (opts.withThinking ?? true) ? resolveThinkingEffort(prefs) : undefined,
     delegateTo,
+    delegationHint,
     resultHandling: agent.memoryConfig?.result_handling ?? null,
     loopOverrides,
   };

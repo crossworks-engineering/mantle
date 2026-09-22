@@ -235,9 +235,21 @@ Full write-ups: dev-brain pages `cdf6a97c-5b84-485e-8698-9c266614318c`
   a use in `params.uses` (mode `shadow`). Until the jackdaw form ships the
   toggles, edit `params` as JSON. The resolution cache means a flip takes up
   to 30 s to reach a running process.
-- **Read the shadow week:** `/traces` steps named `decide_<use>`; `/debug`
-  spend-by-model row `~typesafe/jev-latest`; the `search_chunks` step's
-  `passage_scoring_dropped` meta.
+- **Read the shadow week.** Where each use leaves its evidence differs,
+  because on the web and MCP surfaces the context load and the turn assembly
+  run BEFORE the turn's trace opens, so `decide()` has no trace to write a
+  step into there:
+  - `passage_scoring`: a `decide_passage_scoring` step inside each
+    `search_chunks` tool call (the call runs inside the trace), plus the tool
+    step's `passage_scoring_*` meta.
+  - `context_pruning`: the `load_context` step's output →
+    `snapshot.pruning` (`mode`, `threshold`, `wouldDrop`, `charsSaved`, `ms`).
+  - `delegation_hint`: the turn's `traces.data.delegation_hint` (`pick`,
+    `confidence`, `mode`), read against the same trace's `invoke_agent` steps.
+  - Cost: only calls made inside a trace roll into `/debug` spend (today the
+    `search_chunks` path). The other two are ~$0.0002 per turn; count them
+    from the snapshot and the trace data.
+    Telegram assembles inside its trace, so there the `decide_*` steps appear.
 - **Go live:** set `mode: 'live'` on the one use. Everything else stays shadow.
 - **Kill switch:** disable the worker. Every call site is back to today's
   behaviour within 30 s, with no restart.

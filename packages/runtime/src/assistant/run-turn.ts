@@ -31,6 +31,7 @@ import {
   type ConversationChannel,
 } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
+import { delegationHintTraceData } from '@mantle/decisions';
 import {
   buildChatMessages,
   buildAttachmentContextText,
@@ -460,6 +461,9 @@ export async function runAssistantTurn(
           // way so a query for "traces influenced by heartbeats"
           // works against the same shape on every row.
           related_heartbeat_slugs: relatedHeartbeatSlugs,
+          // The decider's delegation hint (shadow or live). Null when the
+          // use is off. Read against this trace's invoke_agent steps.
+          delegation_hint: delegationHintTraceData(assembled.delegationHint),
           ...dataExtra,
         },
       },

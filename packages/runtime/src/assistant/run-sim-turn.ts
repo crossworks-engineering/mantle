@@ -33,6 +33,7 @@
  * original.
  */
 
+import { delegationHintTraceData } from '@mantle/decisions';
 import { getApiKeyById } from '@mantle/api-keys';
 import { buildChatMessages, loadConversationContext } from '../agent';
 import { getChatAdapter } from '@mantle/voice';
@@ -158,6 +159,10 @@ export async function runSimulatedResponderTurn(
     agent,
     prefs,
     logPrefix: '[mcp-sim]',
+    // Decider delegation hint, same as the web turn, so an ask_responder
+    // canary exercises it: the message plus the caller-held previous user turn.
+    inboundText: message,
+    previousUserText: [...history].reverse().find((h) => h.role === 'user')?.text ?? null,
     ...(opts.excludeToolSlugs?.length ? { excludeToolSlugs: opts.excludeToolSlugs } : {}),
     ...(opts.readOnly ? { readOnly: true } : {}),
   });
@@ -191,6 +196,7 @@ export async function runSimulatedResponderTurn(
         agent_slug: agent.slug,
         tool_count: assembled.allowedTools.length,
         read_only: opts.readOnly === true,
+        delegation_hint: delegationHintTraceData(assembled.delegationHint),
       },
     },
     async () => {
