@@ -68,6 +68,15 @@ export const aiWorkerKind = pgEnum('ai_worker_kind', [
   // (agents.params.suggest_follow_up). Optional; when absent the runtime falls
   // back to the narrator, then the summarizer. See migration 0142.
   'suggester',
+  // Decider: a typed-decision model (TypeSafe Jev via OpenRouter's decisions
+  // endpoint). It writes no prose: state + typed questions in, choice / score /
+  // yes-no answers with probabilities out, in ~300 ms. Every call site treats
+  // it as an OPTIONAL accelerator behind `decide()` in @mantle/decisions — no
+  // worker, disabled, or any error → the caller runs its existing path. The
+  // manifest seeds it DISABLED and each use inside it ships in `shadow` mode
+  // (answer logged, behaviour unchanged) until the owner flips it. See
+  // migration 0158 and docs/decisions.md.
+  'decider',
 ]);
 
 export type AiWorkerKind = (typeof aiWorkerKind.enumValues)[number];
@@ -257,6 +266,55 @@ export type SearchParams = {
   max_tokens?: number;
 };
 
+/** The decision points a `decider` worker can accelerate. Each is a separate
+ *  switch so the owner turns on exactly the experiments they want; a use that
+ *  is missing from `uses` is OFF. Adding a use = add it here + implement it
+ *  behind `decide()` in @mantle/decisions + document it in docs/decisions.md. */
+export type DecisionUse =
+  /** Score `search_chunks` / auto-context passages 0-3 for "does this answer
+   *  the question" and prune the low ones before they enter the prompt. */
+  | 'passage_scoring'
+  /** Group retrieved passages that state the same fact so code can keep the
+   *  newest by date. Not implemented yet (needs its own spike first). */
+  | 'version_grouping'
+  /** Fact reconcile: let a confident ADD skip the chat classifier. */
+  | 'fact_add_prefilter'
+  /** Per-request model routing (complexity / needs tools / sensitive). */
+  | 'model_routing';
+
+/** One use's switch. `shadow` = Jev runs and its answer lands in the trace,
+ *  behaviour does not change; `live` = the answer is used. New uses ship in
+ *  shadow so a week of traces shows the agreement and the cost first. */
+export type DecisionUseConfig = {
+  enabled?: boolean;
+  mode?: 'shadow' | 'live';
+  /** Use-specific cut-off, e.g. passage_scoring drops passages that score
+   *  below this on the 0-3 rubric (default 1.5). */
+  threshold?: number;
+  /** Per-use override of the worker-level `defer_below` / `act_alone_at`. */
+  min_confidence?: number;
+};
+
+/** Params for `kind='decider'`. The model lives on the row's `model` column
+ *  (`typesafe/jev-1.13` on OpenRouter); these govern how the answers are
+ *  USED, which is the experimental part. */
+export type DeciderParams = {
+  uses?: Partial<Record<DecisionUse, DecisionUseConfig>>;
+  /** Ask OpenRouter for zero-data-retention routing + `data_collection:
+   *  'deny'` on every call. Default true: the state can hold the owner's
+   *  documents. */
+  zdr?: boolean;
+  /** Hard ceiling per call; a slow decision is worse than none (the caller
+   *  continues on its own path). Default 1500. */
+  timeout_ms?: number;
+  /** Below this confidence the answer is recorded but NOT acted on — the
+   *  caller's existing logic decides. Default 0.6. */
+  defer_below?: number;
+  /** Only at or above this confidence may an answer be acted on with no
+   *  second check. Default 0.9. */
+  act_alone_at?: number;
+};
+
 /** Discriminated union for type-narrowing at call sites. */
 export type AiWorkerParams =
   | TtsParams
@@ -270,7 +328,8 @@ export type AiWorkerParams =
   | NarratorParams
   | SuggesterParams
   | EmbeddingParams
-  | SearchParams;
+  | SearchParams
+  | DeciderParams;
 
 export const aiWorkers = pgTable(
   'ai_workers',

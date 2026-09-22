@@ -1305,6 +1305,11 @@ If you're reading the code, the canonical files to start with are:
 12. `packages/embeddings/src/reembed.ts`, `runReembed`, used by both
     the CLI script (`pnpm re-embed`) and the workers form's
     Rebuild Index button.
+13. `packages/decisions/src/decide.ts`, the `decider` worker's one door:
+    a typed-decision model (choice / score / yes-no with probabilities, no
+    prose) that is optional at every level and switched per use in the UI.
+    Its own capability (`decision`) and dispatcher, because it is not
+    chat-shaped. See [decisions.md](decisions.md).
 
 ---
 

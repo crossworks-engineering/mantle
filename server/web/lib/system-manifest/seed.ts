@@ -145,7 +145,7 @@ export async function seedManifestWorkers(
       model: route.model,
       apiKeyId: keys[route.keyService]!,
       params: route.params,
-      enabled: true,
+      enabled: w.enabled ?? true,
       isDefault: true,
     });
     created.push({ kind: w.kind, name: w.name, provider: route.provider, model: route.model });
@@ -707,7 +707,7 @@ async function adoptWorker(ownerId: string, kind: AiWorkerKind): Promise<void> {
       model: route.model,
       apiKeyId: keys[route.keyService]!,
       params: route.params,
-      enabled: true,
+      enabled: w.enabled ?? true,
       isDefault: true,
     });
   }

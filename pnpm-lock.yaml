@@ -278,6 +278,34 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/decisions:
+    dependencies:
+      '@mantle/api-keys':
+        specifier: workspace:*
+        version: link:../api-keys
+      '@mantle/db':
+        specifier: workspace:*
+        version: link:../db
+      '@mantle/std':
+        specifier: workspace:*
+        version: link:../std
+      '@mantle/tracing':
+        specifier: workspace:*
+        version: link:../tracing
+      '@mantle/voice':
+        specifier: workspace:*
+        version: link:../voice
+    devDependencies:
+      '@types/node':
+        specifier: ^26.4.1
+        version: 26.4.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^5.0.0
+        version: 5.0.0(@types/node@26.4.1)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.0))
+
   packages/email:
     dependencies:
       '@mantle/client-types':
@@ -581,6 +609,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/decisions':
+        specifier: workspace:*
+        version: link:../decisions
       '@mantle/embeddings':
         specifier: workspace:*
         version: link:../embeddings
@@ -797,6 +828,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../db
+      '@mantle/decisions':
+        specifier: workspace:*
+        version: link:../decisions
       '@mantle/email':
         specifier: workspace:*
         version: link:../email

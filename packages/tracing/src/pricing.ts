@@ -67,6 +67,13 @@ const PRICING: Record<string, PricePerToken> = {
   'perplexity/sonar-pro': { input: 0.000003, output: 0.000015 },
   'perplexity/sonar-reasoning': { input: 0.000001, output: 0.000005 },
   'perplexity/sonar-reasoning-pro': { input: 0.000002, output: 0.000008 },
+
+  // TypeSafe Jev (via OpenRouter's decisions endpoint) — the `decider` worker.
+  // Input-only billing; answers are free. The reported `usage.cost` is the
+  // accurate path, this is the fallback floor. `~typesafe/jev-latest` is the
+  // auto-updating alias of the same model.
+  'typesafe/jev-1.13': { input: 0.000000042, output: 0 },
+  '~typesafe/jev-latest': { input: 0.000000042, output: 0 },
 };
 
 /**

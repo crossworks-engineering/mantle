@@ -41,6 +41,7 @@ import {
   type PersonaNote,
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
+import { applyPassageScores, decisionUseEnabled, scorePassages } from '@mantle/decisions';
 import {
   searchChunks,
   entityRelationsFor,
@@ -559,15 +560,41 @@ export async function loadConversationContext(args: {
   let chunkSentSnap: SnapshotItem[] = [];
   let chunkDroppedSnap: SnapshotItem[] = [];
   if (queryVec && chunkLimit > 0) {
-    const hits = await searchChunks({
+    const chunkQuery = enrichedQuery ?? inboundText;
+    // Decider, use `passage_scoring` (experimental, owner-switched): with it
+    // on, pull a wider pool so the scorer can promote a passage search ranked
+    // 12th. Off = the same small pool as always.
+    const scoringUse = await decisionUseEnabled(ownerId, 'passage_scoring');
+    let hits = await searchChunks({
       ownerId,
       embedding: queryVec,
       // Hybrid arm: the same text the embedding was computed from, so an
       // exact-term question is rescued by keyword when it embeds poorly.
-      q: enrichedQuery ?? inboundText,
-      limit: chunkLimit + 4, // small pool so the cutoff can trim without starving
+      q: chunkQuery,
+      // small pool so the cutoff can trim without starving
+      limit: scoringUse ? Math.min(Math.max(chunkLimit * 2, 16), 25) : chunkLimit + 4,
       excludeSystemOrigin: true,
     });
+    // One decision call scores each passage 0-3 for "does it answer the
+    // question". `live`: weak passages drop and the rest order by score
+    // before the budget cut below. `shadow`: traced only, list unchanged.
+    // Null (off / failed / slow) = the list search returned. Freshness is
+    // NOT the scorer's job — the supersede pass further down stays in charge.
+    if (scoringUse) {
+      const scoring = await scorePassages(
+        ownerId,
+        chunkQuery,
+        hits.map((h) => ({
+          id: `${h.nodeId}:${h.ordinal}`,
+          title: h.nodeTitle,
+          heading: h.headingPath,
+          text: h.text,
+        })),
+      );
+      if (scoring && scoring.mode === 'live') {
+        hits = applyPassageScores(hits, (h) => `${h.nodeId}:${h.ordinal}`, scoring).kept;
+      }
+    }
     // Same exclusions as content hits: a raw telegram turn isn't a "passage"
     // (it's the conversation), and a weak match isn't worth the tokens.
     const selection = selectChunkHits(hits, chunkLimit);

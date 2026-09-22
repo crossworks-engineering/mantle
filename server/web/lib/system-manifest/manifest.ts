@@ -150,6 +150,10 @@ export type ManifestWorker = {
   altProvider?: string;
   altModel?: string;
   altParams?: AiWorkerParams;
+  /** Seed the row switched OFF (default true = on). For a worker that is an
+   *  experiment the owner must opt into — it exists in Settings, ready to
+   *  flip, but spends nothing until then. An upgrade never turns it on. */
+  enabled?: boolean;
 };
 
 /** A heartbeat the product ships: a scheduled, self-directed agent turn.
@@ -1641,6 +1645,31 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     required: false,
     provider: 'openrouter',
     model: 'google/gemini-3.1-flash-lite',
+  },
+  // Decider: the typed-decision model (TypeSafe Jev) behind `decide()` in
+  // @mantle/decisions. Optional AND seeded disabled: it is the experimental
+  // decision layer, and Jason's rule is that experimental decision making is
+  // switched on in the UI, per use, never by an upgrade. Each use ships in
+  // `shadow` (answers traced, behaviour unchanged) so a week of /debug spend +
+  // trace meta shows the agreement before anyone flips it to `live`. The
+  // state sent to it leaves the box (OpenRouter → TypeSafe); `zdr` asks for
+  // zero-data-retention routing on every call. See docs/decisions.md.
+  {
+    kind: 'decider',
+    name: 'Decider (typed decisions)',
+    required: false,
+    enabled: false,
+    provider: 'openrouter',
+    model: 'typesafe/jev-1.13',
+    params: {
+      zdr: true,
+      timeout_ms: 1500,
+      defer_below: 0.6,
+      act_alone_at: 0.9,
+      uses: {
+        passage_scoring: { enabled: false, mode: 'shadow', threshold: 1.5 },
+      },
+    },
   },
 ];
 

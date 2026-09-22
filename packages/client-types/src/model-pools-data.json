@@ -2190,5 +2190,26 @@
     },
     "rating": 2,
     "note": "FREE, 128K context, real vision-language model (not just text); rate-limited, best for low-stakes/high-volume extraction"
+  },
+  {
+    "pool": "decider",
+    "position": 0,
+    "name": "TypeSafe: Jev 1.13",
+    "vendor": "TypeSafe",
+    "routes": [
+      {
+        "provider": "openrouter",
+        "model": "typesafe/jev-1.13"
+      }
+    ],
+    "pricing": {
+      "inputPerM": 0.042,
+      "outputPerM": 0,
+      "currency": "USD",
+      "capturedAt": "2026-09-22",
+      "source": "openrouter"
+    },
+    "rating": null,
+    "note": "The only typed-decision model on OpenRouter (alpha decisions endpoint). Hand-added 2026-09-22 with the decider worker; re-curate at /models/pools when a second one ships."
   }
 ]

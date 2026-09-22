@@ -26,6 +26,7 @@ const KIND = z.enum([
   'search_advanced',
   'narrator',
   'suggester',
+  'decider',
 ]);
 
 /** Connection/route fields shared by create + patch (all optional on patch). */

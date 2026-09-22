@@ -43,7 +43,7 @@ export type PoolModality = {
    *  a voice route was always "unknown"); since the fetch asks for
    *  `output_modalities=all` they carry positive evidence like everything
    *  else. */
-  output: 'text' | 'image' | 'speech' | 'transcription';
+  output: 'text' | 'image' | 'speech' | 'transcription' | 'decisions';
 };
 
 const TEXT_OUT: PoolModality = { input: [], output: 'text' };
@@ -148,6 +148,14 @@ export const MODEL_POOLS: readonly ModelPoolDef[] = [
     group: 'workers',
     modality: TEXT_OUT,
   },
+  {
+    id: 'decider',
+    label: 'Decider (typed decisions)',
+    description:
+      'Typed-decision models (TypeSafe Jev): choice / score / yes-no answers with probabilities, no prose. Behind the experimental per-use switches (passage scoring first). Output modality `decisions`, so no chat model fits here and it fits nowhere else.',
+    group: 'workers',
+    modality: { input: [], output: 'decisions' },
+  },
 ];
 
 export const MODEL_POOL_IDS = new Set(MODEL_POOLS.map((p) => p.id));
@@ -210,6 +218,18 @@ export function poolModelIssue(
   if (outputs.length === 0 && inputs.length === 0) return null;
 
   const makesImages = outputs.includes('image');
+  // The decider pool is the one place a `decisions`-out model belongs — and
+  // the one place a text-out chat model does not: a chat model answers a
+  // decisions request with nothing usable, and Jev answers a chat request
+  // with nothing at all.
+  if (want.output === 'decisions') {
+    return outputs.length > 0 && !outputs.includes('decisions')
+      ? `this model outputs ${outputs.join('+')}, not decisions — the ${pool.label} pool needs a typed-decision model such as typesafe/jev-1.13.`
+      : null;
+  }
+  if (want.output === 'text' && outputs.includes('decisions')) {
+    return `this model outputs decisions, not text — it belongs in the Decider pool, not ${pool.label}.`;
+  }
   if (want.output === 'text' && makesImages) {
     return (
       `this model OUTPUTS images (${outputs.join('+')}) — it is an image generator, ` +

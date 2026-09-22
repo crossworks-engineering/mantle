@@ -20,6 +20,7 @@
     "@mantle/content-core": "workspace:*",
     "@mantle/crypto": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/decisions": "workspace:*",
     "@mantle/email": "workspace:*",
     "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",

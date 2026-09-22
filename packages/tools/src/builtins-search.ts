@@ -9,6 +9,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { searchNodes, searchChunks, readSection, resolveSupersededTargets } from '@mantle/search';
 import { embed } from '@mantle/embeddings';
+import { applyPassageScores, decisionUseEnabled, scorePassages } from '@mantle/decisions';
 import { nodeUrl } from '@mantle/content';
 import { type BuiltinToolDef } from './types';
 import { str, strOpt, numOpt as num } from './coerce';
@@ -182,16 +183,54 @@ export const search_chunks: BuiltinToolDef = {
     try {
       const q = str(input.q);
       if (!q) return { ok: false, error: 'q is required' };
+      const limit = num(input.limit, 10) ?? 10;
       const embedding = await embed(ctx.ownerId, q);
-      const hits = await searchChunks({
+      // Decider, use `passage_scoring` (experimental, owner-switched): when it
+      // is on, fetch a wider pool so the scorer has something to choose from.
+      // Off = the exact pool it always fetched.
+      const scoringUse = await decisionUseEnabled(ctx.ownerId, 'passage_scoring');
+      const pool = scoringUse ? Math.min(Math.max(limit * 2, 16), 25) : limit;
+      const found = await searchChunks({
         ownerId: ctx.ownerId,
         embedding,
         // Hybrid: the query text feeds the FTS booster arm, so exact rare
         // tokens (error codes, field names) are findable alongside vector.
         q,
         branch: strOpt(input.branch),
-        limit: num(input.limit, 10),
+        limit: pool,
       });
+      // Score every passage 0-3 for "does it answer q" in one decision call.
+      // `live`: drop the weak ones, order by score, return the top `limit`.
+      // `shadow`: the answer lands in the trace only; the reply is what it
+      // always was (the first `limit` in search order). Null = as before.
+      let hits = found.slice(0, limit);
+      let scores: Map<string, { score: number; confidence: number }> | null = null;
+      if (scoringUse) {
+        const scoring = await scorePassages(
+          ctx.ownerId,
+          q,
+          found.map((h) => ({
+            id: chunkKey(h),
+            title: h.nodeTitle,
+            heading: h.headingPath,
+            text: h.text,
+          })),
+        );
+        if (scoring) {
+          const { kept, dropped } = applyPassageScores(found, chunkKey, scoring);
+          ctx.step?.setMeta({
+            passage_scoring: scoring.mode,
+            passage_scoring_pool: found.length,
+            passage_scoring_dropped: dropped.length,
+            passage_scoring_ms: scoring.ms,
+            passage_scoring_cached: scoring.cached,
+          });
+          if (scoring.mode === 'live') {
+            hits = kept.slice(0, limit);
+            scores = scoring.scores;
+          }
+        }
+      }
       ctx.step?.setOutput({ count: hits.length });
       // Content-currency annotation: passages from a superseded node carry
       // their living successor so the model quotes the current copy instead.
@@ -203,6 +242,7 @@ export const search_chunks: BuiltinToolDef = {
         ok: true,
         output: hits.map((h) => {
           const succ = successors.get(h.nodeId);
+          const rel = scores?.get(chunkKey(h));
           return {
             nodeId: h.nodeId,
             nodeTitle: h.nodeTitle,
@@ -210,6 +250,10 @@ export const search_chunks: BuiltinToolDef = {
             heading: h.headingPath,
             ordinal: h.ordinal,
             text: h.text,
+            // Present only when the decider ranked this reply (live mode):
+            // 0-3, "how well this passage answers q". Freshness is NOT in
+            // it — `superseded_by` below is the currency signal.
+            ...(rel ? { relevance: Math.round(rel.score * 100) / 100 } : {}),
             ...(succ
               ? {
                   superseded_by: {
@@ -227,6 +271,11 @@ export const search_chunks: BuiltinToolDef = {
     }
   },
 };
+
+/** Stable per-passage key for the decider's score map. */
+function chunkKey(h: { nodeId: string; ordinal: number }): string {
+  return `${h.nodeId}:${h.ordinal}`;
+}
 
 export const read_section: BuiltinToolDef = {
   slug: 'read_section',
