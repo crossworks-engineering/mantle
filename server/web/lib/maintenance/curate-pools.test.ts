@@ -77,8 +77,12 @@ describe('combineRank', () => {
     expect(combineRank(null, 0.9)).toBe(0.9);
   });
 
-  it('blends 60/40 toward the benchmark when both exist', () => {
-    expect(combineRank(1, 0)).toBeCloseTo(0.6);
+  it('lets usage lift a score but never drag it', () => {
+    // The benchmark is the floor; usage closes part of the gap to 1. A model
+    // is never worse off for having been counted.
+    expect(combineRank(0.5, 0)).toBe(0.5);
+    expect(combineRank(0.5, 1)).toBeCloseTo(0.7);
+    expect(combineRank(0.5, 1)).toBeGreaterThan(combineRank(0.5, null));
     expect(combineRank(0, 0)).toBe(0);
   });
 });
@@ -433,5 +437,203 @@ describe('voice pools take engines, not chat models that accept audio', () => {
       current: [],
     });
     expect(plan.entries.map((e) => e.routes[0]!.model)).toEqual(['real/engine']);
+  });
+});
+
+describe('evidence inheritance is for aliases only', () => {
+  const pools = [
+    {
+      id: 'agents',
+      label: 'Agents / Responders',
+      description: 'x',
+      group: 'agents' as const,
+      modality: { input: [], output: 'text' as const },
+    },
+  ];
+
+  it('an old release does not borrow its successor’s score', () => {
+    // The live preview put `openai/gpt-4` at the TOP of the agents pool at
+    // $30/$60 per 1M: it shares the `openai/gpt` family with GPT-5.5, inherited
+    // its benchmark, tied on rank, and then won the price tie-break because
+    // that prefers the dearer of two equals. An alias is the same model as its
+    // target; a 2023 release is not its successor.
+    const plan = planCuration({
+      capturedAt: AT,
+      pools,
+      catalog: [
+        row('openai/gpt-4', { inputPerM: 30, outputPerM: 60 }),
+        row('openai/gpt-5.5', { inputPerM: 2.5, outputPerM: 15 }),
+      ],
+      benchmarks: [{ model_permaslug: 'openai/gpt-5.5-20260423', intelligence_index: 38.4 }],
+      usage: [],
+      current: [],
+    });
+    expect(plan.entries[0]!.routes[0]!.model).toBe('openai/gpt-5.5');
+    const old = plan.entries.find((e) => e.routes[0]!.model === 'openai/gpt-4');
+    // It may still appear (nothing else fits), but never with a borrowed score.
+    if (old) expect(old.note).not.toContain('intelligence index');
+  });
+});
+
+describe('a forced default replaces its own family', () => {
+  const pools = [
+    {
+      id: 'agents',
+      label: 'Agents / Responders',
+      description: 'x',
+      group: 'agents' as const,
+      modality: { input: [], output: 'text' as const },
+    },
+  ];
+
+  it('does not sit the alias beside the pinned release it resolves to', () => {
+    // The live preview listed `~x-ai/grok-latest` at position 3 and
+    // `x-ai/grok-4.7` at position 2 — the same model twice, because forcing the
+    // shipped default in bypassed the one-per-family rule.
+    const plan = planCuration({
+      capturedAt: AT,
+      pools,
+      catalog: [
+        row('x-ai/grok-4.7', { inputPerM: 1.6, outputPerM: 4.8 }),
+        row('~x-ai/grok-latest', { inputPerM: 1.6, outputPerM: 4.8 }),
+        row('other/model', { inputPerM: 1, outputPerM: 1 }),
+      ],
+      benchmarks: [{ model_permaslug: 'x-ai/grok-4.7-20260916', intelligence_index: 46.4 }],
+      usage: [],
+      current: [],
+      required: { agents: ['~x-ai/grok-latest'] },
+    });
+    const ids = plan.entries.map((e) => e.routes[0]!.model);
+    expect(ids).toContain('~x-ai/grok-latest');
+    expect(ids).not.toContain('x-ai/grok-4.7');
+  });
+});
+
+describe('usage is a percentile, not a share of the leader', () => {
+  const pools = [
+    {
+      id: 'agents',
+      label: 'Agents / Responders',
+      description: 'x',
+      group: 'agents' as const,
+      modality: { input: [], output: 'text' as const },
+    },
+  ];
+
+  it('does not penalise a measured model against an unmeasured one', () => {
+    // Real counts span orders of magnitude. Dividing by the maximum made a
+    // model with a trillion tokens score ~0.06, and the 60/40 blend then put
+    // it BELOW an identical model nobody had ranked. Being measured must not
+    // cost you: grok carried the pool's top benchmark and rated ★3.
+    const plan = planCuration({
+      capturedAt: AT,
+      pools,
+      catalog: [
+        row('measured/model', { inputPerM: 1, outputPerM: 1 }),
+        row('unmeasured/model', { inputPerM: 1, outputPerM: 1 }),
+        row('busiest/model', { inputPerM: 1, outputPerM: 1 }),
+      ],
+      benchmarks: [
+        { model_permaslug: 'measured/model-20260101', intelligence_index: 50 },
+        { model_permaslug: 'unmeasured/model-20260101', intelligence_index: 50 },
+        { model_permaslug: 'busiest/model-20260101', intelligence_index: 10 },
+      ],
+      usage: [
+        { model: 'busiest/model-20260101', tokens: 17_000_000_000_000 },
+        { model: 'measured/model-20260101', tokens: 1_000_000_000_000 },
+      ],
+      current: [],
+    });
+    const rating = (id: string) => plan.entries.find((e) => e.routes[0]!.model === id)!.rating ?? 0;
+    expect(rating('measured/model')).toBeGreaterThanOrEqual(rating('unmeasured/model'));
+  });
+});
+
+describe('ordering keeps its promises', () => {
+  const workhorse = [
+    {
+      id: 'extractor',
+      label: 'Extractor',
+      description: 'x',
+      group: 'workers' as const,
+      modality: { input: [], output: 'text' as const },
+    },
+  ];
+
+  it('a forced default is ranked, not appended to the end', () => {
+    // Forced entries were pushed onto the list after the sort, so the shipped
+    // defaults came out LAST and rated ★2 — worst in their own pool, on the
+    // strength of nothing but insertion order.
+    const plan = planCuration({
+      capturedAt: AT,
+      pools: workhorse,
+      catalog: [
+        row('shipped/default', { inputPerM: 0.3, outputPerM: 2.5 }),
+        row('weak/model', { inputPerM: 0.3, outputPerM: 2.5 }),
+      ],
+      benchmarks: [{ model_permaslug: 'shipped/default-20260101', intelligence_index: 50 }],
+      usage: [],
+      current: [],
+      required: { extractor: ['shipped/default'] },
+    });
+    expect(plan.entries[0]!.routes[0]!.model).toBe('shipped/default');
+    expect(plan.entries[0]!.rating).toBe(5);
+  });
+
+  it('a free tier does not take position 0 of a workhorse pool', () => {
+    // Quality-per-dollar at a price of zero is just quality, so free tiers
+    // swept the top of every worker pool. They are rate-limited and carry no
+    // vendor SLA — a fallback, not a default.
+    const plan = planCuration({
+      capturedAt: AT,
+      pools: workhorse,
+      catalog: [
+        row('vendor/free:free', { inputPerM: 0, outputPerM: 0 }),
+        row('vendor/paid', { inputPerM: 0.1, outputPerM: 0.2 }),
+      ],
+      benchmarks: [
+        { model_permaslug: 'vendor/free-20260101', intelligence_index: 40 },
+        { model_permaslug: 'vendor/paid-20260101', intelligence_index: 40 },
+      ],
+      usage: [],
+      current: [],
+    });
+    expect(plan.entries[0]!.routes[0]!.model).toBe('vendor/paid');
+  });
+});
+
+describe('a shipped default leads its pool', () => {
+  const pools = [
+    {
+      id: 'agents',
+      label: 'Agents / Responders',
+      description: 'x',
+      group: 'agents' as const,
+      modality: { input: [], output: 'text' as const },
+    },
+  ];
+
+  it('even when a rival out-ranks it on adoption', () => {
+    // Grok 4.7 shipped six days before the first live run, so it had no usage
+    // row, while rivals a fraction behind on the benchmark got a lift straight
+    // past it — and the pool then told the owner that the model their brain
+    // actually runs was the worst option on the list.
+    const plan = planCuration({
+      capturedAt: AT,
+      pools,
+      catalog: [
+        row('new/default', { inputPerM: 1.6, outputPerM: 4.8 }),
+        row('popular/rival', { inputPerM: 1, outputPerM: 1 }),
+      ],
+      benchmarks: [
+        { model_permaslug: 'new/default-20260916', intelligence_index: 46.4 },
+        { model_permaslug: 'popular/rival-20260816', intelligence_index: 44.8 },
+      ],
+      usage: [{ model: 'popular/rival-20260816', tokens: 9_000_000_000_000 }],
+      current: [],
+      required: { agents: ['new/default'] },
+    });
+    expect(plan.entries[0]!.routes[0]!.model).toBe('new/default');
+    expect(plan.entries[0]!.rating).toBe(5);
   });
 });

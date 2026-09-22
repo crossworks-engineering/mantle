@@ -272,6 +272,8 @@ type Scored = {
   inherited: boolean;
   /** This id is a system-manifest default, forced in regardless of rank. */
   shipped?: boolean;
+  /** Place in the pool's RANK ordering, before the display sort by price. */
+  rankIndex?: number;
   blendedPerM: number | null;
 };
 
@@ -295,6 +297,13 @@ function evidenceFor(
   const bench = benchBySlug.get(id) ?? null;
   const usage = usageBySlug.get(id) ?? null;
   if (bench != null || usage != null) return { bench, usage, inherited: false };
+  // ONLY an alias may inherit. A concrete release must stand on its own
+  // evidence: `openai/gpt-4` shares the `openai/gpt` family with GPT-5.5, so
+  // letting it borrow a sibling's score handed a 2023 model a ★★★★ rating —
+  // and then the price tie-break, which prefers the dearer of two equals, put
+  // it at the TOP of the agents pool at $30/$60 per 1M. An alias is the same
+  // model as its target; an old release is not its successor.
+  if (!isAlias(id)) return { bench: null, usage: null, inherited: false };
   const fam = familyBest.get(`${vendorOf(id)}::${familyKey(id)}`);
   if (!fam) return { bench: null, usage: null, inherited: false };
   return { bench: fam.bench, usage: fam.usage, inherited: true };
@@ -303,40 +312,42 @@ function evidenceFor(
 /**
  * Combine benchmark score and real usage into one 0..1 rank.
  *
- * Either signal alone misleads in a known direction — benchmarks over-rate
- * models nobody ships, usage over-rates whatever is cheapest — so a model with
- * both is ranked on the average, and one with only a single signal is ranked on
- * that signal alone rather than being penalised for the missing half. A model
- * with neither scores 0 and only reaches a pool when nothing better fits.
+ * Usage can only LIFT. The obvious version — blend the two 60/40 — has a
+ * perverse consequence: a model with a strong benchmark and modest traffic
+ * scores BELOW an identical model nobody has ranked, because the missing
+ * signal is treated as neutral while a real one is treated as a low mark.
+ * `~x-ai/grok-latest` carried the highest benchmark in the agents pool and
+ * came out ★3 that way. Being measured must not be a penalty.
+ *
+ * So the benchmark sets the floor and usage closes some of the distance to 1:
+ * a well-used model beats an equally-scored unused one, a heavily-used model
+ * with a modest benchmark still climbs (real traffic is evidence a benchmark
+ * cannot capture), and nothing is ever worse off for having been counted.
+ * With no benchmark at all, usage is the whole signal.
  */
 export function combineRank(bench: number | null, usage: number | null): number {
-  if (bench != null && usage != null) return 0.6 * bench + 0.4 * usage;
-  return bench ?? usage ?? 0;
-}
-
-/** 1..5, from the blended rank. Ratings are a tier signal in the picker UI,
- *  not a measurement, so the bands are coarse on purpose. */
-function ratingFor(rank: number): number {
-  if (rank >= 0.8) return 5;
-  if (rank >= 0.6) return 4;
-  if (rank >= 0.4) return 3;
-  if (rank >= 0.2) return 2;
-  return 1;
+  if (bench == null) return usage ?? 0;
+  if (usage == null) return bench;
+  const USAGE_LIFT = 0.4;
+  return bench + (1 - bench) * USAGE_LIFT * usage;
 }
 
 /**
- * Rate a pool whose models carry no benchmark or usage evidence at all — the
- * generators, voice engines and decision models, none of which appear in a
- * general intelligence benchmark.
+ * 1..5 from an entry's place in its OWN pool's ranking.
  *
- * `ratingFor` would give every one of them ★1, which reads as "we checked and
- * they are all bad" rather than "there is nothing to check". Grading on the
- * pool's own price ordering at least says something true: dearer is the
- * vendor's own claim about which of its models is better. Applied per ENTRY,
- * so an unbenchmarked row in an otherwise-scored pool is treated the same way.
+ * Absolute bands do not work here, and shipping them proved it twice. Scored
+ * against the whole catalog every curated model rated ★1, because none of them
+ * appear in a general benchmark; scored against the benchmark leader they ALL
+ * rated ★5, because a shortlist contains nothing but top models. Either way the
+ * stars said the same thing about every row, which is to say nothing.
+ *
+ * A shortlist rating is a comparison WITHIN the list — it is what the original
+ * hand-curated template meant by giving Opus 5 a 5 and a budget flash model a
+ * 3 — so that is what this computes. The bands are coarse because the ordering
+ * is the real signal and the stars are a glance at it.
  */
-function positionRating(index: number, total: number): number {
-  if (total <= 1) return 3;
+function poolRating(index: number, total: number): number {
+  if (total <= 1) return 5;
   const share = index / (total - 1);
   if (share <= 0.2) return 5;
   if (share <= 0.45) return 4;
@@ -356,7 +367,7 @@ function noteFor(s: Scored): string {
         : `intelligence index ${s.benchIndex}`,
     );
   }
-  if (s.usage != null && s.usage >= 0.5) bits.push('heavy real usage on OpenRouter');
+  if (s.usage != null && s.usage >= 0.5) bits.push('busier than most of the ranked field');
   if (s.blendedPerM === 0) bits.push('free tier: rate-limited, use as a fallback not a default');
   if (s.row.contextTokens && s.row.contextTokens >= 1_000_000) bits.push('1M+ context');
   return bits.length ? bits.join('; ') : 'fits the pool; no benchmark or usage signal';
@@ -405,12 +416,29 @@ export function planCuration(input: PlanInput): CurationPlan {
   }
   const maxBench = Math.max(1, ...benchBySlug.values());
 
-  const usageBySlug = new Map<string, number>();
+  const usageTokens = new Map<string, number>();
   for (const u of input.usage) {
     const key = undatedSlug(u.model);
-    usageBySlug.set(key, Math.max(usageBySlug.get(key) ?? 0, u.tokens));
+    usageTokens.set(key, Math.max(usageTokens.get(key) ?? 0, u.tokens));
   }
-  const maxUsage = Math.max(1, ...usageBySlug.values());
+  // PERCENTILE, not a share of the leader.
+  //
+  // Token counts span orders of magnitude — the busiest model on OpenRouter
+  // does ~17 trillion tokens a week and the fiftieth does ~1 trillion. Dividing
+  // by the maximum crushed everything below the leader to near zero, and since
+  // `combineRank` blends 60/40 when both signals exist, a heavily-used model
+  // scored WORSE than an identical one nobody had measured: `~x-ai/grok-latest`
+  // carried the highest benchmark in the agents pool (46.4) and came out ★3,
+  // because inheriting a small usage fraction dragged a 0.87 rank to 0.54.
+  // Being measured must never be a penalty. A percentile says what the raw
+  // count means — "busier than 80% of the ranked field" — and is immune to the
+  // scale.
+  const usageBySlug = new Map<string, number>();
+  const ordered = [...usageTokens.entries()].sort((a, b) => b[1] - a[1]);
+  ordered.forEach(([slug], i) => {
+    usageBySlug.set(slug, ordered.length === 1 ? 1 : 1 - i / (ordered.length - 1));
+  });
+  const maxUsage = 1;
 
   // Best evidence seen anywhere in each family, so an alias can inherit it.
   const familyBest = new Map<string, { bench: number | null; usage: number | null }>();
@@ -475,7 +503,14 @@ export function planCuration(input: PlanInput): CurationPlan {
     const score = (x: Scored): number => {
       const q = combineRank(x.bench, x.usage);
       if (tier !== 'workhorse') return q;
-      return q / (1 + (x.blendedPerM ?? 0));
+      // Quality per dollar — which, at a price of zero, is just quality, so a
+      // free tier swept to the top of every workhorse pool. The template's own
+      // note has always said what they are: "rate-limited, no vendor SLA, use
+      // as a fallback not a default". Charging them a notional floor price
+      // keeps them on the list and off position 0.
+      const FREE_TIER_FLOOR = 0.15;
+      const perM = x.blendedPerM === 0 || x.blendedPerM == null ? FREE_TIER_FLOOR : x.blendedPerM;
+      return q / (1 + perM);
     };
     eligible.sort((a, b) => {
       const d = score(b) - score(a);
@@ -483,7 +518,11 @@ export function planCuration(input: PlanInput): CurationPlan {
       // Tie-break toward the alias: it is the same model and it does not go
       // stale, which is the entire reason the vendor publishes it.
       if (isAlias(a.row.id) !== isAlias(b.row.id)) return isAlias(a.row.id) ? -1 : 1;
-      return (b.blendedPerM ?? 0) - (a.blendedPerM ?? 0);
+      // Then dearest first among equals, with unpriced rows last — a curator's
+      // "no price" is a per-minute voice route, not a free model.
+      if (a.blendedPerM == null) return b.blendedPerM == null ? 0 : 1;
+      if (b.blendedPerM == null) return -1;
+      return b.blendedPerM - a.blendedPerM;
     });
     const takenFamily = new Set<string>();
     const picked: Scored[] = [];
@@ -507,6 +546,16 @@ export function planCuration(input: PlanInput): CurationPlan {
         already.shipped = true;
         continue;
       }
+      // Drop whatever already holds this family. Otherwise forcing the shipped
+      // default in put `~x-ai/grok-latest` directly beside the pinned
+      // `x-ai/grok-4.7` it currently resolves to — the same model twice, which
+      // is exactly what the one-per-family rule exists to prevent. The forced
+      // id wins, because a shipped default outranks the arithmetic.
+      const family = `${vendorOf(id)}::${familyKey(id)}`;
+      const clash = picked.findIndex(
+        (p) => `${vendorOf(p.row.id)}::${familyKey(p.row.id)}` === family,
+      );
+      if (clash >= 0) picked.splice(clash, 1);
       const row = input.catalog.find((r) => r.id === id);
       if (!row) continue;
       const ev = evidenceFor(id, benchBySlug, usageBySlug, familyBest);
@@ -523,18 +572,43 @@ export function planCuration(input: PlanInput): CurationPlan {
       picked.push(forced);
     }
 
-    // 3. Order the pool best → budget. The combos read PRICE for priced pools
-    //    and POSITION only for unpriced ones (per-minute voice routes), so this
-    //    ordering is what `best-advanced` and `cheapest` fall back on there.
-    //    Unpriced rows sort last: a curator's "no price" is not "free".
+    // 3. The pool is left in RANK order, best first.
+    //
+    //    It used to be re-sorted by price, on the old "priciest first"
+    //    convention — which held only while price tracked quality. It stopped
+    //    holding: the shortlist now carries cheap models with strong evidence,
+    //    so a price-ordered list showed stars scattered up and down it and read
+    //    as though the ratings were noise. Ordering by rank makes the list say
+    //    one thing, and the price is still on every row for the cost question.
+    //
+    //    Safe for the combos: for a PRICED pool they read price directly
+    //    (`best-advanced` takes the dearest, `cheapest` the lowest), never
+    //    position. Position matters only for the unpriced voice pools, where
+    //    their fallback already assumes a curator ordered it best→budget —
+    //    which is now literally true rather than hoped for.
+    // Re-rank AFTER the forced defaults joined: they are pushed onto the end of
+    // the list, so ranking by arrival put `~x-ai/grok-latest` last in the
+    // agents pool and `google/gemini-3.5-flash-lite` last in every worker pool
+    // — the shipped defaults, rated worst, on the strength of nothing but
+    // insertion order.
+    // Shipped defaults lead, then everything else by score.
+    //
+    // Ranking them like any other row put `~x-ai/grok-latest` LAST in the
+    // agents pool at ★2. The arithmetic was right and the outcome was still
+    // wrong: Grok 4.7 shipped six days before this ran, so it had no traffic
+    // yet, while rivals a fraction behind it on the benchmark got a usage lift
+    // straight past it. Any ranking that leans on adoption will do that to a
+    // new model, and the pool would have told the owner that the model their
+    // brain actually runs is the worst option on the list.
+    //
+    // A default is a recommendation we have already made. It leads, the way the
+    // recommended card leads the onboarding list, and the rest is ranked.
     picked.sort((a, b) => {
-      const pa = a.blendedPerM;
-      const pb = b.blendedPerM;
-      if (pa == null && pb == null)
-        return combineRank(b.bench, b.usage) - combineRank(a.bench, a.usage);
-      if (pa == null) return 1;
-      if (pb == null) return -1;
-      return pb - pa;
+      if (!!a.shipped !== !!b.shipped) return a.shipped ? -1 : 1;
+      return score(b) - score(a);
+    });
+    picked.forEach((p, i) => {
+      p.rankIndex = i;
     });
 
     const entries: PlannedEntry[] = picked.map((s, i) => ({
@@ -553,14 +627,7 @@ export function planCuration(input: PlanInput): CurationPlan {
               capturedAt,
               source: 'openrouter',
             },
-      // An entry with no evidence at all is rated on the pool's own price
-      // ordering, not on a rank of zero. ★1 would read as "we checked and it
-      // is bad"; these are the rows nobody benchmarks — the generators, the
-      // voice engines, and a shipped default too new to have been scored.
-      rating:
-        s.bench == null && s.usage == null
-          ? positionRating(i, picked.length)
-          : ratingFor(combineRank(s.bench, s.usage)),
+      rating: poolRating(s.rankIndex ?? i, picked.length),
       note: noteFor(s),
     }));
 
