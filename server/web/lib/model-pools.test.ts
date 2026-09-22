@@ -51,12 +51,17 @@ describe('curated template + onboarding choices', () => {
       expect(new Set(ids).size).toBe(ids.length);
       expect(list.filter((c) => c.recommended).length).toBe(1);
     }
-    expect(ASSISTANT_MODEL_CHOICES.find((c) => c.recommended)?.id).toBe(
-      'anthropic/claude-sonnet-5',
+    // Derived from the manifest, NOT hardcoded: the whole point of this
+    // assertion is that the onboarding card and the seeded default can never
+    // disagree, and a literal here would just be a second place to forget.
+    const { DEFAULT_AGENT_MODEL, DEFAULT_WORKER_MODEL, PERSONA_MANIFEST, MANIFEST_WORKERS } =
+      await import('./system-manifest');
+    expect(PERSONA_MANIFEST.model).toBe(DEFAULT_AGENT_MODEL);
+    expect(MANIFEST_WORKERS.find((w) => w.kind === 'summarizer')?.model).toBe(
+      DEFAULT_WORKER_MODEL,
     );
-    expect(WORKER_MODEL_CHOICES.find((c) => c.recommended)?.id).toBe(
-      'google/gemini-3.1-flash-lite',
-    );
+    expect(ASSISTANT_MODEL_CHOICES.find((c) => c.recommended)?.id).toBe(DEFAULT_AGENT_MODEL);
+    expect(WORKER_MODEL_CHOICES.find((c) => c.recommended)?.id).toBe(DEFAULT_WORKER_MODEL);
     // The extension actually widened the lists beyond the hand-written heads.
     expect(ASSISTANT_MODEL_CHOICES.length).toBeGreaterThan(4);
     expect(WORKER_MODEL_CHOICES.length).toBeGreaterThan(4);

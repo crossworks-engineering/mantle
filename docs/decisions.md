@@ -13,7 +13,7 @@ answers with probabilities in about 300 ms:
 **Confidence** is the shape of the distribution (1 = all mass on one option,
 0 = flat). It is the number code gates on. **Probability** says which option.
 
-The model is TypeSafe **Jev** (`typesafe/jev-1.13` on OpenRouter), reached
+The model is TypeSafe **Jev** (`~typesafe/jev-latest` on OpenRouter — the auto-updating alias), reached
 through OpenRouter's `POST /api/alpha/decisions` endpoint — not chat
 completions. Input-only billing ($0.042 per 1M tokens, answers free), 32k
 context. The endpoint is **alpha**; everything below is built so that it
@@ -236,7 +236,7 @@ Full write-ups: dev-brain pages `cdf6a97c-5b84-485e-8698-9c266614318c`
   toggles, edit `params` as JSON. The resolution cache means a flip takes up
   to 30 s to reach a running process.
 - **Read the shadow week:** `/traces` steps named `decide_<use>`; `/debug`
-  spend-by-model row `typesafe/jev-1.13`; the `search_chunks` step's
+  spend-by-model row `~typesafe/jev-latest`; the `search_chunks` step's
   `passage_scoring_dropped` meta.
 - **Go live:** set `mode: 'live'` on the one use. Everything else stays shadow.
 - **Kill switch:** disable the worker. Every call site is back to today's

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { resolveWorkerRoute } from './worker-route';
-import { MANIFEST_WORKERS, type ManifestWorker } from './manifest';
+import { MANIFEST_WORKERS, DEFAULT_WORKER_MODEL, type ManifestWorker } from './manifest';
 
 const tts = MANIFEST_WORKERS.find((w) => w.kind === 'tts')!;
 const extractor = MANIFEST_WORKERS.find((w) => w.kind === 'extractor')!;
@@ -39,12 +39,15 @@ describe('resolveWorkerRoute', () => {
   it('keeps the expected provider/model per worker kind (drift guard)', () => {
     const byKind = Object.fromEntries(MANIFEST_WORKERS.map((w) => [w.kind, w]));
     const expected: Record<string, { provider: string; model: string }> = {
-      extractor: { provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
-      summarizer: { provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
-      reflector: { provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
-      document: { provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
-      vision: { provider: 'openrouter', model: 'google/gemini-3.1-flash-lite' },
-      image_gen: { provider: 'openrouter', model: 'google/gemini-3.1-flash-image-preview' },
+      // Model asserted via the manifest constant, not a literal: this guard is
+      // about the ROUTE (which provider each kind lands on), and a second copy
+      // of the model id here would just be one more place to forget.
+      extractor: { provider: 'openrouter', model: DEFAULT_WORKER_MODEL },
+      summarizer: { provider: 'openrouter', model: DEFAULT_WORKER_MODEL },
+      reflector: { provider: 'openrouter', model: DEFAULT_WORKER_MODEL },
+      document: { provider: 'openrouter', model: DEFAULT_WORKER_MODEL },
+      vision: { provider: 'openrouter', model: DEFAULT_WORKER_MODEL },
+      image_gen: { provider: 'openrouter', model: 'google/gemini-3.1-flash-image' },
       tts: { provider: 'openrouter', model: 'x-ai/grok-voice-tts-1.0' },
       stt: { provider: 'openrouter', model: 'openai/gpt-4o-mini-transcribe' },
       search: { provider: 'openrouter', model: 'perplexity/sonar' },

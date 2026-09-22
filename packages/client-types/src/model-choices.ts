@@ -36,12 +36,19 @@ export type ModelChoice = {
  *  exported list below extends this with the shipped `agents` pool. */
 const BASE_ASSISTANT_CHOICES: readonly ModelChoice[] = [
   {
+    id: '~x-ai/grok-latest',
+    name: 'Grok (latest)',
+    blurb:
+      'The shipped default — an auto-updating alias, so a brain installed today and one installed next year both get xAI’s current flagship. Frontier-class reasoning and tool use at well under Sonnet money.',
+    price: '$1.60 · $4.80 /M',
+    recommended: true,
+  },
+  {
     id: 'anthropic/claude-sonnet-5',
     name: 'Claude Sonnet 5',
     blurb:
-      'The shipped default — Anthropic’s newest Sonnet: superb reasoning and tool use, 1M context, and cheaper than the generation before it.',
+      'Anthropic’s newest Sonnet: superb reasoning and tool use, and 1M context — double Grok’s — if you routinely hand the assistant very large documents.',
     price: '$2 · $10 /M',
-    recommended: true,
   },
   {
     id: 'anthropic/claude-opus-4.8',
@@ -62,7 +69,7 @@ const BASE_ASSISTANT_CHOICES: readonly ModelChoice[] = [
     id: 'x-ai/grok-4.20',
     name: 'Grok 4.20',
     blurb:
-      'Frontier-class at a budget price — fast and capable, the value pick if cost per conversation matters most.',
+      'A pinned Grok generation — the value pick if you want a fixed model that never moves under you, rather than the tracking alias above.',
     price: '$1.25 · $2.50 /M',
   },
 ];
@@ -72,11 +79,11 @@ const BASE_ASSISTANT_CHOICES: readonly ModelChoice[] = [
  *  process EVERYTHING the brain ingests, so price and speed dominate. */
 const BASE_WORKER_CHOICES: readonly ModelChoice[] = [
   {
-    id: 'google/gemini-3.1-flash-lite',
-    name: 'Gemini 3.1 Flash Lite',
+    id: 'google/gemini-3.5-flash-lite',
+    name: 'Gemini 3.5 Flash Lite',
     blurb:
       'The shipped default — very fast, very cheap, 1M-token context. Ideal for the always-on indexing that reads everything you add.',
-    price: '$0.25 · $1.50 /M',
+    price: '$0.30 · $2.50 /M',
     recommended: true,
   },
   {

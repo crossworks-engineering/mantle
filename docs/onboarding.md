@@ -95,22 +95,23 @@ kind/slug that already exists is left alone):
 
 | Capability | Worker kind | Provider · model | Gated by |
 |---|---|---|---|
-| Fact/summary/persona extraction | `extractor`, `summarizer`, `reflector` | OpenRouter · `google/gemini-3.1-flash-lite` | OpenRouter key |
-| Document/PDF reading | `document` | OpenRouter · `google/gemini-3.1-flash-lite` | OpenRouter key |
-| Image / scan reading | `vision` | OpenRouter · `google/gemini-3.1-flash-lite` | OpenRouter key |
+| Fact/summary/persona extraction | `extractor`, `summarizer`, `reflector` | OpenRouter · `google/gemini-3.5-flash-lite` | OpenRouter key |
+| Document/PDF reading | `document` | OpenRouter · `google/gemini-3.5-flash-lite` | OpenRouter key |
+| Image / scan reading | `vision` | OpenRouter · `google/gemini-3.5-flash-lite` | OpenRouter key |
 | Image generation | `image_gen` | OpenRouter · `google/gemini-3.1-flash-image-preview` | OpenRouter key |
 | Spoken replies | `tts` | xAI · `grok-voice-latest` (ara/rex) **or** OpenRouter · `x-ai/grok-voice-tts-1.0` (ara) | xAI key if added, else OpenRouter |
 | Voice notes → text | `stt` | xAI · `grok-stt` **or** OpenRouter · `openai/gpt-4o-mini-transcribe` | xAI key if added, else OpenRouter |
 
 All OpenRouter model picks above are operator-verified as working + affordable on
-a single OpenRouter key. `gemini-3.1-flash-lite` is multimodal, so it backs the
+a single OpenRouter key. `gemini-3.5-flash-lite` is multimodal, so it backs the
 indexing workers, document reading, and vision alike.
 | Memory search | embeddings | chosen in the **Memory** step, online `text-embedding-3-large` @768 via OpenRouter/OpenAI by default; the keyless local EmbeddingGemma config is the pre-onboarding fallback | always |
 
 The **assistant** is one `agents` row (slug `assistant`, role `responder`, serves
 both web `/assistant` and Telegram). Its model, params, memory config, and tool
 grant all come from `PERSONA_MANIFEST` (the system manifest), not hardcoded here:
-model `anthropic/claude-sonnet-5`, granted `PERSONA_TOOL_GROUP_SLUGS`. It's
+model `DEFAULT_AGENT_MODEL` (`~x-ai/grok-latest`, an auto-updating OpenRouter
+alias), granted `PERSONA_TOOL_GROUP_SLUGS`. It's
 created with the Warm/Saskia default and refined by the personality step
 (`savePersonaAgent`: rebuilds the system prompt from the chosen preset, sets the
 name + temperature, points the TTS voice at the gender).

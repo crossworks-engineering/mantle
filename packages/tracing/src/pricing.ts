@@ -68,6 +68,18 @@ const PRICING: Record<string, PricePerToken> = {
   'perplexity/sonar-reasoning': { input: 0.000001, output: 0.000005 },
   'perplexity/sonar-reasoning-pro': { input: 0.000002, output: 0.000008 },
 
+  // xAI via OpenRouter. `~x-ai/grok-latest` is the auto-updating alias and the
+  // shipped agent default; it resolves to the current flagship (Grok 4.7 as of
+  // 2026-09-22) and is priced the same, so both keys carry the one rate. An
+  // alias never appears in a usage row under its target's id, so it needs its
+  // own entry or every agent turn prices at $0 on the fallback path.
+  '~x-ai/grok-latest': { input: 0.0000016, output: 0.0000048 },
+  'x-ai/grok-4.7': { input: 0.0000016, output: 0.0000048 },
+
+  // Google Gemini Flash Lite — the always-on indexing workers' model.
+  'google/gemini-3.5-flash-lite': { input: 0.0000003, output: 0.0000025 },
+  'google/gemini-3.1-flash-lite': { input: 0.00000025, output: 0.0000015 },
+
   // TypeSafe Jev (via OpenRouter's decisions endpoint) — the `decider` worker.
   // Input-only billing; answers are free. The reported `usage.cost` is the
   // accurate path, this is the fallback floor. `~typesafe/jev-latest` is the

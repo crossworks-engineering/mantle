@@ -40,10 +40,16 @@ const FALLBACK_CONTEXT_LIMITS: Record<string, number> = {
   // Google
   'google/gemini-2.5-flash': 1_000_000,
   'google/gemini-2.5-pro': 2_000_000,
+  'google/gemini-3.1-flash-lite': 1_048_576,
+  'google/gemini-3.5-flash-lite': 1_048_576,
 
-  // xAI
+  // xAI. `~x-ai/grok-latest` is OpenRouter's auto-updating alias and the
+  // shipped agent default — it must carry its own fallback, since the live
+  // catalog is not loaded on the very first turn after a cold boot.
   'x-ai/grok-2': 131_072,
   'x-ai/grok-4': 256_000,
+  'x-ai/grok-4.7': 500_000,
+  '~x-ai/grok-latest': 500_000,
 };
 
 /**
@@ -344,7 +350,9 @@ function modelSupportsVisionHeuristic(s: string): boolean {
   // Google Gemini — all current models are multimodal.
   if (s.startsWith('google/gemini')) return true;
   // xAI Grok vision-capable lines.
-  if (s.startsWith('x-ai/grok-4') || s.includes('grok-2-vision')) return true;
+  // `~x-ai/grok-latest` too: the tilde alias is a distinct string, so a
+  // `startsWith('x-ai/')` test alone silently calls the shipped default blind.
+  if (/^~?x-ai\/grok-(4|latest)/.test(s) || s.includes('grok-2-vision')) return true;
   // Open vision-language variants (Qwen-VL, Llama vision, Pixtral, …).
   if (s.includes('-vl') || s.includes('vision') || s.includes('pixtral')) return true;
   return false;

@@ -493,6 +493,23 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       "Keyless — OpenRouter's catalog is public, fetched once per run and cached 6h, and no model is invoked. Exits 0 even when a misfit is found. Only OpenRouter routes are subjects: the modality facts come from OpenRouter's catalog, so a direct-provider slug ('claude-opus-5') is out of scope rather than a finding, and the meta-routers (openrouter/auto*) are reported unchecked because their modalities are the union over everything they might route to. Same rule as the four write guards (`poolModelIssue`), so the report and the guards can never disagree.",
   },
   {
+    slug: 'curate-pools',
+    title: 'Re-curate model pools',
+    description:
+      "Rebuilds every curated model shortlist from live evidence: OpenRouter's catalog (what exists, what it costs, what it can DO), Artificial Analysis benchmark indices (what scores), and OpenRouter's usage rankings (what real traffic trusts). Benchmarks alone over-rate models nobody ships; usage alone over-rates whatever is cheapest, so the ranking blends them. Complements the three model reports, which all stop at a finding: pool-fit asks whether an entry can do its pool's job, pinned-model-drift whether a model still exists, models-drift whether our catalogue is current — none proposes a replacement, and this is the one that does. Dry-run by default: it prints the plan, and only --apply writes.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'io',
+    schedulable: false,
+    script: 'scripts/curate-pools.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--json', '--export'],
+    requiresEnv: ['MANTLE_MASTER_KEY'],
+    notes:
+      "Invokes no model — the three datasets are HTTP reads and the ranking is arithmetic, so a run costs network round-trips and no tokens. The master key is needed only to decrypt the owner's OpenRouter key for the benchmark/usage endpoints; the catalog itself is keyless, and without a key the run still produces a plan but says out loud that it ranked on price and modality alone. NOT schedulable: --apply REPLACES each pool (a ranked list merged into a stale one yields an order that is neither), and a shortlist rearranging itself unattended is the kind of change an owner should see before it lands. --export <path> writes the repo template in the /api/model-pools/export shape, which is how a re-curation reaches a release.",
+  },
+  {
     slug: 'models-drift',
     title: 'Model catalogue drift report',
     description:

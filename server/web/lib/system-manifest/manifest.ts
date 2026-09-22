@@ -1057,6 +1057,42 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   },
 ];
 
+// ── Shipped model defaults ───────────────────────────────────────────────────
+
+/**
+ * The model every shipped agent is seeded on.
+ *
+ * It is an ALIAS, not a pin. OpenRouter marks an auto-updating alias with a
+ * leading `~`: `~x-ai/grok-latest` resolves to xAI's current flagship (Grok 4.7
+ * today, 500k context, tools + vision) and follows the family forward on its
+ * own. A pinned id is a decision that nothing ages — six months on, a fresh
+ * install seeds a model two generations behind and no one notices until a turn
+ * 404s. An alias is the standing instruction "ship whatever is current", which
+ * is what a default should mean.
+ *
+ * `pinned-model-drift` deliberately reports an alias as `current` rather than
+ * `newer-in-family` — "something newer exists" is not a finding when tracking
+ * the family is exactly what was asked for.
+ *
+ * Operator-owned after seeding: an agent's model is never overwritten by the
+ * boot reconcile (decision 2026-07-29), and `coder` / `appsmith` additionally
+ * accept a `CODER_MODEL` / `APPSMITH_MODEL` env override at seed time.
+ */
+export const DEFAULT_AGENT_MODEL = '~x-ai/grok-latest';
+
+/**
+ * The model the always-on indexing workers run on (extractor, summarizer,
+ * reflector, document reader, vision, narrator, suggester).
+ *
+ * NOT an alias, and deliberately so: the only Google alias OpenRouter offers is
+ * `~google/gemini-flash-latest`, which is full Flash at ~3x the token price.
+ * These workers read EVERYTHING the brain ingests, so the cheap Flash Lite tier
+ * dominates the cost of running a brain and there is no `flash-lite-latest` to
+ * track. So this one stays pinned, and `pinned-model-drift` is what tells us a
+ * newer Flash Lite has landed, to bump on purpose rather than by surprise.
+ */
+export const DEFAULT_WORKER_MODEL = 'google/gemini-3.5-flash-lite';
+
 // ── Agents ───────────────────────────────────────────────────────────────────
 
 export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
@@ -1065,7 +1101,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Assistant',
     description: 'The generalist persona — serves web /assistant and Telegram.',
     role: 'responder',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     isPersona: true,
     // P6: grants are pure tool groups — the generalist's effective set is the
     // union of these bundles. Page/table work is HYBRID (2026-07-18 delegation
@@ -1185,7 +1221,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Pages',
     description: 'Document authoring + editing specialist; backs the /pages Assist panel.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'PAGES_MODEL',
     systemPrompt: AGENT_PROMPTS['pages']!,
     // P6: full page capability via groups — `pages` (authoring) + `page-admin`
@@ -1217,7 +1253,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Ledger',
     description: 'Typed-grid + data specialist; backs the /tables Assist panel.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'TABLES_MODEL',
     systemPrompt: AGENT_PROMPTS['tables']!,
     // P6: `tables` is the authoring subset (no `table-admin`/table_delete);
@@ -1244,7 +1280,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       'Diagram + chart specialist — hand-draws editorial SVG into pages beside a readable spec block (38 visual types).',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'DIAGRAMMER_MODEL',
     systemPrompt: AGENT_PROMPTS['diagrammer']!,
     // `pages` for the spec block + embed edits, `files` for the SVG upload
@@ -1268,7 +1304,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Remy',
     description: 'Memory-recall agent — replays past conversations from the archive.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'REMY_MODEL',
     systemPrompt: AGENT_PROMPTS['remy']!,
     // P6: `replay` (replay_window) + `replay-search` (find_window, Remy's specialty) +
@@ -1284,7 +1320,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Researcher',
     description: 'Live-web research agent (Perplexity Sonar via OpenRouter).',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'RESEARCHER_MODEL',
     systemPrompt: AGENT_PROMPTS['researcher']!,
     // P6: `research` (web_search) + `memory-core` for the node lookups it cites.
@@ -1302,7 +1338,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
       'OpenRouter usage rankings, benchmarks, and pricing. Advisory shortlists only; never ' +
       'changes what any agent or worker runs.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'CURATOR_MODEL',
     systemPrompt: AGENT_PROMPTS['curator']!,
     toolGroupSlugs: ['model-curation'],
@@ -1319,7 +1355,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       'Calculation librarian — transcribes equations out of standards into stored formulas, and audits the ones already there.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'MATHEMATICIAN_MODEL',
     systemPrompt: AGENT_PROMPTS['mathematician']!,
     // `formulas` (author + evaluate, no delete) + `calculator` for arithmetic it
@@ -1341,7 +1377,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       'Web page reader — opens a URL and reads its content back as context for the responder.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'READER_MODEL',
     systemPrompt: AGENT_PROMPTS['reader']!,
     // Just `web-read` (web_fetch) — a focused page reader, deliberately without
@@ -1359,7 +1395,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       'API integration specialist — reads service docs, authors + tests agent-callable HTTP tools. Reached by delegation (invoke_agent) from the responder, like every specialist — no surface pre-selects it.',
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'TOOLSMITH_MODEL',
     systemPrompt: AGENT_PROMPTS['toolsmith']!,
     // `toolsmith` (the api_tool_*/group/grant/web_fetch kit) + `research` so it
@@ -1378,7 +1414,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     name: 'Brian the Coder',
     description: 'Code + ops specialist (holds the unrestricted terminal).',
     role: 'custom',
-    model: 'anthropic/claude-opus-4.7',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'CODER_MODEL',
     systemPrompt: AGENT_PROMPTS['coder']!,
     // P6: `terminal` (unrestricted shell) + `sandboxes` (contained shell) +
@@ -1395,7 +1431,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       "Mini-app builder — writes real TSX against the app's shadcn UI + theme, bundles with esbuild, renders in a sandbox; backs the /apps Assist panel.",
     role: 'custom',
-    model: 'anthropic/claude-opus-4.8',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'APPSMITH_MODEL',
     systemPrompt: AGENT_PROMPTS['appsmith']!,
     // `apps` (authoring) + `app-admin` (delete/publish) reassemble the full
@@ -1420,7 +1456,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     description:
       "Permission-limited responder for the external Team Chat surface (/team) — serves team-member contacts, read-only plus filing change requests. Never appears in the owner's Conversations inbox and is never a delegate.",
     role: 'custom',
-    model: 'anthropic/claude-sonnet-5',
+    model: DEFAULT_AGENT_MODEL,
     envModelVar: 'TEAM_RESPONDER_MODEL',
     systemPrompt: AGENT_PROMPTS['team-responder']!,
     // `team-read` is the bulk of its surface (see that group's description for
@@ -1499,8 +1535,9 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
 
 // ── Workers ──────────────────────────────────────────────────────────────────
 
-// One OpenRouter key powers everything; gemini-3.1-flash-lite is the cheap
-// multimodal workhorse behind the indexing pipeline + document/vision. Voice
+// One OpenRouter key powers everything; DEFAULT_WORKER_MODEL (Gemini Flash
+// Lite) is the cheap multimodal workhorse behind the indexing pipeline +
+// document/vision. Voice
 // (tts/stt) runs on the OpenRouter route by default and UPGRADES to a dedicated
 // xAI route when the user has an xAI key (the proven grok path). These models +
 // params are the single source — onboarding and reconcile both seed from here
@@ -1540,7 +1577,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     name: 'Extractor',
     required: true,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-lite',
+    model: DEFAULT_WORKER_MODEL,
     params: { extract_facts: true },
   },
   {
@@ -1548,35 +1585,38 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     name: 'Summarizer',
     required: true,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-lite',
+    model: DEFAULT_WORKER_MODEL,
   },
   {
     kind: 'reflector',
     name: 'Reflector',
     required: true,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-lite',
+    model: DEFAULT_WORKER_MODEL,
   },
   {
     kind: 'document',
     name: 'Document reader',
     required: true,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-lite',
+    model: DEFAULT_WORKER_MODEL,
   },
   {
     kind: 'vision',
     name: 'Read images',
     required: false,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-lite',
+    model: DEFAULT_WORKER_MODEL,
   },
   {
     kind: 'image_gen',
+    // The STABLE id, not `-preview`: same vendor, same price, but 131k context
+    // instead of 65k and no preview-window withdrawal risk. (Verified against
+    // the live OpenRouter catalog 2026-09-22.)
     name: 'Image generation',
     required: false,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-image-preview',
+    model: 'google/gemini-3.1-flash-image',
   },
   {
     kind: 'tts',
@@ -1631,7 +1671,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     name: 'Narrator',
     required: true,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-lite',
+    model: DEFAULT_WORKER_MODEL,
   },
   // Suggester: proposes one follow-up question after a completed turn (the
   // accept-with-Enter chip above the chat composer). OPTIONAL: fresh onboarding
@@ -1644,7 +1684,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     name: 'Follow-up suggester',
     required: false,
     provider: 'openrouter',
-    model: 'google/gemini-3.1-flash-lite',
+    model: DEFAULT_WORKER_MODEL,
   },
   // Decider: the typed-decision model (TypeSafe Jev) behind `decide()` in
   // @mantle/decisions. Optional AND seeded disabled: it is the experimental
@@ -1660,7 +1700,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     required: false,
     enabled: false,
     provider: 'openrouter',
-    model: 'typesafe/jev-1.13',
+    model: '~typesafe/jev-latest',
     params: {
       zdr: true,
       timeout_ms: 1500,
