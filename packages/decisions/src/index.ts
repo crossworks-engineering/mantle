@@ -33,4 +33,16 @@ export {
   type Delegate,
   type DelegationHint,
 } from './delegation-hint';
+export {
+  CONTEXT_FLOORS,
+  CONTEXT_THRESHOLD_DEFAULT,
+  MAX_CONTEXT_ITEMS,
+  MAX_CONTEXT_ITEM_CHARS,
+  pruneContextItems,
+  scoreContextItems,
+  type ContextBlock,
+  type ContextItem,
+  type ContextScore,
+  type ContextScoring,
+} from './context-pruning';
 export { DecisionCache } from './cache';

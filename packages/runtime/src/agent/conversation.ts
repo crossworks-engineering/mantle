@@ -41,7 +41,15 @@ import {
   type PersonaNote,
 } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
-import { applyPassageScores, decisionUseEnabled, scorePassages } from '@mantle/decisions';
+import {
+  CONTEXT_FLOORS,
+  applyPassageScores,
+  decisionUseEnabled,
+  pruneContextItems,
+  scoreContextItems,
+  scorePassages,
+  type ContextItem,
+} from '@mantle/decisions';
 import {
   searchChunks,
   entityRelationsFor,
@@ -559,6 +567,10 @@ export async function loadConversationContext(args: {
   let chunkHits: ChunkContextHit[] = [];
   let chunkSentSnap: SnapshotItem[] = [];
   let chunkDroppedSnap: SnapshotItem[] = [];
+  // Decider, use `context_pruning`: when on, ONE request later in this
+  // function scores facts + content hits + passages together, so the
+  // separate passage_scoring call below is skipped (its work is covered).
+  const pruningUse = queryVec ? await decisionUseEnabled(ownerId, 'context_pruning') : null;
   if (queryVec && chunkLimit > 0) {
     const chunkQuery = enrichedQuery ?? inboundText;
     // Decider, use `passage_scoring` (experimental, owner-switched): with it
@@ -572,7 +584,7 @@ export async function loadConversationContext(args: {
       // exact-term question is rescued by keyword when it embeds poorly.
       q: chunkQuery,
       // small pool so the cutoff can trim without starving
-      limit: scoringUse ? Math.min(Math.max(chunkLimit * 2, 16), 25) : chunkLimit + 4,
+      limit: scoringUse || pruningUse ? Math.min(Math.max(chunkLimit * 2, 16), 25) : chunkLimit + 4,
       excludeSystemOrigin: true,
     });
     // One decision call scores each passage 0-3 for "does it answer the
@@ -580,7 +592,7 @@ export async function loadConversationContext(args: {
     // before the budget cut below. `shadow`: traced only, list unchanged.
     // Null (off / failed / slow) = the list search returned. Freshness is
     // NOT the scorer's job — the supersede pass further down stays in charge.
-    if (scoringUse) {
+    if (scoringUse && !pruningUse) {
       const scoring = await scorePassages(
         ownerId,
         chunkQuery,
@@ -614,6 +626,104 @@ export async function loadConversationContext(args: {
       const successors = await resolveSupersededTargets(ownerId, staleIds);
       contentHits = patchSuperseded(contentHits, successors);
       chunkHits = patchSuperseded(chunkHits, successors);
+    }
+  }
+
+  // ─── Context pruning: one decision over everything retrieval admitted ────
+  // Decider, use `context_pruning` (experimental, owner-switched). Every fact,
+  // content hit and passage above is scored 0-3 for "does it help answer the
+  // question" in ONE request; under the threshold (default 1.0) it goes. The
+  // spike behind this: the answer relied on 13% of injected context, and the
+  // 1.0 cut halves it for ~10% of needed items lost. Preferences are exempt,
+  // each block keeps a floor, and freshness is NOT judged here (the supersede
+  // pass above already ran). `shadow`: counts only, lists unchanged. Null
+  // (off / failed / slow): nothing happens.
+  let pruningSnap: ContextSnapshot['pruning'] = undefined;
+  if (pruningUse && factRows.length + contentHits.length + chunkHits.length > 0) {
+    const factKey = (f: FactSnippet) => `f:${f.content.slice(0, 120)}`;
+    const hitKey = (h: ContentHit) => `h:${h.nodeId}`;
+    const chunkKey = (c: ChunkContextHit) => `c:${c.nodeId}|${c.text.slice(0, 120)}`;
+    const isPref = (f: FactSnippet) => f.kind === 'preference';
+    const items: ContextItem[] = [
+      ...factRows
+        .filter((f) => !isPref(f))
+        .map((f) => ({
+          id: factKey(f),
+          block: 'fact' as const,
+          text: `${f.entityName ? `${f.entityName}: ` : ''}${f.content}`,
+        })),
+      ...contentHits.map((h) => ({
+        id: hitKey(h),
+        block: 'hit' as const,
+        text: `${h.title}: ${h.summary ?? ''}`,
+      })),
+      ...chunkHits.map((c) => ({
+        id: chunkKey(c),
+        block: 'chunk' as const,
+        text: `${c.title}${c.heading ? ` > ${c.heading}` : ''}: ${c.text}`,
+      })),
+    ];
+    try {
+      const scoring = await scoreContextItems(ownerId, enrichedQuery ?? inboundText, items);
+      if (scoring) {
+        const f = pruneContextItems(factRows, factKey, scoring, {
+          exempt: isPref,
+          floor: CONTEXT_FLOORS.fact,
+        });
+        const h = pruneContextItems(contentHits, hitKey, scoring, { floor: CONTEXT_FLOORS.hit });
+        const c = pruneContextItems(chunkHits, chunkKey, scoring, { floor: CONTEXT_FLOORS.chunk });
+        const charsSaved =
+          f.dropped.reduce((n, x) => n + x.content.length, 0) +
+          h.dropped.reduce((n, x) => n + (x.summary?.length ?? 0), 0) +
+          c.dropped.reduce((n, x) => n + x.text.length, 0);
+        pruningSnap = {
+          mode: scoring.mode,
+          threshold: scoring.threshold,
+          wouldDrop: {
+            facts: f.dropped.length,
+            contentHits: h.dropped.length,
+            chunkHits: c.dropped.length,
+          },
+          charsSaved,
+          ms: scoring.ms,
+          cached: scoring.cached,
+        };
+        if (scoring.mode === 'live') {
+          // Apply to the lists AND move the matching snapshot rows from sent
+          // to dropped, so /debug/context shows what the prompt really got.
+          const droppedKeys = new Set([
+            ...f.dropped.map(factKey),
+            ...h.dropped.map(hitKey),
+            ...c.dropped.map(chunkKey),
+          ]);
+          const snapFactKey = (s: SnapshotItem) => `f:${s.text.slice(0, 120)}`;
+          const snapHitKey = (s: SnapshotItem) => `h:${s.nodeId ?? ''}`;
+          const snapChunkKey = (s: SnapshotItem) => `c:${s.nodeId ?? ''}|${s.text.slice(0, 120)}`;
+          factRows = f.kept;
+          contentHits = h.kept;
+          chunkHits = c.kept;
+          factsDroppedSnap = [
+            ...factsDroppedSnap,
+            ...factsSentSnap.filter((x) => droppedKeys.has(snapFactKey(x))),
+          ];
+          factsSentSnap = factsSentSnap.filter((x) => !droppedKeys.has(snapFactKey(x)));
+          contentDroppedSnap = [
+            ...contentDroppedSnap,
+            ...contentSentSnap.filter((x) => droppedKeys.has(snapHitKey(x))),
+          ];
+          contentSentSnap = contentSentSnap.filter((x) => !droppedKeys.has(snapHitKey(x)));
+          chunkDroppedSnap = [
+            ...chunkDroppedSnap,
+            ...chunkSentSnap.filter((x) => droppedKeys.has(snapChunkKey(x))),
+          ];
+          chunkSentSnap = chunkSentSnap.filter((x) => !droppedKeys.has(snapChunkKey(x)));
+        }
+      }
+    } catch (err) {
+      console.error(
+        '[conversation] context pruning skipped:',
+        err instanceof Error ? err.message : err,
+      );
     }
   }
 
@@ -753,6 +863,7 @@ export async function loadConversationContext(args: {
     },
     personaNotes: { count: personaNotes.length },
     corpusMap: { count: corpusMap.entries.length, truncated: corpusMap.truncated },
+    ...(pruningSnap ? { pruning: pruningSnap } : {}),
   };
 
   return {

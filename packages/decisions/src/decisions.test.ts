@@ -3,6 +3,7 @@ import { DecisionCache } from './cache';
 import { resolveUse, summarizeAnswers } from './decide';
 import { applyPassageScores } from './passage-scoring';
 import { delegationCriteria, delegationHintLine, wordCount } from './delegation-hint';
+import { pruneContextItems } from './context-pruning';
 
 describe('resolveUse', () => {
   it('a use missing from params is OFF', () => {
@@ -134,5 +135,47 @@ describe('delegation hint', () => {
   it('counts words', () => {
     expect(wordCount('  yes   but shorter ')).toBe(3);
     expect(wordCount('')).toBe(0);
+  });
+});
+
+describe('pruneContextItems', () => {
+  type It = { id: string; pref?: boolean };
+  const items: It[] = [
+    { id: 'pref', pref: true },
+    { id: 'a' },
+    { id: 'b' },
+    { id: 'c' },
+    { id: 'd' },
+    { id: 'late' }, // past the request cap: unscored
+  ];
+  const scores = new Map([
+    ['a', { score: 0.4, confidence: 0.9 }],
+    ['b', { score: 2.1, confidence: 0.9 }],
+    ['c', { score: 1.0, confidence: 0.9 }],
+    ['d', { score: 0.2, confidence: 0.9 }],
+  ]);
+  const idOf = (x: It) => x.id;
+  const exempt = (x: It) => !!x.pref;
+
+  it('keeps exempt first, then scored ≥ threshold best-first, then unscored; drops the rest', () => {
+    const r = pruneContextItems(items, idOf, { scores, threshold: 1.0 }, { exempt });
+    expect(r.kept.map(idOf)).toEqual(['pref', 'b', 'c', 'late']);
+    expect(r.dropped.map(idOf)).toEqual(['a', 'd']);
+  });
+
+  it('a floor keeps the best of the cut', () => {
+    const r = pruneContextItems(items, idOf, { scores, threshold: 3 }, { exempt, floor: 2 });
+    expect(r.kept.map(idOf)).toEqual(['pref', 'b', 'c', 'late']);
+    expect(r.dropped.map(idOf)).toEqual(['a', 'd']);
+  });
+
+  it('a floor larger than the scored set keeps everything scored', () => {
+    const r = pruneContextItems(items, idOf, { scores, threshold: 3 }, { floor: 10 });
+    expect(r.dropped).toEqual([]);
+  });
+
+  it('threshold 0 keeps all, reordered by score', () => {
+    const r = pruneContextItems(items, idOf, { scores, threshold: 0 }, { exempt });
+    expect(r.kept.map(idOf)).toEqual(['pref', 'b', 'c', 'a', 'd', 'late']);
   });
 });

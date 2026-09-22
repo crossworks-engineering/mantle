@@ -157,6 +157,34 @@ direct turns; the chat baseline delegated 29 of them. Next improvement: put
 the open page/app title in the state (the UI knows it); most misses were
 short instructions about what the user had open.
 
+### `context_pruning` (built; ships `shadow`)
+
+Once per responder turn, after retrieval and the supersede pass, ONE request
+scores every injected item — facts, content hits, passages — 0-3 for "does
+this help answer the question" (`packages/decisions/src/context-pruning.ts`,
+wired in `loadConversationContext`). Code drops items under `threshold`
+(default **1.0**) and keeps the rest best-first; each block keeps a floor
+(2 facts, 1 hit, 2 passages); **preference facts are exempt**; history, the
+corpus map, digests and relations are never touched. When this use is on,
+the auto-context's separate `passage_scoring` call is skipped — the one
+request covers the passages too (the `search_chunks` tool keeps its own).
+
+- `shadow`: the `/debug/context` snapshot gains `pruning: { mode, threshold,
+wouldDrop: {facts, contentHits, chunkHits}, charsSaved, ms, cached }`.
+  Lists unchanged. A shadow week reads the cut per turn from there.
+- `live`: the lists are pruned before the prompt is built, and the snapshot's
+  `sent` / `dropped` rows move with them, so `/debug/context` shows what the
+  model really received.
+
+Spike (NATREF, 2026-09-22, 60 real turns, 1 524 items, dev-brain page
+29a6b411): the answer relied on **13%** of injected context (facts 9%, hits
+18%, passages 17%). Jev ranked a needed item above a not-needed one 82% of
+the time. Cut under 1.0: 51% of characters kept, 10% of needed items lost;
+under 1.5: 30% kept but 30% lost. A plain threshold beat every top-k mix.
+One request per turn: ~26 items, 356 ms, $0.0002. Those were 240-character
+snippets; production sends fuller text, so tighten only after a shadow week
+on full items.
+
 ### Declared, not built
 
 - `version_grouping`: nouls over the top hits, "do `p3` and `p7` state the same

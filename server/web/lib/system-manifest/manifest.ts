@@ -1669,6 +1669,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
       uses: {
         passage_scoring: { enabled: false, mode: 'shadow', threshold: 1.5 },
         delegation_hint: { enabled: false, mode: 'shadow' },
+        context_pruning: { enabled: false, mode: 'shadow', threshold: 1.0 },
       },
     },
   },

@@ -690,6 +690,18 @@ export type ContextSnapshot = {
   };
   personaNotes: { count: number };
   corpusMap: { count: number; truncated: boolean };
+  /** The decider's `context_pruning` use, when it ran on this turn. In
+   *  `shadow` the counts say what WOULD have been dropped; in `live` they were.
+   *  Absent when the use is off or the call failed (nothing changed). */
+  pruning?: {
+    mode: 'shadow' | 'live';
+    threshold: number;
+    wouldDrop: { facts: number; contentHits: number; chunkHits: number };
+    /** Characters of item text under the threshold (≈ tokens × 4). */
+    charsSaved: number;
+    ms: number;
+    cached: boolean;
+  };
 };
 
 export type BackupFrequency = 'daily' | 'weekly';

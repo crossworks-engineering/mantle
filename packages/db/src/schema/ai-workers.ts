@@ -274,6 +274,10 @@ export type DecisionUse =
   /** Score `search_chunks` / auto-context passages 0-3 for "does this answer
    *  the question" and prune the low ones before they enter the prompt. */
   | 'passage_scoring'
+  /** Per responder turn: score every injected context item (facts, content
+   *  hits, passages) for relevance to the question in ONE request and drop
+   *  the weak ones before the prompt is built. Preferences are exempt. */
+  | 'context_pruning'
   /** Group retrieved passages that state the same fact so code can keep the
    *  newest by date. Not implemented yet (needs its own spike first). */
   | 'version_grouping'
