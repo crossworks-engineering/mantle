@@ -100,7 +100,11 @@ describe('adoptWorkerParams', () => {
 
   it('adds a manifest use the live row lacks, as the manifest ships it', () => {
     const { context_pruning: _drop, ...rest } = live.uses;
-    const out = adoptWorkerParams('decider', { ...live, uses: rest }, decider.params) as typeof live;
+    const out = adoptWorkerParams(
+      'decider',
+      { ...live, uses: rest },
+      decider.params,
+    ) as typeof live;
     expect(out.uses.passage_scoring).toEqual(live.uses.passage_scoring);
     expect(out.uses.context_pruning).toEqual({ enabled: false, mode: 'shadow', threshold: 1.0 });
   });
