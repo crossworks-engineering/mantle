@@ -1711,6 +1711,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
         delegation_hint: { enabled: false, mode: 'shadow' },
         context_pruning: { enabled: false, mode: 'shadow', threshold: 1.0 },
         version_grouping: { enabled: false, mode: 'shadow', threshold: 0.9 },
+        fact_add_prefilter: { enabled: false, mode: 'shadow' },
       },
     },
   },

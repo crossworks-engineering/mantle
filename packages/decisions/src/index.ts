@@ -61,4 +61,13 @@ export {
   type VersionPairAnswer,
   type VersionPassage,
 } from './version-grouping';
+export {
+  FACT_RELATION_CRITERIA,
+  MAX_FACT_CHARS,
+  factRelationQuestion,
+  prefilterFactAdd,
+  shouldSkipClassifier,
+  type FactAddPrefilter,
+  type FactRelation,
+} from './fact-add-prefilter';
 export { DecisionCache } from './cache';

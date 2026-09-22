@@ -10,6 +10,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db, facts, nodes, type AiWorker, type ExtractorParams } from '@mantle/db';
 
 import { currentTrace, step } from '@mantle/tracing';
+import { prefilterFactAdd, type FactAddPrefilter } from '@mantle/decisions';
 import { resolveChatRoutes } from '@mantle/runtime/agent';
 import { type ExtractedFact, type ExtractorOutput } from '../extractor-parse';
 import { CLASSIFIER_PROMPT_TEMPLATE } from './prompts';
@@ -67,6 +68,31 @@ async function classifyAndApplyFact(
     return 'ADD';
   }
 
+  // Decider, use `fact_add_prefilter` (experimental, owner-switched): a Jev
+  // ADD at the act-alone gate (0.9) skips the chat classifier in `live`. Any
+  // other Jev answer is only recorded; the classifier below decides as
+  // always. Jev never retires or rewrites a fact (spike: dev-brain page
+  // f28a25cf). Null (off / failed / slow): today's path.
+  const prefilter = await prefilterFactAdd(
+    ownerId,
+    candidate.content,
+    closeNeighbours.map((n) => n.content),
+  );
+  if (prefilter?.mode === 'live' && prefilter.wouldSkip) {
+    await recordPrefilterVerdict(prefilter, null);
+    await db.insert(facts).values({
+      ownerId,
+      content: candidate.content,
+      kind: candidate.kind,
+      entityId: primaryEntityId,
+      confidence: candidate.confidence,
+      validFrom,
+      sourceNodeId,
+      embedding: candidateEmbedding,
+    });
+    return 'ADD';
+  }
+
   // Slow path: call the classifier to decide.
   const params = (worker.params ?? {}) as ExtractorParams;
   const decisionResult = await chatComplete(
@@ -80,6 +106,7 @@ async function classifyAndApplyFact(
     params,
   );
   const decision = parseClassifierDecision(decisionResult.text);
+  if (prefilter) await recordPrefilterVerdict(prefilter, decision.decision);
 
   const targetIdx = decision.target_index ? decision.target_index - 1 : null;
   const target = targetIdx != null ? closeNeighbours[targetIdx] : null;
@@ -133,6 +160,27 @@ async function classifyAndApplyFact(
     embedding: candidateEmbedding,
   });
   return 'ADD';
+}
+
+/**
+ * The shadow-week evidence for `fact_add_prefilter`: Jev's pick next to the
+ * chat classifier's, on one step. `chat` is null when a live skip meant the
+ * classifier never ran. Read: of the steps with `would_skip`, how many have
+ * `chat: 'ADD'` (the spike: 22 of 22).
+ */
+async function recordPrefilterVerdict(pre: FactAddPrefilter, chat: string | null): Promise<void> {
+  await step({ name: 'fact_add_prefilter_verdict', kind: 'compute' }, async (h) => {
+    h.setMeta({
+      use: 'fact_add_prefilter',
+      mode: pre.mode,
+      jev: `${pre.pick}@${Math.round(pre.confidence * 100) / 100}`,
+      gate: pre.gate,
+      would_skip: pre.wouldSkip,
+      chat,
+      agree: chat === null ? null : chat.toLowerCase() === pre.pick,
+      skipped: chat === null,
+    });
+  });
 }
 
 // ─── Per-stage seams ────────────────────────────────────────────────────────

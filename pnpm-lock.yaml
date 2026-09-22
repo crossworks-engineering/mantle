@@ -997,6 +997,9 @@ importers:
       '@mantle/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@mantle/decisions':
+        specifier: workspace:*
+        version: link:../../packages/decisions
       '@mantle/embeddings':
         specifier: workspace:*
         version: link:../../packages/embeddings

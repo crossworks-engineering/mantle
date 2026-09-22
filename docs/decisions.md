@@ -217,11 +217,33 @@ their successor, 0 other drops. The wording above: precision 1.00 at 0.8 and
 wording grouped 14 of 33 at 0.5); at 0.9 every grouping in real pools was a
 genuine unlinked copy. ~400 ms, ~$0.0005 per request.
 
+### `fact_add_prefilter` (built; ships `shadow`)
+
+On the extractor's slow path (a candidate fact with close neighbours,
+`server/api/src/agent/extract/facts.ts`), before the chat classifier: one
+four-way choice, add / update / delete / noop
+(`packages/decisions/src/fact-add-prefilter.ts`). The `add` and `update`
+criteria spell out the multi-valued case ("a project uses many line
+classes") because that is where the spike saw Jev go wrong.
+
+- The ONE rule: a Jev `add` at or above the gate (the use's `threshold`, else
+  the worker's `act_alone_at`, 0.9) skips the chat call in `live`. Every
+  other answer (any update / delete / noop, or a low-confidence add) goes to
+  the chat classifier as today. Jev never retires or rewrites a fact.
+- Evidence: a `fact_add_prefilter_verdict` step in the `extractor_run` trace
+  per slow-path fact: `meta.jev` (`add@0.93`), `gate`, `would_skip`, `chat`
+  (the classifier's decision, null on a live skip) and `agree`. The shadow
+  week reads: of the steps with `would_skip: true`, how many have `chat: ADD`
+  (target ≥ 95%).
+
+Spike (NATREF, 2026-09-21, 60 real slow-path cases, dev-brain page
+f28a25cf): Jev ADD at ≥ 0.9 on 22 of 60 cases (37%), the chat model also
+said ADD on 22 of 22. Jev's UPDATE was wrong once at 0.99, so no confidence
+makes its update / delete safe. The shipped wording is new (the spike's exact
+round-2 text was not kept); the shadow week is its test.
+
 ### Declared, not built
 
-- `fact_add_prefilter`: fact reconcile, let a Jev `ADD` at confidence ≥ 0.9
-  skip the chat classifier (≈35% of slow-path calls in the spike, zero harmful
-  misses). Never let it emit `UPDATE` / `DELETE`.
 - `model_routing`: per-request complexity score + needs-tools / needs-code /
   sensitive nouls + language choice; code picks a route from the model pool;
   short conversational replies skip the router; under the floor the current

@@ -18,6 +18,7 @@
     "@mantle/content": "workspace:*",
     "@mantle/content-core": "workspace:*",
     "@mantle/db": "workspace:*",
+    "@mantle/decisions": "workspace:*",
     "@mantle/embeddings": "workspace:*",
     "@mantle/files": "workspace:*",
     "@mantle/runs": "workspace:*",
