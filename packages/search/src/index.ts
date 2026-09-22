@@ -49,6 +49,12 @@ export {
   type ReadSectionOptions,
   type ReadSectionResult,
 } from './chunks';
+export {
+  chunkPairSimilarities,
+  MAX_CHUNK_PAIR_KEYS,
+  type ChunkKey,
+  type ChunkPairSimilarity,
+} from './chunk-pairs';
 
 export interface SearchOptions {
   ownerId: string;

@@ -80,6 +80,8 @@ export type ChunkContextHit = {
   title: string;
   heading: string | null;
   text: string;
+  /** The chunk's position in its node; with nodeId, the chunk's key. */
+  ordinal?: number;
   /** Set when the parent node is SUPERSEDED — see ContentHit.supersededBy. */
   supersededBy?: { id: string; title: string };
 };

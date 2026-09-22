@@ -46,4 +46,19 @@ export {
   type ContextScore,
   type ContextScoring,
 } from './context-pruning';
+export {
+  MAX_VERSION_PAIRS,
+  MAX_VERSION_PASSAGE_CHARS,
+  VERSION_SIMILARITY_FLOOR,
+  VERSION_THRESHOLD_DEFAULT,
+  applyVersionGroups,
+  candidateVersionPairs,
+  dropSupersededInPool,
+  groupVersions,
+  versionQuestion,
+  type PassagePairSimilarity,
+  type VersionGrouping,
+  type VersionPairAnswer,
+  type VersionPassage,
+} from './version-grouping';
 export { DecisionCache } from './cache';

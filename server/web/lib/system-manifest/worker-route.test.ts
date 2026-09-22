@@ -95,7 +95,13 @@ describe('adoptWorkerParams', () => {
   };
 
   it('keeps the decider switchboard on adopt (uses stay on)', () => {
-    expect(adoptWorkerParams('decider', live, decider.params)).toEqual(live);
+    const out = adoptWorkerParams('decider', live, decider.params) as typeof live;
+    expect(out).toMatchObject(live);
+    // Nothing the operator set is lost; only uses the row lacks are added.
+    for (const [use, cfg] of Object.entries(out.uses)) {
+      if (use in live.uses) expect(cfg).toEqual(live.uses[use as keyof typeof live.uses]);
+      else expect(cfg).toMatchObject({ enabled: false, mode: 'shadow' });
+    }
   });
 
   it('adds a manifest use the live row lacks, as the manifest ships it', () => {

@@ -66,6 +66,7 @@ export type ChunkSearchHit = {
   nodeTitle: string;
   nodeType: string;
   nodeSupersededBy?: string | null;
+  ordinal?: number;
   headingPath: string | null;
   text: string;
   distance: number;
@@ -210,6 +211,7 @@ export function selectChunkHits(
     title: h.nodeTitle,
     heading: h.headingPath,
     text: h.text,
+    ...(h.ordinal !== undefined ? { ordinal: h.ordinal } : {}),
     ...(h.nodeSupersededBy ? { supersededBy: { id: h.nodeSupersededBy, title: '' } } : {}),
   }));
   const toSnapItem = (h: (typeof hits)[number]): SnapshotItem => ({

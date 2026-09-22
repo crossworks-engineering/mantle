@@ -702,6 +702,19 @@ export type ContextSnapshot = {
     ms: number;
     cached: boolean;
   };
+  /** The decider's `version_grouping` use, when it ran on this turn. Part A
+   *  (code): hits whose living successor is also in the pool. Part B (the
+   *  model): passages judged a version of a higher-ranked passage from an
+   *  unlinked node. `shadow`: counts only; `live`: dropped. */
+  versionGrouping?: {
+    mode: 'shadow' | 'live';
+    threshold: number;
+    wouldDrop: { superseded: number; versions: number };
+    /** Candidate pairs asked about (0 = no model call). */
+    pairs: number;
+    ms: number;
+    cached: boolean;
+  };
 };
 
 export type BackupFrequency = 'daily' | 'weekly';

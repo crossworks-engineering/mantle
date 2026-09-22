@@ -185,11 +185,40 @@ One request per turn: ~26 items, 356 ms, $0.0002. Those were 240-character
 snippets; production sends fuller text, so tighten only after a shadow week
 on full items.
 
+### `version_grouping` (built; ships `shadow`)
+
+Once per responder turn, after context pruning, in `loadConversationContext`
+(`packages/decisions/src/version-grouping.ts`). Stops two versions of one
+passage from both reaching the prompt. Two parts:
+
+- **Part A, code, no model.** A hit (content hit or passage) whose node is
+  superseded, and whose living successor is also in the pool, goes. The
+  supersede pass already resolved each stale hit to the living end of its
+  chain, so this is a set lookup. It counts even when the model call fails.
+- **Part B, the model, on what code cannot resolve.** Passage pairs from
+  DIFFERENT nodes, not linked by `superseded_by`, with embedding similarity
+  ≥ 0.75 (`chunkPairSimilarities` in `@mantle/search`: one query, the
+  vectors stay in Postgres), at most 60 per request. One noul per pair:
+  "are these two versions of the same passage", with the contrastive
+  criteria from the spike. A direct yes at `threshold` (default **0.9**)
+  drops the LOWER-RANKED passage. Never chained (a dropped passage causes no
+  further drop); two sections of one node are never compared; the model
+  never picks the newer copy (search rank keeps salience and recency).
+
+- `shadow`: the `/debug/context` snapshot gains `versionGrouping: { mode,
+threshold, wouldDrop: {superseded, versions}, pairs, ms, cached }`.
+- `live`: the lists shrink before the prompt is built; the snapshot's
+  `sent` / `dropped` rows move with them.
+
+Spike (dev, 2026-09-22, dev-brain page b564522b): 30 real superseded pairs,
+26 search pools, 47 stale passages. Part A alone: 0 stale passages above
+their successor, 0 other drops. The wording above: precision 1.00 at 0.8 and
+0.9 on 33 labelled negatives (the older "same fact about the same subject"
+wording grouped 14 of 33 at 0.5); at 0.9 every grouping in real pools was a
+genuine unlinked copy. ~400 ms, ~$0.0005 per request.
+
 ### Declared, not built
 
-- `version_grouping`: nouls over the top hits, "do `p3` and `p7` state the same
-  fact about the same subject", so code can keep the newest by date /
-  `superseded_by`. Needs its own spike first.
 - `fact_add_prefilter`: fact reconcile, let a Jev `ADD` at confidence ≥ 0.9
   skip the chat classifier (≈35% of slow-path calls in the spike, zero harmful
   misses). Never let it emit `UPDATE` / `DELETE`.

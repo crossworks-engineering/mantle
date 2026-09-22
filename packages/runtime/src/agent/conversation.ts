@@ -43,8 +43,13 @@ import {
 import { embed } from '@mantle/embeddings';
 import {
   CONTEXT_FLOORS,
+  VERSION_THRESHOLD_DEFAULT,
   applyPassageScores,
+  applyVersionGroups,
+  candidateVersionPairs,
   decisionUseEnabled,
+  dropSupersededInPool,
+  groupVersions,
   pruneContextItems,
   scoreContextItems,
   scorePassages,
@@ -52,6 +57,7 @@ import {
 } from '@mantle/decisions';
 import {
   searchChunks,
+  chunkPairSimilarities,
   entityRelationsFor,
   pgArrayLiteral,
   resolveSupersededTargets,
@@ -727,6 +733,94 @@ export async function loadConversationContext(args: {
     }
   }
 
+  // ─── Version grouping: two versions of one passage ───────────────────────
+  // Decider, use `version_grouping` (experimental, owner-switched). Part A is
+  // code: a hit whose living successor (resolved by the supersede pass above)
+  // is also in the pool goes. Part B asks the model, only for passage pairs
+  // from different, UNLINKED nodes that embed as near-copies, "are these two
+  // versions of the same passage"; a direct yes at the threshold drops the
+  // lower-ranked one. The model never picks the newer copy. Spike: dev-brain
+  // page b564522b. `shadow`: counts only. Part B null (off / failed): Part A
+  // still counts.
+  let versionSnap: ContextSnapshot['versionGrouping'] = undefined;
+  const versionUse =
+    queryVec && contentHits.length + chunkHits.length > 1
+      ? await decisionUseEnabled(ownerId, 'version_grouping')
+      : null;
+  if (versionUse) {
+    try {
+      const t0 = Date.now();
+      const staleHits = dropSupersededInPool(contentHits);
+      const staleChunks = dropSupersededInPool(chunkHits);
+      const chunkId = (c: ChunkContextHit) => `${c.nodeId}:${c.ordinal ?? ''}`;
+      const keyed = staleChunks.kept.filter((c) => c.ordinal !== undefined);
+      const sims = await chunkPairSimilarities(
+        ownerId,
+        keyed.map((c) => ({ nodeId: c.nodeId, ordinal: c.ordinal! })),
+      );
+      const passages = keyed.map((c) => ({
+        id: chunkId(c),
+        nodeId: c.nodeId,
+        title: c.title,
+        heading: c.heading,
+        text: c.text,
+        supersededBy: c.supersededBy,
+      }));
+      const pairs = candidateVersionPairs(
+        passages,
+        sims.map((s) => ({
+          a: `${s.a.nodeId}:${s.a.ordinal}`,
+          b: `${s.b.nodeId}:${s.b.ordinal}`,
+          similarity: s.similarity,
+        })),
+      );
+      const grouping = await groupVersions(ownerId, passages, pairs);
+      const versions = grouping
+        ? applyVersionGroups(staleChunks.kept, chunkId, grouping)
+        : { kept: staleChunks.kept, dropped: [] as ChunkContextHit[] };
+      versionSnap = {
+        mode: versionUse.mode,
+        threshold: grouping?.threshold ?? versionUse.threshold ?? VERSION_THRESHOLD_DEFAULT,
+        wouldDrop: {
+          superseded: staleHits.dropped.length + staleChunks.dropped.length,
+          versions: versions.dropped.length,
+        },
+        pairs: grouping ? pairs.length : 0,
+        ms: Date.now() - t0,
+        cached: grouping?.cached ?? false,
+      };
+      if (versionUse.mode === 'live') {
+        // Same snapshot bookkeeping as pruning: dropped rows move from sent
+        // to dropped so /debug/context shows what the prompt really got.
+        const goneHits = new Set(staleHits.dropped.map((h) => h.nodeId));
+        // snip() on both sides: snapshot text is whitespace-collapsed.
+        const chunkKey = (nodeId: string, text: string) => `${nodeId}|${snip(text, 120)}`;
+        const goneChunks = new Set(
+          [...staleChunks.dropped, ...versions.dropped].map((c) => chunkKey(c.nodeId, c.text)),
+        );
+        contentHits = staleHits.kept;
+        chunkHits = versions.kept;
+        contentDroppedSnap = [
+          ...contentDroppedSnap,
+          ...contentSentSnap.filter((x) => goneHits.has(x.nodeId ?? '')),
+        ];
+        contentSentSnap = contentSentSnap.filter((x) => !goneHits.has(x.nodeId ?? ''));
+        chunkDroppedSnap = [
+          ...chunkDroppedSnap,
+          ...chunkSentSnap.filter((x) => goneChunks.has(chunkKey(x.nodeId ?? '', x.text))),
+        ];
+        chunkSentSnap = chunkSentSnap.filter(
+          (x) => !goneChunks.has(chunkKey(x.nodeId ?? '', x.text)),
+        );
+      }
+    } catch (err) {
+      console.error(
+        '[conversation] version grouping skipped:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
   // ─── Corpus map: the cached "what exists" index ─────────────────────────
   // Not a retrieval — a map. The responder otherwise sees only the ~11 nodes
   // vector search surfaces per turn and has no idea what else the brain
@@ -864,6 +958,7 @@ export async function loadConversationContext(args: {
     personaNotes: { count: personaNotes.length },
     corpusMap: { count: corpusMap.entries.length, truncated: corpusMap.truncated },
     ...(pruningSnap ? { pruning: pruningSnap } : {}),
+    ...(versionSnap ? { versionGrouping: versionSnap } : {}),
   };
 
   return {

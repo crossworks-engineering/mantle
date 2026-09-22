@@ -1710,6 +1710,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
         passage_scoring: { enabled: false, mode: 'shadow', threshold: 1.5 },
         delegation_hint: { enabled: false, mode: 'shadow' },
         context_pruning: { enabled: false, mode: 'shadow', threshold: 1.0 },
+        version_grouping: { enabled: false, mode: 'shadow', threshold: 0.9 },
       },
     },
   },
