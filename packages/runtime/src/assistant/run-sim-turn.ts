@@ -38,7 +38,7 @@ import { getApiKeyById } from '@mantle/api-keys';
 import { buildChatMessages, loadConversationContext } from '../agent';
 import { getChatAdapter } from '@mantle/voice';
 import { loadProfilePreferences } from '@mantle/content';
-import { startTrace, currentTrace } from '@mantle/tracing';
+import { startTrace, currentTrace, createTracePrelude, withTracePrelude } from '@mantle/tracing';
 import { resolveAssistantAgent } from './run-turn';
 import { assembleResponderTurn } from './assemble-turn';
 import { runResponderLoop } from './responder-loop';
@@ -144,7 +144,12 @@ export async function runSimulatedResponderTurn(
   // as a live turn loads it. We keep everything EXCEPT the loaded history: the
   // sim's conversation history is caller-held, so we build the prompt from
   // `opts.history` and never touch the stored assistant_messages window.
-  const ctx = await loadConversationContext({ ownerId, agent, inboundText: message });
+  // Steps before the trace opens (the decider's pruning + hint calls, the
+  // query embed) are held here and written into the trace below.
+  const prelude = createTracePrelude();
+  const ctx = await withTracePrelude(prelude, () =>
+    loadConversationContext({ ownerId, agent, inboundText: message }),
+  );
   const history = (opts.history ?? []).map((t) => ({
     role: t.role === 'assistant' ? ('assistant' as const) : ('user' as const),
     text: t.content,
@@ -154,18 +159,20 @@ export async function runSimulatedResponderTurn(
   // group-resolved tool allowlist, thinking budget, loop overrides). No
   // heartbeatSurface — the sim isn't a live web/telegram surface, so it skips
   // the open-heartbeat awareness block + continuity-tool affordance.
-  const assembled = await assembleResponderTurn({
-    ownerId,
-    agent,
-    prefs,
-    logPrefix: '[mcp-sim]',
-    // Decider delegation hint, same as the web turn, so an ask_responder
-    // canary exercises it: the message plus the caller-held previous user turn.
-    inboundText: message,
-    previousUserText: [...history].reverse().find((h) => h.role === 'user')?.text ?? null,
-    ...(opts.excludeToolSlugs?.length ? { excludeToolSlugs: opts.excludeToolSlugs } : {}),
-    ...(opts.readOnly ? { readOnly: true } : {}),
-  });
+  const assembled = await withTracePrelude(prelude, () =>
+    assembleResponderTurn({
+      ownerId,
+      agent,
+      prefs,
+      logPrefix: '[mcp-sim]',
+      // Decider delegation hint, same as the web turn, so an ask_responder
+      // canary exercises it: the message plus the caller-held previous user turn.
+      inboundText: message,
+      previousUserText: [...history].reverse().find((h) => h.role === 'user')?.text ?? null,
+      ...(opts.excludeToolSlugs?.length ? { excludeToolSlugs: opts.excludeToolSlugs } : {}),
+      ...(opts.readOnly ? { readOnly: true } : {}),
+    }),
+  );
 
   // Apply the caller's iteration cap by overriding the assembly's loop
   // overrides. Clamp to a positive int ≤ 30, matching assemble-turn's own
@@ -186,6 +193,7 @@ export async function runSimulatedResponderTurn(
   const outcome = await startTrace(
     {
       kind: 'manual',
+      prelude,
       ownerId,
       subjectKind: 'agent',
       subjectId: agent.id,

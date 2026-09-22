@@ -59,6 +59,8 @@ import {
   registerTurnAbort,
   unregisterTurnAbort,
   currentTrace,
+  createTracePrelude,
+  withTracePrelude,
 } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
 
@@ -147,7 +149,12 @@ export async function runTeamTurn(
   // ctx.history is structurally empty; digests are off via the agent's
   // memoryConfig. We use facts/contentHits/chunkHits/relations only, and load
   // the REAL history from the member's own team thread below.
-  const ctx = await loadConversationContext({ ownerId, agent, inboundText: trimmed });
+  // Steps before the trace opens (the decider's pruning + hint calls, the
+  // query embed) are held here and written into the trace below.
+  const prelude = createTracePrelude();
+  const ctx = await withTracePrelude(prelude, () =>
+    loadConversationContext({ ownerId, agent, inboundText: trimmed }),
+  );
   const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
   const teamHistoryRows = await recentTeamMessages(
     ownerId,
@@ -208,17 +215,19 @@ export async function runTeamTurn(
   // switch (default OFF) is enforced HERE, at tool resolution — independent
   // of the `team-read` group grant, so it can't be bypassed by a manifest
   // change that re-adds the slugs.
-  const assembled = await assembleResponderTurn({
-    ownerId,
-    agent,
-    prefs,
-    logPrefix: '[team-turn]',
-    includeIdentity: false,
-    volatileExtras: [memberLine],
-    withThinking: false,
-    allowDelegation: false,
-    excludeToolSlugs: isTeamPrivateReadsEnabled(prefs) ? [] : TEAM_PRIVATE_READ_SLUGS,
-  });
+  const assembled = await withTracePrelude(prelude, () =>
+    assembleResponderTurn({
+      ownerId,
+      agent,
+      prefs,
+      logPrefix: '[team-turn]',
+      includeIdentity: false,
+      volatileExtras: [memberLine],
+      withThinking: false,
+      allowDelegation: false,
+      excludeToolSlugs: isTeamPrivateReadsEnabled(prefs) ? [] : TEAM_PRIVATE_READ_SLUGS,
+    }),
+  );
   const { volatileContext, allowedTools } = assembled;
 
   const adapter = getChatAdapter(agent.provider);
@@ -251,6 +260,7 @@ export async function runTeamTurn(
     outcome = await startTrace(
       {
         kind: 'responder_turn',
+        prelude,
         ownerId,
         turnId: options.streamId,
         subjectId: inbound.id,

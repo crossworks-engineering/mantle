@@ -57,6 +57,8 @@ import {
   registerTurnAbort,
   unregisterTurnAbort,
   currentTrace,
+  createTracePrelude,
+  withTracePrelude,
 } from '@mantle/tracing';
 import { TEAM_RESPONDER_SLUG } from './run-team-turn';
 import { errorMessage } from '@mantle/std';
@@ -211,7 +213,12 @@ export async function runForumTurn(
 
     // Retrieval context (the team-responder's own history is structurally
     // empty; digests are off via its memoryConfig — see runTeamTurn).
-    const ctx = await loadConversationContext({ ownerId, agent, inboundText: trigger.body });
+    // Steps before the trace opens (the decider's pruning + hint calls, the
+    // query embed) are held here and written into the trace below.
+    const prelude = createTracePrelude();
+    const ctx = await withTracePrelude(prelude, () =>
+      loadConversationContext({ ownerId, agent, inboundText: trigger.body }),
+    );
 
     // Belt-and-suspenders: fail out any TRULY abandoned (>15min) pending so a
     // wedged topic self-heals even before the P1 global sweep worker. The
@@ -252,17 +259,19 @@ export async function runForumTurn(
       "You are answering in a shared team forum: every team member can read this thread, and user messages are prefixed with their author's name. " +
       'Address the member whose post you are answering, but write for the room.';
 
-    const assembled = await assembleResponderTurn({
-      ownerId,
-      agent,
-      prefs,
-      logPrefix: '[forum-turn]',
-      includeIdentity: false,
-      volatileExtras: [memberLine, topicLine],
-      withThinking: false,
-      allowDelegation: false,
-      excludeToolSlugs: isTeamPrivateReadsEnabled(prefs) ? [] : TEAM_PRIVATE_READ_SLUGS,
-    });
+    const assembled = await withTracePrelude(prelude, () =>
+      assembleResponderTurn({
+        ownerId,
+        agent,
+        prefs,
+        logPrefix: '[forum-turn]',
+        includeIdentity: false,
+        volatileExtras: [memberLine, topicLine],
+        withThinking: false,
+        allowDelegation: false,
+        excludeToolSlugs: isTeamPrivateReadsEnabled(prefs) ? [] : TEAM_PRIVATE_READ_SLUGS,
+      }),
+    );
     const { volatileContext, allowedTools } = assembled;
 
     const adapter = getChatAdapter(agent.provider);
@@ -294,6 +303,7 @@ export async function runForumTurn(
       outcome = await startTrace(
         {
           kind: 'responder_turn',
+          prelude,
           ownerId,
           turnId: options.streamId,
           subjectId: inboundPostId,

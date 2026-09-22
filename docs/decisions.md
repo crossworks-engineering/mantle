@@ -235,21 +235,25 @@ Full write-ups: dev-brain pages `cdf6a97c-5b84-485e-8698-9c266614318c`
   a use in `params.uses` (mode `shadow`). Until the jackdaw form ships the
   toggles, edit `params` as JSON. The resolution cache means a flip takes up
   to 30 s to reach a running process.
-- **Read the shadow week.** Where each use leaves its evidence differs,
-  because on the web and MCP surfaces the context load and the turn assembly
-  run BEFORE the turn's trace opens, so `decide()` has no trace to write a
-  step into there:
-  - `passage_scoring`: a `decide_passage_scoring` step inside each
-    `search_chunks` tool call (the call runs inside the trace), plus the tool
-    step's `passage_scoring_*` meta.
+- **Read the shadow week.** Every use leaves a `decide_<use>` step in the
+  turn's trace, with its cost. On the web, MCP sim, forum and team surfaces
+  the context load and the turn assembly run BEFORE the trace opens (the
+  trace's subject is the inbound row, written only after the load so history
+  cannot contain the new message). Those steps are held in a trace prelude
+  (`createTracePrelude` / `withTracePrelude` in `@mantle/tracing`) and
+  written as the trace's first steps, marked `meta.prelude: true`, with their
+  tokens and cost added to the trace total. Telegram and the runs resume
+  already run inside their trace. Per use, also read:
+  - `passage_scoring`: the `decide_passage_scoring` step inside each
+    `search_chunks` tool call, plus the tool step's `passage_scoring_*` meta.
   - `context_pruning`: the `load_context` step's output →
     `snapshot.pruning` (`mode`, `threshold`, `wouldDrop`, `charsSaved`, `ms`).
   - `delegation_hint`: the turn's `traces.data.delegation_hint` (`pick`,
     `confidence`, `mode`), read against the same trace's `invoke_agent` steps.
-  - Cost: only calls made inside a trace roll into `/debug` spend (today the
-    `search_chunks` path). The other two are ~$0.0002 per turn; count them
-    from the snapshot and the trace data.
-    Telegram assembles inside its trace, so there the `decide_*` steps appear.
+  - Cost: `/api/debug/spend` splits each decision model's row by use
+    (`modelSpend[].uses`: calls, failed, cost, tokens in, mean ms). Cache hits
+    make no call and leave no step. A failed call is logged under the model
+    id the worker asked for (`~typesafe/jev-latest`), not the served one.
 - **Go live:** set `mode: 'live'` on the one use. Everything else stays shadow.
 - **Kill switch:** disable the worker. Every call site is back to today's
   behaviour within 30 s, with no restart.
