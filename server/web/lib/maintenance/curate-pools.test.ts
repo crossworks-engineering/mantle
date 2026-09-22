@@ -147,11 +147,7 @@ describe('planCuration', () => {
       usage: [],
       current: [],
     });
-    expect(plan.entries.map((e) => e.routes[0]!.model)).toEqual([
-      'c/paid',
-      'b/free',
-      'a/unpriced',
-    ]);
+    expect(plan.entries.map((e) => e.routes[0]!.model)).toEqual(['c/paid', 'b/free', 'a/unpriced']);
     expect(plan.entries[2]!.pricing).toBeNull();
   });
 

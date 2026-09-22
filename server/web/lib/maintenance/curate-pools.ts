@@ -108,28 +108,28 @@ export function vendorOf(id: string): string {
 /** Display names for the vendor prefixes OpenRouter uses. Falls back to the
  *  prefix itself, which is readable enough (`upstage`, `krea`). */
 const VENDOR_LABELS: Record<string, string> = {
-  'anthropic': 'Anthropic',
-  'openai': 'OpenAI',
-  'google': 'Google',
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  google: 'Google',
   'x-ai': 'xAI',
-  'deepseek': 'DeepSeek',
+  deepseek: 'DeepSeek',
   'z-ai': 'Z.ai',
-  'moonshotai': 'MoonshotAI',
-  'meta': 'Meta',
-  'mistralai': 'Mistral',
-  'qwen': 'Qwen',
-  'nvidia': 'NVIDIA',
-  'perplexity': 'Perplexity',
-  'typesafe': 'TypeSafe',
-  'microsoft': 'Microsoft',
-  'minimax': 'MiniMax',
-  'tencent': 'Tencent',
-  'xiaomi': 'Xiaomi',
+  moonshotai: 'MoonshotAI',
+  meta: 'Meta',
+  mistralai: 'Mistral',
+  qwen: 'Qwen',
+  nvidia: 'NVIDIA',
+  perplexity: 'Perplexity',
+  typesafe: 'TypeSafe',
+  microsoft: 'Microsoft',
+  minimax: 'MiniMax',
+  tencent: 'Tencent',
+  xiaomi: 'Xiaomi',
   'fish-audio': 'Fish Audio',
-  'deepgram': 'Deepgram',
+  deepgram: 'Deepgram',
   'black-forest-labs': 'Black Forest Labs',
   'bytedance-seed': 'ByteDance',
-  'recraft': 'Recraft',
+  recraft: 'Recraft',
 };
 
 export function vendorLabel(id: string): string {
@@ -440,7 +440,10 @@ export function planCuration(input: PlanInput): CurationPlan {
     for (const row of input.catalog) {
       if (isExcluded(row.id)) continue;
       if (!poolAllows(pool.id, row.id, row)) continue;
-      if ((pool.id === 'search' || pool.id === 'search_advanced') && !searchTierFits(pool.id, row.id))
+      if (
+        (pool.id === 'search' || pool.id === 'search_advanced') &&
+        !searchTierFits(pool.id, row.id)
+      )
         continue;
       const issue = poolModelIssue(pool.id, {
         input: row.inputModalities,
@@ -527,7 +530,8 @@ export function planCuration(input: PlanInput): CurationPlan {
     picked.sort((a, b) => {
       const pa = a.blendedPerM;
       const pb = b.blendedPerM;
-      if (pa == null && pb == null) return combineRank(b.bench, b.usage) - combineRank(a.bench, a.usage);
+      if (pa == null && pb == null)
+        return combineRank(b.bench, b.usage) - combineRank(a.bench, a.usage);
       if (pa == null) return 1;
       if (pb == null) return -1;
       return pb - pa;

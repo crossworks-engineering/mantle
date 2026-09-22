@@ -57,9 +57,7 @@ describe('curated template + onboarding choices', () => {
     const { DEFAULT_AGENT_MODEL, DEFAULT_WORKER_MODEL, PERSONA_MANIFEST, MANIFEST_WORKERS } =
       await import('./system-manifest');
     expect(PERSONA_MANIFEST.model).toBe(DEFAULT_AGENT_MODEL);
-    expect(MANIFEST_WORKERS.find((w) => w.kind === 'summarizer')?.model).toBe(
-      DEFAULT_WORKER_MODEL,
-    );
+    expect(MANIFEST_WORKERS.find((w) => w.kind === 'summarizer')?.model).toBe(DEFAULT_WORKER_MODEL);
     expect(ASSISTANT_MODEL_CHOICES.find((c) => c.recommended)?.id).toBe(DEFAULT_AGENT_MODEL);
     expect(WORKER_MODEL_CHOICES.find((c) => c.recommended)?.id).toBe(DEFAULT_WORKER_MODEL);
     // The extension actually widened the lists beyond the hand-written heads.
