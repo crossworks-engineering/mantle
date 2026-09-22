@@ -281,8 +281,18 @@ half runs the same idea inside the brain, on a schedule:
   retrievers (hybrid `search_nodes` + passage `search_chunks`), scores
   recall@1/3/5/10 + MRR (pure helpers in `packages/search/src/eval.ts`),
   persists the run as a note tagged `recall-eval-run`, and reports drift vs
-  the previous run, `alert: true` on MRR −0.05 or R@5 −0.10. Run notes are
-  ordinary nodes, so the history is searchable and chartable later.
+  the previous run, `alert: true` on MRR −0.05 or R@5 −0.10
+  (`reason: 'quality_dropped'`). Run notes are ordinary nodes, so the
+  history is searchable and chartable later.
+- **A gold set that matches nothing alerts on its own.** When EVERY case
+  misses in both retrievers the run scores exactly 0/0, which drift reads as
+  "no change" — that state sat silent for nine weekly runs on the dev brain
+  (2026-07-20 → 2026-09-15; the set had been pasted in from another brain, so
+  none of its node ids or titles existed). `recall_eval` now returns
+  `alert: true, reason: 'gold_set_unmatched'` with `unmatchedCases` and a
+  `detail` naming the fix (repair the `recall-eval-cases` note; prefer
+  `expectTitleIncludes` for documentation nodes, whose ids churn on re-sync).
+  Retrieval is unmeasured in that state, not degraded.
 - **The `brain_health` heartbeat** ships in the system manifest, so every brain
   gets it — new ones at onboarding, existing ones on the next boot reconcile.
   It fires weekly ±6h with quiet hours, calls `brain_capacity` + `recall_eval`

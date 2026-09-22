@@ -18,6 +18,10 @@
  *  - Every lookup and retriever call is scoped to the caller's owner id.
  *  - Drift vs the previous run drives `alert`; without a previous run there
  *    is no drift and no alert.
+ *  - A gold set that matches NOTHING (every case null in both retrievers)
+ *    alerts on its own, with `reason: 'gold_set_unmatched'`, even on the very
+ *    first run. Drift reads 0 → 0 as "no change", which is how a pasted-in set
+ *    from another brain stayed silent for nine weekly runs on dev.
  *
  * The db select chain is a queue of result batches (gold note first, previous
  * run second); embeddings, both retrievers and createNote are stubbed. The
@@ -216,6 +220,68 @@ describe('recall_eval', () => {
     const out = outputOf(await evalTool.handler({}, ctx));
     expect(out.drift).toMatchObject({ searchMrr: 0, searchR5: 0 });
     expect(out.alert).toBe(false);
+    expect(out.reason).toBeNull();
+    expect(out.unmatchedCases).toEqual([]);
+  });
+
+  it('names the drift reason when quality fell', async () => {
+    selectQueue.push([goldNote(CASES)], [prevRun(1, 1)]);
+    vi.mocked(searchNodes).mockResolvedValue([]);
+    const out = outputOf(await evalTool.handler({}, ctx));
+    expect(out.alert).toBe(true);
+    expect(out.reason).toBe('quality_dropped');
+    // The chunk arm still ranked the case, so the gold set is not unmatched.
+    expect(out.unmatchedCases).toEqual([]);
+  });
+
+  it('alerts gold_set_unmatched when every case misses in both retrievers, even with no previous run', async () => {
+    selectQueue.push(
+      [goldNote([...CASES, { id: 'x', query: 'other', expectTitleIncludes: ['nowhere'] }])],
+      [],
+    );
+    vi.mocked(searchNodes).mockResolvedValue([{ id: 'n7', title: 'Unrelated' }] as never);
+    vi.mocked(searchChunks).mockResolvedValue([{ nodeId: 'n8', nodeTitle: 'Also not' }] as never);
+    const out = outputOf(await evalTool.handler({}, ctx));
+
+    expect(out).toMatchObject({
+      casesUsed: 2,
+      search: { mrr: 0, recallAt10: 0 },
+      chunks: { mrr: 0, recallAt10: 0 },
+      drift: null,
+      alert: true,
+      reason: 'gold_set_unmatched',
+      unmatchedCases: ['q3', 'x'],
+    });
+    expect(out.detail).toMatch(/every gold case \(2\) missed in BOTH retrievers/);
+    expect(out.detail).toMatch(/recall-eval-cases/);
+    expect(out.detail).toMatch(/expectTitleIncludes/);
+    // Still exactly one run note, and it records which cases went unmatched.
+    expect(createNote).toHaveBeenCalledTimes(1);
+    const [, note] = vi.mocked(createNote).mock.calls[0]!;
+    expect(JSON.parse(note.content as string)).toMatchObject({ unmatchedCases: ['q3', 'x'] });
+  });
+
+  it('keeps alerting gold_set_unmatched when the previous run was all-zero too (drift 0 is not health)', async () => {
+    selectQueue.push([goldNote(CASES)], [prevRun(0, 0)]);
+    vi.mocked(searchNodes).mockResolvedValue([]);
+    vi.mocked(searchChunks).mockResolvedValue([]);
+    const out = outputOf(await evalTool.handler({}, ctx));
+    expect(out.drift).toMatchObject({ searchMrr: 0, searchR5: 0 });
+    expect(out.alert).toBe(true);
+    expect(out.reason).toBe('gold_set_unmatched');
+  });
+
+  it('does not call the gold set unmatched while any case still ranks somewhere', async () => {
+    selectQueue.push(
+      [goldNote([...CASES, { id: 'x', query: 'other', expectNodeIds: ['n2'] }])],
+      [],
+    );
+    // 'q3' ranks only in the chunk arm; 'x' ranks nowhere.
+    vi.mocked(searchNodes).mockResolvedValue([]);
+    const out = outputOf(await evalTool.handler({}, ctx));
+    expect(out.alert).toBe(false);
+    expect(out.reason).toBeNull();
+    expect(out.unmatchedCases).toEqual(['x']);
   });
 
   it('skips a case whose embedding fails and scores the rest', async () => {

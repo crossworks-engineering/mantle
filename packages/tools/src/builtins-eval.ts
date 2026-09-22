@@ -36,7 +36,14 @@ type RunSummary = {
   casesSkipped: number;
   search: RecallScores;
   chunks: RecallScores;
+  /** Case ids that no retriever ranked at all (null in BOTH arms). */
+  unmatchedCases: string[];
 };
+
+/** Why `alert` is true. `gold_set_unmatched` = every case missed in both
+ *  retrievers, which is a stale gold set (ids deleted / re-created, titles
+ *  changed), not degraded retrieval; `quality_dropped` = drift vs last run. */
+type AlertReason = 'gold_set_unmatched' | 'quality_dropped' | null;
 
 /** Newest note carrying a tag, parsed as JSON from its content. */
 async function latestTaggedNoteJson(
@@ -73,7 +80,7 @@ const recall_eval: BuiltinToolDef = {
   slug: 'recall_eval',
   name: 'Run the retrieval-quality eval',
   description:
-    "Run the brain's retrieval self-check: every golden case (a note tagged `recall-eval-cases` holding a JSON array of {id, query, expectNodeIds?|expectTitleIncludes?}) is searched via the shipped hybrid + passage retrievers, scored (recall@k, MRR), saved as a run note, and compared to the previous run. Returns scores, drift, and `alert: true` when quality dropped enough to tell the user. Writes one summary note per run. Returns `skipped: true, alert: false` when no gold set exists yet — unmeasured, not degraded, so say nothing. For a point-in-time capacity check use `brain_capacity`; this measures retrieval QUALITY.",
+    "Run the brain's retrieval self-check: every golden case (a note tagged `recall-eval-cases` holding a JSON array of {id, query, expectNodeIds?|expectTitleIncludes?}) is searched via the shipped hybrid + passage retrievers, scored (recall@k, MRR), saved as a run note, and compared to the previous run. Returns scores, drift, and `alert: true` when quality dropped enough to tell the user (`reason: 'quality_dropped'`), or when EVERY case missed in both retrievers (`reason: 'gold_set_unmatched'`: the gold set no longer describes this brain and needs repairing, see `unmatchedCases`). Writes one summary note per run. Returns `skipped: true, alert: false` when no gold set exists yet — unmeasured, not degraded, so say nothing. For a point-in-time capacity check use `brain_capacity`; this measures retrieval QUALITY.",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => {
     const casesNote = await latestTaggedNoteJson(ctx.ownerId, CASES_TAG);
@@ -109,6 +116,7 @@ const recall_eval: BuiltinToolDef = {
 
     const searchRanks: Array<number | null> = [];
     const chunkRanks: Array<number | null> = [];
+    const scoredIds: string[] = [];
     let skipped = 0;
     for (const c of cases) {
       let queryEmbedding: number[];
@@ -118,6 +126,7 @@ const recall_eval: BuiltinToolDef = {
         skipped++;
         continue;
       }
+      scoredIds.push(c.id);
       const found = await searchNodes({
         ownerId: ctx.ownerId,
         q: c.query,
@@ -154,12 +163,25 @@ const recall_eval: BuiltinToolDef = {
       };
     }
 
+    // A case neither retriever ranks is invisible to the eval. When that is
+    // EVERY case the score is exactly 0 in both arms — which is never what a
+    // degraded retriever looks like (it degrades unevenly) and always what a
+    // gold set that no longer matches the corpus looks like (ids deleted or
+    // re-created by a re-sync, titles renamed, or a set pasted in from another
+    // brain). Drift can't see it: 0 vs 0 is "no change", so this state stayed
+    // silent for weeks on a real brain. It is alerted on its own.
+    const unmatchedCases = scoredIds.filter(
+      (_, i) => searchRanks[i] === null && chunkRanks[i] === null,
+    );
+    const goldSetUnmatched = unmatchedCases.length === scoredIds.length;
+
     const run: RunSummary = {
       at: new Date().toISOString(),
       casesUsed: searchRanks.length,
       casesSkipped: skipped,
       search: scoreRanks(searchRanks),
       chunks: scoreRanks(chunkRanks),
+      unmatchedCases,
     };
 
     const prevNote = await latestTaggedNoteJson(ctx.ownerId, RUN_TAG);
@@ -173,9 +195,21 @@ const recall_eval: BuiltinToolDef = {
             previousAt: prev.at,
           }
         : null;
-    const alert = drift
+    const qualityDropped = drift
       ? drift.searchMrr <= -MRR_ALERT_DROP || drift.searchR5 <= -R5_ALERT_DROP
       : false;
+    const alert = goldSetUnmatched || qualityDropped;
+    const reason: AlertReason = goldSetUnmatched
+      ? 'gold_set_unmatched'
+      : qualityDropped
+        ? 'quality_dropped'
+        : null;
+    const detail = goldSetUnmatched
+      ? `every gold case (${unmatchedCases.length}) missed in BOTH retrievers — retrieval is not measured, ` +
+        `the gold set no longer matches this brain (expected node ids deleted or re-created, titles changed, ` +
+        `or a set written for another brain). Repair the note tagged '${CASES_TAG}': prefer expectTitleIncludes ` +
+        `for nodes whose ids churn on re-sync, then re-run recall_eval.`
+      : null;
 
     const note = await createNote(ctx.ownerId, {
       title: `Recall eval — MRR ${run.search.mrr.toFixed(2)} / R@5 ${(run.search.recallAt5 * 100).toFixed(0)}%`,
@@ -183,8 +217,8 @@ const recall_eval: BuiltinToolDef = {
       tags: [RUN_TAG],
     });
 
-    ctx.step?.setMeta({ mrr: run.search.mrr, r5: run.search.recallAt5, alert });
-    return { ok: true, output: { ...run, drift, alert, runNoteId: note.id } };
+    ctx.step?.setMeta({ mrr: run.search.mrr, r5: run.search.recallAt5, alert, reason });
+    return { ok: true, output: { ...run, drift, alert, reason, detail, runNoteId: note.id } };
   },
 };
 

@@ -12,7 +12,9 @@ When this heartbeat fires:
 2. Call recall_eval (it persists its own run note and computes drift).
 3. Decide whether anything warrants a message. ONLY these do:
    - capacity zone is 'watch' or 'split', OR
-   - recall_eval returned alert: true, OR
+   - recall_eval returned alert: true (reason 'quality_dropped' = the scores
+     fell vs last run; reason 'gold_set_unmatched' = EVERY case missed in
+     both retrievers, so the gold set no longer matches this brain), OR
    - recall_eval returned ok: false (a real failure, e.g. the embedder is down).
 
    NOT a reason to message:
@@ -27,7 +29,9 @@ When this heartbeat fires:
    the metric that moved (e.g. "search MRR 0.91 → 0.83"), and the next
    step from the playbook: watch → run recall checks / raise ef_search;
    split → plan a breakout brain for the dominant category; eval failure →
-   the fix named in the error. Then heartbeat_update_state with
+   the fix named in the error; gold_set_unmatched → repair the note tagged
+   recall-eval-cases (quote its detail and unmatchedCases; the scores are
+   NOT a retrieval problem). Then heartbeat_update_state with
    { last_run_at, last_status: 'alerted' }.
 
 Never run the eval more than once per firing. State shape:
