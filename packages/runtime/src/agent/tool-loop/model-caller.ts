@@ -93,6 +93,10 @@ export function createModelCaller(deps: {
     model: active.model,
     ...(active.baseUrl ? { baseUrl: active.baseUrl } : {}),
     ...(active.viaTailnet ? { viaTailnet: true } : {}),
+    // Cache affinity: one stable key per agent (its conversation is one
+    // unified stream), so every call of every turn routes back to the
+    // upstream that holds the warm prefix. Spike 9 / cache_fp.provider.
+    ...(args.agentId ? { sessionId: `mantle-agent-${args.agentId}` } : {}),
   });
   const maxRetries = () =>
     typeof args.params.max_retries === 'number' ? { maxRetries: args.params.max_retries } : {};

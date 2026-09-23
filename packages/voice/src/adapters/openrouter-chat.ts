@@ -526,8 +526,10 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
     ...(typeof opts.maxTokens === 'number' ? { maxTokens: opts.maxTokens } : {}),
     ...(typeof opts.topP === 'number' ? { topP: opts.topP } : {}),
     ...(reasoningParam ? { reasoning: reasoningParam } : {}),
+    ...affinity(opts).body,
     ...(opts.extra ?? {}),
   };
+  const affinityHeaders = affinity(opts).headers;
   // Every other adapter bounds its one-shot call with
   // `chatAbortSignal(opts.signal, 60_000)`; this one passed no options at all,
   // so a user Stop was a no-op and a stalled request had nothing to end it.
@@ -541,7 +543,12 @@ async function openrouterChat(opts: ChatOptions): Promise<ChatResult> {
           // Routing metadata on the response: which upstream served the call.
           xOpenRouterMetadata: 'enabled',
         },
-        { signal: callSignal, timeoutMs: ONE_SHOT_TIMEOUT_MS, retries: sdkRetries() },
+        {
+          signal: callSignal,
+          timeoutMs: ONE_SHOT_TIMEOUT_MS,
+          retries: sdkRetries(),
+          ...(affinityHeaders ? { headers: affinityHeaders } : {}),
+        },
       ),
       callSignal,
     );
@@ -749,6 +756,22 @@ export function servedProvider(meta: OrRoutingMeta | null | undefined): string |
   return m ? m[1]!.trim() : undefined;
 }
 
+/** Cache affinity for one call: OpenRouter's sticky-routing key in the body,
+ *  plus xAI's own conversation header for Grok routes (xAI routes requests
+ *  with the same `x-grok-conv-id` to the same server, where its cache lives).
+ *  Nothing when the caller has no conversation id. */
+function affinity(opts: { model: string; sessionId?: string }): {
+  body: { sessionId?: string };
+  headers: Record<string, string> | undefined;
+} {
+  const id = opts.sessionId?.trim().slice(0, 256);
+  if (!id) return { body: {}, headers: undefined };
+  return {
+    body: { sessionId: id },
+    headers: opts.model.startsWith('x-ai/') ? { 'x-grok-conv-id': id } : undefined,
+  };
+}
+
 /** Loose shape of one OpenRouter SSE chunk (the SDK parses to camelCase). Kept
  *  local + defensive (snake_case fallbacks) so this adapter doesn't depend on the
  *  SDK's internal streaming model exports. */
@@ -846,8 +869,10 @@ async function openrouterChatStream(
     ...(typeof opts.maxTokens === 'number' ? { maxTokens: opts.maxTokens } : {}),
     ...(typeof opts.topP === 'number' ? { topP: opts.topP } : {}),
     ...(reasoningParam ? { reasoning: reasoningParam } : {}),
+    ...affinity(opts).body,
     ...(opts.extra ?? {}),
   };
+  const affinityHeaders = affinity(opts).headers;
 
   const startedAt = Date.now();
   // The user already hit Stop before we even sent — don't spend the request.
@@ -869,7 +894,11 @@ async function openrouterChatStream(
         // `retries` bounds the SDK's own one-hour envelope; no `timeoutMs` here,
         // which the SDK would fold into the Request signal and use to cut a long
         // but healthy stream.
-        { signal: abort.signal, retries: sdkRetries() },
+        {
+          signal: abort.signal,
+          retries: sdkRetries(),
+          ...(affinityHeaders ? { headers: affinityHeaders } : {}),
+        },
       ),
       // The SDK treats our connect-timeout abort as retryable and re-sends it
       // against the same dead signal, so awaiting it alone can hang past the

@@ -21,6 +21,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 // installs via `setMockResult`. Defined at module scope so vi.mock's
 // hoisting can reference it.
 const sendCalls: Array<{ chatRequest: Record<string, unknown> }> = [];
+/** The SDK request options (second arg) of each send, same order. */
+const sendOpts: Array<{ headers?: Record<string, string> } | undefined> = [];
 let mockResult: unknown = {
   model: 'anthropic/claude-haiku-4.5',
   choices: [{ message: { role: 'assistant', content: 'hi' } }],
@@ -39,11 +41,17 @@ let mockSendImpl: ((call: number) => Promise<unknown>) | null = null;
 vi.mock('@openrouter/sdk', () => ({
   OpenRouter: class {
     chat = {
-      send: vi.fn(async (req: { chatRequest: Record<string, unknown> }) => {
-        sendCalls.push(req);
-        if (mockSendImpl) return mockSendImpl(sendCalls.length);
-        return mockResult;
-      }),
+      send: vi.fn(
+        async (
+          req: { chatRequest: Record<string, unknown> },
+          opts?: { headers?: Record<string, string> },
+        ) => {
+          sendCalls.push(req);
+          sendOpts.push(opts);
+          if (mockSendImpl) return mockSendImpl(sendCalls.length);
+          return mockResult;
+        },
+      ),
     };
   },
 }));
@@ -115,6 +123,7 @@ afterEach(() => {
     expect(dropped, `call ${i}: field(s) silently discarded by the SDK`).toEqual([]);
   }
   sendCalls.length = 0;
+  sendOpts.length = 0;
   mockSendImpl = null;
 });
 
@@ -555,6 +564,35 @@ describe('openrouter-chat served provider (cache routing)', () => {
     ).toBe('Google');
     expect(servedProvider(undefined)).toBeUndefined();
     expect(servedProvider({})).toBeUndefined();
+  });
+});
+
+describe('openrouter-chat cache affinity (sessionId)', () => {
+  it('sends session_id on the wire; x-grok-conv-id only on Grok routes', async () => {
+    const base = { apiKey: 'sk-test', messages: [{ role: 'user' as const, content: 'hi' }] };
+    await openrouterChatAdapter.chat({
+      ...base,
+      model: 'anthropic/claude-sonnet-5',
+      sessionId: 'mantle-agent-a1',
+    });
+    expect(wireBody(sendCalls.length - 1).session_id).toBe('mantle-agent-a1');
+    expect(sendOpts.at(-1)?.headers).toBeUndefined();
+    await openrouterChatAdapter.chat({
+      ...base,
+      model: 'x-ai/grok-4.3',
+      sessionId: 'mantle-agent-a1',
+    });
+    expect(sendOpts.at(-1)?.headers).toEqual({ 'x-grok-conv-id': 'mantle-agent-a1' });
+  });
+
+  it('sends nothing when there is no conversation id', async () => {
+    await openrouterChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'x-ai/grok-4.3',
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    expect(wireBody(sendCalls.length - 1).session_id).toBeUndefined();
+    expect(sendOpts.at(-1)?.headers).toBeUndefined();
   });
 });
 

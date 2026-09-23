@@ -468,6 +468,12 @@ export interface ChatOptions {
   /** Provider-neutral prompt-cache hints. See {@link ChatCacheControl}.
    *  Adapters that don't talk to a cache-aware provider ignore this. */
   cacheControl?: ChatCacheControl;
+  /** A stable id for the conversation this call belongs to (≤256 chars).
+   *  Routers use it as the cache-affinity key: OpenRouter's `session_id`
+   *  (sticky routing: follow-up calls go back to the upstream holding the
+   *  warm cache) and xAI's `x-grok-conv-id` (the same server). Adapters that
+   *  have no such key ignore it. Never per-call: a new id per call defeats it. */
+  sessionId?: string;
   /** Optional provider-specific overrides — adapter chooses what to honour.
    *  Used for things like xAI's `reasoning_effort` or HF's `:fastest`
    *  routing suffix. */
