@@ -399,7 +399,13 @@ export async function runAssistantTurn(
       previousUserText: [...filteredHistory].reverse().find((h) => h.role === 'user')?.text ?? null,
     }),
   );
-  const { effectiveSystemPrompt, volatileContext, relatedHeartbeatSlugs, allowedTools } = assembled;
+  const {
+    effectiveSystemPrompt,
+    journalBlock,
+    volatileContext,
+    relatedHeartbeatSlugs,
+    allowedTools,
+  } = assembled;
 
   // Image routing — transcript-default vision gating via the shared
   // `decideImageRouting` (catalog warm + vision + per-provider size check).
@@ -497,6 +503,8 @@ export async function runAssistantTurn(
               systemPrompt: effectiveSystemPrompt,
               volatileContext,
               personaNotes: c.personaNotes,
+              journalBlock,
+              journalRelevant: c.journalRelevant,
               facts: c.facts,
               digests: c.digests,
               corpusMap: c.corpusMap,

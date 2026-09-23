@@ -49,6 +49,8 @@ export type FactRow = {
   kind: string;
   entityId: string | null;
   entityName: string | null;
+  /** The node the fact was extracted from (a Journal entry, a page, …). */
+  sourceNodeId?: string | null;
   dist: number | null;
 };
 
@@ -101,7 +103,12 @@ export function selectFacts(rows: FactRow[]): {
     // surfacing garbage-space rows. Loose by design (0.85) — legitimate facts
     // still pass even when only loosely related.
     .filter((r) => (r.dist ?? 1) < 0.85)
-    .map((r) => ({ content: r.content, kind: r.kind as string, entityName: r.entityName }));
+    .map((r) => ({
+      content: r.content,
+      kind: r.kind as string,
+      entityName: r.entityName,
+      sourceNodeId: r.sourceNodeId ?? null,
+    }));
   const toSnapItem = (r: (typeof rows)[number]): SnapshotItem => ({
     text: snip(r.content),
     dist: round3(r.dist),

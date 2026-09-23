@@ -52,6 +52,9 @@ export interface AgentMemoryConfigDTO {
   chunk_limit?: number;
   inject_journal?: boolean;
   inject_working_notes?: boolean;
+  journal_tiers?: 'off' | 'shadow' | 'live';
+  journal_relevance_min?: number;
+  journal_relevant_chars?: number;
   summarize_threshold?: number;
   summarize_batch?: number;
   extract_types?: string[];

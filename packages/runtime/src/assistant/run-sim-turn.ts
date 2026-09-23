@@ -230,6 +230,8 @@ export async function runSimulatedResponderTurn(
             systemPrompt: assembled.effectiveSystemPrompt,
             volatileContext: assembled.volatileContext,
             personaNotes: c.personaNotes,
+            journalBlock: assembled.journalBlock,
+            journalRelevant: c.journalRelevant,
             facts: c.facts,
             digests: c.digests,
             corpusMap: c.corpusMap,

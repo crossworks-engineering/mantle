@@ -715,6 +715,27 @@ export type ContextSnapshot = {
     ms: number;
     cached: boolean;
   };
+  /** Journal tiers 2 and 3 (memory_config.journal_tiers), when the lookup
+   *  ran. `shadow`: what WOULD have joined the prompt; `live`: what did.
+   *  Absent when the tiers are off, both lanes are off, or no embedding. */
+  journal?: {
+    mode: 'shadow' | 'live';
+    cutoff: number;
+    /** Set when the lookup was skipped on purpose (greetings, thanks). */
+    skipped: 'small_talk' | null;
+    picked: Array<{
+      nodeId: string;
+      kind: string;
+      similarity: number;
+      chars: number;
+      passage: boolean;
+    }>;
+    gap: { nodeId: string; similarity: number } | null;
+    nearMisses: Array<{ nodeId: string; kind: string; similarity: number }>;
+    chars: number;
+    /** Facts and passages the block made redundant (dropped in `live`). */
+    dedupe: { facts: number; chunkHits: number };
+  };
 };
 
 export type BackupFrequency = 'daily' | 'weekly';

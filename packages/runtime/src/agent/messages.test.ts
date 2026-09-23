@@ -320,6 +320,38 @@ describe('buildChatMessages: cache layout (stable to churny)', () => {
     expect(text(after[1]!)).not.toBe(text(before[1]!));
   });
 
+  it('Journal tier 1 joins the notes block; a Journal edit leaves the persona block alone', () => {
+    const withJournal = (journalBlock: string) =>
+      systemMessages(
+        buildChatMessages({
+          model: 'anthropic/claude-sonnet-5',
+          provider: 'openrouter',
+          systemPrompt: 'You are Saskia.',
+          personaNotes: [note('prefers short answers')],
+          journalBlock,
+          journalRelevant: '# From the Journal (relevant to this message)\n\n- (context) X',
+          volatileContext: 'TIME',
+          facts: [],
+          digests: [DIGEST],
+          corpusMap: map,
+          contentHits: [],
+          history: [],
+          newUserText: 'hi',
+        }),
+      );
+    const a = withJournal('# About the user (Journal)\n\n- Engineer');
+    const b = withJournal('# About the user (Journal)\n\n- Engineer\n- Likes tables');
+    expect(text(a[0]!)).not.toMatch(/About the user/);
+    expect(text(a[1]!)).toMatch(/^# About the user[\s\S]*prefers short answers/);
+    expect(marked(a[1]!)).toBe(true);
+    expect(text(b[0]!)).toBe(text(a[0]!));
+    expect(a.filter(marked)).toHaveLength(3);
+    // Tiers 2 + 3: uncached, right after the volatile block.
+    const vi = a.findIndex((m) => text(m) === 'TIME');
+    expect(text(a[vi + 1]!)).toMatch(/^# From the Journal/);
+    expect(marked(a[vi + 1]!)).toBe(false);
+  });
+
   it('with no map the digest carries the last marker; with no notes there is no notes block', () => {
     const sys = layout([], false);
     expect(sys.map(marked).slice(0, 2)).toEqual([true, true]);

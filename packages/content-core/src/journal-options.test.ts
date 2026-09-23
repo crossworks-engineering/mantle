@@ -79,9 +79,15 @@ describe('legacyCategoryToKind', () => {
     expect(legacyCategoryToKind('identity')).toBe('identity');
     expect(legacyCategoryToKind('goal')).toBe('goal');
   });
+  it('reads background life areas as identity, unless the row has a mood', () => {
+    for (const c of ['family', 'relationships', 'faith', 'health']) {
+      expect(legacyCategoryToKind(c)).toBe('identity');
+      expect(legacyCategoryToKind(c, 'reflective')).toBe('context');
+    }
+  });
   it('maps every other legacy life area (and none) to context', () => {
     expect(legacyCategoryToKind('work')).toBe('context');
-    expect(legacyCategoryToKind('faith')).toBe('context');
+    expect(legacyCategoryToKind('reflection')).toBe('context');
     expect(legacyCategoryToKind('emotion')).toBe('context');
     expect(legacyCategoryToKind(null)).toBe('context');
   });

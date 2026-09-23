@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isSmallTalk,
+  pickJournalEntries,
   renderIdentityBlock,
+  renderJournalTier1Block,
   renderPurposeBlock,
+  renderRelevantJournalBlock,
   renderWorkingNotesBlock,
+  type JournalCandidate,
   type IdentityEntry,
   type WorkingNoteEntry,
 } from './identity-context';
@@ -161,5 +166,153 @@ describe('renderWorkingNotesBlock', () => {
 
   it('ignores user-lane and unknown kinds entirely', () => {
     expect(renderWorkingNotesBlock([w('who I am', 'identity'), w('misc', 'whatever')])).toBe('');
+  });
+});
+
+describe('renderJournalTier1Block', () => {
+  it('keeps identity, goal and preference only, grouped, oldest first, full text', () => {
+    const long = 'x'.repeat(900);
+    const block = renderJournalTier1Block(
+      '',
+      [
+        e('Old identity'),
+        e('A context entry', 'context'),
+        e('Wants to ship v1', 'goal'),
+        e(long, 'identity'),
+        e('Terse replies', 'preference'),
+        e('A lesson', 'lesson'),
+      ].map((x) => (x.kind ? x : { ...x, kind: 'identity' })),
+    );
+    expect(block).toMatch(/^# About the user \(Journal\)/);
+    expect(block).not.toMatch(/context entry|A lesson/);
+    expect(block.indexOf('Old identity')).toBeLessThan(block.indexOf(long));
+    expect(block.indexOf('## Identity')).toBeLessThan(block.indexOf('## Goal'));
+    expect(block.indexOf('## Goal')).toBeLessThan(block.indexOf('## Preference'));
+    expect(block).toContain(long); // not cut at 280 like the old block
+  });
+
+  it('puts the purpose first and returns only the purpose when no entry qualifies', () => {
+    const purpose = renderPurposeBlock('Run the refinery docs', null);
+    expect(renderJournalTier1Block(purpose, [e('ctx', 'context')])).toBe(purpose);
+    expect(renderJournalTier1Block('', [])).toBe('');
+  });
+});
+
+describe('isSmallTalk', () => {
+  it('skips greetings, thanks and one-word acknowledgements', () => {
+    for (const t of ['hi', 'Thanks!', 'thank you so much', 'ok', 'Good morning', 'cool.', 'yes'])
+      expect(isSmallTalk(t)).toBe(true);
+  });
+  it('keeps real messages, however short', () => {
+    for (const t of ["I'm not feeling well", 'feeling sick', 'why?', 'draft the SOP header'])
+      expect(isSmallTalk(t)).toBe(false);
+  });
+});
+
+describe('pickJournalEntries', () => {
+  const c = (
+    nodeId: string,
+    kind: string,
+    similarity: number,
+    body = `${nodeId} body`,
+    extra: Partial<JournalCandidate> = {},
+  ): JournalCandidate => ({
+    nodeId,
+    kind,
+    similarity,
+    body,
+    agentSlug: null,
+    status: null,
+    ...extra,
+  });
+
+  it('picks tier 2 kinds at or above the cutoff, best first; tier 1 kinds never', () => {
+    const r = pickJournalEntries(
+      [
+        c('a', 'context', 0.71),
+        c('b', 'lesson', 0.9),
+        c('i', 'identity', 0.99),
+        c('d', 'context', 0.5),
+      ],
+      { cutoff: 0.7, budgetChars: 3000 },
+    );
+    expect(r.picks.map((p) => p.nodeId)).toEqual(['b', 'a']);
+    expect(r.picks[0]!.lane).toBe('agent');
+    expect(r.nearMisses.map((n) => n.nodeId)).toEqual(['d']);
+    expect(r.gap).toBeNull();
+  });
+
+  it('stays inside the budget; the first pick is cut to fit, later ones are skipped', () => {
+    const r = pickJournalEntries(
+      [c('a', 'context', 0.9, 'a'.repeat(500)), c('b', 'context', 0.8, 'b'.repeat(500))],
+      { cutoff: 0.7, budgetChars: 300 },
+    );
+    expect(r.picks.map((p) => p.nodeId)).toEqual(['a']);
+    expect(r.picks[0]!.text.length).toBeLessThanOrEqual(300);
+    expect(r.chars).toBe(r.picks[0]!.text.length);
+  });
+
+  it('sends the best passage of a long body, the whole of a short one', () => {
+    const long = 'L '.repeat(1000);
+    const r = pickJournalEntries([c('a', 'context', 0.9, long), c('b', 'context', 0.8)], {
+      cutoff: 0.7,
+      budgetChars: 3000,
+      passages: new Map([['a', 'the matching passage']]),
+    });
+    expect(r.picks[0]).toMatchObject({ nodeId: 'a', text: 'the matching passage', passage: true });
+    expect(r.picks[1]).toMatchObject({ nodeId: 'b', text: 'b body', passage: false });
+  });
+
+  it('adds at most one open, matching gap; resolved or weak gaps never', () => {
+    const r = pickJournalEntries(
+      [
+        c('g1', 'gap', 0.95, 'resolved q', { status: 'resolved' }),
+        c('g2', 'gap', 0.8, 'open q', { status: 'open' }),
+        c('g3', 'gap', 0.75, 'other q'),
+        c('g4', 'gap', 0.4, 'weak q'),
+      ],
+      { cutoff: 0.7, budgetChars: 3000 },
+    );
+    expect(r.gap?.nodeId).toBe('g2');
+    expect(r.picks).toHaveLength(0);
+  });
+});
+
+describe('renderRelevantJournalBlock', () => {
+  const pick = (
+    kind: string,
+    lane: 'user' | 'agent',
+    text: string,
+    agentSlug: string | null = null,
+  ) => ({
+    nodeId: text,
+    kind,
+    lane,
+    agentSlug,
+    similarity: 0.8,
+    text,
+    passage: false,
+  });
+
+  it('renders user entries, working notes with attribution, and the gap', () => {
+    const block = renderRelevantJournalBlock(
+      {
+        picks: [
+          pick('context', 'user', 'On leave in May'),
+          pick('lesson', 'agent', 'Cite the SOP', 'pages'),
+        ],
+        gap: pick('gap', 'agent', 'Which site is primary?'),
+      },
+      'assistant',
+    );
+    expect(block).toMatch(/^# From the Journal \(relevant to this message\)/);
+    expect(block).toContain('## About the user\n- (context) On leave in May');
+    expect(block).toContain('- (lesson) Cite the SOP _(learned by pages)_');
+    expect(block).toContain('## Open question');
+    expect(block).toContain('journal_resolve_gap');
+  });
+
+  it('is empty when nothing was picked', () => {
+    expect(renderRelevantJournalBlock({ picks: [], gap: null })).toBe('');
   });
 });

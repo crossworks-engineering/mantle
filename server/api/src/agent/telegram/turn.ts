@@ -195,6 +195,8 @@ export async function runTelegramTurn(args: {
             systemPrompt: assembled.effectiveSystemPrompt,
             volatileContext: assembled.volatileContext,
             personaNotes: ctx.personaNotes,
+            journalBlock: assembled.journalBlock,
+            journalRelevant: ctx.journalRelevant,
             facts: ctx.facts,
             digests: ctx.digests,
             corpusMap: ctx.corpusMap,

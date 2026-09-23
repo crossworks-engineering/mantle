@@ -71,7 +71,17 @@ export {
   type AutoTzDecision,
 } from './auto-timezone';
 
-export { buildIdentityContext, buildWorkingNotesContext } from './identity-context';
+export {
+  JOURNAL_RELEVANCE_MIN_DEFAULT,
+  JOURNAL_RELEVANT_CHARS_DEFAULT,
+  buildIdentityContext,
+  buildJournalTier1,
+  buildWorkingNotesContext,
+  renderRelevantJournalBlock,
+  selectRelevantJournal,
+  type JournalPick,
+  type JournalRelevance,
+} from './identity-context';
 
 export {
   PURPOSE_ARCHETYPES,

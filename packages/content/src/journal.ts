@@ -74,9 +74,11 @@ export function journalSortSql(): SQL {
 function journalKindSql(): SQL {
   return sql`coalesce(
     nullif(${nodes.data}->>'kind', ''),
-    case ${nodes.data}->>'category'
-      when 'identity' then 'identity'
-      when 'goal' then 'goal'
+    case
+      when ${nodes.data}->>'category' = 'identity' then 'identity'
+      when ${nodes.data}->>'category' = 'goal' then 'goal'
+      when ${nodes.data}->>'category' in ('family', 'relationships', 'faith', 'health')
+        and coalesce(${nodes.data}->>'mood', '') = '' then 'identity'
       else 'context'
     end
   )`;
@@ -98,7 +100,7 @@ function rowOf(n: Node): JournalRow {
     agentSlug: str(d, 'agent_slug'),
     // Legacy rows (no kind) surface their old category mapped to a kind, so
     // every consumer sees ONE vocabulary.
-    kind: kind ?? legacyCategoryToKind(str(d, 'category')),
+    kind: kind ?? legacyCategoryToKind(str(d, 'category'), str(d, 'mood')),
     status: str(d, 'status'),
     entryDate: str(d, 'entry_date'),
     tags: n.tags ?? [],

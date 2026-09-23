@@ -16,9 +16,14 @@
  * entry is added/edited, so it sits inside the cached system block (same
  * cadence as persona notes) and costs nothing per turn beyond the tokens.
  */
-import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
-import { KINDS, kindLabel, legacyCategoryToKind } from '@mantle/content-core/journal-options';
+import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { contentChunks, db, nodes } from '@mantle/db';
+import {
+  KINDS,
+  kindLabel,
+  kindLane,
+  legacyCategoryToKind,
+} from '@mantle/content-core/journal-options';
 import { journalSortSql } from './journal';
 import { loadProfilePreferences } from './profile-preferences';
 import { purposeArchetypeLabel } from '@mantle/content-core/onboarding-questions';
@@ -213,11 +218,10 @@ export async function buildIdentityContext(ownerId: string): Promise<string> {
     const rawKind = typeof d.kind === 'string' && d.kind.trim() ? d.kind.trim() : null;
     // Agent-lane kinds belong to the working-notes block, not here.
     if (rawKind === 'lesson' || rawKind === 'expectation' || rawKind === 'gap') continue;
-    const category = typeof d.category === 'string' && d.category.trim() ? d.category.trim() : null;
     entries.push({
       body: typeof d.body === 'string' ? d.body : '',
       // Legacy rows (no kind) map their old category so they keep rendering.
-      kind: rawKind ?? legacyCategoryToKind(category),
+      kind: rawKind ?? legacyKind(d),
     });
   }
   const journalBlock = renderIdentityBlock(entries);
@@ -258,4 +262,370 @@ export async function buildWorkingNotesContext(
     };
   });
   return renderWorkingNotesBlock(entries, currentAgentSlug ?? null);
+}
+
+// ─── Journal tiers (spike 10, dev-brain page 60a2f51e) ───────────────────────
+// The two blocks above sit at the FRONT of the cached prompt with newest-first
+// caps: a work brain showed six cut-off release notes as "About the user", a
+// personal brain silently lost its background entries, and every Journal
+// write re-bills the whole cached prefix. The tiers replace them (per agent,
+// `memory_config.journal_tiers = 'live'`):
+//   Tier 1, always on: purpose + identity / goal / preference, full text,
+//     oldest first, in the cached notes block AFTER the persona prompt.
+//   Tier 2, per turn: context entries and agent lessons / expectations whose
+//     embedding matches the message, the matching passage only, ~3k chars.
+//   Tier 3, per turn: at most one open gap question, only when it matches.
+// Tiers 2 and 3 ride an uncached block, so a Journal write busts nothing.
+
+/** Kinds that are always on (tier 1). */
+export const TIER1_KINDS: readonly string[] = ['identity', 'goal', 'preference'];
+/** Tier 1 keeps full text, but a runaway paste still cannot bloat every turn. */
+const TIER1_MAX_ENTRY_CHARS = 1_500;
+const TIER1_MAX_CHARS = 8_000;
+/** Cosine similarity an entry needs to join a turn. Spike 10: ~0.60 on long
+ *  work logs, 0.72 to 0.75 on short personal entries (same embedder). */
+export const JOURNAL_RELEVANCE_MIN_DEFAULT = 0.7;
+/** Tier 2 + 3 characters per turn. */
+export const JOURNAL_RELEVANT_CHARS_DEFAULT = 3_000;
+/** A body longer than this sends its best-matching passage, not the whole. */
+const TIER2_PASSAGE_CHARS = 1_200;
+const TIER2_MAX_ENTRIES = 6;
+/** How many journal rows one relevance pass reads (all of a normal brain). */
+const TIER2_SCAN_LIMIT = 500;
+/** Near-misses kept for the trace snapshot. */
+const TIER2_NEAR_MISSES = 3;
+
+function legacyKind(d: Record<string, unknown>): string {
+  const str = (k: string) =>
+    typeof d[k] === 'string' && (d[k] as string).trim() ? (d[k] as string).trim() : null;
+  return legacyCategoryToKind(str('category'), str('mood'));
+}
+
+/** The effective kind of a journal row's data (legacy rows mapped). */
+function effectiveKind(d: Record<string, unknown>): string {
+  const raw = typeof d.kind === 'string' && d.kind.trim() ? d.kind.trim() : null;
+  return raw ?? legacyKind(d);
+}
+
+function flatten(body: string, max: number): string {
+  const flat = (body ?? '').replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
+}
+
+/**
+ * Pure renderer: the tier 1 block. `entries` come oldest first; they are
+ * grouped by kind (identity, goal, preference) and keep that order inside a
+ * group, so a new entry appends and an old one never moves. Full text up to
+ * TIER1_MAX_ENTRY_CHARS; the block stops at TIER1_MAX_CHARS. Returns '' when
+ * neither the purpose nor any entry renders.
+ */
+export function renderJournalTier1Block(purposeBlock: string, entries: IdentityEntry[]): string {
+  const byKind = new Map<string, string[]>();
+  for (const e of entries) {
+    const kind = e.kind ?? '';
+    if (!TIER1_KINDS.includes(kind)) continue;
+    const body = flatten(e.body, TIER1_MAX_ENTRY_CHARS);
+    if (!body) continue;
+    byKind.set(kind, [...(byKind.get(kind) ?? []), body]);
+  }
+  const lines: string[] = [
+    'What the user has recorded about who they are, what they want and how',
+    'they like to work (their "Journal"). Treat it as durable, first-person',
+    'truth about the user. Do not recite it back unprompted.',
+  ];
+  let chars = 0;
+  let count = 0;
+  for (const kind of TIER1_KINDS) {
+    const list = byKind.get(kind);
+    if (!list) continue;
+    const bullets: string[] = [];
+    for (const body of list) {
+      if (chars + body.length > TIER1_MAX_CHARS) break;
+      bullets.push(`- ${body}`);
+      chars += body.length;
+      count++;
+    }
+    if (bullets.length) lines.push('', `## ${kindLabel(kind) ?? kind}`, ...bullets);
+  }
+  const journal = count > 0 ? `# About the user (Journal)\n\n${lines.join('\n')}` : '';
+  return [purposeBlock, journal].filter(Boolean).join('\n\n');
+}
+
+/**
+ * Tier 1 for an owner: the brain's purpose plus the always-on user-lane
+ * entries, oldest first (created_at, then id, so the order never shifts on
+ * an edit). Deterministic, no LLM; it only changes when such an entry or the
+ * purpose changes.
+ */
+export async function buildJournalTier1(ownerId: string): Promise<string> {
+  const [prefs, rows] = await Promise.all([
+    loadProfilePreferences(ownerId),
+    db
+      .select({ data: nodes.data })
+      .from(nodes)
+      .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'journal')))
+      .orderBy(asc(nodes.createdAt), asc(nodes.id))
+      .limit(TIER2_SCAN_LIMIT),
+  ]);
+  const purposeBlock = renderPurposeBlock(
+    prefs.purpose ?? '',
+    purposeArchetypeLabel(prefs.purposeArchetype),
+  );
+  const entries: IdentityEntry[] = rows.map((r) => {
+    const d = (r.data ?? {}) as Record<string, unknown>;
+    return { body: typeof d.body === 'string' ? d.body : '', kind: effectiveKind(d) };
+  });
+  return renderJournalTier1Block(purposeBlock, entries);
+}
+
+/** One journal entry picked (or nearly picked) for this turn. */
+export type JournalPick = {
+  nodeId: string;
+  kind: string;
+  lane: 'user' | 'agent';
+  agentSlug: string | null;
+  similarity: number;
+  /** What the prompt gets: the whole body, or its best-matching passage. */
+  text: string;
+  /** True when `text` is a passage of a longer body. */
+  passage: boolean;
+};
+
+export type JournalRelevance = {
+  picks: JournalPick[];
+  gap: JournalPick | null;
+  /** Best entries under the cutoff (for the trace), text omitted. */
+  nearMisses: Array<Pick<JournalPick, 'nodeId' | 'kind' | 'similarity'>>;
+  cutoff: number;
+  chars: number;
+  /** Why nothing was picked without looking. */
+  skipped: 'small_talk' | null;
+};
+
+/** Greetings, thanks and one-word acknowledgements: no Journal lookup
+ *  (spike 10: short test prompts pulled entries at 0.66 to 0.75). */
+export function isSmallTalk(text: string): boolean {
+  const t = text
+    .trim()
+    .toLowerCase()
+    .replace(/[!.?,\s]+$/g, '');
+  if (!t) return true;
+  if (t.split(/\s+/).length <= 1 && !/\?/.test(text)) return true;
+  return /^(hi|hey|hello|hiya|yo|thanks|thank you|thx|cheers|ok|okay|k|cool|great|nice|perfect|sure|yes|no|yep|nope|got it|sounds good|good (morning|afternoon|evening|night)|morning|evening|night|bye|see you)( (there|again|so much|a lot|mate|all))?$/.test(
+    t,
+  );
+}
+
+export type JournalCandidate = {
+  nodeId: string;
+  kind: string;
+  agentSlug: string | null;
+  status: string | null;
+  body: string;
+  similarity: number;
+};
+
+/**
+ * Pure: choose tier 2 entries and the tier 3 gap from scored candidates.
+ * Tier 2 kinds are everything that is not tier 1 or a gap (context, free-text
+ * user kinds, lessons, expectations). Best similarity first, at or above the
+ * cutoff, at most TIER2_MAX_ENTRIES, inside the character budget (the first
+ * pick is cut to fit rather than dropped). `passages` maps a node id to its
+ * best-matching passage, used when the body is long.
+ */
+export function pickJournalEntries(
+  candidates: readonly JournalCandidate[],
+  opts: { cutoff: number; budgetChars: number; passages?: ReadonlyMap<string, string> },
+): Pick<JournalRelevance, 'picks' | 'gap' | 'nearMisses' | 'chars'> {
+  const sorted = [...candidates].sort((a, b) => b.similarity - a.similarity);
+  const toPick = (c: JournalCandidate, max: number): JournalPick => {
+    const long = c.body.replace(/\s+/g, ' ').trim().length > TIER2_PASSAGE_CHARS;
+    const source = long ? (opts.passages?.get(c.nodeId) ?? c.body) : c.body;
+    return {
+      nodeId: c.nodeId,
+      kind: c.kind,
+      lane: kindLane(c.kind),
+      agentSlug: c.agentSlug,
+      similarity: Math.round(c.similarity * 1000) / 1000,
+      text: flatten(source, Math.min(max, TIER2_PASSAGE_CHARS)),
+      passage: long && opts.passages?.has(c.nodeId) === true,
+    };
+  };
+
+  let gap: JournalPick | null = null;
+  const openGap = sorted.find(
+    (c) => c.kind === 'gap' && c.status !== 'resolved' && c.similarity >= opts.cutoff,
+  );
+  let budget = opts.budgetChars;
+  if (openGap) {
+    gap = toPick(openGap, budget);
+    budget -= gap.text.length;
+  }
+
+  const picks: JournalPick[] = [];
+  const nearMisses: JournalRelevance['nearMisses'] = [];
+  for (const c of sorted) {
+    if (c.kind === 'gap' || TIER1_KINDS.includes(c.kind)) continue;
+    if (c.similarity < opts.cutoff) {
+      if (nearMisses.length < TIER2_NEAR_MISSES) {
+        nearMisses.push({
+          nodeId: c.nodeId,
+          kind: c.kind,
+          similarity: Math.round(c.similarity * 1000) / 1000,
+        });
+      }
+      continue;
+    }
+    if (picks.length >= TIER2_MAX_ENTRIES || budget <= 0) continue;
+    const pick = toPick(c, picks.length === 0 ? budget : Number.MAX_SAFE_INTEGER);
+    if (!pick.text) continue;
+    if (picks.length > 0 && pick.text.length > budget) continue;
+    picks.push(pick);
+    budget -= pick.text.length;
+  }
+  const chars = picks.reduce((n, p) => n + p.text.length, 0) + (gap?.text.length ?? 0);
+  return { picks, gap, nearMisses, chars };
+}
+
+/**
+ * Pure renderer: the per-turn tier 2 + 3 block. Returns '' when nothing was
+ * picked. Lessons and expectations learned by another agent carry the same
+ * attribution as the old working-notes block.
+ */
+export function renderRelevantJournalBlock(
+  relevance: Pick<JournalRelevance, 'picks' | 'gap'>,
+  currentAgentSlug?: string | null,
+): string {
+  const attribution = (p: JournalPick) =>
+    p.agentSlug && p.agentSlug !== currentAgentSlug ? ` _(learned by ${p.agentSlug})_` : '';
+  const user = relevance.picks.filter((p) => p.lane === 'user');
+  const agent = relevance.picks.filter((p) => p.lane === 'agent');
+  if (user.length + agent.length === 0 && !relevance.gap) return '';
+  const lines: string[] = [
+    'Journal entries that match the current message. User entries are',
+    'first-person truth about the user; working notes are what the agents of',
+    'this brain have learned. Use what helps; do not recite it back unprompted.',
+  ];
+  if (user.length) {
+    lines.push('', '## About the user', ...user.map((p) => `- (${p.kind}) ${p.text}`));
+  }
+  if (agent.length) {
+    lines.push(
+      '',
+      '## Working notes',
+      ...agent.map((p) => `- (${p.kind}) ${p.text}${attribution(p)}`),
+    );
+  }
+  if (relevance.gap) {
+    lines.push(
+      '',
+      '## Open question',
+      'The brain is missing this knowledge and it fits this conversation. You may',
+      'ask the user: never as an opener, and drop it if the user declines. When',
+      'the user answers, record it with `journal_resolve_gap` so it is never asked',
+      'again.',
+      `- ${relevance.gap.text}${attribution(relevance.gap)}`,
+    );
+  }
+  return `# From the Journal (relevant to this message)\n\n${lines.join('\n')}`;
+}
+
+/**
+ * Tiers 2 and 3 for one turn: score every journal entry of the owner against
+ * the message embedding (a brain holds hundreds at most, so this is one
+ * plain scan, not an index walk that a type filter would starve), fetch the
+ * best passage of each long match, and pick within the budget. Lanes are
+ * gated separately (`inject_journal` / `inject_working_notes`).
+ */
+export async function selectRelevantJournal(opts: {
+  ownerId: string;
+  queryVec: number[];
+  inboundText: string;
+  cutoff?: number;
+  budgetChars?: number;
+  userLane: boolean;
+  agentLane: boolean;
+}): Promise<JournalRelevance> {
+  const cutoff = opts.cutoff ?? JOURNAL_RELEVANCE_MIN_DEFAULT;
+  const budgetChars = opts.budgetChars ?? JOURNAL_RELEVANT_CHARS_DEFAULT;
+  const empty: JournalRelevance = {
+    picks: [],
+    gap: null,
+    nearMisses: [],
+    cutoff,
+    chars: 0,
+    skipped: null,
+  };
+  if (!opts.userLane && !opts.agentLane) return empty;
+  if (isSmallTalk(opts.inboundText)) return { ...empty, skipped: 'small_talk' };
+
+  const vec = JSON.stringify(opts.queryVec);
+  const rows = await db
+    .select({
+      id: nodes.id,
+      data: nodes.data,
+      dist: sql<number>`${nodes.embedding} <=> ${vec}::vector`,
+    })
+    .from(nodes)
+    .where(
+      and(eq(nodes.ownerId, opts.ownerId), eq(nodes.type, 'journal'), isNotNull(nodes.embedding)),
+    )
+    .limit(TIER2_SCAN_LIMIT);
+
+  const candidates: JournalCandidate[] = [];
+  for (const r of rows) {
+    const d = (r.data ?? {}) as Record<string, unknown>;
+    const kind = effectiveKind(d);
+    const lane = kindLane(kind);
+    if (lane === 'user' ? !opts.userLane : !opts.agentLane) continue;
+    candidates.push({
+      nodeId: r.id,
+      kind,
+      agentSlug: typeof d.agent_slug === 'string' ? d.agent_slug : null,
+      status: typeof d.status === 'string' ? d.status : null,
+      body: typeof d.body === 'string' ? d.body : '',
+      similarity: 1 - Number(r.dist),
+    });
+  }
+
+  // Best passage of each long match that could be picked.
+  const longIds = candidates
+    .filter(
+      (c) =>
+        c.similarity >= cutoff &&
+        !TIER1_KINDS.includes(c.kind) &&
+        c.body.replace(/\s+/g, ' ').trim().length > TIER2_PASSAGE_CHARS,
+    )
+    .map((c) => c.nodeId);
+  const passages = new Map<string, string>();
+  if (longIds.length > 0) {
+    const chunks = await db
+      .select({
+        nodeId: contentChunks.nodeId,
+        text: contentChunks.text,
+        dist: sql<number>`${contentChunks.embedding} <=> ${vec}::vector`,
+      })
+      .from(contentChunks)
+      .where(
+        and(
+          eq(contentChunks.ownerId, opts.ownerId),
+          inArray(contentChunks.nodeId, longIds),
+          isNotNull(contentChunks.embedding),
+        ),
+      );
+    const best = new Map<string, number>();
+    for (const c of chunks) {
+      const d = Number(c.dist);
+      if (d < (best.get(c.nodeId) ?? Number.POSITIVE_INFINITY)) {
+        best.set(c.nodeId, d);
+        passages.set(c.nodeId, c.text);
+      }
+    }
+  }
+
+  return {
+    ...pickJournalEntries(candidates, { cutoff, budgetChars, passages }),
+    cutoff,
+    skipped: null,
+  };
 }

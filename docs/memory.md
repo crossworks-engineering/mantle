@@ -1019,6 +1019,9 @@ Visual map of who writes what, who reads what:
 > records `meta.cache_fp` (`{tools, blocks[]}`, short hashes) so a cache miss
 > shows which part changed. The 1-hour cache TTL was measured and rejected: most
 > cold turns come more than an hour apart, where a 1-hour write only costs more.
+> With `memory_config.journal_tiers = 'live'` the Journal leaves the front of
+> the prefix too: tier 1 rides the persona-notes block, tiers 2 + 3 an uncached
+> per-turn block ([journal.md §4a](journal.md#4a-tiers-memory_configjournal_tiers-2026-09-23)).
 
 **The ranking factors (all in the one effective-distance expression):**
 

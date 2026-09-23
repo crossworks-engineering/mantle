@@ -67,6 +67,7 @@ vi.mock('@mantle/content', () => ({
     if (h.identityError) throw h.identityError;
     return h.identity;
   }),
+  buildJournalTier1: vi.fn(async () => 'TIER1'),
   buildTimeContextLine: () => 'TIME-LINE',
   resolveThinkingBudget: () => h.thinkingBudget,
   // Mirrors the real tier mapping (1024→low, 4096→medium, 8000→high) closely
@@ -192,6 +193,25 @@ describe('assembleResponderTurn — prompt composition', () => {
       agent: agent({ memoryConfig: { inject_journal: false } }),
     });
     expect(a.effectiveSystemPrompt).toBe('PERSONA');
+  });
+
+  it('journal_tiers=live: no Journal in the persona prompt, tier 1 returned for the notes block', async () => {
+    h.identity = 'IDENTITY';
+    const live = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ memoryConfig: { journal_tiers: 'live' } }),
+    });
+    expect(live.effectiveSystemPrompt).toBe('PERSONA');
+    expect(live.journalBlock).toBe('TIER1');
+    const shadow = await assembleResponderTurn({ ...BASE, agent: agent() });
+    expect(shadow.effectiveSystemPrompt).toContain('IDENTITY');
+    expect(shadow.journalBlock).toBe('');
+    const team = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ memoryConfig: { journal_tiers: 'live' } }),
+      includeIdentity: false,
+    });
+    expect(team.journalBlock).toBe('');
   });
 
   it('includeIdentity=false (team isolation) never calls the identity builder', async () => {

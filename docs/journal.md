@@ -64,10 +64,14 @@ import it without dragging `postgres` into the bundle):
 | user | `identity`, `context`, `preference`, `goal` | `# About the user` |
 | agent | `lesson`, `expectation`, `gap` | `# Working notes` |
 
-**Legacy rows** (pre-v2) carry `mood`/`category` in jsonb. Nothing reads
-`mood` anymore. `category` maps to a kind at read time
-(`legacyCategoryToKind`: identity→identity, goal→goal, everything else→
-context). No migration, no backfill.
+**Legacy rows** (pre-v2) carry `mood`/`category` in jsonb. `category` maps to
+a kind at read time (`legacyCategoryToKind`, mirrored in `journalKindSql`):
+identity→identity, goal→goal; the background life areas family,
+relationships, faith and health→identity, unless the row carries a `mood` (a
+mood-era entry reflects on a moment)→context; everything else→context. The
+mood is read only for that split. No migration, no backfill. (Spike 10: with
+every background area mapped to context, a personal brain's family, faith and
+health baseline fell off the always-on block.)
 
 `nodes.title` is an optional short title, auto-derived from the first
 sentence / ~60 chars of `body`. All entries live under the lazy-created
@@ -134,6 +138,53 @@ responder — owner-internal context never reaches an external member).
 (`packages/runtime/src/assistant/assemble-turn.ts`) prepends identity +
 working notes before the persona/skills prompt, inside cache breakpoint 1.
 Team turns pass `includeIdentity: false`, which gates BOTH blocks.
+
+### 4a. Tiers (`memory_config.journal_tiers`, 2026-09-23)
+
+Spike 10 (dev-brain page 60a2f51e) found three faults in the two blocks above:
+newest-first caps showed the wrong entries (six cut-off release notes as
+"About the user" on dev; a personal brain's background entries silently
+dropped), every Journal write re-billed the whole cached prefix (it sits in
+front of the persona prompt), and relevance played no part. The tiers replace
+them, per agent:
+
+| `journal_tiers` | What the prompt gets |
+|---|---|
+| `off` | the two blocks above; no per-turn lookup |
+| `shadow` (default) | the two blocks above; tiers 2 + 3 are picked and recorded in the `load_context` snapshot (`snapshot.journal`) only |
+| `live` | the tiers below; the two blocks above are gone |
+
+- **Tier 1, always on** (`buildJournalTier1` → `renderJournalTier1Block`):
+  the purpose block + identity / goal / preference entries, full text (≤1,500
+  chars each, ≤8,000 total), grouped by kind, oldest first by `created_at`, so
+  a new entry appends and an edit never reorders. It rides the **persona-notes
+  block** (cache marker 2), after the persona prompt: a Journal write re-bills
+  that block onward, never the persona prompt. `assembleResponderTurn` returns
+  it as `journalBlock`; `buildChatMessages` renders it.
+- **Tier 2, per turn** (`selectRelevantJournal`, called from
+  `loadConversationContext` with the turn's one query embedding): context
+  entries (and free-text user kinds), lessons and expectations whose cosine
+  similarity to the message is at least `journal_relevance_min` (default 0.70;
+  ~0.60 suits long work logs, 0.72 to 0.75 short personal entries). Best
+  first, ≤6 entries, ≤`journal_relevant_chars` (default 3,000) a turn. A body
+  over 1,200 chars sends its best-matching chunk, not the whole. Greetings,
+  thanks and one-word acknowledgements skip the lookup (`isSmallTalk`). The
+  scan reads every journal row of the owner (≤500) with a plain distance
+  select, not an index walk a type filter would starve.
+- **Tier 3, per turn**: at most one open gap whose similarity passes the same
+  cutoff, with the ask/record instructions.
+- Tiers 2 + 3 render as `# From the Journal (relevant to this message)`, an
+  **uncached** system block right after the volatile context
+  (`ctx.journalRelevant`). In `live`, non-preference facts extracted from a
+  picked entry, and passages of a picked entry, are dropped as redundant
+  (`snapshot.journal.dedupe` counts them in both modes).
+- Lanes stay gated: `inject_journal` (user lane) and `inject_working_notes`
+  (agent lane). Team and forum turns never pass `journalBlock` or
+  `journalRelevant` to the prompt builder.
+
+To go live on one agent: set `memory_config.journal_tiers` to `live`; read a
+few `load_context` snapshots first (`snapshot.journal.picked`, `nearMisses`)
+and tune `journal_relevance_min` for that brain.
 
 ---
 

@@ -44,6 +44,7 @@ import {
 } from '../agent';
 import {
   buildIdentityContext,
+  buildJournalTier1,
   buildWorkingNotesContext,
   buildTimeContextLine,
   resolveThinkingBudget,
@@ -143,6 +144,10 @@ export type AssembledResponderTurn = {
   /** Cached prefix (breakpoint 1): identity + persona + skills + suffix —
    *  stable across turns. */
   effectiveSystemPrompt: string;
+  /** Journal tier 1 (purpose + identity/goal/preference) for the cached
+   *  notes block, when memory_config.journal_tiers is `live`; '' otherwise
+   *  (the old blocks are then inside effectiveSystemPrompt). */
+  journalBlock: string;
   /** Uncached volatile slot: time line + surface extras + heartbeat block. */
   volatileContext: string;
   /** Slugs of open (expecting-reply) heartbeats that influenced this turn —
@@ -175,6 +180,7 @@ export async function assembleResponderTurn(
   const memoryConfig = (agent.memoryConfig ?? {}) as {
     inject_journal?: boolean;
     inject_working_notes?: boolean;
+    journal_tiers?: 'off' | 'shadow' | 'live';
     delegate_to?: string[];
     max_iterations?: number;
     max_tool_calls?: number;
@@ -224,8 +230,24 @@ export async function assembleResponderTurn(
   // user's Journal (deterministic, no LLM; empty when there are none). Opt
   // out per-agent with memory_config.inject_journal=false. Prepended so it
   // reads as durable user-truth at the top of the (cached) system block.
+  // With memory_config.journal_tiers = 'live' neither block goes here: tier 1
+  // rides the cached notes block (after the persona prompt, so a Journal write
+  // no longer re-bills the whole prefix) and tiers 2/3 come per turn from
+  // loadConversationContext. docs/journal.md "Tiers".
+  const journalLive = memoryConfig.journal_tiers === 'live';
+  let journalBlock = '';
+  if (journalLive && (opts.includeIdentity ?? true) && memoryConfig.inject_journal !== false) {
+    try {
+      journalBlock = await buildJournalTier1(ownerId);
+    } catch (err) {
+      console.error(
+        `${logPrefix} journal tier 1 skipped:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
   let identityBlock = '';
-  if ((opts.includeIdentity ?? true) && memoryConfig.inject_journal !== false) {
+  if (!journalLive && (opts.includeIdentity ?? true) && memoryConfig.inject_journal !== false) {
     try {
       const block = await buildIdentityContext(ownerId);
       if (block) identityBlock = `${block}\n\n`;
@@ -243,7 +265,11 @@ export async function assembleResponderTurn(
   // out per-agent with memory_config.inject_working_notes=false. Deterministic
   // and cached, same posture as the identity block.
   let workingNotesBlock = '';
-  if ((opts.includeIdentity ?? true) && memoryConfig.inject_working_notes !== false) {
+  if (
+    !journalLive &&
+    (opts.includeIdentity ?? true) &&
+    memoryConfig.inject_working_notes !== false
+  ) {
     try {
       const block = await buildWorkingNotesContext(ownerId, agent.slug);
       if (block) workingNotesBlock = `${block}\n\n`;
@@ -353,6 +379,7 @@ export async function assembleResponderTurn(
   return {
     attachedSkills,
     effectiveSystemPrompt,
+    journalBlock,
     volatileContext,
     relatedHeartbeatSlugs,
     allowedTools,

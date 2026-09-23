@@ -40,6 +40,7 @@ import {
   type ConversationExternalRef,
   type PersonaNote,
 } from '@mantle/db';
+import { renderRelevantJournalBlock, selectRelevantJournal } from '@mantle/content';
 import { embed } from '@mantle/embeddings';
 import {
   CONTEXT_FLOORS,
@@ -93,6 +94,10 @@ export type ConversationContext = {
   relations: RelationLine[];
   digests: Digest[];
   history: HistoryTurn[];
+  /** Journal tiers 2 + 3 for this turn ('' unless memory_config.journal_tiers
+   *  is `live` and something matched). Owner-internal: only surfaces that
+   *  carry the owner's identity pass it on to the prompt. */
+  journalRelevant: string;
   snapshot: ContextSnapshot;
 };
 
@@ -451,6 +456,7 @@ export async function loadConversationContext(args: {
             kind: facts.kind,
             entityId: facts.entityId,
             entityName: entities.name,
+            sourceNodeId: facts.sourceNodeId,
             dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
           })
           .from(facts)
@@ -821,6 +827,79 @@ export async function loadConversationContext(args: {
     }
   }
 
+  // ─── Journal tiers 2 + 3: entries that match this message ──────────────
+  // memory_config.journal_tiers (default `shadow`). Every journal entry is
+  // scored against the one query embedding; context entries, lessons and
+  // expectations at or above the cutoff join an uncached per-turn block
+  // (their best passage when long, ~3k chars a turn), plus at most one
+  // matching open gap. `shadow`: the pick lands in the snapshot only. `live`:
+  // the block is returned, and facts extracted from a picked entry, or a
+  // passage of one, are dropped as redundant. Spike 10, dev-brain 60a2f51e.
+  let journalRelevant = '';
+  let journalSnap: ContextSnapshot['journal'] = undefined;
+  const journalMode = memoryConfig.journal_tiers ?? 'shadow';
+  const userLane = memoryConfig.inject_journal !== false;
+  const agentLane = memoryConfig.inject_working_notes !== false;
+  if (queryVec && journalMode !== 'off' && (userLane || agentLane)) {
+    try {
+      const rel = await selectRelevantJournal({
+        ownerId,
+        queryVec,
+        inboundText,
+        cutoff: memoryConfig.journal_relevance_min,
+        budgetChars: memoryConfig.journal_relevant_chars,
+        userLane,
+        agentLane,
+      });
+      const pickedIds = new Set(rel.picks.map((p) => p.nodeId));
+      const redundantFact = (f: FactSnippet) =>
+        f.kind !== 'preference' && !!f.sourceNodeId && pickedIds.has(f.sourceNodeId);
+      const redundantFacts = factRows.filter(redundantFact);
+      const redundantChunks = chunkHits.filter((c) => pickedIds.has(c.nodeId));
+      journalSnap = {
+        mode: journalMode === 'live' ? 'live' : 'shadow',
+        cutoff: rel.cutoff,
+        skipped: rel.skipped,
+        picked: rel.picks.map((p) => ({
+          nodeId: p.nodeId,
+          kind: p.kind,
+          similarity: p.similarity,
+          chars: p.text.length,
+          passage: p.passage,
+        })),
+        gap: rel.gap ? { nodeId: rel.gap.nodeId, similarity: rel.gap.similarity } : null,
+        nearMisses: rel.nearMisses,
+        chars: rel.chars,
+        dedupe: { facts: redundantFacts.length, chunkHits: redundantChunks.length },
+      };
+      if (journalMode === 'live') {
+        journalRelevant = renderRelevantJournalBlock(rel, agent.slug);
+        if (redundantFacts.length > 0) {
+          const gone = new Set(redundantFacts.map((f) => snip(f.content)));
+          factRows = factRows.filter((f) => !redundantFact(f));
+          factsDroppedSnap = [
+            ...factsDroppedSnap,
+            ...factsSentSnap.filter((x) => gone.has(x.text)),
+          ];
+          factsSentSnap = factsSentSnap.filter((x) => !gone.has(x.text));
+        }
+        if (redundantChunks.length > 0) {
+          chunkHits = chunkHits.filter((c) => !pickedIds.has(c.nodeId));
+          chunkDroppedSnap = [
+            ...chunkDroppedSnap,
+            ...chunkSentSnap.filter((x) => pickedIds.has(x.nodeId ?? '')),
+          ];
+          chunkSentSnap = chunkSentSnap.filter((x) => !pickedIds.has(x.nodeId ?? ''));
+        }
+      }
+    } catch (err) {
+      console.error(
+        '[conversation] journal relevance skipped:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
   // ─── Corpus map: the cached "what exists" index ─────────────────────────
   // Not a retrieval — a map. The responder otherwise sees only the ~11 nodes
   // vector search surfaces per turn and has no idea what else the brain
@@ -959,6 +1038,7 @@ export async function loadConversationContext(args: {
     corpusMap: { count: corpusMap.entries.length, truncated: corpusMap.truncated },
     ...(pruningSnap ? { pruning: pruningSnap } : {}),
     ...(versionSnap ? { versionGrouping: versionSnap } : {}),
+    ...(journalSnap ? { journal: journalSnap } : {}),
   };
 
   return {
@@ -970,6 +1050,7 @@ export async function loadConversationContext(args: {
     relations,
     digests,
     history,
+    journalRelevant,
     snapshot,
   };
 }

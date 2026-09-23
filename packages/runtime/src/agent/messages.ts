@@ -61,6 +61,8 @@ export type FactSnippet = {
   content: string;
   kind: string;
   entityName?: string | null;
+  /** The node the fact came from; lets a Journal passage replace its facts. */
+  sourceNodeId?: string | null;
 };
 
 export type ContentHit = {
@@ -366,6 +368,13 @@ export function buildChatMessages(args: {
    *  `systemPrompt` — that breaks cross-turn prompt caching. */
   volatileContext?: string;
   personaNotes: PersonaNote[];
+  /** Journal tier 1 (memory_config.journal_tiers = 'live'): rendered at the
+   *  head of the persona-notes block, under the same cache marker, so a
+   *  Journal write re-bills that block onward, never the persona prompt. */
+  journalBlock?: string;
+  /** Journal tiers 2 + 3 for this turn: an uncached block after the volatile
+   *  context. Owner-internal; team surfaces never pass it. */
+  journalRelevant?: string;
   facts: FactSnippet[];
   digests: Digest[];
   /** The cached "what exists" index (see CorpusMapEntry). Optional so older
@@ -389,6 +398,8 @@ export function buildChatMessages(args: {
     systemPrompt,
     volatileContext,
     personaNotes,
+    journalBlock,
+    journalRelevant,
     facts,
     digests,
     corpusMap,
@@ -417,8 +428,12 @@ export function buildChatMessages(args: {
   // ─── Block 1: persona prompt + data rule (stable until a config edit) ──
   const messages: ChatMessage[] = [systemBlock(renderPersonaPrompt(systemPrompt), true)];
 
-  // ─── Block 2: persona notes (own breakpoint; the reflector adds notes) ─
-  const notesText = renderPersonaNotes(personaNotes);
+  // ─── Block 2: Journal tier 1 + persona notes (own breakpoint) ─────────
+  // Both change rarely (a Journal edit, a reflector note); either busts this
+  // block and those after it, never the persona prompt.
+  const notesText = [journalBlock?.trim(), renderPersonaNotes(personaNotes)]
+    .filter(Boolean)
+    .join('\n\n');
   if (notesText) messages.push(systemBlock(notesText, true));
 
   // ─── Block 3: conversation digests + corpus map (one breakpoint) ───────
@@ -451,6 +466,11 @@ export function buildChatMessages(args: {
   // the cached persona/digest prefix.
   if (volatileContext && volatileContext.trim().length > 0) {
     messages.push({ role: 'system', content: volatileContext.trim() });
+  }
+
+  // ─── Block 2a': Journal tiers 2 + 3 (no cache; picked per message) ─────
+  if (journalRelevant && journalRelevant.trim().length > 0) {
+    messages.push({ role: 'system', content: journalRelevant.trim() });
   }
 
   // ─── Block 2b: profile facts (no cache; ranked per query) ─────────────
