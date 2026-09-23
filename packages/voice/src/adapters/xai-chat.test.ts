@@ -19,7 +19,11 @@ function stubFetch(): Array<{ headers: Record<string, string> }> {
 }
 
 describe('xai-chat cache affinity', () => {
-  const base = { apiKey: 'k', model: 'grok-4', messages: [{ role: 'user' as const, content: 'hi' }] };
+  const base = {
+    apiKey: 'k',
+    model: 'grok-4',
+    messages: [{ role: 'user' as const, content: 'hi' }],
+  };
 
   it('sends x-grok-conv-id when the caller has a conversation id', async () => {
     const calls = stubFetch();
