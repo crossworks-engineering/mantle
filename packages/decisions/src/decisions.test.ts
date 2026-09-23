@@ -183,7 +183,7 @@ describe('delegation hint', () => {
   });
 
   it('none covers page and table edits (the responder does them), not app work', () => {
-    // Spike v2 (NATREF, 130 turns): the responder edits pages and tables itself
+    // Spike v2 (a work brain, 130 turns): the responder edits pages and tables itself
     // since 2026-08-12 but still hands app work to its specialist.
     const c = delegationCriteria([{ slug: 'pages', description: 'Document specialist.' }]);
     expect(c.none).toMatch(/an edit to a page or table, including the one in `open_surface`/);
@@ -204,11 +204,11 @@ describe('splitOnScreenNote', () => {
   it('splits typed text from the open page', () => {
     const r = splitOnScreenNote(
       'please update the header' +
-        note('- page "Line Class SOP" (node 4516836f-91e2-4bcb-8630-3e817869c995)'),
+        note('- page "Onboarding checklist" (node 00000000-0000-4000-8000-000000000001)'),
     );
     expect(r).toEqual({
       typed: 'please update the header',
-      openSurface: { kind: 'page', title: 'Line Class SOP' },
+      openSurface: { kind: 'page', title: 'Onboarding checklist' },
     });
   });
 

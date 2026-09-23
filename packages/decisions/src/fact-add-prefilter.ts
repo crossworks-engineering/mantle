@@ -4,7 +4,7 @@
  *
  * When a candidate fact has close neighbours, the extractor asks a chat model
  * ADD / UPDATE / DELETE / NOOP (server/api/src/agent/extract/facts.ts). The
- * 2026-09-21 spike (60 real NATREF cases, dev-brain page f28a25cf) found Jev
+ * 2026-09-21 spike (60 real cases from a work brain, dev-brain page f28a25cf) found Jev
  * unsafe for that whole choice: it read multi-valued attributes as
  * single-valued ("uses line class A" against "uses line class B") and chose
  * UPDATE, once at 0.99, which retires a fact that is still true. So a

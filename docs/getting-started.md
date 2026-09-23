@@ -284,7 +284,8 @@ at `/settings/keys`, then create a responder at `/settings/agents`.
 recall) + `profile` (dedup'd facts with an ADD/UPDATE/DELETE classifier) +
 `content_index` (per-item summary + embedding + chunks) + `content_store`.
 Prompt assembly keeps the cacheable prefix byte-stable (persona ← breakpoint 1,
-digests ← breakpoint 2, everything per-turn rides below them), see
+Journal tier 1 + persona notes ← breakpoint 2, digests + corpus map ←
+breakpoint 3, everything per-turn rides below them), see
 [`memory.md`](./memory.md) §7 for the as-built order and the cache-hygiene
 rule.
 

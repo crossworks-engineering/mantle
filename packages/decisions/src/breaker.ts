@@ -1,8 +1,9 @@
 /**
  * A small in-process circuit breaker for the decider endpoint. A DEAD
  * endpoint fails fast; a SLOW one makes every decision wait out the full
- * timeout (1.5 s), and a turn can run two or three decisions before the
- * answer. After `threshold` failures in a row the breaker opens: `allow()`
+ * timeout (1.5 s), and a turn runs several decisions before the answer.
+ * After `threshold` failed DECISIONS in a row the breaker opens (a fan-out of
+ * many requests is one decision: `DecideBatch` in decide.ts): `allow()`
  * says no for `cooldownMs`, and the caller runs its old path at once. When
  * the cooldown ends, one call goes through as a probe (the cooldown re-arms
  * at the same moment, so a probe that never reports cannot wedge it open).

@@ -90,17 +90,23 @@ cached 30 s, negative results too, so a brain without the worker pays one
 query per half minute); read the use's switch; look the (use, model, state,
 questions) tuple up in an in-process LRU (500 entries, 10 min); otherwise open
 one `llm_call` trace step named `decide_<use>` and call the adapter with the
-worker's `timeout_ms` (1500). Success: `recordChatUsage` (same meta keys as
+worker's `timeout_ms` (1500, clamped to 200-5,000). Success: `recordChatUsage` (same meta keys as
 every LLM step, so `/debug` spend-by-model shows Jev with no special case),
 plus `meta.use`, `meta.mode`, `meta.decision_ms`, a compact `meta.answers`
 (`"technical@0.75"`, `"2.99@0.99"`, `0.96`) and anything `summarize` adds.
 Failure: `meta.failed`, the step is marked skipped (`decision_failed`, amber
 in `/traces`), the caller gets `null`.
 
-Circuit breaker (`breaker.ts`): after 3 failures in a row for one worker,
-`decide()` returns `null` at once, with no call and no step, for 5 minutes.
-A slow endpoint then costs 3 timeouts, not 1.5 s on every decision of every
-turn. The step that opens it carries `meta.breaker_opened: true`. When the
+Circuit breaker (`breaker.ts`): after 3 failed decisions in a row for one
+worker, `decide()` returns `null` at once, with no call and no step, for 5
+minutes. A slow endpoint then costs 3 timeouts, not 1.5 s on every decision
+of every turn. A fan-out (`scoreInGroups`: many parallel requests for one
+decision) is ONE decision: it passes a `DecideBatch`, and the breaker hears
+one success when any group answered, one failure only when every group that
+went out failed. Before that, the fast groups' successes reset the count and
+a slow tail's timeouts then opened the breaker over one turn. The step that
+opens it on a single call carries `meta.breaker_opened: true`; a batch that
+opens it logs the warning instead. When the
 5 minutes end, one call goes through as a probe: success closes the breaker,
 failure keeps it open for another 5 minutes. Cache hits are still served
 while it is open. Per process, like the cache. In a shadow week read, a gap
@@ -160,7 +166,7 @@ edits pages and tables itself (the open one included) and hands a specialist
 large jobs, work inside an app, and work on a specialist's own data source.
 The trace data carries `surface` (the kind) next to the pick.
 
-Re-run (NATREF, 2026-09-23, 130 web turns, 104 with an on-screen note): v2's
+Re-run (a work brain, 2026-09-23, 130 web turns, 104 with an on-screen note): v2's
 state beat today's on exact match (67 vs 63) and correct `none` (37 vs 33),
 but hint precision stayed ~45% at 0.6 for every variant, because the labels
 are stale: the responder stopped delegating page edits on 2026-08-12, and
@@ -180,7 +186,7 @@ passes the previous user message, Telegram passes the message only.
   is a hint. The tool loop's allowlist is still what delegation is checked
   against, and the responder can ignore it.
 
-Spike (NATREF, 2026-09-22, 83 real turns): with that policy, 36 hints, 31
+Spike (a work brain, 2026-09-22, 83 real turns): with that policy, 36 hints, 31
 right, 4 wrong (2 arguable), 1 on a turn the responder answered itself —
 86% precision, 296 ms, ~$0.00004 per turn. Jev said `none` on 15 of 30
 direct turns; the chat baseline delegated 29 of them. Most misses were short
@@ -206,7 +212,7 @@ wouldDrop: {facts, contentHits, chunkHits}, charsSaved, ms, cached }`.
   `sent` / `dropped` rows move with them, so `/debug/context` shows what the
   model really received.
 
-Spike (NATREF, 2026-09-22, 60 real turns, 1 524 items, dev-brain page
+Spike (a work brain, 2026-09-22, 60 real turns, 1 524 items, dev-brain page
 29a6b411): the answer relied on **13%** of injected context (facts 9%, hits
 18%, passages 17%). Jev ranked a needed item above a not-needed one 82% of
 the time. Cut under 1.0: 51% of characters kept, 10% of needed items lost;
@@ -266,7 +272,7 @@ classes") because that is where the spike saw Jev go wrong.
   week reads: of the steps with `would_skip: true`, how many have `chat: ADD`
   (target ≥ 95%).
 
-Spike (NATREF, 2026-09-21, 60 real slow-path cases, dev-brain page
+Spike (a work brain, 2026-09-21, 60 real slow-path cases, dev-brain page
 f28a25cf): Jev ADD at ≥ 0.9 on 22 of 60 cases (37%), the chat model also
 said ADD on 22 of 22. Jev's UPDATE was wrong once at 0.99, so no confidence
 makes its update / delete safe. The shipped wording is new (the spike's exact
@@ -288,12 +294,18 @@ retrieval instead of adding to the turn. Threshold default **1.0**.
 
 - `shadow`: the `/debug/context` snapshot gains `historyRecall: { mode,
 threshold, exchanges: [{back, score, chars}], wouldAdd, chars, calls, failed,
-ms, cached }`. History unchanged.
+skipped, ms, cached }` (`ms` is the fan-out's wall time, timeouts included;
+`skipped` counts groups the open breaker held back). History unchanged.
 - `live`: exchanges at the threshold rejoin the history before the recent
   part, in time order; the first turn of each carries `[Recalled from earlier
   in this conversation, N messages back, …]` so the model knows the messages
   between are not shown. A failed group leaves its exchanges out (today's
-  behaviour).
+  behaviour). The recent part is cut by row count, so it can open on a reply
+  whose question is older: that question then comes along, unmarked, right
+  before it, and same-role neighbours where the recalled part meets the
+  recent part are joined, so the model never sees two replies (or two user
+  messages) in a row.
+- Small talk ("thanks", "ok") skips the use, like `journal_recall`.
 
 The intended pairing is a SMALLER `history_limit` plus this use: the spike's
 winner was the last 20 messages + Jev over the last 50.
@@ -319,15 +331,26 @@ do the header next") do not embed alike, and a follow-up message names no
 topic. With this use on, Jev scores every agent-lane rule 0-3 for "must a
 reply to this message follow it" (`packages/decisions/src/journal-recall.ts`),
 in parallel groups of 40 with the previous exchange as context, started at the
-top of `loadConversationContext` beside `history_recall`. Threshold default
-**1.5**. The shared engine of both uses is `group-scoring.ts`.
+top of `loadConversationContext` beside `history_recall`. The rules are the
+agent's own lessons and expectations (plus tier 1 overflow: always-on entries
+that did not fit), newest first, up to 1,000. Threshold default **1.5**. The
+shared engine of both uses is `group-scoring.ts`: it caps the message each
+group carries at 3,000 chars and counts the fan-out as ONE decision for the
+breaker (`DecideBatch`), so a slow tail in one turn cannot switch the decider
+off.
 
 - `shadow`: tier 2 keeps its similarity pick; `snapshot.journal.recall`
   records what Jev WOULD send (`picked: [{nodeId, score, chars}]`, `rules`,
-  `scored`, `calls`, `failed`, `ms`).
-- `live`: tier 2's agent lane is Jev's pick (score ≥ threshold, best first,
-  ≤ 25 rules, ≤ 6,000 chars, its own budget beside the user lane's 3,000);
-  user-lane context entries and the tier 3 gap stay on similarity.
+  `scored`, `calls`, `failed`, `skipped`, `ms`), picked from the same
+  candidate load as the real pick.
+- `live`: the rules Jev scored are picked by score (≥ threshold, best first,
+  ≤ 25 rules, ≤ 6,000 chars, their own budget beside the 3,000 for the rest);
+  a rule Jev did not score (its group failed) falls back to similarity, so a
+  failed group costs nothing a turn without Jev would have. User-lane context
+  entries and the tier 3 gap stay on similarity. Live only has an effect
+  when the Journal tiers are live too (`journal_tiers = 'live'`, or
+  `notes_target = 'journal'`): with the tiers in shadow nothing reaches the
+  prompt.
 
 Spike 13 (a work brain, 2026-09-23, 435 topic rules from the owner assistant's persona notes, 30
 real turns, Sonnet 5 key, dev-brain page 9f57fa46): similarity found 15 to
@@ -394,6 +417,15 @@ Full write-ups: dev-brain pages `cdf6a97c-5b84-485e-8698-9c266614318c`
     `snapshot.pruning` (`mode`, `threshold`, `wouldDrop`, `charsSaved`, `ms`).
   - `delegation_hint`: the turn's `traces.data.delegation_hint` (`pick`,
     `confidence`, `mode`), read against the same trace's `invoke_agent` steps.
+  - `history_recall`: the `load_context` step's output →
+    `snapshot.historyRecall` (`exchanges[].score`, `wouldAdd`, `failed`, `ms`).
+  - `journal_recall`: the `load_context` step's output →
+    `snapshot.journal.recall` (`picked`, `scored`, `failed`, `ms`), beside
+    `snapshot.journal.picked` (the similarity pick) and `.tier1`.
+  - Shadow waits: both recall uses are awaited in shadow too (the snapshot
+    needs the scores), but they start at the top of the turn and are bounded
+    by the worker's `timeout_ms` (clamped 0.2-5 s), so the most a shadow use
+    adds is the part of that bound retrieval does not already cover.
   - Cost: `/api/debug/spend` splits each decision model's row by use
     (`modelSpend[].uses`: calls, failed, cost, tokens in, mean ms). Cache hits
     make no call and leave no step. A failed call is logged under the model

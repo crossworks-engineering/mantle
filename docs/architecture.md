@@ -754,8 +754,11 @@ Key properties:
   `cache_control: { type: 'ephemeral' }` on the persona prompt, on the
   persona notes, and on the digest + corpus map block, three of Anthropic's
   four allowed breakpoints (the tool loop adds the fourth on the tail).
-  Ordered stable to churny; see memory.md "Prefix stability". Caching for non-Anthropic models is implicit (OpenAI, DeepSeek
-  auto-cache) or unsupported (most open-source routes), no marker needed.
+  Ordered stable to churny; see memory.md "Prefix stability". Caching for
+  non-Anthropic models is implicit (grok, OpenAI, Gemini, DeepSeek cache the
+  prefix themselves) or unsupported (most open-source routes); no marker is
+  sent, but the same block order holds and each call carries a per-agent
+  affinity key (`session_id`, and `x-grok-conv-id` on grok routes).
 - **Event-driven, not polled.** The pg_notify trigger is fired inside the
   worker's INSERT transaction, so the agent gets the message id within
   milliseconds of it landing in the DB.
@@ -769,10 +772,10 @@ Key properties:
 
 Sharp edges still open:
 
-- **No third cache breakpoint.** Two of four are used (system + digest).
-  Marking the raw-history block too would cut cost further but needs the
-  prefix to be byte-stable turn-to-turn, easy to break accidentally
-  when a new turn lands.
+- **No history breakpoint.** All four markers are spoken for (persona,
+  notes, digest + map, tail). History sits after per-turn blocks, so it is
+  re-written each turn anyway; trimming it (`history_limit` +
+  `history_recall`) is what saves there, not caching it.
 - **No cost ceiling.** Each inbound triggers exactly one OpenRouter
   responder call + (every ~20 turns) one summarizer call. Cheap on
   Haiku/DeepSeek; spendier on Sonnet/Opus.

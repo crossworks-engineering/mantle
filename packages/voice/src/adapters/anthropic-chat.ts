@@ -557,8 +557,8 @@ function buildAnthropicBody(opts: ChatOptions): Record<string, unknown> {
   // breakpoints per request — we set at most 2 from opts.cacheControl
   // (system + last user) PLUS whatever per-block markers the caller
   // pre-emitted via array system content. The buildChatMessages helper
-  // typically emits 2 system blocks (persona + digest), each with its
-  // own cache_control — leaving headroom under the cap.
+  // emits up to 3 marked system blocks (persona, notes, digest + map), so
+  // the tail marker is the 4th and last the cap allows.
   const cacheControl = opts.cacheControl;
   let systemField: AnthropicSystemField | undefined;
   if (systemBlocks.length > 0) {

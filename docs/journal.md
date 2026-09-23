@@ -154,40 +154,69 @@ them, per agent:
 | `shadow` (default) | the two blocks above; tiers 2 + 3 are picked and recorded in the `load_context` snapshot (`snapshot.journal`) only |
 | `live` | the tiers below; the two blocks above are gone |
 
-- **Tier 1, always on** (`buildJournalTier1` → `renderJournalTier1Block`):
-  the purpose block + identity / goal / preference entries, full text (≤1,500
-  chars each, ≤8,000 total), grouped by kind, oldest first by `created_at`, so
-  a new entry appends and an edit never reorders. It rides the **persona-notes
-  block** (cache marker 2), after the persona prompt: a Journal write re-bills
-  that block onward, never the persona prompt. `assembleResponderTurn` returns
-  it as `journalBlock`; `buildChatMessages` renders it.
-- **Tier 2, per turn** (`selectRelevantJournal`, called from
-  `loadConversationContext` with the turn's one query embedding): context
-  entries (and free-text user kinds), lessons and expectations whose cosine
-  similarity to the message is at least `journal_relevance_min` (default 0.70;
+`notes_target = 'journal'` (§4b) implies `live` whatever `journal_tiers` says
+(`journalTiersOf`): the agent's notes then exist only in the Journal, and the
+old capped blocks would show about 6 of hundreds.
+
+**Scope.** An entry an agent learned (`agent_slug` set) belongs to that agent:
+other agents do not see it, in any block or tier. Entries with no agent (the
+user's own) and open gaps are brain-wide. Superseded entries
+(`nodes.superseded_by`) never show. Decided 2026-09-23, when persona notes,
+which were per agent, moved into the Journal (`visibleToAgent`).
+
+- **Tier 1, always on** (`buildJournalTier1` → `planJournalTier1` →
+  `renderJournalTier1Block`): the purpose block + the identity / goal /
+  preference entries the agent may see, full text (≤1,500 chars each),
+  grouped by kind, oldest first by `created_at`, so a new entry appends and an
+  edit never reorders. The block holds 8,000 chars: each kind first fills its
+  own share (identity 2,500, goal 1,500, preference 4,000), then what is left
+  is shared in kind order. An entry that does not fit **overflows to tier 2**
+  (and to the rules `journal_recall` scores): it is picked per turn, never
+  lost. `snapshot.journal.tier1` counts shown and overflow. It rides the
+  **persona-notes block** (cache marker 2), after the persona prompt: a Journal
+  write re-bills that block onward, never the persona prompt.
+  `assembleResponderTurn` returns it as `journalBlock`; `buildChatMessages`
+  renders it.
+- **Tier 2, per turn** (`journalTiersForTurn`, runtime
+  `conversation/journal-tiers.ts`, with the turn's one query embedding): every
+  non-gap entry not shown in tier 1 (context entries, free-text user kinds,
+  lessons, expectations, tier 1 overflow) whose cosine similarity to the
+  message is at least `journal_relevance_min` (default 0.70, clamped 0 to 1;
   ~0.60 suits long work logs, 0.72 to 0.75 short personal entries). Best
-  first, ≤6 entries, ≤`journal_relevant_chars` (default 3,000) a turn. A body
-  over 1,200 chars sends its best-matching chunk, not the whole. Greetings,
-  thanks and one-word acknowledgements skip the lookup (`isSmallTalk`). The
-  scan reads every journal row of the owner (≤500) with a plain distance
-  select, not an index walk a type filter would starve.
-  With the decider's `journal_recall` use live, the agent lane (lessons,
-  expectations) is picked by Jev's score instead (≤25 rules, ≤6,000 chars):
-  similarity cannot match a rule to a request (spike 13, decisions.md §4).
+  first, ≤6 entries, ≤`journal_relevant_chars` (default 3,000, clamped 200 to
+  20,000) a turn. A body over 1,200 chars sends its best-matching chunk, not
+  the whole; a pick cut to fit the budget is dropped when under 80 chars.
+  Greetings, thanks and acknowledgements skip the lookup (`isSmallTalk`; a
+  one-word request such as "invoices" is not small talk). The scan is a plain
+  distance select over the agent's visible entries (not an index walk a type
+  filter would starve), capped at 5,000 rows.
+  With the decider's `journal_recall` use live, the rules Jev scored are
+  picked by score instead (≤25 rules, ≤6,000 chars): similarity cannot match a
+  rule to a request (spike 13, decisions.md §4). A rule Jev did not score (its
+  group failed) falls back to similarity, and a scored rule with no embedding
+  yet is still a candidate. In shadow, Jev's pick is traced beside the
+  similarity pick from the same candidate load (`snapshot.journal.recall`).
 - **Tier 3, per turn**: at most one open gap whose similarity passes the same
   cutoff, with the ask/record instructions.
 - Tiers 2 + 3 render as `# From the Journal (relevant to this message)`, an
   **uncached** system block right after the volatile context
-  (`ctx.journalRelevant`). In `live`, non-preference facts extracted from a
-  picked entry, and passages of a picked entry, are dropped as redundant
-  (`snapshot.journal.dedupe` counts them in both modes).
-- Lanes stay gated: `inject_journal` (user lane) and `inject_working_notes`
-  (agent lane). Team and forum turns never pass `journalBlock` or
-  `journalRelevant` to the prompt builder.
+  (`ctx.journalRelevant`). In `live`, what a **whole** entry in the prompt
+  (tier 1, or a tier 2 pick sent in full) makes redundant is dropped: facts
+  extracted from it, its chunk hits and its content hit. A passage pick drops
+  only its own chunk. `snapshot.journal.dedupe` counts them in both modes.
+- The embedding is computed when the tiers need it, even with `fact_limit`
+  and `content_hit_limit` at 0.
+- Lanes stay gated: `inject_journal` (user lane, and with it tier 1) and
+  `inject_working_notes` (agent lane). Team and forum turns never pass
+  `journalBlock` or `journalRelevant` to the prompt builder.
+- The legacy mapping (a family / relationships / faith / health row with no
+  mood reads as identity) applies to the old blocks too, so with `off` or
+  `shadow` such rows moved from "Other" into the identity group.
 
-To go live on one agent: set `memory_config.journal_tiers` to `live`; read a
-few `load_context` snapshots first (`snapshot.journal.picked`, `nearMisses`)
-and tune `journal_relevance_min` for that brain.
+To go live on one agent: set `memory_config.journal_tiers` to `live` (the
+agent PATCH route accepts it, with the clamps above); read a few
+`load_context` snapshots first (`snapshot.journal.picked`, `nearMisses`,
+`tier1`) and tune `journal_relevance_min` for that brain.
 
 ### 4b. Persona notes move into the Journal (`memory_config.notes_target`)
 
@@ -196,27 +225,50 @@ Persona notes (`agents.persona_notes`, written by the reflector and
 agent learned about helping its user. The notes ride every prompt in full and
 were never retired (spike 13, dev-brain page 9f57fa46: one work brain held 503
 notes, 103k chars, 68 of them general and 435 topic rules). The move, per
-agent:
+agent (both runs spend, so both take `--yes`; the task runs from a terminal
+only, since it needs `--agent` or `--page`):
 
-1. **Dry run:** `pnpm maintain run persona-notes-to-journal -- --agent=<slug>`.
-   The agent's own model sorts every live note (general → `preference` /
-   `identity`, tier 1; topic → `expectation` / `lesson` / `context`, tier 2;
-   a correction is always general), near-copies are merged (embedding ≥ 0.85,
-   confirmed by the model, earliest note kept), and the plan goes to a review
-   page (the plan itself in the page's `data.persona_notes_plan`).
-2. **Apply:** `… -- --apply --page=<id>` creates exactly the reviewed entries,
-   authored as the agent, tagged `from-persona-notes`,
-   `data.source.persona_note_ref` set (idempotent). Persona notes untouched.
+1. **Dry run:** `pnpm maintain persona-notes-to-journal --agent=<slug> --yes`.
+   Inside a box's container the owner id is not in the environment:
+   `docker exec -w /app -e ALLOWED_USER_ID=<owner id> mantle_web pnpm maintain persona-notes-to-journal --agent=<slug> --yes`.
+   The agent's own model sorts every live note at low reasoning effort, in
+   batches of 15 with one retry each (general → `preference` / `identity`,
+   tier 1; topic → `expectation` / `lesson` / `context`, tier 2; a correction
+   is always general). Answers are checked; a note with no usable answer is
+   "unsorted" and goes per turn, listed on the page. A batch that still fails
+   leaves its notes unsorted instead of ending the run. Near-copies are merged
+   (embedding ≥ 0.85, confirmed by the model); a group keeps its strongest
+   note (a correction, then a general note, then the earliest). The plan goes
+   to a review page (the plan itself in the page's `data.persona_notes_plan`),
+   which warns when the always-on notes outgrow tier 1. Measured 2026-09-23:
+   $0.79 for 503 notes on Sonnet 5, $0.12 for 119 on grok.
+2. **Apply:** `pnpm maintain persona-notes-to-journal --apply --page=<id> --yes`
+   checks the stored plan and its agent, then creates exactly the reviewed
+   entries, authored as the agent (so they belong to it), tagged
+   `from-persona-notes`, `data.source.persona_note_ref` set (idempotent).
+   Notes retired since the dry run are skipped; notes learned since are
+   reported (re-run the dry run for them). No sorting call, but each new
+   entry is indexed, which runs the extractor once per entry. Persona notes
+   untouched.
 3. **Switch:** set the agent's `memory_config.notes_target` to `journal`.
-   The agent stops reading its persona notes; the reflector reads the Journal
+   This also switches its tiers live (§4a). The agent stops reading its
+   persona notes; the reflector reads this agent's rule entries (identity,
+   goal, preference, lesson, expectation; newest 300, each cut to 240 chars)
    as "already known" and writes Journal entries (it also gives each note a
    `scope`: general → `preference`, topic → `expectation`; relationship →
-   `identity`; correction → `preference`); `update_persona` writes a general
-   `preference` (retiring an old entry is `journal_update` / `journal_delete`).
-   New entries are deduped against the whole Journal (token Jaccard ≥ 0.6).
+   `identity`; correction → `preference`), dropping near-copies of what the
+   agent knows (token Jaccard ≥ 0.6). `update_persona` always writes a general
+   `preference` (an explicit request, and a correction must land even when it
+   reads like the rule it replaces); its `supersede_refs` do not apply in the
+   Journal, and the tool says so: retiring the old entry is `journal_list`,
+   then `journal_update` / `journal_delete`.
 4. Rules then reach the prompt through tier 2, picked by Jev when the
    decider's `journal_recall` use is live (embedding similarity cannot match
    a rule to a request).
+
+There is no one-step undo: the converted entries carry the
+`from-persona-notes` tag, and setting `notes_target` back to `persona` makes
+the agent read its (untouched) persona notes again.
 
 ---
 
@@ -226,7 +278,8 @@ agent:
    with `kind='gap'`: one answerable question, written to be answered cold.
    Born `status='open'`.
 2. **Ask.** Every conversational agent sees open questions in its Working
-   notes. The `gap_questions` manifest skill teaches the etiquette: ask only
+   notes (with the tiers live, only the one open gap that matches the message
+   joins a turn: tier 3, §4a). The `gap_questions` manifest skill teaches the etiquette: ask only
    when relevant to the current conversation, at most one per turn, never as
    an opener, drop it if declined. The UI's "Questions for you" view (jackdaw
    P2, including a home-screen block) is the out-of-chat path.

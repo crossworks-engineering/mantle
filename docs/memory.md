@@ -213,7 +213,10 @@ close the thread. You speak to Sarah; she remembers everything she's been
 told; you pick up wherever you left off.
 
 This frames everything else in this doc:
-- **No `session_id`.** The conversation never ends.
+- **No conversation sessions.** The conversation never ends. (The
+  `session_id` Mantle sends OpenRouter is a per-agent cache-affinity key,
+  `mantle-agent-<agentId>`, not a conversation boundary: §7 "Prefix
+  stability".)
 - **The agent has identity.** Sarah has a stable persona that grows
   through use, not a per-call system prompt.
 - **Memory is the product.** The killer feature is *recall*, Sarah
@@ -684,8 +687,8 @@ as "where does Alex work *currently*?" via `WHERE valid_to IS NULL`.
 `reconcileEntity` in [`server/api/src/agent/extractor.ts`](../server/api/src/agent/extractor.ts)
 matches in four steps: (1) exact name/alias, (2) trigram similarity ≥ 0.7,
 (3) embedding cosine < threshold, (4) new entity. Steps 2-3 are the merge
-paths; they collapse "Mr J Schoeman", "Schoeman", "Don Carter", "Jonathan
-Schoeman" into one entity, which is great for spelling variations of the
+paths; they collapse "Mr J Carter", "Carter", "Don Carter", "Jonathan
+Carter" into one entity, which is great for spelling variations of the
 *same person* and disastrous for *different people* who share a surname.
 
 **Same-surname-different-given guard** (added 2026-05-26). When the candidate
@@ -699,9 +702,9 @@ normal merge still wins:
 | Candidate vs existing | Decision |
 |---|---|
 | `Don Carter` vs `Alex Carter` | distinct → **new entity** |
-| `Don Carter` vs `Donald Schoeman` | prefix overlap → merge (nickname/long-form) |
-| `Don Carter` vs `D. Schoeman` | initial → merge (could be the same) |
-| `Don Carter` vs `Mr J Schoeman` | title + initial → merge (could be the same) |
+| `Don Carter` vs `Donald Carter` | prefix overlap → merge (nickname/long-form) |
+| `Don Carter` vs `D. Carter` | initial → merge (could be the same) |
+| `Don Carter` vs `Mr J Carter` | title + initial → merge (could be the same) |
 | `Don Carter` vs `Don Smith` | different surname → not this rule's concern |
 | `Don Co` (org) vs `Alex Co` (org) | non-person → not this rule's concern |
 
@@ -711,7 +714,7 @@ only if the candidate clashes with **all** of them, so a re-extraction of a
 contact already aliased into an entity still finds its way home.
 
 Doesn't unwind earlier collapses, if pre-fix data shows a single
-`J. Schoeman` row with five people's aliases, delete the row (facts'
+`J. Carter` row with five people's aliases, delete the row (facts'
 `entity_id` FK is `ON DELETE SET NULL`; `entity_edges` need a manual sweep)
 and re-fire `pg_notify('node_ingested')` on the affected source nodes; the
 guard does the right thing on the re-extract.
@@ -983,10 +986,11 @@ Visual map of who writes what, who reads what:
 ```
 [tool definitions]                            ← front of every cached prefix (grant order)
 [persona prompt + skills + data rule]         ← cache_control (changes on a config edit)
-[persona_notes]                               ← cache_control (the reflector adds notes)
+[Journal tier 1 + persona_notes]              ← cache_control (the reflector adds notes)
 [conversation_digest — last N digests]        ← shares the next marker (small)
 [corpus map]                                  ← cache_control (changes with content writes)
 [volatile context — time line + heartbeats]   ← UNCACHED by design (changes every turn)
+[Journal tiers 2 + 3 — picked per message]    ← UNCACHED (journal.md §4a)
 [profile facts — top-K for this query]        ← UNCACHED (query-ranked, changes every turn)
    facts = top-K by (cosine + KIND-AWARE RECENCY) … PLUS preferences always-injected
 [content_index hits — top 5]                  ← ranked by SALIENCE- + RECENCY-adjusted
@@ -1022,6 +1026,20 @@ Visual map of who writes what, who reads what:
 > With `memory_config.journal_tiers = 'live'` the Journal leaves the front of
 > the prefix too: tier 1 rides the persona-notes block, tiers 2 + 3 an uncached
 > per-turn block ([journal.md §4a](journal.md#4a-tiers-memory_configjournal_tiers-2026-09-23)).
+>
+> **Every provider, not only Anthropic (2026-09-23).** Markers exist only on
+> Anthropic routes (`anthropic/…`, `~anthropic/…` aliases, direct). The other
+> routes (grok, OpenAI, Gemini) cache the longest byte-identical prefix on
+> their own, so the same order matters there, and the stable blocks carry a
+> `STABLE_PREFIX` tag (a symbol, never on the wire) that `cache_fp.blocks`
+> hashes: on grok the fingerprint used to read `blocks: []` and could not
+> show a prompt change. Each call also carries a per-agent affinity key:
+> OpenRouter's `session_id = mantle-agent-<agentId>` (sticky routing to the
+> upstream holding the warm prefix; `cache_fp.provider` records which one
+> served the call) and, on grok routes, `x-grok-conv-id` (the `~x-ai/` alias
+> included, and on the direct xAI adapter). Before the alias fix no fleet
+> agent got it, and warm grok turns read 0.1% of the prompt from cache
+> against 75% on Claude.
 
 **The ranking factors (all in the one effective-distance expression):**
 
@@ -1079,7 +1097,7 @@ crowding out personal notes; this fixes it without losing anything.
 lineage primitive (`facts.superseded_by`) to content: an uploaded file whose
 content was migrated into a corrected page, an older versioned export, or an
 explicitly-corrected node points at its living replacement. Measured motivation
-(NATREF, 2026-07): stale source files often carry MORE chunk vectors than the
+(a work brain, 2026-07): stale source files often carry MORE chunk vectors than the
 pages that replaced them, so passage retrieval preferred the dead copy daily.
 
 Mechanics: the demotion is **materialized into `salience`** at write time
