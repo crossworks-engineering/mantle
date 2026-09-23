@@ -348,3 +348,43 @@ export function buildHistory(rows: HistoryRow[]): {
 
   return { history, toolRecords: historyToolRecords, mediaRecords: historyMediaRecords };
 }
+
+// ─── history_recall helpers (pure) ──────────────────────────────────────────
+
+/** An exchange as the decider reads it: `USER: …` / `ASSISTANT: …` lines. */
+export const exchangeText = (turns: readonly HistoryTurn[]): string =>
+  turns.map((t) => `${t.role === 'user' ? 'USER' : 'ASSISTANT'}: ${t.text}`).join('\n');
+
+/** Group oldest-first turns into exchanges: each user turn opens one; a
+ *  leading reply with no user turn before it forms its own. `start` is the
+ *  index of the exchange's first turn. */
+export function groupExchanges(
+  turns: readonly HistoryTurn[],
+): Array<{ start: number; turns: HistoryTurn[] }> {
+  const out: Array<{ start: number; turns: HistoryTurn[] }> = [];
+  turns.forEach((t, i) => {
+    if (t.role === 'user' || out.length === 0) out.push({ start: i, turns: [] });
+    out[out.length - 1]!.turns.push(t);
+  });
+  return out;
+}
+
+/** Put recalled older exchanges (time order) in front of the recent history.
+ *  The first turn of each carries a marker, so the model knows it was picked
+ *  from further back and that the messages between are not shown. */
+export function withRecalledExchanges(
+  history: readonly HistoryTurn[],
+  recalled: ReadonlyArray<{ turns: HistoryTurn[]; back: number }>,
+): HistoryTurn[] {
+  const marked = recalled.flatMap((e) =>
+    e.turns.map((t, i) =>
+      i === 0
+        ? {
+            ...t,
+            text: `[Recalled from earlier in this conversation, ${e.back} messages back, because it bears on the new message. The messages between are not shown.]\n${t.text}`,
+          }
+        : t,
+    ),
+  );
+  return [...marked, ...history];
+}

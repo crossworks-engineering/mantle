@@ -715,6 +715,22 @@ export type ContextSnapshot = {
     ms: number;
     cached: boolean;
   };
+  /** The decider's `history_recall` use, when it ran on this turn: every
+   *  exchange older than history_limit (up to 50 messages back) with its
+   *  score. `shadow`: `wouldAdd` says how many WOULD have rejoined the
+   *  history; `live`: they did, before the recent part. */
+  historyRecall?: {
+    mode: 'shadow' | 'live';
+    threshold: number;
+    /** `back` = messages back from the newest; `score` null = unscored. */
+    exchanges: Array<{ back: number; score: number | null; chars: number }>;
+    wouldAdd: number;
+    chars: number;
+    calls: number;
+    failed: number;
+    ms: number;
+    cached: boolean;
+  };
   /** Journal tiers 2 and 3 (memory_config.journal_tiers), when the lookup
    *  ran. `shadow`: what WOULD have joined the prompt; `live`: what did.
    *  Absent when the tiers are off, both lanes are off, or no embedding. */

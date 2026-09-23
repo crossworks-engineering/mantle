@@ -4,6 +4,7 @@ import {
   formatToolRecordSuffix,
   looksAnaphoricFollowup,
 } from './conversation';
+import { exchangeText, groupExchanges, withRecalledExchanges } from './conversation/select';
 
 describe('looksAnaphoricFollowup', () => {
   it('flags short referential follow-ups (enrich the retrieval embedding)', () => {
@@ -172,5 +173,34 @@ describe('formatMediaRecordSuffix', () => {
     expect(out).toContain('+2 more');
     expect(out).toContain('0153d1f2');
     expect(out).not.toContain('4153d1f2');
+  });
+});
+
+describe('history_recall helpers', () => {
+  const u = (text: string) => ({ role: 'user' as const, text });
+  const a = (text: string) => ({ role: 'assistant' as const, text });
+
+  it('groups turns into exchanges; a leading reply is its own exchange', () => {
+    const g = groupExchanges([a('orphan'), u('q1'), a('r1'), u('q2'), u('q3'), a('r3')]);
+    expect(g.map((x) => x.start)).toEqual([0, 1, 3, 4]);
+    expect(g[1]!.turns).toEqual([u('q1'), a('r1')]);
+    expect(exchangeText(g[1]!.turns)).toBe('USER: q1\nASSISTANT: r1');
+  });
+
+  it('puts recalled exchanges (time order) before the recent part, marking each first turn', () => {
+    const out = withRecalledExchanges(
+      [u('recent q'), a('recent r')],
+      [
+        { turns: [u('older q')], back: 44 },
+        { turns: [u('old q'), a('old r')], back: 31 },
+      ],
+    );
+    expect(out.map((t) => t.role)).toEqual(['user', 'user', 'assistant', 'user', 'assistant']);
+    expect(out[0]!.text).toMatch(
+      /^\[Recalled from earlier in this conversation, 44 messages back[\s\S]*\nolder q$/,
+    );
+    expect(out[1]!.text).toMatch(/31 messages back[\s\S]*\nold q$/);
+    expect(out[2]!.text).toBe('old r');
+    expect(out.slice(3)).toEqual([u('recent q'), a('recent r')]);
   });
 });

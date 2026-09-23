@@ -73,5 +73,15 @@ export {
   type FactAddPrefilter,
   type FactRelation,
 } from './fact-add-prefilter';
+export {
+  HISTORY_RECALL_GROUP,
+  HISTORY_RECALL_THRESHOLD_DEFAULT,
+  HISTORY_RECALL_WINDOW,
+  MAX_HISTORY_EXCHANGE_CHARS,
+  recallExchanges,
+  scoreHistoryExchanges,
+  type HistoryExchange,
+  type HistoryRecallScoring,
+} from './history-recall';
 export { DecisionCache } from './cache';
 export { CircuitBreaker } from './breaker';

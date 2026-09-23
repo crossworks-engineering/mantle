@@ -44,6 +44,7 @@ import { renderRelevantJournalBlock, selectRelevantJournal } from '@mantle/conte
 import { embed } from '@mantle/embeddings';
 import {
   CONTEXT_FLOORS,
+  HISTORY_RECALL_WINDOW,
   VERSION_THRESHOLD_DEFAULT,
   applyPassageScores,
   applyVersionGroups,
@@ -52,9 +53,13 @@ import {
   dropSupersededInPool,
   groupVersions,
   pruneContextItems,
+  recallExchanges,
   scoreContextItems,
+  scoreHistoryExchanges,
   scorePassages,
   type ContextItem,
+  type HistoryExchange,
+  type HistoryRecallScoring,
 } from '@mantle/decisions';
 import {
   searchChunks,
@@ -147,6 +152,8 @@ import {
   buildDigests,
   buildHistory,
   CHUNK_CUTOFF,
+  exchangeText,
+  groupExchanges,
   mergePreferences,
   patchSuperseded,
   selectChunkHits,
@@ -154,6 +161,8 @@ import {
   selectFacts,
   snip,
   staleNodeIds,
+  withRecalledExchanges,
+  type HistoryRow,
 } from './conversation/select';
 
 /** How many section-level passages to auto-pull into context (the fine-grained
@@ -364,6 +373,92 @@ export async function markTurnSuperseded(args: {
  * it (by time). The web path loads context BEFORE inserting the inbound, so it
  * omits both — the new turn simply isn't in the table yet.
  */
+/** An older exchange scored by `history_recall`: its turns, and how many
+ *  messages back from the newest its first message sits. */
+type RecallExchange = HistoryExchange & { turns: HistoryTurn[]; back: number };
+
+/**
+ * The raw history rows, newest first, plus the `history_recall` scoring of
+ * the rows past `historyLimit` when that use is on. Started at the top of
+ * loadConversationContext and awaited at the end, so the scoring overlaps
+ * the embedding and retrieval.
+ */
+async function loadHistoryRows(o: {
+  ownerId: string;
+  agentId: string;
+  historyLimit: number;
+  windowHours: number | null;
+  excludeMessageId?: string;
+  before?: Date;
+  inboundText: string;
+  recall: boolean;
+}): Promise<{
+  recentRows: HistoryRow[];
+  recall: { exchanges: RecallExchange[]; scoring: HistoryRecallScoring | null } | null;
+}> {
+  // Only 'complete' turns are real conversation: the durable runner writes the
+  // outbound row 'pending' (empty text) at turn start and may end it 'failed'
+  // (no usable reply). Either would otherwise leak into a later turn's prompt as
+  // an empty/garbage assistant message. Inbound rows are always 'complete', so
+  // this filter keeps every user turn. See docs/live-turn-streaming.md §6.
+  // Superseded pairs (data.superseded_by — a turn the user cancelled mid-stream
+  // and re-sent with a correction) are ALSO excluded: both rows finalize
+  // 'complete', so without this the abandoned half-answer would leak back into
+  // the next prompt. Recall deliberately still sees them.
+  const histConds = [
+    eq(assistantMessages.ownerId, o.ownerId),
+    eq(assistantMessages.agentId, o.agentId),
+    eq(assistantMessages.status, 'complete'),
+    notSuperseded(),
+  ];
+  if (o.excludeMessageId) histConds.push(ne(assistantMessages.id, o.excludeMessageId));
+  if (o.before) histConds.push(lt(assistantMessages.createdAt, o.before));
+  if (o.windowHours != null && o.windowHours > 0) {
+    const base = o.before ?? new Date();
+    histConds.push(
+      gte(assistantMessages.createdAt, new Date(base.getTime() - o.windowHours * 3600_000)),
+    );
+  }
+  const limit = o.recall ? Math.max(o.historyLimit, HISTORY_RECALL_WINDOW) : o.historyLimit;
+  const rows = await db
+    .select({
+      direction: assistantMessages.direction,
+      text: assistantMessages.text,
+      createdAt: assistantMessages.createdAt,
+      data: assistantMessages.data,
+      attachments: assistantMessages.attachments,
+    })
+    .from(assistantMessages)
+    .where(and(...histConds))
+    .orderBy(desc(assistantMessages.createdAt))
+    .limit(limit);
+  const recentRows = rows.slice(0, o.historyLimit);
+  const olderRows = rows.slice(o.historyLimit);
+  if (!o.recall || olderRows.length === 0) return { recentRows, recall: null };
+
+  // buildHistory reverses in place: hand it copies. Both come back oldest first.
+  const olderTurns = buildHistory([...olderRows]).history;
+  const recentTurns = buildHistory([...recentRows]).history;
+  const exchanges: RecallExchange[] = groupExchanges(olderTurns).map((g, i) => ({
+    id: `x${i}`,
+    turns: g.turns,
+    text: exchangeText(g.turns),
+    back: o.historyLimit + (olderTurns.length - g.start),
+  }));
+  const lastUser = recentTurns.map((t) => t.role).lastIndexOf('user');
+  const previous = lastUser >= 0 ? exchangeText(recentTurns.slice(lastUser)) : null;
+  let scoring: HistoryRecallScoring | null = null;
+  try {
+    scoring = await scoreHistoryExchanges(o.ownerId, o.inboundText, previous, exchanges);
+  } catch (err) {
+    console.error(
+      '[conversation] history recall skipped:',
+      err instanceof Error ? err.message : err,
+    );
+  }
+  return { recentRows, recall: { exchanges, scoring } };
+}
+
 export async function loadConversationContext(args: {
   ownerId: string;
   agent: Agent;
@@ -387,6 +482,27 @@ export async function loadConversationContext(args: {
   const corpusMapLimit = memoryConfig.corpus_map_limit ?? CORPUS_MAP_LIMIT_DEFAULT;
 
   const personaNotes: PersonaNote[] = (agent.personaNotes ?? []) as PersonaNote[];
+
+  // History rows, started now: with the decider's `history_recall` use on, the
+  // older rows are scored while the embedding and retrieval below run, so the
+  // ~0.5 s never adds to the turn. Awaited where the history is built.
+  const recallUse =
+    historyLimit > 0 && inboundText.trim().length > 0
+      ? await decisionUseEnabled(ownerId, 'history_recall')
+      : null;
+  const historyLoad = loadHistoryRows({
+    ownerId,
+    agentId: agent.id,
+    historyLimit,
+    windowHours,
+    excludeMessageId: args.excludeMessageId,
+    before: args.before,
+    inboundText,
+    recall: recallUse != null,
+  });
+  // Surfaced where it is awaited; this only stops an early throw above from
+  // leaving the promise unobserved.
+  historyLoad.catch(() => {});
 
   // Embed the inbound once for both fact + content lookups. The embedder is
   // resolved centrally from embedding_config — no per-agent override (the query
@@ -974,46 +1090,41 @@ export async function loadConversationContext(args: {
   const digests: Digest[] = buildDigests(digestRows);
 
   // ─── Raw recent turns (all channels, per agent) ─────────────────────────
-  // Only 'complete' turns are real conversation: the durable runner writes the
-  // outbound row 'pending' (empty text) at turn start and may end it 'failed'
-  // (no usable reply). Either would otherwise leak into a later turn's prompt as
-  // an empty/garbage assistant message. Inbound rows are always 'complete', so
-  // this filter keeps every user turn. See docs/live-turn-streaming.md §6.
-  // Superseded pairs (data.superseded_by — a turn the user cancelled mid-stream
-  // and re-sent with a correction) are ALSO excluded: both rows finalize
-  // 'complete', so without this the abandoned half-answer would leak back into
-  // the next prompt. Recall deliberately still sees them.
-  const histConds = [
-    eq(assistantMessages.ownerId, ownerId),
-    eq(assistantMessages.agentId, agent.id),
-    eq(assistantMessages.status, 'complete'),
-    notSuperseded(),
-  ];
-  if (args.excludeMessageId) histConds.push(ne(assistantMessages.id, args.excludeMessageId));
-  if (args.before) histConds.push(lt(assistantMessages.createdAt, args.before));
-  if (windowHours != null && windowHours > 0) {
-    const base = args.before ?? new Date();
-    histConds.push(
-      gte(assistantMessages.createdAt, new Date(base.getTime() - windowHours * 3600_000)),
-    );
+  // Filters and the early start: loadHistoryRows above.
+  const { recentRows, recall } = await historyLoad;
+  const built = buildHistory([...recentRows]);
+  let history = built.history;
+  const historyToolRecords = built.toolRecords;
+  const historyMediaRecords = built.mediaRecords;
+
+  // Decider, use `history_recall` (experimental, owner-switched): older
+  // exchanges that score at the threshold come back before the recent part,
+  // in time order, each marked so the model knows the messages between are
+  // not shown. `shadow`: the scores land in the snapshot only. Null scoring
+  // (failed / slow) = today's history. Spike 12, dev-brain page c8c2256f.
+  let recallSnap: ContextSnapshot['historyRecall'] = undefined;
+  if (recall?.scoring) {
+    const { scoring } = recall;
+    const picked = recallExchanges(recall.exchanges, (e) => e.id, scoring);
+    recallSnap = {
+      mode: scoring.mode,
+      threshold: scoring.threshold,
+      exchanges: recall.exchanges.map((e) => ({
+        back: e.back,
+        score: scoring.scores.has(e.id) ? Math.round(scoring.scores.get(e.id)! * 100) / 100 : null,
+        chars: e.text.length,
+      })),
+      wouldAdd: picked.kept.length,
+      chars: picked.kept.reduce((n, e) => n + e.text.length, 0),
+      calls: scoring.calls,
+      failed: scoring.failed,
+      ms: scoring.ms,
+      cached: scoring.cached,
+    };
+    if (scoring.mode === 'live' && picked.kept.length > 0) {
+      history = withRecalledExchanges(history, picked.kept);
+    }
   }
-  const rows = await db
-    .select({
-      direction: assistantMessages.direction,
-      text: assistantMessages.text,
-      createdAt: assistantMessages.createdAt,
-      data: assistantMessages.data,
-      attachments: assistantMessages.attachments,
-    })
-    .from(assistantMessages)
-    .where(and(...histConds))
-    .orderBy(desc(assistantMessages.createdAt))
-    .limit(historyLimit);
-  const {
-    history,
-    toolRecords: historyToolRecords,
-    mediaRecords: historyMediaRecords,
-  } = buildHistory(rows);
 
   const snapshot: ContextSnapshot = {
     query: {
@@ -1039,6 +1150,7 @@ export async function loadConversationContext(args: {
     ...(pruningSnap ? { pruning: pruningSnap } : {}),
     ...(versionSnap ? { versionGrouping: versionSnap } : {}),
     ...(journalSnap ? { journal: journalSnap } : {}),
+    ...(recallSnap ? { historyRecall: recallSnap } : {}),
   };
 
   return {

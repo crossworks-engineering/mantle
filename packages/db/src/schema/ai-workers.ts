@@ -287,6 +287,10 @@ export type DecisionUse =
   | 'delegation_hint'
   /** Fact reconcile: let a confident ADD skip the chat classifier. */
   | 'fact_add_prefilter'
+  /** Per responder turn: score the exchanges older than `history_limit` (up
+   *  to 50 messages back) for "does a reply to this message need it"; live =
+   *  the ones at the threshold rejoin the history before the recent part. */
+  | 'history_recall'
   /** Per-request model routing (complexity / needs tools / sensitive). */
   | 'model_routing';
 

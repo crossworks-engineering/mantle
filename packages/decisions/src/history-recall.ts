@@ -1,0 +1,154 @@
+/**
+ * History recall — use `history_recall`. The responder's history is the last
+ * `history_limit` messages. A message just past that line drops out, even when
+ * the new message returns to it. Once per responder turn, this scores the
+ * OLDER exchanges (up to HISTORY_RECALL_WINDOW messages back, whole exchange =
+ * user message + reply) 0-3 for "does a reply to this message need it"; code
+ * brings back the ones at the threshold, in time order, before the recent part.
+ *
+ * Why: spike 12 (2026-09-23, 50 real NATREF turns, dev-brain page c8c2256f).
+ * Today's last-30 window missed a needed exchange on 4 turns, 3 of them a
+ * RETURN to a topic after 8 h to 10 days, which Jev scored 2.2 to 2.85. The
+ * last 20 + Jev at 1.0 missed on 3 turns with 78% of the tokens; 11 of the 18
+ * needed exchanges outside the last 20 came back. A walk back to the topic
+ * start and chat-model selectors both lost (12 to 18 misses).
+ *
+ * Groups of HISTORY_RECALL_GROUP exchanges go out as separate requests in
+ * parallel (Jev reads ~32k tokens a call); the caller starts this early so the
+ * ~0.5 s overlaps the rest of the context load. Nothing is ever dropped from
+ * the recent part; a failed group only means its exchanges stay out, as today.
+ */
+import type { DecisionQuestion } from '@mantle/voice';
+import { decide, type DecideOutcome } from './decide';
+
+/** How far back the scan reaches, in messages, counted from the newest (the
+ *  recent part included). Spike 12: no NATREF topic began further back. */
+export const HISTORY_RECALL_WINDOW = 50;
+
+/** Default cut on the 0-3 score. Spike 12: 1.0 kept 11 of 18 needed older
+ *  exchanges; 0.5 kept 12 at twice the recalled text. */
+export const HISTORY_RECALL_THRESHOLD_DEFAULT = 1.0;
+
+/** Exchanges per request. */
+export const HISTORY_RECALL_GROUP = 10;
+
+/** Per-exchange text cap inside a request (a long reply keeps its head). */
+export const MAX_HISTORY_EXCHANGE_CHARS = 5_000;
+
+/** The most recent exchange, given as context for a terse message. */
+const MAX_PREVIOUS_CHARS = 2_000;
+
+/** One older exchange: a stable id plus its text as the history renders it. */
+export type HistoryExchange = { id: string; text: string };
+
+export type HistoryRecallScoring = {
+  scores: Map<string, number>;
+  mode: 'shadow' | 'live';
+  threshold: number;
+  /** Requests sent (cache hits included). */
+  calls: number;
+  /** Groups that came back with no answer (their exchanges stay out). */
+  failed: number;
+  cached: boolean;
+  /** Slowest group, the wait the turn saw. */
+  ms: number;
+};
+
+const LEVELS = (k: string): string[] => [
+  `\`exchanges.${k}\` is about a different topic than \`message\`.`,
+  `\`exchanges.${k}\` is on the same topic, but a reply to \`message\` does not need it.`,
+  `\`exchanges.${k}\` gives useful background for a reply to \`message\`.`,
+  `\`exchanges.${k}\` is needed to reply to \`message\`: \`message\` continues it, refers to it, or relies on something in it.`,
+];
+
+/** Score older exchanges against `message`. Null = decider off, nothing to
+ *  score, or every group failed; the caller then keeps today's history. */
+export async function scoreHistoryExchanges(
+  ownerId: string,
+  message: string,
+  previousExchange: string | null,
+  exchanges: readonly HistoryExchange[],
+): Promise<HistoryRecallScoring | null> {
+  if (exchanges.length === 0 || !message.trim()) return null;
+  const groups: HistoryExchange[][] = [];
+  for (let i = 0; i < exchanges.length; i += HISTORY_RECALL_GROUP) {
+    groups.push(exchanges.slice(i, i + HISTORY_RECALL_GROUP));
+  }
+
+  const results = await Promise.all(
+    groups.map(async (group) => {
+      const keyById = new Map<string, string>();
+      const texts: Record<string, string> = {};
+      const questions: Record<string, DecisionQuestion> = {};
+      group.forEach((ex, i) => {
+        const k = `x${i + 1}`;
+        keyById.set(ex.id, k);
+        texts[k] =
+          ex.text.length > MAX_HISTORY_EXCHANGE_CHARS
+            ? ex.text.slice(0, MAX_HISTORY_EXCHANGE_CHARS)
+            : ex.text;
+        questions[k] = {
+          type: 'score',
+          instructions: `How much does a reply to \`message\` need \`exchanges.${k}\`? Judge only \`exchanges.${k}\`.`,
+          criteria: LEVELS(k),
+        };
+      });
+      const outcome: DecideOutcome | null = await decide({
+        ownerId,
+        use: 'history_recall',
+        state: {
+          message,
+          previous_exchange: (previousExchange ?? '').slice(0, MAX_PREVIOUS_CHARS),
+          exchanges: texts,
+        },
+        questions,
+        summarize: (answers) => ({
+          exchanges: group.length,
+          at_or_above_default: Object.values(answers).filter(
+            (a) => a.type === 'score' && a.score >= HISTORY_RECALL_THRESHOLD_DEFAULT,
+          ).length,
+        }),
+      });
+      return { group, keyById, outcome };
+    }),
+  );
+
+  const answered = results.filter((r) => r.outcome);
+  if (answered.length === 0) return null;
+  const first = answered[0]!.outcome!;
+  const scores = new Map<string, number>();
+  for (const { group, keyById, outcome } of answered) {
+    for (const ex of group) {
+      const a = outcome!.answers[keyById.get(ex.id)!];
+      if (a && a.type === 'score') scores.set(ex.id, a.score);
+    }
+  }
+  return {
+    scores,
+    mode: first.mode,
+    threshold: first.use.threshold ?? HISTORY_RECALL_THRESHOLD_DEFAULT,
+    calls: results.length,
+    failed: results.length - answered.length,
+    cached: answered.every((r) => r.outcome!.cached),
+    ms: Math.max(...answered.map((r) => r.outcome!.ms)),
+  };
+}
+
+/**
+ * Pure: which older exchanges come back. Scored at or above the threshold,
+ * in their original (time) order; unscored ones stay out.
+ */
+export function recallExchanges<T>(
+  older: readonly T[],
+  idOf: (item: T) => string,
+  scoring: Pick<HistoryRecallScoring, 'scores' | 'threshold'>,
+): { kept: T[]; dropped: T[] } {
+  const kept: T[] = [];
+  const dropped: T[] = [];
+  for (const item of older) {
+    const s = scoring.scores.get(idOf(item));
+    if (s !== undefined && s >= scoring.threshold) kept.push(item);
+    else dropped.push(item);
+  }
+  return { kept, dropped };
+}

@@ -272,6 +272,43 @@ said ADD on 22 of 22. Jev's UPDATE was wrong once at 0.99, so no confidence
 makes its update / delete safe. The shipped wording is new (the spike's exact
 round-2 text was not kept); the shadow week is its test.
 
+### `history_recall` (built; ships `shadow`)
+
+The responder's history is the last `history_limit` messages; a message just
+past that line drops out even when the new message returns to it. Once per
+responder turn, the exchanges OLDER than `history_limit` (up to 50 messages
+back; a whole exchange = user message + reply, as the history renders it) are
+scored 0-3 for "does a reply to this message need it"
+(`packages/decisions/src/history-recall.ts`, wired in
+`loadConversationContext`). The recent part is never touched. Groups of 10
+exchanges (5,000 chars each, plus the most recent exchange as context) go out
+as separate requests in parallel; the rows are fetched and scored from the TOP
+of `loadConversationContext`, so the ~0.5 s overlaps the embedding and
+retrieval instead of adding to the turn. Threshold default **1.0**.
+
+- `shadow`: the `/debug/context` snapshot gains `historyRecall: { mode,
+threshold, exchanges: [{back, score, chars}], wouldAdd, chars, calls, failed,
+ms, cached }`. History unchanged.
+- `live`: exchanges at the threshold rejoin the history before the recent
+  part, in time order; the first turn of each carries `[Recalled from earlier
+  in this conversation, N messages back, …]` so the model knows the messages
+  between are not shown. A failed group leaves its exchanges out (today's
+  behaviour).
+
+The intended pairing is a SMALLER `history_limit` plus this use: the spike's
+winner was the last 20 messages + Jev over the last 50.
+
+Spike 12 (NATREF, 2026-09-23, 50 real turns, Sonnet 5 answer key with full
+text, dev-brain page c8c2256f): today's last 30 missed a needed exchange on 4
+turns, 3 of them a return to a topic after 8 h to 10 days (Jev scored those
+2.2 to 2.85). Last 20 + Jev ≥ 1.0 missed on 3 turns with 78% of the tokens;
+11 of the 18 needed exchanges outside the last 20 came back (12 at 0.5).
+Losers: one chat-model context worker over all 50 (flash-lite 14 misses,
+flash 12), and a walk back in blocks of 10 until the topic ends (13 to 17;
+the walk stopped after one block on 36 of 50 turns, and it stops at the topic
+in between on a return). The money is small on NATREF (history is ~12% of
+responder spend); this use is about the returns, not the cost.
+
 ### Declared, not built
 
 - `model_routing`: per-request complexity score + needs-tools / needs-code /

@@ -1712,6 +1712,7 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
         context_pruning: { enabled: false, mode: 'shadow', threshold: 1.0 },
         version_grouping: { enabled: false, mode: 'shadow', threshold: 0.9 },
         fact_add_prefilter: { enabled: false, mode: 'shadow' },
+        history_recall: { enabled: false, mode: 'shadow', threshold: 1.0 },
       },
     },
   },
