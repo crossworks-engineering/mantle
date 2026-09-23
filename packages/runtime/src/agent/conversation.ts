@@ -509,7 +509,7 @@ export async function loadConversationContext(args: {
   // older rows are scored while the embedding and retrieval below run, so the
   // ~0.5 s never adds to the turn. Awaited where the history is built.
   const recallUse =
-    historyLimit > 0 && inboundText.trim().length > 0
+    historyLimit > 0 && !isSmallTalk(inboundText)
       ? await decisionUseEnabled(ownerId, 'history_recall')
       : null;
   const rowsLoad = loadHistoryRows({
@@ -1223,7 +1223,18 @@ export async function loadConversationContext(args: {
       cached: scoring.cached,
     };
     if (scoring.mode === 'live' && picked.kept.length > 0) {
-      history = withRecalledExchanges(history, picked.kept);
+      // The recent part is cut by row count: when it opens on a reply, that
+      // reply's question is the newest older exchange. Bring it along so the
+      // recalled part never leaves the reply answering nothing shown.
+      const newestOlder = recall.exchanges[recall.exchanges.length - 1];
+      const bridge =
+        history[0]?.role === 'assistant' &&
+        newestOlder &&
+        !picked.kept.includes(newestOlder) &&
+        newestOlder.turns[newestOlder.turns.length - 1]?.role === 'user'
+          ? newestOlder.turns
+          : [];
+      history = withRecalledExchanges(history, picked.kept, bridge);
     }
   }
 

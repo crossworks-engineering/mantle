@@ -5,6 +5,11 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('./decide', () => ({
+  DecideBatch: class {
+    skipped = 0;
+    note() {}
+    settle() {}
+  },
   decide: vi.fn(async (input: any) => {
     h.calls.push({ use: input.use, state: input.state, questions: input.questions });
     return {

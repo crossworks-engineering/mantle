@@ -11,10 +11,13 @@
  *      (`shadow`: the answer lands in the trace, behaviour unchanged; `live`:
  *      the caller may act on it). The caller reads `mode` off the outcome and
  *      MUST honour it — `decide()` cannot enforce what the caller does.
- *   3. Bounded. A hard timeout (default 1.5 s); a slow decision is worse than
- *      none. One request, questions answered in parallel by the model. After
- *      3 failures in a row the worker is skipped for 5 min (`breaker.ts`), so
- *      a slow endpoint costs 3 timeouts, not one per decision.
+ *   3. Bounded. A hard timeout (default 1.5 s, clamped to 0.2-5 s); a slow
+ *      decision is worse than none. One request, questions answered in
+ *      parallel by the model. After 3 failed decisions in a row the worker is
+ *      skipped for 5 min (`breaker.ts`), so a slow endpoint costs 3 timeouts,
+ *      not one per decision. A fan-out (`scoreInGroups`, many requests for
+ *      ONE decision) passes a `DecideBatch` and counts once: any group
+ *      answering means the endpoint is up.
  *   4. Traced. One `llm_call` step per call with `meta.use`, `meta.mode`, the
  *      model, token + cost rollups (`recordChatUsage`, same keys as every
  *      other LLM step so /debug spend-by-model needs no special case) and a
@@ -53,6 +56,9 @@ export const DEFAULTS = {
   /** Failures in a row before decisions are skipped for a while. */
   breakerFailures: 3,
   breakerCooldownMs: 5 * 60_000,
+  /** Bounds on a worker's `timeout_ms`: a typo must not stall every turn. */
+  minTimeoutMs: 200,
+  maxTimeoutMs: 5_000,
 } as const;
 
 export type DecisionMode = 'shadow' | 'live';
@@ -98,8 +104,41 @@ export type DecideInput = {
   questions: Record<string, DecisionQuestion>;
   /** Optional extra trace meta derived from the answers (e.g. how many
    *  passages a threshold would drop) — lands on the same step. */
-  summarize?: (answers: Record<string, DecisionAnswer>) => Record<string, unknown>;
+  summarize?: (
+    answers: Record<string, DecisionAnswer>,
+    use: ResolvedUse,
+  ) => Record<string, unknown>;
+  /** Part of a fan-out: the breaker hears the batch's one outcome (at
+   *  `settle()`), not each request's. */
+  batch?: DecideBatch;
 };
+
+/**
+ * One decision made of many parallel requests (`scoreInGroups`). Without it,
+ * the fast groups' successes reset the breaker and the slow tail's timeouts
+ * then land as "3 failures in a row", switching every use off for 5 min over
+ * one slow turn. The batch records one success when any request answered,
+ * one failure only when every request that went out failed.
+ */
+export class DecideBatch {
+  private workerId: string | null = null;
+  answered = 0;
+  failed = 0;
+  /** Requests the open breaker kept from going out. */
+  skipped = 0;
+
+  note(workerId: string, ok: boolean): void {
+    this.workerId = workerId;
+    if (ok) this.answered++;
+    else this.failed++;
+  }
+
+  settle(): void {
+    if (!this.workerId) return;
+    if (this.answered > 0) breakerSuccess(this.workerId);
+    else if (this.failed > 0) breakerFailure(this.workerId);
+  }
+}
 
 export type DecideOutcome = {
   answers: Record<string, DecisionAnswer>;
@@ -178,6 +217,29 @@ export function clearDecisionCache(): void {
   breaker.clear();
 }
 
+function breakerSuccess(workerId: string): void {
+  if (breaker.success(workerId)) {
+    console.info(`[decisions] decider ${workerId} answered again; breaker closed`);
+  }
+}
+
+function breakerFailure(workerId: string): boolean {
+  const opened = breaker.failure(workerId);
+  if (opened) {
+    console.warn(
+      `[decisions] decider ${workerId} failed ${DEFAULTS.breakerFailures} times in a row; ` +
+        `skipping decisions for ${DEFAULTS.breakerCooldownMs / 60_000} min`,
+    );
+  }
+  return opened;
+}
+
+function timeoutOf(params: DeciderParams): number {
+  const t = params.timeout_ms;
+  if (typeof t !== 'number' || !Number.isFinite(t)) return DEFAULTS.timeoutMs;
+  return Math.min(DEFAULTS.maxTimeoutMs, Math.max(DEFAULTS.minTimeoutMs, t));
+}
+
 export async function decide(input: DecideInput): Promise<DecideOutcome | null> {
   const r = await resolveDecider(input.ownerId);
   if (!r) return null;
@@ -191,7 +253,10 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
     return { answers: hit.answers, mode: use.mode, use, model: hit.model, cached: true, ms: 0 };
   }
   // Open breaker: no call, no step. The caller runs its old path at once.
-  if (!breaker.allow(worker.id)) return null;
+  if (!breaker.allow(worker.id)) {
+    if (input.batch) input.batch.skipped++;
+    return null;
+  }
 
   const t0 = Date.now();
   return step(
@@ -214,7 +279,7 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
           state: input.state,
           questions: input.questions,
           zeroDataRetention: params.zdr !== false,
-          timeoutMs: params.timeout_ms ?? DEFAULTS.timeoutMs,
+          timeoutMs: timeoutOf(params),
         });
         const ms = Date.now() - t0;
         recordChatUsage(h, res, worker.model);
@@ -223,19 +288,20 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
           mode: use.mode,
           decision_ms: ms,
           answers: summarizeAnswers(res.answers),
-          ...(input.summarize ? input.summarize(res.answers) : {}),
+          ...(input.summarize ? input.summarize(res.answers, use) : {}),
         });
         h.setOutput({ answered: Object.keys(res.answers).length, ms });
         cache.set(key, { answers: res.answers, model: res.model });
-        if (breaker.success(worker.id)) {
-          console.info(`[decisions] decider ${worker.id} answered again; breaker closed`);
-        }
+        if (input.batch) input.batch.note(worker.id, true);
+        else breakerSuccess(worker.id);
         void bumpWorkerUsage(worker.id).catch(() => {});
         return { answers: res.answers, mode: use.mode, use, model: res.model, cached: false, ms };
       } catch (err) {
         // "No decision" — never an error for the caller. The step stays
         // visible (amber) so a dead alpha endpoint shows up in /traces.
-        const opened = breaker.failure(worker.id);
+        let opened = false;
+        if (input.batch) input.batch.note(worker.id, false);
+        else opened = breakerFailure(worker.id);
         h.setMeta({
           use: input.use,
           mode: use.mode,
@@ -244,12 +310,6 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
           ...(opened ? { breaker_opened: true } : {}),
         });
         h.setSkipped('decision_failed');
-        if (opened) {
-          console.warn(
-            `[decisions] decider ${worker.id} failed ${DEFAULTS.breakerFailures} times in a row; ` +
-              `skipping decisions for ${DEFAULTS.breakerCooldownMs / 60_000} min`,
-          );
-        }
         return null;
       }
     },

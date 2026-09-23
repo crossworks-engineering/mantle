@@ -369,13 +369,35 @@ export function groupExchanges(
   return out;
 }
 
+/** Join consecutive same-role turns: strict-alternation providers reject
+ *  two user (or two assistant) messages in a row. */
+function mergeSameRole(turns: readonly HistoryTurn[]): HistoryTurn[] {
+  const out: HistoryTurn[] = [];
+  for (const t of turns) {
+    const last = out[out.length - 1];
+    if (last && last.role === t.role)
+      out[out.length - 1] = { ...last, text: `${last.text}\n\n${t.text}` };
+    else out.push(t);
+  }
+  return out;
+}
+
 /** Put recalled older exchanges (time order) in front of the recent history.
  *  The first turn of each carries a marker, so the model knows it was picked
- *  from further back and that the messages between are not shown. */
+ *  from further back and that the messages between are not shown.
+ *
+ *  `bridge`: the turns just before the recent part, unmarked. The recent part
+ *  is cut by row count, so it can open on a reply whose question sits in the
+ *  older rows; recalling other exchanges in front of that orphan would show
+ *  two replies in a row and hide the question the reply answers. The caller
+ *  passes the orphan's own exchange here. Same-role neighbours in the
+ *  recalled part and at the seam are joined, never the recent part itself. */
 export function withRecalledExchanges(
   history: readonly HistoryTurn[],
   recalled: ReadonlyArray<{ turns: HistoryTurn[]; back: number }>,
+  bridge: readonly HistoryTurn[] = [],
 ): HistoryTurn[] {
+  if (recalled.length === 0) return [...history];
   const marked = recalled.flatMap((e) =>
     e.turns.map((t, i) =>
       i === 0
@@ -386,5 +408,6 @@ export function withRecalledExchanges(
         : t,
     ),
   );
-  return [...marked, ...history];
+  const head = mergeSameRole([...marked, ...bridge, ...history.slice(0, 1)]);
+  return [...head, ...history.slice(1)];
 }

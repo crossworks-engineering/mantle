@@ -1,5 +1,6 @@
 export {
   DEFAULTS,
+  DecideBatch,
   clearDecisionCache,
   decide,
   decisionUseEnabled,

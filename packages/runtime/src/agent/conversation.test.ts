@@ -195,12 +195,44 @@ describe('history_recall helpers', () => {
         { turns: [u('old q'), a('old r')], back: 31 },
       ],
     );
-    expect(out.map((t) => t.role)).toEqual(['user', 'user', 'assistant', 'user', 'assistant']);
+    // An unanswered older question and the next exchange's question join into
+    // one user turn: no two user messages in a row.
+    expect(out.map((t) => t.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
     expect(out[0]!.text).toMatch(
-      /^\[Recalled from earlier in this conversation, 44 messages back[\s\S]*\nolder q$/,
+      /^\[Recalled from earlier in this conversation, 44 messages back[\s\S]*\nolder q\n\n\[Recalled[\s\S]*31 messages back[\s\S]*\nold q$/,
     );
-    expect(out[1]!.text).toMatch(/31 messages back[\s\S]*\nold q$/);
-    expect(out[2]!.text).toBe('old r');
-    expect(out.slice(3)).toEqual([u('recent q'), a('recent r')]);
+    expect(out[1]!.text).toBe('old r');
+    expect(out.slice(2)).toEqual([u('recent q'), a('recent r')]);
+  });
+
+  it('a recent part that opens on a reply gets its own question as the bridge', () => {
+    const out = withRecalledExchanges(
+      [a('orphan reply'), u('recent q'), a('recent r')],
+      [{ turns: [u('old q'), a('old r')], back: 30 }],
+      [u('the orphan question')],
+    );
+    expect(out.map((t) => t.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+    ]);
+    expect(out[2]).toEqual(u('the orphan question'));
+    expect(out[3]).toEqual(a('orphan reply'));
+  });
+
+  it('never two replies in a row, even with no bridge', () => {
+    const out = withRecalledExchanges(
+      [a('orphan reply'), u('recent q')],
+      [{ turns: [u('old q'), a('old r')], back: 30 }],
+    );
+    for (let i = 1; i < out.length; i++) expect(out[i]!.role).not.toBe(out[i - 1]!.role);
+  });
+
+  it('nothing recalled: the history is returned unchanged', () => {
+    const h = [a('orphan reply'), u('recent q')];
+    expect(withRecalledExchanges(h, [])).toEqual(h);
   });
 });

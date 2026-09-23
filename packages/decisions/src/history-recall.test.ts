@@ -7,6 +7,11 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('./decide', () => ({
+  DecideBatch: class {
+    skipped = 0;
+    note() {}
+    settle() {}
+  },
   decide: vi.fn(async (input: any) => {
     const i = h.calls.length;
     h.calls.push({ use: input.use, state: input.state, questions: input.questions });
@@ -60,7 +65,8 @@ describe('scoreHistoryExchanges', () => {
       message: 'the SOP again',
       previous_exchange: 'USER: hi',
     });
-    expect(r).toMatchObject({ calls: 3, failed: 0, mode: 'shadow', ms: 102 });
+    expect(r).toMatchObject({ calls: 3, failed: 0, skipped: 0, mode: 'shadow' });
+    expect(r!.ms).toBeGreaterThanOrEqual(0);
     expect(r!.threshold).toBe(HISTORY_RECALL_THRESHOLD_DEFAULT);
     expect(r!.scores.size).toBe(25);
   });
