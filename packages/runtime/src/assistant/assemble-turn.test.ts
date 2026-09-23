@@ -68,6 +68,12 @@ vi.mock('@mantle/content', () => ({
     return h.identity;
   }),
   buildJournalTier1: vi.fn(async () => 'TIER1'),
+  journalTiersOf: (m?: { journal_tiers?: string; notes_target?: string }) =>
+    m?.notes_target === 'journal'
+      ? 'live'
+      : m?.journal_tiers === 'off' || m?.journal_tiers === 'live'
+        ? m.journal_tiers
+        : 'shadow',
   buildTimeContextLine: () => 'TIME-LINE',
   resolveThinkingBudget: () => h.thinkingBudget,
   // Mirrors the real tier mapping (1024→low, 4096→medium, 8000→high) closely
@@ -212,6 +218,19 @@ describe('assembleResponderTurn — prompt composition', () => {
       includeIdentity: false,
     });
     expect(team.journalBlock).toBe('');
+  });
+
+  it('notes_target=journal switches the tiers live, scoped to this agent', async () => {
+    h.identity = 'IDENTITY';
+    const { buildJournalTier1 } = await import('@mantle/content');
+    (buildJournalTier1 as ReturnType<typeof vi.fn>).mockClear();
+    const r = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ memoryConfig: { notes_target: 'journal' } }),
+    });
+    expect(r.effectiveSystemPrompt).toBe('PERSONA');
+    expect(r.journalBlock).toBe('TIER1');
+    expect((buildJournalTier1 as ReturnType<typeof vi.fn>).mock.calls[0]?.[1]).toBeTruthy();
   });
 
   it('includeIdentity=false (team isolation) never calls the identity builder', async () => {

@@ -71,14 +71,16 @@ export function journalSortSql(): SQL {
 /** Effective kind of a row in SQL, with the legacy `category` mapping applied
  *  (rows written before kinds existed have no `kind`). Mirrors
  *  `legacyCategoryToKind` — keep the two in step. */
-function journalKindSql(): SQL {
+export function journalKindSql(): SQL {
+  // btrim everywhere: the JS mapping trims kind, category and mood, and the
+  // two must agree on every row.
   return sql`coalesce(
-    nullif(${nodes.data}->>'kind', ''),
+    nullif(btrim(${nodes.data}->>'kind'), ''),
     case
-      when ${nodes.data}->>'category' = 'identity' then 'identity'
-      when ${nodes.data}->>'category' = 'goal' then 'goal'
-      when ${nodes.data}->>'category' in ('family', 'relationships', 'faith', 'health')
-        and coalesce(${nodes.data}->>'mood', '') = '' then 'identity'
+      when btrim(${nodes.data}->>'category') = 'identity' then 'identity'
+      when btrim(${nodes.data}->>'category') = 'goal' then 'goal'
+      when btrim(${nodes.data}->>'category') in ('family', 'relationships', 'faith', 'health')
+        and coalesce(btrim(${nodes.data}->>'mood'), '') = '' then 'identity'
       else 'context'
     end
   )`;

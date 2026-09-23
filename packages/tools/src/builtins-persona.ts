@@ -149,12 +149,27 @@ const update_persona: BuiltinToolDef = {
         [{ ...update.add, scope: 'general' }],
         'update_persona',
       );
-      ctx.step?.setMeta({ agent: slug, target: 'journal', written: written.length });
+      // Persona refs mean nothing in the Journal. The new entry is written
+      // (a correction must land); the old one is retired by the model with the
+      // Journal tools, and it is told so rather than told "done".
+      const staleRefs = (update.supersedeRefs ?? []).length > 0;
+      ctx.step?.setMeta({
+        agent: slug,
+        target: 'journal',
+        written: written.length,
+        ...(staleRefs ? { supersede_refs_ignored: update.supersedeRefs } : {}),
+      });
       return {
         ok: true,
-        output: written.length
-          ? { journal: written[0] }
-          : { journal: null, note: 'Already in the Journal; nothing new written.' },
+        output: {
+          journal: written[0] ?? null,
+          ...(staleRefs
+            ? {
+                not_retired:
+                  'supersede_refs are persona-note refs and do not apply in the Journal. Find the entry this replaces with journal_list, then remove or rewrite it with journal_delete / journal_update.',
+              }
+            : {}),
+        },
       };
     }
 

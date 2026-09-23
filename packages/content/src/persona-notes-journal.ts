@@ -14,10 +14,11 @@
  *     carries a note's ref is skipped. The persona notes are NOT touched; the
  *     agent reads them until `memory_config.notes_target` says otherwise.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { dedupeNewNotes, type PersonaNote } from '@mantle/db';
-import { createJournal } from './journal';
+import { createJournal, journalKindSql } from './journal';
+import { journalVisibleSql } from './identity-context';
 
 /** Key of the plan inside the review page's `nodes.data`. */
 export const PLAN_DATA_KEY = 'persona_notes_plan';
@@ -274,10 +275,17 @@ export function journalKindForNote(noteKind: string, scope?: 'general' | 'topic'
   return scope === 'topic' ? 'expectation' : 'preference';
 }
 
-/** Every non-gap Journal entry (body + kind): what the agents already know.
- *  The reflector reads it so it only learns what is new. */
+/** Rules one reflector run is shown as "already known", newest first. */
+export const KNOWN_ENTRIES_LIMIT = 300;
+
+/** What this agent already knows from the Journal (body + kind), newest
+ *  first: the rule-like kinds it may see (identity, goal, preference, lesson,
+ *  expectation), not work logs or gaps, and nothing superseded. The reflector
+ *  reads it so it only learns what is new. */
 export async function knownJournalEntries(
   ownerId: string,
+  agentSlug: string | null,
+  limit = KNOWN_ENTRIES_LIMIT,
 ): Promise<Array<{ kind: string; body: string }>> {
   const rows = await db
     .select({ data: nodes.data })
@@ -286,10 +294,12 @@ export async function knownJournalEntries(
       and(
         eq(nodes.ownerId, ownerId),
         eq(nodes.type, 'journal'),
-        sql`coalesce(${nodes.data}->>'kind', '') <> 'gap'`,
+        sql`${journalKindSql()} in ('identity', 'goal', 'preference', 'lesson', 'expectation')`,
+        journalVisibleSql(agentSlug),
       ),
     )
-    .limit(1000);
+    .orderBy(desc(nodes.createdAt), desc(nodes.id))
+    .limit(limit);
   return rows
     .map((r) => {
       const d = (r.data ?? {}) as Record<string, unknown>;
@@ -303,8 +313,11 @@ export async function knownJournalEntries(
 
 /**
  * Write notes an agent learned (reflector, update_persona) as Journal
- * entries authored by that agent, dropping any that near-copy an entry the
- * Journal already holds (the persona path's token-Jaccard backstop). Returns
+ * entries authored by that agent. The reflector's notes are dropped when they
+ * near-copy an entry the agent already knows (the persona path's
+ * token-Jaccard backstop). An update_persona note is an explicit request and
+ * is always written: the backstop would read a correction ("British spelling"
+ * → "American spelling") as a copy and silently keep the old rule. Returns
  * the entries written.
  */
 export async function writeLearnedEntries(
@@ -313,13 +326,12 @@ export async function writeLearnedEntries(
   notes: ReadonlyArray<{ kind: string; content: string; scope?: 'general' | 'topic' | null }>,
   via: 'reflector' | 'update_persona',
 ): Promise<Array<{ kind: string; content: string }>> {
-  const known = await knownJournalEntries(ownerId);
-  const asNotes: PersonaNote[] = known.map((e) => ({
-    kind: 'style',
-    content: e.body,
-    at: '',
-  }));
-  const fresh = dedupeNewNotes(asNotes, [...notes]);
+  let fresh = [...notes];
+  if (via === 'reflector') {
+    const known = await knownJournalEntries(ownerId, agentSlug);
+    const asNotes: PersonaNote[] = known.map((e) => ({ kind: 'style', content: e.body, at: '' }));
+    fresh = dedupeNewNotes(asNotes, fresh);
+  }
   const written: Array<{ kind: string; content: string }> = [];
   for (const n of fresh) {
     const kind = journalKindForNote(n.kind, n.scope ?? null);

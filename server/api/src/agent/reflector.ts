@@ -141,6 +141,14 @@ type ReflectorOutput = {
   }>;
 };
 
+/** One known entry as the reflector reads it: enough to recognise a rule it
+ *  already has, not the whole of a long entry (the whole Journal once went
+ *  in, ~50x the persona-notes input). */
+function flattenNote(body: string, max = 240): string {
+  const flat = body.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
+}
+
 /** Added to the reflector's input when the agent learns into the Journal:
  *  the one extra field the Journal needs (always on vs picked per turn). */
 const JOURNAL_SCOPE_INSTRUCTION = `
@@ -317,7 +325,9 @@ async function reflectOnAgent(
       const liveNotes = activeNotes(existingNotes);
       const known =
         target === 'journal'
-          ? (await knownJournalEntries(ownerId)).map((e) => `- (${e.kind}) ${e.body}`)
+          ? (await knownJournalEntries(ownerId, agent.slug)).map(
+              (e) => `- (${e.kind}) ${flattenNote(e.body)}`,
+            )
           : liveNotes.map((n) => `- (${n.kind}) ${n.content}`);
       const existingNotesText = known.length === 0 ? '(no existing notes)' : known.join('\n');
 

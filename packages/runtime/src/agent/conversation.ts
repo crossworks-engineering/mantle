@@ -42,9 +42,13 @@ import {
 } from '@mantle/db';
 import {
   isSmallTalk,
+  journalTiersOf,
   loadJournalRules,
+  loadJournalTier1Entries,
+  notesTargetOf,
+  planJournalTier1,
   renderRelevantJournalBlock,
-  selectRelevantJournal,
+  type Tier1Plan,
 } from '@mantle/content';
 import { embed } from '@mantle/embeddings';
 import {
@@ -85,6 +89,12 @@ import type {
   RelationLine,
 } from './messages';
 import type { SnapshotItem, ContextSnapshot } from '@mantle/client-types';
+import {
+  journalSnapshot,
+  journalTierConfig,
+  journalTiersForTurn,
+  passageKey,
+} from './conversation/journal-tiers';
 import { env } from '@mantle/config';
 
 export type { SnapshotItem, ContextSnapshot };
@@ -501,9 +511,10 @@ export async function loadConversationContext(args: {
   const corpusMapLimit = memoryConfig.corpus_map_limit ?? CORPUS_MAP_LIMIT_DEFAULT;
 
   // memory_config.notes_target = 'journal': the notes moved to the Journal
-  // (persona-notes-to-journal) and arrive through its tiers instead.
+  // (persona-notes-to-journal) and arrive through its tiers instead, which
+  // that setting switches to live (journalTiersOf).
   const personaNotes: PersonaNote[] =
-    memoryConfig.notes_target === 'journal' ? [] : ((agent.personaNotes ?? []) as PersonaNote[]);
+    notesTargetOf(memoryConfig) === 'journal' ? [] : ((agent.personaNotes ?? []) as PersonaNote[]);
 
   // History rows, started now: with the decider's `history_recall` use on, the
   // older rows are scored while the embedding and retrieval below run, so the
@@ -528,21 +539,31 @@ export async function loadConversationContext(args: {
       : null,
   }));
 
-  // Journal tiers (memory_config.journal_tiers, default `shadow`) and the
-  // decider's `journal_recall` use: Jev scores the Journal's agent-lane rules
-  // against this message, started now for the same reason as history recall
-  // (~0.9 s, spike 13). Runs beside it, not after it.
-  const journalMode = memoryConfig.journal_tiers ?? 'shadow';
+  // Journal tiers (memory_config.journal_tiers, default `shadow`; live when
+  // notes_target = journal) and the decider's `journal_recall` use: Jev
+  // scores this agent's rules against the message, started now for the same
+  // reason as history recall (~0.9 s, spike 13). Runs beside it, not after
+  // it. Tier 1's plan comes first: its shown entries stay out of tiers 2/3,
+  // its overflow joins the rules Jev scores.
+  const journalMode = journalTiersOf(memoryConfig);
   const userLane = memoryConfig.inject_journal !== false;
   const agentLane = memoryConfig.inject_working_notes !== false;
+  const journalWanted =
+    journalMode !== 'off' && (userLane || agentLane) && !isSmallTalk(inboundText);
+  const tier1Load: Promise<Tier1Plan | null> =
+    journalMode !== 'off' && userLane
+      ? loadJournalTier1Entries(ownerId, agent.slug).then(planJournalTier1)
+      : Promise.resolve(null);
   const journalRecallUse =
-    journalMode !== 'off' && agentLane && !isSmallTalk(inboundText)
-      ? await decisionUseEnabled(ownerId, 'journal_recall')
-      : null;
+    journalWanted && agentLane ? await decisionUseEnabled(ownerId, 'journal_recall') : null;
   const journalRecallLoad = journalRecallUse
-    ? rowsLoad.then(async ({ recentRows }) => {
+    ? Promise.all([rowsLoad, tier1Load.catch(() => null)]).then(async ([{ recentRows }, tier1]) => {
         try {
-          const rules = await loadJournalRules(ownerId);
+          const rules = await loadJournalRules(
+            ownerId,
+            agent.slug,
+            tier1?.overflow.map((e) => e.nodeId) ?? [],
+          );
           if (rules.length === 0) return null;
           const scoring = await scoreJournalRules(
             ownerId,
@@ -550,7 +571,7 @@ export async function loadConversationContext(args: {
             previousExchangeOf(recentRows),
             rules.map((r) => ({ id: r.nodeId, text: r.body })),
           );
-          return scoring ? { rules: rules.length, scoring } : null;
+          return scoring ? { rules, scoring } : null;
         } catch (err) {
           console.error(
             '[conversation] journal recall skipped:',
@@ -563,6 +584,7 @@ export async function loadConversationContext(args: {
   // Surfaced where they are awaited; this only stops an early throw above
   // from leaving a promise unobserved.
   historyLoad.catch(() => {});
+  tier1Load.catch(() => {});
   journalRecallLoad.catch(() => {});
 
   // Embed the inbound once for both fact + content lookups. The embedder is
@@ -570,7 +592,7 @@ export async function loadConversationContext(args: {
   // must share the corpus's vector space).
   let queryVec: number[] | null = null;
   let enrichedQuery: string | null = null;
-  if ((factLimit > 0 || contentHitLimit > 0) && inboundText.trim().length > 0) {
+  if ((factLimit > 0 || contentHitLimit > 0 || journalWanted) && inboundText.trim().length > 0) {
     // For a short anaphoric follow-up, prepend recent turn text so the retrieval
     // embedding resolves the referent instead of embedding "tell me more" alone.
     let embedInput = inboundText;
@@ -670,7 +692,12 @@ export async function loadConversationContext(args: {
   // recent, deduped against whatever the vector search already returned.
   if (factLimit > 0) {
     const prefRows = await db
-      .select({ content: facts.content, kind: facts.kind, entityName: entities.name })
+      .select({
+        content: facts.content,
+        kind: facts.kind,
+        entityName: entities.name,
+        sourceNodeId: facts.sourceNodeId,
+      })
       .from(facts)
       .leftJoin(entities, eq(facts.entityId, entities.id))
       .where(and(eq(facts.ownerId, ownerId), isNull(facts.validTo), eq(facts.kind, 'preference')))
@@ -1005,109 +1032,61 @@ export async function loadConversationContext(args: {
   }
 
   // ─── Journal tiers 2 + 3: entries that match this message ──────────────
-  // memory_config.journal_tiers (default `shadow`). Every journal entry is
-  // scored against the one query embedding; context entries, lessons and
-  // expectations at or above the cutoff join an uncached per-turn block
-  // (their best passage when long, ~3k chars a turn), plus at most one
-  // matching open gap. `shadow`: the pick lands in the snapshot only. `live`:
-  // the block is returned, and facts extracted from a picked entry, or a
-  // passage of one, are dropped as redundant. Spike 10, dev-brain 60a2f51e.
+  // journalTiersOf(memory_config): `shadow` (default) records the pick in the
+  // snapshot only; `live` sends it in an uncached per-turn block and drops
+  // what a whole entry makes redundant. conversation/journal-tiers.ts.
   let journalRelevant = '';
   let journalSnap: ContextSnapshot['journal'] = undefined;
   const journalRecall = await journalRecallLoad.catch(() => null);
+  const tier1 = await tier1Load.catch(() => null);
   if (queryVec && journalMode !== 'off' && (userLane || agentLane)) {
     try {
-      // journal_recall live: agent-lane rules come from Jev's scores, not
-      // similarity. Shadow: the embedding pick stands; Jev's pick is traced.
-      const recallScores = journalRecall
-        ? { scores: journalRecall.scoring.scores, threshold: journalRecall.scoring.threshold }
-        : undefined;
-      const rel = await selectRelevantJournal({
+      const turn = await journalTiersForTurn({
         ownerId,
-        queryVec,
+        agentSlug: agent.slug,
         inboundText,
-        cutoff: memoryConfig.journal_relevance_min,
-        budgetChars: memoryConfig.journal_relevant_chars,
+        queryVec,
         userLane,
         agentLane,
-        ...(journalRecall?.scoring.mode === 'live' ? { agentScores: recallScores } : {}),
+        ...journalTierConfig(memoryConfig),
+        tier1,
+        recall: journalRecall,
       });
-      const jevPicks =
-        journalRecall && recallScores
-          ? journalRecall.scoring.mode === 'live'
-            ? rel.picks.filter((p) => p.score !== undefined)
-            : (
-                await selectRelevantJournal({
-                  ownerId,
-                  queryVec,
-                  inboundText,
-                  cutoff: memoryConfig.journal_relevance_min,
-                  budgetChars: memoryConfig.journal_relevant_chars,
-                  userLane: false,
-                  agentLane,
-                  agentScores: recallScores,
-                })
-              ).picks.filter((p) => p.score !== undefined)
-          : [];
-      const pickedIds = new Set(rel.picks.map((p) => p.nodeId));
-      const redundantFact = (f: FactSnippet) =>
-        f.kind !== 'preference' && !!f.sourceNodeId && pickedIds.has(f.sourceNodeId);
-      const redundantFacts = factRows.filter(redundantFact);
-      const redundantChunks = chunkHits.filter((c) => pickedIds.has(c.nodeId));
-      journalSnap = {
-        mode: journalMode === 'live' ? 'live' : 'shadow',
-        cutoff: rel.cutoff,
-        skipped: rel.skipped,
-        picked: rel.picks.map((p) => ({
-          nodeId: p.nodeId,
-          kind: p.kind,
-          similarity: p.similarity,
-          chars: p.text.length,
-          passage: p.passage,
-        })),
-        gap: rel.gap ? { nodeId: rel.gap.nodeId, similarity: rel.gap.similarity } : null,
-        nearMisses: rel.nearMisses,
-        chars: rel.chars,
-        dedupe: { facts: redundantFacts.length, chunkHits: redundantChunks.length },
-        ...(journalRecall
-          ? {
-              recall: {
-                mode: journalRecall.scoring.mode,
-                threshold: journalRecall.scoring.threshold,
-                rules: journalRecall.rules,
-                scored: journalRecall.scoring.scores.size,
-                picked: jevPicks.map((p) => ({
-                  nodeId: p.nodeId,
-                  score: p.score!,
-                  chars: p.text.length,
-                })),
-                calls: journalRecall.scoring.calls,
-                failed: journalRecall.scoring.failed,
-                ms: journalRecall.scoring.ms,
-                cached: journalRecall.scoring.cached,
-              },
-            }
-          : {}),
-      };
-      if (journalMode === 'live') {
-        journalRelevant = renderRelevantJournalBlock(rel, agent.slug);
-        if (redundantFacts.length > 0) {
-          const gone = new Set(redundantFacts.map((f) => snip(f.content)));
-          factRows = factRows.filter((f) => !redundantFact(f));
-          factsDroppedSnap = [
-            ...factsDroppedSnap,
-            ...factsSentSnap.filter((x) => gone.has(x.text)),
-          ];
-          factsSentSnap = factsSentSnap.filter((x) => !gone.has(x.text));
-        }
-        if (redundantChunks.length > 0) {
-          chunkHits = chunkHits.filter((c) => !pickedIds.has(c.nodeId));
-          chunkDroppedSnap = [
-            ...chunkDroppedSnap,
-            ...chunkSentSnap.filter((x) => pickedIds.has(x.nodeId ?? '')),
-          ];
-          chunkSentSnap = chunkSentSnap.filter((x) => !pickedIds.has(x.nodeId ?? ''));
-        }
+      const { wholeIds, passageKeys } = turn;
+      const redundantFact = (f: FactSnippet) => !!f.sourceNodeId && wholeIds.has(f.sourceNodeId);
+      const redundantChunk = (c: { nodeId: string; text: string }) =>
+        wholeIds.has(c.nodeId) || passageKeys.has(passageKey(c.nodeId, c.text));
+      const redundantHit = (h: { nodeId: string }) => wholeIds.has(h.nodeId);
+      const live = journalMode === 'live';
+      journalSnap = journalSnapshot({
+        mode: live ? 'live' : 'shadow',
+        turn,
+        tier1,
+        recall: journalRecall,
+        dedupe: {
+          facts: factRows.filter(redundantFact).length,
+          chunkHits: chunkHits.filter(redundantChunk).length,
+          contentHits: contentHits.filter(redundantHit).length,
+        },
+      });
+      if (live) {
+        journalRelevant = renderRelevantJournalBlock(turn.relevance, agent.slug);
+        const goneFacts = new Set(factRows.filter(redundantFact).map((f) => snip(f.content)));
+        factRows = factRows.filter((f) => !redundantFact(f));
+        factsDroppedSnap = [
+          ...factsDroppedSnap,
+          ...factsSentSnap.filter((x) => goneFacts.has(x.text)),
+        ];
+        factsSentSnap = factsSentSnap.filter((x) => !goneFacts.has(x.text));
+        chunkHits = chunkHits.filter((c) => !redundantChunk(c));
+        const chunkGone = (x: SnapshotItem) =>
+          redundantChunk({ nodeId: x.nodeId ?? '', text: x.text });
+        chunkDroppedSnap = [...chunkDroppedSnap, ...chunkSentSnap.filter(chunkGone)];
+        chunkSentSnap = chunkSentSnap.filter((x) => !chunkGone(x));
+        contentHits = contentHits.filter((h) => !redundantHit(h));
+        const hitGone = (x: SnapshotItem) => redundantHit({ nodeId: x.nodeId ?? '' });
+        contentDroppedSnap = [...contentDroppedSnap, ...contentSentSnap.filter(hitGone)];
+        contentSentSnap = contentSentSnap.filter((x) => !hitGone(x));
       }
     } catch (err) {
       console.error(
@@ -1219,6 +1198,7 @@ export async function loadConversationContext(args: {
       chars: picked.kept.reduce((n, e) => n + e.text.length, 0),
       calls: scoring.calls,
       failed: scoring.failed,
+      skipped: scoring.skipped,
       ms: scoring.ms,
       cached: scoring.cached,
     };

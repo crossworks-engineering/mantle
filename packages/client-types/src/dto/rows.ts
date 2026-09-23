@@ -728,6 +728,9 @@ export type ContextSnapshot = {
     chars: number;
     calls: number;
     failed: number;
+    /** Of `failed`: groups the open breaker kept from going out. */
+    skipped?: number;
+    /** Wall time of the whole fan-out (timeouts included). */
     ms: number;
     cached: boolean;
   };
@@ -745,12 +748,21 @@ export type ContextSnapshot = {
       similarity: number;
       chars: number;
       passage: boolean;
+      /** The complete body went out (not a passage, not cut). */
+      whole?: boolean;
+      /** Jev's score when journal_recall picked it. */
+      score?: number;
     }>;
     gap: { nodeId: string; similarity: number } | null;
     nearMisses: Array<{ nodeId: string; kind: string; similarity: number }>;
     chars: number;
-    /** Facts and passages the block made redundant (dropped in `live`). */
-    dedupe: { facts: number; chunkHits: number };
+    /** Facts, passages and content hits the tiers made redundant (dropped
+     *  in `live`): only a whole entry (tier 1, or a whole tier 2 pick) makes
+     *  its facts and hits redundant; a passage replaces its own chunk. */
+    dedupe: { facts: number; chunkHits: number; contentHits?: number };
+    /** Tier 1 for this agent: entries shown always-on, and those that did
+     *  not fit and compete in tier 2 instead. */
+    tier1?: { shown: number; overflow: number; chars: number };
     /** The decider's `journal_recall` use, when it ran: Jev's scores over
      *  the agent-lane rules. `shadow`: `picked` is what Jev WOULD send in
      *  place of the similarity pick; `live`: it did. */
@@ -763,6 +775,8 @@ export type ContextSnapshot = {
       picked: Array<{ nodeId: string; score: number; chars: number }>;
       calls: number;
       failed: number;
+      /** Of `failed`: groups the open breaker kept from going out. */
+      skipped?: number;
       ms: number;
       cached: boolean;
     };

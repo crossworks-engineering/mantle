@@ -23,9 +23,9 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { Param, SQL } from 'drizzle-orm';
 
 const agentRows: Array<{ id: string; personaNotes: unknown[]; memoryConfig?: unknown }> = [];
-const writeLearned = vi.fn(async (..._args: unknown[]) => [
-  { kind: 'preference', content: 'Prefers prose.' },
-]);
+const writeLearned = vi.fn(async (...args: unknown[]) =>
+  (args[2] as Array<{ content: string }>).map((n) => ({ kind: 'preference', content: n.content })),
+);
 
 vi.mock('@mantle/content', () => ({
   notesTargetOf: (m: { notes_target?: string } | null | undefined) =>
@@ -173,7 +173,12 @@ describe('update_persona', () => {
       { add: { kind: 'style', content: 'Prefers prose.' }, supersede_refs: ['n-bullets'] },
       ctx,
     );
-    expect(outputOf(res)).toEqual({ journal: { kind: 'preference', content: 'Prefers prose.' } });
+    // The entry is written, and the model is told the old one was NOT
+    // retired (persona refs mean nothing in the Journal), never "done".
+    expect(outputOf(res)).toMatchObject({
+      journal: { kind: 'preference', content: 'Prefers prose.' },
+      not_retired: expect.stringMatching(/journal_list[\s\S]*journal_update/),
+    });
     expect(writeLearned).toHaveBeenCalledWith(
       'o1',
       'responder',
@@ -181,6 +186,19 @@ describe('update_persona', () => {
       'update_persona',
     );
     expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('notes_target = journal: a plain add reports no retirement note', async () => {
+    agentRows.splice(0, agentRows.length, {
+      id: 'a1',
+      personaNotes: [],
+      memoryConfig: { notes_target: 'journal' },
+    });
+    const res = await tool.handler(
+      { add: { kind: 'correction', content: 'Use US spelling.' } },
+      ctx,
+    );
+    expect(outputOf(res)).toEqual({ journal: { kind: 'preference', content: 'Use US spelling.' } });
   });
 
   it('notes_target = journal: refs alone point at the Journal tools', async () => {

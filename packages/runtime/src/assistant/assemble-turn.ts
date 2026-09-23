@@ -46,6 +46,7 @@ import {
   buildIdentityContext,
   buildJournalTier1,
   buildWorkingNotesContext,
+  journalTiersOf,
   buildTimeContextLine,
   resolveThinkingBudget,
   resolveThinkingEffort,
@@ -230,15 +231,17 @@ export async function assembleResponderTurn(
   // user's Journal (deterministic, no LLM; empty when there are none). Opt
   // out per-agent with memory_config.inject_journal=false. Prepended so it
   // reads as durable user-truth at the top of the (cached) system block.
-  // With memory_config.journal_tiers = 'live' neither block goes here: tier 1
-  // rides the cached notes block (after the persona prompt, so a Journal write
-  // no longer re-bills the whole prefix) and tiers 2/3 come per turn from
-  // loadConversationContext. docs/journal.md "Tiers".
-  const journalLive = memoryConfig.journal_tiers === 'live';
+  // With the tiers live (memory_config.journal_tiers = 'live', implied by
+  // notes_target = 'journal') neither block goes here: tier 1 rides the
+  // cached notes block (after the persona prompt, so a Journal write no
+  // longer re-bills the whole prefix) and tiers 2/3 come per turn from
+  // loadConversationContext. Every block is scoped to this agent: an entry
+  // another agent learned is not ours. docs/journal.md "Tiers".
+  const journalLive = journalTiersOf(memoryConfig) === 'live';
   let journalBlock = '';
   if (journalLive && (opts.includeIdentity ?? true) && memoryConfig.inject_journal !== false) {
     try {
-      journalBlock = await buildJournalTier1(ownerId);
+      journalBlock = await buildJournalTier1(ownerId, agent.slug);
     } catch (err) {
       console.error(
         `${logPrefix} journal tier 1 skipped:`,
@@ -249,7 +252,7 @@ export async function assembleResponderTurn(
   let identityBlock = '';
   if (!journalLive && (opts.includeIdentity ?? true) && memoryConfig.inject_journal !== false) {
     try {
-      const block = await buildIdentityContext(ownerId);
+      const block = await buildIdentityContext(ownerId, agent.slug);
       if (block) identityBlock = `${block}\n\n`;
     } catch (err) {
       console.error(

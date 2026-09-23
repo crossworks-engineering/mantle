@@ -266,6 +266,12 @@ vi.mock('@mantle/tracing', () => ({
 // ── Remaining collaborators ───────────────────────────────────────────────
 vi.mock('@mantle/content', () => ({
   buildIdentityContext: vi.fn(async () => ''),
+  journalTiersOf: (m?: { journal_tiers?: string; notes_target?: string }) =>
+    m?.notes_target === 'journal'
+      ? 'live'
+      : m?.journal_tiers === 'off' || m?.journal_tiers === 'live'
+        ? m.journal_tiers
+        : 'shadow',
   buildTimeContextLine: () => 'Current time: 2026-07-17T10:00:00+02:00 (Africa/Johannesburg)',
   loadProfilePreferences: vi.fn(async () => ({})),
   resolveThinkingBudget: () => 0,

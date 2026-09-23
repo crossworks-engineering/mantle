@@ -138,12 +138,22 @@ export function selectFacts(rows: FactRow[]): {
 export function mergePreferences(
   factRows: FactSnippet[],
   factsSentSnap: SnapshotItem[],
-  prefRows: Array<{ content: string; kind: string; entityName: string | null }>,
+  prefRows: Array<{
+    content: string;
+    kind: string;
+    entityName: string | null;
+    sourceNodeId?: string | null;
+  }>,
 ): { facts: FactSnippet[]; sent: SnapshotItem[] } {
   const seen = new Set(factRows.map((f) => f.content));
   const prefs = prefRows
     .filter((p) => !seen.has(p.content))
-    .map((p) => ({ content: p.content, kind: p.kind as string, entityName: p.entityName }));
+    .map((p) => ({
+      content: p.content,
+      kind: p.kind as string,
+      entityName: p.entityName,
+      sourceNodeId: p.sourceNodeId ?? null,
+    }));
   if (prefs.length) {
     factRows = [...prefs, ...factRows];
     factsSentSnap = [

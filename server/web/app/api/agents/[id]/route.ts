@@ -28,6 +28,16 @@ const MemoryConfig = z
     digest_limit: z.number().int().min(0).max(20).optional(),
     fact_limit: z.number().int().min(0).max(100).optional(),
     content_hit_limit: z.number().int().min(0).max(20).optional(),
+    chunk_limit: z.number().int().min(0).max(50).optional(),
+    corpus_map_limit: z.number().int().min(0).max(2_000).optional(),
+    // Journal context (docs/journal.md §4a/§4b). notes_target = 'journal'
+    // implies journal_tiers = 'live' at runtime.
+    inject_journal: z.boolean().optional(),
+    inject_working_notes: z.boolean().optional(),
+    journal_tiers: z.enum(['off', 'shadow', 'live']).optional(),
+    journal_relevance_min: z.number().min(0).max(1).optional(),
+    journal_relevant_chars: z.number().int().min(200).max(20_000).optional(),
+    notes_target: z.enum(['persona', 'journal']).optional(),
     summarize_threshold: z.number().int().min(1).max(10_000).optional(),
     summarize_batch: z.number().int().min(1).max(1_000).optional(),
     extract_types: z.array(z.string().min(1).max(64)).max(32).optional(),

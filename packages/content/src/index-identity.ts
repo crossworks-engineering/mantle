@@ -78,12 +78,20 @@ export {
   buildJournalTier1,
   buildWorkingNotesContext,
   isSmallTalk,
+  journalTiersOf,
+  loadJournalCandidates,
   loadJournalRules,
+  loadJournalTier1Entries,
   pickJournalEntries,
+  planJournalTier1,
   renderRelevantJournalBlock,
   selectRelevantJournal,
+  visibleToAgent,
+  type JournalAgentScores,
   type JournalPick,
   type JournalRelevance,
+  type JournalRuleRow,
+  type Tier1Plan,
 } from './identity-context';
 
 export {
