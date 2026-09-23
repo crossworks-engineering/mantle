@@ -385,7 +385,8 @@ export function isLearnedRule(kind: string | null, data: Record<string, unknown>
   return (
     src.via === 'reflector' ||
     src.via === 'update_persona' ||
-    typeof src.persona_note_ref === 'string'
+    // Same test as the SQL twin (`is not null`): the two must agree.
+    (src.persona_note_ref !== undefined && src.persona_note_ref !== null)
   );
 }
 

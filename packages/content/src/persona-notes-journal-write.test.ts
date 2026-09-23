@@ -82,13 +82,15 @@ describe('applyConversionPlan', () => {
     const r = await applyConversionPlan(
       'o1',
       plan([
-        entry('kept'),
-        entry('copy1', { duplicateOf: 'kept' }),
+        entry('kept', { kind: 'preference', scope: 'general' }),
+        entry('copy1', { duplicateOf: 'kept', kind: 'expectation', scope: 'topic' }),
         entry('copy2', { duplicateOf: 'kept' }),
       ]),
       { skipRefs: new Set(['kept']) },
     );
     expect(h.created.map((e) => e.body)).toEqual(['copy1 rule']);
+    // It takes the kept note's reviewed kind: a correction stays always on.
+    expect(h.created[0]).toMatchObject({ kind: 'preference' });
     expect(r).toEqual({ created: 1, existing: 0, duplicates: 1, skipped: 1 });
   });
 

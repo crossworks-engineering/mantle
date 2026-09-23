@@ -357,7 +357,11 @@ export async function applyConversionPlan(
   // different copy by hand) is re-rooted on its first live duplicate, so the
   // rule is not lost with the retired copy.
   const rerooted = new Set<string>();
+  const byRef = new Map(plan.entries.map((x) => [x.ref, x]));
   for (const e of plan.entries) {
+    // A substitute takes the kind of the note it replaces: the group's rule
+    // was reviewed as that (a correction stays always on).
+    let kind = e.kind;
     if (e.duplicateOf) {
       const rootGone = opts.skipRefs?.has(e.duplicateOf) === true;
       if (!rootGone || rerooted.has(e.duplicateOf) || opts.skipRefs?.has(e.ref)) {
@@ -365,6 +369,7 @@ export async function applyConversionPlan(
         continue;
       }
       rerooted.add(e.duplicateOf);
+      kind = byRef.get(e.duplicateOf)?.kind ?? e.kind;
     }
     if (opts.skipRefs?.has(e.ref)) {
       skipped++;
@@ -376,7 +381,7 @@ export async function applyConversionPlan(
     }
     await createJournal(ownerId, {
       body: e.content,
-      kind: e.kind,
+      kind,
       author: 'agent',
       agentSlug: plan.agentSlug,
       tags: [CONVERTED_TAG],

@@ -167,7 +167,11 @@ for the user (`journal_create` of "I'm vegetarian", a resolved gap's answer)
 is the user's knowledge and stays brain-wide whoever wrote it, as do entries
 with no agent and open gaps. Superseded entries (`nodes.superseded_by`) never
 show. Decided 2026-09-23, when persona notes, which were per agent, moved
-into the Journal.
+into the Journal. A learned rule keeps its `source` through edits, so it
+stays scoped; to share one agent's rule with every agent, re-create it as a
+plain entry (no agent). The scope SQL has a real-Postgres test,
+`packages/content/src/journal-scope.db.test.ts` (gated on
+`MANTLE_TEST_DATABASE_URL`).
 
 - **Tier 1, always on** (`buildJournalTier1` → `planJournalTier1` →
   `renderJournalTier1Block`): the purpose block + the identity / goal /
