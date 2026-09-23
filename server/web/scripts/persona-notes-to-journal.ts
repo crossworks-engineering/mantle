@@ -104,6 +104,9 @@ async function dryRun(ownerId: string, slug: string) {
           ],
           temperature: 0,
           maxTokens: 12_000,
+          // Sorting needs no deep thought; a reasoning model at its default
+          // effort (grok) ran past the 60 s one-shot cap on 15 notes.
+          thinkingEffort: 'low',
         });
         spent += result.reportedCostUsd ?? 0;
         return parseJson(result.text);
