@@ -751,6 +751,21 @@ export type ContextSnapshot = {
     chars: number;
     /** Facts and passages the block made redundant (dropped in `live`). */
     dedupe: { facts: number; chunkHits: number };
+    /** The decider's `journal_recall` use, when it ran: Jev's scores over
+     *  the agent-lane rules. `shadow`: `picked` is what Jev WOULD send in
+     *  place of the similarity pick; `live`: it did. */
+    recall?: {
+      mode: 'shadow' | 'live';
+      threshold: number;
+      /** Rules loaded / rules Jev answered for. */
+      rules: number;
+      scored: number;
+      picked: Array<{ nodeId: string; score: number; chars: number }>;
+      calls: number;
+      failed: number;
+      ms: number;
+      cached: boolean;
+    };
   };
 };
 

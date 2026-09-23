@@ -291,6 +291,11 @@ export type DecisionUse =
    *  to 50 messages back) for "does a reply to this message need it"; live =
    *  the ones at the threshold rejoin the history before the recent part. */
   | 'history_recall'
+  /** Per responder turn: score the Journal's agent-lane rules (lessons,
+   *  expectations) for "must a reply to this message follow it"; live = the
+   *  ones at the threshold are Journal tier 2's agent lane instead of the
+   *  embedding pick. */
+  | 'journal_recall'
   /** Per-request model routing (complexity / needs tools / sensitive). */
   | 'model_routing';
 

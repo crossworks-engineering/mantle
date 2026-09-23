@@ -309,6 +309,32 @@ the walk stopped after one block on 36 of 50 turns, and it stops at the topic
 in between on a return). The money is small on NATREF (history is ~12% of
 responder spend); this use is about the returns, not the cost.
 
+### `journal_recall` (built; ships `shadow`)
+
+Journal tier 2 (journal.md §4a) picks context entries, lessons and
+expectations by embedding similarity. For the agent lane (lessons,
+expectations: the RULES an agent learned) that fails: a rule ("the user
+requires the assistant to log edits in the change log…") and a request ("yes,
+do the header next") do not embed alike, and a follow-up message names no
+topic. With this use on, Jev scores every agent-lane rule 0-3 for "must a
+reply to this message follow it" (`packages/decisions/src/journal-recall.ts`),
+in parallel groups of 40 with the previous exchange as context, started at the
+top of `loadConversationContext` beside `history_recall`. Threshold default
+**1.5**. The shared engine of both uses is `group-scoring.ts`.
+
+- `shadow`: tier 2 keeps its similarity pick; `snapshot.journal.recall`
+  records what Jev WOULD send (`picked: [{nodeId, score, chars}]`, `rules`,
+  `scored`, `calls`, `failed`, `ms`).
+- `live`: tier 2's agent lane is Jev's pick (score ≥ threshold, best first,
+  ≤ 25 rules, ≤ 6,000 chars, its own budget beside the user lane's 3,000);
+  user-lane context entries and the tier 3 gap stay on similarity.
+
+Spike 13 (NATREF, 2026-09-23, 435 topic rules from Rea's persona notes, 30
+real turns, Sonnet 5 key, dev-brain page 9f57fa46): similarity found 15 to
+49% of the rules a turn needed; Jev 84% at 1.5 (5k chars a turn) and 89% at
+1.0 (8k), against 91k chars when every rule rides every turn. Median 0.93 s
+with groups of 60 (hence 40 here), $0.0037 a turn.
+
 ### Declared, not built
 
 - `model_routing`: per-request complexity score + needs-tools / needs-code /

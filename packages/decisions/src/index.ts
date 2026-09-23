@@ -83,5 +83,14 @@ export {
   type HistoryExchange,
   type HistoryRecallScoring,
 } from './history-recall';
+export {
+  JOURNAL_RECALL_GROUP,
+  JOURNAL_RECALL_THRESHOLD_DEFAULT,
+  MAX_JOURNAL_RULE_CHARS,
+  scoreJournalRules,
+  type JournalRecallScoring,
+  type JournalRule,
+} from './journal-recall';
+export { scoreInGroups, type GroupScoring, type ScoredItem } from './group-scoring';
 export { DecisionCache } from './cache';
 export { CircuitBreaker } from './breaker';

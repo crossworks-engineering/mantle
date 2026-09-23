@@ -18,8 +18,7 @@
  * ~0.5 s overlaps the rest of the context load. Nothing is ever dropped from
  * the recent part; a failed group only means its exchanges stay out, as today.
  */
-import type { DecisionQuestion } from '@mantle/voice';
-import { decide, type DecideOutcome } from './decide';
+import { scoreInGroups, type GroupScoring, type ScoredItem } from './group-scoring';
 
 /** How far back the scan reaches, in messages, counted from the newest (the
  *  recent part included). Spike 12: no NATREF topic began further back. */
@@ -35,24 +34,10 @@ export const HISTORY_RECALL_GROUP = 10;
 /** Per-exchange text cap inside a request (a long reply keeps its head). */
 export const MAX_HISTORY_EXCHANGE_CHARS = 5_000;
 
-/** The most recent exchange, given as context for a terse message. */
-const MAX_PREVIOUS_CHARS = 2_000;
-
 /** One older exchange: a stable id plus its text as the history renders it. */
-export type HistoryExchange = { id: string; text: string };
+export type HistoryExchange = ScoredItem;
 
-export type HistoryRecallScoring = {
-  scores: Map<string, number>;
-  mode: 'shadow' | 'live';
-  threshold: number;
-  /** Requests sent (cache hits included). */
-  calls: number;
-  /** Groups that came back with no answer (their exchanges stay out). */
-  failed: number;
-  cached: boolean;
-  /** Slowest group, the wait the turn saw. */
-  ms: number;
-};
+export type HistoryRecallScoring = GroupScoring;
 
 const LEVELS = (k: string): string[] => [
   `\`exchanges.${k}\` is about a different topic than \`message\`.`,
@@ -69,69 +54,21 @@ export async function scoreHistoryExchanges(
   previousExchange: string | null,
   exchanges: readonly HistoryExchange[],
 ): Promise<HistoryRecallScoring | null> {
-  if (exchanges.length === 0 || !message.trim()) return null;
-  const groups: HistoryExchange[][] = [];
-  for (let i = 0; i < exchanges.length; i += HISTORY_RECALL_GROUP) {
-    groups.push(exchanges.slice(i, i + HISTORY_RECALL_GROUP));
-  }
-
-  const results = await Promise.all(
-    groups.map(async (group) => {
-      const keyById = new Map<string, string>();
-      const texts: Record<string, string> = {};
-      const questions: Record<string, DecisionQuestion> = {};
-      group.forEach((ex, i) => {
-        const k = `x${i + 1}`;
-        keyById.set(ex.id, k);
-        texts[k] =
-          ex.text.length > MAX_HISTORY_EXCHANGE_CHARS
-            ? ex.text.slice(0, MAX_HISTORY_EXCHANGE_CHARS)
-            : ex.text;
-        questions[k] = {
-          type: 'score',
-          instructions: `How much does a reply to \`message\` need \`exchanges.${k}\`? Judge only \`exchanges.${k}\`.`,
-          criteria: LEVELS(k),
-        };
-      });
-      const outcome: DecideOutcome | null = await decide({
-        ownerId,
-        use: 'history_recall',
-        state: {
-          message,
-          previous_exchange: (previousExchange ?? '').slice(0, MAX_PREVIOUS_CHARS),
-          exchanges: texts,
-        },
-        questions,
-        summarize: (answers) => ({
-          exchanges: group.length,
-          at_or_above_default: Object.values(answers).filter(
-            (a) => a.type === 'score' && a.score >= HISTORY_RECALL_THRESHOLD_DEFAULT,
-          ).length,
-        }),
-      });
-      return { group, keyById, outcome };
-    }),
-  );
-
-  const answered = results.filter((r) => r.outcome);
-  if (answered.length === 0) return null;
-  const first = answered[0]!.outcome!;
-  const scores = new Map<string, number>();
-  for (const { group, keyById, outcome } of answered) {
-    for (const ex of group) {
-      const a = outcome!.answers[keyById.get(ex.id)!];
-      if (a && a.type === 'score') scores.set(ex.id, a.score);
-    }
-  }
-  return {
-    scores,
-    mode: first.mode,
-    threshold: first.use.threshold ?? HISTORY_RECALL_THRESHOLD_DEFAULT,
-    calls: results.length,
-    failed: results.length - answered.length,
-    cached: answered.every((r) => r.outcome!.cached),
-    ms: Math.max(...answered.map((r) => r.outcome!.ms)),
-  };
+  return scoreInGroups({
+    ownerId,
+    use: 'history_recall',
+    message,
+    previousExchange,
+    items: exchanges,
+    groupSize: HISTORY_RECALL_GROUP,
+    itemsKey: 'exchanges',
+    keyPrefix: 'x',
+    capChars: MAX_HISTORY_EXCHANGE_CHARS,
+    instructions: (k) =>
+      `How much does a reply to \`message\` need \`exchanges.${k}\`? Judge only \`exchanges.${k}\`.`,
+    levels: LEVELS,
+    defaultThreshold: HISTORY_RECALL_THRESHOLD_DEFAULT,
+  });
 }
 
 /**

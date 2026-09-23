@@ -263,6 +263,33 @@ describe('pickJournalEntries', () => {
     expect(r.picks[1]).toMatchObject({ nodeId: 'b', text: 'b body', passage: false });
   });
 
+  it('journal_recall scores pick the agent lane (best score first, own budget); user lane stays on similarity', () => {
+    const r = pickJournalEntries(
+      [
+        c('ctx', 'context', 0.8),
+        c('r1', 'expectation', 0.2), // weak by similarity, strong by Jev
+        c('r2', 'lesson', 0.95), // strong by similarity, below Jev's cut
+        c('r3', 'expectation', 0.1),
+        c('r4', 'expectation', 0.3), // unscored: stays out
+      ],
+      {
+        cutoff: 0.7,
+        budgetChars: 3000,
+        agentScores: {
+          scores: new Map([
+            ['r1', 2.4],
+            ['r2', 0.9],
+            ['r3', 2.9],
+          ]),
+          threshold: 1.5,
+        },
+      },
+    );
+    expect(r.picks.map((p) => p.nodeId)).toEqual(['r3', 'r1', 'ctx']);
+    expect(r.picks[0]).toMatchObject({ lane: 'agent', score: 2.9 });
+    expect(r.picks.find((p) => p.nodeId === 'ctx')!.score).toBeUndefined();
+  });
+
   it('adds at most one open, matching gap; resolved or weak gaps never', () => {
     const r = pickJournalEntries(
       [

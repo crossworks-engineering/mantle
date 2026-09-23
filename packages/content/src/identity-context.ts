@@ -290,6 +290,10 @@ export const JOURNAL_RELEVANT_CHARS_DEFAULT = 3_000;
 /** A body longer than this sends its best-matching passage, not the whole. */
 const TIER2_PASSAGE_CHARS = 1_200;
 const TIER2_MAX_ENTRIES = 6;
+/** Agent-lane rules picked by Jev (journal_recall): their own budget. Rules
+ *  are short (~200 chars) and a turn needs a median 5, up to 13 (spike 13). */
+const TIER2_RULES_MAX_ENTRIES = 25;
+const TIER2_RULES_CHARS = 6_000;
 /** How many journal rows one relevance pass reads (all of a normal brain). */
 const TIER2_SCAN_LIMIT = 500;
 /** Near-misses kept for the trace snapshot. */
@@ -389,6 +393,8 @@ export type JournalPick = {
   text: string;
   /** True when `text` is a passage of a longer body. */
   passage: boolean;
+  /** Jev's 0-3 score when the pick came from `journal_recall`. */
+  score?: number;
 };
 
 export type JournalRelevance = {
@@ -435,7 +441,15 @@ export type JournalCandidate = {
  */
 export function pickJournalEntries(
   candidates: readonly JournalCandidate[],
-  opts: { cutoff: number; budgetChars: number; passages?: ReadonlyMap<string, string> },
+  opts: {
+    cutoff: number;
+    budgetChars: number;
+    passages?: ReadonlyMap<string, string>;
+    /** journal_recall scores by node id. When set, agent-lane rules are
+     *  picked by score (at or above `threshold`, best first, their own
+     *  budget) instead of by similarity; the user lane is unchanged. */
+    agentScores?: { scores: ReadonlyMap<string, number>; threshold: number };
+  },
 ): Pick<JournalRelevance, 'picks' | 'gap' | 'nearMisses' | 'chars'> {
   const sorted = [...candidates].sort((a, b) => b.similarity - a.similarity);
   const toPick = (c: JournalCandidate, max: number): JournalPick => {
@@ -464,8 +478,27 @@ export function pickJournalEntries(
 
   const picks: JournalPick[] = [];
   const nearMisses: JournalRelevance['nearMisses'] = [];
+  const byScore = opts.agentScores;
+  if (byScore) {
+    const rules = sorted
+      .filter((c) => c.kind !== 'gap' && !TIER1_KINDS.includes(c.kind))
+      .filter((c) => kindLane(c.kind) === 'agent')
+      .map((c) => ({ c, score: byScore.scores.get(c.nodeId) }))
+      .filter((x): x is { c: JournalCandidate; score: number } => x.score !== undefined)
+      .filter((x) => x.score >= byScore.threshold)
+      .sort((a, b) => b.score - a.score);
+    let ruleBudget = TIER2_RULES_CHARS;
+    for (const { c, score } of rules) {
+      if (picks.length >= TIER2_RULES_MAX_ENTRIES) break;
+      const pick = toPick(c, Number.MAX_SAFE_INTEGER);
+      if (!pick.text || pick.text.length > ruleBudget) continue;
+      picks.push({ ...pick, score: Math.round(score * 100) / 100 });
+      ruleBudget -= pick.text.length;
+    }
+  }
   for (const c of sorted) {
     if (c.kind === 'gap' || TIER1_KINDS.includes(c.kind)) continue;
+    if (byScore && kindLane(c.kind) === 'agent') continue;
     if (c.similarity < opts.cutoff) {
       if (nearMisses.length < TIER2_NEAR_MISSES) {
         nearMisses.push({
@@ -476,10 +509,11 @@ export function pickJournalEntries(
       }
       continue;
     }
-    if (picks.length >= TIER2_MAX_ENTRIES || budget <= 0) continue;
-    const pick = toPick(c, picks.length === 0 ? budget : Number.MAX_SAFE_INTEGER);
+    const simPicks = picks.filter((p) => p.score === undefined).length;
+    if (simPicks >= TIER2_MAX_ENTRIES || budget <= 0) continue;
+    const pick = toPick(c, simPicks === 0 ? budget : Number.MAX_SAFE_INTEGER);
     if (!pick.text) continue;
-    if (picks.length > 0 && pick.text.length > budget) continue;
+    if (simPicks > 0 && pick.text.length > budget) continue;
     picks.push(pick);
     budget -= pick.text.length;
   }
@@ -545,6 +579,8 @@ export async function selectRelevantJournal(opts: {
   budgetChars?: number;
   userLane: boolean;
   agentLane: boolean;
+  /** journal_recall scores (live): agent-lane rules picked by Jev. */
+  agentScores?: { scores: ReadonlyMap<string, number>; threshold: number };
 }): Promise<JournalRelevance> {
   const cutoff = opts.cutoff ?? JOURNAL_RELEVANCE_MIN_DEFAULT;
   const budgetChars = opts.budgetChars ?? JOURNAL_RELEVANT_CHARS_DEFAULT;
@@ -624,8 +660,42 @@ export async function selectRelevantJournal(opts: {
   }
 
   return {
-    ...pickJournalEntries(candidates, { cutoff, budgetChars, passages }),
+    ...pickJournalEntries(candidates, {
+      cutoff,
+      budgetChars,
+      passages,
+      ...(opts.agentScores ? { agentScores: opts.agentScores } : {}),
+    }),
     cutoff,
     skipped: null,
   };
+}
+
+/** The Journal's agent-lane rules (lessons, expectations) for
+ *  `journal_recall`: id + body. Gaps are tier 3 and stay on similarity. */
+export async function loadJournalRules(
+  ownerId: string,
+): Promise<Array<{ nodeId: string; kind: string; body: string }>> {
+  const rows = await db
+    .select({ id: nodes.id, data: nodes.data })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'journal'),
+        sql`${nodes.data}->>'kind' in ('lesson', 'expectation')`,
+      ),
+    )
+    .orderBy(asc(nodes.createdAt), asc(nodes.id))
+    .limit(TIER2_SCAN_LIMIT);
+  return rows
+    .map((r) => {
+      const d = (r.data ?? {}) as Record<string, unknown>;
+      return {
+        nodeId: r.id,
+        kind: typeof d.kind === 'string' ? d.kind : 'lesson',
+        body: flatten(typeof d.body === 'string' ? d.body : '', TIER2_PASSAGE_CHARS),
+      };
+    })
+    .filter((r) => r.body.length > 0);
 }

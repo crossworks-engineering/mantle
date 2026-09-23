@@ -171,6 +171,9 @@ them, per agent:
   thanks and one-word acknowledgements skip the lookup (`isSmallTalk`). The
   scan reads every journal row of the owner (≤500) with a plain distance
   select, not an index walk a type filter would starve.
+  With the decider's `journal_recall` use live, the agent lane (lessons,
+  expectations) is picked by Jev's score instead (≤25 rules, ≤6,000 chars):
+  similarity cannot match a rule to a request (spike 13, decisions.md §4).
 - **Tier 3, per turn**: at most one open gap whose similarity passes the same
   cutoff, with the ask/record instructions.
 - Tiers 2 + 3 render as `# From the Journal (relevant to this message)`, an

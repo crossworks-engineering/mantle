@@ -40,7 +40,12 @@ import {
   type ConversationExternalRef,
   type PersonaNote,
 } from '@mantle/db';
-import { renderRelevantJournalBlock, selectRelevantJournal } from '@mantle/content';
+import {
+  isSmallTalk,
+  loadJournalRules,
+  renderRelevantJournalBlock,
+  selectRelevantJournal,
+} from '@mantle/content';
 import { embed } from '@mantle/embeddings';
 import {
   CONTEXT_FLOORS,
@@ -56,6 +61,7 @@ import {
   recallExchanges,
   scoreContextItems,
   scoreHistoryExchanges,
+  scoreJournalRules,
   scorePassages,
   type ContextItem,
   type HistoryExchange,
@@ -390,12 +396,8 @@ async function loadHistoryRows(o: {
   windowHours: number | null;
   excludeMessageId?: string;
   before?: Date;
-  inboundText: string;
   recall: boolean;
-}): Promise<{
-  recentRows: HistoryRow[];
-  recall: { exchanges: RecallExchange[]; scoring: HistoryRecallScoring | null } | null;
-}> {
+}): Promise<{ recentRows: HistoryRow[]; olderRows: HistoryRow[] }> {
   // Only 'complete' turns are real conversation: the durable runner writes the
   // outbound row 'pending' (empty text) at turn start and may end it 'failed'
   // (no usable reply). Either would otherwise leak into a later turn's prompt as
@@ -432,31 +434,48 @@ async function loadHistoryRows(o: {
     .where(and(...histConds))
     .orderBy(desc(assistantMessages.createdAt))
     .limit(limit);
-  const recentRows = rows.slice(0, o.historyLimit);
-  const olderRows = rows.slice(o.historyLimit);
-  if (!o.recall || olderRows.length === 0) return { recentRows, recall: null };
+  return { recentRows: rows.slice(0, o.historyLimit), olderRows: rows.slice(o.historyLimit) };
+}
 
-  // buildHistory reverses in place: hand it copies. Both come back oldest first.
-  const olderTurns = buildHistory([...olderRows]).history;
-  const recentTurns = buildHistory([...recentRows]).history;
+/** The most recent exchange (last user turn onward) as decider context. */
+function previousExchangeOf(recentRows: HistoryRow[]): string | null {
+  // buildHistory reverses in place: hand it a copy. Comes back oldest first.
+  const turns = buildHistory([...recentRows]).history;
+  const lastUser = turns.map((t) => t.role).lastIndexOf('user');
+  return lastUser >= 0 ? exchangeText(turns.slice(lastUser)) : null;
+}
+
+/** `history_recall`: score the rows past `historyLimit` as exchanges. */
+async function recallOlderExchanges(o: {
+  ownerId: string;
+  historyLimit: number;
+  inboundText: string;
+  recentRows: HistoryRow[];
+  olderRows: HistoryRow[];
+}): Promise<{ exchanges: RecallExchange[]; scoring: HistoryRecallScoring | null } | null> {
+  if (o.olderRows.length === 0) return null;
+  const olderTurns = buildHistory([...o.olderRows]).history;
   const exchanges: RecallExchange[] = groupExchanges(olderTurns).map((g, i) => ({
     id: `x${i}`,
     turns: g.turns,
     text: exchangeText(g.turns),
     back: o.historyLimit + (olderTurns.length - g.start),
   }));
-  const lastUser = recentTurns.map((t) => t.role).lastIndexOf('user');
-  const previous = lastUser >= 0 ? exchangeText(recentTurns.slice(lastUser)) : null;
   let scoring: HistoryRecallScoring | null = null;
   try {
-    scoring = await scoreHistoryExchanges(o.ownerId, o.inboundText, previous, exchanges);
+    scoring = await scoreHistoryExchanges(
+      o.ownerId,
+      o.inboundText,
+      previousExchangeOf(o.recentRows),
+      exchanges,
+    );
   } catch (err) {
     console.error(
       '[conversation] history recall skipped:',
       err instanceof Error ? err.message : err,
     );
   }
-  return { recentRows, recall: { exchanges, scoring } };
+  return { exchanges, scoring };
 }
 
 export async function loadConversationContext(args: {
@@ -490,19 +509,58 @@ export async function loadConversationContext(args: {
     historyLimit > 0 && inboundText.trim().length > 0
       ? await decisionUseEnabled(ownerId, 'history_recall')
       : null;
-  const historyLoad = loadHistoryRows({
+  const rowsLoad = loadHistoryRows({
     ownerId,
     agentId: agent.id,
     historyLimit,
     windowHours,
     excludeMessageId: args.excludeMessageId,
     before: args.before,
-    inboundText,
     recall: recallUse != null,
   });
-  // Surfaced where it is awaited; this only stops an early throw above from
-  // leaving the promise unobserved.
+  const historyLoad = rowsLoad.then(async ({ recentRows, olderRows }) => ({
+    recentRows,
+    recall: recallUse
+      ? await recallOlderExchanges({ ownerId, historyLimit, inboundText, recentRows, olderRows })
+      : null,
+  }));
+
+  // Journal tiers (memory_config.journal_tiers, default `shadow`) and the
+  // decider's `journal_recall` use: Jev scores the Journal's agent-lane rules
+  // against this message, started now for the same reason as history recall
+  // (~0.9 s, spike 13). Runs beside it, not after it.
+  const journalMode = memoryConfig.journal_tiers ?? 'shadow';
+  const userLane = memoryConfig.inject_journal !== false;
+  const agentLane = memoryConfig.inject_working_notes !== false;
+  const journalRecallUse =
+    journalMode !== 'off' && agentLane && !isSmallTalk(inboundText)
+      ? await decisionUseEnabled(ownerId, 'journal_recall')
+      : null;
+  const journalRecallLoad = journalRecallUse
+    ? rowsLoad.then(async ({ recentRows }) => {
+        try {
+          const rules = await loadJournalRules(ownerId);
+          if (rules.length === 0) return null;
+          const scoring = await scoreJournalRules(
+            ownerId,
+            inboundText,
+            previousExchangeOf(recentRows),
+            rules.map((r) => ({ id: r.nodeId, text: r.body })),
+          );
+          return scoring ? { rules: rules.length, scoring } : null;
+        } catch (err) {
+          console.error(
+            '[conversation] journal recall skipped:',
+            err instanceof Error ? err.message : err,
+          );
+          return null;
+        }
+      })
+    : Promise.resolve(null);
+  // Surfaced where they are awaited; this only stops an early throw above
+  // from leaving a promise unobserved.
   historyLoad.catch(() => {});
+  journalRecallLoad.catch(() => {});
 
   // Embed the inbound once for both fact + content lookups. The embedder is
   // resolved centrally from embedding_config — no per-agent override (the query
@@ -953,11 +1011,14 @@ export async function loadConversationContext(args: {
   // passage of one, are dropped as redundant. Spike 10, dev-brain 60a2f51e.
   let journalRelevant = '';
   let journalSnap: ContextSnapshot['journal'] = undefined;
-  const journalMode = memoryConfig.journal_tiers ?? 'shadow';
-  const userLane = memoryConfig.inject_journal !== false;
-  const agentLane = memoryConfig.inject_working_notes !== false;
+  const journalRecall = await journalRecallLoad.catch(() => null);
   if (queryVec && journalMode !== 'off' && (userLane || agentLane)) {
     try {
+      // journal_recall live: agent-lane rules come from Jev's scores, not
+      // similarity. Shadow: the embedding pick stands; Jev's pick is traced.
+      const recallScores = journalRecall
+        ? { scores: journalRecall.scoring.scores, threshold: journalRecall.scoring.threshold }
+        : undefined;
       const rel = await selectRelevantJournal({
         ownerId,
         queryVec,
@@ -966,7 +1027,25 @@ export async function loadConversationContext(args: {
         budgetChars: memoryConfig.journal_relevant_chars,
         userLane,
         agentLane,
+        ...(journalRecall?.scoring.mode === 'live' ? { agentScores: recallScores } : {}),
       });
+      const jevPicks =
+        journalRecall && recallScores
+          ? journalRecall.scoring.mode === 'live'
+            ? rel.picks.filter((p) => p.score !== undefined)
+            : (
+                await selectRelevantJournal({
+                  ownerId,
+                  queryVec,
+                  inboundText,
+                  cutoff: memoryConfig.journal_relevance_min,
+                  budgetChars: memoryConfig.journal_relevant_chars,
+                  userLane: false,
+                  agentLane,
+                  agentScores: recallScores,
+                })
+              ).picks.filter((p) => p.score !== undefined)
+          : [];
       const pickedIds = new Set(rel.picks.map((p) => p.nodeId));
       const redundantFact = (f: FactSnippet) =>
         f.kind !== 'preference' && !!f.sourceNodeId && pickedIds.has(f.sourceNodeId);
@@ -987,6 +1066,25 @@ export async function loadConversationContext(args: {
         nearMisses: rel.nearMisses,
         chars: rel.chars,
         dedupe: { facts: redundantFacts.length, chunkHits: redundantChunks.length },
+        ...(journalRecall
+          ? {
+              recall: {
+                mode: journalRecall.scoring.mode,
+                threshold: journalRecall.scoring.threshold,
+                rules: journalRecall.rules,
+                scored: journalRecall.scoring.scores.size,
+                picked: jevPicks.map((p) => ({
+                  nodeId: p.nodeId,
+                  score: p.score!,
+                  chars: p.text.length,
+                })),
+                calls: journalRecall.scoring.calls,
+                failed: journalRecall.scoring.failed,
+                ms: journalRecall.scoring.ms,
+                cached: journalRecall.scoring.cached,
+              },
+            }
+          : {}),
       };
       if (journalMode === 'live') {
         journalRelevant = renderRelevantJournalBlock(rel, agent.slug);
