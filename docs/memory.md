@@ -981,8 +981,11 @@ Visual map of who writes what, who reads what:
 > cosine and assembled only persona / facts / content / turns.
 
 ```
-[persona + persona_notes]                     ← cache_control (byte-stable for days)
-[conversation_digest — last N digests]        ← cache_control (changes every ~20 turns)
+[tool definitions]                            ← front of every cached prefix (grant order)
+[persona prompt + skills + data rule]         ← cache_control (changes on a config edit)
+[persona_notes]                               ← cache_control (the reflector adds notes)
+[conversation_digest — last N digests]        ← shares the next marker (small)
+[corpus map]                                  ← cache_control (changes with content writes)
 [volatile context — time line + heartbeats]   ← UNCACHED by design (changes every turn)
 [profile facts — top-K for this query]        ← UNCACHED (query-ranked, changes every turn)
    facts = top-K by (cosine + KIND-AWARE RECENCY) … PLUS preferences always-injected
@@ -1005,6 +1008,17 @@ Visual map of who writes what, who reads what:
 > heartbeat awareness via `buildChatMessages`'s `volatileContext` arg, facts
 > as their own uncached block. Never fold per-turn text into the agent's
 > system prompt at a call site; pass it through `volatileContext`.
+>
+> **Prefix stability (2026-09-23, spike 9, dev-brain page e9539aaf).** A change
+> busts its own cached block and every block after it, and the ~55k-token tool
+> list sits in front of all of them. So: tools, tool-group skills and tools per
+> group resolve in the agent's GRANT order, never Postgres row order (row order
+> changed on every boot); persona notes have their own marker, so a reflector
+> note no longer re-writes the tools and persona; the digest shares the corpus
+> map's marker to stay inside Anthropic's cap of four. Every model-call step
+> records `meta.cache_fp` (`{tools, blocks[]}`, short hashes) so a cache miss
+> shows which part changed. The 1-hour cache TTL was measured and rejected: most
+> cold turns come more than an hour apart, where a 1-hour write only costs more.
 
 **The ranking factors (all in the one effective-distance expression):**
 
@@ -1028,8 +1042,9 @@ Visual map of who writes what, who reads what:
 
 Persona first (durable identity), then dialog memory, then per-query content +
 graph + passages, then raw recent turns. Early blocks durable, late blocks live.
-Two Anthropic cache breakpoints emitted here (persona, digests); the tool-loop
-adds a third, moving one on the latest tail message, three of four total.
+Up to three Anthropic cache breakpoints emitted here (persona prompt, persona
+notes, digests + corpus map); the tool-loop adds one on the latest tail
+message, four of four total.
 Knobs: `memory_config.{fact_limit, content_hit_limit, chunk_limit,
 digest_limit}`; env `MANTLE_{SALIENCE_LAMBDA,RECENCY_*,QUERY_ENRICH}`.
 `chunk_limit` defaults to 8 (the runtime `CHUNK_LIMIT_DEFAULT`, ~22k chars),

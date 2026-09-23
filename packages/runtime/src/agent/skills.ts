@@ -68,7 +68,7 @@ export async function resolveToolGroupSkillSlugs(
 ): Promise<string[]> {
   if (groupSlugs.length === 0) return [];
   const rows = await db
-    .select({ integration: toolGroups.integration })
+    .select({ slug: toolGroups.slug, integration: toolGroups.integration })
     .from(toolGroups)
     .where(
       and(
@@ -77,9 +77,12 @@ export async function resolveToolGroupSkillSlugs(
         inArray(toolGroups.slug, groupSlugs),
       ),
     );
+  // In grant order, not row order: skill bodies land in the cached persona
+  // block, so an unstable order would bust the prompt cache.
+  const bySlug = new Map(rows.map((r) => [r.slug, r]));
   const out = new Set<string>();
-  for (const r of rows) {
-    const slug = r.integration?.skillSlug;
+  for (const g of groupSlugs) {
+    const slug = bySlug.get(g)?.integration?.skillSlug;
     if (slug) out.add(slug);
   }
   return Array.from(out);
@@ -115,7 +118,7 @@ export function effectiveSkillSlugs(ownSlugs: string[], groupSkillSlugs: string[
 export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): Promise<string[]> {
   if (slugs.length === 0) return [];
   const rows = await db
-    .select({ toolSlugs: toolGroups.toolSlugs })
+    .select({ slug: toolGroups.slug, toolSlugs: toolGroups.toolSlugs })
     .from(toolGroups)
     .where(
       and(
@@ -124,8 +127,12 @@ export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): 
         inArray(toolGroups.slug, slugs),
       ),
     );
+  // In grant order, not row order: the tool list is the front of every
+  // cached prompt prefix, so it must be byte-stable between turns (and the
+  // cap in effectiveToolSlugs then cuts the same tools every time).
+  const bySlug = new Map(rows.map((r) => [r.slug, r]));
   const set = new Set<string>();
-  for (const r of rows) for (const t of r.toolSlugs ?? []) set.add(t);
+  for (const g of slugs) for (const t of bySlug.get(g)?.toolSlugs ?? []) set.add(t);
   return Array.from(set);
 }
 
@@ -146,7 +153,7 @@ export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): 
  * persona note cannot, and why the preview shows it (no hidden prompts).
  *
  * Being that seam is also why `{{name}}` resolves HERE rather than deeper in
- * `renderPersonaBlock`: substituting later would make the model see a name the
+ * `renderPersonaPrompt`: substituting later would make the model see a name the
  * Studio preview does not, which is exactly the hidden prompt this seam exists
  * to prevent. `agentName` is REQUIRED so a new call site cannot forget it and
  * silently ship a literal token to a model.

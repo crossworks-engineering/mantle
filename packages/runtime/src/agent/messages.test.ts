@@ -266,3 +266,64 @@ describe('buildChatMessages — an image hit carries a usable marker', () => {
     expect(out).not.toContain('media:');
   });
 });
+
+describe('buildChatMessages: cache layout (stable to churny)', () => {
+  const note = (content: string, at = '2026-09-01T00:00:00Z') => ({
+    id: content,
+    kind: 'style' as const,
+    content,
+    at,
+  });
+  const map = {
+    entries: [{ nodeId: 'n1', type: 'page', title: 'Plan', branch: 'pages', summary: null }],
+    truncated: false,
+  };
+  const layout = (personaNotes: ReturnType<typeof note>[], withMap: boolean) =>
+    systemMessages(
+      buildChatMessages({
+        model: 'anthropic/claude-sonnet-5',
+        provider: 'openrouter',
+        systemPrompt: 'You are Saskia.',
+        personaNotes,
+        facts: [],
+        digests: [DIGEST],
+        ...(withMap ? { corpusMap: map } : {}),
+        contentHits: [],
+        history: [],
+        newUserText: 'hi',
+      }),
+    );
+  const text = (m: Extract<ChatMessage, { role: 'system' }>) =>
+    typeof m.content === 'string' ? m.content : m.content.map((p) => p.text).join('');
+  const marked = (m: Extract<ChatMessage, { role: 'system' }>) =>
+    Array.isArray(m.content) && m.content.some((p) => p.cacheControl);
+
+  it('persona prompt, notes, digest + map: at most 3 markers (the tail takes the 4th)', () => {
+    const sys = layout([note('prefers short answers')], true);
+    expect(text(sys[0]!)).toMatch(/^You are Saskia\./);
+    expect(text(sys[0]!)).toMatch(/Data boundary/);
+    expect(text(sys[1]!)).toMatch(/prefers short answers/);
+    expect(text(sys[2]!)).toMatch(/Earlier in this conversation/);
+    expect(sys.map(marked).slice(0, 4)).toEqual([true, true, false, true]);
+    expect(sys.filter(marked)).toHaveLength(3);
+  });
+
+  it('a new persona note leaves the persona block byte-identical', () => {
+    // The point of the split: a reflector note used to re-write the whole
+    // prefix, the ~55k-token tool list included.
+    const before = layout([note('prefers short answers')], true);
+    const after = layout(
+      [note('prefers short answers'), note('likes tables', '2026-09-02T00:00:00Z')],
+      true,
+    );
+    expect(text(after[0]!)).toBe(text(before[0]!));
+    expect(text(after[1]!)).not.toBe(text(before[1]!));
+  });
+
+  it('with no map the digest carries the last marker; with no notes there is no notes block', () => {
+    const sys = layout([], false);
+    expect(sys.map(marked).slice(0, 2)).toEqual([true, true]);
+    expect(text(sys[1]!)).toMatch(/Earlier in this conversation/);
+    expect(sys.some((m) => /What you've learned/.test(text(m)))).toBe(false);
+  });
+});

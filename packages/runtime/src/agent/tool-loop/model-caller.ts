@@ -8,6 +8,7 @@ import { step, isTurnStreaming, emitTurnDelta, currentTurnAbortSignal } from '@m
 import type { ChatDispatcher, ChatOptions, ChatResult, ChatToolDefinition } from '@mantle/voice';
 import { errorMessage } from '@mantle/std';
 import { recordChatUsage } from '../llm-usage';
+import { cacheFingerprint } from './cache-fingerprint';
 import { isChatFailover } from '../chat-failover';
 import type { ChatMessage } from '../messages';
 import type { ToolLoopArgs } from '../tool-loop';
@@ -184,6 +185,8 @@ export function createModelCaller(deps: {
               streamed,
             );
             recordChatUsage(h, r, active.model);
+            // Which cached part changed, when a call misses the cache.
+            h.setMeta({ cache_fp: cacheFingerprint(messages, sendTools ? toolsForModel : null) });
             tokensOut += r.tokensOut ?? 0;
             return r;
           } catch (err) {
@@ -227,6 +230,7 @@ export function createModelCaller(deps: {
             failedOver = true;
             const r = await dispatchChat(active.adapter, { ...routeOpts(), ...chatOpts }, iter);
             recordChatUsage(h, r, active.model);
+            h.setMeta({ cache_fp: cacheFingerprint(messages, sendTools ? toolsForModel : null) });
             tokensOut += r.tokensOut ?? 0;
             return r;
           }
@@ -267,6 +271,7 @@ export function createModelCaller(deps: {
             iter,
           );
           recordChatUsage(h, r, active.model);
+          h.setMeta({ cache_fp: cacheFingerprint(messages, null) });
           tokensOut += r.tokensOut ?? 0;
           return r;
         },
@@ -307,6 +312,7 @@ export function createModelCaller(deps: {
             ...maxRetries(),
           });
           recordChatUsage(h, r, active.model);
+          h.setMeta({ cache_fp: cacheFingerprint(messages, null) });
           tokensOut += r.tokensOut ?? 0;
           if (!r.text.trim()) h.setMeta({ still_empty: true });
           return r.text;
