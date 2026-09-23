@@ -55,6 +55,7 @@ export interface AgentMemoryConfigDTO {
   journal_tiers?: 'off' | 'shadow' | 'live';
   journal_relevance_min?: number;
   journal_relevant_chars?: number;
+  notes_target?: 'persona' | 'journal';
   summarize_threshold?: number;
   summarize_batch?: number;
   extract_types?: string[];

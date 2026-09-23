@@ -189,6 +189,35 @@ To go live on one agent: set `memory_config.journal_tiers` to `live`; read a
 few `load_context` snapshots first (`snapshot.journal.picked`, `nearMisses`)
 and tune `journal_relevance_min` for that brain.
 
+### 4b. Persona notes move into the Journal (`memory_config.notes_target`)
+
+Persona notes (`agents.persona_notes`, written by the reflector and
+`update_persona`) and the Journal's agent lane hold the same thing: what an
+agent learned about helping its user. The notes ride every prompt in full and
+were never retired (spike 13, dev-brain page 9f57fa46: one work brain held 503
+notes, 103k chars, 68 of them general and 435 topic rules). The move, per
+agent:
+
+1. **Dry run:** `pnpm maintain run persona-notes-to-journal -- --agent=<slug>`.
+   The agent's own model sorts every live note (general → `preference` /
+   `identity`, tier 1; topic → `expectation` / `lesson` / `context`, tier 2;
+   a correction is always general), near-copies are merged (embedding ≥ 0.85,
+   confirmed by the model, earliest note kept), and the plan goes to a review
+   page (the plan itself in the page's `data.persona_notes_plan`).
+2. **Apply:** `… -- --apply --page=<id>` creates exactly the reviewed entries,
+   authored as the agent, tagged `from-persona-notes`,
+   `data.source.persona_note_ref` set (idempotent). Persona notes untouched.
+3. **Switch:** set the agent's `memory_config.notes_target` to `journal`.
+   The agent stops reading its persona notes; the reflector reads the Journal
+   as "already known" and writes Journal entries (it also gives each note a
+   `scope`: general → `preference`, topic → `expectation`; relationship →
+   `identity`; correction → `preference`); `update_persona` writes a general
+   `preference` (retiring an old entry is `journal_update` / `journal_delete`).
+   New entries are deduped against the whole Journal (token Jaccard ≥ 0.6).
+4. Rules then reach the prompt through tier 2, picked by Jev when the
+   decider's `journal_recall` use is live (embedding similarity cannot match
+   a rule to a request).
+
 ---
 
 ## 5. The gap loop

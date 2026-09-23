@@ -3,6 +3,8 @@ import {
   buildConversionPlan,
   duplicateMap,
   journalKindFor,
+  journalKindForNote,
+  notesTargetOf,
   renderConversionPlanMarkdown,
   type NoteClass,
 } from './persona-notes-journal';
@@ -89,5 +91,22 @@ describe('buildConversionPlan + render', () => {
     expect(md).toContain(
       '| change-log app | expectation | Change-log tiles take one of five tags. |',
     );
+  });
+});
+
+describe('notes_target = journal', () => {
+  it('defaults to persona; only the literal journal switches', () => {
+    expect(notesTargetOf(undefined)).toBe('persona');
+    expect(notesTargetOf({})).toBe('persona');
+    expect(notesTargetOf({ notes_target: 'journal' })).toBe('journal');
+    expect(notesTargetOf({ notes_target: 'JOURNAL' })).toBe('persona');
+  });
+
+  it('maps a live-learned note: corrections always on, style by scope, default general', () => {
+    expect(journalKindForNote('correction', 'topic')).toBe('preference');
+    expect(journalKindForNote('relationship')).toBe('identity');
+    expect(journalKindForNote('style', 'topic')).toBe('expectation');
+    expect(journalKindForNote('style', 'general')).toBe('preference');
+    expect(journalKindForNote('style')).toBe('preference');
   });
 });

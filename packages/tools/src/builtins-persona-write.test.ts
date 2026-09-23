@@ -22,7 +22,16 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { Param, SQL } from 'drizzle-orm';
 
-const agentRows: Array<{ id: string; personaNotes: unknown[] }> = [];
+const agentRows: Array<{ id: string; personaNotes: unknown[]; memoryConfig?: unknown }> = [];
+const writeLearned = vi.fn(async (..._args: unknown[]) => [
+  { kind: 'preference', content: 'Prefers prose.' },
+]);
+
+vi.mock('@mantle/content', () => ({
+  notesTargetOf: (m: { notes_target?: string } | null | undefined) =>
+    m?.notes_target === 'journal' ? 'journal' : 'persona',
+  writeLearnedEntries: (...args: unknown[]) => writeLearned(...args),
+}));
 const selectChain = {
   from: vi.fn().mockReturnThis(),
   where: vi.fn().mockReturnThis(),
@@ -152,6 +161,39 @@ describe('update_persona', () => {
       retired: [{ ref: 'n-bullets', reason: 'superseded' }],
       active_note_count: 2,
     });
+  });
+
+  it('notes_target = journal: an add becomes a general Journal entry, the persona array is untouched', async () => {
+    agentRows.splice(0, agentRows.length, {
+      id: 'a1',
+      personaNotes: [BULLETS],
+      memoryConfig: { notes_target: 'journal' },
+    });
+    const res = await tool.handler(
+      { add: { kind: 'style', content: 'Prefers prose.' }, supersede_refs: ['n-bullets'] },
+      ctx,
+    );
+    expect(outputOf(res)).toEqual({ journal: { kind: 'preference', content: 'Prefers prose.' } });
+    expect(writeLearned).toHaveBeenCalledWith(
+      'o1',
+      'responder',
+      [{ kind: 'style', content: 'Prefers prose.', scope: 'general' }],
+      'update_persona',
+    );
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('notes_target = journal: refs alone point at the Journal tools', async () => {
+    agentRows.splice(0, agentRows.length, {
+      id: 'a1',
+      personaNotes: [BULLETS],
+      memoryConfig: { notes_target: 'journal' },
+    });
+    expect(errorOf(await tool.handler({ remove_refs: ['n-bullets'] }, ctx))).toMatch(
+      /journal_update/,
+    );
+    expect(writeLearned).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
   });
 
   it('supersede_refs without an add retires nothing (no replacement, no write)', async () => {

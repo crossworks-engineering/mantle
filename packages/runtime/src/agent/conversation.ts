@@ -500,7 +500,10 @@ export async function loadConversationContext(args: {
   const chunkLimit = memoryConfig.chunk_limit ?? CHUNK_LIMIT_DEFAULT;
   const corpusMapLimit = memoryConfig.corpus_map_limit ?? CORPUS_MAP_LIMIT_DEFAULT;
 
-  const personaNotes: PersonaNote[] = (agent.personaNotes ?? []) as PersonaNote[];
+  // memory_config.notes_target = 'journal': the notes moved to the Journal
+  // (persona-notes-to-journal) and arrive through its tiers instead.
+  const personaNotes: PersonaNote[] =
+    memoryConfig.notes_target === 'journal' ? [] : ((agent.personaNotes ?? []) as PersonaNote[]);
 
   // History rows, started now: with the decider's `history_recall` use on, the
   // older rows are scored while the embedding and retrieval below run, so the

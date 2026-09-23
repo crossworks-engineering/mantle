@@ -16,6 +16,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
+import { dedupeNewNotes, type PersonaNote } from '@mantle/db';
 import { createJournal } from './journal';
 
 /** Key of the plan inside the review page's `nodes.data`. */
@@ -243,4 +244,94 @@ export async function applyConversionPlan(
     created++;
   }
   return { created, existing, duplicates };
+}
+
+// ─── After the conversion: learning straight into the Journal ───────────────
+// memory_config.notes_target = 'journal' (per agent, default 'persona'): the
+// agent stops reading its persona notes, and the reflector and update_persona
+// write Journal entries instead, so what the agent learns joins the tiers
+// (general → tier 1, topic → tier 2 via journal_recall).
+
+export type NotesTarget = 'persona' | 'journal';
+
+/** Where an agent's learned notes live (default: its persona notes). */
+export function notesTargetOf(
+  memoryConfig: { notes_target?: string } | null | undefined,
+): NotesTarget {
+  return memoryConfig?.notes_target === 'journal' ? 'journal' : 'persona';
+}
+
+/**
+ * Pure: the Journal kind for a note learned live. A correction is always on
+ * (preference); a relationship note is who-the-user-is (identity); a style
+ * note is a preference when it applies to most conversations, an
+ * expectation (picked per turn) when it only applies to one topic. No scope
+ * given = general: an explicit request is a standing preference.
+ */
+export function journalKindForNote(noteKind: string, scope?: 'general' | 'topic' | null): string {
+  if (noteKind === 'correction') return 'preference';
+  if (noteKind === 'relationship') return 'identity';
+  return scope === 'topic' ? 'expectation' : 'preference';
+}
+
+/** Every non-gap Journal entry (body + kind): what the agents already know.
+ *  The reflector reads it so it only learns what is new. */
+export async function knownJournalEntries(
+  ownerId: string,
+): Promise<Array<{ kind: string; body: string }>> {
+  const rows = await db
+    .select({ data: nodes.data })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'journal'),
+        sql`coalesce(${nodes.data}->>'kind', '') <> 'gap'`,
+      ),
+    )
+    .limit(1000);
+  return rows
+    .map((r) => {
+      const d = (r.data ?? {}) as Record<string, unknown>;
+      return {
+        kind: typeof d.kind === 'string' ? d.kind : 'context',
+        body: typeof d.body === 'string' ? d.body.trim() : '',
+      };
+    })
+    .filter((e) => e.body.length > 0);
+}
+
+/**
+ * Write notes an agent learned (reflector, update_persona) as Journal
+ * entries authored by that agent, dropping any that near-copy an entry the
+ * Journal already holds (the persona path's token-Jaccard backstop). Returns
+ * the entries written.
+ */
+export async function writeLearnedEntries(
+  ownerId: string,
+  agentSlug: string,
+  notes: ReadonlyArray<{ kind: string; content: string; scope?: 'general' | 'topic' | null }>,
+  via: 'reflector' | 'update_persona',
+): Promise<Array<{ kind: string; content: string }>> {
+  const known = await knownJournalEntries(ownerId);
+  const asNotes: PersonaNote[] = known.map((e) => ({
+    kind: 'style',
+    content: e.body,
+    at: '',
+  }));
+  const fresh = dedupeNewNotes(asNotes, [...notes]);
+  const written: Array<{ kind: string; content: string }> = [];
+  for (const n of fresh) {
+    const kind = journalKindForNote(n.kind, n.scope ?? null);
+    await createJournal(ownerId, {
+      body: n.content.trim(),
+      kind,
+      author: 'agent',
+      agentSlug,
+      tags: [via === 'reflector' ? 'reflector' : 'update-persona'],
+      source: { via, agent_slug: agentSlug, note_kind: n.kind },
+    });
+    written.push({ kind, content: n.content.trim() });
+  }
+  return written;
 }

@@ -104,6 +104,12 @@ export type AgentMemoryConfig = {
   journal_relevance_min?: number;
   /** Tier 2/3 characters per turn. Default 3000. */
   journal_relevant_chars?: number;
+  /** Where this agent's learned notes live. `persona` (default): the
+   *  `persona_notes` array, all of it in every prompt. `journal`: the agent
+   *  stops reading its persona notes; the reflector and `update_persona`
+   *  write Journal entries (general → tier 1, topic → tier 2). Set it after
+   *  the `persona-notes-to-journal` task has moved the old notes over. */
+  notes_target?: 'persona' | 'journal';
   /** Summarizer-only: undigested-turn count that triggers a summarization.
    *  Default 30, capped at max(history_limit, summarize_batch) so no turn
    *  can age out of the live history window while still undigested. */

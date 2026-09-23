@@ -30,6 +30,7 @@ import {
   type PersonaNote,
   type PersonaUpdate,
 } from '@mantle/db';
+import { notesTargetOf, writeLearnedEntries } from '@mantle/content';
 import type { BuiltinToolDef } from './types';
 
 function asStringArray(v: unknown): string[] {
@@ -119,12 +120,42 @@ const update_persona: BuiltinToolDef = {
     }
 
     const [row] = await db
-      .select({ id: agents.id, personaNotes: agents.personaNotes })
+      .select({
+        id: agents.id,
+        personaNotes: agents.personaNotes,
+        memoryConfig: agents.memoryConfig,
+      })
       .from(agents)
       .where(and(eq(agents.ownerId, ctx.ownerId), eq(agents.slug, slug)))
       .limit(1);
     if (!row) {
       return { ok: false, error: `agent '${slug}' not found for this owner` };
+    }
+
+    // memory_config.notes_target = 'journal': this agent's notes live in the
+    // Journal now. An explicit request is a standing preference (always on);
+    // retiring an old one is a Journal edit, which the Journal tools do.
+    if (notesTargetOf(row.memoryConfig) === 'journal') {
+      if (!update.add) {
+        return {
+          ok: false,
+          error:
+            'Your notes live in the Journal: change or remove the entry with journal_update / journal_delete.',
+        };
+      }
+      const written = await writeLearnedEntries(
+        ctx.ownerId,
+        slug,
+        [{ ...update.add, scope: 'general' }],
+        'update_persona',
+      );
+      ctx.step?.setMeta({ agent: slug, target: 'journal', written: written.length });
+      return {
+        ok: true,
+        output: written.length
+          ? { journal: written[0] }
+          : { journal: null, note: 'Already in the Journal; nothing new written.' },
+      };
     }
 
     const current = (row.personaNotes ?? []) as PersonaNote[];
