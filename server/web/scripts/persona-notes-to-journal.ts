@@ -33,8 +33,11 @@ import { chatWithFailover, resolveChatRoutes } from '@mantle/runtime/agent';
 import { env } from '@mantle/config';
 
 const OWNER_ID = env('ALLOWED_USER_ID');
-const CLASSIFY_BATCH = 40;
-const JUDGE_BATCH = 30;
+// Small batches: a one-shot chat call is capped at 60 s, and a reasoning model
+// sorting 40 notes ran close to it (the first real dry run timed out).
+const CLASSIFY_BATCH = 15;
+const JUDGE_BATCH = 15;
+const ATTEMPTS = 2;
 const NEAR_COPY = 0.85;
 
 const arg = (name: string) =>
@@ -89,17 +92,26 @@ async function dryRun(ownerId: string, slug: string) {
   }
   const routes = resolveChatRoutes(agent);
   let spent = 0;
+  // One retry per batch: a single slow or garbled answer used to end a run
+  // of hundreds of notes and throw away what it had already paid for.
   const ask = async (system: string, user: string) => {
-    const { result } = await chatWithFailover(ownerId, routes, {
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-      temperature: 0,
-      maxTokens: 12_000,
-    });
-    spent += result.reportedCostUsd ?? 0;
-    return parseJson(result.text);
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const { result } = await chatWithFailover(ownerId, routes, {
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+          temperature: 0,
+          maxTokens: 12_000,
+        });
+        spent += result.reportedCostUsd ?? 0;
+        return parseJson(result.text);
+      } catch (err) {
+        if (attempt >= ATTEMPTS) throw err;
+        console.log(` (retry: ${err instanceof Error ? err.message : String(err)})`);
+      }
+    }
   };
 
   console.log(
