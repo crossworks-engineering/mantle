@@ -144,10 +144,12 @@ describe('delegation hint', () => {
     expect(wordCount('')).toBe(0);
   });
 
-  it('none no longer claims edits of what the user has open', () => {
+  it('none covers page and table edits (the responder does them), not app work', () => {
+    // Spike v2 (NATREF, 130 turns): the responder edits pages and tables itself
+    // since 2026-08-12 but still hands app work to its specialist.
     const c = delegationCriteria([{ slug: 'pages', description: 'Document specialist.' }]);
-    expect(c.none).toMatch(/Not for creating or changing a page, table, app or drawing/);
-    expect(c.none).not.toMatch(/small edit to what the user has open/);
+    expect(c.none).toMatch(/an edit to a page or table, including the one in `open_surface`/);
+    expect(c.none).toMatch(/Not for a large job .*work inside an app/);
   });
 
   it('traces the surface kind next to the pick', () => {

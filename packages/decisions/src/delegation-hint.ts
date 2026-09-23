@@ -96,7 +96,7 @@ export type DelegationHint = {
 /** Contrastive wording for the two options the spike showed Jev over- or
  *  under-picks. A delegate's own description is used for everything else. */
 const NONE_CRITERION =
-  'No specialist. The assistant answers itself: a general question, an explanation, a summary of what it already holds, or a short reply in an ongoing conversation. Not for creating or changing a page, table, app or drawing, including the one in `open_surface`: its specialist does that.';
+  "No specialist. The assistant answers itself: a general question, an explanation, a summary of what it already holds, a short reply in an ongoing conversation, or an edit to a page or table, including the one in `open_surface`, that its own tools can do. Not for a large job (writing or restructuring a whole document), work inside an app (its data or its code), or work that needs a specialist's own data source.";
 
 const HINT_INSTRUCTIONS =
   'A personal-assistant AI received `message` (with `previous_user_message` as context when present). `open_surface`, when present, is the page, table or app the user has open on screen right now; "this", "it" and "the header" usually refer to it. Which specialist should handle the message, or `none` if the assistant should answer it itself?';

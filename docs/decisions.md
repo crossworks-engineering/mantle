@@ -145,10 +145,17 @@ is empty.
 markers (the same three jackdaw's own transcript view splits on), so
 `message` is what the user typed and the surface is a named field. No wire
 change: surfaces that send no note (Telegram, mobile) simply have no
-surface. The `none` criterion no longer claims "a small edit to what the user
-has open"; editing a page, table, app or drawing, open or not, is its
-specialist's work. The trace data carries `surface` (the kind) next to the
-pick.
+surface. The `none` criterion matches how the responder works today: it
+edits pages and tables itself (the open one included) and hands a specialist
+large jobs, work inside an app, and work on a specialist's own data source.
+The trace data carries `surface` (the kind) next to the pick.
+
+Re-run (NATREF, 2026-09-23, 130 web turns, 104 with an on-screen note): v2's
+state beat today's on exact match (67 vs 63) and correct `none` (37 vs 33),
+but hint precision stayed ~45% at 0.6 for every variant, because the labels
+are stale: the responder stopped delegating page edits on 2026-08-12, and
+`pcms-analyst` only exists since 2026-09-03. **Do not go live on the old
+numbers**; the shadow week scores it against current behaviour.
 
 Wired in `assembleResponderTurn` (`packages/runtime/src/assistant/assemble-turn.ts`),
 so every delegating surface gets it through the same door; the web turn
