@@ -77,6 +77,7 @@ async function xaiChat(opts: ChatOptions): Promise<ChatResult> {
     headers: {
       Authorization: `Bearer ${opts.apiKey}`,
       'content-type': 'application/json',
+      ...convIdHeader(opts),
     },
     body: JSON.stringify(body),
     signal: chatAbortSignal(opts.signal, 60_000),
@@ -147,6 +148,14 @@ async function xaiDiscover(apiKey: string): Promise<DiscoveryResult<ChatModelInf
   }
 }
 
+/** xAI routes calls with the same `x-grok-conv-id` to the same server, where
+ *  its prompt cache lives (the direct twin of the OpenRouter adapter's
+ *  affinity). Nothing when the caller has no conversation id. */
+function convIdHeader(opts: ChatOptions): Record<string, string> {
+  const id = opts.sessionId?.trim().slice(0, 256);
+  return id ? { 'x-grok-conv-id': id } : {};
+}
+
 /** Streaming xAI chat — OpenAI-compatible SSE via the shared streamer. */
 function xaiChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<ChatResult> {
   if (!opts.apiKey) throw new Error('xai-chat: apiKey required');
@@ -155,7 +164,11 @@ function xaiChatStream(opts: ChatOptions, onDelta: ChatStreamSink): Promise<Chat
     opts,
     {
       url: `${XAI_BASE_URL}/chat/completions`,
-      headers: { Authorization: `Bearer ${opts.apiKey}`, 'content-type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+        'content-type': 'application/json',
+        ...convIdHeader(opts),
+      },
       provider: 'xai',
     },
     onDelta,

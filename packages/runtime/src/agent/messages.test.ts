@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildChatMessages,
   buildAttachmentContextText,
+  STABLE_PREFIX,
   type Digest,
   type ChatMessage,
 } from './messages';
@@ -58,9 +59,27 @@ describe('buildChatMessages — explicit cache breakpoints', () => {
     expect(Array.isArray(sys[0]?.content)).toBe(true);
   });
 
+  it('emits markers for the tilde alias (~anthropic/…)', () => {
+    const sys = systemMessages(
+      build({ model: '~anthropic/claude-sonnet-latest', provider: 'openrouter' }),
+    );
+    expect(Array.isArray(sys[0]?.content)).toBe(true);
+  });
+
   it('uses plain-string system blocks for non-Anthropic providers', () => {
     const sys = systemMessages(build({ model: 'openai/gpt-4o', provider: 'openrouter' }));
     for (const m of sys) expect(typeof m.content).toBe('string');
+  });
+
+  it('tags the stable blocks on implicit-cache providers, for the fingerprint only', () => {
+    const sys = systemMessages(
+      build({ model: '~x-ai/grok-latest', provider: 'openrouter', volatileContext: 'now' }),
+    );
+    // Persona + digest are the stable prefix; the volatile line is not.
+    expect(sys.filter((m) => m[STABLE_PREFIX]).length).toBe(2);
+    expect(sys.find((m) => m.content === 'now')?.[STABLE_PREFIX]).toBeUndefined();
+    // The tag is a symbol: nothing of it survives serialisation.
+    expect(JSON.stringify(sys)).not.toContain('stablePrefix');
   });
 
   it('falls back to slug-only behaviour when provider is omitted', () => {

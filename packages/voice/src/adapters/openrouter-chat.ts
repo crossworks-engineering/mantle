@@ -768,7 +768,9 @@ function affinity(opts: { model: string; sessionId?: string }): {
   if (!id) return { body: {}, headers: undefined };
   return {
     body: { sessionId: id },
-    headers: opts.model.startsWith('x-ai/') ? { 'x-grok-conv-id': id } : undefined,
+    // `~x-ai/grok-latest` (the shipped default) is a distinct string: a bare
+    // `startsWith('x-ai/')` sent the header to no fleet agent at all.
+    headers: /^~?x-ai\//.test(opts.model) ? { 'x-grok-conv-id': id } : undefined,
   };
 }
 

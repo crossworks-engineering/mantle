@@ -131,10 +131,17 @@ export type ToolCallRequest = {
   function: { name: string; arguments: string };
 };
 
+/** Tag on a plain-string system block that belongs to the stable prompt
+ *  prefix (persona, notes, digest/map) on a provider that caches implicitly.
+ *  Read by the cache fingerprint; a symbol key, so JSON and the adapters
+ *  never see it. */
+export const STABLE_PREFIX: unique symbol = Symbol('mantle.stablePrefix');
+
 export type ChatMessage =
   | {
       role: 'system';
       content: string | Array<{ type: 'text'; text: string; cacheControl?: { type: 'ephemeral' } }>;
+      [STABLE_PREFIX]?: true;
     }
   | {
       role: 'user';
@@ -417,13 +424,20 @@ export function buildChatMessages(args: {
   // cache_control markers. Gating on the slug alone missed the direct path, so a
   // direct-Anthropic responder collapsed persona+digest into one cache block and
   // a digest refresh busted the persona cache too.
-  const supportsExplicitCache = args.provider === 'anthropic' || model.startsWith('anthropic/');
+  // A leading `~` is OpenRouter's alias form (`~anthropic/claude-sonnet-latest`).
+  const supportsExplicitCache =
+    args.provider === 'anthropic' || model.replace(/^~/, '').startsWith('anthropic/');
   const ephemeral = { type: 'ephemeral' as const };
 
+  // A marked block on a provider with implicit caching (grok, OpenAI, Gemini)
+  // is still part of the stable prefix: tag it for the cache fingerprint. The
+  // tag is a symbol key, so it never reaches the wire.
   const systemBlock = (text: string, marked: boolean): ChatMessage =>
     supportsExplicitCache && marked
       ? { role: 'system', content: [{ type: 'text', text, cacheControl: ephemeral }] }
-      : { role: 'system', content: text };
+      : marked
+        ? { role: 'system', content: text, [STABLE_PREFIX]: true }
+        : { role: 'system', content: text };
 
   // ─── Block 1: persona prompt + data rule (stable until a config edit) ──
   const messages: ChatMessage[] = [systemBlock(renderPersonaPrompt(systemPrompt), true)];

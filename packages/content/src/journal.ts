@@ -65,7 +65,7 @@ export function journalSortSql(): SQL {
     case when ${nodes.data}->>'entry_date' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
       then (${nodes.data}->>'entry_date')::timestamptz end,
     ${nodes.updatedAt}
-  ) desc`;
+  ) desc, ${nodes.id} desc`;
 }
 
 /** Effective kind of a row in SQL, with the legacy `category` mapping applied

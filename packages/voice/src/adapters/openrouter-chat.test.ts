@@ -585,6 +585,16 @@ describe('openrouter-chat cache affinity (sessionId)', () => {
     expect(sendOpts.at(-1)?.headers).toEqual({ 'x-grok-conv-id': 'mantle-agent-a1' });
   });
 
+  it('the tilde alias (~x-ai/grok-latest, the fleet default) gets the Grok header too', async () => {
+    await openrouterChatAdapter.chat({
+      apiKey: 'sk-test',
+      messages: [{ role: 'user' as const, content: 'hi' }],
+      model: '~x-ai/grok-latest',
+      sessionId: 'mantle-agent-a1',
+    });
+    expect(sendOpts.at(-1)?.headers).toEqual({ 'x-grok-conv-id': 'mantle-agent-a1' });
+  });
+
   it('sends nothing when there is no conversation id', async () => {
     await openrouterChatAdapter.chat({
       apiKey: 'sk-test',

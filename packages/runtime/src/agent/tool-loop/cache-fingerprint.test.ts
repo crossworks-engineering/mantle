@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { cacheFingerprint } from './cache-fingerprint';
-import type { ChatMessage } from '../messages';
+import { STABLE_PREFIX, type ChatMessage } from '../messages';
 
 const marked = (text: string): ChatMessage => ({
   role: 'system',
@@ -38,6 +38,18 @@ describe('cacheFingerprint', () => {
     const a = cacheFingerprint([], [tool('a'), tool('b')]);
     const b = cacheFingerprint([], [tool('b'), tool('a')]);
     expect(a.tools).not.toBe(b.tools);
+  });
+
+  it('hashes tagged plain-string blocks (grok, OpenAI, Gemini): a prompt change shows', () => {
+    const stable = (text: string): ChatMessage => ({
+      role: 'system',
+      content: text,
+      [STABLE_PREFIX]: true,
+    });
+    const a = cacheFingerprint([stable('persona A'), { role: 'system', content: 'now' }], null);
+    const b = cacheFingerprint([stable('persona B'), { role: 'system', content: 'now' }], null);
+    expect(a.blocks).toHaveLength(1);
+    expect(a.blocks[0]).not.toBe(b.blocks[0]);
   });
 
   it('no tools sent: tools is null', () => {
