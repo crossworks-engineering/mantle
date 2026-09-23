@@ -22,6 +22,57 @@ import { decide, type DecideOutcome } from './decide';
  *  inside the conversation ("yes, but shorter") — no call. */
 export const MIN_WORDS_FOR_HINT = 8;
 
+/** With a page, table or app open, a short instruction ("fix the header")
+ *  is exactly the case the hint exists for, so the gate drops to this. */
+export const MIN_WORDS_WITH_SURFACE = 3;
+
+/** What the user has open while chatting, read off the UI's note. */
+export type OpenSurface = { kind: string; title: string };
+
+/** Markers of the machine note the web UI appends to a sent message (jackdaw
+ *  `buildContextPreamble` / `buildFocusDirective`; its own transcript view
+ *  splits on the same three). Everything before the first is what the user
+ *  typed. */
+const NOTE_MARKERS = [
+  '\n\n---\nOn screen right now',
+  '\n\n---\nAttached context',
+  '\nFOCUS SET —',
+] as const;
+
+/** The note's noun per kind, back to the UI's kind id. */
+const SURFACE_KIND_BY_LABEL: Record<string, string> = {
+  'journal entry': 'journal',
+  drawing: 'draw',
+};
+
+/**
+ * Pure: split a sent message into what the user typed and the open surface
+ * named in the UI's "On screen right now" note (the first pinned line). No
+ * note: the text is all typed and there is no surface. Spike 3: with the note
+ * left inside `message`, Jev read short instructions about the open page or
+ * app as `none`; as a named field it can use it.
+ */
+export function splitOnScreenNote(text: string): {
+  typed: string;
+  openSurface: OpenSurface | null;
+} {
+  const cuts = NOTE_MARKERS.map((m) => text.indexOf(m)).filter((i) => i >= 0);
+  if (cuts.length === 0) return { typed: text.trim(), openSurface: null };
+  const typed = text.slice(0, Math.min(...cuts)).trim();
+  const at = text.indexOf(NOTE_MARKERS[0]);
+  if (at < 0) return { typed, openSurface: null };
+  // The header line, then `- <label> "<title>" (node <id>)[ [meta]]`.
+  const firstItem = text
+    .slice(at + NOTE_MARKERS[0].length)
+    .split('\n')
+    .slice(1)
+    .find((l) => l.startsWith('- '));
+  const m = firstItem?.match(/^- (.+?) "(.*)" \((?:node|[a-z ]+ id) [^)]*\)/);
+  if (!m) return { typed, openSurface: null };
+  const label = m[1]!.trim();
+  return { typed, openSurface: { kind: SURFACE_KIND_BY_LABEL[label] ?? label, title: m[2]! } };
+}
+
 /** Cap on the message text sent as state. The head carries the ask. */
 const MAX_MESSAGE_CHARS = 3_000;
 const MAX_PREVIOUS_CHARS = 600;
@@ -31,6 +82,8 @@ export type Delegate = { slug: string; description: string | null };
 export type DelegationHint = {
   /** A delegate slug, or 'none'. */
   pick: string;
+  /** The open surface the state carried, if any (kind only is traced). */
+  surface: string | null;
   confidence: number;
   probabilities: Record<string, number>;
   mode: 'shadow' | 'live';
@@ -43,7 +96,10 @@ export type DelegationHint = {
 /** Contrastive wording for the two options the spike showed Jev over- or
  *  under-picks. A delegate's own description is used for everything else. */
 const NONE_CRITERION =
-  'No specialist. The assistant answers itself: a general question, an explanation, a summary of what it already holds, a short reply in an ongoing conversation, or a small edit to what the user has open that its own tools can do.';
+  'No specialist. The assistant answers itself: a general question, an explanation, a summary of what it already holds, or a short reply in an ongoing conversation. Not for creating or changing a page, table, app or drawing, including the one in `open_surface`: its specialist does that.';
+
+const HINT_INSTRUCTIONS =
+  'A personal-assistant AI received `message` (with `previous_user_message` as context when present). `open_surface`, when present, is the page, table or app the user has open on screen right now; "this", "it" and "the header" usually refer to it. Which specialist should handle the message, or `none` if the assistant should answer it itself?';
 const REMY_CRITERION =
   'Replay of PAST CONVERSATIONS only ("what did we discuss on…", "what did X say last week"). Not for looking something up in a document or page — the assistant does that itself.';
 
@@ -90,18 +146,19 @@ export async function suggestDelegate(args: {
   delegates: readonly Delegate[];
 }): Promise<DelegationHint | null> {
   const { ownerId, delegates } = args;
-  const message = args.message.trim();
-  if (delegates.length === 0 || wordCount(message) < MIN_WORDS_FOR_HINT) return null;
+  const { typed: message, openSurface } = splitOnScreenNote(args.message);
+  const minWords = openSurface ? MIN_WORDS_WITH_SURFACE : MIN_WORDS_FOR_HINT;
+  if (delegates.length === 0 || wordCount(message) < minWords) return null;
 
   const state: Record<string, unknown> = { message: message.slice(0, MAX_MESSAGE_CHARS) };
-  const prev = args.previousUserMessage?.trim();
+  const prev = args.previousUserMessage ? splitOnScreenNote(args.previousUserMessage).typed : '';
   if (prev) state.previous_user_message = prev.slice(0, MAX_PREVIOUS_CHARS);
+  if (openSurface) state.open_surface = openSurface;
 
   const questions: Record<string, DecisionQuestion> = {
     agent: {
       type: 'choice',
-      instructions:
-        'A personal-assistant AI received `message` (with `previous_user_message` as context when present). Which specialist should handle it, or `none` if the assistant should answer it itself?',
+      instructions: HINT_INSTRUCTIONS,
       criteria: delegationCriteria(delegates),
     },
   };
@@ -116,6 +173,7 @@ export async function suggestDelegate(args: {
   if (!a || a.type !== 'choice') return null;
   return {
     pick: a.choice,
+    surface: openSurface?.kind ?? null,
     confidence: a.confidence,
     probabilities: a.probabilities,
     mode: outcome.mode,
@@ -132,6 +190,7 @@ export async function suggestDelegate(args: {
  */
 export function delegationHintTraceData(hint: DelegationHint | null): {
   pick: string;
+  surface: string | null;
   confidence: number;
   mode: 'shadow' | 'live';
   ms: number;
@@ -140,6 +199,7 @@ export function delegationHintTraceData(hint: DelegationHint | null): {
   if (!hint) return null;
   return {
     pick: hint.pick,
+    surface: hint.surface,
     confidence: Math.round(hint.confidence * 100) / 100,
     mode: hint.mode,
     ms: hint.ms,

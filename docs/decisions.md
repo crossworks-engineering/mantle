@@ -134,8 +134,21 @@ charge.
 Before a responder turn, one `choice` over the agent's `delegate_to` roster
 plus `none`, with each agent's description as the criterion (`remy` and
 `none` carry tightened contrastive wording). State: the message and the
-previous user message, nothing else. Skipped for messages under 8 words, for
-surfaces that cannot delegate (team, forum), and when the roster is empty.
+previous user message, and `open_surface: { kind, title }` when the user has
+something open. Skipped for messages under 8 words (3 when a surface is
+open), for surfaces that cannot delegate (team, forum), and when the roster
+is empty.
+
+`open_surface` (v2) is read off the note the web UI appends to a sent message
+("On screen right now … - page "Title" (node …)", jackdaw
+`buildContextPreamble`): `splitOnScreenNote` cuts the message at the note's
+markers (the same three jackdaw's own transcript view splits on), so
+`message` is what the user typed and the surface is a named field. No wire
+change: surfaces that send no note (Telegram, mobile) simply have no
+surface. The `none` criterion no longer claims "a small edit to what the user
+has open"; editing a page, table, app or drawing, open or not, is its
+specialist's work. The trace data carries `surface` (the kind) next to the
+pick.
 
 Wired in `assembleResponderTurn` (`packages/runtime/src/assistant/assemble-turn.ts`),
 so every delegating surface gets it through the same door; the web turn
@@ -153,9 +166,9 @@ passes the previous user message, Telegram passes the message only.
 Spike (NATREF, 2026-09-22, 83 real turns): with that policy, 36 hints, 31
 right, 4 wrong (2 arguable), 1 on a turn the responder answered itself —
 86% precision, 296 ms, ~$0.00004 per turn. Jev said `none` on 15 of 30
-direct turns; the chat baseline delegated 29 of them. Next improvement: put
-the open page/app title in the state (the UI knows it); most misses were
-short instructions about what the user had open.
+direct turns; the chat baseline delegated 29 of them. Most misses were short
+instructions about what the user had open, with the note still inside the
+message: the reason for v2.
 
 ### `context_pruning` (built; ships `shadow`)
 

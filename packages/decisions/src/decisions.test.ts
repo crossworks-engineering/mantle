@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { DecisionCache } from './cache';
 import { resolveUse, summarizeAnswers } from './decide';
 import { applyPassageScores } from './passage-scoring';
-import { delegationCriteria, delegationHintLine, wordCount } from './delegation-hint';
+import {
+  delegationCriteria,
+  delegationHintLine,
+  delegationHintTraceData,
+  splitOnScreenNote,
+  wordCount,
+} from './delegation-hint';
 import { pruneContextItems } from './context-pruning';
 
 describe('resolveUse', () => {
@@ -104,6 +110,7 @@ describe('applyPassageScores', () => {
 describe('delegation hint', () => {
   const base = {
     pick: 'pages',
+    surface: 'page',
     confidence: 0.84,
     probabilities: { pages: 0.84, none: 0.1 },
     mode: 'live' as const,
@@ -135,6 +142,66 @@ describe('delegation hint', () => {
   it('counts words', () => {
     expect(wordCount('  yes   but shorter ')).toBe(3);
     expect(wordCount('')).toBe(0);
+  });
+
+  it('none no longer claims edits of what the user has open', () => {
+    const c = delegationCriteria([{ slug: 'pages', description: 'Document specialist.' }]);
+    expect(c.none).toMatch(/Not for creating or changing a page, table, app or drawing/);
+    expect(c.none).not.toMatch(/small edit to what the user has open/);
+  });
+
+  it('traces the surface kind next to the pick', () => {
+    expect(delegationHintTraceData(base)).toMatchObject({ pick: 'pages', surface: 'page' });
+  });
+});
+
+describe('splitOnScreenNote', () => {
+  // The exact shape jackdaw's buildContextPreamble appends.
+  const note = (item: string) =>
+    '\n\n---\nOn screen right now — the user has this open in the editor and means it by "this page" (if a specialist does the work, hand it the node id and any focus directive verbatim):\n' +
+    item;
+
+  it('splits typed text from the open page', () => {
+    const r = splitOnScreenNote(
+      'please update the header' +
+        note('- page "Line Class SOP" (node 4516836f-91e2-4bcb-8630-3e817869c995)'),
+    );
+    expect(r).toEqual({
+      typed: 'please update the header',
+      openSurface: { kind: 'page', title: 'Line Class SOP' },
+    });
+  });
+
+  it('maps the note nouns back to kind ids, and keeps meta out of the title', () => {
+    const r = splitOnScreenNote(
+      'tidy this up' + note('- journal entry "Tuesday" (node abc) [tab: body]'),
+    );
+    expect(r.openSurface).toEqual({ kind: 'journal', title: 'Tuesday' });
+    expect(splitOnScreenNote('x' + note('- drawing "Pump" (node abc)')).openSurface?.kind).toBe(
+      'draw',
+    );
+    expect(splitOnScreenNote('x' + note('- email "Re: bid" (email id 42)')).openSurface).toEqual({
+      kind: 'email',
+      title: 'Re: bid',
+    });
+  });
+
+  it('attached context alone is not an open surface', () => {
+    const r = splitOnScreenNote(
+      'compare these\n\n---\nAttached context (read these with your tools as needed):\n- file "a.pdf" (node x)',
+    );
+    expect(r).toEqual({ typed: 'compare these', openSurface: null });
+  });
+
+  it('a FOCUS SET directive is cut from the typed text too', () => {
+    expect(splitOnScreenNote('make it bold\nFOCUS SET — lines 3-5').typed).toBe('make it bold');
+  });
+
+  it('no note: all typed, no surface', () => {
+    expect(splitOnScreenNote('  what is the status of the Forge plan?  ')).toEqual({
+      typed: 'what is the status of the Forge plan?',
+      openSurface: null,
+    });
   });
 });
 

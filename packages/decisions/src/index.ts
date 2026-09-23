@@ -25,14 +25,17 @@ export {
 } from './passage-scoring';
 export {
   MIN_WORDS_FOR_HINT,
+  MIN_WORDS_WITH_SURFACE,
   delegationCriteria,
   delegationHintLine,
   delegationHintTraceData,
   loadDelegates,
+  splitOnScreenNote,
   suggestDelegate,
   wordCount,
   type Delegate,
   type DelegationHint,
+  type OpenSurface,
 } from './delegation-hint';
 export {
   CONTEXT_FLOORS,
