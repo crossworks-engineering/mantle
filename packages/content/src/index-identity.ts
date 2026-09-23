@@ -104,3 +104,16 @@ export {
   type PersonaPresetKey,
   type PersonaPreset,
 } from '@mantle/content-core/persona-bank';
+
+export {
+  CONVERTED_TAG,
+  PLAN_DATA_KEY,
+  applyConversionPlan,
+  buildConversionPlan,
+  duplicateMap,
+  journalKindFor,
+  renderConversionPlanMarkdown,
+  type ConversionPlan,
+  type NoteClass,
+  type PlanEntry,
+} from './persona-notes-journal';

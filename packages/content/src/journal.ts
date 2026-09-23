@@ -239,6 +239,10 @@ export type CreateJournalInput = {
    *  slug, REST session), never from model-supplied args. Defaults to 'user'. */
   author?: 'user' | 'agent';
   agentSlug?: string;
+  /** Provenance of a converted entry (server-set, e.g. the persona-note
+   *  conversion stamps `{persona_note_ref, agent_slug}`); stored as
+   *  `data.source`. Never from model-supplied args. */
+  source?: Record<string, unknown>;
 };
 
 export async function createJournal(
@@ -254,6 +258,7 @@ export async function createJournal(
   if (input.author === 'agent' && input.agentSlug?.trim()) {
     data.agent_slug = input.agentSlug.trim();
   }
+  if (input.source) data.source = input.source;
   // A gap is born open — the lifecycle is create(open) → resolveGapEntry.
   if (kind === 'gap') data.status = 'open';
   if (input.entryDate?.trim()) {

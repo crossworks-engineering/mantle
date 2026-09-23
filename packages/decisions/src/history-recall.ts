@@ -6,7 +6,7 @@
  * user message + reply) 0-3 for "does a reply to this message need it"; code
  * brings back the ones at the threshold, in time order, before the recent part.
  *
- * Why: spike 12 (2026-09-23, 50 real NATREF turns, dev-brain page c8c2256f).
+ * Why: spike 12 (2026-09-23, 50 real turns on a work brain, dev-brain page c8c2256f).
  * Today's last-30 window missed a needed exchange on 4 turns, 3 of them a
  * RETURN to a topic after 8 h to 10 days, which Jev scored 2.2 to 2.85. The
  * last 20 + Jev at 1.0 missed on 3 turns with 78% of the tokens; 11 of the 18
@@ -21,7 +21,7 @@
 import { scoreInGroups, type GroupScoring, type ScoredItem } from './group-scoring';
 
 /** How far back the scan reaches, in messages, counted from the newest (the
- *  recent part included). Spike 12: no NATREF topic began further back. */
+ *  recent part included). Spike 12: no topic began further back. */
 export const HISTORY_RECALL_WINDOW = 50;
 
 /** Default cut on the 0-3 score. Spike 12: 1.0 kept 11 of 18 needed older

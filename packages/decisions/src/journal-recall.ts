@@ -7,7 +7,7 @@
  * names no topic at all. Jev judges the fit directly, with the previous
  * exchange as context.
  *
- * Spike 13 (2026-09-23, 435 NATREF topic rules, 30 real turns, Sonnet 5 key,
+ * Spike 13 (2026-09-23, 435 topic rules from a work brain, 30 real turns, Sonnet 5 key,
  * dev-brain page 9f57fa46): embedding picks found 15 to 49% of the rules a
  * turn needed; Jev found 84% at 1.5 (5k chars a turn) and 89% at 1.0 (8k),
  * against 91k chars when every rule rides every turn. ~0.9 s median, so the

@@ -183,6 +183,23 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Indirect chat + embedding spend via the extractor; requires the agent (server/api) to be running. No dry-run flag — it prints the candidate count before firing.',
   },
   {
+    slug: 'persona-notes-to-journal',
+    title: "Move an agent's persona notes into the Journal",
+    description:
+      "Dry run (default): the agent's own chat model sorts every live persona note into a Journal kind (general = always on, topic = picked per turn by journal_recall), near-copies are merged, and the plan is written to a review page. --apply --page=<id> turns that reviewed plan into Journal entries (no model call, idempotent). Persona notes are never touched.",
+    kind: 'ops',
+    status: 'live',
+    cost: 'llm',
+    schedulable: false,
+    script: 'scripts/persona-notes-to-journal.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--agent=<slug>', '--page=<review page id>'],
+    requiresEnv: ['ALLOWED_USER_ID'],
+    notes:
+      "Spike 13 (dev-brain page 9f57fa46). The dry run spends the agent's model (~$0.30 per 500 notes on a Sonnet-class model) plus embeddings; applying creates one Journal entry per kept note, each indexed like any Journal write. The agent keeps reading its persona notes until memory_config.notes_target = journal.",
+  },
+  {
     slug: 'draws-re-render',
     title: 'Re-render drawing snapshots',
     description:

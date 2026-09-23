@@ -298,7 +298,7 @@ ms, cached }`. History unchanged.
 The intended pairing is a SMALLER `history_limit` plus this use: the spike's
 winner was the last 20 messages + Jev over the last 50.
 
-Spike 12 (NATREF, 2026-09-23, 50 real turns, Sonnet 5 answer key with full
+Spike 12 (a work brain, 2026-09-23, 50 real turns, Sonnet 5 answer key with full
 text, dev-brain page c8c2256f): today's last 30 missed a needed exchange on 4
 turns, 3 of them a return to a topic after 8 h to 10 days (Jev scored those
 2.2 to 2.85). Last 20 + Jev ≥ 1.0 missed on 3 turns with 78% of the tokens;
@@ -306,7 +306,7 @@ turns, 3 of them a return to a topic after 8 h to 10 days (Jev scored those
 Losers: one chat-model context worker over all 50 (flash-lite 14 misses,
 flash 12), and a walk back in blocks of 10 until the topic ends (13 to 17;
 the walk stopped after one block on 36 of 50 turns, and it stops at the topic
-in between on a return). The money is small on NATREF (history is ~12% of
+in between on a return). The money is small there (history is ~12% of
 responder spend); this use is about the returns, not the cost.
 
 ### `journal_recall` (built; ships `shadow`)
@@ -329,7 +329,7 @@ top of `loadConversationContext` beside `history_recall`. Threshold default
   ≤ 25 rules, ≤ 6,000 chars, its own budget beside the user lane's 3,000);
   user-lane context entries and the tier 3 gap stay on similarity.
 
-Spike 13 (NATREF, 2026-09-23, 435 topic rules from Rea's persona notes, 30
+Spike 13 (a work brain, 2026-09-23, 435 topic rules from the owner assistant's persona notes, 30
 real turns, Sonnet 5 key, dev-brain page 9f57fa46): similarity found 15 to
 49% of the rules a turn needed; Jev 84% at 1.5 (5k chars a turn) and 89% at
 1.0 (8k), against 91k chars when every rule rides every turn. Median 0.93 s

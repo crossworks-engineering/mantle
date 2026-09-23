@@ -192,7 +192,7 @@ describe('renderJournalTier1Block', () => {
   });
 
   it('puts the purpose first and returns only the purpose when no entry qualifies', () => {
-    const purpose = renderPurposeBlock('Run the refinery docs', null);
+    const purpose = renderPurposeBlock('Run the plant docs', null);
     expect(renderJournalTier1Block(purpose, [e('ctx', 'context')])).toBe(purpose);
     expect(renderJournalTier1Block('', [])).toBe('');
   });
