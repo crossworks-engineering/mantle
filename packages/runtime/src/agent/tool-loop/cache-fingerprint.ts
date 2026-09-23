@@ -18,6 +18,10 @@ export type CacheFingerprint = {
   tools: string | null;
   /** Hash per cache-marked system block, in prompt order. */
   blocks: string[];
+  /** The upstream that served the call (OpenRouter routing metadata), or
+   *  null when unknown. Each upstream keeps its own cache, so a switch
+   *  (Anthropic ↔ Amazon Bedrock ↔ Google) misses with identical hashes. */
+  provider?: string | null;
 };
 
 export function cacheFingerprint(

@@ -203,6 +203,11 @@ export interface ChatResult {
    *  providers return `undefined` here; the trace falls back to
    *  `fallbackCostMicroUsd(model, ...)`. */
   reportedCostUsd?: number;
+  /** The upstream provider that actually served the call, when a router
+   *  reports it (OpenRouter: "Anthropic", "Amazon Bedrock", "Google", …).
+   *  Each upstream keeps its own prompt cache, so a switch between them is a
+   *  cache miss that no prompt change explains. Undefined when unknown. */
+  servedBy?: string;
   /** Provider reasoning blocks from this turn (OpenRouter `reasoning_details`).
    *  When the model thought before answering, the tool-loop stores these on the
    *  assistant message it appends so the NEXT request can echo them back —

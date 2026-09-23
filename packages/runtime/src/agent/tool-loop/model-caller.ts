@@ -186,7 +186,12 @@ export function createModelCaller(deps: {
             );
             recordChatUsage(h, r, active.model);
             // Which cached part changed, when a call misses the cache.
-            h.setMeta({ cache_fp: cacheFingerprint(messages, sendTools ? toolsForModel : null) });
+            h.setMeta({
+              cache_fp: {
+                ...cacheFingerprint(messages, sendTools ? toolsForModel : null),
+                provider: r.servedBy ?? null,
+              },
+            });
             tokensOut += r.tokensOut ?? 0;
             return r;
           } catch (err) {
@@ -230,7 +235,12 @@ export function createModelCaller(deps: {
             failedOver = true;
             const r = await dispatchChat(active.adapter, { ...routeOpts(), ...chatOpts }, iter);
             recordChatUsage(h, r, active.model);
-            h.setMeta({ cache_fp: cacheFingerprint(messages, sendTools ? toolsForModel : null) });
+            h.setMeta({
+              cache_fp: {
+                ...cacheFingerprint(messages, sendTools ? toolsForModel : null),
+                provider: r.servedBy ?? null,
+              },
+            });
             tokensOut += r.tokensOut ?? 0;
             return r;
           }
@@ -271,7 +281,9 @@ export function createModelCaller(deps: {
             iter,
           );
           recordChatUsage(h, r, active.model);
-          h.setMeta({ cache_fp: cacheFingerprint(messages, null) });
+          h.setMeta({
+            cache_fp: { ...cacheFingerprint(messages, null), provider: r.servedBy ?? null },
+          });
           tokensOut += r.tokensOut ?? 0;
           return r;
         },
@@ -312,7 +324,9 @@ export function createModelCaller(deps: {
             ...maxRetries(),
           });
           recordChatUsage(h, r, active.model);
-          h.setMeta({ cache_fp: cacheFingerprint(messages, null) });
+          h.setMeta({
+            cache_fp: { ...cacheFingerprint(messages, null), provider: r.servedBy ?? null },
+          });
           tokensOut += r.tokensOut ?? 0;
           if (!r.text.trim()) h.setMeta({ still_empty: true });
           return r.text;

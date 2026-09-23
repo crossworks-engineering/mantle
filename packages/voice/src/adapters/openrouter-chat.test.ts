@@ -49,7 +49,7 @@ vi.mock('@openrouter/sdk', () => ({
 }));
 
 // Import AFTER vi.mock so the adapter picks up the mocked SDK.
-import { openrouterChatAdapter } from './openrouter-chat';
+import { openrouterChatAdapter, servedProvider } from './openrouter-chat';
 
 // The REAL outbound schema. `vi.mock('@openrouter/sdk')` above replaces that
 // exact module id only, so this subpath import is the genuine article — which is
@@ -493,6 +493,68 @@ describe('openrouter-chat usage round-trip', () => {
       messages: [{ role: 'user', content: 'hi' }],
     });
     expect(result.reportedCostUsd).toBeUndefined();
+  });
+});
+
+describe('openrouter-chat served provider (cache routing)', () => {
+  it('asks for routing metadata and reports the selected upstream (one-shot)', async () => {
+    setMockResult({
+      model: 'anthropic/claude-haiku-4.5',
+      choices: [{ message: { role: 'assistant', content: 'r' } }],
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
+      openrouterMetadata: {
+        endpoints: {
+          available: [
+            { provider: 'Amazon Bedrock', selected: true },
+            { provider: 'Anthropic', selected: false },
+          ],
+        },
+        summary: 'available=2, selected=Amazon Bedrock',
+      },
+    });
+    const r = await openrouterChatAdapter.chat({
+      apiKey: 'sk-test',
+      model: 'anthropic/claude-haiku-4.5',
+      messages: [{ role: 'user', content: 'hi' }],
+    });
+    expect(
+      (sendCalls.at(-1) as unknown as { xOpenRouterMetadata?: string }).xOpenRouterMetadata,
+    ).toBe('enabled');
+    expect(r.servedBy).toBe('Amazon Bedrock');
+  });
+
+  it('reads it off the final stream chunk', async () => {
+    mockSendImpl = async () =>
+      streamOf([
+        { choices: [{ delta: { content: 'ok' }, finishReason: 'stop' }] },
+        {
+          usage: { promptTokens: 1, completionTokens: 1 },
+          openrouterMetadata: { summary: 'available=4, selected=Anthropic' },
+        },
+      ]);
+    const r = await openrouterChatAdapter.chatStream!(
+      {
+        apiKey: 'sk-test',
+        model: 'anthropic/claude-sonnet-5',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+      () => {},
+    );
+    expect(r.servedBy).toBe('Anthropic');
+  });
+
+  it('prefers the last successful attempt after a router retry; undefined when silent', () => {
+    expect(
+      servedProvider({
+        attempts: [
+          { provider: 'Anthropic', status: 529 },
+          { provider: 'Google', status: 200 },
+        ],
+        endpoints: { available: [{ provider: 'Anthropic', selected: true }] },
+      }),
+    ).toBe('Google');
+    expect(servedProvider(undefined)).toBeUndefined();
+    expect(servedProvider({})).toBeUndefined();
   });
 });
 
