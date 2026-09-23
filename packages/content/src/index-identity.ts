@@ -86,6 +86,7 @@ export {
   planJournalTier1,
   renderRelevantJournalBlock,
   selectRelevantJournal,
+  isLearnedRule,
   visibleToAgent,
   type JournalAgentScores,
   type JournalPick,

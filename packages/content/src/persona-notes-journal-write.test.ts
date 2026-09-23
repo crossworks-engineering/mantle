@@ -78,6 +78,20 @@ describe('applyConversionPlan', () => {
     expect(h.created[0]).toMatchObject({ author: 'agent', agentSlug: 'assistant' });
   });
 
+  it('a duplicate whose kept note was retired since the dry run takes its place', async () => {
+    const r = await applyConversionPlan(
+      'o1',
+      plan([
+        entry('kept'),
+        entry('copy1', { duplicateOf: 'kept' }),
+        entry('copy2', { duplicateOf: 'kept' }),
+      ]),
+      { skipRefs: new Set(['kept']) },
+    );
+    expect(h.created.map((e) => e.body)).toEqual(['copy1 rule']);
+    expect(r).toEqual({ created: 1, existing: 0, duplicates: 1, skipped: 1 });
+  });
+
   it('a second apply of the same plan creates nothing', async () => {
     h.existing = [{ ref: 'a' }];
     const r = await applyConversionPlan('o1', plan([entry('a')]));

@@ -10,6 +10,7 @@ import {
   renderPurposeBlock,
   renderRelevantJournalBlock,
   renderWorkingNotesBlock,
+  isLearnedRule,
   visibleToAgent,
   type JournalCandidate,
   type IdentityEntry,
@@ -219,6 +220,21 @@ describe('renderJournalTier1Block + planJournalTier1', () => {
     expect(plan.overflow.every((e) => e.kind === 'identity')).toBe(true);
   });
 
+  it('a new small entry cannot push out an older large one (the re-audit case)', () => {
+    // Fill the preference share, leaving one large older entry for pass 2,
+    // then add a newer small one.
+    const fill = Array.from({ length: 6 }, (_, i) => t(`${i} ${'f'.repeat(1_490)}`, 'preference'));
+    const olderLarge = t('L'.repeat(1_400), 'preference');
+    const idFill = Array.from({ length: 3 }, (_, i) => t(`${i} ${'i'.repeat(990)}`, 'identity'));
+    const goals = Array.from({ length: 2 }, (_, i) => t(`${i} ${'g'.repeat(990)}`, 'goal'));
+    const base = [...idFill, ...goals, ...fill, olderLarge];
+    const before = planJournalTier1(base).shown.map((e) => e.nodeId);
+    const after = planJournalTier1([...base, t('n'.repeat(900), 'preference')]).shown.map(
+      (e) => e.nodeId,
+    );
+    for (const id of before) expect(after).toContain(id);
+  });
+
   it('a new entry never displaces an older one of its kind', () => {
     const base = Array.from({ length: 30 }, (_, i) =>
       t(`pref ${i} ${'p'.repeat(150)}`, 'preference'),
@@ -237,12 +253,25 @@ describe('renderJournalTier1Block + planJournalTier1', () => {
 });
 
 describe('visibleToAgent and journalTiersOf', () => {
-  it("an agent sees its own and unowned entries, never another agent's; gaps are brain-wide", () => {
-    expect(visibleToAgent({ kind: 'lesson', agentSlug: 'a' }, 'a')).toBe(true);
-    expect(visibleToAgent({ kind: 'lesson', agentSlug: null }, 'a')).toBe(true);
-    expect(visibleToAgent({ kind: 'preference', agentSlug: 'b' }, 'a')).toBe(false);
-    expect(visibleToAgent({ kind: 'gap', agentSlug: 'b' }, 'a')).toBe(true);
-    expect(visibleToAgent({ kind: 'lesson', agentSlug: 'b' }, null)).toBe(true);
+  it("an agent sees its own and unowned rules, never another agent's; user facts and gaps are brain-wide", () => {
+    const rule = (kind: string, agentSlug: string | null) => ({ kind, agentSlug, learned: true });
+    expect(visibleToAgent(rule('lesson', 'a'), 'a')).toBe(true);
+    expect(visibleToAgent(rule('lesson', null), 'a')).toBe(true);
+    expect(visibleToAgent(rule('preference', 'b'), 'a')).toBe(false);
+    expect(visibleToAgent(rule('lesson', 'b'), null)).toBe(true);
+    // Recorded FOR the user by agent b: still the user's own knowledge.
+    expect(visibleToAgent({ kind: 'identity', agentSlug: 'b', learned: false }, 'a')).toBe(true);
+  });
+
+  it('isLearnedRule: lessons, expectations and learned notes; never a recorded fact or a gap', () => {
+    expect(isLearnedRule('lesson', {})).toBe(true);
+    expect(isLearnedRule('expectation', {})).toBe(true);
+    expect(isLearnedRule('preference', { source: { via: 'reflector' } })).toBe(true);
+    expect(isLearnedRule('preference', { source: { via: 'update_persona' } })).toBe(true);
+    expect(isLearnedRule('identity', { source: { persona_note_ref: 'n1' } })).toBe(true);
+    expect(isLearnedRule('preference', { author: 'agent', agent_slug: 'b' })).toBe(false);
+    expect(isLearnedRule('context', { source: { via: 'resolve_gap' } })).toBe(false);
+    expect(isLearnedRule('gap', { source: { via: 'reflector' } })).toBe(false);
   });
 
   it('notes_target = journal implies live tiers', () => {

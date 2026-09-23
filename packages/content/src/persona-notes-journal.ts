@@ -238,7 +238,7 @@ export function renderConversionPlanMarkdown(plan: ConversionPlan, applyCommand:
     ...(chars(general) > TIER1_MAX_CHARS
       ? [
           `:::warning`,
-          `The always-on notes come to ${chars(general)} chars; the always-on tier holds ${TIER1_MAX_CHARS}, shared with the user's own identity, goal and preference entries. What does not fit is not lost: it is picked per turn like a topic note. Move notes that must always apply into fewer, shorter entries.`,
+          `The always-on notes come to ${chars(general)} chars; the always-on tier holds ${TIER1_MAX_CHARS}, shared with the user's own identity, goal and preference entries. What does not fit is picked per turn like a topic note: by the decider when its journal_recall use is on, otherwise by similarity, which rarely matches a standing rule. Turn journal_recall on before switching this agent, or move notes that must always apply into fewer, shorter entries.`,
           `:::`,
           '',
         ]
@@ -353,10 +353,18 @@ export async function applyConversionPlan(
   let existing = 0;
   let duplicates = 0;
   let skipped = 0;
+  // A group whose kept note was retired since the dry run (the owner kept a
+  // different copy by hand) is re-rooted on its first live duplicate, so the
+  // rule is not lost with the retired copy.
+  const rerooted = new Set<string>();
   for (const e of plan.entries) {
     if (e.duplicateOf) {
-      duplicates++;
-      continue;
+      const rootGone = opts.skipRefs?.has(e.duplicateOf) === true;
+      if (!rootGone || rerooted.has(e.duplicateOf) || opts.skipRefs?.has(e.ref)) {
+        duplicates++;
+        continue;
+      }
+      rerooted.add(e.duplicateOf);
     }
     if (opts.skipRefs?.has(e.ref)) {
       skipped++;

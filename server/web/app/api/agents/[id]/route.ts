@@ -49,6 +49,10 @@ const MemoryConfig = z
     // Tool-loop iteration cap (set per-specialist by the manifest; editable from
     // the Studio structure editor).
     max_iterations: z.number().int().min(1).max(100).optional(),
+    // Per-turn tool-call caps (the manifest sets them on some specialists;
+    // without them a UI round-trip of memory_config was rejected).
+    max_tool_calls: z.number().int().min(1).max(200).optional(),
+    max_calls_per_tool: z.number().int().min(1).max(100).optional(),
     // Tool-result handling (KB): when a tool output exceeds inline_max_kb it
     // spills to the tool-result store; embed_min_kb is where the envelope
     // recommends semantic query. Fall back to env/global defaults.

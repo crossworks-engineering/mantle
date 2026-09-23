@@ -494,6 +494,10 @@ export async function loadConversationContext(args: {
   inboundText: string;
   excludeMessageId?: string;
   before?: Date;
+  /** false on surfaces that never render the Journal (team, forum: they
+   *  pass `includeIdentity: false` to the assembler). The tiers then do not
+   *  run, spend no decider call, and drop nothing as redundant. */
+  includeJournal?: boolean;
 }): Promise<ConversationContext> {
   const { ownerId, agent, inboundText } = args;
   const memoryConfig = (agent.memoryConfig ?? {}) as AgentMemoryConfig;
@@ -545,7 +549,7 @@ export async function loadConversationContext(args: {
   // reason as history recall (~0.9 s, spike 13). Runs beside it, not after
   // it. Tier 1's plan comes first: its shown entries stay out of tiers 2/3,
   // its overflow joins the rules Jev scores.
-  const journalMode = journalTiersOf(memoryConfig);
+  const journalMode = args.includeJournal === false ? 'off' : journalTiersOf(memoryConfig);
   const userLane = memoryConfig.inject_journal !== false;
   const agentLane = memoryConfig.inject_working_notes !== false;
   const journalWanted =
@@ -786,8 +790,12 @@ export async function loadConversationContext(args: {
   // Decider, use `context_pruning`: when on, ONE request later in this
   // function scores facts + content hits + passages together, so the
   // separate passage_scoring call below is skipped (its work is covered).
-  const pruningUse = queryVec ? await decisionUseEnabled(ownerId, 'context_pruning') : null;
-  if (queryVec && chunkLimit > 0) {
+  // The embedding can exist for the Journal tiers alone: passages, pruning
+  // and version grouping ride only on the retrieval an agent asked for
+  // (fact_limit / content_hit_limit), as before the tiers.
+  const retrievalVec = factLimit > 0 || contentHitLimit > 0 ? queryVec : null;
+  const pruningUse = retrievalVec ? await decisionUseEnabled(ownerId, 'context_pruning') : null;
+  if (retrievalVec && chunkLimit > 0) {
     const chunkQuery = enrichedQuery ?? inboundText;
     // Decider, use `passage_scoring` (experimental, owner-switched): with it
     // on, pull a wider pool so the scorer can promote a passage search ranked
@@ -795,7 +803,7 @@ export async function loadConversationContext(args: {
     const scoringUse = await decisionUseEnabled(ownerId, 'passage_scoring');
     let hits = await searchChunks({
       ownerId,
-      embedding: queryVec,
+      embedding: retrievalVec,
       // Hybrid arm: the same text the embedding was computed from, so an
       // exact-term question is rescued by keyword when it embeds poorly.
       q: chunkQuery,
@@ -954,7 +962,7 @@ export async function loadConversationContext(args: {
   // still counts.
   let versionSnap: ContextSnapshot['versionGrouping'] = undefined;
   const versionUse =
-    queryVec && contentHits.length + chunkHits.length > 1
+    retrievalVec && contentHits.length + chunkHits.length > 1
       ? await decisionUseEnabled(ownerId, 'version_grouping')
       : null;
   if (versionUse) {

@@ -301,14 +301,17 @@ export async function buildWorkingNotesContext(
 export const TIER1_KINDS: readonly string[] = ['identity', 'goal', 'preference'];
 /** Tier 1 keeps full text, but a runaway paste still cannot bloat every turn. */
 const TIER1_MAX_ENTRY_CHARS = 1_500;
-export const TIER1_MAX_CHARS = 8_000;
+/** ~4k tokens, in a cached block. Sized so an owner assistant's standing
+ *  rules fit after the persona-notes move (one work brain: 76 general notes,
+ *  12.4k chars); persona notes put all 103k chars on every turn before. */
+export const TIER1_MAX_CHARS = 16_000;
 /** Each kind's first claim on the tier 1 budget; the rest is shared after. A
  *  long identity group can no longer starve every preference (one work brain:
- *  49 identity entries filled all 8k). */
+ *  49 identity entries filled a single shared budget). */
 const TIER1_SHARES: Readonly<Record<string, number>> = {
-  identity: 2_500,
-  goal: 1_500,
-  preference: 4_000,
+  identity: 4_000,
+  goal: 2_000,
+  preference: 10_000,
 };
 /** Cosine similarity an entry needs to join a turn. Spike 10: ~0.60 on long
  *  work logs, 0.72 to 0.75 on short personal entries (same embedder). */
@@ -361,22 +364,45 @@ function flatten(body: string, max: number): string {
  *  its own; entries with no agent and open gaps are brain-wide. No current
  *  agent (a caller outside a turn) sees everything. */
 export function visibleToAgent(
-  e: { kind: string | null; agentSlug: string | null },
+  e: { kind: string | null; agentSlug: string | null; learned: boolean },
   currentAgentSlug: string | null | undefined,
 ): boolean {
-  if (!currentAgentSlug || e.kind === 'gap') return true;
+  if (!currentAgentSlug || !e.learned) return true;
   return !e.agentSlug || e.agentSlug === currentAgentSlug;
 }
 
-/** SQL twin of {@link visibleToAgent}, plus "not superseded". */
+/** Pure: is this entry a rule an agent learned about doing its job (and so
+ *  scoped to that agent)? Lessons and expectations always; any other kind
+ *  only when it came from the agent's own learning (the reflector,
+ *  update_persona, the persona-notes conversion). What an agent RECORDS for
+ *  the user ("I'm vegetarian", a resolved gap's answer) is the user's
+ *  knowledge and stays brain-wide, whoever wrote it down. Gaps are
+ *  brain-wide. */
+export function isLearnedRule(kind: string | null, data: Record<string, unknown>): boolean {
+  if (kind === 'gap') return false;
+  if (kind === 'lesson' || kind === 'expectation') return true;
+  const src = (data.source ?? {}) as Record<string, unknown>;
+  return (
+    src.via === 'reflector' ||
+    src.via === 'update_persona' ||
+    typeof src.persona_note_ref === 'string'
+  );
+}
+
+/** SQL twin of {@link visibleToAgent} + {@link isLearnedRule}, plus "not
+ *  superseded". Every term is NULL-safe: a NULL "learned" would make `not`
+ *  NULL and silently hide a row that is not a rule at all. */
 export function journalVisibleSql(currentAgentSlug: string | null | undefined): SQL {
   const live = isNull(nodes.supersededBy);
   if (!currentAgentSlug) return live;
+  const learned = sql`(${journalKindSql()} in ('lesson', 'expectation')
+    or coalesce(${nodes.data}->'source'->>'via', '') in ('reflector', 'update_persona')
+    or ${nodes.data}->'source'->>'persona_note_ref' is not null)`;
   return and(
     live,
-    sql`(coalesce(btrim(${nodes.data}->>'agent_slug'), '') = ''
-      or btrim(${nodes.data}->>'agent_slug') = ${currentAgentSlug}
-      or ${journalKindSql()} = 'gap')`,
+    sql`(not ${learned}
+      or coalesce(btrim(${nodes.data}->>'agent_slug'), '') = ''
+      or btrim(${nodes.data}->>'agent_slug') = ${currentAgentSlug})`,
   )!;
 }
 
@@ -393,9 +419,11 @@ export type Tier1Plan = {
 
 /**
  * Pure: which tier 1 entries fit. Each kind first fills its own share
- * (TIER1_SHARES), oldest first, skipping an entry that does not fit; then the
- * budget left is shared in kind order. Deterministic, and a new entry (the
- * newest) never displaces an older one of its own kind.
+ * (TIER1_SHARES) oldest first, stopping at the first entry that does not fit;
+ * then the budget left is shared in kind order, oldest first, skipping what
+ * does not fit. Deterministic, and a new entry (the newest) never displaces
+ * an older one of its own kind: every older entry is placed before it in
+ * both passes. It can displace an older entry of a later kind in pass 2.
  */
 export function planJournalTier1(
   entries: ReadonlyArray<{ nodeId: string; kind: string | null; body: string }>,
@@ -417,7 +445,7 @@ export function planJournalTier1(
   for (const kind of TIER1_KINDS) {
     let used = 0;
     for (const e of byKind.get(kind) ?? []) {
-      if (used + e.body.length > (TIER1_SHARES[kind] ?? 0)) continue;
+      if (used + e.body.length > (TIER1_SHARES[kind] ?? 0)) break;
       taken.add(e);
       used += e.body.length;
     }
@@ -733,7 +761,8 @@ export async function loadJournalCandidates(opts: {
   userLane: boolean;
   agentLane: boolean;
   cutoff: number;
-  alwaysOn: ReadonlySet<string>;
+  /** Tier 1 shown ids; undefined = unknown (every tier 1 kind is left out). */
+  alwaysOn?: ReadonlySet<string>;
   rules?: readonly JournalRuleRow[];
 }): Promise<{ candidates: JournalCandidate[]; passages: Map<string, string> }> {
   const vec = JSON.stringify(opts.queryVec);
@@ -781,7 +810,7 @@ export async function loadJournalCandidates(opts: {
     .filter(
       (c) =>
         c.kind !== 'gap' &&
-        !opts.alwaysOn.has(c.nodeId) &&
+        (opts.alwaysOn ? !opts.alwaysOn.has(c.nodeId) : !TIER1_KINDS.includes(c.kind)) &&
         c.body.replace(/\s+/g, ' ').trim().length > TIER2_PASSAGE_CHARS &&
         (c.similarity >= opts.cutoff || (opts.rules ?? []).some((r) => r.nodeId === c.nodeId)),
     )
@@ -844,14 +873,13 @@ export async function selectRelevantJournal(opts: {
   };
   if (!opts.userLane && !opts.agentLane) return empty;
   if (isSmallTalk(opts.inboundText)) return { ...empty, skipped: 'small_talk' };
-  const alwaysOn = opts.alwaysOn ?? new Set<string>();
-  const { candidates, passages } = await loadJournalCandidates({ ...opts, cutoff, alwaysOn });
+  const { candidates, passages } = await loadJournalCandidates({ ...opts, cutoff });
   return {
     ...pickJournalEntries(candidates, {
       cutoff,
       budgetChars,
       passages,
-      alwaysOn,
+      ...(opts.alwaysOn ? { alwaysOn: opts.alwaysOn } : {}),
       ...(opts.agentScores ? { agentScores: opts.agentScores } : {}),
     }),
     cutoff,

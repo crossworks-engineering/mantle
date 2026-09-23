@@ -70,7 +70,9 @@ export async function journalTiersForTurn(o: {
   tier1: Tier1Plan | null;
   recall: { rules: JournalRuleRow[]; scoring: JournalRecallScoring } | null;
 }): Promise<JournalTurn> {
-  const alwaysOn = new Set(o.tier1?.shown.map((e) => e.nodeId) ?? []);
+  // No plan (the tier 1 load failed, or the user lane is off): every tier 1
+  // kind stays out of tier 2, so nothing can show twice.
+  const alwaysOn = o.tier1 ? new Set(o.tier1.shown.map((e) => e.nodeId)) : undefined;
   const tier1Whole = o.tier1?.shown.filter((e) => e.whole).map((e) => e.nodeId) ?? [];
   if (isSmallTalk(o.inboundText)) {
     return {
@@ -94,10 +96,15 @@ export async function journalTiersForTurn(o: {
     userLane: o.userLane,
     agentLane: o.agentLane,
     cutoff: o.cutoff,
-    alwaysOn,
+    ...(alwaysOn ? { alwaysOn } : {}),
     ...(o.recall ? { rules: o.recall.rules } : {}),
   });
-  const base = { cutoff: o.cutoff, budgetChars: o.budgetChars, passages, alwaysOn };
+  const base = {
+    cutoff: o.cutoff,
+    budgetChars: o.budgetChars,
+    passages,
+    ...(alwaysOn ? { alwaysOn } : {}),
+  };
   const scores: JournalAgentScores | undefined = o.recall
     ? { scores: o.recall.scoring.scores, threshold: o.recall.scoring.threshold }
     : undefined;

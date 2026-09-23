@@ -217,7 +217,12 @@ export async function runForumTurn(
     // query embed) are held here and written into the trace below.
     const prelude = createTracePrelude();
     const ctx = await withTracePrelude(prelude, () =>
-      loadConversationContext({ ownerId, agent, inboundText: trigger.body }),
+      loadConversationContext({
+        ownerId,
+        agent,
+        inboundText: trigger.body,
+        includeJournal: false,
+      }),
     );
 
     // Belt-and-suspenders: fail out any TRULY abandoned (>15min) pending so a

@@ -158,21 +158,30 @@ them, per agent:
 (`journalTiersOf`): the agent's notes then exist only in the Journal, and the
 old capped blocks would show about 6 of hundreds.
 
-**Scope.** An entry an agent learned (`agent_slug` set) belongs to that agent:
-other agents do not see it, in any block or tier. Entries with no agent (the
-user's own) and open gaps are brain-wide. Superseded entries
-(`nodes.superseded_by`) never show. Decided 2026-09-23, when persona notes,
-which were per agent, moved into the Journal (`visibleToAgent`).
+**Scope.** A rule an agent learned belongs to that agent: other agents do not
+see it, in any block or tier. A learned rule is a lesson or expectation, or
+any entry that came from the agent's own learning (`data.source.via` =
+`reflector` / `update_persona`, or `data.source.persona_note_ref`), with
+`agent_slug` set (`isLearnedRule`, `visibleToAgent`). What an agent RECORDS
+for the user (`journal_create` of "I'm vegetarian", a resolved gap's answer)
+is the user's knowledge and stays brain-wide whoever wrote it, as do entries
+with no agent and open gaps. Superseded entries (`nodes.superseded_by`) never
+show. Decided 2026-09-23, when persona notes, which were per agent, moved
+into the Journal.
 
 - **Tier 1, always on** (`buildJournalTier1` → `planJournalTier1` →
   `renderJournalTier1Block`): the purpose block + the identity / goal /
   preference entries the agent may see, full text (≤1,500 chars each),
   grouped by kind, oldest first by `created_at`, so a new entry appends and an
-  edit never reorders. The block holds 8,000 chars: each kind first fills its
-  own share (identity 2,500, goal 1,500, preference 4,000), then what is left
-  is shared in kind order. An entry that does not fit **overflows to tier 2**
-  (and to the rules `journal_recall` scores): it is picked per turn, never
-  lost. `snapshot.journal.tier1` counts shown and overflow. It rides the
+  edit never reorders. The block holds 16,000 chars: each kind first fills its
+  own share (identity 4,000, goal 2,000, preference 10,000), oldest first,
+  stopping at the first that does not fit; then what is left of the 16,000
+  is shared in kind order. A new entry never pushes out an older one of its
+  own kind. An entry that does not fit **overflows to tier 2** and to the
+  rules `journal_recall` scores: it is then picked per turn, by Jev when that
+  use is on, otherwise by similarity, which rarely matches a standing rule
+  (turn `journal_recall` on for an agent whose rules overflow).
+  `snapshot.journal.tier1` counts shown and overflow. It rides the
   **persona-notes block** (cache marker 2), after the persona prompt: a Journal
   write re-bills that block onward, never the persona prompt.
   `assembleResponderTurn` returns it as `journalBlock`; `buildChatMessages`
@@ -205,10 +214,15 @@ which were per agent, moved into the Journal (`visibleToAgent`).
   extracted from it, its chunk hits and its content hit. A passage pick drops
   only its own chunk. `snapshot.journal.dedupe` counts them in both modes.
 - The embedding is computed when the tiers need it, even with `fact_limit`
-  and `content_hit_limit` at 0.
+  and `content_hit_limit` at 0. Passages, context pruning and version
+  grouping still ride only on the retrieval an agent asked for, so an
+  embedding computed for the tiers alone does not switch them on.
+- If the tier 1 plan cannot be loaded, tier 2 leaves out every tier 1 kind,
+  so no entry can show twice.
 - Lanes stay gated: `inject_journal` (user lane, and with it tier 1) and
-  `inject_working_notes` (agent lane). Team and forum turns never pass
-  `journalBlock` or `journalRelevant` to the prompt builder.
+  `inject_working_notes` (agent lane). Team and forum turns never render the
+  Journal, so they call `loadConversationContext` with `includeJournal:
+  false`: the tiers do not run there, spend no decider call and drop nothing.
 - The legacy mapping (a family / relationships / faith / health row with no
   mood reads as identity) applies to the old blocks too, so with `off` or
   `shadow` such rows moved from "Other" into the identity group.
@@ -240,7 +254,8 @@ only, since it needs `--agent` or `--page`):
    (embedding ≥ 0.85, confirmed by the model); a group keeps its strongest
    note (a correction, then a general note, then the earliest). The plan goes
    to a review page (the plan itself in the page's `data.persona_notes_plan`),
-   which warns when the always-on notes outgrow tier 1. Measured 2026-09-23:
+   which warns when the always-on notes outgrow tier 1 (16,000 chars, shared
+   with the user's own entries). Measured 2026-09-23:
    $0.79 for 503 notes on Sonnet 5, $0.12 for 119 on grok.
 2. **Apply:** `pnpm maintain persona-notes-to-journal --apply --page=<id> --yes`
    checks the stored plan and its agent, then creates exactly the reviewed

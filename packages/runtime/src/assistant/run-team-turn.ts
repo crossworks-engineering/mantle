@@ -153,7 +153,7 @@ export async function runTeamTurn(
   // query embed) are held here and written into the trace below.
   const prelude = createTracePrelude();
   const ctx = await withTracePrelude(prelude, () =>
-    loadConversationContext({ ownerId, agent, inboundText: trimmed }),
+    loadConversationContext({ ownerId, agent, inboundText: trimmed, includeJournal: false }),
   );
   const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
   const teamHistoryRows = await recentTeamMessages(
