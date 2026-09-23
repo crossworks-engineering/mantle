@@ -4,16 +4,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // already knows) and the Journal write.
 const h = vi.hoisted(() => ({
   known: [] as Array<{ data: Record<string, unknown> }>,
+  existing: [] as Array<{ ref: string }>,
   created: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock('@mantle/db', async () => {
   const actual = await vi.importActual<typeof import('@mantle/db')>('@mantle/db');
-  const chain = {
+  // `where` ends the apply's query (already-converted refs); `limit` ends
+  // the known-entries query.
+  const chain: Record<string, unknown> = {
     from: () => chain,
     where: () => chain,
     orderBy: () => chain,
     limit: async () => h.known,
+    then: (res: (v: unknown) => unknown) => res(h.existing),
   };
   return { ...actual, db: { select: () => chain } };
 });
@@ -28,11 +32,58 @@ vi.mock('./journal', async () => {
   };
 });
 
+import { applyConversionPlan, type ConversionPlan } from './persona-notes-journal';
 import { writeLearnedEntries } from './persona-notes-journal';
 
 beforeEach(() => {
   h.known = [{ data: { kind: 'preference', body: 'The user prefers British English spelling.' } }];
   h.created = [];
+  h.existing = [];
+});
+
+describe('applyConversionPlan', () => {
+  const entry = (ref: string, extra: Record<string, unknown> = {}) => ({
+    ref,
+    content: `${ref} rule`,
+    noteKind: 'style',
+    kind: 'preference',
+    scope: 'general' as const,
+    topic: '',
+    ...extra,
+  });
+  const plan = (entries: ReturnType<typeof entry>[]): ConversionPlan => ({
+    version: 1,
+    agentId: 'ag1',
+    agentSlug: 'assistant',
+    createdAt: '2026-09-23T00:00:00Z',
+    model: 'm',
+    entries,
+  });
+
+  it('creates each ref once, skips duplicates, retired notes and what already exists', async () => {
+    h.existing = [{ ref: 'done' }];
+    const r = await applyConversionPlan(
+      'o1',
+      plan([
+        entry('a'),
+        entry('a'), // two id-less notes with the same text share a ref
+        entry('b', { duplicateOf: 'a' }),
+        entry('gone'),
+        entry('done'),
+      ]),
+      { skipRefs: new Set(['gone']) },
+    );
+    expect(r).toEqual({ created: 1, existing: 2, duplicates: 1, skipped: 1 });
+    expect(h.created.map((e) => e.body)).toEqual(['a rule']);
+    expect(h.created[0]).toMatchObject({ author: 'agent', agentSlug: 'assistant' });
+  });
+
+  it('a second apply of the same plan creates nothing', async () => {
+    h.existing = [{ ref: 'a' }];
+    const r = await applyConversionPlan('o1', plan([entry('a')]));
+    expect(r.created).toBe(0);
+    expect(r.existing).toBe(1);
+  });
 });
 
 describe('writeLearnedEntries', () => {

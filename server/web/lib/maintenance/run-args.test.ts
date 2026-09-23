@@ -57,4 +57,13 @@ describe('planRun', () => {
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toContain('terminal');
   });
+
+  it('flag-driven tasks (an agent slug, a page id) are CLI-only, dry run included', () => {
+    const t = getTask('persona-notes-to-journal')!;
+    for (const apply of [false, true]) {
+      const res = planRun(t, { apply }, ENV);
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.error).toMatch(/terminal only[\s\S]*--agent/);
+    }
+  });
 });

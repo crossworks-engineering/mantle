@@ -9,19 +9,43 @@
  *   dry run: a model sorts each note (kind, general/topic), near-copies are
  *     merged, and the plan is written to a review PAGE (markdown for the
  *     owner, the plan itself in the page's `data`);
- *   apply: that exact plan becomes Journal entries. No second model run, so
- *     what is applied is what was reviewed. Idempotent: an entry that already
- *     carries a note's ref is skipped. The persona notes are NOT touched; the
- *     agent reads them until `memory_config.notes_target` says otherwise.
+ *   apply: that exact plan becomes Journal entries. No second sorting run,
+ *     so what is applied is what was reviewed (each new entry is indexed,
+ *     which runs the extractor). Idempotent: an entry that already carries a
+ *     note's ref is skipped; a note retired since the dry run is not brought
+ *     back. The persona notes are NOT touched; the agent reads them until
+ *     `memory_config.notes_target = 'journal'`, which also switches its
+ *     Journal tiers live.
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { dedupeNewNotes, type PersonaNote } from '@mantle/db';
 import { createJournal, journalKindSql } from './journal';
-import { journalVisibleSql } from './identity-context';
+import { TIER1_MAX_CHARS, journalVisibleSql } from './identity-context';
 
 /** Key of the plan inside the review page's `nodes.data`. */
 export const PLAN_DATA_KEY = 'persona_notes_plan';
+
+/**
+ * Pure: the JSON object in a model reply, parsed leniently. Prose around the
+ * object is ignored, and a bare `N12` / `P3` KEY (models drop the quotes) is
+ * quoted. Only keys: the same token inside a string value ("triage of P1
+ * incidents") is text and stays as it is.
+ */
+export function parseLooseJson(text: string): Record<string, unknown> {
+  const a = text.indexOf('{');
+  const b = text.lastIndexOf('}');
+  if (a < 0 || b < a) throw new Error(`no JSON in model reply: ${text.slice(0, 200)}`);
+  const body = text.slice(a, b + 1);
+  try {
+    return JSON.parse(body) as Record<string, unknown>;
+  } catch {
+    return JSON.parse(body.replace(/([{,]\s*)([NP]\d+)(\s*:)/g, '$1"$2"$3')) as Record<
+      string,
+      unknown
+    >;
+  }
+}
 
 /** What the classifier says about one note. */
 export type NoteClass = {
@@ -29,6 +53,28 @@ export type NoteClass = {
   scope: 'general' | 'topic';
   topic: string;
 };
+
+const NOTE_CLASS_KINDS: readonly NoteClass['kind'][] = [
+  'preference',
+  'identity',
+  'context',
+  'expectation',
+  'lesson',
+];
+
+/** Pure: a classifier answer, checked. Case and spacing are forgiven
+ *  ("Topic", " lesson "); anything else is no answer, so the note is counted
+ *  as unsorted instead of landing in a kind nobody reviews. */
+export function parseNoteClass(raw: unknown): NoteClass | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const norm = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
+  const kind = norm(r.kind) as NoteClass['kind'];
+  const scope = norm(r.scope);
+  if (!NOTE_CLASS_KINDS.includes(kind) || (scope !== 'general' && scope !== 'topic')) return null;
+  const topic = typeof r.topic === 'string' ? r.topic.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+  return { kind, scope, topic };
+}
 
 export type PlanEntry = {
   /** The persona note's ref (noteRef: id, or a content hash). */
@@ -40,8 +86,10 @@ export type PlanEntry = {
   kind: string;
   scope: 'general' | 'topic';
   topic: string;
-  /** Set when this note is a near-copy of an earlier one: not created. */
+  /** Set when this note is a near-copy of another: not created. */
   duplicateOf?: string;
+  /** The classifier gave no usable answer: placed by the fallback below. */
+  unsorted?: true;
 };
 
 export type ConversionPlan = {
@@ -60,13 +108,15 @@ export type ConversionPlan = {
  * context (user lane), lesson stays lesson, anything else is an expectation
  * (agent lane, picked per turn by journal_recall). A correction is always
  * general: a "not Sarah-with-an-h" must never depend on a relevance pick.
+ * An unsorted note (no class) goes per turn: always-on is the costly tier,
+ * and the review page lists it for the owner to move.
  */
 export function journalKindFor(
   noteKind: string,
   cls: NoteClass | undefined,
 ): { kind: string; scope: 'general' | 'topic' } {
-  const scope = noteKind === 'correction' ? 'general' : (cls?.scope ?? 'general');
-  const k = cls?.kind ?? 'preference';
+  const scope = noteKind === 'correction' ? 'general' : (cls?.scope ?? 'topic');
+  const k = cls?.kind ?? 'expectation';
   if (scope === 'general') {
     return { kind: k === 'identity' || k === 'context' ? 'identity' : 'preference', scope };
   }
@@ -77,12 +127,15 @@ export function journalKindFor(
 
 /**
  * Pure: resolve "same" pairs into duplicates. Pairs are unioned into groups;
- * each group keeps its EARLIEST note (the order given) and the rest point at
- * it. Returns ref → the ref it duplicates.
+ * each group keeps its STRONGEST note (lowest `rank`: a correction before a
+ * general note before a topic note), the earliest on a tie, and the rest
+ * point at it. Keeping the earliest regardless dropped a later correction and
+ * sent its rule to the per-turn tier. Returns ref → the ref it duplicates.
  */
 export function duplicateMap(
   orderedRefs: readonly string[],
   samePairs: ReadonlyArray<readonly [string, string]>,
+  rank: (ref: string) => number = () => 0,
 ): Map<string, string> {
   const parent = new Map<string, string>();
   const find = (x: string): string => {
@@ -96,8 +149,9 @@ export function duplicateMap(
     const ra = find(a);
     const rb = find(b);
     if (ra === rb) continue;
-    // The earlier note is the root of the merged group.
-    if (order.get(ra)! <= order.get(rb)!) parent.set(rb, ra);
+    // The stronger note (then the earlier) is the root of the merged group.
+    const aFirst = rank(ra) !== rank(rb) ? rank(ra) < rank(rb) : order.get(ra)! <= order.get(rb)!;
+    if (aFirst) parent.set(rb, ra);
     else parent.set(ra, rb);
   }
   const out = new Map<string, string>();
@@ -119,13 +173,18 @@ export function buildConversionPlan(input: {
   samePairs: ReadonlyArray<readonly [string, string]>;
   now?: Date;
 }): ConversionPlan {
+  const placed = new Map(
+    input.notes.map((n) => [n.ref, journalKindFor(n.kind, input.classes.get(n.ref))]),
+  );
+  const kindOf = new Map(input.notes.map((n) => [n.ref, n.kind]));
   const dups = duplicateMap(
     input.notes.map((n) => n.ref),
     input.samePairs,
+    (ref) => (kindOf.get(ref) === 'correction' ? 0 : placed.get(ref)?.scope === 'general' ? 1 : 2),
   );
   const entries: PlanEntry[] = input.notes.map((n) => {
     const cls = input.classes.get(n.ref);
-    const { kind, scope } = journalKindFor(n.kind, cls);
+    const { kind, scope } = placed.get(n.ref)!;
     const duplicateOf = dups.get(n.ref);
     return {
       ref: n.ref,
@@ -135,6 +194,7 @@ export function buildConversionPlan(input: {
       scope,
       topic: cls?.topic ?? '',
       ...(duplicateOf ? { duplicateOf } : {}),
+      ...(cls ? {} : { unsorted: true as const }),
     };
   });
   return {
@@ -153,6 +213,7 @@ export function renderConversionPlanMarkdown(plan: ConversionPlan, applyCommand:
   const general = kept.filter((e) => e.scope === 'general');
   const topic = kept.filter((e) => e.scope === 'topic');
   const dups = plan.entries.filter((e) => e.duplicateOf);
+  const unsorted = kept.filter((e) => e.unsorted);
   const chars = (es: PlanEntry[]) => es.reduce((n, e) => n + e.content.length, 0);
   const byRef = new Map(plan.entries.map((e) => [e.ref, e]));
   const esc = (s: string) => s.replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
@@ -170,9 +231,18 @@ export function renderConversionPlanMarkdown(plan: ConversionPlan, applyCommand:
     `| Always on (tier 1: identity, preference) | ${general.length} | ${chars(general)} |`,
     `| Per turn, only when relevant (tier 2) | ${topic.length} | ${chars(topic)} |`,
     `| Duplicates, not created | ${dups.length} | ${chars(dups)} |`,
+    `| Unsorted (no usable answer; placed per turn) | ${unsorted.length} | ${chars(unsorted)} |`,
     '',
     `Sorted by \`${plan.model}\` on ${plan.createdAt.slice(0, 10)}.`,
     '',
+    ...(chars(general) > TIER1_MAX_CHARS
+      ? [
+          `:::warning`,
+          `The always-on notes come to ${chars(general)} chars; the always-on tier holds ${TIER1_MAX_CHARS}, shared with the user's own identity, goal and preference entries. What does not fit is not lost: it is picked per turn like a topic note. Move notes that must always apply into fewer, shorter entries.`,
+          `:::`,
+          '',
+        ]
+      : []),
     '## Always on',
     '',
     '| Kind | Note |',
@@ -187,7 +257,19 @@ export function renderConversionPlanMarkdown(plan: ConversionPlan, applyCommand:
       .sort((a, b) => a.topic.localeCompare(b.topic))
       .map((e) => `| ${esc(e.topic)} | ${e.kind} | ${esc(e.content)} |`),
     '',
-    '## Duplicates (merged into the earlier note)',
+    ...(unsorted.length
+      ? [
+          '## Unsorted',
+          '',
+          'The model gave no usable answer for these; they are placed per turn. Edit the entry kind in the Journal after applying if one must always apply.',
+          '',
+          '| Note |',
+          '|---|',
+          ...unsorted.map((e) => `| ${esc(e.content)} |`),
+          '',
+        ]
+      : []),
+    '## Duplicates (merged into the note kept)',
     '',
     '| Dropped | Kept |',
     '|---|---|',
@@ -198,19 +280,64 @@ export function renderConversionPlanMarkdown(plan: ConversionPlan, applyCommand:
   return lines.join('\n');
 }
 
-/** Tag on every converted entry, so they can be found (and undone) as a set. */
+/** Tag on every converted entry, so they can be found as a set. */
 export const CONVERTED_TAG = 'from-persona-notes';
 
 /**
- * Create the plan's Journal entries (duplicates skipped). Idempotent: an
- * entry whose `data.source.persona_note_ref` matches is not created again.
- * Authored as the agent (`author: 'agent'`, `agent_slug`), so the Journal
- * shows who learned it. Each insert is indexed like any Journal write.
+ * Pure: the plan stored on a review page, checked before it writes anything.
+ * The page's `data` is only as trustworthy as whatever last wrote it, so a
+ * wrong shape is an error that names the problem, never a partial apply.
+ */
+export function parseConversionPlan(raw: unknown): ConversionPlan {
+  const fail = (why: string): never => {
+    throw new Error(`the review page's plan is not usable: ${why}`);
+  };
+  if (!raw || typeof raw !== 'object') fail('missing');
+  const p = raw as Record<string, unknown>;
+  if (p.version !== 1) fail(`version ${String(p.version)} (expected 1)`);
+  if (typeof p.agentSlug !== 'string' || !p.agentSlug) fail('no agentSlug');
+  if (typeof p.agentId !== 'string' || !p.agentId) fail('no agentId');
+  if (!Array.isArray(p.entries)) fail('no entries');
+  const kinds = ['identity', 'goal', 'preference', 'context', 'expectation', 'lesson'];
+  (p.entries as unknown[]).forEach((e, i) => {
+    const x = (e ?? {}) as Record<string, unknown>;
+    if (typeof x.ref !== 'string' || !x.ref) fail(`entry ${i}: no ref`);
+    if (typeof x.content !== 'string' || !x.content.trim()) fail(`entry ${i}: no content`);
+    if (typeof x.kind !== 'string' || !kinds.includes(x.kind))
+      fail(`entry ${i}: kind ${String(x.kind)}`);
+    if (x.scope !== 'general' && x.scope !== 'topic') fail(`entry ${i}: scope ${String(x.scope)}`);
+  });
+  return raw as ConversionPlan;
+}
+
+/** Pure: how the agent's live notes moved since the dry run. `retired`: in
+ *  the plan but no longer live (the owner or the agent retired them), so
+ *  applying must not bring them back. `added`: live now but not in the plan
+ *  (learned since), so they would be left behind; re-run the dry run. */
+export function planStaleness(
+  plan: ConversionPlan,
+  liveRefs: ReadonlySet<string>,
+): { retired: string[]; added: string[] } {
+  const planned = new Set(plan.entries.map((e) => e.ref));
+  return {
+    retired: plan.entries.filter((e) => !liveRefs.has(e.ref)).map((e) => e.ref),
+    added: [...liveRefs].filter((r) => !planned.has(r)),
+  };
+}
+
+/**
+ * Create the plan's Journal entries (duplicates and `skipRefs` skipped).
+ * Idempotent: an entry whose `data.source.persona_note_ref` matches is not
+ * created again. Authored as the agent (`author: 'agent'`, `agent_slug`), so
+ * the entry belongs to that agent (visibleToAgent). Each insert is indexed
+ * like any Journal write, which runs the extractor once per entry: an apply
+ * makes no model call itself, but it does spend.
  */
 export async function applyConversionPlan(
   ownerId: string,
   plan: ConversionPlan,
-): Promise<{ created: number; existing: number; duplicates: number }> {
+  opts: { skipRefs?: ReadonlySet<string> } = {},
+): Promise<{ created: number; existing: number; duplicates: number; skipped: number }> {
   const existingRows = await db
     .select({ ref: sql<string>`${nodes.data}->'source'->>'persona_note_ref'` })
     .from(nodes)
@@ -225,9 +352,14 @@ export async function applyConversionPlan(
   let created = 0;
   let existing = 0;
   let duplicates = 0;
+  let skipped = 0;
   for (const e of plan.entries) {
     if (e.duplicateOf) {
       duplicates++;
+      continue;
+    }
+    if (opts.skipRefs?.has(e.ref)) {
+      skipped++;
       continue;
     }
     if (done.has(e.ref)) {
@@ -242,9 +374,11 @@ export async function applyConversionPlan(
       tags: [CONVERTED_TAG],
       source: { persona_note_ref: e.ref, agent_slug: plan.agentSlug, topic: e.topic },
     });
+    // Two notes can share a ref (id-less notes with the same text): one entry.
+    done.add(e.ref);
     created++;
   }
-  return { created, existing, duplicates };
+  return { created, existing, duplicates, skipped };
 }
 
 // ─── After the conversion: learning straight into the Journal ───────────────

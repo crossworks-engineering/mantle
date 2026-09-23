@@ -15,6 +15,14 @@ export function planRun(
   req: Omit<StartRunRequest, 'slug'>,
   env: Record<string, string | undefined>,
 ): RunPlan {
+  if (task.cliOnly) {
+    return {
+      ok: false,
+      status: 400,
+      error: `"${task.slug}" runs from the terminal only: it ${task.cliOnly}.`,
+    };
+  }
+
   if (task.positionalArgs?.length) {
     return {
       ok: false,

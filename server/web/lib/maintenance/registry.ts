@@ -35,6 +35,12 @@ export interface MaintenanceTask {
    *  guardrail without an `applyFlag`. Set this ONLY when the script provably
    *  writes nothing: it is the thing that lets the unattended cron run it. */
   readOnly?: boolean;
+  /** What a DRY run spends, when it is not free (a preview that calls a
+   *  model). The runner then asks for --yes on the dry run too. */
+  dryRunCost?: TaskCost;
+  /** The task needs flags only a terminal can pass (an agent slug, a page
+   *  id): the UI runner refuses it with this reason instead of failing. */
+  cliOnly?: string;
   /** Flag that switches the script from dry-run (its default) to live. */
   applyFlag?: string;
   /** Flag that switches the script from live (its default) to dry-run. */
@@ -186,10 +192,14 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'persona-notes-to-journal',
     title: "Move an agent's persona notes into the Journal",
     description:
-      "Dry run (default): the agent's own chat model sorts every live persona note into a Journal kind (general = always on, topic = picked per turn by journal_recall), near-copies are merged, and the plan is written to a review page. --apply --page=<id> turns that reviewed plan into Journal entries (no model call, idempotent). Persona notes are never touched.",
+      "Dry run (default): the agent's own chat model sorts every live persona note into a Journal kind (general = always on, topic = picked per turn by journal_recall), near-copies are merged, and the plan is written to a review page. --apply --page=<id> turns that reviewed plan into Journal entries (no sorting call; each entry is indexed, which runs the extractor; idempotent; notes retired since the dry run are skipped). Persona notes are never touched.",
     kind: 'ops',
     status: 'live',
+    // Both runs spend: the dry run sorts with the agent's model; the apply
+    // indexes each new entry, which runs the extractor.
     cost: 'llm',
+    dryRunCost: 'llm',
+    cliOnly: 'needs --agent=<slug> (dry run) or --page=<review page id> (apply)',
     schedulable: false,
     script: 'scripts/persona-notes-to-journal.ts',
     cwd: 'server/web',
@@ -197,7 +207,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     extraFlags: ['--agent=<slug>', '--page=<review page id>'],
     requiresEnv: ['ALLOWED_USER_ID'],
     notes:
-      "Spike 13 (dev-brain page 9f57fa46). The dry run spends the agent's model (~$0.30 per 500 notes on a Sonnet-class model) plus embeddings; applying creates one Journal entry per kept note, each indexed like any Journal write. The agent keeps reading its persona notes until memory_config.notes_target = journal.",
+      "Spike 13 (dev-brain page 9f57fa46). The dry run spends the agent's model (measured 2026-09-23: $0.79 for 503 notes on Sonnet 5, $0.12 for 119 on grok) plus embeddings; applying creates one Journal entry per kept note, each indexed like any Journal write. Inside a box's container pass the owner: docker exec -e ALLOWED_USER_ID=<owner id>. The agent keeps reading its persona notes until memory_config.notes_target = journal, which also switches its Journal tiers live.",
   },
   {
     slug: 'draws-re-render',

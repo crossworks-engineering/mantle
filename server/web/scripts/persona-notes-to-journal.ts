@@ -10,22 +10,31 @@
  * page id. Spends model tokens (~$0.30 for 500 notes on a Sonnet-class model).
  *
  * Apply: `--apply --page=<id>` turns THAT page's stored plan into Journal
- * entries (no model call). Idempotent. Persona notes are left as they are.
+ * entries (no sorting call; each entry is indexed, which runs the extractor).
+ * Idempotent. Notes retired since the dry run are skipped; notes learned
+ * since are reported (re-run the dry run for them). Persona notes are left as
+ * they are.
  *
- * Usage:
- *   pnpm maintain run persona-notes-to-journal -- --agent=<slug>
- *   pnpm maintain run persona-notes-to-journal -- --apply --page=<page-id>
+ * Usage (both spend, so both need --yes):
+ *   pnpm maintain persona-notes-to-journal --agent=<slug> --yes
+ *   pnpm maintain persona-notes-to-journal --apply --page=<page-id> --yes
+ * Inside a box's container the owner id is not in the environment:
+ *   docker exec -w /app -e ALLOWED_USER_ID=<owner id> mantle_web \
+ *     pnpm maintain persona-notes-to-journal --agent=<slug> --yes
  */
 import { and, eq } from 'drizzle-orm';
-import { activeNotes, agents, db, nodes, noteRef } from '@mantle/db';
+import { activeNotes, agents, closeDb, db, nodes, noteRef } from '@mantle/db';
 import {
   PLAN_DATA_KEY,
   applyConversionPlan,
   buildConversionPlan,
   createPage,
   markdownToDoc,
+  parseConversionPlan,
+  parseLooseJson,
+  parseNoteClass,
+  planStaleness,
   renderConversionPlanMarkdown,
-  type ConversionPlan,
   type NoteClass,
 } from '@mantle/content';
 import { embedBatch } from '@mantle/embeddings';
@@ -51,17 +60,6 @@ const CLASSIFY_RULES = `Kinds:
 - "expectation": a standard or rule for ONE kind of task, document, app, dataset or calculation. Only matters when the conversation is on that topic.
 - "lesson": like expectation, but learned from a specific past outcome or mistake.
 Also give "scope": "general" (applies to most conversations) or "topic" (only when the topic comes up), and "topic": a 2-5 word label.`;
-
-function parseJson(text: string): Record<string, unknown> {
-  const a = text.indexOf('{');
-  const b = text.lastIndexOf('}');
-  if (a < 0 || b < a) throw new Error(`no JSON in model reply: ${text.slice(0, 200)}`);
-  // A bare N12 key or value (unquoted) is not JSON; quote it.
-  return JSON.parse(text.slice(a, b + 1).replace(/(?<!")\b([NP]\d+)\b(?!")/g, '"$1"')) as Record<
-    string,
-    unknown
-  >;
-}
 
 const cosine = (a: number[], b: number[]) => {
   let d = 0;
@@ -109,7 +107,7 @@ async function dryRun(ownerId: string, slug: string) {
           thinkingEffort: 'low',
         });
         spent += result.reportedCostUsd ?? 0;
-        return parseJson(result.text);
+        return parseLooseJson(result.text);
       } catch (err) {
         if (attempt >= ATTEMPTS) throw err;
         console.log(` (retry: ${err instanceof Error ? err.message : String(err)})`);
@@ -120,19 +118,28 @@ async function dryRun(ownerId: string, slug: string) {
   console.log(
     `${notes.length} live notes; sorting with ${routes.primary.provider}:${routes.primary.model}`,
   );
+  // A batch that still fails after its retry leaves its notes unsorted (the
+  // plan places them per turn and the page lists them); the run goes on, so
+  // what was already paid for is kept.
   const classes = new Map<string, NoteClass>();
+  let failedBatches = 0;
   for (let i = 0; i < notes.length; i += CLASSIFY_BATCH) {
     const batch = notes.slice(i, i + CLASSIFY_BATCH);
     const list = batch.map((n, k) => `[N${k + 1}] (${n.kind}) ${n.content}`).join('\n');
-    const json = await ask(
-      CLASSIFY_SYSTEM,
-      `${CLASSIFY_RULES}\n\nNOTES:\n${list}\n\nReturn JSON only: {"N<number>": {"kind": "...", "scope": "general|topic", "topic": "..."}, ...} for every note.`,
-    );
-    batch.forEach((n, k) => {
-      const v = json[`N${k + 1}`] as NoteClass | undefined;
-      if (v && typeof v === 'object') classes.set(n.ref, v);
-    });
-    process.stdout.write('.');
+    try {
+      const json = await ask(
+        CLASSIFY_SYSTEM,
+        `${CLASSIFY_RULES}\n\nNOTES:\n${list}\n\nReturn JSON only: {"N<number>": {"kind": "...", "scope": "general|topic", "topic": "..."}, ...} for every note.`,
+      );
+      batch.forEach((n, k) => {
+        const v = parseNoteClass(json[`N${k + 1}`]);
+        if (v) classes.set(n.ref, v);
+      });
+      process.stdout.write('.');
+    } catch (err) {
+      failedBatches++;
+      console.log(` (batch failed: ${err instanceof Error ? err.message : String(err)})`);
+    }
   }
   console.log(` sorted ${classes.size}/${notes.length}`);
 
@@ -150,15 +157,25 @@ async function dryRun(ownerId: string, slug: string) {
     const list = batch
       .map(([a, b], k) => `[P${k + 1}]\nA: ${notes[a]!.content}\nB: ${notes[b]!.content}`)
       .join('\n\n');
-    const json = await ask(
-      'You compare pairs of notes an assistant keeps about its user. Reply with JSON only.',
-      `For each pair: "same" if one note could replace the other with no loss (same rule, maybe different words); "overlap" if they share a rule but each adds something; "different" otherwise.\n\n${list}\n\nReturn JSON only: {"P1": "same|overlap|different", ...}`,
-    );
-    batch.forEach(([a, b], k) => {
-      if (json[`P${k + 1}`] === 'same') samePairs.push([notes[a]!.ref, notes[b]!.ref]);
-    });
+    try {
+      const json = await ask(
+        'You compare pairs of notes an assistant keeps about its user. Reply with JSON only.',
+        `For each pair: "same" if one note could replace the other with no loss (same rule, maybe different words); "overlap" if they share a rule but each adds something; "different" otherwise.\n\n${list}\n\nReturn JSON only: {"P1": "same|overlap|different", ...}`,
+      );
+      batch.forEach(([a, b], k) => {
+        const v = json[`P${k + 1}`];
+        if (typeof v === 'string' && v.trim().toLowerCase() === 'same') {
+          samePairs.push([notes[a]!.ref, notes[b]!.ref]);
+        }
+      });
+    } catch (err) {
+      // An unjudged pair stays two entries: a missed merge, never a lost note.
+      failedBatches++;
+      console.log(` (pair batch failed: ${err instanceof Error ? err.message : String(err)})`);
+    }
   }
   console.log(`${pairs.length} near-copy pairs, ${samePairs.length} confirmed the same`);
+  if (failedBatches > 0) console.log(`${failedBatches} batch(es) failed after a retry`);
 
   const plan = buildConversionPlan({
     agentId: agent.id,
@@ -175,13 +192,17 @@ async function dryRun(ownerId: string, slug: string) {
     doc: markdownToDoc(
       renderConversionPlanMarkdown(
         plan,
-        'pnpm maintain run persona-notes-to-journal -- --apply --page=<this page id>',
+        'pnpm maintain persona-notes-to-journal --apply --page=<this page id> --yes',
       ),
     ),
     data: { [PLAN_DATA_KEY]: plan },
   });
-  console.log(`review page: ${page.id}  (model spend ~$${spent.toFixed(3)})`);
-  console.log(`apply with:  --apply --page=${page.id}`);
+  console.log(
+    `review page: ${page.id}  (sorting spend ~$${spent.toFixed(3)}, embeddings not counted)`,
+  );
+  console.log(
+    `apply with:  pnpm maintain persona-notes-to-journal --apply --page=${page.id} --yes`,
+  );
 }
 
 async function apply(ownerId: string, pageId: string) {
@@ -190,12 +211,29 @@ async function apply(ownerId: string, pageId: string) {
     .from(nodes)
     .where(and(eq(nodes.ownerId, ownerId), eq(nodes.id, pageId), eq(nodes.type, 'page')))
     .limit(1);
-  const plan = (row?.data as Record<string, unknown> | undefined)?.[PLAN_DATA_KEY] as
-    ConversionPlan | undefined;
-  if (!plan || plan.version !== 1) throw new Error(`page ${pageId} carries no conversion plan`);
-  const r = await applyConversionPlan(ownerId, plan);
+  if (!row) throw new Error(`no page ${pageId} for this owner`);
+  const plan = parseConversionPlan((row.data as Record<string, unknown> | null)?.[PLAN_DATA_KEY]);
+  const [agent] = await db
+    .select({ id: agents.id, slug: agents.slug, personaNotes: agents.personaNotes })
+    .from(agents)
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.id, plan.agentId)))
+    .limit(1);
+  if (!agent || agent.slug !== plan.agentSlug) {
+    throw new Error(`the plan's agent '${plan.agentSlug}' is not an agent of this owner`);
+  }
+  const live = new Set(activeNotes(agent.personaNotes ?? []).map(noteRef));
+  const stale = planStaleness(plan, live);
+  if (stale.retired.length > 0) {
+    console.log(`${stale.retired.length} note(s) retired since the dry run: not brought back`);
+  }
+  if (stale.added.length > 0) {
+    console.log(
+      `${stale.added.length} note(s) learned since the dry run are NOT in this plan: re-run the dry run to include them`,
+    );
+  }
+  const r = await applyConversionPlan(ownerId, plan, { skipRefs: new Set(stale.retired) });
   console.log(
-    `agent '${plan.agentSlug}': created ${r.created} Journal entries, ${r.existing} already there, ${r.duplicates} duplicates skipped`,
+    `agent '${plan.agentSlug}': created ${r.created} Journal entries, ${r.existing} already there, ${r.duplicates} duplicates and ${r.skipped} retired skipped`,
   );
 }
 
@@ -212,10 +250,11 @@ async function main() {
   }
 }
 
-main().then(
-  () => process.exit(0),
-  (err) => {
+// One-shot script: close the pooled client so the process can exit, and
+// set the exit code rather than calling process.exit (flushes output).
+main()
+  .catch((err) => {
     console.error('persona-notes-to-journal:', err instanceof Error ? err.message : err);
-    process.exit(1);
-  },
-);
+    process.exitCode = 1;
+  })
+  .finally(() => closeDb());

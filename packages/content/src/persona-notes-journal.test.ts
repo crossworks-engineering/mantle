@@ -5,6 +5,10 @@ import {
   journalKindFor,
   journalKindForNote,
   notesTargetOf,
+  parseConversionPlan,
+  parseLooseJson,
+  parseNoteClass,
+  planStaleness,
   renderConversionPlanMarkdown,
   type NoteClass,
 } from './persona-notes-journal';
@@ -36,12 +40,48 @@ describe('journalKindFor', () => {
     expect(journalKindFor('style', cls('context', 'topic')).kind).toBe('context');
   });
 
-  it('a correction is always on, whatever the classifier said; unclassified = general preference', () => {
+  it('a correction is always on, whatever the classifier said; an unsorted note goes per turn', () => {
     expect(journalKindFor('correction', cls('expectation', 'topic'))).toEqual({
       kind: 'preference',
       scope: 'general',
     });
-    expect(journalKindFor('style', undefined)).toEqual({ kind: 'preference', scope: 'general' });
+    // Always-on is the costly tier: a note the model gave no answer for does
+    // not land there by default.
+    expect(journalKindFor('style', undefined)).toEqual({ kind: 'expectation', scope: 'topic' });
+    expect(journalKindFor('correction', undefined)).toEqual({
+      kind: 'preference',
+      scope: 'general',
+    });
+  });
+});
+
+describe('parseNoteClass', () => {
+  it('forgives case and spacing, rejects anything else', () => {
+    expect(parseNoteClass({ kind: ' Lesson ', scope: 'Topic', topic: ' SOP  headers ' })).toEqual({
+      kind: 'lesson',
+      scope: 'topic',
+      topic: 'SOP headers',
+    });
+    expect(parseNoteClass({ kind: 'rule', scope: 'topic' })).toBeNull();
+    expect(parseNoteClass({ kind: 'lesson', scope: 'sometimes' })).toBeNull();
+    expect(parseNoteClass('lesson')).toBeNull();
+    expect(parseNoteClass(null)).toBeNull();
+  });
+});
+
+describe('parseLooseJson', () => {
+  it('quotes a bare key but never touches the same token inside a value', () => {
+    expect(parseLooseJson('Here: {N1: {"topic": "triage of P1 incidents"}, "N2": 3} done')).toEqual(
+      {
+        N1: { topic: 'triage of P1 incidents' },
+        N2: 3,
+      },
+    );
+    expect(parseLooseJson('{"P1": "same", P2: "different"}')).toEqual({
+      P1: 'same',
+      P2: 'different',
+    });
+    expect(() => parseLooseJson('no json here')).toThrow(/no JSON/);
   });
 });
 
@@ -56,6 +96,51 @@ describe('duplicateMap', () => {
       ],
     );
     expect(Object.fromEntries(m)).toEqual({ c: 'b', d: 'b' });
+  });
+
+  it('keeps the strongest note of a group (a later correction beats an earlier topic note)', () => {
+    const rank = (r: string) => (r === 'late-correction' ? 0 : 2);
+    const m = duplicateMap(
+      ['early-topic', 'late-correction'],
+      [['early-topic', 'late-correction']],
+      rank,
+    );
+    expect(Object.fromEntries(m)).toEqual({ 'early-topic': 'late-correction' });
+  });
+});
+
+describe('parseConversionPlan and planStaleness', () => {
+  const ok = {
+    version: 1,
+    agentId: 'ag1',
+    agentSlug: 'assistant',
+    createdAt: '2026-09-23T00:00:00Z',
+    model: 'm',
+    entries: [
+      {
+        ref: 'a',
+        content: 'x',
+        noteKind: 'style',
+        kind: 'preference',
+        scope: 'general',
+        topic: '',
+      },
+      { ref: 'b', content: 'y', noteKind: 'style', kind: 'lesson', scope: 'topic', topic: 't' },
+    ],
+  };
+
+  it('accepts a good plan and names what is wrong with a bad one', () => {
+    expect(parseConversionPlan(ok).entries).toHaveLength(2);
+    expect(() => parseConversionPlan({ ...ok, version: 2 })).toThrow(/version 2/);
+    expect(() =>
+      parseConversionPlan({ ...ok, entries: [{ ...ok.entries[0], kind: 'secret' }] }),
+    ).toThrow(/entry 0: kind secret/);
+    expect(() => parseConversionPlan(undefined)).toThrow(/missing/);
+  });
+
+  it('reports notes retired and learned since the dry run', () => {
+    const plan = parseConversionPlan(ok);
+    expect(planStaleness(plan, new Set(['a', 'c']))).toEqual({ retired: ['b'], added: ['c'] });
   });
 });
 
