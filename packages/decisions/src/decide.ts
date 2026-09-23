@@ -12,7 +12,9 @@
  *      the caller may act on it). The caller reads `mode` off the outcome and
  *      MUST honour it — `decide()` cannot enforce what the caller does.
  *   3. Bounded. A hard timeout (default 1.5 s); a slow decision is worse than
- *      none. One request, questions answered in parallel by the model.
+ *      none. One request, questions answered in parallel by the model. After
+ *      3 failures in a row the worker is skipped for 5 min (`breaker.ts`), so
+ *      a slow endpoint costs 3 timeouts, not one per decision.
  *   4. Traced. One `llm_call` step per call with `meta.use`, `meta.mode`, the
  *      model, token + cost rollups (`recordChatUsage`, same keys as every
  *      other LLM step so /debug spend-by-model needs no special case) and a
@@ -41,12 +43,16 @@ import {
   type DecisionDispatcher,
   type DecisionQuestion,
 } from '@mantle/voice';
+import { CircuitBreaker } from './breaker';
 import { DecisionCache } from './cache';
 
 export const DEFAULTS = {
   timeoutMs: 1_500,
   deferBelow: 0.6,
   actAloneAt: 0.9,
+  /** Failures in a row before decisions are skipped for a while. */
+  breakerFailures: 3,
+  breakerCooldownMs: 5 * 60_000,
 } as const;
 
 export type DecisionMode = 'shadow' | 'live';
@@ -164,10 +170,12 @@ export async function decisionUseEnabled(
 // ─── The call ───────────────────────────────────────────────────────────────
 
 const cache = new DecisionCache<{ answers: Record<string, DecisionAnswer>; model: string }>();
+const breaker = new CircuitBreaker(DEFAULTS.breakerFailures, DEFAULTS.breakerCooldownMs);
 
 /** Test seam. */
 export function clearDecisionCache(): void {
   cache.clear();
+  breaker.clear();
 }
 
 export async function decide(input: DecideInput): Promise<DecideOutcome | null> {
@@ -182,6 +190,8 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
   if (hit) {
     return { answers: hit.answers, mode: use.mode, use, model: hit.model, cached: true, ms: 0 };
   }
+  // Open breaker: no call, no step. The caller runs its old path at once.
+  if (!breaker.allow(worker.id)) return null;
 
   const t0 = Date.now();
   return step(
@@ -217,18 +227,29 @@ export async function decide(input: DecideInput): Promise<DecideOutcome | null> 
         });
         h.setOutput({ answered: Object.keys(res.answers).length, ms });
         cache.set(key, { answers: res.answers, model: res.model });
+        if (breaker.success(worker.id)) {
+          console.info(`[decisions] decider ${worker.id} answered again; breaker closed`);
+        }
         void bumpWorkerUsage(worker.id).catch(() => {});
         return { answers: res.answers, mode: use.mode, use, model: res.model, cached: false, ms };
       } catch (err) {
         // "No decision" — never an error for the caller. The step stays
         // visible (amber) so a dead alpha endpoint shows up in /traces.
+        const opened = breaker.failure(worker.id);
         h.setMeta({
           use: input.use,
           mode: use.mode,
           model: worker.model,
           failed: errorMessage(err),
+          ...(opened ? { breaker_opened: true } : {}),
         });
         h.setSkipped('decision_failed');
+        if (opened) {
+          console.warn(
+            `[decisions] decider ${worker.id} failed ${DEFAULTS.breakerFailures} times in a row; ` +
+              `skipping decisions for ${DEFAULTS.breakerCooldownMs / 60_000} min`,
+          );
+        }
         return null;
       }
     },

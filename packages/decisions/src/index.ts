@@ -74,3 +74,4 @@ export {
   type FactRelation,
 } from './fact-add-prefilter';
 export { DecisionCache } from './cache';
+export { CircuitBreaker } from './breaker';

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CircuitBreaker } from './breaker';
 import { DecisionCache } from './cache';
 import { resolveUse, summarizeAnswers } from './decide';
 import { applyPassageScores } from './passage-scoring';
@@ -78,6 +79,43 @@ describe('DecisionCache', () => {
   it('keys are stable for equal inputs and differ otherwise', () => {
     expect(DecisionCache.key(['u', { a: 1 }])).toBe(DecisionCache.key(['u', { a: 1 }]));
     expect(DecisionCache.key(['u', { a: 1 }])).not.toBe(DecisionCache.key(['u', { a: 2 }]));
+  });
+});
+
+describe('CircuitBreaker', () => {
+  it('opens after the threshold of failures in a row, probes once after the cooldown', () => {
+    let now = 0;
+    const b = new CircuitBreaker(3, 100, () => now);
+    expect(b.failure('w')).toBe(false);
+    expect(b.failure('w')).toBe(false);
+    expect(b.allow('w')).toBe(true);
+    expect(b.failure('w')).toBe(true); // this one opened it
+    expect(b.allow('w')).toBe(false);
+    now = 99;
+    expect(b.allow('w')).toBe(false);
+    now = 100;
+    expect(b.allow('w')).toBe(true); // the probe
+    expect(b.allow('w')).toBe(false); // the rest wait out the re-armed cooldown
+    expect(b.failure('w')).toBe(false); // failed probe: still open, not "opened"
+    now = 150;
+    expect(b.allow('w')).toBe(false);
+    now = 200;
+    expect(b.allow('w')).toBe(true);
+    expect(b.success('w')).toBe(true); // closed
+    expect(b.allow('w')).toBe(true);
+    expect(b.isOpen('w')).toBe(false);
+  });
+
+  it('a success resets the count; keys are independent', () => {
+    const b = new CircuitBreaker(2, 100, () => 0);
+    b.failure('w');
+    expect(b.success('w')).toBe(false);
+    b.failure('w');
+    expect(b.isOpen('w')).toBe(false);
+    b.failure('x');
+    b.failure('x');
+    expect(b.isOpen('x')).toBe(true);
+    expect(b.allow('w')).toBe(true);
   });
 });
 

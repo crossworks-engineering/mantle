@@ -97,6 +97,16 @@ plus `meta.use`, `meta.mode`, `meta.decision_ms`, a compact `meta.answers`
 Failure: `meta.failed`, the step is marked skipped (`decision_failed`, amber
 in `/traces`), the caller gets `null`.
 
+Circuit breaker (`breaker.ts`): after 3 failures in a row for one worker,
+`decide()` returns `null` at once, with no call and no step, for 5 minutes.
+A slow endpoint then costs 3 timeouts, not 1.5 s on every decision of every
+turn. The step that opens it carries `meta.breaker_opened: true`. When the
+5 minutes end, one call goes through as a probe: success closes the breaker,
+failure keeps it open for another 5 minutes. Cache hits are still served
+while it is open. Per process, like the cache. In a shadow week read, a gap
+in `decide_*` steps after a `breaker_opened` step is the breaker, not a lack
+of traffic.
+
 A shadow week is read from these steps: per use, how many calls, cache hits,
 what the answers were, how many were under the floor, what it cost.
 
