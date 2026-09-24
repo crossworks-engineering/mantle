@@ -155,7 +155,21 @@ type ListJournalsOpts = {
   /** Gap lifecycle filter; meaningful with kind='gap'. */
   status?: string;
   tag?: string;
+  /** Only the rules this agent learned (the Journal's replacement for the
+   *  agent form's old "Learned" tab): learned (journalLearnedSql) and carrying
+   *  its slug. */
+  learnedBy?: string;
 };
+
+/** SQL: the entry is a rule an agent learned (the twin of isLearnedRule in
+ *  ./identity-context, without the agent check). NULL-safe: journalKindSql
+ *  never returns NULL and the other branches are plain booleans, so it can
+ *  sit under NOT. */
+export function journalLearnedSql(): SQL {
+  return sql`(${journalKindSql()} in ('lesson', 'expectation')
+    or coalesce(${nodes.data}->'source'->>'via', '') in ('reflector', 'update_persona')
+    or ${nodes.data}->'source'->>'persona_note_ref' is not null)`;
+}
 
 /** Shared WHERE conditions for journal list/count queries. */
 function journalConds(ownerId: string, opts: ListJournalsOpts) {
@@ -180,6 +194,10 @@ function journalConds(ownerId: string, opts: ListJournalsOpts) {
   }
   if (opts.status) conds.push(sql`${nodes.data}->>'status' = ${opts.status}`);
   if (opts.tag) conds.push(sql`${opts.tag} = ANY(${nodes.tags})`);
+  if (opts.learnedBy?.trim()) {
+    conds.push(journalLearnedSql());
+    conds.push(sql`btrim(${nodes.data}->>'agent_slug') = ${opts.learnedBy.trim()}`);
+  }
   return conds;
 }
 

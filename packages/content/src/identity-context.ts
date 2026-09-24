@@ -25,7 +25,7 @@ import {
   kindLane,
   legacyCategoryToKind,
 } from '@mantle/content-core/journal-options';
-import { journalKindSql, journalSortSql } from './journal';
+import { journalKindSql, journalLearnedSql, journalSortSql } from './journal';
 import { loadProfilePreferences } from './profile-preferences';
 import { purposeArchetypeLabel } from '@mantle/content-core/onboarding-questions';
 
@@ -390,14 +390,9 @@ export function isLearnedRule(kind: string | null, data: Record<string, unknown>
   );
 }
 
-/** SQL twin of {@link isLearnedRule} without the agent_slug check: the entry
- *  is a rule an agent learned. NULL-safe (every branch is a plain boolean), so
- *  it can sit under NOT. */
-export function journalLearnedSql(): SQL {
-  return sql`(${journalKindSql()} in ('lesson', 'expectation')
-    or coalesce(${nodes.data}->'source'->>'via', '') in ('reflector', 'update_persona')
-    or ${nodes.data}->'source'->>'persona_note_ref' is not null)`;
-}
+// SQL twin of {@link isLearnedRule}: lives in ./journal (the list filter
+// needs it too), re-exported here where the scope rules are.
+export { journalLearnedSql } from './journal';
 
 /** SQL twin of {@link visibleToAgent} + {@link isLearnedRule}, plus "not
  *  superseded". Every term is NULL-safe: a NULL "learned" would make `not`
