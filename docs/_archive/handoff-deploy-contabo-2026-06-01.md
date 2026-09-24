@@ -126,7 +126,7 @@ brain (1,945 nodes); secrets in `apps/web/.env.local`.
   S3_ACCESS_KEY=minio
   S3_SECRET_KEY=*** (fresh)
   SESSION_SECRET=*** (fresh)
-  ALLOWED_USER_ID=61572800-924c-4597-b6f0-facde6640f6a   # MUST match dev
+  ALLOWED_USER_ID=00000000-0000-4000-8000-00000000d002   # MUST match dev
   MANTLE_MASTER_KEY=*** (carried over from dev — MUST match dev or vault won't decrypt)
   ```
 - **Migration data on the VPS:**

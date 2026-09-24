@@ -13,7 +13,7 @@ import { maskEmail } from './mask-email';
 
 describe('maskEmail', () => {
   it('masks the local-part to first + stars + last', () => {
-    expect(maskEmail('jason@schoeman.me')).toBe('j***n@schoeman.me');
+    expect(maskEmail('jason@example.com')).toBe('j***n@example.com');
   });
 
   it('caps the number of stars at 6 for very long local-parts', () => {

@@ -4,7 +4,7 @@
 > agent" can run ~$0.80 average per chat. This is the investigation so far,
 > the evidence, the root cause, and the proposed fix. **Investigation only,
 > no code changed.** Everything below is from the **production** DB
-> (`ssh cwe@mcp.crossworks.network`, `mantle_pg`).
+> (`ssh user@vps.example.com`, `mantle_pg`).
 
 ## TL;DR
 
@@ -38,7 +38,7 @@
 
 Run prod SQL via stdin to avoid nested-quote hell:
 ```bash
-ssh cwe@mcp.crossworks.network "docker exec -i mantle_pg psql -U postgres -d postgres -P pager=off" <<'SQL'
+ssh user@vps.example.com "docker exec -i mantle_pg psql -U postgres -d postgres -P pager=off" <<'SQL'
 <your query>
 SQL
 ```

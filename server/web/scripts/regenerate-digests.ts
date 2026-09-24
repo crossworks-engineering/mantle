@@ -125,6 +125,9 @@ async function main() {
       apiKey,
       model: worker.model,
       messages: flattenChatMessagesForAdapter(messages),
+      // Re-mark the flattened system prompt, as the summarizer does: an
+      // anthropic/ model otherwise reads it uncached on every digest.
+      cacheControl: { systemPrompt: true },
     });
     const summary = result.text.trim();
     if (!summary) {

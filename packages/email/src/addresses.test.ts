@@ -3,26 +3,26 @@ import { domainOf, parseAddress, parseAddressList } from './addresses';
 
 describe('parseAddress', () => {
   it('parses bare addresses', () => {
-    expect(parseAddress('jason@schoeman.me')).toEqual({ address: 'jason@schoeman.me' });
+    expect(parseAddress('jason@example.com')).toEqual({ address: 'jason@example.com' });
   });
 
   it('parses RFC-5322 quoted-name format', () => {
-    expect(parseAddress('"Jason Schoeman" <jason@schoeman.me>')).toEqual({
-      address: 'jason@schoeman.me',
-      name: 'Jason Schoeman',
+    expect(parseAddress('"Jason Botha" <jason@example.com>')).toEqual({
+      address: 'jason@example.com',
+      name: 'Jason Botha',
     });
   });
 
   it('parses unquoted-name format', () => {
-    expect(parseAddress('Jason Schoeman <jason@schoeman.me>')).toEqual({
-      address: 'jason@schoeman.me',
-      name: 'Jason Schoeman',
+    expect(parseAddress('Jason Botha <jason@example.com>')).toEqual({
+      address: 'jason@example.com',
+      name: 'Jason Botha',
     });
   });
 
   it('lowercases the address but preserves the display name', () => {
-    expect(parseAddress('Jason <JASON@Schoeman.ME>')).toEqual({
-      address: 'jason@schoeman.me',
+    expect(parseAddress('Jason <JASON@Example.COM>')).toEqual({
+      address: 'jason@example.com',
       name: 'Jason',
     });
   });
@@ -36,15 +36,15 @@ describe('parseAddress', () => {
   });
 
   it('trims surrounding whitespace', () => {
-    expect(parseAddress('  jason@schoeman.me  ')).toEqual({ address: 'jason@schoeman.me' });
+    expect(parseAddress('  jason@example.com  ')).toEqual({ address: 'jason@example.com' });
   });
 });
 
 describe('parseAddressList', () => {
   it('splits on commas not inside angle brackets', () => {
-    const list = parseAddressList('"Jason, J." <jason@schoeman.me>, bob@example.com');
+    const list = parseAddressList('"Jason, J." <jason@example.com>, bob@example.com');
     expect(list).toEqual([
-      { address: 'jason@schoeman.me', name: 'Jason, J.' },
+      { address: 'jason@example.com', name: 'Jason, J.' },
       { address: 'bob@example.com' },
     ]);
   });
@@ -68,11 +68,11 @@ describe('parseAddressList', () => {
 
 describe('domainOf', () => {
   it('returns the domain after the last @', () => {
-    expect(domainOf('jason@schoeman.me')).toBe('schoeman.me');
+    expect(domainOf('jason@example.com')).toBe('example.com');
   });
 
   it('lowercases the domain', () => {
-    expect(domainOf('jason@SCHOEMAN.ME')).toBe('schoeman.me');
+    expect(domainOf('jason@EXAMPLE.COM')).toBe('example.com');
   });
 
   it('returns empty string when there is no @', () => {

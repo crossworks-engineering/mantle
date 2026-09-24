@@ -117,13 +117,13 @@ and a domain set (the `@`-entries, stored bare), plus the owner's own
 `email_accounts.address` set. Then:
 
 ```
-allows(fromAddr) = exact.has(addr)            // jason@schoeman.me
+allows(fromAddr) = exact.has(addr)            // alice@example.com
                || ownAccounts.has(addr)        // your own sent/self mail
-               || domains.has(domainOf(addr))  // @schoeman.me wildcard
+               || domains.has(domainOf(addr))  // @example.com wildcard
 ```
 
 - **`@domain` wildcards** mean "trust all mail from this domain", the whole-org
-  case (a church group, a company you deal with). Stored as `@schoeman.me`;
+  case (a church group, a company you deal with). Stored as `@example.com`;
   matched against the From address's domain.
 - **Own-account addresses are always allowed.** Mail *from* you (Sent items,
   notes-to-self) ingests even with zero contacts; it's yours.

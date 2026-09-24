@@ -46,7 +46,7 @@ Corrected registration:
 ```bash
 claude mcp remove mantle -s local
 claude mcp add mantle -s local -- \
-  pnpm -C /Users/jasonschoeman/Projects/mantle/server/mcp start
+  pnpm -C ~/Projects/mantle/server/mcp start
 ```
 
 The `--` is critical, without it `claude mcp add` swallows the args
@@ -213,7 +213,7 @@ always-on. For now you just call `telegram_pending` manually.
 
 - **SSH tunnel to remote prod Postgres**: pid 92561, started via
   `~/Projects/mantle/scripts/dev-tunnel.sh --background`. Forwards
-  `127.0.0.1:54322 → cwe@mcp.crossworks.network:5432`.
+  `127.0.0.1:54322 → user@vps.example.com:5432`.
   PID file: `$TMPDIR/mantle-tunnel.pid`. Stop with `./scripts/dev-tunnel.sh --stop`.
 - **Local Supabase is stopped**: `supabase stop` was run to free port
   54322 for the tunnel. To switch back to local dev, `./scripts/dev-tunnel.sh --stop && supabase start`.
@@ -227,8 +227,8 @@ always-on. For now you just call `telegram_pending` manually.
   Or just `pnpm dev` from the root for the full stack.
 - **Mantle MCP server**: registered at **local** scope (per-project)
   in `~/.claude.json` under the project entry for
-  `/Users/jasonschoeman/Projects/mantle`. Command:
-  `pnpm -C /Users/jasonschoeman/Projects/mantle/server/mcp start`.
+  `~/Projects/mantle`. Command:
+  `pnpm -C ~/Projects/mantle/server/mcp start`.
   Verified `✓ Connected` via `claude mcp get mantle`. **Requires
   Claude Code restart** to be loaded into a session, `/reload-plugins`
   is plugin-only. (Earlier in the day the entry was broken, see the
@@ -239,8 +239,8 @@ always-on. For now you just call `telegram_pending` manually.
 ```text
 telegram_accounts
   id                = 52ef0b87-9308-4319-8c96-c8be6118e4f1
-  bot_username      = miaschoemanbot
-  branch_path       = inbox.telegram_miaschoemanbot
+  bot_username      = family_example_bot
+  branch_path       = inbox.telegram_family_example_bot
   enabled           = true
   last_update_offset = (advanced past the test message)
 
@@ -252,7 +252,7 @@ telegram_chats
 
 telegram_messages   (one unprocessed test)
   id                = e077c9a9-8da0-42bc-9438-205a69d93c02
-  from_name         = Jason Schoeman
+  from_name         = Jason Botha
   text              = "Are you working yet?"
   sent_at           = 2026-05-16T10:43:00Z
   processed         = false   ← waiting for the next session to reply

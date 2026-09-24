@@ -55,7 +55,7 @@ const REFLECTION_WINDOW = 50;
  *  rest are picked up on the next tick. Most-active-first. */
 const MAX_AGENTS_PER_RUN = 5;
 
-export const DEFAULT_REFLECTOR_PROMPT = `You are a reflector for a personal AI assistant. You will be given a transcript of recent exchanges between the user and the assistant, plus the assistant's current persona_notes (preferences, relationship notes, corrections already learned).
+export const DEFAULT_REFLECTOR_PROMPT = `You are a reflector for a personal AI assistant. You will be given a transcript of recent exchanges between the user and the assistant, plus the notes the assistant has already learned (preferences, relationship notes, corrections).
 
 Your job: spot NEW signals worth remembering, AND ONLY new ones.
 
@@ -76,7 +76,7 @@ Output STRICT JSON, no markdown:
 }
 
 Rules:
-- Skip anything already covered by an existing persona_note (read the list before deciding).
+- Skip anything already covered by an existing note (read the list before deciding).
 - Be specific — "the user prefers terse, no-bullet replies" beats "user likes brevity".
 - Don't invent — only return notes grounded in the transcript.
 - Return an EMPTY new_notes array if nothing notable surfaces.

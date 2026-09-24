@@ -7,7 +7,7 @@ people whose mail Mantle will ingest. It does **two** jobs at once:
 2. **Allowlist; both directions.** The set of contact emails IS the gate for
    *outbound* `email_send` *and* (since 2026-06-04) *inbound* ingestion. Each
    contact carries a list of entries (`data.emails`), each a full address
-   (`jason@schoeman.me`) or a `@domain` wildcard (`@schoeman.me` = all mail from
+   (`alice@example.com`) or a `@domain` wildcard (`@example.com` = all mail from
    that domain). With zero contacts, *sending* is open (bootstrap) but *inbound*
    ingests nothing. Adding a contact unlocks mailing them AND lets their mail
    into the brain (with a 90-day backfill). See §2 for the deliberate

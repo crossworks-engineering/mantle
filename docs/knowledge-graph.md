@@ -144,7 +144,7 @@ blind-merges (`packages/content/src/entity-dedup.ts`):
     email/phone-named entity matched to a person via the **contacts** table.
   - **`review`**: plausible but needs a human eye: person *given-name* subset
     (`Alex` ⊂ `Alex Carter`). The subset rule **requires the first name to
-    match**; it rejects the dangerous surname-only collision (`C. Schoeman` →
+    match**; it rejects the dangerous surname-only collision (`C. Botha` →
     `Alex Carter`).
 - **`dismissMergeCandidate`**: records "not a duplicate" (migration 0056,
   `entity_merge_dismissals`) so a rejected pair is never suggested again.

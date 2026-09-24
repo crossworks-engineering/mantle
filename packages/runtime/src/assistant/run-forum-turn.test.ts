@@ -57,12 +57,12 @@ describe('forumPostsToHistory', () => {
   it('coalesces consecutive human posts into ONE user turn', () => {
     const h = forumPostsToHistory([
       post({ authorName: 'Sam', body: 'first' }),
-      post({ authorName: 'Rea', body: 'second' }),
+      post({ authorName: 'Nova', body: 'second' }),
       post({ authorKind: 'agent', body: 'reply' }),
       post({ authorName: 'Sam', body: 'third' }),
     ]);
     expect(h).toEqual([
-      { role: 'user', text: 'Sam: first\n\nRea: second' },
+      { role: 'user', text: 'Sam: first\n\nNova: second' },
       { role: 'assistant', text: 'reply' },
       { role: 'user', text: 'Sam: third' },
     ]);
@@ -86,7 +86,7 @@ describe('forumPostsToHistory', () => {
     const h = forumPostsToHistory([
       post({ authorName: 'Sam', body: 'q1' }),
       post({ authorKind: 'agent', body: 'a1' }),
-      post({ authorName: 'Rea', body: 'q2' }),
+      post({ authorName: 'Nova', body: 'q2' }),
       post({ authorKind: 'agent', body: 'a2' }),
     ]);
     expect(h.map((t) => t.role)).toEqual(['user', 'assistant', 'user', 'assistant']);

@@ -9,7 +9,7 @@ watch — inside and outside, from one store.**
 ## 0. Where you are
 
 - **Branch:** `feat/recall-s1`, worktree
-  `/Users/jasonschoeman/Projects/mantle/.claude/worktrees/recall-s1`, pushed
+  `~/Projects/mantle/.claude/worktrees/recall-s1`, pushed
   to origin. UNMERGED — Jason gates merge + release, and has not yet said
   "ship it to dev".
 - **State:** `pnpm verify` fully green (4,209 tests). Commits, in order:

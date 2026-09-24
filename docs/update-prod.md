@@ -167,7 +167,7 @@ Then smoke-test the surface the release actually changed in the browser (and
   The dev/prod bot split (2026-06-02) means prod polls only `saskianewbot` and dev
   only `saskiadevbot`, disjoint tokens, no 409. If you ever re-share a token across
   dev+prod you'll get 409s again; the fix is separate bots, not stopping the worker.
-  Keep apostle_paulus_bot / brianthecoder_bot / miaschoemanbot **disabled** on prod.
+  Keep study_example_bot / coder_example_bot / family_example_bot **disabled** on prod.
 - **Caddyfile / infra changes** ride in the release **bundle**, not the image. Copy
   the updated `infra/caddy/Caddyfile` onto the box, then **restart** caddy
   (`docker restart mantle_caddy`), don't just reload. The file is bind-mounted
