@@ -38,7 +38,7 @@ vi.mock('./rule-reconciler', () => ({
 
 vi.mock('@mantle/content', () => ({
   notesTargetOf: (m: { notes_target?: string } | null | undefined) =>
-    m?.notes_target === 'journal' ? 'journal' : 'persona',
+    m?.notes_target === 'persona' ? 'persona' : 'journal',
   writeLearnedEntries: (...args: unknown[]) => writeLearned(...args),
 }));
 const selectChain = {
@@ -98,7 +98,13 @@ const FORMAL = { id: 'n-formal', kind: 'style', content: 'Formal tone.', at: 't0
 beforeEach(() => {
   vi.clearAllMocks();
   // clearAllMocks clears CALLS, not implementations: re-establish defaults.
-  agentRows.splice(0, agentRows.length, { id: 'a1', personaNotes: [BULLETS, FORMAL] });
+  // The persona-notes path is an explicit opt-out since the Journal became
+  // the default (2026-09-24).
+  agentRows.splice(0, agentRows.length, {
+    id: 'a1',
+    personaNotes: [BULLETS, FORMAL],
+    memoryConfig: { notes_target: 'persona' },
+  });
   selectChain.from.mockReturnThis();
   selectChain.where.mockReturnThis();
   selectChain.limit.mockImplementation(async () => agentRows);

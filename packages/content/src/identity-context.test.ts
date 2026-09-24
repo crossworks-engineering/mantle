@@ -274,12 +274,14 @@ describe('visibleToAgent and journalTiersOf', () => {
     expect(isLearnedRule('gap', { source: { via: 'reflector' } })).toBe(false);
   });
 
-  it('notes_target = journal implies live tiers', () => {
-    expect(journalTiersOf({})).toBe('shadow');
-    expect(journalTiersOf({ journal_tiers: 'off' })).toBe('off');
-    expect(journalTiersOf({ journal_tiers: 'bogus' })).toBe('shadow');
-    expect(journalTiersOf({ notes_target: 'journal' })).toBe('live');
+  it('notes in the Journal (the default) imply live tiers; only a persona opt-out reads journal_tiers', () => {
+    expect(journalTiersOf({})).toBe('live');
+    expect(journalTiersOf(null)).toBe('live');
     expect(journalTiersOf({ notes_target: 'journal', journal_tiers: 'off' })).toBe('live');
+    expect(journalTiersOf({ notes_target: 'persona' })).toBe('shadow');
+    expect(journalTiersOf({ notes_target: 'persona', journal_tiers: 'off' })).toBe('off');
+    expect(journalTiersOf({ notes_target: 'persona', journal_tiers: 'bogus' })).toBe('shadow');
+    expect(journalTiersOf({ notes_target: 'persona', journal_tiers: 'live' })).toBe('live');
   });
 });
 

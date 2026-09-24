@@ -348,9 +348,9 @@ off.
   a rule Jev did not score (its group failed) falls back to similarity, so a
   failed group costs nothing a turn without Jev would have. User-lane context
   entries and the tier 3 gap stay on similarity. Live only has an effect
-  when the Journal tiers are live too (`journal_tiers = 'live'`, or
-  `notes_target = 'journal'`): with the tiers in shadow nothing reaches the
-  prompt.
+  when the Journal tiers are live too (the default since 2026-09-24; only an
+  agent with `notes_target = 'persona'` can have them in shadow, where
+  nothing reaches the prompt).
 
 Spike 13 (a work brain, 2026-09-23, 435 topic rules from the owner assistant's persona notes, 30
 real turns, Sonnet 5 key, dev-brain page 9f57fa46): similarity found 15 to

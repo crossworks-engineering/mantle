@@ -69,7 +69,7 @@ vi.mock('@mantle/content', () => ({
   }),
   buildJournalTier1: vi.fn(async () => 'TIER1'),
   journalTiersOf: (m?: { journal_tiers?: string; notes_target?: string }) =>
-    m?.notes_target === 'journal'
+    m?.notes_target !== 'persona'
       ? 'live'
       : m?.journal_tiers === 'off' || m?.journal_tiers === 'live'
         ? m.journal_tiers
@@ -147,9 +147,10 @@ describe('assembleResponderTurn — prompt composition', () => {
   it('cached prefix = identity + skills prompt + suffix; volatile = time + extras + heartbeat', async () => {
     h.identity = 'IDENTITY';
     h.openHeartbeats = [{ slug: 'hb-1', name: 'HB', state: {} }];
+    // The legacy identity block only rides a persona-notes agent now.
     const a = await assembleResponderTurn({
       ...BASE,
-      agent: agent({ skillSlugs: ['recall'] }),
+      agent: agent({ skillSlugs: ['recall'], memoryConfig: { notes_target: 'persona' } }),
       systemPromptSuffix: '\n\nAUDIO-TAGS',
       volatileExtras: ['LOCATION-LINE', '', null, 'TZ-NOTE'],
       heartbeatSurface: { kind: 'web' },
@@ -201,15 +202,15 @@ describe('assembleResponderTurn — prompt composition', () => {
     expect(a.effectiveSystemPrompt).toBe('PERSONA');
   });
 
-  it('journal_tiers=live: no Journal in the persona prompt, tier 1 returned for the notes block', async () => {
+  it('tiers live (the default): no Journal in the persona prompt, tier 1 returned for the notes block', async () => {
     h.identity = 'IDENTITY';
-    const live = await assembleResponderTurn({
-      ...BASE,
-      agent: agent({ memoryConfig: { journal_tiers: 'live' } }),
-    });
+    const live = await assembleResponderTurn({ ...BASE, agent: agent() });
     expect(live.effectiveSystemPrompt).toBe('PERSONA');
     expect(live.journalBlock).toBe('TIER1');
-    const shadow = await assembleResponderTurn({ ...BASE, agent: agent() });
+    const shadow = await assembleResponderTurn({
+      ...BASE,
+      agent: agent({ memoryConfig: { notes_target: 'persona' } }),
+    });
     expect(shadow.effectiveSystemPrompt).toContain('IDENTITY');
     expect(shadow.journalBlock).toBe('');
     const team = await assembleResponderTurn({

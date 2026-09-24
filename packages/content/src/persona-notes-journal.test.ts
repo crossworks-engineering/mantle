@@ -181,10 +181,12 @@ describe('buildConversionPlan + render', () => {
 
 describe('notes_target = journal', () => {
   it('defaults to persona; only the literal journal switches', () => {
-    expect(notesTargetOf(undefined)).toBe('persona');
-    expect(notesTargetOf({})).toBe('persona');
+    // The Journal is the default; only an explicit 'persona' opts out.
+    expect(notesTargetOf(undefined)).toBe('journal');
+    expect(notesTargetOf({})).toBe('journal');
     expect(notesTargetOf({ notes_target: 'journal' })).toBe('journal');
-    expect(notesTargetOf({ notes_target: 'JOURNAL' })).toBe('persona');
+    expect(notesTargetOf({ notes_target: 'persona' })).toBe('persona');
+    expect(notesTargetOf({ notes_target: 'PERSONA' })).toBe('journal');
   });
 
   it('maps a live-learned note: corrections always on, style by scope, default general', () => {

@@ -937,7 +937,10 @@ export async function loadJournalRules(
 export function journalTiersOf(
   memoryConfig: { journal_tiers?: string; notes_target?: string } | null | undefined,
 ): 'off' | 'shadow' | 'live' {
-  if (memoryConfig?.notes_target === 'journal') return 'live';
+  // Learned notes live in the Journal unless the agent opts back into its
+  // persona notes (notesTargetOf): then the old capped blocks would show
+  // about 6 of hundreds, so the tiers are live.
+  if (memoryConfig?.notes_target !== 'persona') return 'live';
   const t = memoryConfig?.journal_tiers;
   return t === 'off' || t === 'live' ? t : 'shadow';
 }

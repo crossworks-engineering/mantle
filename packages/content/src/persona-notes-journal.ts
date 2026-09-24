@@ -413,11 +413,13 @@ export async function applyConversionPlan(
 
 export type NotesTarget = 'persona' | 'journal';
 
-/** Where an agent's learned notes live (default: its persona notes). */
+/** Where an agent's learned notes live. The Journal since 2026-09-24 (the
+ *  fleet had moved every agent's notes over); `persona` is an explicit
+ *  opt-out, kept only as the undo path while `persona_notes` still exists. */
 export function notesTargetOf(
   memoryConfig: { notes_target?: string } | null | undefined,
 ): NotesTarget {
-  return memoryConfig?.notes_target === 'journal' ? 'journal' : 'persona';
+  return memoryConfig?.notes_target === 'persona' ? 'persona' : 'journal';
 }
 
 /**

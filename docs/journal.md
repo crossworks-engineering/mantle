@@ -151,11 +151,13 @@ them, per agent:
 | `journal_tiers` | What the prompt gets |
 |---|---|
 | `off` | the two blocks above; no per-turn lookup |
-| `shadow` (default) | the two blocks above; tiers 2 + 3 are picked and recorded in the `load_context` snapshot (`snapshot.journal`) only |
+| `shadow` | the two blocks above; tiers 2 + 3 are picked and recorded in the `load_context` snapshot (`snapshot.journal`) only |
 | `live` | the tiers below; the two blocks above are gone |
 
-`notes_target = 'journal'` (§4b) implies `live` whatever `journal_tiers` says
-(`journalTiersOf`): the agent's notes then exist only in the Journal, and the
+`journal_tiers` is only read for an agent that opted back into persona notes
+(`notes_target = 'persona'`; there `shadow` is the default). Every other agent
+is `live` whatever `journal_tiers` says (`journalTiersOf`): the Journal is
+where learned notes live by default since 2026-09-24 (§4b), and the
 old capped blocks would show about 6 of hundreds.
 
 **Scope.** A rule an agent learned belongs to that agent: other agents do not
@@ -290,6 +292,14 @@ only, since it needs `--agent` or `--page`):
 There is no one-step undo: the converted entries carry the
 `from-persona-notes` tag, and setting `notes_target` back to `persona` makes
 the agent read its (untouched) persona notes again.
+
+**The Journal is the default (2026-09-24).** Once every fleet agent's notes had
+moved, `notesTargetOf` flipped: an agent with no `notes_target` learns into
+the Journal and reads it through live tiers, so no agent writes persona notes
+any more and a manifest reconcile (which rewrites a system agent's
+`memory_config`) cannot put one back on them. `notes_target = 'persona'` is
+the explicit opt-out and the undo; the `persona_notes` column stays until the
+Journal has soaked, then goes in its own migration.
 
 ### 4c. Rule reconcile: copies and stale versions (`rule_reconcile`)
 
