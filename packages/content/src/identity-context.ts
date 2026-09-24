@@ -295,7 +295,8 @@ export async function buildWorkingNotesContext(
 //
 // Scope: an entry an agent learned (`agent_slug` set) belongs to that agent;
 // entries with no agent and open gaps are brain-wide. Superseded entries
-// (`nodes.superseded_by`) never show.
+// (`nodes.superseded_by`) and entries marked wrong without a replacement (a
+// bare `corrected` mark) never show: journalLiveSql.
 
 /** Kinds that are always on (tier 1). */
 export const TIER1_KINDS: readonly string[] = ['identity', 'goal', 'preference'];
@@ -397,8 +398,19 @@ export { journalLearnedSql } from './journal';
 /** SQL twin of {@link visibleToAgent} + {@link isLearnedRule}, plus "not
  *  superseded". Every term is NULL-safe: a NULL "learned" would make `not`
  *  NULL and silently hide a row that is not a rule at all. */
+/** SQL: the entry is live. Not superseded by another entry, and not marked
+ *  wrong: a bare `corrected` mark (content_supersede with no successor, the
+ *  owner saying "this rule is wrong") retires it as well. A bare `version` or
+ *  `migrated` mark only down-weights search, as for any node. NULL-safe. */
+export function journalLiveSql(): SQL {
+  return and(
+    isNull(nodes.supersededBy),
+    sql`coalesce(${nodes.supersededReason}, '') <> 'corrected'`,
+  )!;
+}
+
 export function journalVisibleSql(currentAgentSlug: string | null | undefined): SQL {
-  const live = isNull(nodes.supersededBy);
+  const live = journalLiveSql();
   if (!currentAgentSlug) return live;
   const learned = journalLearnedSql();
   return and(

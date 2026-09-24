@@ -21,7 +21,7 @@ describe.skipIf(!URL)('journalVisibleSql on Postgres', () => {
     try {
       const visible = await db.transaction(async (tx) => {
         await tx.execute(
-          sql`create temp table nodes (id text, data jsonb, superseded_by uuid) on commit drop`,
+          sql`create temp table nodes (id text, data jsonb, superseded_by uuid, superseded_reason text) on commit drop`,
         );
         await tx.execute(sql`insert into nodes (id, data, superseded_by) values
           ('own-lesson',       '{"kind":"lesson","agent_slug":"a"}', null),
@@ -35,6 +35,11 @@ describe.skipIf(!URL)('journalVisibleSql on Postgres', () => {
           ('other-gap',        '{"kind":"gap","agent_slug":"b"}', null),
           ('legacy-row',       '{"category":"family","body":"x"}', null),
           ('superseded',       '{"kind":"identity"}', '00000000-0000-4000-8000-000000000001')`);
+        // A bare mark: no successor. 'corrected' (this is wrong) retires the
+        // entry; 'version' only down-weights search, so it stays.
+        await tx.execute(sql`insert into nodes (id, data, superseded_by, superseded_reason) values
+          ('corrected-bare',   '{"kind":"lesson","agent_slug":"a"}', null, 'corrected'),
+          ('version-bare',     '{"kind":"lesson","agent_slug":"a"}', null, 'version')`);
         const rows = await tx.execute(
           sql`select id from nodes where ${journalVisibleSql('a')} order by id`,
         );
@@ -48,6 +53,7 @@ describe.skipIf(!URL)('journalVisibleSql on Postgres', () => {
         'other-recorded',
         'own-lesson',
         'unowned-lesson',
+        'version-bare',
       ]);
     } finally {
       await closeDb();
@@ -62,7 +68,7 @@ describe.skipIf(!URL)('journalVisibleSql on Postgres', () => {
     try {
       const rows = await db.transaction(async (tx) => {
         await tx.execute(
-          sql`create temp table nodes (id text, data jsonb, superseded_by uuid) on commit drop`,
+          sql`create temp table nodes (id text, data jsonb, superseded_by uuid, superseded_reason text) on commit drop`,
         );
         await tx.execute(sql`insert into nodes (id, data, superseded_by) values
           ('own-lesson',       '{"kind":"lesson","agent_slug":"a"}', null),
@@ -76,6 +82,8 @@ describe.skipIf(!URL)('journalVisibleSql on Postgres', () => {
           ('other-lesson',     '{"kind":"lesson","agent_slug":"b"}', null),
           ('unowned-lesson',   '{"kind":"lesson"}', null),
           ('user-preference',  '{"kind":"preference","author":"user"}', null)`);
+        await tx.execute(sql`insert into nodes (id, data, superseded_by, superseded_reason) values
+          ('own-corrected',    '{"kind":"lesson","agent_slug":"a"}', null, 'corrected')`);
         const r = await tx.execute(
           sql`select id from nodes where ${learnedRuleOfAgentSql('a')} order by id`,
         );

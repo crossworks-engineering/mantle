@@ -20,10 +20,10 @@
  * This package does not depend on the decider or the embedder; the caller
  * passes a {@link RuleReconciler} (built in @mantle/tools).
  */
-import { and, asc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { journalKindSql } from './journal';
-import { journalLearnedSql } from './identity-context';
+import { journalLearnedSql, journalLiveSql } from './identity-context';
 import { supersedeNode } from './supersede';
 
 /** Kinds a learned rule can have (gaps, context and logs are not rules). */
@@ -84,7 +84,7 @@ export type RuleReconcileReport = {
  *  journal-scope.db.test.ts). */
 export function learnedRuleOfAgentSql(agentSlug: string): SQL {
   return and(
-    isNull(nodes.supersededBy),
+    journalLiveSql(),
     sql`${journalKindSql()} in (${sql.join(
       RULE_KINDS.map((k) => sql`${k}`),
       sql`, `,
@@ -336,9 +336,7 @@ export async function applyReconcilePlan(
       : await db
           .select({ id: nodes.id })
           .from(nodes)
-          .where(
-            and(eq(nodes.ownerId, ownerId), isNull(nodes.supersededBy), inArray(nodes.id, ids)),
-          );
+          .where(and(eq(nodes.ownerId, ownerId), journalLiveSql(), inArray(nodes.id, ids)));
   const live = new Set(rows.map((r) => r.id));
   const todo = plan.retires.filter((r) => live.has(r.olderId) && live.has(r.newerId));
   const errors = await applyRetires(ownerId, todo, plan.threshold);
