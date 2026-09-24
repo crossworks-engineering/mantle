@@ -62,6 +62,22 @@ box is not steady state; it's two specific events:
 | **Recommended** (build-on-VPS, only if you build your own image on the box; see §2) | 4    | 8 GB  | 80 GB | Headroom for `next build`; each build leaves ~3–6 GB of Docker build cache, run `docker builder prune` after deploy bursts (a 5×-in-a-day burst once accumulated 35 GB).                                             |
 | **Reference** (author's prod)                                                       | 6    | 12 GB | 96 GB | Comfortable; ~27 GB disk in use including images, brain data itself is tiny (~170 MB at ~700 nodes).                                                                                                                 |
 
+**Container memory caps.** Every service carries a `mem_limit`: a cap, not a
+reservation, so the caps may add up to more than the box has. The two that
+matter are per-box settings in the stack's `.env`:
+
+| Variable          | Service      | Default | Raise it when                                                                                   |
+| ----------------- | ------------ | ------- | ----------------------------------------------------------------------------------------------- |
+| `WEB_MEM_LIMIT`   | `mantle_web` | `3g`    | the box has RAM to spare (16 GB: `6g`); every `pnpm maintain` run executes inside this container |
+| `API_MEM_LIMIT`   | `mantle_api` | `3g`    | large Tables workbooks next to heavy extraction (16 GB: `4g`)                                    |
+| `MEDIA_MEM_LIMIT` | `mantle_media` | `1g`  | big media parses (`3g`)                                                                          |
+
+Until 2026-09-24 the web cap was a fixed 1.5g: four maintenance runs at once
+OOM-restarted a pilot's web tier. On a 4 GB box the higher defaults move a
+runaway from a container OOM to the host's, so set them back down there
+(`WEB_MEM_LIMIT=1.5g`, `API_MEM_LIMIT=1.5g`). A change takes effect when
+compose recreates the container (the next roll, or `docker compose up -d`).
+
 Disk grows with: email/attachment volume (MinIO + Postgres), the nightly
 backup rotation (~40 MB × keep-count at a ~700-node brain), and, dominantly
 on build-on-VPS boxes, Docker build cache, which is reclaimable.

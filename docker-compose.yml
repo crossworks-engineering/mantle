@@ -631,7 +631,12 @@ services:
     container_name: mantle_web
     restart: unless-stopped
     logging: *default-logging
-    mem_limit: 1.5g
+    # The web tier also hosts every `pnpm maintain` run (docker exec into
+    # mantle_web), and each tsx process loads the whole workspace (~300-400
+    # MB). At the old fixed 1.5g, four maintenance runs at once OOM-restarted
+    # a pilot's web tier (2026-09-24). A cap, not a reservation: set
+    # WEB_MEM_LIMIT higher on a box with RAM to spare (16 GB box: 6g).
+    mem_limit: ${WEB_MEM_LIMIT:-3g}
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
@@ -910,12 +915,12 @@ services:
     container_name: mantle_api
     restart: unless-stopped
     logging: *default-logging
-    # 1.5g fits an ordinary box. One carrying large Tables workbooks next to
-    # heavy extraction can spike past it: a cgroup OOM measured 2026-09-09 at
-    # ~1.46 GB anon-rss killed the runtime mid-extract and left extract jobs
-    # stranded 'active'. Such boxes set API_MEM_LIMIT=3g; the default is
-    # deliberately unchanged so no other box moves.
-    mem_limit: ${API_MEM_LIMIT:-1.5g}
+    # A box carrying large Tables workbooks next to heavy extraction spiked
+    # past the old 1.5g default: a cgroup OOM measured 2026-09-09 at ~1.46 GB
+    # anon-rss killed the runtime mid-extract and left extract jobs stranded
+    # 'active'. The default is 3g since 2026-09-24 (every box has >= 8 GB);
+    # a cap, not a reservation. API_MEM_LIMIT raises it per box.
+    mem_limit: ${API_MEM_LIMIT:-3g}
     # Heartbeat-based liveness (no HTTP port; DBOS admin server off by default).
     healthcheck: *worker-healthcheck
     # Flag this container for the autoheal sidecar: when the heartbeat probe
