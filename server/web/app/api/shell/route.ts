@@ -70,6 +70,9 @@ export async function GET() {
     // email as the fallback and as the menu's secondary line.
     displayName: user.actor.displayName ?? null,
     email: user.actor.email ?? null,
+    // The rail's starred screens: per LOGIN (the actor's row), so they follow
+    // the person across browsers. [] when none are starred.
+    navFavorites: personal.navFavorites ?? [],
     siteName: prefs.siteName ?? null,
     peerName: prefs.peerName ?? null,
     colorTheme: prefs.colorTheme ?? null,

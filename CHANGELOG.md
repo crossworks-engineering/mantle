@@ -66,7 +66,8 @@ list page sorted by date. Mantle now stores the organisation, so every client
   apps per login. `POST /api/apps/:id/opened` counts opens per login, feeding
   "Most used" and "Recent".
 - **Favourites follow the person.** `PUT /api/profile/nav-favorites` moves the
-  sidebar favourites off the browser's localStorage onto the login's profile.
+  sidebar favourites off the browser's localStorage onto the login's profile;
+  `GET /api/shell` returns them as `navFavorites`.
 - **Icons and colours.** An app's icon may now be `lucide:<name>` as well as an
   emoji, and it takes a `color` tint key (`APP_TINTS`, never a raw colour, so
   each theme supplies its own shade). Both are projected on read, so an old
