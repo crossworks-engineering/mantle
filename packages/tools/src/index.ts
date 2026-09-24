@@ -287,3 +287,4 @@ export {
   type OpenapiSyncRowState,
 } from './openapi-sync';
 export { parseOpenapiBinding, type ToolGroupOpenapiBinding } from './integration-meta';
+export { reconcileMeta, ruleReconcilerFor } from './rule-reconciler';

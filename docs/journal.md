@@ -280,7 +280,9 @@ only, since it needs `--agent` or `--page`):
    `preference` (an explicit request, and a correction must land even when it
    reads like the rule it replaces); its `supersede_refs` do not apply in the
    Journal, and the tool says so: retiring the old entry is `journal_list`,
-   then `journal_update` / `journal_delete`.
+   then `journal_update` / `journal_delete`. With the decider's
+   `rule_reconcile` use live, both writers retire the older rule a new one
+   repeats or changes themselves (§4c).
 4. Rules then reach the prompt through tier 2, picked by Jev when the
    decider's `journal_recall` use is live (embedding similarity cannot match
    a rule to a request).
@@ -288,6 +290,38 @@ only, since it needs `--agent` or `--page`):
 There is no one-step undo: the converted entries carry the
 `from-persona-notes` tag, and setting `notes_target` back to `persona` makes
 the agent read its (untouched) persona notes again.
+
+### 4c. Rule reconcile: copies and stale versions (`rule_reconcile`)
+
+An agent's learned rules pile up: the reflector re-reads overlapping turns and
+writes the same lesson again in other words, and a rule that changed ("use
+the external time tracker" → "use a table") leaves the old one beside the new
+one, both read as current. Spike 14 (dev-brain page d58e4ed3) found both on
+real brains. The decider's `rule_reconcile` use (decisions.md §4) handles it
+in two places, both limited to rules THIS agent learned
+(`learnedRuleOfAgentSql` in `packages/content/src/rule-reconcile.ts`: a live
+identity / goal / preference / lesson / expectation entry that the agent
+learned and that carries its slug). What an agent records for the user is
+never a candidate.
+
+1. **On write** (`writeLearnedEntries`): each new rule is paired with the
+   agent's close rules (cosine ≥ 0.70 of the rule texts, at most 5) and Jev
+   answers "same rule?" and "does the newer change the older?". Live: at 0.8
+   on either, the new rule is written and the older one superseded by it
+   (reason `corrected` or `version`; reversible). Shadow: nothing changes and
+   the would-be retires are traced. A failed or absent decider writes exactly
+   as before.
+2. **Cleanup** (maintenance task `journal-rules-reconcile`, terminal only):
+   - dry run: `pnpm maintain journal-rules-reconcile --agent=<slug> --yes`
+     judges every close pair of the agent's existing rules and writes the
+     retires to a review page (plan in `data.rule_reconcile_plan`). An older
+     rule matched by several newer ones goes to the newest, and a chain
+     (a → b → c, each a direct yes) ends at its living end.
+   - apply: `pnpm maintain journal-rules-reconcile --apply --page=<id> --yes`
+     writes the reviewed supersede marks; a retire whose rules changed since
+     the dry run is skipped.
+
+Undo a retire with the supersede undo (`unsupersedeNode`); nothing is deleted.
 
 ---
 

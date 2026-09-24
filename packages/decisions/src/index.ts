@@ -92,6 +92,19 @@ export {
   type JournalRecallScoring,
   type JournalRule,
 } from './journal-recall';
+export {
+  MAX_RULE_CHARS,
+  MAX_RULE_PAIRS,
+  RULE_RECONCILE_THRESHOLD_DEFAULT,
+  RULE_SIMILARITY_FLOOR,
+  judgeRulePairs,
+  replacesRuleQuestion,
+  retiresOlder,
+  sameRuleQuestion,
+  type RulePair,
+  type RulePairScore,
+  type RuleReconcileJudgement,
+} from './rule-reconcile';
 export { scoreInGroups, type GroupScoring, type ScoredItem } from './group-scoring';
 export { DecisionCache } from './cache';
 export { CircuitBreaker } from './breaker';

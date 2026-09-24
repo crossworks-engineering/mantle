@@ -31,6 +31,7 @@ import {
   type PersonaUpdate,
 } from '@mantle/db';
 import { notesTargetOf, writeLearnedEntries } from '@mantle/content';
+import { reconcileMeta, ruleReconcilerFor } from './rule-reconciler';
 import type { BuiltinToolDef } from './types';
 
 function asStringArray(v: unknown): string[] {
@@ -143,15 +144,18 @@ const update_persona: BuiltinToolDef = {
             'Your notes live in the Journal: change or remove the entry with journal_update / journal_delete.',
         };
       }
-      const written = await writeLearnedEntries(
+      const { written, reconcile } = await writeLearnedEntries(
         ctx.ownerId,
         slug,
         [{ ...update.add, scope: 'general' }],
         'update_persona',
+        { reconcile: ruleReconcilerFor(ctx.ownerId) },
       );
       // Persona refs mean nothing in the Journal. The new entry is written
-      // (a correction must land); the old one is retired by the model with the
-      // Journal tools, and it is told so rather than told "done".
+      // (a correction must land). With rule_reconcile live, an older rule it
+      // repeats or changes is retired here; anything else the model retires
+      // with the Journal tools, and it is told so rather than told "done".
+      const retired = reconcile?.mode === 'live' ? reconcile.retires.length - reconcile.errors : 0;
       const ignoredRefs = [...(update.supersedeRefs ?? []), ...(update.removeRefs ?? [])];
       const staleRefs = ignoredRefs.length > 0;
       ctx.step?.setMeta({
@@ -159,15 +163,23 @@ const update_persona: BuiltinToolDef = {
         target: 'journal',
         written: written.length,
         ...(staleRefs ? { refs_ignored: ignoredRefs } : {}),
+        ...(reconcile ? { rule_reconcile: reconcileMeta(reconcile) } : {}),
       });
       return {
         ok: true,
         output: {
           journal: written[0] ?? null,
+          ...(retired > 0
+            ? {
+                retired: reconcile!.retires.map((r) => r.older),
+              }
+            : {}),
           ...(staleRefs
             ? {
                 not_retired:
-                  'supersede_refs / remove_refs are persona-note refs and do not apply in the Journal. Find the entry this replaces with journal_list, then remove or rewrite it with journal_delete / journal_update.',
+                  retired > 0
+                    ? 'The older rules listed in `retired` were superseded automatically. supersede_refs / remove_refs are persona-note refs and do not apply in the Journal; retire anything else with journal_list, then journal_delete / journal_update.'
+                    : 'supersede_refs / remove_refs are persona-note refs and do not apply in the Journal. Find the entry this replaces with journal_list, then remove or rewrite it with journal_delete / journal_update.',
               }
             : {}),
         },

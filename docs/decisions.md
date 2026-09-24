@@ -358,6 +358,48 @@ real turns, Sonnet 5 key, dev-brain page 9f57fa46): similarity found 15 to
 1.0 (8k), against 91k chars when every rule rides every turn. Median 0.93 s
 with groups of 60 (hence 40 here), $0.0037 a turn.
 
+### `rule_reconcile` (built; ships `shadow`)
+
+When an agent learns a rule (the reflector or `update_persona`, in Journal
+mode), is a rule it already holds now a copy or out of date? Each new rule is
+paired with the agent's close learned rules (embedding cosine of the rule
+texts ≥ **0.70**, at most 5), and Jev answers two nouls per (older, newer)
+pair (`packages/decisions/src/rule-reconcile.ts`, 20 pairs per request): "do
+they state the same rule?" and "does the newer one change or reverse the
+older, so that following the older as written would now be wrong?". Code
+names which rule is newer (dates); Jev never picks it. When either answer is
+at or above the threshold (default **0.8**), the OLDER rule is superseded by
+the new one (`packages/content/src/rule-reconcile.ts`): reason `corrected`
+when the change answer cleared it, else `version`. Only rules THIS agent
+learned are candidates; what an agent records for the user is never
+touched. The wiring is `ruleReconcilerFor` (`packages/tools/src/rule-reconciler.ts`).
+
+- `shadow`: nothing is retired. The reflector's `append_journal` step and the
+  `update_persona` tool step carry `rule_reconcile` meta with `would_retire:
+  [{older, newer, same, replaces}]`.
+- `live`: the older rules are superseded (reversible; hidden from turns,
+  kept for audit), listed as `retired` in the same meta; `update_persona`
+  also tells the model which rules it retired. A reflector note the decider
+  matched skips the token-Jaccard backstop: it replaces the old rule instead
+  of being dropped, so a correction that reads like a copy lands.
+- Cleanup of what is already there: the maintenance task
+  `journal-rules-reconcile` asks the same about every close pair of the
+  agent's existing rules and writes the plan to a review page; `--apply
+  --page=<id>` applies it (journal.md §4c). It needs the use enabled in
+  either mode: there the review page is the gate.
+
+Spike 14 (two work brains, 2026-09-24, 387 real pairs of learned rules at
+cosine ≥ 0.70, Sonnet 5 answer key with four labels, every retire hand
+checked; dev-brain page d58e4ed3). The reframe that makes it safe: for
+"same", "extends" (the newer adds detail) AND "replaces", the right action is
+the same, keep the newer and retire the older; only "different" is harmed.
+At 0.8 on either answer: 102 retires, **0 harmful**; 0.7 let one or two
+through. "Same" alone reads as "same rule", its extra yeses were "extends"
+(the newer rule covers the older, now and then minus a small detail).
+"Replaces" was right 8 of 8 at 0.8 and found live contradictions the notes
+had carried side by side for weeks. A 4-way choice was no better. Jev cost
+$0.01 for all 387 pairs, ~330-400 ms per 20-pair request.
+
 ### Declared, not built
 
 - `model_routing`: per-request complexity score + needs-tools / needs-code /
@@ -422,6 +464,9 @@ Full write-ups: dev-brain pages `cdf6a97c-5b84-485e-8698-9c266614318c`
   - `journal_recall`: the `load_context` step's output →
     `snapshot.journal.recall` (`picked`, `scored`, `failed`, `ms`), beside
     `snapshot.journal.picked` (the similarity pick) and `.tier1`.
+  - `rule_reconcile`: the reflector's `append_journal` step and the
+    `update_persona` tool step → `meta.rule_reconcile` (`mode`, `pairs`,
+    `would_retire` or `retired`, `failed`, `ms`).
   - Shadow waits: both recall uses are awaited in shadow too (the snapshot
     needs the scores), but they start at the top of the turn and are bounded
     by the worker's `timeout_ms` (clamped 0.2-5 s), so the most a shadow use
@@ -434,4 +479,5 @@ Full write-ups: dev-brain pages `cdf6a97c-5b84-485e-8698-9c266614318c`
 - **Kill switch:** disable the worker. Every call site is back to today's
   behaviour within 30 s, with no restart.
 - **Cost guard:** the decider only rides on calls that happen anyway (a search,
-  a turn). It adds no trigger, cron or sweep, per the cost-safety rule.
+  a turn, a learned rule being written). It adds no trigger, cron or sweep,
+  per the cost-safety rule; the rule cleanup is a manual maintenance task.

@@ -53,4 +53,37 @@ describe.skipIf(!URL)('journalVisibleSql on Postgres', () => {
       await closeDb();
     }
   });
+
+  it('rule reconcile only ever sees live rules THIS agent learned', async () => {
+    process.env.DATABASE_URL = URL;
+    const { db, closeDb } = await import('@mantle/db');
+    const { sql } = await import('drizzle-orm');
+    const { learnedRuleOfAgentSql } = await import('./rule-reconcile');
+    try {
+      const rows = await db.transaction(async (tx) => {
+        await tx.execute(
+          sql`create temp table nodes (id text, data jsonb, superseded_by uuid) on commit drop`,
+        );
+        await tx.execute(sql`insert into nodes (id, data, superseded_by) values
+          ('own-lesson',       '{"kind":"lesson","agent_slug":"a"}', null),
+          ('own-padded-slug',  '{"kind":"expectation","agent_slug":" a "}', null),
+          ('own-reflected',    '{"kind":"preference","agent_slug":"a","source":{"via":"reflector"}}', null),
+          ('own-converted',    '{"kind":"identity","agent_slug":"a","source":{"persona_note_ref":"n1"}}', null),
+          ('own-recorded',     '{"kind":"identity","agent_slug":"a","author":"agent"}', null),
+          ('own-gap',          '{"kind":"gap","agent_slug":"a"}', null),
+          ('own-context',      '{"kind":"context","agent_slug":"a","source":{"via":"reflector"}}', null),
+          ('own-superseded',   '{"kind":"lesson","agent_slug":"a"}', '00000000-0000-4000-8000-000000000001'),
+          ('other-lesson',     '{"kind":"lesson","agent_slug":"b"}', null),
+          ('unowned-lesson',   '{"kind":"lesson"}', null),
+          ('user-preference',  '{"kind":"preference","author":"user"}', null)`);
+        const r = await tx.execute(
+          sql`select id from nodes where ${learnedRuleOfAgentSql('a')} order by id`,
+        );
+        return (r as unknown as Array<{ id: string }>).map((x) => x.id);
+      });
+      expect(rows).toEqual(['own-converted', 'own-lesson', 'own-padded-slug', 'own-reflected']);
+    } finally {
+      await closeDb();
+    }
+  });
 });

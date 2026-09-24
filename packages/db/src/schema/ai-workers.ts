@@ -296,6 +296,11 @@ export type DecisionUse =
    *  ones at the threshold are Journal tier 2's agent lane instead of the
    *  embedding pick. */
   | 'journal_recall'
+  /** When an agent learns a rule (reflector, update_persona, Journal mode):
+   *  does the new rule state the same as, or change, a rule the agent
+   *  already holds? Live = the older rule is superseded by the new one; the
+   *  cleanup task asks the same about existing pairs. */
+  | 'rule_reconcile'
   /** Per-request model routing (complexity / needs tools / sensitive). */
   | 'model_routing';
 

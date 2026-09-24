@@ -22,6 +22,17 @@ import { db, nodes } from '@mantle/db';
 import { dedupeNewNotes, type PersonaNote } from '@mantle/db';
 import { createJournal, journalKindSql } from './journal';
 import { TIER1_MAX_CHARS, journalVisibleSql } from './identity-context';
+import {
+  applyRetires,
+  loadLearnedRules,
+  pairNewWithExisting,
+  pairRetires,
+  type LearnedRule,
+  type RulePairScore,
+  type RuleReconcileReport,
+  type RuleReconciler,
+  type RuleRetire,
+} from './rule-reconcile';
 
 /** Key of the plan inside the review page's `nodes.data`. */
 export const PLAN_DATA_KEY = 'persona_notes_plan';
@@ -458,31 +469,74 @@ export async function knownJournalEntries(
     .filter((e) => e.body.length > 0);
 }
 
+export type LearnedWrite = {
+  written: Array<{ id: string; kind: string; content: string }>;
+  /** Null when no reconciler was given, the agent has no close rules, or the
+   *  decider did not answer. */
+  reconcile: RuleReconcileReport | null;
+};
+
 /**
  * Write notes an agent learned (reflector, update_persona) as Journal
- * entries authored by that agent. The reflector's notes are dropped when they
- * near-copy an entry the agent already knows (the persona path's
- * token-Jaccard backstop). An update_persona note is an explicit request and
- * is always written: the backstop would read a correction ("British spelling"
- * → "American spelling") as a copy and silently keep the old rule. Returns
- * the entries written.
+ * entries authored by that agent.
+ *
+ * With a `reconcile` wired in (the decider's `rule_reconcile` use), each new
+ * rule is paired with the agent's close existing learned rules. Live: when a
+ * pair clears the gate (same rule, or the new rule changes the old one), the
+ * new rule is written and the OLDER one is superseded by it. Shadow: nothing
+ * changes and the would-be retires come back in `reconcile`.
+ *
+ * The reflector's notes still pass the token-Jaccard backstop (dropped when
+ * they near-copy an entry the agent already knows), except, in live mode, a
+ * note the decider matched: it replaces the old rule instead of being
+ * dropped, so a correction ("British spelling" → "American spelling"), which
+ * the backstop reads as a copy, lands. An update_persona note is an explicit
+ * request and is always written.
  */
 export async function writeLearnedEntries(
   ownerId: string,
   agentSlug: string,
   notes: ReadonlyArray<{ kind: string; content: string; scope?: 'general' | 'topic' | null }>,
   via: 'reflector' | 'update_persona',
-): Promise<Array<{ kind: string; content: string }>> {
-  let fresh = [...notes];
+  opts: { reconcile?: RuleReconciler } = {},
+): Promise<LearnedWrite> {
+  const incoming = notes.filter((n) => n.content.trim().length > 0);
+  const judged = opts.reconcile
+    ? await judgeNewRules(
+        ownerId,
+        agentSlug,
+        incoming.map((n) => n.content.trim()),
+        opts.reconcile,
+      )
+    : null;
+  const live = judged?.judgement.mode === 'live';
+  const matched = new Set<number>();
+  judged?.pairs.forEach((p, k) => {
+    if (pairRetires(judged.judgement.scores[k] ?? null, judged.judgement.threshold)) {
+      matched.add(p.newIdx);
+    }
+  });
+
+  let keep = incoming.map((_, i) => i);
   if (via === 'reflector') {
     const known = await knownJournalEntries(ownerId, agentSlug);
     const asNotes: PersonaNote[] = known.map((e) => ({ kind: 'style', content: e.body, at: '' }));
-    fresh = dedupeNewNotes(asNotes, fresh);
+    const backstop = keep.filter((i) => !(live && matched.has(i)));
+    const passed = new Set(
+      dedupeNewNotes(
+        asNotes,
+        backstop.map((i) => ({ i, content: incoming[i]!.content })),
+      ).map((x) => x.i),
+    );
+    keep = keep.filter((i) => (live && matched.has(i)) || passed.has(i));
   }
-  const written: Array<{ kind: string; content: string }> = [];
-  for (const n of fresh) {
+
+  const written: LearnedWrite['written'] = [];
+  const idOf = new Map<number, string>();
+  for (const i of keep) {
+    const n = incoming[i]!;
     const kind = journalKindForNote(n.kind, n.scope ?? null);
-    await createJournal(ownerId, {
+    const row = await createJournal(ownerId, {
       body: n.content.trim(),
       kind,
       author: 'agent',
@@ -490,7 +544,81 @@ export async function writeLearnedEntries(
       tags: [via === 'reflector' ? 'reflector' : 'update-persona'],
       source: { via, agent_slug: agentSlug, note_kind: n.kind },
     });
-    written.push({ kind, content: n.content.trim() });
+    idOf.set(i, row.id);
+    written.push({ id: row.id, kind, content: n.content.trim() });
   }
-  return written;
+
+  if (!judged) return { written, reconcile: null };
+  const { judgement, pairs, rules } = judged;
+  // Each older rule goes once, to the new rule it matched best. A new rule
+  // the backstop dropped (shadow) retires nothing: it was not written.
+  const best = new Map<number, { newIdx: number; score: RulePairScore }>();
+  pairs.forEach((p, k) => {
+    const score = judgement.scores[k] ?? null;
+    if (!pairRetires(score, judgement.threshold)) return;
+    if (!idOf.has(p.newIdx)) return;
+    const cur = best.get(p.ruleIdx);
+    const strength = Math.max(score!.same, score!.replaces);
+    if (!cur || strength > Math.max(cur.score.same, cur.score.replaces)) {
+      best.set(p.ruleIdx, { newIdx: p.newIdx, score: score! });
+    }
+  });
+  const retires: RuleRetire[] = [...best.entries()].map(([ruleIdx, { newIdx, score }]) => ({
+    olderId: rules[ruleIdx]!.id,
+    newerId: idOf.get(newIdx)!,
+    older: rules[ruleIdx]!.body,
+    newer: incoming[newIdx]!.content.trim(),
+    same: Math.round(score.same * 100) / 100,
+    replaces: Math.round(score.replaces * 100) / 100,
+  }));
+  const errors = live ? await applyRetires(ownerId, retires, judgement.threshold) : 0;
+  return {
+    written,
+    reconcile: {
+      mode: judgement.mode,
+      threshold: judgement.threshold,
+      pairs: pairs.length,
+      calls: judgement.calls,
+      failed: judgement.failed,
+      ms: judgement.ms,
+      retires,
+      errors,
+    },
+  };
+}
+
+/** Pair new rule texts with the agent's close learned rules and ask the
+ *  decider. Null when there is nothing to ask or no answer; never throws (a
+ *  failed reconcile must not stop the write). */
+async function judgeNewRules(
+  ownerId: string,
+  agentSlug: string,
+  texts: string[],
+  reconciler: RuleReconciler,
+): Promise<{
+  judgement: NonNullable<Awaited<ReturnType<RuleReconciler['judge']>>>;
+  pairs: Array<{ newIdx: number; ruleIdx: number; sim: number }>;
+  rules: LearnedRule[];
+} | null> {
+  if (texts.length === 0) return null;
+  try {
+    const rules = await loadLearnedRules(ownerId, agentSlug);
+    if (rules.length === 0) return null;
+    const vecs = await reconciler.embed([...texts, ...rules.map((r) => r.body)]);
+    const pairs = pairNewWithExisting(
+      vecs.slice(0, texts.length),
+      vecs.slice(texts.length),
+      reconciler.similarityFloor,
+    );
+    if (pairs.length === 0) return null;
+    const judgement = await reconciler.judge(
+      pairs.map((p) => ({ older: rules[p.ruleIdx]!.body, newer: texts[p.newIdx]! })),
+    );
+    return judgement ? { judgement, pairs, rules } : null;
+  } catch (err) {
+    console.warn(
+      `[rule-reconcile] ${agentSlug}: skipped (${err instanceof Error ? err.message : String(err)})`,
+    );
+    return null;
+  }
 }

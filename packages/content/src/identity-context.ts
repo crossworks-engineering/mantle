@@ -390,15 +390,22 @@ export function isLearnedRule(kind: string | null, data: Record<string, unknown>
   );
 }
 
+/** SQL twin of {@link isLearnedRule} without the agent_slug check: the entry
+ *  is a rule an agent learned. NULL-safe (every branch is a plain boolean), so
+ *  it can sit under NOT. */
+export function journalLearnedSql(): SQL {
+  return sql`(${journalKindSql()} in ('lesson', 'expectation')
+    or coalesce(${nodes.data}->'source'->>'via', '') in ('reflector', 'update_persona')
+    or ${nodes.data}->'source'->>'persona_note_ref' is not null)`;
+}
+
 /** SQL twin of {@link visibleToAgent} + {@link isLearnedRule}, plus "not
  *  superseded". Every term is NULL-safe: a NULL "learned" would make `not`
  *  NULL and silently hide a row that is not a rule at all. */
 export function journalVisibleSql(currentAgentSlug: string | null | undefined): SQL {
   const live = isNull(nodes.supersededBy);
   if (!currentAgentSlug) return live;
-  const learned = sql`(${journalKindSql()} in ('lesson', 'expectation')
-    or coalesce(${nodes.data}->'source'->>'via', '') in ('reflector', 'update_persona')
-    or ${nodes.data}->'source'->>'persona_note_ref' is not null)`;
+  const learned = journalLearnedSql();
   return and(
     live,
     sql`(not ${learned}

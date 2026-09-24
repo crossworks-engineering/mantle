@@ -43,6 +43,7 @@ import {
   resolveChatRoutes,
 } from '@mantle/runtime/agent';
 import { knownJournalEntries, notesTargetOf, writeLearnedEntries } from '@mantle/content';
+import { reconcileMeta, ruleReconcilerFor } from '@mantle/tools';
 import { CONVERSATIONAL_ROLES, rankActiveAgents } from './agent-select.js';
 
 /** How many recent turns the reflector reviews per agent per run. */
@@ -392,8 +393,18 @@ async function reflectOnAgent(
             input: { candidates: parsed.new_notes.length },
           },
           async (h) => {
-            const w = await writeLearnedEntries(ownerId, agent.slug, parsed.new_notes, 'reflector');
-            h.setMeta({ written: w.length, kinds: w.map((e) => e.kind) });
+            const { written: w, reconcile } = await writeLearnedEntries(
+              ownerId,
+              agent.slug,
+              parsed.new_notes,
+              'reflector',
+              { reconcile: ruleReconcilerFor(ownerId) },
+            );
+            h.setMeta({
+              written: w.length,
+              kinds: w.map((e) => e.kind),
+              ...(reconcile ? { rule_reconcile: reconcileMeta(reconcile) } : {}),
+            });
             return w;
           },
         );

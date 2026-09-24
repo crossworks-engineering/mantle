@@ -6,6 +6,8 @@ const h = vi.hoisted(() => ({
   known: [] as Array<{ data: Record<string, unknown> }>,
   existing: [] as Array<{ ref: string }>,
   created: [] as Array<Record<string, unknown>>,
+  rules: [] as Array<{ id: string; kind: string; body: string; createdAt: Date }>,
+  superseded: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock('@mantle/db', async () => {
@@ -32,6 +34,17 @@ vi.mock('./journal', async () => {
   };
 });
 
+vi.mock('./rule-reconcile', async () => {
+  const actual = await vi.importActual<typeof import('./rule-reconcile')>('./rule-reconcile');
+  return { ...actual, loadLearnedRules: vi.fn(async () => h.rules) };
+});
+vi.mock('./supersede', () => ({
+  supersedeNode: vi.fn(async (input: Record<string, unknown>) => {
+    h.superseded.push(input);
+    return {};
+  }),
+}));
+
 import { applyConversionPlan, type ConversionPlan } from './persona-notes-journal';
 import { writeLearnedEntries } from './persona-notes-journal';
 
@@ -39,6 +52,15 @@ beforeEach(() => {
   h.known = [{ data: { kind: 'preference', body: 'The user prefers British English spelling.' } }];
   h.created = [];
   h.existing = [];
+  h.rules = [
+    {
+      id: 'r1',
+      kind: 'preference',
+      body: 'The user prefers British English spelling.',
+      createdAt: new Date('2026-09-01T00:00:00Z'),
+    },
+  ];
+  h.superseded = [];
 });
 
 describe('applyConversionPlan', () => {
@@ -102,12 +124,40 @@ describe('applyConversionPlan', () => {
   });
 });
 
+import type { RuleReconciler } from './rule-reconcile';
+
+/** A reconciler whose vectors put every text on top of each other (all
+ *  pairs clear the similarity floor) and whose decider returns `score`. */
+function reconciler(
+  mode: 'shadow' | 'live',
+  score: { same: number; replaces: number } | null,
+  opts: { failEmbed?: boolean } = {},
+): RuleReconciler & { asked: Array<{ older: string; newer: string }> } {
+  const asked: Array<{ older: string; newer: string }> = [];
+  return {
+    asked,
+    similarityFloor: 0.7,
+    embed: async (texts) => {
+      if (opts.failEmbed) throw new Error('embedder down');
+      return texts.map(() => [1, 0]);
+    },
+    judge: async (pairs) => {
+      asked.push(...pairs);
+      if (!score) return null;
+      return { scores: pairs.map(() => score), mode, threshold: 0.8, calls: 1, failed: 0, ms: 300 };
+    },
+  };
+}
+
 describe('writeLearnedEntries', () => {
   const correction = { kind: 'correction', content: 'The user prefers American English spelling.' };
 
   it('an explicit update_persona add is always written, even when it reads like a copy', async () => {
     const w = await writeLearnedEntries('o1', 'assistant', [correction], 'update_persona');
-    expect(w).toEqual([{ kind: 'preference', content: correction.content }]);
+    expect(w).toEqual({
+      written: [{ id: 'j1', kind: 'preference', content: correction.content }],
+      reconcile: null,
+    });
     expect(h.created).toHaveLength(1);
     expect(h.created[0]).toMatchObject({ author: 'agent', agentSlug: 'assistant' });
   });
@@ -119,7 +169,85 @@ describe('writeLearnedEntries', () => {
       [{ kind: 'style', content: 'The user prefers British English spelling.' }],
       'reflector',
     );
-    expect(w).toEqual([]);
+    expect(w.written).toEqual([]);
     expect(h.created).toHaveLength(0);
+  });
+
+  it('live: a correction the backstop reads as a copy lands and retires the old rule', async () => {
+    const rec = reconciler('live', { same: 0.1, replaces: 0.93 });
+    const w = await writeLearnedEntries('o1', 'assistant', [correction], 'reflector', {
+      reconcile: rec,
+    });
+    expect(rec.asked).toEqual([
+      { older: 'The user prefers British English spelling.', newer: correction.content },
+    ]);
+    expect(w.written.map((e) => e.content)).toEqual([correction.content]);
+    expect(h.superseded).toEqual([
+      { ownerId: 'o1', id: 'r1', supersededBy: 'j1', reason: 'corrected' },
+    ]);
+    expect(w.reconcile).toMatchObject({ mode: 'live', pairs: 1, errors: 0 });
+    expect(w.reconcile!.retires).toMatchObject([{ olderId: 'r1', newerId: 'j1', replaces: 0.93 }]);
+  });
+
+  it('live: a same-rule match is a version, not a correction', async () => {
+    const note = { kind: 'style', content: 'Tables always cite their source row.' };
+    await writeLearnedEntries('o1', 'assistant', [note], 'update_persona', {
+      reconcile: reconciler('live', { same: 0.86, replaces: 0.05 }),
+    });
+    expect(h.superseded).toEqual([
+      { ownerId: 'o1', id: 'r1', supersededBy: 'j1', reason: 'version' },
+    ]);
+  });
+
+  it('shadow: nothing is retired, and the backstop still drops a copy', async () => {
+    const w = await writeLearnedEntries('o1', 'assistant', [correction], 'reflector', {
+      reconcile: reconciler('shadow', { same: 0.1, replaces: 0.93 }),
+    });
+    expect(w.written).toEqual([]);
+    expect(h.superseded).toEqual([]);
+    // The dropped note was never written, so it retires nothing even on paper.
+    expect(w.reconcile).toMatchObject({ mode: 'shadow', pairs: 1, retires: [] });
+  });
+
+  it('shadow: a written rule reports its would-be retire', async () => {
+    const note = { kind: 'style', content: 'Tables always cite their source row.' };
+    const w = await writeLearnedEntries('o1', 'assistant', [note], 'reflector', {
+      reconcile: reconciler('shadow', { same: 0.86, replaces: 0.05 }),
+    });
+    expect(w.written).toHaveLength(1);
+    expect(h.superseded).toEqual([]);
+    expect(w.reconcile!.retires).toMatchObject([{ olderId: 'r1', newerId: 'j1', same: 0.86 }]);
+  });
+
+  it('below the gate nothing is retired', async () => {
+    const note = { kind: 'style', content: 'Tables always cite their source row.' };
+    const w = await writeLearnedEntries('o1', 'assistant', [note], 'update_persona', {
+      reconcile: reconciler('live', { same: 0.79, replaces: 0.79 }),
+    });
+    expect(h.superseded).toEqual([]);
+    expect(w.reconcile!.retires).toEqual([]);
+  });
+
+  it('no decider answer, or a failing embedder, writes as before', async () => {
+    const off = await writeLearnedEntries('o1', 'assistant', [correction], 'update_persona', {
+      reconcile: reconciler('live', null),
+    });
+    expect(off).toMatchObject({ reconcile: null, written: [{ content: correction.content }] });
+    const broken = await writeLearnedEntries('o1', 'assistant', [correction], 'update_persona', {
+      reconcile: reconciler('live', { same: 1, replaces: 1 }, { failEmbed: true }),
+    });
+    expect(broken.reconcile).toBeNull();
+    expect(h.created).toHaveLength(2);
+    expect(h.superseded).toEqual([]);
+  });
+
+  it('an agent with no learned rules asks nothing', async () => {
+    h.rules = [];
+    const rec = reconciler('live', { same: 1, replaces: 1 });
+    const w = await writeLearnedEntries('o1', 'assistant', [correction], 'update_persona', {
+      reconcile: rec,
+    });
+    expect(rec.asked).toEqual([]);
+    expect(w.reconcile).toBeNull();
   });
 });

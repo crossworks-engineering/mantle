@@ -23,9 +23,18 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { Param, SQL } from 'drizzle-orm';
 
 const agentRows: Array<{ id: string; personaNotes: unknown[]; memoryConfig?: unknown }> = [];
-const writeLearned = vi.fn(async (...args: unknown[]) =>
-  (args[2] as Array<{ content: string }>).map((n) => ({ kind: 'preference', content: n.content })),
-);
+let reconcileReport: unknown = null;
+const writeLearned = vi.fn(async (...args: unknown[]) => ({
+  written: (args[2] as Array<{ content: string }>).map((n) => ({
+    kind: 'preference',
+    content: n.content,
+  })),
+  reconcile: reconcileReport,
+}));
+vi.mock('./rule-reconciler', () => ({
+  ruleReconcilerFor: (ownerId: string) => ({ ownerId }),
+  reconcileMeta: (r: { mode: string }) => ({ mode: r.mode }),
+}));
 
 vi.mock('@mantle/content', () => ({
   notesTargetOf: (m: { notes_target?: string } | null | undefined) =>
@@ -184,6 +193,7 @@ describe('update_persona', () => {
       'responder',
       [{ kind: 'style', content: 'Prefers prose.', scope: 'general' }],
       'update_persona',
+      { reconcile: { ownerId: 'o1' } },
     );
     expect(db.update).not.toHaveBeenCalled();
   });
@@ -199,6 +209,46 @@ describe('update_persona', () => {
       ctx,
     );
     expect(outputOf(res)).toEqual({ journal: { kind: 'preference', content: 'Use US spelling.' } });
+  });
+
+  it('notes_target = journal: a live rule_reconcile retire is reported to the model', async () => {
+    agentRows.splice(0, agentRows.length, {
+      id: 'a1',
+      personaNotes: [],
+      memoryConfig: { notes_target: 'journal' },
+    });
+    reconcileReport = {
+      mode: 'live',
+      threshold: 0.8,
+      pairs: 1,
+      calls: 1,
+      failed: 0,
+      ms: 300,
+      errors: 0,
+      retires: [
+        {
+          olderId: 'j-old',
+          newerId: 'j-new',
+          older: 'Use British spelling.',
+          newer: 'Use US spelling.',
+          same: 0.1,
+          replaces: 0.93,
+        },
+      ],
+    };
+    try {
+      const res = await tool.handler(
+        { add: { kind: 'correction', content: 'Use US spelling.' }, supersede_refs: ['n-x'] },
+        ctx,
+      );
+      expect(outputOf(res)).toMatchObject({
+        journal: { kind: 'preference', content: 'Use US spelling.' },
+        retired: ['Use British spelling.'],
+        not_retired: expect.stringMatching(/superseded automatically/),
+      });
+    } finally {
+      reconcileReport = null;
+    }
   });
 
   it('notes_target = journal: refs alone point at the Journal tools', async () => {

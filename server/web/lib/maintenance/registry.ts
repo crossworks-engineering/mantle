@@ -210,6 +210,27 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       "Spike 13 (dev-brain page 9f57fa46). The dry run spends the agent's model (measured 2026-09-23: $0.79 for 503 notes on Sonnet 5, $0.12 for 119 on grok) plus embeddings; applying creates one Journal entry per kept note, each indexed like any Journal write. Inside a box's container pass the owner: docker exec -e ALLOWED_USER_ID=<owner id>. The agent keeps reading its persona notes until memory_config.notes_target = journal, which also switches its Journal tiers live.",
   },
   {
+    slug: 'journal-rules-reconcile',
+    title: "Clean up an agent's learned Journal rules",
+    description:
+      "Dry run (default): every close pair of the agent's live learned rules goes to the decider's rule_reconcile use (same rule? does the newer one change the older?), and the older rules it would retire, each into its newer rule, are written to a review page. --apply --page=<id> applies that reviewed plan as supersede marks (reversible; a retire whose rules changed since the dry run is skipped). Only rules the agent learned; what it recorded for the user is never touched.",
+    kind: 'ops',
+    status: 'live',
+    // Apply only writes supersede marks; the dry run calls the decider (Jev)
+    // and the embedder.
+    cost: 'sql',
+    dryRunCost: 'llm',
+    cliOnly: 'needs --agent=<slug> (dry run) or --page=<review page id> (apply)',
+    schedulable: false,
+    script: 'scripts/journal-rules-reconcile.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    extraFlags: ['--agent=<slug>', '--page=<review page id>'],
+    requiresEnv: ['ALLOWED_USER_ID'],
+    notes:
+      "Spike 14 (dev-brain page d58e4ed3). Needs the decider's rule_reconcile use enabled (shadow or live). Jev cost is tiny (spike: $0.01 for 387 pairs); embeddings are cached by content. Inside a box's container pass the owner: docker exec -e ALLOWED_USER_ID=<owner id>.",
+  },
+  {
     slug: 'draws-re-render',
     title: 'Re-render drawing snapshots',
     description:
