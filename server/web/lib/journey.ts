@@ -223,7 +223,7 @@ async function reapUnguarded(userId: string): Promise<number> {
  *
  * The owner-scoped reaper above only fires when someone opens the live-activity
  * view, so on a box nobody browses an orphaned trace sits in `running` for days
- * (NATREF 2026-07-18: two reaped ~41 h late). Unguarded on purpose, unlike the
+ * (a client box 2026-07-18: two reaped ~41 h late). Unguarded on purpose, unlike the
  * self-heal: this is the sweep's whole job, not a tidy-up before a read, so a
  * database that refuses the write must surface as a failed run rather than
  * silently report zero. Returns how many it reaped.
@@ -253,7 +253,7 @@ async function reapOnce(userId: string, cutoff: Date): Promise<number> {
       // Honest unknown: the process died at some unrecorded moment, so
       // stamping "now - startedAt" fabricated absurd durations (a trace
       // reaped on the next UI visit 41h later read as a 41-hour run —
-      // NATREF 2026-07-18) and skewed every duration rollup. Null says
+      // a client box 2026-07-18) and skewed every duration rollup. Null says
       // "we don't know", which is the truth.
       durationMs: null,
     })

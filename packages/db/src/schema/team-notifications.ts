@@ -4,7 +4,7 @@ import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 /**
  * Member-to-member notifications — "let Deepthi know to check this thread".
  *
- * The gap this fills, from a real Pinnacle forum topic (2026-07-21): a member
+ * The gap this fills, from a real client forum topic (2026-07-21): a member
  * asked the responder to notify a colleague, and it correctly answered that it
  * had no way to reach anyone — so the ask degraded to "go tell her yourself,
  * and point her at this thread by hand", while the responder was SITTING in

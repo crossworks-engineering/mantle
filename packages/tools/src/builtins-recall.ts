@@ -36,7 +36,7 @@ const INTENT_PROP = {
   intent: {
     type: 'string',
     description:
-      "One line on why you came ('starting Destiny FM work'). Recorded for the owner's recall log; optional but appreciated.",
+      "One line on why you came ('starting the fleet-app work'). Recorded for the owner's recall log; optional but appreciated.",
   },
 } as const;
 

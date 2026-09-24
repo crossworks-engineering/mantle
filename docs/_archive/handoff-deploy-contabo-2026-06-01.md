@@ -1,7 +1,7 @@
-# Handover: Deploy Mantle to Contabo (jason.crossworks.network)
+# Handover: Deploy Mantle to Contabo (brain.example.com)
 
 **Date:** 2026-06-01 · **Status:** ✅ **DEPLOYED & LIVE** at
-https://jason.crossworks.network (valid Let's Encrypt cert). All 11 containers
+https://brain.example.com (valid Let's Encrypt cert). All 11 containers
 healthy, brain restored (1948 nodes), connections stable. Three production-only
 bugs surfaced and were fixed on the way up, see "Deploy completed" below.
 
@@ -56,9 +56,9 @@ climbing). Commit `825b663`.
 
 **Verify it's still healthy:**
 ```bash
-ssh cwe@mcp.crossworks.network 'cd ~/mantle && docker compose ps'
-ssh cwe@mcp.crossworks.network 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from pg_stat_activity"'  # expect ~20, NOT climbing
-curl -sI https://jason.crossworks.network   # 307 → /login, valid cert
+ssh user@vps.example.com 'cd ~/mantle && docker compose ps'
+ssh user@vps.example.com 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from pg_stat_activity"'  # expect ~20, NOT climbing
+curl -sI https://brain.example.com   # 307 → /login, valid cert
 ```
 
 ---
@@ -70,7 +70,7 @@ Docker on the VPS; the build was interrupted by that). Everything up to the
 build is staged on the VPS filesystem and survives a Docker reinstall.
 
 **Goal:** Run the containerized Mantle stack on the Contabo VPS, migrate Jason's
-dev brain (Postgres + files + MinIO) onto it, serve at `jason.crossworks.network`
+dev brain (Postgres + files + MinIO) onto it, serve at `brain.example.com`
 with Caddy auto-HTTPS.
 
 ---
@@ -79,10 +79,10 @@ with Caddy auto-HTTPS.
 
 | | |
 |---|---|
-| VPS SSH | `ssh cwe@mcp.crossworks.network` (key-based, non-interactive from Jason's Mac) |
+| VPS SSH | `ssh user@vps.example.com` (key-based, non-interactive from Jason's Mac) |
 | VPS | Ubuntu 24.04, **x86_64/amd64**, 6 CPU, 11 GB RAM, ~88 GB free |
 | Install dir | `~/mantle` (= `/home/cwe/mantle`) |
-| Domain | `jason.crossworks.network` → **185.207.250.252** = VPS IPv4 (CONFIRMED) |
+| Domain | `brain.example.com` → **203.0.113.10** = VPS IPv4 (CONFIRMED) |
 | Image | `titanwest/mantle:latest` (Docker Hub, namespace `titanwest`, **private**) |
 
 **Dev box = Jason's Mac** (`~/Projects/mantle`): dev stack runs from
@@ -103,7 +103,7 @@ brain (1,945 nodes); secrets in `apps/web/.env.local`.
    `titanwest/mantle:latest` via a compose `command:` override; only `web` has
    `build:`. So `docker compose build web` builds the one image for all.
 3. **Old stack cleared:** the VPS previously ran an old Supabase-based Mantle
-   (project `mantle_supabase`, files at `/home/cwe/mcp.cwe.cloud/infra/supabase/`).
+   (project `mantle_supabase`, files at `/home/cwe/old-host.example.com/infra/supabase/`).
    Its containers (`mantle_kong/db/studio/caddy/storage/meta/auth`) were
    `docker stop`ped to free 80/443. Volumes were kept (a Docker reinstall may wipe
    them; Jason said the box can be empty, so fine).
@@ -119,8 +119,8 @@ brain (1,945 nodes); secrets in `apps/web/.env.local`.
   ```
   MANTLE_IMAGE_NAMESPACE=titanwest
   MANTLE_IMAGE_TAG=latest
-  MANTLE_SITE_ADDRESS=jason.crossworks.network
-  MANTLE_PUBLIC_URL=https://jason.crossworks.network
+  MANTLE_SITE_ADDRESS=brain.example.com
+  MANTLE_PUBLIC_URL=https://brain.example.com
   MANTLE_DATA_DIR=/home/cwe/mantle/data
   POSTGRES_PASSWORD=*** (fresh, generated on VPS)
   S3_ACCESS_KEY=minio
@@ -141,26 +141,26 @@ brain (1,945 nodes); secrets in `apps/web/.env.local`.
 
 ```bash
 # 0. Confirm the daemon is back (Jason was reinstalling Docker)
-ssh cwe@mcp.crossworks.network 'docker version && docker compose version'
+ssh user@vps.example.com 'docker version && docker compose version'
 
 # 1. Build the one image natively (amd64). ~5–10 min. (Was interrupted ~80%
 #    through the deps install by the Docker reinstall — just re-run.)
-ssh cwe@mcp.crossworks.network 'cd ~/mantle && docker compose build web'
+ssh user@vps.example.com 'cd ~/mantle && docker compose build web'
 
 # 2. Restore the brain BEFORE the app/migrate starts, then bring everything up.
 #    ORDER MATTERS: restore into a fresh postgres so the public schema is empty
 #    and the dump's drizzle bookkeeping makes the later migrate a no-op.
-ssh cwe@mcp.crossworks.network 'cd ~/mantle &&
+ssh user@vps.example.com 'cd ~/mantle &&
   docker compose up -d postgres --wait &&                 # init: extensions + auth schema
   bash scripts/db-restore.sh backups/mantle.dump &&        # benign "already exists" notices = OK
   tar xzf minio.tgz -C data/minio &&                       # restore object store
   docker compose up -d --wait'                             # migrate no-ops; web/agent/workers/caddy up
 
 # 3. Verify
-ssh cwe@mcp.crossworks.network 'cd ~/mantle && docker compose ps'
-ssh cwe@mcp.crossworks.network 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from nodes"'  # expect 1945
-curl -sI https://jason.crossworks.network | head -5        # 200 + valid LE cert
-# browser: https://jason.crossworks.network → /debug (traces) → /debug/integrity Corpus audit (clean)
+ssh user@vps.example.com 'cd ~/mantle && docker compose ps'
+ssh user@vps.example.com 'docker exec mantle_pg psql -U postgres -d postgres -tA -c "select count(*) from nodes"'  # expect 1945
+curl -sI https://brain.example.com | head -5        # 200 + valid LE cert
+# browser: https://brain.example.com → /debug (traces) → /debug/integrity Corpus audit (clean)
 ```
 
 Caddy issues the Let's Encrypt cert automatically on first `up` (DNS resolves +
@@ -182,7 +182,7 @@ Tailnet/remote-inference is **off** (no `TS_AUTHKEY`); skip unless wanted later
 - If the Docker reinstall changed group membership, re-add `cwe` to the `docker`
   group (`sudo usermod -aG docker cwe` + re-login) so non-sudo docker works.
 - Master key / user id already in `.env`; to re-transfer the key without printing:
-  `grep '^MANTLE_MASTER_KEY=' ~/Projects/mantle/apps/web/.env.local | ssh cwe@mcp.crossworks.network 'cat >> ~/mantle/.env'`
+  `grep '^MANTLE_MASTER_KEY=' ~/Projects/mantle/apps/web/.env.local | ssh user@vps.example.com 'cat >> ~/mantle/.env'`
   (then dedupe the line).
 
 ## Re-dumping dev data (if needed again)

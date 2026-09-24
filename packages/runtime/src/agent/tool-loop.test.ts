@@ -1234,7 +1234,7 @@ describe('runToolLoop — tool-volume guards', () => {
   });
 
   it('a fully-skipped batch (≥3 calls) force-finals immediately instead of iterating on', async () => {
-    // NATREF 2026-07-28 shape: after the fixation cap trips, the model mass
+    // A client-box 2026-07-28 shape: after the fixation cap trips, the model mass
     // re-emits blocked calls round after round. The loop must stop paying for
     // rounds the guards will nullify: one fully-skipped batch → forced final.
     const tool = fakeTool({ slug: 'row_add' });

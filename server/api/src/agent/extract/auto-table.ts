@@ -173,7 +173,7 @@ export async function maybeAutoTableSpreadsheet(
   if (sheets.length === 0) return;
 
   // One workbook per spreadsheet (v2.1 P2): every usable sheet becomes a TAB
-  // of a single table node — no more sibling-table splitting (the NATREF
+  // of a single table node — no more sibling-table splitting (the client-box
   // sweep's "129 auto-tables" class shrinks by the sheet multiplier). The cap
   // now bounds TABS per workbook; the vestigial part logic is gone (parts
   // were never set post-v2).

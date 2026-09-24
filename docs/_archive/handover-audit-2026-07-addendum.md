@@ -47,7 +47,7 @@ showed the same parallel-load timeout flake class as `app-build/build.test.ts`
 3. **Perf verification was on the small local clone**: re-check EXPLAIN plans
    on a large corpus after deploy (unchanged from original).
 4. **Telegram responder must be smoke-tested live before shipping** (dev →
-   DFM → NATREF):
+   client box A → client box B):
    - text turn + a >4096-char answer (one Telegram message per chunk, threads
      under the inbound);
    - voice note in → voice reply out; a `[VOICE]`-provoking typed turn;
@@ -84,4 +84,4 @@ showed the same parallel-load timeout flake class as `app-build/build.test.ts`
 
 Unchanged in shape: review the branch (`/code-review`), merge `--no-ff` from the
 integrator, cut a release, then compose-refresh the boxes and run the Telegram
-smoke list above on dev before DFM/NATREF pick it up.
+smoke list above on dev before the client boxes pick it up.

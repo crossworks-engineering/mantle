@@ -101,7 +101,7 @@ const MAX_TEXT_ROWS = 20_000;
  *  clamped up to the 50 floor instead of falling back to 300, and every DWG on
  *  every default box rendered at 50 dpi: an 800×500 smudge of a P&ID, small
  *  enough (~1 KB) that the embedded-image gate then dropped it as
- *  `too_few_bytes` and the drawing got no picture at all. Found on NATREF
+ *  `too_few_bytes` and the drawing got no picture at all. Found on a client brain
  *  2026-09-02 — a 563 KB P&ID rendered 1003 bytes at 50 dpi, 15 KB at 300. */
 export function dwgRenderDpi(): number {
   const raw = Number(env('DWG_RENDER_DPI'));

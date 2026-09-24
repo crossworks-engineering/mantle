@@ -237,7 +237,7 @@ container and no LibreOffice in the image. Honest about what it costs: Tika's
 XHTML is a rendering, so **boolean cells are lost** (they render empty, though
 column alignment survives) and **dates arrive as display text**. Numbers come
 through and re-infer cleanly. In practice this is theoretical — across the dev,
-prod and NATREF brains there is not a single `.xls` or `.xlsb` — and
+prod and a client brain there is not a single `.xls` or `.xlsb` — and
 `legacy-sheet.ts` records exactly what degrades if one ever lands.
 
 ### Smaller consequences

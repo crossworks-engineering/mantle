@@ -174,7 +174,7 @@ Re-run (a work brain, 2026-09-23, 130 web turns, 104 with an on-screen note): v2
 state beat today's on exact match (67 vs 63) and correct `none` (37 vs 33),
 but hint precision stayed ~45% at 0.6 for every variant, because the labels
 are stale: the responder stopped delegating page edits on 2026-08-12, and
-`pcms-analyst` only exists since 2026-09-03. **Do not go live on the old
+the newest specialist only exists since 2026-09-03. **Do not go live on the old
 numbers**; the shadow week scores it against current behaviour.
 
 Wired in `assembleResponderTurn` (`packages/runtime/src/assistant/assemble-turn.ts`),

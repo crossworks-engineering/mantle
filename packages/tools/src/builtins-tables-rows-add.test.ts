@@ -150,7 +150,7 @@ describe('table_rows_add', () => {
 
 /** Fixture with EXISTING rows for the upsert (legacy doc path: no sqlite
  *  surface mocked, so the handler reads `doc.rows` directly). Keyed on the
- *  composite Service Name + Fluid Name, like the NATREF services table. */
+ *  composite Service Name + Fluid Name, like a client's services table. */
 const detailWithRows = () => ({
   ...detail(),
   data: {

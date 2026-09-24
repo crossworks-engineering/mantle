@@ -42,7 +42,7 @@ export async function buildTableIndexPieces(
   // Tables v2 (§12.1 amendment, 2026-07-15): file-backed tables index
   // PROFILE-ONLY chunks — the L1 profile per tab plus the L2 overview.
   // Rows are NEVER embedded (row dumps were 531 passages/16 nodes of the
-  // NATREF chunk pollution); row-level lookup is table_sql's job, and the
+  // client-box chunk pollution); row-level lookup is table_sql's job, and the
   // first-200-rows text lives only in tables.data_text for list ILIKE.
   // Legacy JSONB tables keep the old dataText chunking until a commit
   // converts them to file storage.

@@ -253,7 +253,7 @@ parentNodeId, on)`, and the cascade-aware drop-ins `applyShareMode` /
   returns the whole shared set but tags each section with the `parentToken` of
   its nearest team-shared ancestor. The **built-in hub** cards on top-level
   (`parentToken == null`) only, so a cascaded subtree doesn't flood it; a **hub
-  app** gets the full tree and can nest children under their parent (the NATREF
+  app** gets the full tree and can nest children under their parent (a client
   Team Hub renders the Master Documentation Index as an expandable directory).
   Every section stays an openable team-mode share, so children open from either
   surface.

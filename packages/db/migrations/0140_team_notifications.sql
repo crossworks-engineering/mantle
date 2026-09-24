@@ -1,6 +1,6 @@
 -- Member-to-member notifications, with reply-in-place.
 --
--- From a real Pinnacle forum topic (2026-07-21): a member asked the responder
+-- From a real client forum topic (2026-07-21): a member asked the responder
 -- to notify a colleague; it answered — correctly — that it had no way to reach
 -- anyone, so the ask degraded to "go tell her yourself and point her at this
 -- thread", while the responder was sitting in that thread and knew its id.

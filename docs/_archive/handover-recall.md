@@ -124,8 +124,8 @@ Jackdaw (the client repo): **v0.6.11** — Pages content centering
 (`MeasurePane` rebuilt: centered measure, 2× drag, persisted width; preview,
 focus mode, team readers) and **v0.6.12** — leaf page cards show their
 updated stamp (`updatedAgo`). Both merged, released, and **rolled to the
-whole fleet including Shahin's box** (client tag pinned in each box's
-`~/mantle/.env`, dev uses `~/stack-rehearsal`, NATREF `/opt/mantle`). Fully
+whole fleet including a client's box** (client tag pinned in each box's
+`~/mantle/.env`, dev uses `~/stack-rehearsal`, one client box `/opt/mantle`). Fully
 recorded in the working-memory page + Feature Tracker on the dev brain.
 
 ## 8. Session hygiene notes

@@ -166,7 +166,7 @@ const note_get: BuiltinToolDef = {
 };
 
 // Edit-in-place was a real gap: with only note_create, "add today's entries to
-// the work log" forced a duplicate note or a copy-paste handoff (NATREF
+// the work log" forced a duplicate note or a copy-paste handoff (a client box
 // 2026-07-18 — the responder flagged it herself). `append` covers the recurring
 // log-style flow in one call without re-emitting the whole body.
 const note_update: BuiltinToolDef = {

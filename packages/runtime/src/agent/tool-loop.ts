@@ -853,7 +853,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
     if (turnAborted()) return stoppedResult(result.text, iter, { pushAssistantMessage: false });
     const boundary = guards.endBatch(calls.length);
     if (boundary === 'batch_fully_skipped') {
-      // (NATREF 2026-07-28: a capped child re-issued 47 blocked row-adds across
+      // (a client box 2026-07-28: a capped child re-issued 47 blocked row-adds across
       // two more rounds before giving up.) Force the final answer now instead
       // of paying LLM rounds for more of the same.
       batchFullySkipped = true;

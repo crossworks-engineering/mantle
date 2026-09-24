@@ -11,7 +11,7 @@
  *
  * `team_member_list` / `team_notify` — the member-to-member reach. A member
  * could always ASK the responder to tell a colleague something, and it could
- * only answer that it had no way to (a real Pinnacle forum topic, 2026-07-21).
+ * only answer that it had no way to (a real client forum topic, 2026-07-21).
  * Same provenance discipline as above: the SENDER is the authenticated member,
  * the forum topic/post is stamped from the surface, and a recipient is always
  * an id from `team_member_list` re-verified against live membership — there is

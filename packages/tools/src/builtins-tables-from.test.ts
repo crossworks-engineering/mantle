@@ -2,7 +2,7 @@
  * Tests for the two import tools: table_from_text and table_from_file.
  *
  * Both ALWAYS create a new table. That is the property that bit hardest in
- * production (NATREF 2026-07-28: an agent reached for table_from_text to
+ * production (a client box 2026-07-28: an agent reached for table_from_text to
  * append rows and left a stray import behind), so both suites pin that no
  * draft op is ever issued on an existing table.
  *

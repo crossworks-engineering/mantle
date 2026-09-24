@@ -44,7 +44,7 @@
 		format json
 	}
 
-	# Box-local drop-ins: extra routes such as the PCMS MCP bridge on a client
+	# Box-local drop-ins: extra routes such as a database MCP bridge on a client
 	# box, or a customer vhost's paths. One file per concern in
 	# infra/caddy/conf.d/*.caddy, imported HERE so this file is never edited
 	# on a box and a release roll cannot wipe a route. Caddy orders handle

@@ -119,10 +119,10 @@ Foundation: A Summary from His Sermons"*; nothing lost.
 - [`update-prod.md`](../update-prod.md), the prod update loop + its **Verify** block.
 
 ### Read-only health probe (SSH + psql)
-The box: `ssh cwe@mcp.crossworks.network`, install dir `~/mantle`. A psql helper:
+The box: `ssh user@vps.example.com`, install dir `~/mantle`. A psql helper:
 
 ```bash
-H=cwe@mcp.crossworks.network
+H=user@vps.example.com
 PSQL(){ ssh $H "docker exec mantle_pg psql -U postgres -d postgres -tA -c \"$1\""; }
 ```
 

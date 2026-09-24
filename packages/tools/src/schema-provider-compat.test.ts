@@ -7,8 +7,8 @@
  * .parameters.properties[params].items: missing field." Anthropic and OpenAI
  * accept the same schema, so an itemless array is invisible until an agent on
  * a Google model is handed the tool — then EVERY turn of that agent 400s, no
- * matter what it was asked (NATREF, 2026-09-16: Rea's delegation to the
- * pcms-analyst failed twice on `app_db_query.params`).
+ * matter what it was asked (a client box, 2026-09-16: a responder's delegation to a
+ * Gemini specialist failed twice on `app_db_query.params`).
  *
  * The blast radius is the whole tool list, not the one broken tool: the
  * provider refuses the request outright. So this is a hard gate.

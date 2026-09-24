@@ -130,7 +130,7 @@ Always sanity-check a delete list and confirm `count=0` per file before acting.
 
 ## Deploy state
 
-Prod live + healthy at `b7ab202` (https://jason.crossworks.network). Migration
+Prod live + healthy at `b7ab202` (https://brain.example.com). Migration
 `0065` applied (now **66** total). All UI/files/chat work deployed; nodes ≈1994.
 Telegram poller still **stopped on prod** (dev owns the bots, the per-env bot
 split is NOT done yet). Docker Hub `titanwest/mantle:latest` is **stale** (last

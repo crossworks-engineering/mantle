@@ -690,7 +690,7 @@ const app_db_query: BuiltinToolDef = {
       // `items` is mandatory, not decoration: Google validates every function
       // declaration before the model runs and 400s the WHOLE request when an
       // array property omits it, so one itemless schema takes down every tool
-      // the agent has (NATREF, 2026-09-16). Enforced by
+      // the agent has (a client box, 2026-09-16). Enforced by
       // schema-provider-compat.test.ts.
       params: {
         type: 'array',

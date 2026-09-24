@@ -4,7 +4,7 @@
  * someone opens the live-activity view). On a box nobody browses for days,
  * crashed-mid-run traces sat in `running` the whole time, skewing every
  * "active"/"running" rollup until the next UI visit finally swept them
- * (NATREF 2026-07-18: two traces reaped ~41 h late). This sweep closes them
+ * (a client box 2026-07-18: two traces reaped ~41 h late). This sweep closes them
  * on the nightly cadence instead.
  *
  * Same semantics as the in-app reaper: status → error 'abandoned…',
