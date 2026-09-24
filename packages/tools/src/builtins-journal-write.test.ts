@@ -24,11 +24,12 @@ vi.mock('@mantle/content', async (importOriginal) => {
     createJournal: vi.fn(),
     updateJournal: vi.fn(),
     resolveGapEntry: vi.fn(),
+    ownerHasAgent: vi.fn(),
     nodeUrl: (id: string) => `https://brain.test/n/${id}`,
   };
 });
 
-import { createJournal, updateJournal, resolveGapEntry } from '@mantle/content';
+import { createJournal, updateJournal, resolveGapEntry, ownerHasAgent } from '@mantle/content';
 import { JOURNAL_TOOLS } from './builtins-journal';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
@@ -81,6 +82,42 @@ beforeEach(() => {
 });
 
 describe('journal_create', () => {
+  it('over MCP, `agent` scopes a lesson to that agent; the author stays the user', async () => {
+    vi.mocked(ownerHasAgent).mockResolvedValue(true);
+    await create.handler(
+      { body: 'Always cite the drawing number', kind: 'lesson', agent: 'planner' },
+      userCtx,
+    );
+    expect(ownerHasAgent).toHaveBeenCalledWith('o1', 'planner');
+    expect(createJournal).toHaveBeenCalledWith(
+      'o1',
+      expect.objectContaining({ kind: 'lesson', author: 'user', agentSlug: 'planner' }),
+    );
+  });
+
+  it('refuses `agent` on a non-rule kind, and for an agent that does not exist', async () => {
+    vi.mocked(ownerHasAgent).mockResolvedValue(true);
+    expect(
+      errorOf(
+        await create.handler({ body: 'I lead ops', kind: 'identity', agent: 'planner' }, userCtx),
+      ),
+    ).toMatch(/lesson or expectation/);
+    vi.mocked(ownerHasAgent).mockResolvedValue(false);
+    expect(
+      errorOf(await create.handler({ body: 'x', kind: 'expectation', agent: 'ghost' }, userCtx)),
+    ).toMatch(/no agent "ghost"/);
+    expect(createJournal).not.toHaveBeenCalled();
+  });
+
+  it('an agent calling with `agent` still writes as itself', async () => {
+    await create.handler({ body: 'Keep replies short', kind: 'lesson', agent: 'other' }, agentCtx);
+    expect(ownerHasAgent).not.toHaveBeenCalled();
+    expect(createJournal).toHaveBeenCalledWith(
+      'o1',
+      expect.objectContaining({ author: 'agent', agentSlug: 'responder' }),
+    );
+  });
+
   it('refuses a blank body WITHOUT calling the store', async () => {
     expect(errorOf(await create.handler({ body: '  ', kind: 'identity' }, userCtx))).toMatch(
       /body/,

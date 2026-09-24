@@ -152,6 +152,7 @@ export {
   listJournalTags,
   getJournal,
   createJournal,
+  ownerHasAgent,
   updateJournal,
   deleteJournal,
   resolveGapEntry,

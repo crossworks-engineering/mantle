@@ -46,7 +46,8 @@ Lives entirely in `nodes.data` (no sidecar, the Notes/Contacts pattern):
 data = {
   body: string,          // the entry — a short first-person paragraph
   author: 'user'|'agent',// provenance — stamped SERVER-SIDE, never model args
-  agent_slug?: string,   // authoring agent when author='agent'
+  agent_slug?: string,   // the agent it belongs to: the author when author='agent',
+                         // or the agent a user-written rule is for (MCP `agent`)
   kind?: string,         // identity·context·preference·goal | lesson·expectation·gap
   status?: string,       // gap lifecycle: 'open' | 'resolved' (kind='gap' only)
   resolved_at?: string,  // stamped when a gap is resolved
@@ -388,6 +389,13 @@ Gap creation only happens inside an existing turn — no cron, no trigger.
 - MCP serves the same builtins through the shared registry; a Claude
   Desktop/Code call has no `ctx.agent`, so upstream-ingest entries record as
   the user — correct, it's the user's surface.
+- **A rule for one agent, from MCP.** `journal_create` takes an optional
+  `agent` (slug) that only counts without `ctx.agent`: a `lesson` or
+  `expectation` then stays `author='user'` but gets that `agent_slug`, so it is
+  scoped like a rule the agent learned itself (`journalVisibleSql`: read by
+  that agent alone, listed under `/journal?learned_by=<slug>`). Without it an
+  MCP rule has no agent and every agent reads it. The agent must exist on the
+  brain; any other kind refuses the field.
 
 Tool descriptions steer the lanes: user-lane on the user's explicit ask;
 agent-lane for the agent's own lessons/expectations/gaps; never world-facts

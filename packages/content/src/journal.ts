@@ -4,7 +4,9 @@
  *   nodes.title            short display title (auto-derived from body if blank)
  *   nodes.data.body        the entry — a short plain-text paragraph
  *   nodes.data.author      'user' | 'agent' — stamped server-side (never model-supplied)
- *   nodes.data.agent_slug  authoring agent's slug when author='agent'
+ *   nodes.data.agent_slug  the agent the entry belongs to: the author when
+ *                          author='agent', or the agent a rule written by the
+ *                          user over MCP is for (author stays 'user')
  *   nodes.data.kind        optional kind (see KINDS); free text tolerated
  *   nodes.data.status      gap lifecycle ('open'|'resolved'); kind='gap' only
  *   nodes.data.resolved_at ISO timestamp set when a gap is resolved
@@ -25,7 +27,7 @@
  * anymore; `category` maps to a kind at read time (legacyCategoryToKind).
  */
 import { and, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import { agents, db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
 import { legacyCategoryToKind, normalizeEntryDate } from '@mantle/content-core/journal-options';
 
 export const JOURNAL_ROOT_LABEL = 'journal';
@@ -258,12 +260,26 @@ export type CreateJournalInput = {
   /** Provenance — set by the SERVER from the calling context (tool loop agent
    *  slug, REST session), never from model-supplied args. Defaults to 'user'. */
   author?: 'user' | 'agent';
+  /** With author='agent': the authoring agent. With author='user': the agent a
+   *  learned rule (lesson/expectation) is FOR, set over MCP; the rule is then
+   *  scoped to that agent like one it learned itself. */
   agentSlug?: string;
   /** Provenance of a converted entry (server-set, e.g. the persona-note
    *  conversion stamps `{persona_note_ref, agent_slug}`); stored as
    *  `data.source`. Never from model-supplied args. */
   source?: Record<string, unknown>;
 };
+
+/** Does this owner have an agent with this slug? (A user-written rule may
+ *  only be scoped to a real agent.) */
+export async function ownerHasAgent(ownerId: string, slug: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, slug.trim())))
+    .limit(1);
+  return Boolean(row);
+}
 
 export async function createJournal(
   ownerId: string,
@@ -275,9 +291,7 @@ export async function createJournal(
   const kind = input.kind?.trim();
   if (kind) data.kind = kind;
   data.author = input.author === 'agent' ? 'agent' : 'user';
-  if (input.author === 'agent' && input.agentSlug?.trim()) {
-    data.agent_slug = input.agentSlug.trim();
-  }
+  if (input.agentSlug?.trim()) data.agent_slug = input.agentSlug.trim();
   if (input.source) data.source = input.source;
   // A gap is born open — the lifecycle is create(open) → resolveGapEntry.
   if (kind === 'gap') data.status = 'open';
