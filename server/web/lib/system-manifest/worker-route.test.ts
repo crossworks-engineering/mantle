@@ -100,7 +100,7 @@ describe('adoptWorkerParams', () => {
     // Nothing the operator set is lost; only uses the row lacks are added.
     for (const [use, cfg] of Object.entries(out.uses)) {
       if (use in live.uses) expect(cfg).toEqual(live.uses[use as keyof typeof live.uses]);
-      else expect(cfg).toMatchObject({ enabled: false, mode: 'shadow' });
+      else expect(cfg).toEqual((decider.params as { uses: Record<string, unknown> }).uses[use]);
     }
   });
 
@@ -112,7 +112,7 @@ describe('adoptWorkerParams', () => {
       decider.params,
     ) as typeof live;
     expect(out.uses.passage_scoring).toEqual(live.uses.passage_scoring);
-    expect(out.uses.context_pruning).toEqual({ enabled: false, mode: 'shadow', threshold: 1.0 });
+    expect(out.uses.context_pruning).toEqual({ enabled: true, mode: 'live', threshold: 1.0 });
   });
 
   it('fills missing top-level keys from the manifest', () => {

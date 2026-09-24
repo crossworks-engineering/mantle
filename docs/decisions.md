@@ -30,8 +30,12 @@ going away breaks nothing.
 3. **Switched per use, in the UI.** The worker's `enabled` toggle is the
    master switch. Each use has its own switch in `params.uses` with a `mode`:
    `shadow` (Jev runs, the answer lands in the trace, behaviour does not
-   change) or `live` (the answer is used). New uses ship in `shadow`. The
-   manifest seeds the worker **disabled**; an upgrade never turns it on.
+   change) or `live` (the answer is used). Since 2026-09-24 a **fresh**
+   brain is seeded with the worker **on and every built use `live`** (the
+   whole fleet ran that way first; `model_routing` is not built and stays
+   off). The worker is optional, so an upgrade never creates or turns it on
+   for an EXISTING brain: that stays an operator act. A new use is developed
+   in `shadow` on the pilots first.
 4. **Two confidence floors.** Below `defer_below` (0.6) the answer is recorded
    and not acted on. Only at or above `act_alone_at` (0.9) may a caller act
    with no second check. Both are worker-level with per-use `min_confidence`
@@ -62,7 +66,7 @@ going away breaks nothing.
 | The one adapter                                                                                                                               | `packages/voice/src/adapters/openrouter-decision.ts` (+ wire-shape test)                  |
 | **`decide()`**, `resolveUse`, per-owner resolution cache, in-process answer cache                                                             | `packages/decisions/src/decide.ts`, `cache.ts`                                            |
 | Use: passage scoring                                                                                                                          | `packages/decisions/src/passage-scoring.ts`                                               |
-| Manifest entry (optional, `enabled: false`)                                                                                                   | `server/web/lib/system-manifest/manifest.ts`                                              |
+| Manifest entry (optional, `enabled: true`, built uses `live`)                                                                                                   | `server/web/lib/system-manifest/manifest.ts`                                              |
 | Test button RPC + route                                                                                                                       | `server/web/lib/ai-worker-rpc.ts` `testDecision`, `app/api/ai-workers/[id]/test/decision` |
 | Model pool `decider` (output modality `decisions`; a chat model is rejected here and Jev is rejected in every text pool) + one template entry | `packages/client-types/src/model-pools.ts`, `model-pools-data.json`                       |
 | Pricing fallback rows                                                                                                                         | `packages/tracing/src/pricing.ts`                                                         |
@@ -118,7 +122,7 @@ what the answers were, how many were under the floor, what it cost.
 
 ## 4. Uses
 
-### `passage_scoring` (built; ships `shadow`)
+### `passage_scoring` (built; ships `live`)
 
 After hybrid search returns its passages, one request scores each 0-3 on
 "how well does this passage answer the question" (rubric in
@@ -145,7 +149,7 @@ the true gain before anyone flips `live`. Freshness is **not** in the score:
 a stale passage reads as a perfect answer; the supersede annotation stays in
 charge.
 
-### `delegation_hint` (built; ships `shadow`)
+### `delegation_hint` (built; ships `live`)
 
 Before a responder turn, one `choice` over the agent's `delegate_to` roster
 plus `none`, with each agent's description as the criterion (`remy` and
@@ -193,7 +197,7 @@ direct turns; the chat baseline delegated 29 of them. Most misses were short
 instructions about what the user had open, with the note still inside the
 message: the reason for v2.
 
-### `context_pruning` (built; ships `shadow`)
+### `context_pruning` (built; ships `live`)
 
 Once per responder turn, after retrieval and the supersede pass, ONE request
 scores every injected item — facts, content hits, passages — 0-3 for "does
@@ -221,7 +225,7 @@ One request per turn: ~26 items, 356 ms, $0.0002. Those were 240-character
 snippets; production sends fuller text, so tighten only after a shadow week
 on full items.
 
-### `version_grouping` (built; ships `shadow`)
+### `version_grouping` (built; ships `live`)
 
 Once per responder turn, after context pruning, in `loadConversationContext`
 (`packages/decisions/src/version-grouping.ts`). Stops two versions of one
@@ -253,7 +257,7 @@ their successor, 0 other drops. The wording above: precision 1.00 at 0.8 and
 wording grouped 14 of 33 at 0.5); at 0.9 every grouping in real pools was a
 genuine unlinked copy. ~400 ms, ~$0.0005 per request.
 
-### `fact_add_prefilter` (built; ships `shadow`)
+### `fact_add_prefilter` (built; ships `live`)
 
 On the extractor's slow path (a candidate fact with close neighbours,
 `server/api/src/agent/extract/facts.ts`), before the chat classifier: one
@@ -278,7 +282,7 @@ said ADD on 22 of 22. Jev's UPDATE was wrong once at 0.99, so no confidence
 makes its update / delete safe. The shipped wording is new (the spike's exact
 round-2 text was not kept); the shadow week is its test.
 
-### `history_recall` (built; ships `shadow`)
+### `history_recall` (built; ships `live`)
 
 The responder's history is the last `history_limit` messages; a message just
 past that line drops out even when the new message returns to it. Once per
@@ -321,7 +325,7 @@ the walk stopped after one block on 36 of 50 turns, and it stops at the topic
 in between on a return). The money is small there (history is ~12% of
 responder spend); this use is about the returns, not the cost.
 
-### `journal_recall` (built; ships `shadow`)
+### `journal_recall` (built; ships `live`)
 
 Journal tier 2 (journal.md §4a) picks context entries, lessons and
 expectations by embedding similarity. For the agent lane (lessons,
@@ -358,7 +362,7 @@ real turns, Sonnet 5 key, dev-brain page 9f57fa46): similarity found 15 to
 1.0 (8k), against 91k chars when every rule rides every turn. Median 0.93 s
 with groups of 60 (hence 40 here), $0.0037 a turn.
 
-### `rule_reconcile` (built; ships `shadow`)
+### `rule_reconcile` (built; ships `live`)
 
 When an agent learns a rule (the reflector or `update_persona`, in Journal
 mode), is a rule it already holds now a copy or out of date? Each new rule is
@@ -432,16 +436,18 @@ Full write-ups: dev-brain pages `cdf6a97c-5b84-485e-8698-9c266614318c`
    **pure** apply function it can run in `live` and merely count in `shadow`.
 3. At the call site: `decisionUseEnabled()` if the pool size depends on it,
    `null` → old path, honour `outcome.mode`.
-4. Add the use to the manifest `params.uses` as `{ enabled: false, mode:
-'shadow' }`, and to the jackdaw worker form under "Experimental".
+4. Add the use to the manifest `params.uses` (`{ enabled: false, mode:
+'shadow' }` while it is measured, `live` once the fleet runs it), and to the
+jackdaw worker form under "Experimental".
 5. Check the question against the weak-spot list (rule 6) and make sure no
    answer alone can retire, merge or overwrite anything.
 6. Document it here.
 
 ## 7. Operating it
 
-- **Turn on:** Settings → AI Workers → Decider: enable the worker, then enable
-  a use in `params.uses` (mode `shadow`). Until the jackdaw form ships the
+- **Turn on (existing brain):** Settings → AI Workers → Decider: enable the
+  worker, then enable the uses in `params.uses` (a fresh brain has them all
+  live already). Until the jackdaw form ships the
   toggles, edit `params` as JSON. The resolution cache means a flip takes up
   to 30 s to reach a running process.
 - **Read the shadow week.** Every use leaves a `decide_<use>` step in the

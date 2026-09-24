@@ -1687,18 +1687,21 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
     model: DEFAULT_WORKER_MODEL,
   },
   // Decider: the typed-decision model (TypeSafe Jev) behind `decide()` in
-  // @mantle/decisions. Optional AND seeded disabled: it is the experimental
-  // decision layer, and Jason's rule is that experimental decision making is
-  // switched on in the UI, per use, never by an upgrade. Each use ships in
-  // `shadow` (answers traced, behaviour unchanged) so a week of /debug spend +
-  // trace meta shows the agreement before anyone flips it to `live`. The
-  // state sent to it leaves the box (OpenRouter → TypeSafe); `zdr` asks for
-  // zero-data-retention routing on every call. See docs/decisions.md.
+  // @mantle/decisions. Since 2026-09-24 a fresh brain ships it ON with every
+  // built use live: the whole fleet ran that way first (Jason's call, the
+  // pilots' full-range test), and the Journal tiers need journal_recall to
+  // pick an agent's rules (similarity alone finds 15-49% of them).
+  // `required: false` keeps it off EXISTING brains on upgrade: an optional
+  // worker is seeded at onboarding only, so switching an existing brain on
+  // stays an operator act (worker enabled + params.uses). model_routing is
+  // not built. The state sent to it leaves the box (OpenRouter → TypeSafe);
+  // `zdr` asks for zero-data-retention routing on every call. Without an
+  // OpenRouter key every use falls back to its old path. docs/decisions.md.
   {
     kind: 'decider',
     name: 'Decider (typed decisions)',
     required: false,
-    enabled: false,
+    enabled: true,
     provider: 'openrouter',
     model: '~typesafe/jev-latest',
     params: {
@@ -1707,14 +1710,15 @@ export const MANIFEST_WORKERS: readonly ManifestWorker[] = [
       defer_below: 0.6,
       act_alone_at: 0.9,
       uses: {
-        passage_scoring: { enabled: false, mode: 'shadow', threshold: 1.5 },
-        delegation_hint: { enabled: false, mode: 'shadow' },
-        context_pruning: { enabled: false, mode: 'shadow', threshold: 1.0 },
-        version_grouping: { enabled: false, mode: 'shadow', threshold: 0.9 },
-        fact_add_prefilter: { enabled: false, mode: 'shadow' },
-        history_recall: { enabled: false, mode: 'shadow', threshold: 1.0 },
-        journal_recall: { enabled: false, mode: 'shadow', threshold: 1.5 },
-        rule_reconcile: { enabled: false, mode: 'shadow', threshold: 0.8 },
+        passage_scoring: { enabled: true, mode: 'live', threshold: 1.5 },
+        delegation_hint: { enabled: true, mode: 'live' },
+        context_pruning: { enabled: true, mode: 'live', threshold: 1.0 },
+        version_grouping: { enabled: true, mode: 'live', threshold: 0.9 },
+        fact_add_prefilter: { enabled: true, mode: 'live' },
+        history_recall: { enabled: true, mode: 'live', threshold: 1.0 },
+        journal_recall: { enabled: true, mode: 'live', threshold: 1.5 },
+        rule_reconcile: { enabled: true, mode: 'live', threshold: 0.8 },
+        model_routing: { enabled: false, mode: 'shadow' },
       },
     },
   },

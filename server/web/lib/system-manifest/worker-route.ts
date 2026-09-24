@@ -55,10 +55,10 @@ export function resolveWorkerRoute(
  * Most workers take the manifest's params as-is: adopt means "reset to the
  * template". The decider is the exception. Its params are the operator's
  * switchboard (which uses are on, shadow vs live, thresholds, confidence gates,
- * zdr), not part of the route, and a reset would silently switch every use OFF
- * because the manifest seeds them disabled. So for the decider the operator's
- * values win; the manifest only contributes keys the row lacks, e.g. a use
- * added in a later release (which arrives disabled, in shadow).
+ * zdr), not part of the route, and a reset would silently overwrite what the
+ * operator chose with the manifest's defaults. So for the decider the
+ * operator's values win; the manifest only contributes keys the row lacks,
+ * e.g. a use added in a later release (which arrives as the manifest ships it).
  */
 export function adoptWorkerParams(
   kind: string,
