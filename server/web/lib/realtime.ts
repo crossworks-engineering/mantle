@@ -1,7 +1,11 @@
 import postgres from 'postgres';
 import { eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
-import { COMMENTS_CHANGED_CHANNEL, TASKS_CHANGED_CHANNEL } from '@mantle/content';
+import {
+  APP_NAV_CHANGED_CHANNEL,
+  COMMENTS_CHANGED_CHANNEL,
+  TASKS_CHANGED_CHANNEL,
+} from '@mantle/content';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 import { RUNS_CHANGED_CHANNEL, RUNS_CHANGED_TYPE } from '@mantle/runs';
 import { TURN_STREAM_CHANNEL, type TurnStreamEnvelope } from '@mantle/turn-stream';
@@ -108,6 +112,11 @@ async function ensureListening(): Promise<void> {
     const subTasks = await sql.listen(TASKS_CHANGED_CHANNEL, (ownerId) => {
       broadcast({ ownerId, type: 'task', id: '' });
     });
+    // App-nav writes (layout, pins, app create/rename/recolour/delete) —
+    // owner-id payload; the sidebar refetches /api/app-nav on every device.
+    const subAppNav = await sql.listen(APP_NAV_CHANGED_CHANNEL, (ownerId) => {
+      broadcast({ ownerId, type: 'app-nav', id: '' });
+    });
     // Comment writes (migration 0149) — JSON {ownerId, nodeId} payload,
     // broadcast typed 'comment' with the node id so a thread view can
     // invalidate precisely.
@@ -150,6 +159,7 @@ async function ensureListening(): Promise<void> {
         await subPending.unlisten();
         await subRuns.unlisten();
         await subTasks.unlisten();
+        await subAppNav.unlisten();
         await subComments.unlisten();
         await subConversation.unlisten();
         await subTurnStream.unlisten();

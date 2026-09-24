@@ -47,6 +47,37 @@ use it too: one image to host instead of two, and `MC_IMAGE_TAG` is gone
 (`MINIO_IMAGE_TAG` still overrides the tag). Boxes recreate the minio container
 once on their next update; the data is a bind mount and stays put. This is a
 stopgap: replacing MinIO with a maintained S3-compatible store is planned.
+## Unreleased: apps get folders, pins, icons and colours in the sidebar, synced everywhere (branch feat/app-nav-folders)
+
+The server half of the sidebar apps tree. A brain with a dozen or more mini
+apps had no way to organise them: the sidebar showed one "Apps" row and the
+list page sorted by date. Mantle now stores the organisation, so every client
+(web, desktop, phone) renders the same menu.
+
+- **Shared layout.** `appNav` is a brain-level preference (one record on the
+  anchor row, like the theme): folders nested up to three levels, their order,
+  and where each app sits. An app placed nowhere is "unsorted", which is where
+  a new app lands. `GET /api/app-nav` returns the tree, the login's pins and
+  open counts, and every app in slim form in one round-trip, already pruned of
+  deleted apps. `PUT /api/app-nav { baseRev, entries }` saves it
+  compare-and-set: when another client saved first the answer is 409 with the
+  current layout, so two devices can't silently overwrite each other.
+- **Personal pins and usage.** `PUT /api/app-nav/pins` keeps up to 12 pinned
+  apps per login. `POST /api/apps/:id/opened` counts opens per login, feeding
+  "Most used" and "Recent".
+- **Favourites follow the person.** `PUT /api/profile/nav-favorites` moves the
+  sidebar favourites off the browser's localStorage onto the login's profile.
+- **Icons and colours.** An app's icon may now be `lucide:<name>` as well as an
+  emoji, and it takes a `color` tint key (`APP_TINTS`, never a raw colour, so
+  each theme supplies its own shade). Both are projected on read, so an old
+  icon value that isn't renderable reads as unset.
+- **Live.** Layout, pin and app create/rename/recolour/delete writes notify
+  `app_nav_changed`, broadcast on `/api/realtime` as type `app-nav`.
+
+The pure tree logic (projection, strict write check, move/place/dissolve, and
+the flattening the sidebar renders its guide lines from) lives in
+`@mantle/content-core/app-nav`, so a move the client offers is one the server
+accepts. Types and limits are in `@mantle/client-types/app-nav`.
 
 ## Unreleased: MCP connectors sign in with pre-registered OAuth apps, so Power BI works (branch feat/mcp-entra-oauth)
 

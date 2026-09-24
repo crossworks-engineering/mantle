@@ -84,6 +84,18 @@ export {
 } from './apps';
 
 export {
+  APP_NAV_CHANGED_CHANNEL,
+  AppNavInvalidError,
+  listAppNavItems,
+  loadAppNavView,
+  notifyAppNavChanged,
+  recordAppOpen,
+  saveAppNav,
+  saveAppPins,
+  type SaveAppNavResult,
+} from './app-nav';
+
+export {
   SANDBOX_NAME_RE,
   createSandboxRow,
   listSandboxes,

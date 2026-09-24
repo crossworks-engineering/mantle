@@ -4,7 +4,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { createApp, listApps, countApps, type AppSort } from '@mantle/content';
+import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
+import { createApp, listApps, countApps, notifyAppNavChanged, type AppSort } from '@mantle/content';
 import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -29,7 +30,8 @@ export async function GET(req: Request) {
 const CreateBody = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(280).optional(),
-  icon: z.string().max(16).optional(),
+  icon: z.string().max(APP_ICON_MAX).optional(),
+  color: z.enum(APP_TINTS).optional(),
   tags: z.array(z.string().max(40)).max(20).optional().default([]),
 });
 
@@ -49,5 +51,7 @@ export async function POST(req: Request) {
     payload: { title: app.title, via: 'web_api', kind: 'app' },
     snippet: app.title,
   });
+  // A new app lands in the sidebar's Unsorted group on every open client.
+  void notifyAppNavChanged(user.id);
   return NextResponse.json({ app }, { status: 201 });
 }

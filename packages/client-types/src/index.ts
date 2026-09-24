@@ -32,3 +32,16 @@ export * from './dto/turns';
 export * from './dto/rows';
 export * from './dto/views';
 export * from './dto/recall';
+
+// Types only at the root; the runtime constants (APP_TINTS, limits) are the
+// `@mantle/client-types/app-nav` subpath.
+export type {
+  AppNav,
+  AppNavApp,
+  AppNavEntry,
+  AppNavFolder,
+  AppNavItem,
+  AppNavResponse,
+  AppOpenStat,
+  AppTint,
+} from './app-nav';

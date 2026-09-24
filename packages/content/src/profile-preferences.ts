@@ -28,6 +28,9 @@ import {
   isReminderChannel,
   isValidLocale,
   isValidTimezone,
+  projectAppNav,
+  projectAppOpens,
+  projectAppPins,
   projectAvatarParts,
   projectAvatarPhotoType,
   projectAvatarStyle,
@@ -40,6 +43,7 @@ import {
   projectHouseStyle,
   projectLogoKey,
   projectLogoType,
+  projectNavFavorites,
   projectNeatBackground,
   projectOnboardingModels,
   projectPeerName,
@@ -161,6 +165,10 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     teamPrivateReads: prefs.teamPrivateReads === true,
     teamHubAppId: projectTeamHubAppId(prefs.teamHubAppId),
     teamHubTags: projectTeamHubTags(prefs.teamHubTags),
+    appNav: projectAppNav(prefs.appNav),
+    appPins: projectAppPins(prefs.appPins),
+    navFavorites: projectNavFavorites(prefs.navFavorites),
+    appOpens: projectAppOpens(prefs.appOpens),
     lastReconciledVersion:
       typeof prefs.lastReconciledVersion === 'string' && prefs.lastReconciledVersion.length > 0
         ? prefs.lastReconciledVersion
@@ -252,6 +260,19 @@ export async function updateProfilePreferences(
     patch = { ...patch, teamHubTags: projectTeamHubTags(patch.teamHubTags) ?? [] };
   }
 
+  // The layout is rev-checked: only saveAppNav may write it, or a plain
+  // preference save could clobber a concurrent reorganisation.
+  if (patch.appNav !== undefined) {
+    throw new Error('appNav is written through saveAppNav, not a preference patch.');
+  }
+  // Canonical forms; [] is the deliberate "clear" write for both lists.
+  if (patch.appPins !== undefined) {
+    patch = { ...patch, appPins: projectAppPins(patch.appPins) ?? [] };
+  }
+  if (patch.navFavorites !== undefined) {
+    patch = { ...patch, navFavorites: projectNavFavorites(patch.navFavorites) ?? [] };
+  }
+
   const merge = JSON.stringify(patch);
   const [row] = await db
     .insert(profiles)
@@ -316,6 +337,10 @@ export async function updateProfilePreferences(
     teamPrivateReads: merged.teamPrivateReads === true,
     teamHubAppId: projectTeamHubAppId(merged.teamHubAppId),
     teamHubTags: projectTeamHubTags(merged.teamHubTags),
+    appNav: projectAppNav(merged.appNav),
+    appPins: projectAppPins(merged.appPins),
+    navFavorites: projectNavFavorites(merged.navFavorites),
+    appOpens: projectAppOpens(merged.appOpens),
     lastReconciledVersion: merged.lastReconciledVersion || undefined,
   };
 }
@@ -384,6 +409,9 @@ export const BRAIN_PREFERENCE_KEYS = [
   'onboardedAt',
   'onboardingStep',
   'onboardingModels',
+  // How the brain's apps are organised: one shared tree, so a team sees the
+  // same folders on every device. Pins and open counts stay personal.
+  'appNav',
 ] as const satisfies ReadonlyArray<keyof ProfilePreferences>;
 
 type BrainPreferenceKey = (typeof BRAIN_PREFERENCE_KEYS)[number];
@@ -399,7 +427,7 @@ function isBrainKey(k: string): k is BrainPreferenceKey {
  * throws (corrupt multi-user state): degrading to per-user is strictly better
  * than failing a settings save.
  */
-async function brandRowId(userId: string): Promise<string> {
+export async function brandRowId(userId: string): Promise<string> {
   try {
     return (await resolveSingleOwnerId()) ?? userId;
   } catch {

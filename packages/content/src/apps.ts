@@ -4,7 +4,8 @@
  * pointers:
  *
  *   nodes.title           display name
- *   nodes.data.icon       optional emoji / icon
+ *   nodes.data.icon       optional emoji or `lucide:<name>` (projectAppIcon)
+ *   nodes.data.color      optional tile tint key (APP_TINTS)
  *   nodes.data.summary    extractor-written summary (if 'app' is extracted)
  *   apps.source           { entry, files } — built + run
  *   apps.source_text      derived plaintext (concatenated source; FTS reads this)
@@ -30,7 +31,8 @@ import {
 } from '@mantle/db';
 import { shareModeOf } from './shares';
 import { loadProfilePreferences } from './profile-preferences';
-import type { AppRow, AppDetail } from '@mantle/client-types';
+import type { AppRow, AppDetail, AppTint } from '@mantle/client-types';
+import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 export type { AppRow, AppDetail };
 
 export const APPS_ROOT_LABEL = 'apps';
@@ -102,7 +104,10 @@ function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
   return {
     id: n.id,
     title: n.title,
-    icon: typeof d.icon === 'string' ? d.icon : null,
+    // Stored icons predate validation; project on read so a client only ever
+    // sees a shape it can render.
+    icon: projectAppIcon(d.icon) ?? null,
+    color: projectAppTint(d.color) ?? null,
     tags: n.tags ?? [],
     summary: typeof d.summary === 'string' ? d.summary : null,
     description: typeof manifest.description === 'string' ? manifest.description : null,
@@ -283,6 +288,7 @@ export function workingSource(app: AppDetail): AppSource {
 export type CreateAppInput = {
   title: string;
   icon?: string;
+  color?: AppTint;
   description?: string;
   tags?: string[];
   source?: AppSource;
@@ -303,7 +309,10 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
         type: 'app',
         title: input.title.trim().slice(0, 200) || 'Untitled app',
         path: APPS_ROOT_LABEL,
-        data: { ...(input.icon ? { icon: input.icon } : {}) },
+        data: {
+          ...(projectAppIcon(input.icon) ? { icon: projectAppIcon(input.icon) } : {}),
+          ...(projectAppTint(input.color) ? { color: input.color } : {}),
+        },
         tags: dedupeTags(input.tags ?? []),
       })
       .returning();
@@ -326,7 +335,10 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
 
 export type UpdateAppInput = Partial<{
   title: string;
+  /** '' clears back to the default tile. */
   icon: string;
+  /** null clears back to the neutral tint. */
+  color: AppTint | null;
   tags: string[];
 }>;
 
@@ -342,7 +354,16 @@ export async function updateAppMeta(
     .limit(1);
   if (!node) return null;
   const newData = { ...((node.data ?? {}) as Record<string, unknown>) };
-  if (input.icon !== undefined) newData.icon = input.icon;
+  if (input.icon !== undefined) {
+    const icon = projectAppIcon(input.icon);
+    if (icon) newData.icon = icon;
+    else delete newData.icon;
+  }
+  if (input.color !== undefined) {
+    const color = projectAppTint(input.color);
+    if (color) newData.color = color;
+    else delete newData.color;
+  }
   await db
     .update(nodes)
     .set({

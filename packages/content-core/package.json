@@ -7,6 +7,7 @@
     "typecheck": "tsc --noEmit"
   },
   "exports": {
+    "./app-nav": "./src/app-nav.ts",
     "./block-diff": "./src/block-diff.ts",
     "./block-ids": "./src/block-ids.ts",
     "./block-list": "./src/block-list.ts",

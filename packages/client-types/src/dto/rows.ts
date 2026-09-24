@@ -10,6 +10,8 @@
  * public surface is byte-identical — only the file a symbol lives in moved.
  */
 
+import type { AppNav, AppOpenStat, AppTint } from '../app-nav';
+
 // ── Row/DTO shapes moved from the server packages (jackdaw split P0) ─────────
 // Sources: @mantle/content, @mantle/email, @mantle/microsoft, @mantle/runtime/agent
 // re-export these names, so server code keeps its original import paths.
@@ -148,7 +150,10 @@ export type PageListRow = PageRow & {
 export type AppRow = {
   id: string;
   title: string;
+  /** Emoji, or `lucide:<name>` from the client's curated set (app-nav.ts). */
   icon: string | null;
+  /** Tile tint key (APP_TINTS); null = the client's neutral default. */
+  color: AppTint | null;
   tags: string[];
   summary: string | null;
   description: string | null;
@@ -450,6 +455,18 @@ export type ProfilePreferences = {
    *  this pref only chooses which tag groupings get pinned. Unset/empty ⇒ no
    *  curated sections. Read via projectTeamHubTags, never raw. */
   teamHubTags?: string[];
+  /** BRAIN-level sidebar layout for mini apps: folders (nested up to
+   *  APP_NAV_MAX_DEPTH), their order, and where each app sits. Written ONLY
+   *  through saveAppNav (rev-checked), read via projectAppNav, never raw. */
+  appNav?: AppNav;
+  /** Per-login: app ids pinned above the tree, in order. */
+  appPins?: string[];
+  /** Per-login: sidebar favourite hrefs, in order. Moved server-side from the
+   *  web client's localStorage so they follow the person across devices. */
+  navFavorites?: string[];
+  /** Per-login: open count + last-opened instant per app id, feeding the
+   *  "Most used" and "Recent" filters. Written by recordAppOpen. */
+  appOpens?: Record<string, AppOpenStat>;
 };
 
 export type BackupConfig = {

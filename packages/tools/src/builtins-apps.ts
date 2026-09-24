@@ -19,6 +19,7 @@ import {
   setDraftBuild,
   publishApp,
   deleteApp,
+  notifyAppNavChanged,
   workingSource,
   nodeUrl,
   CannotDeleteEntryError,
@@ -99,6 +100,8 @@ const app_create: BuiltinToolDef = {
         tags: strArr(input.tags),
       });
       ctx.step?.setOutput({ id: app.id, name: app.title });
+      // Lands in every open sidebar's Unsorted group.
+      void notifyAppNavChanged(ctx.ownerId);
       void recordIngest({
         source: 'agent_tool',
         ownerId: ctx.ownerId,
@@ -633,6 +636,7 @@ const app_delete: BuiltinToolDef = {
       const ok = await deleteApp(ctx.ownerId, id);
       if (!ok) return { ok: false, error: `app ${id} not found` };
       ctx.step?.setOutput({ id, deleted: true });
+      void notifyAppNavChanged(ctx.ownerId);
       return { ok: true, output: { id, deleted: true } };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
