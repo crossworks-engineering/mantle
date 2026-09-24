@@ -63,12 +63,15 @@ Every task declares:
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `slug`                     | stable id, used by CLI / worker / UI                                                                                                                                                           |
 | `kind`                     | `recurring` (drifts back), `remedy` (monitored one-shot, re-run when a dashboard flags drift), `ops` (deliberate event: model change, key rotation, deploy), `backfill` (historical migration) |
-| `status`                   | `live` or `retired` (completed backfills, still runnable with `--all`, hidden by default)                                                                                                     |
-| `cost`                     | `sql` \| `io` \| `imap` \| `crypto` \| `embedding` \| `llm`, what a live run spends                                                                                                           |
+| `status`                   | `live` or `retired` (completed backfills, still runnable with `--all`, hidden by default)                                                                                                      |
+| `cost`                     | `sql` \| `io` \| `imap` \| `crypto` \| `embedding` \| `llm`, what a live run spends                                                                                                            |
 | `schedulable`              | eligible for the Phase-2 cron worker                                                                                                                                                           |
 | `script` / `cwd`           | what the runner spawns (`tsx <script>` in `<cwd>`)                                                                                                                                             |
 | `applyFlag` / `dryRunFlag` | which convention the script uses; absence of both = live-on-invoke                                                                                                                             |
 | `requiresEnv`              | env vars beyond `DATABASE_URL` the script needs                                                                                                                                                |
+| `dryRunCost`               | what a DRY run spends when it is not free (a preview that calls a model); CLI and UI both ask to confirm it                                                                                    |
+| `uiArgs`                   | values the UI collects and passes as `--<name>=<value>`: `agent` (a slug, for the dry run) or `page` (a review page id, for the apply)                                                         |
+| `cliOnly`                  | a reason the UI must refuse the task (flags it cannot collect); unused while `uiArgs` covers the agent/page tasks                                                                              |
 
 **Hard guardrail** (enforced by a runtime assertion at module load and by
 `registry.test.ts`): `schedulable` tasks must be free (`isFreeCost`, `sql` or
@@ -173,8 +176,8 @@ streams a run.
   `agents.model` / `ai_workers.model` actually send still exist, and has the
   family moved on? A pin on OpenRouter absolutely can drift, a delisted slug
   404s at turn time, so it covers precisely what the other one skips.
-  `pool-fit` is the third axis: not *does the model exist* but *does it do the
-  job*. It came out of 2026-09-02, when an image GENERATOR was sitting in the
+  `pool-fit` is the third axis: not _does the model exist_ but _does it do the
+  job_. It came out of 2026-09-02, when an image GENERATOR was sitting in the
   vision ("Read images") pool on all five brains. Generators accept image input
   exactly like readers do, so nothing on the input side caught it, and it would
   have billed image-generation tokens and returned a picture where the vision
@@ -222,6 +225,14 @@ without a terminal:
   `planRun()` shared with the routes, enforces the SAME rails as
   `pnpm maintain` server-side, so the UI cannot bypass them (spend/retired
   confirms, env checks, positional-arg tasks like the backups stay CLI-only).
+- **Agent and page tasks** (`persona-notes-to-journal`,
+  `journal-rules-reconcile`) run from the tab too: their `uiArgs` make the
+  tab ask for the agent before a Preview and the review page before an
+  Apply; `planRun()` checks each value's shape (a slug, a uuid) before it
+  becomes argv. Their dry run spends (`dryRunCost: 'llm'`), so it confirms.
+- **`ALLOWED_USER_ID`** is filled from the signed-in owner when the box
+  leaves it empty (`runEnv()`, `SESSION_ENV`), so tasks that scope to the
+  owner no longer show "needs env" in the tab. A value set on the box wins.
 - Routes: `GET /api/debug/maintenance` (registry + env status + current run),
   `POST/GET /api/debug/maintenance/run` (start / poll), `…/run/cancel`.
   Owner-gated via `getOwnerOr401` like every debug route.

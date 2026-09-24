@@ -10,7 +10,12 @@
  * data (plus invariant assertions) — it must stay importable from CLI, worker,
  * and Next.js contexts alike, so no side effects and no app imports.
  */
-import type { TaskCost, TaskKind, TaskStatus } from '@mantle/client-types/types/maintenance';
+import type {
+  MaintenanceArg,
+  TaskCost,
+  TaskKind,
+  TaskStatus,
+} from '@mantle/client-types/types/maintenance';
 export type { TaskCost, TaskKind, TaskStatus };
 
 /** What a LIVE run of the task spends. `sql` and `io` are free; `imap` costs
@@ -41,6 +46,9 @@ export interface MaintenanceTask {
   /** The task needs flags only a terminal can pass (an agent slug, a page
    *  id): the UI runner refuses it with this reason instead of failing. */
   cliOnly?: string;
+  /** Values the UI runner collects and passes as `--<name>=<value>` (an
+   *  agent slug for the dry run, a review page id for the apply). */
+  uiArgs?: MaintenanceArg[];
   /** Flag that switches the script from dry-run (its default) to live. */
   applyFlag?: string;
   /** Flag that switches the script from live (its default) to dry-run. */
@@ -199,7 +207,10 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     // indexes each new entry, which runs the extractor.
     cost: 'llm',
     dryRunCost: 'llm',
-    cliOnly: 'needs --agent=<slug> (dry run) or --page=<review page id> (apply)',
+    uiArgs: [
+      { name: 'agent', kind: 'agent', label: 'Agent', for: 'dry' },
+      { name: 'page', kind: 'page', label: 'Review page', for: 'apply' },
+    ],
     schedulable: false,
     script: 'scripts/persona-notes-to-journal.ts',
     cwd: 'server/web',
@@ -220,7 +231,10 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     // and the embedder.
     cost: 'sql',
     dryRunCost: 'llm',
-    cliOnly: 'needs --agent=<slug> (dry run) or --page=<review page id> (apply)',
+    uiArgs: [
+      { name: 'agent', kind: 'agent', label: 'Agent', for: 'dry' },
+      { name: 'page', kind: 'page', label: 'Review page', for: 'apply' },
+    ],
     schedulable: false,
     script: 'scripts/journal-rules-reconcile.ts',
     cwd: 'server/web',
@@ -575,6 +589,10 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Reads api_keys and calls each provider once; no model is invoked, so there is no token spend. Skips OpenRouter, Copilot, local and custom — they build their lists from the provider and cannot drift by construction. Exits 0 even when drift is found: a provider shipping a model is not a failure.',
   },
 ];
+
+/** Env the UI runner fills from the signed-in owner when the box leaves it
+ *  empty: the scripts scope their work to that user. */
+export const SESSION_ENV = ['ALLOWED_USER_ID'] as const;
 
 export function getTask(slug: string): MaintenanceTask | undefined {
   return MAINTENANCE_TASKS.find((t) => t.slug === slug);
