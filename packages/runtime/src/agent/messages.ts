@@ -269,10 +269,16 @@ export function flattenChatMessagesForAdapter(
     if (typeof m.content === 'string') {
       return { role: m.role, content: m.content };
     }
-    // The array form is only emitted by the tool-loop path. The 3a
-    // chat workers shouldn't see it.
+    // buildChatMessages emits a system block as a one-part, cache-marked
+    // text array whenever the worker's model is an anthropic/ one. Text-only
+    // arrays flatten losslessly (the caller passes cacheControl.systemPrompt,
+    // which re-marks the system text); only an image part needs 3b.
+    const parts = m.content as Array<{ type: string; text?: string }>;
+    if (parts.every((p) => p.type === 'text')) {
+      return { role: m.role, content: parts.map((p) => p.text ?? '').join('') };
+    }
     throw new Error(
-      `flattenChatMessagesForAdapter: ${m.role} message at index ${idx} has array content (multi-modal or cache-marked) — use the 3b tool-loop path for these callers.`,
+      `flattenChatMessagesForAdapter: ${m.role} message at index ${idx} has an image part — use the 3b tool-loop path for multi-modal callers.`,
     );
   });
 }

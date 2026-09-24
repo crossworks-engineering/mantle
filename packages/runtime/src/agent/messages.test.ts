@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildChatMessages,
   buildAttachmentContextText,
+  flattenChatMessagesForAdapter,
   STABLE_PREFIX,
   type Digest,
   type ChatMessage,
@@ -376,5 +377,38 @@ describe('buildChatMessages: cache layout (stable to churny)', () => {
     expect(sys.map(marked).slice(0, 2)).toEqual([true, true]);
     expect(text(sys[1]!)).toMatch(/Earlier in this conversation/);
     expect(sys.some((m) => /What you've learned/.test(text(m)))).toBe(false);
+  });
+});
+
+describe('flattenChatMessagesForAdapter', () => {
+  it('flattens the cache-marked system blocks an anthropic/ worker gets', () => {
+    // The summarizer builds its prompt with buildChatMessages; on an
+    // anthropic/ model the system blocks come back as cache-marked text
+    // arrays, which used to throw here.
+    const msgs = build({ model: 'anthropic/claude-sonnet-5' });
+    expect(systemMessages(msgs).some((m) => Array.isArray(m.content))).toBe(true);
+    const flat = flattenChatMessagesForAdapter(msgs);
+    expect(flat.every((m) => typeof m.content === 'string')).toBe(true);
+    expect(flat[0]!.content).toContain('You are Saskia.');
+    expect(flat.at(-1)).toEqual({ role: 'user', content: 'hi' });
+  });
+
+  it('gives the same text for an anthropic/ and a non-anthropic model', () => {
+    const text = (model: string) =>
+      flattenChatMessagesForAdapter(build({ model })).map((m) => m.content);
+    expect(text('anthropic/claude-sonnet-5')).toEqual(text('google/gemini-3-flash'));
+  });
+
+  it('still rejects an image part', () => {
+    const msgs: ChatMessage[] = [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'look' },
+          { type: 'image_url', imageUrl: { url: 'data:image/png;base64,AAAA' } },
+        ],
+      },
+    ];
+    expect(() => flattenChatMessagesForAdapter(msgs)).toThrow(/image part/);
   });
 });
