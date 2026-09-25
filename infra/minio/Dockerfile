@@ -12,8 +12,8 @@
 # AIStor build, which denies every S3 call until a licence is installed.
 #
 # Same layout as the upstream image this replaces: minio AND mc in /usr/bin
-# (the compose healthcheck runs `mc ready local`, and createbuckets runs mc
-# from this same image), upstream's docker-entrypoint.sh, the ubi9-micro base,
+# (the compose healthcheck runs `mc ready local`), upstream's
+# docker-entrypoint.sh, the ubi9-micro base,
 # /data as the volume. Source: https://github.com/minio/minio (tag
 # $MINIO_TAG) and https://github.com/minio/mc (tag $MC_TAG), AGPL-3.0.
 #
