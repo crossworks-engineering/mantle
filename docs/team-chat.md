@@ -152,6 +152,9 @@ opts in:
   same team surface, with the same rules.
 - `app_db_list` / `app_db_query` on a team surface reach only apps with an
   active team-mode share.
+- Member uploads in 1:1 chat are saved with `data.indexing = 'metadata'`: the
+  brain indexes the file name, never its content. Images still reach the model inline and text files
+  stay readable, but `file_read` returns no text for a PDF or Word upload.
 - The owner switch lives on the `/team-admin` **Settings** tab; **enabling**
   requires an `AlertDialog` confirm that spells out the blast radius
   (disabling is immediate, no confirm). It is surface-wide; it governs the

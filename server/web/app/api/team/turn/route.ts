@@ -40,8 +40,7 @@ import {
   INGESTABLE_EXTS,
   MAX_UPLOAD_BYTES,
 } from '@mantle/files';
-import { db, nodes, type ConversationAttachment } from '@mantle/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { type ConversationAttachment } from '@mantle/db';
 import { recordIngest } from '@mantle/tracing';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
@@ -167,15 +166,15 @@ export async function POST(req: Request): Promise<NextResponse> {
           filename,
           bytes,
           overwrite: false,
+          data: {
+            // Provenance: team-contributed content must be distinguishable forever.
+            source: `team:${contactId}`,
+            // A member's upload is NOT brain knowledge: index it by name only,
+            // never read its content into chunks, facts or entities. Set on
+            // insert, so the extractor's first pass already sees it.
+            indexing: 'metadata',
+          },
         });
-        // Provenance: team-contributed content must be distinguishable forever.
-        await db
-          .update(nodes)
-          .set({
-            data: sql`coalesce(${nodes.data}, '{}'::jsonb) || ${JSON.stringify({ source: `team:${contactId}` })}::jsonb`,
-          })
-          .where(and(eq(nodes.id, saved.id), eq(nodes.ownerId, ownerId)))
-          .catch(() => {});
         void recordIngest({
           source: 'team_upload',
           ownerId,
