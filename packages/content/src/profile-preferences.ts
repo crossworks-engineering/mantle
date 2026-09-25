@@ -54,7 +54,8 @@ import {
   type ProfilePreferences,
 } from '@mantle/content-core/profile-projections';
 
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+import { APP_OPENS_MAX } from '@mantle/client-types/app-nav';
 import { db, profiles, resolveSingleOwnerId, type ConversationChannel } from '@mantle/db';
 
 /** Read prefs jsonb and project to typed shape. Missing keys fall
@@ -260,10 +261,12 @@ export async function updateProfilePreferences(
     patch = { ...patch, teamHubTags: projectTeamHubTags(patch.teamHubTags) ?? [] };
   }
 
-  // The layout is rev-checked: only saveAppNav may write it, or a plain
-  // preference save could clobber a concurrent reorganisation.
-  if (patch.appNav !== undefined) {
-    throw new Error('appNav is written through saveAppNav, not a preference patch.');
+  // Revisioned values are written ONLY by savePreferenceIfRev: a plain merge
+  // here would clobber whatever another client saved since this one loaded.
+  for (const k of REVISIONED_PREFERENCE_KEYS) {
+    if (patch[k] !== undefined) {
+      throw new Error(`${k} is written through savePreferenceIfRev, not a preference patch.`);
+    }
   }
   // Canonical forms; [] is the deliberate "clear" write for both lists.
   if (patch.appPins !== undefined) {
@@ -490,6 +493,119 @@ export async function savePreferencesFor(
     (merged as Record<string, unknown>)[k] = brand[k];
   }
   return merged;
+}
+
+// ── Concurrency-safe writes ────────────────────────────────────────────────
+//
+// `savePreferencesFor` merges a patch blindly (`preferences || patch`): the
+// last write wins, which is right for a theme or a timezone. Two kinds of
+// value need more, and both live here so feature code never hand-writes SQL
+// against the preferences column.
+
+/**
+ * Preferences whose value is one structure edited from several clients at
+ * once (a whole tree, say), so a blind merge would silently drop one client's
+ * work. Each carries a `rev` and is written only by `savePreferenceIfRev`;
+ * `updateProfilePreferences` refuses them.
+ */
+export const REVISIONED_PREFERENCE_KEYS = ['appNav'] as const satisfies ReadonlyArray<
+  keyof ProfilePreferences
+>;
+export type RevisionedPreferenceKey = (typeof REVISIONED_PREFERENCE_KEYS)[number];
+type RevisionedValue<K extends RevisionedPreferenceKey> = NonNullable<ProfilePreferences[K]>;
+
+export type RevSaveResult<K extends RevisionedPreferenceKey> =
+  { ok: true; value: RevisionedValue<K> } | { ok: false; current: RevisionedValue<K> | undefined };
+
+/**
+ * Save a revisioned preference compare-and-set: it lands, stamped
+ * `rev: expectedRev + 1`, only while the stored value's rev still equals
+ * `expectedRev` (an unset value counts as rev 0). Otherwise nothing is written
+ * and the CURRENT value comes back, so the caller can reapply its edit on top
+ * and retry. Brain-level keys go to the anchor row, like savePreferencesFor.
+ *
+ * The caller validates `value`; this only guarantees no lost update.
+ */
+export async function savePreferenceIfRev<K extends RevisionedPreferenceKey>(
+  userId: string,
+  key: K,
+  value: Omit<RevisionedValue<K>, 'rev'>,
+  expectedRev: number,
+): Promise<RevSaveResult<K>> {
+  const rowId = isBrainKey(key) ? await brandRowId(userId) : userId;
+  // Materialise the row so the conditional UPDATE has one to match.
+  await loadProfilePreferences(rowId);
+  const next = { ...value, rev: expectedRev + 1 } as RevisionedValue<K>;
+  const updated = await db
+    .update(profiles)
+    .set({
+      preferences: sql`${profiles.preferences} || ${JSON.stringify({ [key]: next })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(profiles.userId, rowId),
+        sql`coalesce((${profiles.preferences}->${key}->>'rev')::int, 0) = ${expectedRev}`,
+      ),
+    )
+    .returning({ userId: profiles.userId });
+  if (updated.length > 0) return { ok: true, value: next };
+  const current = (await loadProfilePreferences(rowId))[key] as RevisionedValue<K> | undefined;
+  return { ok: false, current };
+}
+
+/**
+ * Per-id counters (`{ [id]: { n, at } }`), bumped far more often than they are
+ * read. Each names its cap and its read projection; the map is trimmed to the
+ * cap in batches once it grows `slack` past it, not on every bump.
+ */
+const COUNTER_PREFERENCES = {
+  appOpens: { max: APP_OPENS_MAX, slack: 50, project: projectAppOpens },
+} as const;
+export type CounterPreferenceKey = keyof typeof COUNTER_PREFERENCES;
+
+/**
+ * Add one to counter `id` under `key` and stamp it now. One atomic jsonb
+ * update, so concurrent bumps (two tabs, two devices) all count, which a
+ * read-modify-write through savePreferencesFor would not. Personal rows only:
+ * a counter describes one login's use.
+ */
+export async function bumpPreferenceCounter(
+  userId: string,
+  key: CounterPreferenceKey,
+  id: string,
+): Promise<void> {
+  const spec = COUNTER_PREFERENCES[key];
+  await loadProfilePreferences(userId);
+  const at = new Date().toISOString();
+  const map = sql`coalesce(${profiles.preferences}->${key}, '{}'::jsonb)`;
+  const [row] = await db
+    .update(profiles)
+    .set({
+      preferences: sql`jsonb_set(
+        ${profiles.preferences},
+        ARRAY[${key}]::text[],
+        ${map} || jsonb_build_object(
+          ${id}::text,
+          jsonb_build_object(
+            'n', coalesce((${map}->${id}::text->>'n')::int, 0) + 1,
+            'at', ${at}::text
+          )
+        )
+      )`,
+    })
+    .where(eq(profiles.userId, userId))
+    .returning({ map: sql<unknown>`${profiles.preferences}->${key}` });
+  const stored = row?.map;
+  if (stored && typeof stored === 'object' && Object.keys(stored).length > spec.max + spec.slack) {
+    const trimmed = JSON.stringify(spec.project(stored) ?? {});
+    await db
+      .update(profiles)
+      .set({
+        preferences: sql`jsonb_set(${profiles.preferences}, ARRAY[${key}]::text[], ${trimmed}::jsonb)`,
+      })
+      .where(eq(profiles.userId, userId));
+  }
 }
 
 /** Format a Date in the user's timezone + locale. Cached per-locale

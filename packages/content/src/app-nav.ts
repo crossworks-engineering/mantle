@@ -7,13 +7,17 @@
  *   profiles(actor).preferences.appPins   one login's pins
  *   profiles(actor).preferences.appOpens  one login's open counters
  *
+ * No SQL against the preferences column here: the rev-checked layout save and
+ * the atomic open counter are the generic `savePreferenceIfRev` and
+ * `bumpPreferenceCounter` in profile-preferences.ts.
+ *
  * Every write NOTIFYs `app_nav_changed` with the anchor owner id, so each open
  * client refetches the tree (realtime type 'app-nav'), on every device.
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { apps, db, nodes, profiles } from '@mantle/db';
+import { apps, db, nodes } from '@mantle/db';
 import type { AppNav, AppNavEntry, AppNavItem, AppNavResponse } from '@mantle/client-types';
-import { APP_OPENS_MAX, EMPTY_APP_NAV } from '@mantle/client-types/app-nav';
+import { EMPTY_APP_NAV } from '@mantle/client-types/app-nav';
 import {
   appNavIssue,
   projectAppIcon,
@@ -22,15 +26,11 @@ import {
   pruneAppNav,
 } from '@mantle/content-core/app-nav';
 import {
-  brandRowId,
+  bumpPreferenceCounter,
   loadPreferencesFor,
-  loadProfilePreferences,
-  projectAppOpens,
+  savePreferenceIfRev,
   savePreferencesFor,
 } from './profile-preferences';
-
-/** How far past APP_OPENS_MAX the stored counters may grow before a trim. */
-const APP_OPENS_TRIM_SLACK = 50;
 
 /** NOTIFY channel for any app-nav write (payload: anchor owner id). Consumed
  *  by server/web/lib/realtime.ts, which broadcasts it as type 'app-nav'. */
@@ -107,10 +107,9 @@ export class AppNavInvalidError extends Error {}
 export type SaveAppNavResult = { ok: true; nav: AppNav } | { ok: false; current: AppNav };
 
 /**
- * Save the shared layout, compare-and-set on `baseRev`. The whole tree is
- * replaced in one statement that only matches while the stored rev still
- * equals `baseRev`; a lost race returns `{ ok: false, current }` so the client
- * can reapply its change on top of what the other device saved.
+ * Save the shared layout, compare-and-set on `baseRev` (savePreferenceIfRev):
+ * a lost race returns `{ ok: false, current }` so the client can reapply its
+ * change on top of what the other device saved.
  *
  * Placements of apps that don't exist (deleted since the client loaded) are
  * dropped rather than refused: a stale app id is expected, not a bug. Anything
@@ -127,39 +126,20 @@ export async function saveAppNav(
   if (!projected) throw new AppNavInvalidError('entries must be an array');
 
   const live = new Set((await listAppNavItems(ownerId)).map((a) => a.id));
-  const next: AppNav = {
-    rev: baseRev + 1,
+  const next = {
     entries: pruneAppNav(projected.entries as AppNavEntry[], (id) => live.has(id)),
   };
 
-  const rowId = await brandRowId(ownerId);
-  // Materialise the row first so the conditional UPDATE below has something to
-  // match on a brand-new brain.
-  await loadProfilePreferences(rowId);
-  const merge = JSON.stringify({ appNav: next });
-  const updated = await db
-    .update(profiles)
-    .set({
-      preferences: sql`${profiles.preferences} || ${merge}::jsonb`,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(profiles.userId, rowId),
-        sql`coalesce((${profiles.preferences}->'appNav'->>'rev')::int, 0) = ${baseRev}`,
-      ),
-    )
-    .returning({ userId: profiles.userId });
-
-  if (updated.length === 0) {
-    const current = (await loadProfilePreferences(rowId)).appNav ?? EMPTY_APP_NAV;
+  const saved = await savePreferenceIfRev(ownerId, 'appNav', next, baseRev);
+  if (!saved.ok) {
+    const current = saved.current ?? EMPTY_APP_NAV;
     return {
       ok: false,
       current: { rev: current.rev, entries: pruneAppNav(current.entries, (id) => live.has(id)) },
     };
   }
   void notifyAppNavChanged(ownerId);
-  return { ok: true, nav: next };
+  return { ok: true, nav: saved.value };
 }
 
 /** Replace one login's pins (order matters). Pins of missing apps are dropped. */
@@ -177,9 +157,8 @@ export async function saveAppPins(
 }
 
 /**
- * Count one open of an app by one login. A single atomic jsonb update, so two
- * tabs opening at once both count. Returns false when the app doesn't exist.
- * The cap on counters (APP_OPENS_MAX) is applied by the read projection.
+ * Count one open of an app by one login (bumpPreferenceCounter: atomic, so two
+ * tabs opening at once both count). Returns false when the app doesn't exist.
  */
 export async function recordAppOpen(
   ownerId: string,
@@ -192,40 +171,6 @@ export async function recordAppOpen(
     .where(and(eq(nodes.id, appId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'app')))
     .limit(1);
   if (!app) return false;
-  await loadProfilePreferences(actorId);
-  const at = new Date().toISOString();
-  const [row] = await db
-    .update(profiles)
-    .set({
-      preferences: sql`jsonb_set(
-        ${profiles.preferences},
-        '{appOpens}',
-        coalesce(${profiles.preferences}->'appOpens', '{}'::jsonb) || jsonb_build_object(
-          ${app.id}::text,
-          jsonb_build_object(
-            'n', coalesce((${profiles.preferences}->'appOpens'->${app.id}::text->>'n')::int, 0) + 1,
-            'at', ${at}::text
-          )
-        )
-      )`,
-    })
-    .where(eq(profiles.userId, actorId))
-    .returning({ opens: sql<unknown>`${profiles.preferences}->'appOpens'` });
-  // Trim in batches rather than on every open: once the map is well past the
-  // cap, rewrite it as the projection (the most recently opened APP_OPENS_MAX).
-  const stored = row?.opens;
-  if (
-    stored &&
-    typeof stored === 'object' &&
-    Object.keys(stored).length > APP_OPENS_MAX + APP_OPENS_TRIM_SLACK
-  ) {
-    const trimmed = JSON.stringify(projectAppOpens(stored) ?? {});
-    await db
-      .update(profiles)
-      .set({
-        preferences: sql`jsonb_set(${profiles.preferences}, '{appOpens}', ${trimmed}::jsonb)`,
-      })
-      .where(eq(profiles.userId, actorId));
-  }
+  await bumpPreferenceCounter(actorId, 'appOpens', app.id);
   return true;
 }
