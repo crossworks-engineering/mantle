@@ -256,9 +256,21 @@ class ErrorBoundary extends React.Component {
 // the same tick as root.render(), before React had rendered anything, so the
 // host revealed a blank frame. Children's mount effects run before this one,
 // so an app's first bridge requests (and any holdReady) reach the host first.
+//
+// The next frame OR a short timer, whichever comes first: a background tab
+// runs no animation frames, and waiting on one alone left an app opened in a
+// background tab unready until it was shown (and tripped the host watchdog).
 function ReadySignal(props) {
   React.useEffect(() => {
-    requestAnimationFrame(() => window.parent.postMessage({ v: 1, kind: 'ready' }, '*'));
+    let sent = false;
+    const send = () => {
+      if (sent) return;
+      sent = true;
+      window.parent.postMessage({ v: 1, kind: 'ready' }, '*');
+    };
+    requestAnimationFrame(send);
+    const t = setTimeout(send, 100);
+    return () => clearTimeout(t);
   }, []);
   return props.children;
 }
