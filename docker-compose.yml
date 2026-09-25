@@ -154,12 +154,14 @@ x-app-env: &app-env
   # (Was `:?required`, which contradicted .env.prod.example and broke fresh
   # installs before any user exists.)
   ALLOWED_USER_ID: ${ALLOWED_USER_ID:-}
-  S3_ENDPOINT: http://minio:9000
-  S3_REGION: us-east-1
-  S3_BUCKET: mantle
+  # Any S3-compatible store works: the app speaks plain S3 only. The defaults
+  # point at the bundled `minio` service; override in .env for an external one.
+  S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_BUCKET: ${S3_BUCKET:-mantle}
   S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set it in .env — scripts/install.sh writes one}
   S3_SECRET_KEY: ${S3_SECRET_KEY:?set it in .env — scripts/install.sh writes one}
-  S3_FORCE_PATH_STYLE: 'true'
+  S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
   NODE_ENV: production
   MANTLE_EMBEDDING_MODEL: ${MANTLE_EMBEDDING_MODEL:-}
   # Self-hosted embedder. Points at the bundled `ollama` service serving
@@ -350,7 +352,7 @@ services:
     # source, deleted minio/minio and minio/mc from Docker Hub (2026-09-11) and
     # then locked the quay.io copies (401), so every roll and fresh install
     # failed at the pull. Same release, built from upstream's AGPL source, with
-    # mc inside (the healthcheck and createbuckets both use it).
+    # mc inside (the healthcheck uses it).
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
     container_name: mantle_minio
     restart: unless-stopped
@@ -371,36 +373,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-
-  # One-shot: create the object-store bucket the app writes to. MinIO ships
-  # empty — `mc ready` (the health gate above) only means the SERVER is up, not
-  # that the bucket exists. Without this, the first upload / app build / file
-  # ingest on a fresh box fails "The specified bucket does not exist" (the app
-  # only HEADs the bucket, never creates it — see packages/storage/src/index.ts).
-  # The dev path (scripts/up.sh) does the same `mc mb`; this is its prod twin.
-  # Idempotent (`--ignore-existing`), so it's a no-op on every later boot. Every
-  # service that writes object bytes depends_on this completing.
-  createbuckets:
-    # The minio image itself: it carries mc (RELEASE.2025-08-13T08-35-41Z, the
-    # same mc this service used to pull on its own), so there is one image to
-    # host instead of two.
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
-    container_name: mantle_createbuckets
-    restart: "no"
-    depends_on:
-      minio: { condition: service_healthy }
-    environment:
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set it in .env — scripts/install.sh writes one}
-      S3_SECRET_KEY: ${S3_SECRET_KEY:?set it in .env — scripts/install.sh writes one}
-      S3_BUCKET: ${S3_BUCKET:-mantle}
-    entrypoint: ["sh", "-c"]
-    command:
-      - |
-        set -e
-        mc alias set local http://minio:9000 "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY"
-        mc mb --ignore-existing "local/$$S3_BUCKET"
-        mc anonymous set none "local/$$S3_BUCKET"
-        echo "[createbuckets] bucket '$$S3_BUCKET' ready"
 
   # Apache Tika — document-parser fallback for formats our in-process parsers
   # don't cover (.odt / .ods / .odp / .pptx / .ppt / .doc / .rtf / .epub / …).
@@ -613,11 +585,16 @@ services:
     # same one-shot gate — every worker depends_on this completing, so by the time
     # they call pg-boss start() the schema exists and they can't race to create it
     # (which on a fresh DB leaves it uncreated). Idempotent on an existing brain.
-    command: ["sh", "-c", "pnpm -C packages/db migrate && pnpm -C server/web pgboss:init && pnpm -C server/api provision"]
+    # Last step: create the object-store bucket if it is missing (plain S3
+    # CreateBucket, any backend). It replaced the `createbuckets` one-shot,
+    # which needed MinIO's `mc`: without a bucket, the first upload, app build
+    # or file ingest fails "The specified bucket does not exist".
+    command: ["sh", "-c", "pnpm -C packages/db migrate && pnpm -C server/web pgboss:init && pnpm -C server/api provision && pnpm -C packages/storage objectstore:ensure"]
     container_name: mantle_migrate
     restart: "no"
     depends_on:
       postgres: { condition: service_healthy }
+      minio:    { condition: service_healthy }
     environment:
       <<: *app-env
 
@@ -644,7 +621,6 @@ services:
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
-      createbuckets: { condition: service_completed_successfully }
       migrate:       { condition: service_completed_successfully }
     environment:
       <<: *app-env
@@ -935,7 +911,6 @@ services:
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
-      createbuckets: { condition: service_completed_successfully }
       migrate:       { condition: service_completed_successfully }
     environment:
       <<: *app-env
@@ -964,7 +939,6 @@ services:
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
-      createbuckets: { condition: service_completed_successfully }
       migrate:       { condition: service_completed_successfully }
     environment:
       <<: *app-env
@@ -1007,7 +981,6 @@ services:
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
-      createbuckets: { condition: service_completed_successfully }
       migrate:       { condition: service_completed_successfully }
     environment:
       <<: *app-env
@@ -1030,7 +1003,6 @@ services:
     depends_on:
       postgres:      { condition: service_healthy }
       minio:         { condition: service_healthy }
-      createbuckets: { condition: service_completed_successfully }
       migrate:       { condition: service_completed_successfully }
     environment:
       <<: *app-env

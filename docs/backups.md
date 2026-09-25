@@ -82,7 +82,13 @@ docker compose up -d --wait
 
 Files, MinIO, and pending forum uploads restore by putting the `files/`,
 `minio/`, and `forum-uploads/` directories back under `${MANTLE_DATA_DIR}`
-while the stack is stopped.
+while the stack is stopped. Then prove the object store is intact: every
+stored attachment's key is the sha256 of its bytes, so this re-hashes each one
+and exits non-zero on any mismatch or unreadable object:
+
+```bash
+docker exec mantle_web pnpm -C packages/storage objectstore:verify
+```
 
 Worth doing once deliberately: a full end-to-end restore rehearsal onto a
 scratch stack, so the first time isn't the bad day.

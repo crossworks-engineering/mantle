@@ -595,6 +595,10 @@ export type SystemHealth = {
     topTables: { name: string; bytes: number }[];
   };
   storage: {
+    /** The object store answered (any S3 backend). */
+    objectStoreUp: boolean | null;
+    /** @deprecated Same value as `objectStoreUp`; kept for clients built
+     *  before the object store went backend-neutral. */
     minioUp: boolean | null;
     attachmentBytes: number | null;
     filesDisk: DiskInfo | null;

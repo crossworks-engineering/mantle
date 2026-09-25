@@ -153,7 +153,6 @@ describe('brain-core override ↔ main compose', () => {
     const DEFAULT_SERVICES = [
       'postgres',
       'minio',
-      'createbuckets',
       'tika',
       'browser',
       'tailscale',

@@ -4,6 +4,30 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the object store goes backend-neutral; `createbuckets` is gone (branch feat/objectstore-neutral)
+
+Step 1 of moving off MinIO (to RustFS, planned): nothing outside the storage
+package may depend on which S3 server answers. The bucket is now created by the
+`migrate` one-shot with a plain S3 CreateBucket
+(`pnpm -C packages/storage objectstore:ensure`), so the `createbuckets` service
+and its dependency on MinIO's `mc` are gone; `scripts/up.sh` runs the same step
+in dev. The S3 client sends flexible checksums only when an operation requires
+them (the SDK default breaks on servers that do not implement them), and
+`S3_FORCE_PATH_STYLE`, which compose always set, is now actually read.
+`S3_ENDPOINT` / `S3_REGION` / `S3_BUCKET` / `S3_FORCE_PATH_STYLE` can be
+overridden from `.env`. New: `objectstore:verify` re-hashes every stored object
+against its sha256 key, the check for any backend swap or data restore
+(docs/backups.md). The dead presigned-URL helper went with its package.
+
+Contract: `SystemHealth.storage.objectStoreUp` is added; `minioUp` stays as a
+deprecated alias with the same value. Labels read "Object storage", the health
+probe is `storage.objectstore`, and the sanity check's bucket fix is
+`docker exec mantle_web pnpm -C packages/storage objectstore:ensure`.
+
+Deploy note: removing `createbuckets` changes the default service set. The
+updater's `up --remove-orphans` removes the old exited container; boxes
+brought up by hand keep it harmlessly until their next `up --remove-orphans`.
+
 ## Unreleased: our own MinIO image, so rolls and fresh installs pull again (branch fix/minio-own-image)
 
 The v0.232.243 roll failed on every box at `compose pull`: the quay.io MinIO

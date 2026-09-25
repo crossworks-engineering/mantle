@@ -185,8 +185,8 @@ reachable only on `127.0.0.1:${MANTLE_WEB_DEBUG_PORT:-3000}`
 for debugging. Postgres and MinIO publish **nothing**: which is why
 `prod-db-tunnel.sh` resolves container IPs instead of a host port.
 
-`migrate` (migrations + `pgboss:init` + API provisioning), `createbuckets` and
-`ollama_pull` are **one-shots**: `exited (0)` is success, not a failure, which
+`migrate` (migrations + `pgboss:init` + API provisioning + creating the
+object-store bucket if it is missing) and `ollama_pull` are **one-shots**: `exited (0)` is success, not a failure, which
 is why `sanity.sh` treats them separately.
 
 Two services are opt-in via `COMPOSE_PROFILES` in `.env` (set by
@@ -397,7 +397,7 @@ Key flags (`--help` for the full list):
 ### `scripts/sanity.sh`: "is it actually serving?"
 
 Inspects every container in the compose project, reports health, treats the
-known one-shots (`migrate`, `createbuckets`, `ollama_pull`) as OK when they
+known one-shots (`migrate`, `ollama_pull`) as OK when they
 exited cleanly, flags services that were never _created_ (a stack missing its
 web container otherwise reads as "all good"), folds in the separate
 `mantle-client` project (a healthy backend with no usable interface must not

@@ -30,7 +30,7 @@ export type SanityStatus =
 export type SanityCategory = 'Storage' | 'Updater' | 'Environment' | 'Embedding' | 'Database';
 
 /** How to fix a non-passing check. `command` is a copy-pasteable one-liner when
- *  one exists (e.g. the `mc mb` to create the bucket). */
+ *  one exists (e.g. the command that creates the bucket). */
 export type SanityFix = { summary: string; command?: string };
 
 export type SanityCheck = {

@@ -198,32 +198,32 @@ async function runInfraChecks(browserHost: string | null): Promise<SanityCheck[]
   }
 
   // Object store — reachability AND the bucket (a registry-pull box that never
-  // ran the createbuckets one-shot has MinIO up but no bucket).
+  // ran the migrate one-shot has the store up but no bucket).
   try {
     const s = await bucketStatus();
     if (!s.reachable) {
       checks.push({
-        label: 'Object storage (MinIO)',
+        label: 'Object storage',
         ok: false,
         detail:
-          'unreachable — is the minio container running? File uploads and app builds will fail.',
+          'unreachable — is the object store container running? File uploads and app builds will fail.',
       });
     } else if (s.exists === false) {
       checks.push({
-        label: 'Object storage (MinIO)',
+        label: 'Object storage',
         ok: false,
         detail: `up, but bucket “${s.bucket}” does not exist — uploads and app builds will fail until it's created.`,
       });
     } else {
       checks.push({
-        label: 'Object storage (MinIO)',
+        label: 'Object storage',
         ok: true,
         detail: `bucket “${s.bucket}” reachable`,
       });
     }
   } catch (err) {
     checks.push({
-      label: 'Object storage (MinIO)',
+      label: 'Object storage',
       ok: false,
       detail: `couldn't verify: ${errorMessage(err)}`,
     });

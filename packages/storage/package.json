@@ -9,15 +9,17 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "objectstore:ensure": "tsx --env-file-if-exists=../../server/web/.env.local src/cli.ts ensure",
+    "objectstore:verify": "tsx --env-file-if-exists=../../server/web/.env.local src/cli.ts verify"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1127.0",
-    "@aws-sdk/s3-request-presigner": "^3.1127.0",
     "@mantle/config": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.3"
   }
 }

@@ -1801,8 +1801,9 @@ package; `pnpm-workspace.yaml` declares them.
    to fill in.
 3. `docker compose -f docker-compose.dev.yml up -d --wait`, postgres +
    minio + tika, health-checked.
-4. Reads `S3_ACCESS_KEY` / `S3_SECRET_KEY` from `.env.local`, runs `mc mb`
-   to ensure the `mantle` bucket exists. Idempotent.
+4. `pnpm -C packages/storage objectstore:ensure`, creates the `mantle` bucket
+   if it is missing, with the `.env.local` credentials (plain S3 CreateBucket,
+   no vendor CLI). Idempotent.
 5. `pnpm -C packages/db migrate`, applies any new Drizzle migrations.
 6. `pnpm -C server/web pgboss:init`, creates the `pgboss` schema deterministically
    so workers don't race on the first start.

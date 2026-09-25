@@ -27,7 +27,7 @@
 #                        (adds `helpers` to COMPOSE_PROFILES in .env)
 #
 # What a core keeps and why (see docker-compose.yml for each service's role):
-#   postgres, minio, createbuckets, migrate   the data spine
+#   postgres, minio, migrate                  the data spine
 #   web                                       HTTP API + MCP + share pages
 #   api                                       durable turns AND the ingest
 #                                             pipeline (summarize/extract

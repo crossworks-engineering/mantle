@@ -1,41 +1,66 @@
 import {
+  CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
+  type S3ClientConfig,
 } from '@aws-sdk/client-s3';
 import type { Readable } from 'node:stream';
-import { getSignedUrl as awsGetSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createHash } from 'node:crypto';
 import { env } from '@mantle/config';
 
 /**
- * Thin wrapper around an S3-compatible object store. In dev/prod we point this
- * at the self-hosted MinIO that runs alongside Postgres in docker compose; the
- * bytes never leave the machine. If we ever swap object stores, this is the
- * only file that knows.
+ * Thin wrapper around an S3-compatible object store: the bundled one that runs
+ * alongside Postgres in docker compose (bytes never leave the machine), or any
+ * other S3 endpoint. Nothing here may depend on which server answers: plain S3
+ * calls only, no vendor admin APIs, no vendor CLI. That is what lets the
+ * bundled store change (MinIO left open source in 2026) without app changes.
+ * If we ever swap object stores, this is the only file that knows.
  */
 
-let _client: S3Client | undefined;
-function client(): S3Client {
-  if (_client) return _client;
+/** The S3Client settings, from env. Exported for the tests. */
+export function clientConfig(): S3ClientConfig {
   const endpoint = env('S3_ENDPOINT');
   const accessKeyId = env('S3_ACCESS_KEY');
   const secretAccessKey = env('S3_SECRET_KEY');
   if (!endpoint || !accessKeyId || !secretAccessKey) {
     throw new Error('S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY must be set');
   }
-  _client = new S3Client({
+  return {
     endpoint,
     region: env('S3_REGION') ?? 'us-east-1',
     credentials: { accessKeyId, secretAccessKey },
-    // MinIO uses path-style addressing (http://host/bucket/key) rather than
-    // virtual-hosted style (http://bucket.host/key). Required for MinIO.
-    forcePathStyle: true,
-  });
+    // Path-style addressing (http://host/bucket/key) is what self-hosted
+    // stores serve without DNS tricks, so it is the default. Set
+    // S3_FORCE_PATH_STYLE=false for a provider that wants virtual-hosted
+    // style (http://bucket.host/key).
+    forcePathStyle: !/^(false|0|no)$/i.test(env('S3_FORCE_PATH_STYLE') ?? ''),
+    // Since SDK 3.729 every PutObject carries a flexible checksum header
+    // (x-amz-checksum-crc32) by default, and not every S3-compatible server
+    // implements those. Send and check them only when an operation requires
+    // one; integrity is ours anyway (keys are the sha256 of the bytes).
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
+  };
+}
+
+/** The subset of S3Client this module calls, so the tests can pass a fake. */
+type S3Sender = Pick<S3Client, 'send'>;
+
+let _client: S3Sender | undefined;
+function client(): S3Sender {
+  if (_client) return _client;
+  _client = new S3Client(clientConfig());
   return _client;
+}
+
+/** Test seam: swap the client (pass undefined to go back to the real one). */
+export function __setClientForTests(c: S3Sender | undefined): void {
+  _client = c;
 }
 
 function bucket(): string {
@@ -91,16 +116,10 @@ export async function putContent(
   return { key, sha256, size, deduped: false };
 }
 
-export async function getSignedUrl(key: string, expiresInSec = 300): Promise<string> {
-  return awsGetSignedUrl(client(), new GetObjectCommand({ Bucket: bucket(), Key: key }), {
-    expiresIn: expiresInSec,
-  });
-}
-
 /**
- * Stream bytes back from object storage. Use this for proxied downloads when
- * the object store endpoint (e.g. internal MinIO) isn't reachable from the
- * browser, rather than getSignedUrl() + redirect.
+ * Stream bytes back from object storage. Downloads are always proxied through
+ * the app: the object store is an internal compose service the browser cannot
+ * reach, which is why there is no presigned-URL helper here.
  */
 export async function getContent(key: string): Promise<{
   body: Readable;
@@ -152,11 +171,11 @@ export type BucketStatus = {
 /**
  * Stricter sibling of `bucketReachable()` for the sanity checker. Where
  * `bucketReachable()` deliberately reports a 404 as "reachable" (the dashboard
- * pill only cares that MinIO answered), this DISTINGUISHES a missing bucket
- * from an unreachable store — because a missing `mantle` bucket is exactly the
- * silent break that fails every app build / upload while MinIO itself is "up".
- * Provisioned by `scripts/up.sh` (`mc mb local/mantle`); prod compose does not
- * create it, so a registry-pull box that never ran up.sh has no bucket.
+ * pill only cares that the store answered), this DISTINGUISHES a missing
+ * bucket from an unreachable store, because a missing `mantle` bucket is
+ * exactly the silent break that fails every app build / upload while the store
+ * itself is "up". `ensureBucket()` creates it: compose's `migrate` one-shot
+ * runs it on every boot, and so does `scripts/up.sh` in dev.
  */
 export async function bucketStatus(): Promise<BucketStatus> {
   const name = bucket();
@@ -172,4 +191,114 @@ export async function bucketStatus(): Promise<BucketStatus> {
     if (typeof status === 'number') return { bucket: name, reachable: true, exists: null };
     return { bucket: name, reachable: false, exists: null };
   }
+}
+
+function errorName(err: unknown): string | undefined {
+  return (err as { name?: string; Code?: string }).name ?? (err as { Code?: string }).Code;
+}
+
+/**
+ * Create the S3_BUCKET bucket if it is missing. Idempotent and safe to run on
+ * every boot (compose's `migrate` one-shot does). Plain S3 CreateBucket, so it
+ * works on any backend and needs no vendor CLI. New buckets are private: S3
+ * grants no anonymous access unless a policy says so.
+ *
+ * Throws when the store is unreachable (the caller retries or fails the boot).
+ * When the store answers but the key may not HeadBucket (403, possible on an
+ * external S3 with a scoped key), it does not try to create anything and
+ * reports `created: false, verified: false`, so a least-privilege key never
+ * blocks the boot.
+ */
+export async function ensureBucket(): Promise<{
+  bucket: string;
+  created: boolean;
+  verified: boolean;
+}> {
+  const s = await bucketStatus();
+  if (!s.reachable) throw new Error(`object store unreachable (bucket "${s.bucket}")`);
+  if (s.exists === true) return { bucket: s.bucket, created: false, verified: true };
+  if (s.exists === null) return { bucket: s.bucket, created: false, verified: false };
+  try {
+    await client().send(new CreateBucketCommand({ Bucket: s.bucket }));
+    return { bucket: s.bucket, created: true, verified: true };
+  } catch (err: unknown) {
+    // Another process won the race between the HEAD and the create.
+    const name = errorName(err);
+    if (name === 'BucketAlreadyOwnedByYou' || name === 'BucketAlreadyExists') {
+      return { bucket: s.bucket, created: false, verified: true };
+    }
+    throw err;
+  }
+}
+
+export type StoredObject = { key: string; size: number; etag?: string };
+
+/** Every object in S3_BUCKET under `prefix`, paged through ListObjectsV2. */
+export async function* listKeys(prefix = ''): AsyncGenerator<StoredObject> {
+  let token: string | undefined;
+  do {
+    const res = await client().send(
+      new ListObjectsV2Command({
+        Bucket: bucket(),
+        Prefix: prefix || undefined,
+        ContinuationToken: token,
+      }),
+    );
+    for (const o of res.Contents ?? []) {
+      if (o.Key) yield { key: o.Key, size: o.Size ?? 0, etag: o.ETag?.replace(/"/g, '') };
+    }
+    token = res.IsTruncated ? res.NextContinuationToken : undefined;
+  } while (token);
+}
+
+const CONTENT_KEY = /^attachments\/[0-9a-f]{2}\/[0-9a-f]{2}\/([0-9a-f]{64})$/;
+
+export type VerifyReport = {
+  bucket: string;
+  /** Objects listed. */
+  objects: number;
+  bytes: number;
+  /** Content-addressed objects whose bytes hash back to their key. */
+  verified: number;
+  /** Objects outside the content-addressed scheme: listed, not hashable. */
+  other: number;
+  /** Keys whose bytes do NOT hash to the key, or could not be read. */
+  bad: { key: string; problem: string }[];
+};
+
+/**
+ * Prove the store's contents are intact. Every key `putContent` writes is the
+ * sha256 of its bytes, so each object checks itself: stream it back, hash it,
+ * compare. Used after any object-store change (a backend swap, a data-dir
+ * move) and by `pnpm -C packages/storage objectstore:verify`. Reads every byte
+ * once, sequentially; fine for the data sizes a brain holds.
+ */
+export async function verifyObjects(): Promise<VerifyReport> {
+  const report: VerifyReport = {
+    bucket: bucket(),
+    objects: 0,
+    bytes: 0,
+    verified: 0,
+    other: 0,
+    bad: [],
+  };
+  for await (const o of listKeys()) {
+    report.objects += 1;
+    report.bytes += o.size;
+    const m = CONTENT_KEY.exec(o.key);
+    if (!m) {
+      report.other += 1;
+      continue;
+    }
+    try {
+      const { body } = await getContent(o.key);
+      const h = createHash('sha256');
+      for await (const chunk of body) h.update(chunk as Buffer);
+      if (h.digest('hex') === m[1]) report.verified += 1;
+      else report.bad.push({ key: o.key, problem: 'sha256 mismatch' });
+    } catch (err: unknown) {
+      report.bad.push({ key: o.key, problem: `read failed: ${(err as Error).message}` });
+    }
+  }
+  return report;
 }
