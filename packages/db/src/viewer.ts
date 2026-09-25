@@ -69,6 +69,23 @@ export function asSystem<T>(fn: () => Promise<T>): Promise<T> {
   return store.exit(fn);
 }
 
+/**
+ * Refuse to hand work to another process from inside a viewer scope. A job
+ * runs later in a worker that does not inherit this scope, so it would run at
+ * admin: "the level only goes down" breaks across the queue. No job type
+ * carries a level yet, so every enqueue helper calls this first and a limited
+ * turn cannot queue work at all (plan section 2b).
+ */
+export function assertNoViewer(what: string): void {
+  const level = currentViewerLevel();
+  if (level !== 'admin') {
+    throw new Error(
+      `${what} leaves this process and would run at admin, but the caller runs at '${level}'. ` +
+        'A limited-level turn cannot queue work.',
+    );
+  }
+}
+
 /** The Postgres LOGIN role for a limited level. Not `mantle_team`: that name
  *  is already the team visitor cookie. */
 export function viewerRoleName(level: LimitedLevel): string {

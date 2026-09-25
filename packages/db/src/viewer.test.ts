@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   asSystem,
+  assertNoViewer,
   currentViewerLevel,
   lowerLevel,
   viewerDatabaseUrl,
@@ -62,6 +63,13 @@ describe('withViewer', () => {
       return [inside, currentViewerLevel()];
     });
     expect(seen).toEqual(['admin', 'team']);
+  });
+
+  it('refuses to queue work from inside a limited scope', async () => {
+    expect(() => assertNoViewer('enqueueX')).not.toThrow();
+    await withViewer('team', async () => {
+      expect(() => assertNoViewer('enqueueX')).toThrow(/enqueueX .* 'team'/);
+    });
   });
 
   it('lowerLevel orders public < client < team < admin', () => {

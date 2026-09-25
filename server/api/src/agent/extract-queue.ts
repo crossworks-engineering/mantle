@@ -50,6 +50,7 @@ import { PgBoss } from 'pg-boss';
 import { resolveEmbeddingConfig } from '@mantle/embeddings';
 import { extractNode } from './extractor.js';
 import { env } from '@mantle/config';
+import { assertNoViewer } from '@mantle/db/viewer';
 
 const EXTRACT_QUEUE = 'mantle.extract';
 const DEAD_LETTER_QUEUE = 'mantle.extract.dead';
@@ -217,6 +218,7 @@ export async function startExtractQueue(databaseUrl: string, ownerId: string): P
  * through. No-op if the queue isn't started.
  */
 export async function enqueueExtract(nodeId: string): Promise<void> {
+  assertNoViewer('enqueueExtract');
   if (!boss || !nodeId) return;
   await boss.send(EXTRACT_QUEUE, { nodeId } satisfies ExtractJob, { singletonKey: nodeId });
 }
