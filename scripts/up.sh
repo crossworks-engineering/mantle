@@ -83,7 +83,7 @@ docker run --rm --network mantle-dev_default \
   -e ACCESS_KEY="$S3_ACCESS_KEY_VAL" \
   -e SECRET_KEY="$S3_SECRET_KEY_VAL" \
   --entrypoint sh \
-  quay.io/minio/mc -c '
+  titanwest/mantle-minio:RELEASE.2025-09-07T16-13-09Z -c '
     mc alias set local http://minio:9000 "$ACCESS_KEY" "$SECRET_KEY" >/dev/null
     mc mb -p local/mantle 2>/dev/null || true
     mc anonymous set none local/mantle >/dev/null

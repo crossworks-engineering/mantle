@@ -4,6 +4,26 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: our own MinIO image, so rolls and fresh installs pull again (branch fix/minio-own-image)
+
+The v0.232.243 roll failed on every box at `compose pull`: the quay.io MinIO
+images now answer 401, two weeks after MinIO deleted its Docker Hub repos. MinIO
+has left open source (the repo is archived); the only image it still publishes,
+`quay.io/minio/aistor/minio`, is the commercial AIStor build, and without a
+licence it denies every S3 call. So we now build MinIO ourselves:
+`infra/minio/Dockerfile` compiles the same pinned releases (minio
+`RELEASE.2025-09-07T16-13-09Z`, mc `RELEASE.2025-08-13T08-35-41Z`) from
+upstream's AGPL source, on the same ubi9-micro base, for amd64 and arm64, and
+the new `minio-image` workflow publishes it as `titanwest/mantle-minio`. The
+commit ids and `--version` output match the official binaries, and on a copy of
+a real box's data every object came back with the same key, size and ETag.
+
+The minio image already carries mc, so `createbuckets` and `scripts/up.sh` now
+use it too: one image to host instead of two, and `MC_IMAGE_TAG` is gone
+(`MINIO_IMAGE_TAG` still overrides the tag). Boxes recreate the minio container
+once on their next update; the data is a bind mount and stays put. This is a
+stopgap: replacing MinIO with a maintained S3-compatible store is planned.
+
 ## Unreleased: MCP connectors sign in with pre-registered OAuth apps, so Power BI works (branch feat/mcp-entra-oauth)
 
 Connecting Microsoft's Power BI MCP server failed silently: the connector sat

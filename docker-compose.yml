@@ -23,8 +23,9 @@ name: mantle
 #                            pulls on first boot)
 #   OLLAMA_KEEP_ALIVE       (default: 5m — set to -1 to keep the embedder always
 #                            resident instead of unloading when idle)
-#   MINIO_IMAGE_TAG / MC_IMAGE_TAG / OLLAMA_IMAGE_TAG (optional — pin the minio,
-#                            minio/mc (both from quay.io), and ollama images. Defaults are the newest
+#   MINIO_IMAGE_TAG / OLLAMA_IMAGE_TAG (optional: pin the minio image (our own
+#                            <namespace>/mantle-minio build, mc included) and the
+#                            ollama image. Defaults are the newest
 #                            stable tags at time of writing; pinned (like
 #                            tailscale) so the in-app update path can't pull a
 #                            breaking upstream `:latest` mid-update.)
@@ -345,10 +346,12 @@ services:
   minio:
     # Pinned (was :latest) — the in-app update path re-pulls images, so a
     # breaking upstream release would land mid-update. Override via env.
-    # From quay.io, not Docker Hub: on 2026-09-14 MinIO pulled minio/minio and
-    # minio/mc from Docker Hub, so every fresh install failed at the pull. The
-    # quay.io mirror carries the same pinned tags.
-    image: quay.io/minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
+    # Our own build (infra/minio/Dockerfile), not MinIO's: MinIO left open
+    # source, deleted minio/minio and minio/mc from Docker Hub (2026-09-11) and
+    # then locked the quay.io copies (401), so every roll and fresh install
+    # failed at the pull. Same release, built from upstream's AGPL source, with
+    # mc inside (the healthcheck and createbuckets both use it).
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
     container_name: mantle_minio
     restart: unless-stopped
     logging: *default-logging
@@ -378,9 +381,10 @@ services:
   # Idempotent (`--ignore-existing`), so it's a no-op on every later boot. Every
   # service that writes object bytes depends_on this completing.
   createbuckets:
-    # Pinned (was :latest) — same reason as minio above: the update path re-pulls.
-    # quay.io for the same reason as minio above too.
-    image: quay.io/minio/mc:${MC_IMAGE_TAG:-RELEASE.2025-08-13T08-35-41Z}
+    # The minio image itself: it carries mc (RELEASE.2025-08-13T08-35-41Z, the
+    # same mc this service used to pull on its own), so there is one image to
+    # host instead of two.
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
     container_name: mantle_createbuckets
     restart: "no"
     depends_on:
