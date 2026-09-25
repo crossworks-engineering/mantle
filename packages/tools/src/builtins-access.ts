@@ -8,6 +8,7 @@ import { agents, db, isViewerLevel, nodes, toolGroups } from '@mantle/db';
 import {
   AccessError,
   accessClosure,
+  accessShadowReport,
   setAgentAudience,
   setItemAudience,
   setToolGroupAudience,
@@ -158,5 +159,52 @@ export const access_set: BuiltinToolDef = {
   },
 };
 
+export const access_shadow_report: BuiltinToolDef = {
+  slug: 'access_shadow_report',
+  readOnly: true,
+  name: 'Access shadow report',
+  description:
+    'What the team responder would LOSE if it ran at team level today: items recent team and forum turns used that are still admin, shared items that can never go below admin (a shared task or event), shares whose embeds or folder contents sit above them, how many facts stay usable, and any tool group the responder holds above team. Read-only, no model call. Read it before lowering `team-responder` with `access_set`; fix what it lists first.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      days: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 365,
+        default: 30,
+        description: 'How far back to read recorded turns.',
+      },
+      agent_slug: {
+        type: 'string',
+        description: "the member-facing agent to check, e.g. 'team-responder'",
+      },
+    },
+  },
+  handler: async (input, ctx) => {
+    const refused = ownerOnly(ctx);
+    if (refused) return refused;
+    try {
+      const days = typeof input.days === 'number' ? input.days : undefined;
+      const report = await accessShadowReport(ctx.ownerId, {
+        days,
+        agentSlug: strOpt(input.agent_slug),
+      });
+      ctx.step?.setOutput({
+        turns: report.turns,
+        usedAtAdmin: report.usedAtAdmin.length,
+        closureGaps: report.closureGaps.length,
+      });
+      return { ok: true, output: report };
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+  },
+};
+
 /** The owner's level levers. */
-export const ACCESS_TOOLS: readonly BuiltinToolDef[] = [access_get, access_set];
+export const ACCESS_TOOLS: readonly BuiltinToolDef[] = [
+  access_get,
+  access_set,
+  access_shadow_report,
+];

@@ -164,6 +164,7 @@ const HTTP_SURFACE = [
   'export_node',
   'access_get',
   'access_set',
+  'access_shadow_report',
   'sheet_build',
   'app_create',
   'app_get',

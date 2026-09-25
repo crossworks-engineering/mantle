@@ -202,3 +202,9 @@ export {
   type AccessItem,
   type SetItemAudienceResult,
 } from './access';
+export {
+  accessShadowReport,
+  idsUsedByStep,
+  type AccessShadowReport,
+  type ShadowItem,
+} from './access-shadow';
