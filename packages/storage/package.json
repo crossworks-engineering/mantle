@@ -15,12 +15,12 @@
     "objectstore:copy-from": "tsx --env-file-if-exists=../../server/web/.env.local src/cli.ts copy-from"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1127.0",
+    "@aws-sdk/client-s3": "^3.1137.0",
     "@mantle/config": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
-    "tsx": "^4.23.13",
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   }
 }

@@ -23,10 +23,10 @@
     "@mantle/files": "workspace:*",
     "@mantle/std": "workspace:*",
     "@mantle/storage": "workspace:*",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.3"
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.6.2",
     "typescript": "^5.9.3"
   }
 }

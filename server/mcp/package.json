@@ -15,11 +15,11 @@
     "@mantle/embeddings": "workspace:*",
     "@mantle/mcp-core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.3"
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
-    "tsx": "^4.23.13",
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   }
 }
