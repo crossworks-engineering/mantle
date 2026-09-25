@@ -30,7 +30,7 @@ describe.skipIf(!URL)('team-level tool groups on the team viewer role', () => {
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
-    process.env.MANTLE_MASTER_KEY ??= 'team-groups-viewer-test-key';
+    process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key'; // shared: roles are cluster-wide
     m = await import('@mantle/db');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);

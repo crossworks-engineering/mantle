@@ -99,7 +99,7 @@ describe.skipIf(!URL)('a team turn under the team viewer role', () => {
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
-    process.env.MANTLE_MASTER_KEY ??= 'team-turn-viewer-test-key';
+    process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key'; // shared: roles are cluster-wide
     m = await import('@mantle/db');
     sqlTag = (await import('drizzle-orm')).sql;
     // The admin pool's own postgres-js client, for setup.

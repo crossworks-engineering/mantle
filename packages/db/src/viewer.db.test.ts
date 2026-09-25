@@ -32,7 +32,9 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
-    process.env.MANTLE_MASTER_KEY = 'viewer-db-test-key';
+    // ONE key for every viewer DB test: roles are cluster-wide, so tests with
+    // different keys running at once reset each other's passwords (28P01).
+    process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     const postgres = (await import('postgres')).default;
     const { ensureViewerRoles } = await import('./viewer-roles');
     const admin = postgres(URL!, { max: 1 });
