@@ -47,6 +47,32 @@ use it too: one image to host instead of two, and `MC_IMAGE_TAG` is gone
 (`MINIO_IMAGE_TAG` still overrides the tag). Boxes recreate the minio container
 once on their next update; the data is a bind mount and stays put. This is a
 stopgap: replacing MinIO with a maintained S3-compatible store is planned.
+## Unreleased: a mini app appears when it's ready, behind the host's loader (branch feat/app-nav-folders)
+
+An app used to announce `ready` in the same tick as `root.render()`, before
+React had drawn anything, and the frame sat `display:none` until then: the
+host said "Loading…", then showed a blank or half-empty app, then the app's
+own spinners.
+
+- **Ready means painted.** The kit posts `ready` after the first commit's
+  frame (or a 100ms timer, since background tabs run no animation frames), and
+  after the app's own mount effects, so its first bridge requests reach the
+  host first.
+- **Revealed when settled.** `AppSandbox` keeps its loader up until the app has
+  mounted and its in-flight `host.db` / `host.tools` requests have been quiet
+  for 150ms (the host brokers them, so it sees them), then cross-fades. Never
+  longer than 8s after mount. The rules live in `share-ui/app-reveal.ts`.
+- **Explicit hold.** `host.ui.holdReady()` / `host.ui.ready()` for work the
+  host can't see; the Appsmith prompt and the app authoring guide say loading
+  is the host's job.
+- **A `loader` slot** on `AppSandbox` (the owner UI passes its thinking orb);
+  the frame stays laid out under it, so an app measuring itself on mount gets
+  real sizes. A crash during the first render now shows the host's failure
+  state with its reason.
+- **The app list knows what can be previewed.** `AppNavItem.hasBuild` is a
+  green published or draft build (the frame-ticket test), and building,
+  discarding a draft or publishing notify `app_nav_changed`.
+
 ## Unreleased: apps get folders, pins, icons and colours in the sidebar, synced everywhere (branch feat/app-nav-folders)
 
 The server half of the sidebar apps tree. A brain with a dozen or more mini
