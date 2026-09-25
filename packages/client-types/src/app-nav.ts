@@ -106,6 +106,8 @@ export type AppNavItem = {
   color: AppTint | null;
   tags: string[];
   description: string | null;
+  /** Previewable: a green published or draft build (the frame-ticket test).
+   *  Differs from AppRow.hasBuild, which is published-only. */
   hasBuild: boolean;
   updatedAt: string;
 };

@@ -58,6 +58,7 @@ export async function listAppNavItems(ownerId: string): Promise<AppNavItem[]> {
       updatedAt: nodes.updatedAt,
       manifest: apps.manifest,
       publishedBuild: apps.publishedBuild,
+      draftBuild: apps.draftBuild,
     })
     .from(nodes)
     .leftJoin(apps, eq(apps.nodeId, nodes.id))
@@ -75,7 +76,9 @@ export async function listAppNavItems(ownerId: string): Promise<AppNavItem[]> {
         typeof r.manifest?.description === 'string' && r.manifest.description
           ? r.manifest.description
           : null,
-      hasBuild: r.publishedBuild?.ok === true,
+      // Previewable: a green published OR draft build, the same test the
+      // frame-ticket route applies before it will render the app.
+      hasBuild: r.publishedBuild?.ok === true || r.draftBuild?.ok === true,
       updatedAt: r.updatedAt.toISOString(),
     };
   });

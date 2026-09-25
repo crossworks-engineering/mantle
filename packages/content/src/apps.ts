@@ -31,6 +31,7 @@ import {
 } from '@mantle/db';
 import { shareModeOf } from './shares';
 import { loadProfilePreferences } from './profile-preferences';
+import { notifyAppNavChanged } from './app-nav';
 import type { AppRow, AppDetail, AppTint } from '@mantle/client-types';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 export type { AppRow, AppDetail };
@@ -473,6 +474,8 @@ export async function setDraftBuild(
     .update(apps)
     .set({ draftBuild: build, updatedAt: new Date() })
     .where(eq(apps.nodeId, id));
+  // The app list shows whether each app can be previewed.
+  void notifyAppNavChanged(ownerId);
   return true;
 }
 
@@ -482,6 +485,7 @@ export async function discardDraft(ownerId: string, id: string): Promise<boolean
     .update(apps)
     .set({ draftSource: null, draftUpdatedAt: null, draftBuild: null })
     .where(eq(apps.nodeId, id));
+  void notifyAppNavChanged(ownerId);
   return true;
 }
 
@@ -555,6 +559,7 @@ export async function publishApp(ownerId: string, id: string): Promise<AppDetail
     await tx.update(nodes).set({ embedding: null, updatedAt: new Date() }).where(eq(nodes.id, id));
   });
   await notifyNodeIngested(id);
+  void notifyAppNavChanged(ownerId);
   return loadDetail(ownerId, id);
 }
 
