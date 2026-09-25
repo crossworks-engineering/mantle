@@ -19,6 +19,6 @@
   "devDependencies": {
     "@mantle/voice-client": "workspace:*",
     "@types/node": "^26.4.1",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }
