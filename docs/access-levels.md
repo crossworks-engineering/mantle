@@ -17,7 +17,7 @@ item when the caller's level is at or above the item's level.
 | Tool group        | `tool_groups.audience` | admin   | an admin, by hand |
 
 - **Type ceiling.** Only workspace kinds may go below admin: pages, notes,
-  drawings, tables, files, folders, apps (`mantle_workspace_kind()` in
+  drawings, tables, files, folders, apps, formulas (`mantle_workspace_kind()` in
   migration 0159, mirrored by `WORKSPACE_NODE_TYPES`). Journal, email,
   contacts, secrets, tasks, events and every other kind are admin forever. A
   CHECK and the row policy both enforce it.

@@ -30,6 +30,9 @@ export const WORKSPACE_NODE_TYPES = [
   'file',
   'branch',
   'app',
+  // Formulas are authored workspace objects (Jason, 2026-09-26): a
+  // team-level agent can evaluate a formula shared with the team.
+  'formula',
 ] as const;
 
 /** What the viewer roles may SELECT: nothing, the whole row, or named

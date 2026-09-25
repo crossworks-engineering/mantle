@@ -140,7 +140,7 @@ export async function setItemAudience(
   if (!row) throw new AccessError(`item ${nodeId} not found`, 'not_found');
   if (audience !== 'admin' && !isWorkspaceKind(row.type)) {
     throw new AccessError(
-      `a ${row.type} is admin only: only pages, notes, drawings, tables, files, folders and apps can go below admin`,
+      `a ${row.type} is admin only: only pages, notes, drawings, tables, files, folders, apps and formulas can go below admin`,
       'type_ceiling',
     );
   }

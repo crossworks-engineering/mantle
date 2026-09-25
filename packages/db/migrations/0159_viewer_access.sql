@@ -15,7 +15,7 @@
 -- mirror (WORKSPACE_NODE_TYPES) is pinned to it by access-matrix.db.test.ts.
 CREATE OR REPLACE FUNCTION "public"."mantle_workspace_kind"(t "public"."node_type")
   RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
-  SELECT t IN ('page', 'note', 'draw', 'table', 'file', 'branch', 'app')
+  SELECT t IN ('page', 'note', 'draw', 'table', 'file', 'branch', 'app', 'formula')
 $$;
 --> statement-breakpoint
 
