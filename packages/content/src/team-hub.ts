@@ -129,6 +129,28 @@ export async function resolveTeamHubApp(
   return { appNodeId: teamHubAppId, shareToken: row.token };
 }
 
+/**
+ * Ids of the apps a team member may reach: an ACTIVE team-mode share, the
+ * same source of truth as the hub launcher. The team-read app-data tools
+ * (app_db_list / app_db_query) filter on this, so a member can no longer read
+ * the data of an app the owner never shared with the team.
+ */
+export async function listTeamSharedAppIds(ownerId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ nodeId: shares.nodeId })
+    .from(shares)
+    .where(
+      and(
+        eq(shares.ownerId, ownerId),
+        eq(shares.nodeType, 'app'),
+        sql`${shares.settings}->>'mode' = 'team'`,
+        isNull(shares.revokedAt),
+        or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())),
+      ),
+    );
+  return new Set(rows.map((r) => r.nodeId));
+}
+
 export type TeamAppCard = {
   /** Share token — the hub launcher opens /s/<token>. */
   token: string;
@@ -185,7 +207,9 @@ export async function listTeamApps(ownerId: string, excludeAppId?: string): Prom
 }
 
 /** Node types surfaced as hub stat tiles, in display order. A whitelist so a
- *  new sensitive node type never leaks into the hub by default. */
+ *  new sensitive node type never leaks into the hub by default. Journal,
+ *  contact and email are NOT here: even a count of the owner's private
+ *  corpus is not a team member's business (the client hides missing tiles). */
 export const TEAM_HUB_STAT_TYPES = [
   'page',
   'note',
@@ -194,9 +218,6 @@ export const TEAM_HUB_STAT_TYPES = [
   'draw',
   'task',
   'event',
-  'journal',
-  'contact',
-  'email',
 ] as const;
 export type TeamHubStatType = (typeof TEAM_HUB_STAT_TYPES)[number];
 

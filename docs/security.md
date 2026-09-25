@@ -120,7 +120,10 @@ attributable.
 - **Private corpus excluded by default.** Email and journal reads require an
   explicit owner opt-in (`teamPrivateReads`, default **off**), enforced at
   tool resolution independently of the group grant, behind a confirmation
-  dialog that spells out the exposure.
+  dialog that spells out the exposure. The same switch filters every read
+  path (search, passages, node reads, entity facts, turn retrieval) by node
+  type, and secrets, Telegram chats, saved places and peers are hidden from
+  team surfaces always (team-chat.md §6).
 - **One write path, provenance-stamped.** The single write tool files a
   review-queue task whose provenance (who, from which message, which
   attachments) is stamped **by the server, never from model arguments**: so

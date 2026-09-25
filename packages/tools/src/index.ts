@@ -128,6 +128,7 @@ export { ASK_HUMAN_FORM_LIMITS } from '@mantle/client-types';
 export { seedBuiltinTools, closeToolInputSchema } from './seed';
 export { resolveTool, resolveTools, dispatchTool } from './dispatch';
 export { isPublicToolAllowed } from './readonly-tools';
+export { surfaceHiddenNodeTypes, HIDDEN_NODE_ERROR } from './team-visibility';
 export { safeFetch } from './safe-fetch';
 export { guardedFetch, assertFetchableUrl, isBlockedIp } from './ssrf-guard';
 export {

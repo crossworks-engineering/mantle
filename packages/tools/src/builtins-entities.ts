@@ -15,6 +15,7 @@ import {
 import { type BuiltinToolDef } from './types';
 import { str, strOpt, numOpt as num, boolOpt as bool } from './coerce';
 import { strArr } from './builtins-common';
+import { surfaceHiddenNodeTypes } from './team-visibility';
 
 export const entity_search: BuiltinToolDef = {
   slug: 'entity_search',
@@ -218,6 +219,7 @@ export const entity_facts: BuiltinToolDef = {
       entityId,
       includeRetired: bool(input.include_retired),
       limit: num(input.limit, 50),
+      excludeSourceTypes: surfaceHiddenNodeTypes(ctx.surface) ?? undefined,
     });
     ctx.step?.setOutput({ count: rows.length });
     return { ok: true, output: rows };
@@ -256,6 +258,7 @@ export const entity_mentions: BuiltinToolDef = {
       ownerId: ctx.ownerId,
       entityId,
       limit: num(input.limit, 25),
+      excludeTypes: surfaceHiddenNodeTypes(ctx.surface) ?? undefined,
     });
     ctx.step?.setOutput({ count: rows.length });
     return { ok: true, output: rows };

@@ -47,6 +47,7 @@ import {
   recentTeamMessages,
   loadProfilePreferences,
   isTeamPrivateReadsEnabled,
+  teamHiddenNodeTypes,
   TEAM_PRIVATE_READ_SLUGS,
 } from '@mantle/content';
 import { assembleResponderTurn } from './assemble-turn';
@@ -152,8 +153,18 @@ export async function runTeamTurn(
   // Steps before the trace opens (the decider's pruning + hint calls, the
   // query embed) are held here and written into the trace below.
   const prelude = createTracePrelude();
+  // The owner's private-reads switch is read BEFORE retrieval: the context
+  // loader hides the same node types the read tools do.
+  const prefs = await loadProfilePreferences(ownerId);
+  const privateReads = isTeamPrivateReadsEnabled(prefs);
   const ctx = await withTracePrelude(prelude, () =>
-    loadConversationContext({ ownerId, agent, inboundText: trimmed, includeJournal: false }),
+    loadConversationContext({
+      ownerId,
+      agent,
+      inboundText: trimmed,
+      includeJournal: false,
+      excludeNodeTypes: teamHiddenNodeTypes(privateReads),
+    }),
   );
   const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
   const teamHistoryRows = await recentTeamMessages(
@@ -204,7 +215,6 @@ export async function runTeamTurn(
     if (options.streamId) unregisterTurnAbort(options.streamId);
   };
 
-  const prefs = await loadProfilePreferences(ownerId);
   // Member identity rides the VOLATILE block: per-contact text in the cached
   // prefix would bust the shared per-agent cache on every member switch.
   const memberLine = `Team member: ${options.contactName ?? 'unknown name'} (contact ${contactId}). You are serving this person — an external team member, not the brain's owner.`;
@@ -225,7 +235,7 @@ export async function runTeamTurn(
       volatileExtras: [memberLine],
       withThinking: false,
       allowDelegation: false,
-      excludeToolSlugs: isTeamPrivateReadsEnabled(prefs) ? [] : TEAM_PRIVATE_READ_SLUGS,
+      excludeToolSlugs: privateReads ? [] : TEAM_PRIVATE_READ_SLUGS,
     }),
   );
   const { volatileContext, allowedTools } = assembled;
@@ -304,6 +314,7 @@ export async function runTeamTurn(
             kind: 'team',
             contactId,
             contactName: options.contactName,
+            privateReads,
             inboundMessageId: inbound.id,
           },
           abortSignal: abortController?.signal ?? null,

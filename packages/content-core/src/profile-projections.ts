@@ -86,6 +86,26 @@ export function isTeamPrivateReadsEnabled(
   return prefs.teamPrivateReads === true;
 }
 
+/** Node types that hold the owner's private corpus (email + journal). A team
+ *  surface sees them only when the owner opted in (`teamPrivateReads`). */
+export const TEAM_PRIVATE_CORPUS_TYPES: readonly string[] = ['email', 'email_thread', 'journal'];
+
+/** Node types a team surface NEVER sees, opt-in or not: credentials, the
+ *  owner's own Telegram chats, saved places ("home") and federation peers. */
+export const TEAM_NEVER_TYPES: readonly string[] = [
+  'secret',
+  'telegram_message',
+  'location',
+  'mantle_peer',
+];
+
+/** Every node type hidden from a team-member surface (team chat, forum, a
+ *  team-mode shared app). The ONE list the read tools and the context loader
+ *  filter on; see `surfaceHiddenNodeTypes` in @mantle/tools. */
+export function teamHiddenNodeTypes(privateReads: boolean): readonly string[] {
+  return privateReads ? TEAM_NEVER_TYPES : [...TEAM_NEVER_TYPES, ...TEAM_PRIVATE_CORPUS_TYPES];
+}
+
 /** Project a stored `thinkingBudget` jsonb value to the typed field — a positive
  *  integer, or undefined for unset/garbage/non-positive. Shared by BOTH the read
  *  (`loadProfilePreferences`) and return (`updateProfilePreferences`) projections

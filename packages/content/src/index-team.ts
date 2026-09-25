@@ -43,6 +43,7 @@ export {
 export {
   listTeamHubSections,
   listTeamApps,
+  listTeamSharedAppIds,
   teamHubContentCounts,
   resolveTeamHubApp,
   TEAM_HUB_STAT_TYPES,

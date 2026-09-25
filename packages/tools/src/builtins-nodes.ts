@@ -13,6 +13,7 @@ import { type BuiltinToolDef } from './types';
 import { str, strOpt, numOpt as num } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { NODE_ID_PRE } from './builtins-common';
+import { HIDDEN_NODE_ERROR, surfaceHiddenNodeTypes } from './team-visibility';
 
 export const brain_capacity: BuiltinToolDef = {
   slug: 'brain_capacity',
@@ -70,12 +71,8 @@ export const node_read: BuiltinToolDef = {
       .from(nodes)
       .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ctx.ownerId)))
       .limit(1);
-    if (!row)
-      return {
-        ok: false,
-        error:
-          'node not found — the id may be stale or mistyped; find it with search_nodes / tree_list, then re-issue.',
-      };
+    if (!row || surfaceHiddenNodeTypes(ctx.surface)?.includes(row.type))
+      return { ok: false, error: HIDDEN_NODE_ERROR };
     ctx.step?.setOutput({ type: row.type });
     // Content-currency annotation: reading a superseded node names its living
     // successor so stale content is never presented as current.

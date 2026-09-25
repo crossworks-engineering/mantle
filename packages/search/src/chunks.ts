@@ -59,6 +59,9 @@ export type ChunkSearchOptions = {
    *  auto-context sets this so Mantle's own documentation isn't injected as "your
    *  content"; the explicit search_chunks tool leaves it off (docs are findable). */
   excludeSystemOrigin?: boolean;
+  /** Node types to leave out (a team surface's hidden types). Applied in
+   *  every arm, so a hidden node can never be ranked in. */
+  excludeTypes?: readonly string[];
   /**
    * Hard allowlist of parent node ids — passages are strictly a subset. Used by
    * the federation surface to search exactly the peer's granted set
@@ -86,6 +89,8 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
   if (opts.branch) scope.push(sql`${nodes.path} <@ ${opts.branch}::ltree`);
   if (opts.excludeSystemOrigin)
     scope.push(sql`(${nodes.data}->>'origin') is distinct from 'system'`);
+  if (opts.excludeTypes?.length)
+    scope.push(sql`${nodes.type}::text <> all(${pgArrayLiteral([...opts.excludeTypes])}::text[])`);
   if (opts.nodeIds)
     scope.push(sql`${contentChunks.nodeId} = any(${pgArrayLiteral(opts.nodeIds)}::uuid[])`);
   if (opts.nodeIdsOrTypes) scope.push(grantUnionFilter(contentChunks.nodeId, opts.nodeIdsOrTypes));
@@ -332,6 +337,8 @@ export type ReadSectionOptions = {
   fromOrdinal?: number;
   toOrdinal?: number;
   maxChars?: number;
+  /** Node types the caller may not read; such a node reads as not found. */
+  excludeTypes?: readonly string[];
 };
 
 export type ReadSectionResult =
@@ -369,7 +376,7 @@ export async function readSection(opts: ReadSectionOptions): Promise<ReadSection
     .from(nodes)
     .where(and(eq(nodes.id, opts.nodeId), eq(nodes.ownerId, opts.ownerId)))
     .limit(1);
-  if (!node) return { error: 'node not found' };
+  if (!node || opts.excludeTypes?.includes(node.type)) return { error: 'node not found' };
 
   const all = await db
     .select({

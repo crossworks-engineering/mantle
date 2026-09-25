@@ -82,6 +82,10 @@ export type ToolHandlerContext = {
         kind: 'team';
         contactId: string;
         contactName?: string;
+        /** The owner's `teamPrivateReads` switch, read when the turn starts.
+         *  Absent = OFF: the read tools hide the private corpus (email,
+         *  journal) as well as the always-hidden types. */
+        privateReads?: boolean;
         /** The inbound team_messages row that started this turn — stamped
          *  into a request task so the specialist can jump to the ask. */
         inboundMessageId?: string;
@@ -94,6 +98,8 @@ export type ToolHandlerContext = {
         kind: 'forum';
         contactId: string;
         contactName?: string;
+        /** Same as the 'team' surface: absent = OFF. */
+        privateReads?: boolean;
         topicId: string;
         /** The forum_posts row that triggered this turn. */
         inboundPostId?: string;

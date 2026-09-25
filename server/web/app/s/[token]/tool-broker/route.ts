@@ -18,11 +18,21 @@
  *            destructive builtin also runs un-gated — declaring one is the
  *            owner's explicit choice, but an arbitrary HTTP/shell call is not
  *            something we let a share expose).
+ *            The call runs on the TEAM surface (not the owner's): read tools
+ *            hide the node types a team member may not see, owner-only tools
+ *            refuse, and the email/journal readers are refused unless the
+ *            owner turned on `teamPrivateReads` (the same rules as Team Chat).
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { resolveActiveShareByToken } from '@/lib/shares';
-import { getApp, recordAppAccess } from '@mantle/content';
+import {
+  getApp,
+  isTeamPrivateReadsEnabled,
+  loadProfilePreferences,
+  recordAppAccess,
+  TEAM_PRIVATE_READ_SLUGS,
+} from '@mantle/content';
 import { resolveTool, dispatchTool, isPublicToolAllowed } from '@mantle/tools';
 import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
@@ -111,6 +121,22 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
     );
   }
 
+  // Only an identified team member reaches here (public mode was refused
+  // above). Fail closed if that ever changes: no contact, no tools.
+  if (visitor.mode !== 'team' || !visitor.contactId) {
+    return NextResponse.json({ ok: false, error: 'team session required' }, { status: 401 });
+  }
+  const privateReads = isTeamPrivateReadsEnabled(await loadProfilePreferences(share.ownerId));
+  if (!privateReads && TEAM_PRIVATE_READ_SLUGS.includes(parsed.data.slug)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `The tool '${parsed.data.slug}' reads the owner's private email or journal and is off for team members.`,
+      },
+      { status: 403 },
+    );
+  }
+
   recordAppAccess({
     ownerId: share.ownerId,
     appNodeId: share.nodeId,
@@ -122,7 +148,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
 
   const result = await dispatchTool(tool, parsed.data.input, {
     ownerId: share.ownerId,
-    surface: { kind: 'web' },
+    surface: { kind: 'team', contactId: visitor.contactId, privateReads },
   });
   return NextResponse.json(result);
 }

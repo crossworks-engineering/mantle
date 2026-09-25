@@ -22,6 +22,7 @@
 import { and, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { db, entities, entityEdges, facts, nodes, type Entity, type Fact } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
+import { pgArrayLiteral } from './pg';
 
 export type EntitySearchOptions = {
   ownerId: string;
@@ -218,11 +219,16 @@ export type FactsOptions = {
   /** Include facts whose validTo is set (history). Default false = current only. */
   includeRetired?: boolean;
   limit?: number;
+  /** Node types the caller may not see (a team surface). When set, a fact is
+   *  kept only when its source node exists and is not of these types: a fact
+   *  with no source came from the owner's own chats, so it stays hidden too. */
+  excludeSourceTypes?: readonly string[];
 };
 
 export async function entityFacts(opts: FactsOptions): Promise<Fact[]> {
   const conds: SQL[] = [eq(facts.ownerId, opts.ownerId), eq(facts.entityId, opts.entityId)];
   if (!opts.includeRetired) conds.push(isNull(facts.validTo));
+  if (opts.excludeSourceTypes) conds.push(visibleFactSource(opts.excludeSourceTypes));
   const rows = await db
     .select()
     .from(facts)
@@ -236,6 +242,8 @@ export type MentionsOptions = {
   ownerId: string;
   entityId: string;
   limit?: number;
+  /** Node types to leave out (a team surface's hidden types). */
+  excludeTypes?: readonly string[];
 };
 
 export type EntityMention = {
@@ -270,6 +278,9 @@ export async function entityMentions(opts: MentionsOptions): Promise<EntityMenti
         eq(entityEdges.sourceKind, 'entity'),
         eq(entityEdges.targetKind, 'node'),
         or(eq(entityEdges.relation, 'mentioned_in'), eq(entityEdges.relation, 'mentions'))!,
+        opts.excludeTypes?.length
+          ? sql`${nodes.type}::text <> all(${pgArrayLiteral([...opts.excludeTypes])}::text[])`
+          : undefined,
       ),
     )
     .orderBy(sql`coalesce(${entityEdges.validFrom}, ${entityEdges.createdAt}) desc`)
@@ -506,4 +517,16 @@ export async function entityRelationsFor(
     if (out.length >= limit) break;
   }
   return out;
+}
+
+/**
+ * The fact-visibility predicate for a caller that may not see some node types:
+ * the fact must have a source node, and that node must not be of a hidden
+ * type. One place, so the tools and the context loader cannot drift.
+ */
+export function visibleFactSource(excludeSourceTypes: readonly string[]): SQL {
+  if (excludeSourceTypes.length === 0) return sql`${facts.sourceNodeId} is not null`;
+  return sql`exists (select 1 from ${nodes} src
+    where src.id = ${facts.sourceNodeId}
+      and src.type::text <> all(${pgArrayLiteral([...excludeSourceTypes])}::text[]))`;
 }

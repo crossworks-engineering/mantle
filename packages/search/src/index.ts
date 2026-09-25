@@ -33,6 +33,7 @@ export {
   type GraphPathOptions,
   type GraphHop,
   type GraphPathResult,
+  visibleFactSource,
 } from './entities';
 
 export { resolveSupersededTargets, terminalSuccessors, type SupersededTarget } from './supersede';
@@ -64,6 +65,9 @@ export interface SearchOptions {
   type?: Node['type'];
   /** Restrict to these node types (plural OR). Composable with `type`. */
   types?: string[];
+  /** Node types to leave out (a team surface's hidden types). Applied in
+   *  every arm, so a hidden node can never be ranked in. */
+  excludeTypes?: readonly string[];
   tags?: string[];
   since?: Date;
   limit?: number;
@@ -121,6 +125,10 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
   if (opts.type) filters.push(eq(nodes.type, opts.type));
   if (opts.types?.length)
     filters.push(sql`${nodes.type}::text = any(${pgArrayLiteral(opts.types)}::text[])`);
+  if (opts.excludeTypes?.length)
+    filters.push(
+      sql`${nodes.type}::text <> all(${pgArrayLiteral([...opts.excludeTypes])}::text[])`,
+    );
   if (opts.branch) filters.push(sql`${nodes.path} <@ ${opts.branch}::ltree`);
   // Array param via pgArrayLiteral — a raw JS array binds as a plain string
   // under postgres-js and the ::text[] cast throws (see pgArrayLiteral's doc).

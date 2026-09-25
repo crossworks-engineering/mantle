@@ -5,8 +5,8 @@
  * unchanged; builtins.ts assembles BUILTIN_TOOLS from these groups.
  */
 
-import { and, desc, eq, sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
+import { and, desc, eq, notInArray, sql } from 'drizzle-orm';
+import { db, nodes, type Node } from '@mantle/db';
 import { searchNodes, searchChunks, readSection, resolveSupersededTargets } from '@mantle/search';
 import { embed } from '@mantle/embeddings';
 import { applyPassageScores, decisionUseEnabled, scorePassages } from '@mantle/decisions';
@@ -15,6 +15,7 @@ import { type BuiltinToolDef } from './types';
 import { str, strOpt, numOpt as num } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { NODE_ID_PRE } from './builtins-common';
+import { surfaceHiddenNodeTypes } from './team-visibility';
 
 export const search_nodes: BuiltinToolDef = {
   slug: 'search_nodes',
@@ -110,6 +111,7 @@ export const search_nodes: BuiltinToolDef = {
         tags: Array.isArray(input.tags) ? (input.tags as string[]) : undefined,
         limit: num(input.limit, 20),
         queryEmbedding,
+        excludeTypes: surfaceHiddenNodeTypes(ctx.surface) ?? undefined,
       });
       ctx.step?.setOutput({ count: rows.length });
       // Content-currency annotation: a superseded hit still surfaces (the
@@ -198,6 +200,7 @@ export const search_chunks: BuiltinToolDef = {
         q,
         branch: strOpt(input.branch),
         limit: pool,
+        excludeTypes: surfaceHiddenNodeTypes(ctx.surface) ?? undefined,
       });
       // Score every passage 0-3 for "does it answer q" in one decision call.
       // `live`: drop the weak ones, order by score, return the top `limit`.
@@ -327,6 +330,7 @@ export const read_section: BuiltinToolDef = {
       fromOrdinal: num(input.from_ordinal),
       toOrdinal: num(input.to_ordinal),
       maxChars: num(input.max_chars),
+      excludeTypes: surfaceHiddenNodeTypes(ctx.surface) ?? undefined,
     });
     if ('error' in res) return { ok: false, error: res.error };
     ctx.step?.setOutput(
@@ -369,6 +373,8 @@ export const tree_list: BuiltinToolDef = {
     const conds = [eq(nodes.ownerId, ctx.ownerId)];
     if (path) conds.push(sql`${nodes.path}::text = ${path}`);
     else conds.push(eq(nodes.type, 'branch'));
+    const hidden = surfaceHiddenNodeTypes(ctx.surface);
+    if (hidden?.length) conds.push(notInArray(nodes.type, hidden as Node['type'][]));
     const rows = await db
       .select({ id: nodes.id, title: nodes.title, type: nodes.type, path: nodes.path })
       .from(nodes)

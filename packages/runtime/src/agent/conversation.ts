@@ -23,7 +23,7 @@
  * (Phase 2); that's an intended improvement, not a regression.
  */
 
-import { and, desc, eq, gte, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lt, ne, notInArray, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -35,6 +35,7 @@ import {
   type Agent,
   type AgentMemoryConfig,
   type AssistantMessage,
+  type Node as NodeRow,
   type ConversationAttachment,
   type ConversationChannel,
   type ConversationExternalRef,
@@ -77,6 +78,7 @@ import {
   entityRelationsFor,
   pgArrayLiteral,
   resolveSupersededTargets,
+  visibleFactSource,
   withHnswPool,
 } from '@mantle/search';
 import type {
@@ -498,8 +500,15 @@ export async function loadConversationContext(args: {
    *  pass `includeIdentity: false` to the assembler). The tiers then do not
    *  run, spend no decider call, and drop nothing as redundant. */
   includeJournal?: boolean;
+  /** Node types this turn may not see (a team or forum turn: see
+   *  teamHiddenNodeTypes). Set = content hits, passages and facts from those
+   *  types are left out, and so are facts with no source node (they come
+   *  from the owner's own chats). Unset = owner turn, no filter. */
+  excludeNodeTypes?: readonly string[];
 }): Promise<ConversationContext> {
   const { ownerId, agent, inboundText } = args;
+  const hiddenTypes = args.excludeNodeTypes;
+  const factVisible = hiddenTypes ? visibleFactSource(hiddenTypes) : undefined;
   const memoryConfig = (agent.memoryConfig ?? {}) as AgentMemoryConfig;
   const historyLimit = memoryConfig.history_limit ?? 20;
   const windowHours = memoryConfig.history_window_hours ?? null;
@@ -647,7 +656,7 @@ export async function loadConversationContext(args: {
     const rows = await withHnswPool(factPool, async (tx) => {
       const pooled = (await tx.execute(
         sql`select id from ${facts}
-            where ${and(eq(facts.ownerId, ownerId), isNull(facts.validTo), sql`${facts.embedding} is not null`)}
+            where ${and(eq(facts.ownerId, ownerId), isNull(facts.validTo), sql`${facts.embedding} is not null`, factVisible)}
             order by ${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector
             limit ${factPool}`,
       )) as unknown as { id: string }[];
@@ -704,7 +713,14 @@ export async function loadConversationContext(args: {
       })
       .from(facts)
       .leftJoin(entities, eq(facts.entityId, entities.id))
-      .where(and(eq(facts.ownerId, ownerId), isNull(facts.validTo), eq(facts.kind, 'preference')))
+      .where(
+        and(
+          eq(facts.ownerId, ownerId),
+          isNull(facts.validTo),
+          eq(facts.kind, 'preference'),
+          factVisible,
+        ),
+      )
       .orderBy(desc(facts.updatedAt))
       .limit(PREFERENCE_INJECT_LIMIT);
     const merged = mergePreferences(factRows, factsSentSnap, prefRows);
@@ -732,6 +748,7 @@ export async function loadConversationContext(args: {
       // content hits so it can't outrank the user's own notes. The audit caught
       // memory.md winning "3D printer gantry"; there are ~57 such system nodes.
       sql`(${nodes.data}->>'origin') is distinct from 'system'`,
+      hiddenTypes?.length ? notInArray(nodes.type, hiddenTypes as NodeRow['type'][]) : undefined,
     );
     const rows = await withHnswPool(contentPool, async (tx) => {
       const pooled = (await tx.execute(
@@ -810,6 +827,7 @@ export async function loadConversationContext(args: {
       // small pool so the cutoff can trim without starving
       limit: scoringUse || pruningUse ? Math.min(Math.max(chunkLimit * 2, 16), 25) : chunkLimit + 4,
       excludeSystemOrigin: true,
+      excludeTypes: hiddenTypes,
     });
     // One decision call scores each passage 0-3 for "does it answer the
     // question". `live`: weak passages drop and the rest order by score

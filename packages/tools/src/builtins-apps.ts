@@ -26,6 +26,7 @@ import {
   AppSourceLimitError,
   NoGreenBuildError,
   type AppDetail,
+  listTeamSharedAppIds,
 } from '@mantle/content';
 import { buildApp, loadRuntimeExports } from '@mantle/app-build';
 import {
@@ -46,6 +47,7 @@ import { resolveTool } from './resolve';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
+import { surfaceHiddenNodeTypes } from './team-visibility';
 
 const APP_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'app', lookup: 'app_list' },
@@ -650,6 +652,12 @@ const app_delete: BuiltinToolDef = {
 // (the authoring group Appsmith gets) so the responder can be granted reads
 // without create/build/publish/delete.
 
+/** On a team surface, the apps shared with the team; null on owner surfaces
+ *  (no filter). A team member must not read an app the owner never shared. */
+async function teamReachableApps(ctx: Parameters<BuiltinToolDef['handler']>[1]) {
+  return surfaceHiddenNodeTypes(ctx.surface) ? listTeamSharedAppIds(ctx.ownerId) : null;
+}
+
 const app_db_list: BuiltinToolDef = {
   slug: 'app_db_list',
   readOnly: true,
@@ -659,7 +667,10 @@ const app_db_list: BuiltinToolDef = {
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx) => {
     try {
-      const apps = await listAppDatabaseSummaries(ctx.ownerId);
+      const teamApps = await teamReachableApps(ctx);
+      const apps = (await listAppDatabaseSummaries(ctx.ownerId)).filter(
+        (a) => !teamApps || teamApps.has(a.appNodeId),
+      );
       const out = [];
       for (const a of apps) {
         const tables = await appDbSchema(ctx.ownerId, a.appNodeId);
@@ -713,6 +724,17 @@ const app_db_query: BuiltinToolDef = {
     if (!sql) return { ok: false, error: 'sql is required' };
     const params = Array.isArray(input.params) ? (input.params as unknown[]) : [];
     try {
+      const teamApps = await teamReachableApps(ctx);
+      if (teamApps && !teamApps.has(appId)) {
+        // Same answer as an app with no database: do not confirm it exists.
+        return {
+          ok: true,
+          output: {
+            rows: [],
+            note: 'This app has no database yet (nothing stored, or no such app).',
+          },
+        };
+      }
       const { rows, empty } = await appDbReadQuery(ctx.ownerId, appId, sql, params);
       ctx.step?.setOutput({ rows: rows.length, empty });
       if (empty) {
