@@ -336,6 +336,10 @@ export const agents = pgTable(
     /** Higher = wins. Convention: 100 default. */
     priority: integer('priority').default(100).notNull(),
     enabled: boolean('enabled').default(true).notNull(),
+    /** The agent's level (admin | team | client | public), member logins
+     *  Phase 0b: who may chat with it AND what it reads. A below-admin agent
+     *  runs inside its level (withAgentViewer). Default admin. */
+    audience: text('audience').notNull().default('admin'),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     usageCount: bigint('usage_count', { mode: 'number' }).default(0).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

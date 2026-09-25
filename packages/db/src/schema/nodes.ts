@@ -80,6 +80,11 @@ export const nodes = pgTable(
      *  hits with the successor so the model prefers it. See
      *  packages/content/src/supersede.ts. */
     supersededBy: uuid('superseded_by'),
+    /** Who may read this item: admin | team | client | public (member logins
+     *  Phase 0b). Default admin; only workspace kinds may go lower (CHECK
+     *  nodes_audience_kind_ck). Enforced by row level security for the
+     *  viewer roles; the admin pool ignores it. */
+    audience: text('audience').notNull().default('admin'),
     /** Why: 'version' (filename-family sibling), 'migrated' (page built from
      *  this source), 'corrected' (explicit mark — demotes harder). */
     supersededReason: text('superseded_reason').$type<'version' | 'migrated' | 'corrected'>(),

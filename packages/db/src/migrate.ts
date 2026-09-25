@@ -42,6 +42,7 @@ import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
 import { env } from '@mantle/config';
 import { ensureViewerRoles } from './viewer-roles';
+import { applyViewerGrants } from './access-matrix';
 
 async function main() {
   const url = env('DATABASE_URL');
@@ -91,6 +92,10 @@ async function main() {
     }
 
     console.log(applied === 0 ? 'Already up to date.' : `Done — applied ${applied} migration(s).`);
+
+    // The viewer roles' grants come from the access matrix, re-applied every
+    // run so the live grants always equal the checked-in list.
+    await applyViewerGrants(sql);
   } finally {
     await sql.end();
   }

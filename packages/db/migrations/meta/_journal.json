@@ -1114,6 +1114,20 @@
       "when": 1789756800000,
       "tag": "0158_ai_worker_kind_decider",
       "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1789843200000,
+      "tag": "0159_viewer_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1789843260000,
+      "tag": "0160_viewer_access_validate",
+      "breakpoints": true
     }
   ]
 }

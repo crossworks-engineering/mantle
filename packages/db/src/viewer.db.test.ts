@@ -4,7 +4,8 @@
  * security filters what it reads, and `systemDb` stays admin.
  *
  * Self-contained: it creates the viewer roles (ensureViewerRoles) and one
- * probe table with a policy, and drops the table after. The roles stay: they
+ * probe table with a policy in its own schema (so the access-matrix test's
+ * grant reset in public never touches it), and drops the schema after. The roles stay: they
  * are cluster objects, and migrate owns them. Gated on a throwaway database:
  *   MANTLE_TEST_DATABASE_URL=postgres://postgres:…@host:port/db \
  *     pnpm vitest run packages/db/src/viewer.db.test.ts
@@ -22,7 +23,9 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
 
   const probe = async (handle: DbModule['db']) =>
     (
-      (await handle.execute(sqlTag`select id from viewer_probe order by id`)) as unknown as {
+      (await handle.execute(
+        sqlTag`select id from viewer_test.viewer_probe order by id`,
+      )) as unknown as {
         id: number;
       }[]
     ).map((r) => r.id);
@@ -36,6 +39,9 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
     try {
       await ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
       await admin.unsafe(`
+        create schema if not exists viewer_test;
+        grant usage on schema viewer_test to mantle_view_team, mantle_view_client, mantle_view_public;
+        set search_path = viewer_test;
         drop table if exists viewer_probe;
         create table viewer_probe (id int primary key, audience text not null);
         insert into viewer_probe values (1,'admin'),(2,'team'),(3,'client'),(4,'public');
@@ -57,7 +63,7 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
   });
 
   afterAll(async () => {
-    await m.systemDb.execute(sqlTag`drop table if exists viewer_probe`);
+    await m.systemDb.execute(sqlTag`drop schema if exists viewer_test cascade`);
     await m.closeDb();
   });
 
@@ -95,7 +101,9 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
     const ids = await m.withViewer('client', () =>
       m.db.transaction(async (tx) =>
         (
-          (await tx.execute(sqlTag`select id from viewer_probe order by id`)) as unknown as {
+          (await tx.execute(
+            sqlTag`select id from viewer_test.viewer_probe order by id`,
+          )) as unknown as {
             id: number;
           }[]
         ).map((r) => r.id),
@@ -106,7 +114,9 @@ describe.skipIf(!URL)('viewer pools on Postgres', () => {
 
   it('a limited role has no write grant: writes fail loudly', async () => {
     await expect(
-      m.withViewer('team', () => m.db.execute(sqlTag`insert into viewer_probe values (9, 'team')`)),
+      m.withViewer('team', () =>
+        m.db.execute(sqlTag`insert into viewer_test.viewer_probe values (9, 'team')`),
+      ),
     ).rejects.toMatchObject({ cause: { code: INSUFFICIENT_PRIVILEGE } });
   });
 
