@@ -31,7 +31,12 @@ export type HubNavTarget = 'chat' | { briefing: string } | { app: string };
 
 /** Fire-and-forget lifecycle events the app emits (no response expected). */
 export type BridgeEvt =
+  // Mounted AND painted once (the kit posts it after the first commit's frame).
   | { v: 1; kind: 'ready' }
+  // host.ui.holdReady() / host.ui.ready(): an app that loads what the host
+  // can't see keeps the host's loader up until it says so (see app-reveal.ts).
+  | { v: 1; kind: 'ready.hold' }
+  | { v: 1; kind: 'ready.release' }
   | { v: 1; kind: 'resize'; height: number }
   | { v: 1; kind: 'error'; message: string; stack?: string }
   // Inspect mode (host-injected overlay → host): the user locked/cleared a

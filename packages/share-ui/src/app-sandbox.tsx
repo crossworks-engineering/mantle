@@ -20,7 +20,8 @@
  * frame URL and are baked into the document's <html>; later host theme
  * changes are pushed into the running app via the postMessage theme sync.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { RevealGate } from './app-reveal';
 import {
   isFromApp,
   isHubNavTarget,
@@ -45,6 +46,7 @@ export function AppSandbox({
   apiBase: apiBaseOverride,
   fetcher,
   onLoadFailure,
+  loader,
 }: {
   appId: string;
   /** When set, render in share mode: the bundle + tool/db brokers are
@@ -93,6 +95,12 @@ export function AppSandbox({
    *  The /team shell uses this to fall back to the built-in hub instead of
    *  showing members a broken slot. */
   onLoadFailure?: () => void;
+  /** What covers the app until it is ready to be SEEN (mounted, painted, its
+   *  first bridge requests answered; see app-reveal.ts), then cross-fades
+   *  away. The host passes its own (the owner UI's thinking orb); absent ⇒ a
+   *  plain "Loading…" line. Kept a slot so this package needs no animation
+   *  dependency. */
+  loader?: ReactNode;
 }) {
   // Public share mode swaps the session-authed API base for the token-authed
   // public one; the route suffixes (bundle / tool-broker / db-broker) match.
@@ -112,6 +120,13 @@ export function AppSandbox({
   // Watchdog retry counter: bumping it re-runs the ticket effect (a fresh
   // ticket AND a fresh iframe — the old ticket may have expired by then).
   const [attempt, setAttempt] = useState(0);
+  // Mounted is not the same as ready to be seen: the gate keeps the loader up
+  // until the app's first bridge requests settle (or it says so, or a cap).
+  // One gate per frame load; `revealed` flips once per load.
+  const gateRef = useRef<RevealGate | null>(null);
+  const [revealed, setRevealed] = useState(false);
+  // The loader stays mounted through its fade-out, then leaves the DOM.
+  const [loaderGone, setLoaderGone] = useState(false);
   // One automatic retry before giving up (see the ready watchdog below).
   const retriedRef = useRef(false);
   // Whether THIS bundle load ever reached ready — distinguishes a boot crash
@@ -190,6 +205,7 @@ export function AppSandbox({
           return;
         }
         if (req.kind === 'tool.call') {
+          gateRef.current?.requestStart();
           const r = await doFetch(`${apiBase}/tool-broker`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -210,6 +226,7 @@ export function AppSandbox({
         }
         // db.query | db.exec
         const op = req.kind === 'db.query' ? 'query' : 'exec';
+        gateRef.current?.requestStart();
         const r = await doFetch(`${apiBase}/db-broker`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -218,6 +235,9 @@ export function AppSandbox({
         reply(await r.json());
       } catch (err) {
         reply({ ok: false, error: err instanceof Error ? err.message : String(err) });
+      } finally {
+        // Balanced with the requestStart above; hub.get never started one.
+        if (req.kind !== 'hub.get') gateRef.current?.requestEnd();
       }
     },
     [apiBase, doFetch],
@@ -230,8 +250,19 @@ export function AppSandbox({
       const m = e.data;
       if (!isFromApp(m)) return;
       if (m.kind === 'ready') {
-        setStatus('ready');
+        // A render crash posts its error before this (the kit signals ready
+        // after the first commit's frame): keep showing the failure.
+        setStatus((s) => (s === 'error' ? s : 'ready'));
         everReadyRef.current = true;
+        gateRef.current?.mount();
+        return;
+      }
+      if (m.kind === 'ready.hold') {
+        gateRef.current?.hold();
+        return;
+      }
+      if (m.kind === 'ready.release') {
+        gateRef.current?.release();
         return;
       }
       if (m.kind === 'resize') {
@@ -298,6 +329,19 @@ export function AppSandbox({
     return () => clearTimeout(t);
   }, [status, frameSrc]);
 
+  // A fresh gate for every frame load (new app, reload, watchdog retry).
+  useEffect(() => {
+    setRevealed(false);
+    setLoaderGone(false);
+    if (frameSrc === null) return;
+    const gate = new RevealGate(() => setRevealed(true));
+    gateRef.current = gate;
+    return () => {
+      gate.dispose();
+      if (gateRef.current === gate) gateRef.current = null;
+    };
+  }, [frameSrc]);
+
   // A NEW load target (not a watchdog retry) gets its retry budget back.
   useEffect(() => {
     retriedRef.current = false;
@@ -348,6 +392,8 @@ export function AppSandbox({
   }, [apiBase, reloadKey, frame, doFetch, attempt]);
 
   const isViewport = frame === 'viewport';
+  const showApp = status === 'ready' && revealed;
+  const showLoader = (status === 'loading' || status === 'ready') && !loaderGone;
   return (
     <div
       className={
@@ -384,17 +430,33 @@ export function AppSandbox({
           title={isViewport ? 'App' : 'App preview'}
           sandbox="allow-scripts"
           src={frameSrc.url}
+          // Laid out (not display:none) while the loader covers it, so an app
+          // measuring itself on mount (charts, grids) gets real sizes.
           className={
-            status === 'ready' ? (isViewport ? 'block h-full w-full' : 'block w-full') : 'hidden'
+            status === 'ready' || status === 'loading'
+              ? `${isViewport ? 'block h-full w-full' : 'block w-full'} transition-opacity duration-300 ${
+                  showApp ? 'opacity-100' : 'pointer-events-none opacity-0'
+                }`
+              : 'hidden'
           }
           style={isViewport ? { border: '0' } : { height, border: '0', width: '100%' }}
         />
       )}
-      {status === 'loading' && (
+      {showLoader && (
         <div
-          className={`flex items-center justify-center p-6 text-sm text-muted-foreground ${isViewport ? 'h-full' : 'h-40'}`}
+          aria-busy={!showApp}
+          onTransitionEnd={() => showApp && setLoaderGone(true)}
+          className={`flex items-center justify-center bg-background transition-opacity duration-300 ${
+            // Over the (laid out, transparent) iframe once there is one; in
+            // flow before that, so a card has height while the ticket loads.
+            isViewport || frameSrc !== null ? 'absolute inset-0' : 'h-40'
+          } ${showApp ? 'pointer-events-none opacity-0' : 'opacity-100'}`}
         >
-          {isViewport ? 'Loading…' : 'Loading preview…'}
+          {loader ?? (
+            <span className="p-6 text-sm text-muted-foreground">
+              {isViewport ? 'Loading…' : 'Loading preview…'}
+            </span>
+          )}
         </div>
       )}
     </div>

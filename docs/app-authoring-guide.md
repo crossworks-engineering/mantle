@@ -101,7 +101,18 @@ await host.db.exec(sql, params?)     // write to this app's own SQLite
 host.ui.resize(heightPx)             // legacy no-op — apps get a real full-screen viewport now (see Layout)
 host.ui.notifyError(message)         // surface an error to the host UI
 host.ui.onAnnotate(fn)               // subscribe to inspector annotations
+host.ui.holdReady()                  // keep the host's loader up (call while first rendering)…
+host.ui.ready()                      // …until this: the app is ready to be seen
 ```
+
+**Loading is the host's job.** The host shows its loader until the app has
+mounted, painted, and its first `host.db` / `host.tools` calls have been
+answered (it brokers them, so it can see them in flight), then fades the app
+in. An app that loads data through the bridge needs nothing extra and should
+not draw its own full-screen loading state. `holdReady()` / `ready()` are for
+work the host can't see, such as a heavy client-side computation. The host
+reveals the app after a few seconds regardless, so a missing `ready()` can't
+hang it.
 
 Everything is brokered by the parent over postMessage and executed server-side,
 so the iframe never sees secrets or credentials.

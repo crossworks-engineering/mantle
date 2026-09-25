@@ -780,6 +780,9 @@ The entry file (default \`App.tsx\`) must \`export default function App() { ... 
 ## Layout — you own a real viewport
 The app renders in a real full-screen frame (in the preview, the editor, and any shared link) — it does NOT auto-size to content anymore. YOU decide size, layout, and scrolling. Viewport-height utilities are real here — use them: a dashboard should fill the space (\`h-full\` or \`h-dvh\` from the root, its own scroll areas with \`min-h-0\`+\`overflow-y-auto\`, sticky headers/sidebars are fine). A small form/list needn't fill it — render a centred column (\`mx-auto max-w-md p-4\`) and leave the rest empty. (\`host.ui.resize\` is a legacy no-op; there's nothing to size.)
 
+## Loading — the host shows the loader, not you
+The host covers the app with its own loader until the app is ready to be seen: mounted, painted, and its first \`host.db\`/\`host.tools\` calls answered. So don't build a full-screen "Loading…" state for the initial load; fetch in a mount effect and render. Only when the app loads something the host can't see (a heavy client-side computation, a large parse) call \`host.ui.holdReady()\` while it first renders and \`host.ui.ready()\` when that's done. The host reveals anyway after a few seconds, so a missed \`ready()\` only costs the wait.
+
 ## Data — pick the simplest tier that fits
 Many apps need NO data apparatus at all: a calculator, converter, or visualizer whose logic is pure code ships with zero tools and zero database — don't delegate to the toolsmith or declare a schema for those; just write the TSX. The tiers, simplest first: (1) **pure code** — nothing to wire; (2) **fixed reference data** — per-app SQLite seeded once at authoring time (see Storage); (3) **live external data** — a declared api_tool via host.tools.call (below). Reaching for tier 3 when tier 1–2 suffices is the classic way to stall an app build.
 

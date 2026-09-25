@@ -212,6 +212,13 @@ export const host = {
     resize: (h) => window.parent.postMessage({ v: 1, kind: 'resize', height: h }, '*'),
     notifyError: (msg) => window.parent.postMessage({ v: 1, kind: 'error', message: String(msg) }, '*'),
     onAnnotate: (fn) => { annotateListeners.add(fn); return () => annotateListeners.delete(fn); },
+    // The host shows a loader until the app is ready to be seen: mounted,
+    // painted, and its first bridge requests settled. An app loading what the
+    // host can't see (a heavy computation, a big client-side parse) calls
+    // holdReady() while it first renders and ready() when it's done. The host
+    // reveals anyway after a few seconds, so a forgotten ready() can't hang it.
+    holdReady: () => window.parent.postMessage({ v: 1, kind: 'ready.hold' }, '*'),
+    ready: () => window.parent.postMessage({ v: 1, kind: 'ready.release' }, '*'),
   },
   // Team-hub surface only. get() rejects everywhere else (owner editor,
   // ordinary shares) — hub apps catch that and render a local preview. The
@@ -245,13 +252,25 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+// Posts \`ready\` once the first commit has painted. It used to be posted in
+// the same tick as root.render(), before React had rendered anything, so the
+// host revealed a blank frame. Children's mount effects run before this one,
+// so an app's first bridge requests (and any holdReady) reach the host first.
+function ReadySignal(props) {
+  React.useEffect(() => {
+    requestAnimationFrame(() => window.parent.postMessage({ v: 1, kind: 'ready' }, '*'));
+  }, []);
+  return props.children;
+}
+
 export function __mount(App) {
   const el = document.getElementById('root');
   if (!el) return;
   const root = createRoot(el);
-  root.render(React.createElement(ErrorBoundary, null, React.createElement(App)));
+  root.render(
+    React.createElement(ReadySignal, null, React.createElement(ErrorBoundary, null, React.createElement(App))),
+  );
   const send = () => host.ui.resize(Math.ceil(document.documentElement.scrollHeight));
-  window.parent.postMessage({ v: 1, kind: 'ready' }, '*');
   requestAnimationFrame(send);
   try { new ResizeObserver(send).observe(document.body); } catch {}
 }
