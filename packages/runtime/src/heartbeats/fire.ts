@@ -207,7 +207,11 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
   // groups; P6) + the heartbeat control tools (always granted on a heartbeat
   // turn). The bound heartbeat skill is pure teaching (P4) — it contributes
   // instructions via the synthetic prompt, never tools.
-  const agentGroupTools = await resolveAgentToolGroups(hb.ownerId, agent.toolGroupSlugs ?? []);
+  const agentGroupTools = await resolveAgentToolGroups(
+    hb.ownerId,
+    agent.toolGroupSlugs ?? [],
+    agentLevel(agent),
+  );
   const allSlugs = new Set<string>([
     ...effectiveToolSlugs(agentGroupTools),
     ...HEARTBEAT_CONTROL_TOOLS,

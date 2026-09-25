@@ -150,7 +150,11 @@ export const invokeAgent: AgentInvoker = async ({
     { role: 'system', content: systemPrompt },
     { role: 'user', content: prompt },
   ];
-  const groupTools = await resolveAgentToolGroups(ownerId, (target as Agent).toolGroupSlugs ?? []);
+  const groupTools = await resolveAgentToolGroups(
+    ownerId,
+    (target as Agent).toolGroupSlugs ?? [],
+    agentLevel(target),
+  );
   const allowedToolSlugs = effectiveToolSlugs(groupTools);
   const allowedTools = await resolveAgentTools(ownerId, allowedToolSlugs);
 

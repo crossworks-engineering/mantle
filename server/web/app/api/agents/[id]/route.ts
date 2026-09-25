@@ -3,6 +3,9 @@ import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { AvatarSchema } from '@/lib/avatar-schema';
 import { deleteAgent, updateAgent } from '@/lib/agents';
+import { agentGrantProblems } from '@mantle/content';
+import { agents, db, isViewerLevel } from '@mantle/db';
+import { and, eq } from 'drizzle-orm';
 import { firstIssue } from '@/lib/zod-issue';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -122,6 +125,25 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (!parsed.success) {
     const message = firstIssue(parsed.error, 'Invalid input.');
     return NextResponse.json({ error: message }, { status: 400 });
+  }
+  // Level rule (member logins Phase 0b): an agent may hold only tool groups
+  // at or below its own level.
+  if (parsed.data.toolGroupSlugs) {
+    const [current] = await db
+      .select({ audience: agents.audience })
+      .from(agents)
+      .where(and(eq(agents.id, idParsed.data.id), eq(agents.ownerId, user.id)))
+      .limit(1);
+    if (current) {
+      const problems = await agentGrantProblems(
+        user.id,
+        isViewerLevel(current.audience) ? current.audience : 'admin',
+        parsed.data.toolGroupSlugs,
+      );
+      if (problems.length > 0) {
+        return NextResponse.json({ error: problems.join('; ') }, { status: 400 });
+      }
+    }
   }
   const row = await updateAgent(user.id, idParsed.data.id, parsed.data);
   if (!row) return NextResponse.json({ error: 'Not found.' }, { status: 404 });

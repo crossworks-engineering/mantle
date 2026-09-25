@@ -7,6 +7,7 @@
 
 import { and, eq, inArray } from 'drizzle-orm';
 import { db, skills, toolGroups, type Skill } from '@mantle/db';
+import { currentViewerLevel, isViewerLevel, lowerLevel, type ViewerLevel } from '@mantle/db/viewer';
 
 export type SkillForRuntime = {
   id: string;
@@ -115,10 +116,22 @@ export function effectiveSkillSlugs(ownSlugs: string[], groupSkillSlugs: string[
  * tool slugs (ENABLED groups only, matching the runtime's resolve-or-omit rule).
  * Empty in ⇒ empty out (no DB hit). See docs/tools-and-skills.md (Phase 3).
  */
-export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): Promise<string[]> {
+export async function resolveAgentToolGroups(
+  ownerId: string,
+  slugs: string[],
+  level: ViewerLevel = 'admin',
+): Promise<string[]> {
   if (slugs.length === 0) return [];
+  // Level cap (member logins Phase 0b): a group above the agent's level, or
+  // above the current viewer scope (whichever is lower), is left out whatever
+  // the grant says. Fail closed: the tools simply are not there.
+  const cap = lowerLevel(currentViewerLevel(), level);
   const rows = await db
-    .select({ slug: toolGroups.slug, toolSlugs: toolGroups.toolSlugs })
+    .select({
+      slug: toolGroups.slug,
+      toolSlugs: toolGroups.toolSlugs,
+      audience: toolGroups.audience,
+    })
     .from(toolGroups)
     .where(
       and(
@@ -130,7 +143,15 @@ export async function resolveAgentToolGroups(ownerId: string, slugs: string[]): 
   // In grant order, not row order: the tool list is the front of every
   // cached prompt prefix, so it must be byte-stable between turns (and the
   // cap in effectiveToolSlugs then cuts the same tools every time).
-  const bySlug = new Map(rows.map((r) => [r.slug, r]));
+  const allowed = rows.filter((r) => {
+    const groupLevel = isViewerLevel(r.audience) ? r.audience : 'admin';
+    if (lowerLevel(groupLevel, cap) === groupLevel) return true;
+    console.warn(
+      `[skills] tool group '${r.slug}' is ${groupLevel}-level; left out for a ${cap}-level agent`,
+    );
+    return false;
+  });
+  const bySlug = new Map(allowed.map((r) => [r.slug, r]));
   const set = new Set<string>();
   for (const g of slugs) for (const t of bySlug.get(g)?.toolSlugs ?? []) set.add(t);
   return Array.from(set);

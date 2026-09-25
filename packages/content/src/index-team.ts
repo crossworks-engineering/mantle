@@ -189,3 +189,16 @@ export {
   TEAM_TOKEN_LENGTH,
   type TeamStatus,
 } from './team-tokens';
+
+// Levels: admin > team > client > public (member logins Phase 0b).
+export {
+  AccessError,
+  accessClosure,
+  agentGrantProblems,
+  isWorkspaceKind,
+  setAgentAudience,
+  setItemAudience,
+  setToolGroupAudience,
+  type AccessItem,
+  type SetItemAudienceResult,
+} from './access';

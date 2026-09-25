@@ -162,6 +162,8 @@ const HTTP_SURFACE = [
   'ask_responder',
   'ask_as_responder',
   'export_node',
+  'access_get',
+  'access_set',
   'sheet_build',
   'app_create',
   'app_get',

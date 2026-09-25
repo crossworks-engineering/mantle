@@ -42,6 +42,7 @@ import { RUN_TOOLS } from './builtins-runs';
 import { TOOLSMITH_TOOLS } from './builtins-toolsmith';
 import { LOCATION_TOOLS } from './builtins-locations';
 import { EXPORT_TOOLS } from './builtins-export';
+import { ACCESS_TOOLS } from './builtins-access';
 import { SHEET_TOOLS } from './builtins-sheets';
 import { read_section, search_chunks, search_nodes, tree_list } from './builtins-search';
 import {
@@ -223,6 +224,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // save it under /files/exports. Shares @mantle/content's resolveExport with
   // the web download button, so the assistant and the UI emit identical files.
   ...EXPORT_TOOLS,
+  ...ACCESS_TOOLS,
   ...SHEET_TOOLS,
   // Runner queues — durable, inspectable execution plans (docs/runs.md).
   // Responder-only via the `runs` tool group; creation gated by MANTLE_RUNS.

@@ -76,7 +76,7 @@ import {
   openHeartbeatsForSurface,
 } from '../heartbeats';
 import { maxImageBytesFor, modelSupportsVision, refreshModelCatalog } from '@mantle/tracing';
-import { withAgentViewer } from '../agent/agent-viewer';
+import { agentLevel, withAgentViewer } from '../agent/agent-viewer';
 
 /** Where a turn's open-heartbeat awareness is scoped. Mirrors the surface
  *  union `openHeartbeatsForSurface` takes (Team Chat has no heartbeats, so
@@ -343,7 +343,11 @@ async function assembleResponderTurnAtLevel(
   // there's an active heartbeat on this surface for the model to act on.
   // No runtime magic the rest of the time. See docs/heartbeats.md §4
   // "Permission model & runtime hygiene".
-  const groupTools = await resolveAgentToolGroups(ownerId, agent.toolGroupSlugs ?? []);
+  const groupTools = await resolveAgentToolGroups(
+    ownerId,
+    agent.toolGroupSlugs ?? [],
+    agentLevel(agent),
+  );
   let allowedToolSlugs = effectiveToolSlugs(groupTools);
   if (opts.excludeToolSlugs?.length) {
     const gated = new Set(opts.excludeToolSlugs);

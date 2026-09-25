@@ -324,7 +324,11 @@ export async function runsWorkerTurnImpl(
           { role: 'system', content: systemPrompt },
           { role: 'user', content: buildEnvelopePrompt(payload) },
         ];
-        const groupTools = await resolveAgentToolGroups(run.ownerId, worker.toolGroupSlugs ?? []);
+        const groupTools = await resolveAgentToolGroups(
+          run.ownerId,
+          worker.toolGroupSlugs ?? [],
+          agentLevel(worker),
+        );
         const allowedTools = await resolveAgentTools(run.ownerId, effectiveToolSlugs(groupTools));
 
         let traceId: string | undefined;
