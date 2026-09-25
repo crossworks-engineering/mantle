@@ -23,7 +23,7 @@
 
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
-import { db, notifyNodeIngested, recallMaps, recallNodes } from '@mantle/db';
+import { db, isBrainOwnerId, notifyNodeIngested, recallMaps, recallNodes } from '@mantle/db';
 import { getRecallEmbedder } from './embed-bridge';
 import {
   RECALL_MAX_MAP_NODES,
@@ -473,6 +473,9 @@ export async function embedPendingRecallPrompts(ownerId: string): Promise<number
  */
 export async function recallAfterPageWrite(ownerId: string, pageId: string): Promise<void> {
   try {
+    // Only the brain's own pages compile into Recall maps. A page in a
+    // member's personal space (member logins Phase 2) never does.
+    if (!(await isBrainOwnerId(ownerId))) return;
     const root = await findPageRoot(ownerId, pageId);
     if (!root || !root.tags.includes(RECALL_TAG)) {
       // Not (or no longer) a map member. The common case — an ordinary page

@@ -131,6 +131,21 @@ export async function admitForExtraction(
     });
     return { proceed: false };
   }
+  // Owner check: only the brain's own items are learned. A node owned by
+  // anything else (a member's personal space, member logins Phase 2) is
+  // never extracted, whichever path notified us. Ships a release before any
+  // such row can exist, so no container ever learns a private item.
+  if (node.ownerId !== ownerId) {
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: nodeId,
+      subjectKind: 'node',
+      disposition: 'not_brain_owner',
+      details: { worker_slug: worker.slug },
+    });
+    return { proceed: false };
+  }
   if (HARD_SKIP_TYPES.has(node.type)) {
     await recordSkippedTrace({
       kind: 'extractor_run',

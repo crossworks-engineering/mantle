@@ -96,3 +96,20 @@ export async function waitForOwner(opts: WaitForOwnerOpts = {}): Promise<string>
     await new Promise((r) => setTimeout(r, intervalMs));
   }
 }
+
+// The brain id never changes for the life of a process (the anchor row can't be
+// deleted), so it is resolved once. Null results are not cached: a fresh
+// install gets its first account later.
+let brainOwnerIdCache: string | null = null;
+
+/**
+ * Whether `ownerId` is the BRAIN, the owner every brain path keys on. Items
+ * owned by anything else (a member's personal space, from member logins Phase
+ * 2) must never be learned: no extraction, no Recall compile. Today the brain
+ * is the anchor login; Phase 2 moves this onto `spaces.kind = 'brain'`, and
+ * every caller keeps working because they ask here, not the anchor directly.
+ */
+export async function isBrainOwnerId(ownerId: string): Promise<boolean> {
+  if (!brainOwnerIdCache) brainOwnerIdCache = await resolveSingleOwnerId();
+  return brainOwnerIdCache !== null && ownerId === brainOwnerIdCache;
+}

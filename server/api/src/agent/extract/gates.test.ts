@@ -154,6 +154,17 @@ describe('admitForExtraction — refusals', () => {
     expect(disposition()).toBe('node_not_found');
   });
 
+  it('refuses a node the brain does not own, before any side pass', async () => {
+    // A member's personal item (member logins Phase 2) must never be learned,
+    // whichever commit path notified the extractor.
+    h.selectQueue.push([node({ ownerId: 'personal-space-1' })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('not_brain_owner');
+    expect(h.autoTable).not.toHaveBeenCalled();
+    expect(h.embeddedImages).not.toHaveBeenCalled();
+    expect(h.embed).not.toHaveBeenCalled();
+  });
+
   it('refuses a hard-skip type whatever the allowlist says', async () => {
     // `branch` is refused in code, not in config — a worker configured with
     // '*' must not reach folder rows.

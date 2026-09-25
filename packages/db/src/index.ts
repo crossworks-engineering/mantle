@@ -14,6 +14,7 @@ export { isWriteRefused } from './write-refused';
 export {
   countUsers,
   resolveSingleOwnerId,
+  isBrainOwnerId,
   waitForOwner,
   type WaitForOwnerOpts,
 } from './resolve-owner';
