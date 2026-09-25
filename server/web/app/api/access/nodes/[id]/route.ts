@@ -1,21 +1,48 @@
 /**
- * GET   /api/access/nodes/:id  -> the item's level and its closure (the
- *                                 embeds / folder contents its share needs).
- * PATCH /api/access/nodes/:id  { audience, withClosure? } -> set the level.
+ * GET   /api/access/nodes/:id  -> the item's level, its closure (the embeds /
+ *                                 folder contents its share needs), its link
+ *                                 and what the control may offer.
+ * PATCH /api/access/nodes/:id  { audience, withClosure? } -> set the level;
+ *                                 the link follows it (none at admin, team-only
+ *                                 at team, open at client and public).
  *
- * Owner only. Member logins Phase 0b: the Access control's API. The rules
- * (type ceiling, closure lowered on request and never raised) live in
- * @mantle/content access.ts.
+ * Owner only. The Access control's API. The rules (type ceiling, closure
+ * lowered on request and never raised, levels drive links) live in
+ * @mantle/content access.ts and shares.ts.
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { getOwnerOr401 } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
-import { AccessError, accessClosure, setItemAudience } from '@mantle/content';
-import { db, nodes, VIEWER_LEVELS } from '@mantle/db';
+import {
+  AccessError,
+  accessClosure,
+  canShareNode,
+  countPageDescendants,
+  getActiveShareForNode,
+  isWorkspaceKind,
+  setItemLevel,
+  type ShareSummary,
+} from '@mantle/content';
+import { db, isViewerLevel, nodes, VIEWER_LEVELS } from '@mantle/db';
+import type { AccessLinkView, AccessNodeUpdate, AccessNodeView } from '@mantle/client-types';
 
 const IdParams = z.object({ id: z.string().uuid() });
+
+/** The link as the control shows it. `path` is server-relative (/s/<token>). */
+function linkView(share: ShareSummary | null): AccessLinkView | null {
+  return share
+    ? {
+        id: share.id,
+        token: share.token,
+        path: `/s/${share.token}`,
+        mode: share.mode,
+        cascade: share.cascade,
+      }
+    : null;
+}
+
 const PatchBody = z.object({
   audience: z.enum(VIEWER_LEVELS),
   withClosure: z.boolean().optional(),
@@ -27,13 +54,34 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   const [item] = await db
-    .select({ id: nodes.id, type: nodes.type, title: nodes.title, audience: nodes.audience })
+    .select({
+      id: nodes.id,
+      type: nodes.type,
+      title: nodes.title,
+      audience: nodes.audience,
+      path: nodes.path,
+    })
     .from(nodes)
     .where(and(eq(nodes.id, idParsed.data.id), eq(nodes.ownerId, user.id)))
     .limit(1);
   if (!item) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
-  const closure = await accessClosure(user.id, item.id);
-  return NextResponse.json({ item, closure });
+  const [closure, share, childCount] = await Promise.all([
+    accessClosure(user.id, item.id),
+    getActiveShareForNode(user.id, item.id),
+    item.type === 'page' ? countPageDescendants(user.id, item.id) : Promise.resolve(0),
+  ]);
+  const { path, ...rest } = item;
+  const body: AccessNodeView = {
+    item: { ...rest, audience: isViewerLevel(rest.audience) ? rest.audience : 'admin' },
+    closure,
+    share: linkView(share),
+    childCount,
+    // What the control may offer: below admin only for workspace kinds; a
+    // link only where the item can carry one (not a folder outside files).
+    canLower: isWorkspaceKind(item.type),
+    canLink: canShareNode({ type: item.type, path }),
+  };
+  return NextResponse.json(body);
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -49,10 +97,11 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     );
   }
   try {
-    const res = await setItemAudience(user.id, idParsed.data.id, parsed.data.audience, {
+    const res = await setItemLevel(user.id, idParsed.data.id, parsed.data.audience, {
       withClosure: parsed.data.withClosure === true,
     });
-    return NextResponse.json(res);
+    const body: AccessNodeUpdate = { ...res, share: linkView(res.share) };
+    return NextResponse.json(body);
   } catch (err) {
     if (err instanceof AccessError) {
       return NextResponse.json(

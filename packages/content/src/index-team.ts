@@ -35,6 +35,10 @@ export {
   applyShareMode,
   revokeShareTree,
   listPageDescendantIds,
+  canShareNode,
+  shareModeForLevel,
+  levelForShareMode,
+  applyLevelToShare,
   type ShareMode,
   type ShareableType,
   type ShareSummary,
@@ -198,9 +202,11 @@ export {
   isWorkspaceKind,
   setAgentAudience,
   setItemAudience,
+  setItemLevel,
   setToolGroupAudience,
   type AccessItem,
   type SetItemAudienceResult,
+  type SetItemLevelResult,
 } from './access';
 export {
   accessShadowReport,

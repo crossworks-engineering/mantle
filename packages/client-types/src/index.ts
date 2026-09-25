@@ -32,6 +32,14 @@ export * from './dto/turns';
 export * from './dto/rows';
 export * from './dto/views';
 export * from './dto/recall';
+// Types only; ACCESS_LEVELS (runtime) is the `@mantle/client-types/dto/access` subpath.
+export type {
+  AccessItemView,
+  AccessLevel,
+  AccessLinkView,
+  AccessNodeUpdate,
+  AccessNodeView,
+} from './dto/access';
 
 // Types only at the root; the runtime constants (APP_TINTS, limits) are the
 // `@mantle/client-types/app-nav` subpath.

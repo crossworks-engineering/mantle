@@ -117,3 +117,35 @@ them (the control). Tests: `packages/db/src/*.db.test.ts`,
 - **Still to come:** share links (`/s/`) running at the link's level ships in
   a later release, after the closure gaps the shadow report lists are fixed;
   member logins (Phase 1) and personal spaces (Phase 2) build on this.
+
+## 7. Levels drive links
+
+The level is the truth; an item's share link (docs/sharing.md) follows it.
+
+| Level  | The item's link                                                   |
+| ------ | ----------------------------------------------------------------- |
+| admin  | none (revoked)                                                    |
+| team   | team-only: the `/team` workspace lists and opens items through it |
+| client | open (anyone with the link), shown to the owner                   |
+| public | open (anyone with the link), shown to the owner                   |
+
+- **Level to link.** `setItemLevel` (`@mantle/content` access.ts) writes the
+  level, then `applyLevelToShare` (shares.ts) revokes, creates or re-modes
+  the link. `PATCH /api/access/nodes/:id` and `access_set` both use it.
+  Closure items get the level only, never a link of their own: they are
+  reached through the item that embeds them.
+- **Link to level.** Every share mutation (`createShare`, `setShareMode`,
+  `applyShareMode`, `setShareCascade`, `revokeShare`, `revokeShareTree`)
+  re-derives the level of the nodes it touched (`levelForShareMode`): no link
+  is admin, a team-only link is team, an open link keeps client or public and
+  drops anything higher to public. Cascaded sub-pages take the parent's
+  level. So `node_share` / `page_share`, the hub app and the email link never
+  drift from the level.
+- **Admin-only kinds** (tasks, events, …) stay admin whatever link they
+  carry. Setting one to admin removes an old link.
+- Migration 0161 re-derived every level from the links once, for the window
+  between 0159 and this rule.
+- **Not yet:** `/s/` handlers run at admin; running them at the link's level
+  (after the share render path reads published columns only) is a later
+  release. Until then a link can show an embed above its level, which is
+  why the Access control offers the closure.

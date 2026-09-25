@@ -10,7 +10,7 @@ import {
   accessClosure,
   accessShadowReport,
   setAgentAudience,
-  setItemAudience,
+  setItemLevel,
   setToolGroupAudience,
 } from '@mantle/content';
 import { errorMessage } from '@mantle/std';
@@ -101,7 +101,7 @@ export const access_set: BuiltinToolDef = {
   preconditions: NODE_ID_PRE,
   name: 'Set an access level',
   description:
-    "Set the level of one brain item, agent or tool group: admin (default), team, client or public. A caller sees what is at or below its level. Only pages, notes, drawings, tables, files, folders, apps and formulas can go below admin. Lowering an item reports the closure items still above it; pass `with_closure: true` to lower those too (it never raises any). An agent's level decides what it reads: lowering `team-responder` to team makes every team turn read only team-level items. Takes effect at once. For reading a level use `access_get`.",
+    "Set the level of one brain item, agent or tool group: admin (default), team, client or public. A caller sees what is at or below its level. Only pages, notes, drawings, tables, files, folders, apps and formulas go below admin. Lowering an item reports closure items still above it; `with_closure: true` lowers those too (never raises). The item's share link follows its level: none at admin, team-only at team (it lists in the team workspace), open at client and public. An agent's level decides what it reads: `team-responder` at team reads only team-level items. Takes effect at once. To read a level use `access_get`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -128,7 +128,7 @@ export const access_set: BuiltinToolDef = {
       const agentSlug = strOpt(input.agent_slug);
       const groupSlug = strOpt(input.tool_group_slug);
       if (nodeId) {
-        const res = await setItemAudience(ctx.ownerId, nodeId, level, {
+        const res = await setItemLevel(ctx.ownerId, nodeId, level, {
           withClosure: input.with_closure === true,
         });
         ctx.step?.setOutput({ id: nodeId, level, lowered: res.lowered.length });

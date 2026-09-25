@@ -28,6 +28,7 @@ import {
 } from '@mantle/db';
 import { referencedDrawIds, referencedFileIds } from './doc-assets';
 import { getPage } from './pages/read';
+import { applyLevelToShare, type ShareSummary } from './shares';
 
 export type AccessItem = { id: string; type: string; title: string; audience: ViewerLevel };
 
@@ -174,6 +175,28 @@ export async function setItemAudience(
       stillAbove: opts.withClosure ? [] : above,
     };
   });
+}
+
+export type SetItemLevelResult = SetItemAudienceResult & {
+  /** The item's link after the change: null at admin (revoked), a team-only
+   *  link at team, an open link at client and public. */
+  share: ShareSummary | null;
+};
+
+/**
+ * The owner's one lever on an item: set its level, then make its link match
+ * (levels drive links, docs/access-levels.md §7). Closure items only get the
+ * level, never a link of their own: they are reached through the item.
+ */
+export async function setItemLevel(
+  ownerId: string,
+  nodeId: string,
+  audience: string,
+  opts: { withClosure?: boolean } = {},
+): Promise<SetItemLevelResult> {
+  const res = await setItemAudience(ownerId, nodeId, audience, opts);
+  const share = await applyLevelToShare(ownerId, nodeId, res.item.audience);
+  return { ...res, share };
 }
 
 /** The tool groups an agent holds that sit ABOVE `level`. */

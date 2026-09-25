@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({ setItem: vi.fn() }));
 vi.mock('@mantle/content', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content')>();
-  return { ...actual, setItemAudience: h.setItem };
+  return { ...actual, setItemLevel: h.setItem };
 });
 
 import { AccessError } from '@mantle/content';

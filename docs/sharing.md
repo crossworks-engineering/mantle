@@ -206,6 +206,16 @@ media presenters are net-new here.)_
 
 ## 7. Owner-side UX
 
+> **Levels drive links (2026-09-26).** The owner UI no longer sets a link's
+> mode directly. The Access control sets the item's **level**
+> (`PATCH /api/access/nodes/:id`) and the link follows it: none at admin, a
+> team-only link at team (so it lists in the `/team` workspace), an open link
+> at client and public. Every share path below re-derives the level from the
+> link it leaves, so they stay in step. See
+> [access-levels.md §7](./access-levels.md). The share API stays for the
+> agent tools and older clients. The text below describes the share model the
+> level now drives.
+
 A reusable **`<ShareControl>`** (`components/share/share-control.tsx`) on every
 detail screen (pages, notes, tasks, events, files, apps, tables, folders): a _"Anyone with the link can
 view"_ toggle → mint token → show URL + **Copy** → **Revoke** (and, P4, expiry +
