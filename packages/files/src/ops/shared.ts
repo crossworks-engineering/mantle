@@ -19,6 +19,11 @@ export type FolderRow = {
   /** The folder's OWN data.indexing flag; null = inherit from ancestors.
    *  Effective resolution lives in ./indexing.ts (extract-time concern). */
   indexing: 'full' | 'metadata' | null;
+  /** The folder's face in the Files tree: an emoji or a `lucide:<name>` key,
+   *  and a named tint key (never a hex). Same vocabulary as an app's look
+   *  (@mantle/client-types/app-nav); null = the default folder glyph. */
+  icon: string | null;
+  color: string | null;
   childFolderCount: number;
   fileCount: number;
   createdAt: string;
@@ -150,6 +155,8 @@ export function folderRowFromNode(
     slug: typeof data.slug === 'string' ? (data.slug as string) : (row.slug ?? row.title),
     description: typeof data.description === 'string' ? (data.description as string) : '',
     indexing: data.indexing === 'metadata' ? 'metadata' : data.indexing === 'full' ? 'full' : null,
+    icon: typeof data.icon === 'string' && data.icon ? data.icon : null,
+    color: typeof data.color === 'string' && data.color ? data.color : null,
     childFolderCount,
     fileCount,
     createdAt: row.createdAt.toISOString(),

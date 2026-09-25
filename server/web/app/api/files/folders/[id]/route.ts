@@ -7,8 +7,10 @@ import {
   renameFolderById,
   setIndexingMode,
   updateFolderDescription,
+  updateFolderLook,
 } from '@/lib/files';
 import { copyFolderById, moveFolderById } from '@mantle/files';
+import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
 import { firstIssue } from '@/lib/zod-issue';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -21,6 +23,16 @@ const PatchBody = z.union([
   z.object({ indexing: z.enum(['full', 'metadata', 'inherit']) }),
   // Move this folder (subtree included) under another parent.
   z.object({ move: z.string().min(1).max(500) }),
+  // The folder's face in the Files tree, the same vocabulary as an app's
+  // look. An omitted field is kept; null clears it.
+  z.object({
+    look: z
+      .object({
+        icon: z.string().max(APP_ICON_MAX).nullable().optional(),
+        color: z.enum(APP_TINTS).nullable().optional(),
+      })
+      .strict(),
+  }),
 ]);
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -65,6 +77,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       const folder = await folderById({ ownerId: user.id, folderId: idParsed.data.id });
       if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
       return NextResponse.json({ folder, requeued });
+    }
+    if ('look' in parsed.data) {
+      const folder = await updateFolderLook({
+        ownerId: user.id,
+        folderId: idParsed.data.id,
+        ...parsed.data.look,
+      });
+      if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
+      return NextResponse.json({ folder });
     }
     if ('rename' in parsed.data) {
       const folder = await renameFolderById({

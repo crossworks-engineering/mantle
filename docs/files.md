@@ -144,6 +144,11 @@ All three converge on the same `@mantle/files` ops:
 | REST    | `POST /api/files/folders` | `PATCH /api/files/folders/[id]` | `POST /api/files/files` (multipart or JSON)        | `PATCH /api/files/files/[id]` | `DELETE …`                      |
 | MCP     | `folder_create`           | `folder_describe`               | `file_upload` (`content_text` or `content_base64`) | `file_upload(overwrite=true)` | `folder_delete` · `file_delete` |
 
+A folder's PATCH also takes `{ look: { icon?, color? } }`: its face in the
+Files tree, in the same vocabulary as an app's (an emoji or `lucide:<name>`,
+and a tint key from `APP_TINTS`). Stored on `data.icon` / `data.color`; null
+clears either back to the default folder tile.
+
 ---
 
 ## 8. Ingestion handoff

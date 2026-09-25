@@ -274,6 +274,40 @@ export async function updateFolderDescription(args: {
 }
 
 /**
+ * Set a folder's look: its icon and/or tint. An omitted field is left as it
+ * is; null clears it back to the default. The caller validates the values
+ * (the route checks the tint against APP_TINTS); this only stores them.
+ */
+export async function updateFolderLook(args: {
+  ownerId: string;
+  folderId: string;
+  icon?: string | null;
+  color?: string | null;
+}): Promise<FolderRow | null> {
+  const [existing] = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.id, args.folderId), eq(nodes.ownerId, args.ownerId)))
+    .limit(1);
+  if (!existing || existing.type !== 'branch') return null;
+  const data = { ...((existing.data ?? {}) as Record<string, unknown>) };
+  for (const key of ['icon', 'color'] as const) {
+    const value = args[key];
+    if (value === undefined) continue;
+    if (value === null || value === '') delete data[key];
+    else data[key] = value;
+  }
+  const [row] = await db
+    .update(nodes)
+    .set({ data, updatedAt: new Date() })
+    .where(eq(nodes.id, args.folderId))
+    .returning();
+  if (!row) return null;
+  const counts = await folderCounts(args.ownerId, row.path);
+  return folderRowFromNode(row, counts.childFolderCount, counts.fileCount);
+}
+
+/**
  * Delete a folder. Refuses if it still has children (folders or files)
  * so the operator has to do it bottom-up — guards against accidental
  * mass-delete via a single click.

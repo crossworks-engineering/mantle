@@ -43,6 +43,7 @@ const PUBLIC = [
   'EXTRACTED_IMAGES_SLUG',
   'ensureFolderPath',
   'updateFolderDescription',
+  'updateFolderLook',
   'deleteFolder',
   'listFolders',
   'listAllFolders',

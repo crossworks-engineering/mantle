@@ -120,6 +120,7 @@ export {
   ensureFolderPath,
   EXTRACTED_IMAGES_SLUG,
   updateFolderDescription,
+  updateFolderLook,
   deleteFolder,
   renameFolderById,
   renamedFolderPath,
