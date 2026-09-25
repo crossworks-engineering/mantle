@@ -514,15 +514,16 @@ after the switch exist only in `data/rustfs`; if you need them, copy them into
 `objectstore:copy-from`). From the stack dir, with the `.env` values exported:
 
 ```bash
-# a temporary MinIO on the old data, on the stack's network
-docker run -d --name mantle_minio_tmp --network mantle_default \
+# a temporary MinIO on the old data, on the stack's network (hyphens, not
+# underscores, in the name: MinIO rejects underscores in a hostname)
+docker run -d --name mantle-minio-tmp --network mantle_default \
   -e MINIO_ROOT_USER="$S3_ACCESS_KEY" -e MINIO_ROOT_PASSWORD="$S3_SECRET_KEY" \
   -v "$MANTLE_DATA_DIR/minio:/data" \
   titanwest/mantle-minio:RELEASE.2025-09-07T16-13-09Z server /data
 # copy what MinIO lacks from RustFS into it (drop --apply for a dry run)
-docker exec -e S3_ENDPOINT=http://mantle_minio_tmp:9000 mantle_web \
+docker exec -e S3_ENDPOINT=http://mantle-minio-tmp:9000 mantle_web \
   pnpm -C packages/storage objectstore:copy-from --endpoint=http://objectstore:9000 --apply
-docker rm -f mantle_minio_tmp
+docker rm -f mantle-minio-tmp
 ```
 
 The MinIO image (`titanwest/mantle-minio`, built from source by `infra/minio`)
