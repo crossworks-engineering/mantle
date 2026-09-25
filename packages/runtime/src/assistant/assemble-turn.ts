@@ -76,6 +76,7 @@ import {
   openHeartbeatsForSurface,
 } from '../heartbeats';
 import { maxImageBytesFor, modelSupportsVision, refreshModelCatalog } from '@mantle/tracing';
+import { withAgentViewer } from '../agent/agent-viewer';
 
 /** Where a turn's open-heartbeat awareness is scoped. Mirrors the surface
  *  union `openHeartbeatsForSurface` takes (Team Chat has no heartbeats, so
@@ -174,7 +175,15 @@ export type AssembledResponderTurn = {
  * context (identity, heartbeats) soft-fails with a warning, never sinks the
  * turn.
  */
-export async function assembleResponderTurn(
+/** Assemble at the agent's level: the prompt derives context from the brain
+ *  too (member logins Phase 0b). */
+export function assembleResponderTurn(
+  opts: AssembleResponderTurnOptions,
+): Promise<AssembledResponderTurn> {
+  return withAgentViewer(opts.agent, () => assembleResponderTurnAtLevel(opts));
+}
+
+async function assembleResponderTurnAtLevel(
   opts: AssembleResponderTurnOptions,
 ): Promise<AssembledResponderTurn> {
   const { ownerId, agent, prefs, logPrefix } = opts;

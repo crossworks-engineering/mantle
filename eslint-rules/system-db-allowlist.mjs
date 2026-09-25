@@ -22,6 +22,7 @@ export const SYSTEM_DB_ALLOWLIST = [
   'packages/content/src/team-access-log.ts',
   'packages/runtime/src/agent/tool-loop/execute-call.ts',
   'server/web/lib/audit.ts',
+  'packages/api-keys/src/index.ts',
 ];
 
 /** Whether `filename` (any absolute or relative path) may import systemDb. */

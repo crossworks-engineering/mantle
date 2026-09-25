@@ -26,7 +26,6 @@
 import { and, desc, eq, gte, inArray, isNull, lt, ne, notInArray, sql } from 'drizzle-orm';
 import {
   db,
-  currentViewerLevel,
   agents,
   assistantMessages,
   notSuperseded,
@@ -183,6 +182,8 @@ import {
   withRecalledExchanges,
   type HistoryRow,
 } from './conversation/select';
+import { withAgentViewer } from './agent-viewer';
+import { currentViewerLevel } from '@mantle/db/viewer';
 
 /** How many section-level passages to auto-pull into context (the fine-grained
  *  complement to the node-level content hits). The budget that matters is
@@ -491,7 +492,18 @@ async function recallOlderExchanges(o: {
   return { exchanges, scoring };
 }
 
-export async function loadConversationContext(args: {
+/**
+ * Load the turn's retrieval context AT THE AGENT'S LEVEL (member logins Phase
+ * 0b): a team-level agent's retrieval runs on the team viewer role, so row
+ * level security decides what it reads, whoever the caller is.
+ */
+export function loadConversationContext(
+  args: Parameters<typeof loadConversationContextAtLevel>[0],
+): Promise<ConversationContext> {
+  return withAgentViewer(args.agent, () => loadConversationContextAtLevel(args));
+}
+
+async function loadConversationContextAtLevel(args: {
   ownerId: string;
   agent: Agent;
   inboundText: string;

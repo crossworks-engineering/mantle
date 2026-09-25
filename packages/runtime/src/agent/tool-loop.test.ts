@@ -86,8 +86,8 @@ vi.mock('@mantle/tools', async () => ({
 
 vi.mock('@mantle/db', () => ({
   // Infrastructure writes go through systemDb; the fake stands in for both.
-  get systemDb() {
-    return this.db;
+  get systemDb(): unknown {
+    return (this as { db: unknown }).db;
   },
   db: {
     insert: vi.fn(() => ({
@@ -805,6 +805,7 @@ describe('runToolLoop — requires_confirm path', () => {
       params: {},
       ownerId: 'owner-1',
       agentId: 'agent-1',
+      agentLevel: 'admin',
       initialMessages: [{ role: 'user', content: 'send it' }],
       tools: [tool],
     });

@@ -61,6 +61,7 @@ import { createModelCaller } from './tool-loop/model-caller';
 import { executeToolCall, toolResultPayload } from './tool-loop/execute-call';
 import { env } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
+import { withViewer, type ViewerLevel } from '@mantle/db/viewer';
 
 const DEFAULT_MAX_ITERATIONS = 6;
 
@@ -389,6 +390,9 @@ export type ToolLoopArgs = {
    *  /pending UI can show which agent proposed each call. Optional —
    *  callers without an agent context (manual scripts) can skip it. */
   agentId?: string;
+  /** The agent's level (agents.audience): required with `agentId`. The loop
+   *  runs every query at this level (member logins Phase 0b). */
+  agentLevel?: ViewerLevel;
   /** The agent row's slug. Passed to handlers (specifically
    *  `invoke_agent`) so they can refuse self-calls + reason about who
    *  invoked them. Optional for scripts that aren't running an agent. */
@@ -512,7 +516,22 @@ export async function buildToolsForModel(
   );
 }
 
+/**
+ * The tool loop, at the agent's level (member logins Phase 0b). A loop run for
+ * an agent MUST say the agent's level: a missing one throws rather than
+ * silently running at admin. The level only ever goes down.
+ */
 export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
+  if (args.agentId && !args.agentLevel) {
+    throw new Error(
+      `runToolLoop: agent '${args.agentSlug ?? args.agentId}' needs agentLevel (agentLevel(agent)): ` +
+        'the loop runs at the agent level.',
+    );
+  }
+  return withViewer(args.agentLevel ?? 'admin', () => runToolLoopAtLevel(args));
+}
+
+async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
   const maxIters = args.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   const handling = resolveResultHandling(args.resultHandling);
   // Always offer `read_result` when the agent has any tools, so a spilled

@@ -19,8 +19,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@mantle/db', () => ({
   // Infrastructure writes go through systemDb; the fake stands in for both.
-  get systemDb() {
-    return this.db;
+  get systemDb(): unknown {
+    return (this as { db: unknown }).db;
   },
   traces: h.tracesTable,
   traceSteps: h.traceStepsTable,

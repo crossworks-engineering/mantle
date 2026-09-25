@@ -38,6 +38,7 @@ import {
 import type { ToolPrecondition, BuiltinToolDef, ToolHandlerResult } from './types';
 import { str, strArr, strOpt, numOpt } from './coerce';
 import { errorMessage } from '@mantle/std';
+import { asSystem } from '@mantle/db/viewer';
 
 const TEAM_CONTACT_ID_PRE: readonly ToolPrecondition[] = [
   {
@@ -111,26 +112,31 @@ const team_request_create: BuiltinToolDef = {
       const attachmentLines = attachments.length
         ? `\n\n**Attachments:**\n${attachments.map((a) => `- [attached file](${nodeUrl(a.nodeId)})`).join('\n')}`
         : '';
-      const row = await createTask(ctx.ownerId, {
-        title,
-        body: `**Team request from ${requester}.**\n\n${body}${attachmentLines}`,
-        priority: (strOpt(input.priority) as TaskPriority | undefined) ?? 'normal',
-        tags: [TEAM_REQUEST_TAG],
-        extraData: {
-          teamRequest: {
-            contactId,
-            contactName: contactName ?? null,
-            threadMessageId: inboundMessageId ?? null,
-            // Forum provenance — which shared topic/post the ask came from,
-            // so Phase 2's review round-trip can deliver the owner's reply
-            // back into that thread.
-            topicId: surface.kind === 'forum' ? surface.topicId : null,
-            postId: surface.kind === 'forum' ? (surface.inboundPostId ?? null) : null,
-            attachments: attachments.map((a) => a.nodeId),
-            filedAt: new Date().toISOString(),
+      // asSystem: a team turn runs on the limited team role, which never
+      // writes; the request is an admin-level task filed on the member's
+      // behalf with server-stamped provenance (the one audited escape).
+      const row = await asSystem(() =>
+        createTask(ctx.ownerId, {
+          title,
+          body: `**Team request from ${requester}.**\n\n${body}${attachmentLines}`,
+          priority: (strOpt(input.priority) as TaskPriority | undefined) ?? 'normal',
+          tags: [TEAM_REQUEST_TAG],
+          extraData: {
+            teamRequest: {
+              contactId,
+              contactName: contactName ?? null,
+              threadMessageId: inboundMessageId ?? null,
+              // Forum provenance — which shared topic/post the ask came from,
+              // so Phase 2's review round-trip can deliver the owner's reply
+              // back into that thread.
+              topicId: surface.kind === 'forum' ? surface.topicId : null,
+              postId: surface.kind === 'forum' ? (surface.inboundPostId ?? null) : null,
+              attachments: attachments.map((a) => a.nodeId),
+              filedAt: new Date().toISOString(),
+            },
           },
-        },
-      });
+        }),
+      );
       ctx.step?.setMeta({ contactId, attachments: attachments.length });
       return {
         ok: true,

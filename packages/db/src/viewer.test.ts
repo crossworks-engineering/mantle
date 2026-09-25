@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  asSystem,
   currentViewerLevel,
   lowerLevel,
   viewerDatabaseUrl,
@@ -50,6 +51,17 @@ describe('withViewer', () => {
       withViewer('client', async () => currentViewerLevel()),
     ]);
     expect([a, b]).toEqual(['team', 'client']);
+  });
+
+  it('asSystem steps out of the scope for its own work only', async () => {
+    const seen = await withViewer('team', async () => {
+      const inside = await asSystem(async () => {
+        await new Promise((r) => setTimeout(r, 1));
+        return currentViewerLevel();
+      });
+      return [inside, currentViewerLevel()];
+    });
+    expect(seen).toEqual(['admin', 'team']);
   });
 
   it('lowerLevel orders public < client < team < admin', () => {

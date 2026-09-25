@@ -36,6 +36,7 @@ import {
 import { step } from '@mantle/tracing';
 import { stageLabelForStep } from './stage-label';
 import type { AssembledResponderTurn } from './assemble-turn';
+import { agentLevel, withAgentViewer } from '../agent/agent-viewer';
 
 /** Rebuild the persistable thought trail from a turn's tool calls — the same
  *  grounded action labels the live trail shows (search/write/delegate), via the
@@ -170,7 +171,14 @@ export type RunResponderLoopOptions = {
  * Everything before (inbound persistence, transcription, attachment ingest)
  * and after (delivery, outbound persistence) stays in the surface adapter.
  */
-export async function runResponderLoop(
+/** The responder loop, at the agent's level (member logins Phase 0b): every
+ *  tool it dispatches reads through row level security for a below-admin
+ *  agent, whoever called it. */
+export function runResponderLoop(opts: RunResponderLoopOptions): Promise<ResponderLoopResult> {
+  return withAgentViewer(opts.agent, () => runResponderLoopAtLevel(opts));
+}
+
+async function runResponderLoopAtLevel(
   opts: RunResponderLoopOptions,
 ): Promise<ResponderLoopResult> {
   const { agent, assembled } = opts;
@@ -215,6 +223,7 @@ export async function runResponderLoop(
     ownerId: opts.ownerId,
     agentId: agent.id,
     agentSlug: agent.slug,
+    agentLevel: agentLevel(agent),
     agentDepth: 1,
     delegateTo: assembled.delegateTo,
     resultHandling: assembled.resultHandling,

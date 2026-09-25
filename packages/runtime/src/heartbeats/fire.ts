@@ -54,6 +54,7 @@ import { withHeartbeatContext } from './context';
 import { buildHeartbeatPrompt, HEARTBEAT_DATA_BOUNDARY } from './prompt';
 import { runWithInflightLock } from './inflight';
 import { errorMessage } from '@mantle/std';
+import { agentLevel } from '../agent/agent-viewer';
 
 const HEARTBEAT_CONTROL_TOOLS = [
   'heartbeat_complete',
@@ -290,6 +291,7 @@ async function fireInner(hb: Heartbeat, opts: { skipGates: boolean }): Promise<F
               ownerId: hb.ownerId,
               agentId: agent.id,
               agentSlug: agent.slug,
+              agentLevel: agentLevel(agent),
               agentDepth: 1,
               delegateTo: [],
               // Per-user adaptive thinking on unattended heartbeat runs too (same

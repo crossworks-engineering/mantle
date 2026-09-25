@@ -47,6 +47,7 @@ import {
   effectiveToolSlugs,
 } from './skills';
 import type { ChatMessage } from './messages';
+import { agentLevel } from './agent-viewer';
 
 export const invokeAgent: AgentInvoker = async ({
   ownerId,
@@ -208,6 +209,7 @@ export const invokeAgent: AgentInvoker = async ({
         ownerId,
         agentId: target.id,
         agentSlug: target.slug,
+        agentLevel: agentLevel(target),
         agentDepth: depth,
         delegateTo: (mc?.delegate_to ?? []) as readonly string[],
         resultHandling: mc?.result_handling ?? null,

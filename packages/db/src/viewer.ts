@@ -59,6 +59,16 @@ export function withViewer<T>(level: ViewerLevel, fn: () => Promise<T>): Promise
   return store.run({ level: next }, fn);
 }
 
+/**
+ * Run `fn` OUTSIDE any viewer scope, on the admin pool: the escape hatch for
+ * the rare WRITE a limited caller needs (team_request_create files an
+ * admin-level task on the member's behalf). Never for reads. Few call sites,
+ * each one audited; grep for `asSystem(` to list them.
+ */
+export function asSystem<T>(fn: () => Promise<T>): Promise<T> {
+  return store.exit(fn);
+}
+
 /** The Postgres LOGIN role for a limited level. Not `mantle_team`: that name
  *  is already the team visitor cookie. */
 export function viewerRoleName(level: LimitedLevel): string {

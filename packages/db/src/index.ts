@@ -6,6 +6,7 @@ export {
   isViewerLevel,
   lowerLevel,
   withViewer,
+  asSystem,
   viewerRoleName,
   type LimitedLevel,
   type ViewerLevel,

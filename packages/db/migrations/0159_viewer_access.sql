@@ -158,7 +158,8 @@ UPDATE "public"."nodes" c SET "audience" = f.audience
     AND c.path <@ f.path
     AND "public"."mantle_workspace_kind"(c.type) AND c.audience = 'admin';
 --> statement-breakpoint
--- The member-facing agent and its tool groups.
-UPDATE "public"."agents" SET "audience" = 'team' WHERE "slug" = 'team-responder';
---> statement-breakpoint
+-- The member-facing tool groups. The team-responder AGENT stays admin: its
+-- level is the one switch (no other flag). An admin lowers it to team by hand
+-- once items carry their levels and the shadow report is clean; from then on
+-- every team turn runs under the team viewer role.
 UPDATE "public"."tool_groups" SET "audience" = 'team' WHERE "slug" IN ('team-read', 'formulas-eval');
