@@ -253,7 +253,7 @@ provably stale, never a number someone typed once.
 ![migrations](https://img.shields.io/badge/migrations-159-336791?logo=postgresql&logoColor=white)
 ![built-in tools](https://img.shields.io/badge/built--in%20tools-245-6b4fbb)
 ![docs](https://img.shields.io/badge/docs-94%20guides-4c8eda)
-![releases](https://img.shields.io/badge/releases-327-blue)
+![releases](https://img.shields.io/badge/releases-328-blue)
 
 **Code & tests** — the suite runs on every push, DB-less, in CI. Test counts below are cases *declared*; parameterised tables (`it.each`) expand to more at run time, so the executed total is higher than the number shown.
 
@@ -278,7 +278,7 @@ provably stale, never a number someone typed once.
 | 💾 &nbsp;Datastores | **1** (Postgres — vectors, graph, FTS, queues, realtime, auth) |
 | 🧊 &nbsp;Idle footprint | ~2.5 GB RAM, whole stack |
 
-**Velocity** — v0.232.252, 3,193 commits and 327 releases since 2026-05-14 (134 days, ~23.8 commits/day).
+**Velocity** — v0.232.253, 3,195 commits and 328 releases since 2026-05-14 (134 days, ~23.8 commits/day).
 
 ```
 commits/week, last 20 weeks   ▁▄▇▆▃▁▃█▃▄▅▇▅▄▃▃▅▁▂▃   peak 376
