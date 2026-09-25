@@ -2,27 +2,27 @@
  * Emits the shared mini-app runtime into an app's `public/app-runtime/`.
  * Run with: `node packages/app-build/scripts/build-runtime.ts` from the app
  * directory (Node strips the TS types). Invoked from `predev`/`prebuild` in
- * server/web and in jackdaw's client/web, so the runtime always exists before
- * apps render.
+ * server/web, so the runtime always exists before apps render.
+ *
+ * Repo-only: the published package ships `src/` alone (`files`), so this
+ * script is not on npm. Nothing outside the repo needs it — jackdaw's owner UI
+ * used to build its own copy but never served it to anything, since every
+ * sandbox frames a brain-rendered document whose import map and CSP point at
+ * the brain's `/app-runtime/` (jackdaw dropped the step after v0.6.131).
  */
 import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 import { buildRuntime } from '../src/build-runtime.ts';
 
 /**
- * Where to write. Each Next app serves its own copy — the ACAO:* runtime has
- * to exist on every origin that renders sandboxes.
+ * Where to write: the app that renders the frame documents (server/web).
  *
  * Paths resolve from the CALLER'S CWD, never from this script's own location.
  * They used to resolve against `../../..` from here, which is the repo root
- * only while this package sits in the repo being built. Published to npm and
- * installed by the jackdaw repo, that same expression pointed at the
- * consumer's `node_modules/`, so `build-runtime.ts client/web` wrote the
- * runtime to `node_modules/client/web/public/app-runtime` — a real directory
- * nothing serves. The owner UI shipped with NO `/app-runtime/*` at all (its
- * Docker build runs the same prebuild), and nothing failed: the build printed
- * a success line naming the wrong path, and only a sandboxed mini-app trying
- * to boot would notice.
+ * only while this package sits in the repo being built. When the script was
+ * still published and run from jackdaw, that expression pointed at the
+ * consumer's `node_modules/` and wrote the runtime into a directory nothing
+ * served, while the build printed a success line naming the wrong path.
  *
  * An ARGUMENT rather than an environment variable, deliberately. The callers
  * used to set `APP_RUNTIME_OUT="$PWD/…"` inline, which is POSIX shell syntax;
