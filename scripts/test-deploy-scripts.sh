@@ -186,7 +186,7 @@ T="$WORK/compose"; fake_stack "$T"
 cat > "$T/img/docker-compose.yml" <<'YML'
 services:
   postgres: {environment: {POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set it in .env}"}}
-  minio: {environment: {S3_ACCESS_KEY: "${S3_ACCESS_KEY:?set it}", S3_SECRET_KEY: "${S3_SECRET_KEY:?set it}"}}
+  objectstore: {environment: {S3_ACCESS_KEY: "${S3_ACCESS_KEY:?set it}", S3_SECRET_KEY: "${S3_SECRET_KEY:?set it}"}}
   web: {environment: {SESSION_SECRET: "${SESSION_SECRET:?required}", MANTLE_MASTER_KEY: "${MANTLE_MASTER_KEY:?required}"}}
 YML
 printf 'MANTLE_IMAGE_NAMESPACE=test\nMANTLE_MASTER_KEY=k\nSESSION_SECRET=s\nS3_ACCESS_KEY=minio\n' > "$T/stack/.env"

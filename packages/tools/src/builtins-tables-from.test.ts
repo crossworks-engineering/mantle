@@ -15,7 +15,7 @@
  *    is coerced through the column type before reaching the store, and an
  *    empty parse is refused before createTable is called.
  *  - table_from_file: the extension gate runs BEFORE the bytes are read (a
- *    500 MB pdf must not be pulled from MinIO to be told it is not a
+ *    500 MB pdf must not be pulled from the object store to be told it is not a
  *    sheet), every non-empty sheet becomes a TAB of one table (not sibling
  *    tables), the source file id is recorded, and the title falls back to
  *    the filename without its extension.

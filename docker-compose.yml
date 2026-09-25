@@ -1,6 +1,6 @@
 name: mantle
 
-# Mantle full stack: postgres + minio + web + agent + workers.
+# Mantle full stack: postgres + object store + web + agent + workers.
 # For local dev, prefer `pnpm up` (uses docker-compose.dev.yml — infra only,
 # app in native Node for hot-reload). This file is for prod-shaped deploys
 # where everything runs in containers.
@@ -23,9 +23,9 @@ name: mantle
 #                            pulls on first boot)
 #   OLLAMA_KEEP_ALIVE       (default: 5m — set to -1 to keep the embedder always
 #                            resident instead of unloading when idle)
-#   MINIO_IMAGE_TAG / OLLAMA_IMAGE_TAG (optional: pin the minio image (our own
-#                            <namespace>/mantle-minio build, mc included) and the
-#                            ollama image. Defaults are the newest
+#   RUSTFS_IMAGE_TAG / OLLAMA_IMAGE_TAG (optional: pin the object store
+#                            (<namespace>/mantle-rustfs, our digest mirror of
+#                            rustfs/rustfs) and the ollama image. Defaults are the newest
 #                            stable tags at time of writing; pinned (like
 #                            tailscale) so the in-app update path can't pull a
 #                            breaking upstream `:latest` mid-update.)
@@ -44,7 +44,7 @@ name: mantle
 #
 # Persistent data — bind-mounted on the host so you can see/back up/move it:
 #   MANTLE_DATA_DIR         (default: ./data) — EVERYTHING lives under here:
-#                            postgres, minio, files, backups, app-dbs, caddy
+#                            postgres, rustfs, files, backups, app-dbs, caddy
 #                            (certs), ollama, tailscale, update-signal. Back this
 #                            up (restic/Syncthing) and it IS your brain. The DB,
 #                            though, should be MOVED
@@ -80,7 +80,7 @@ name: mantle
 
 volumes:
   # POLICY: ALL persistent data is bind-mounted to the local drive under
-  # MANTLE_DATA_DIR — postgres, minio, files, backups, app-dbs, caddy (ACME
+  # MANTLE_DATA_DIR — postgres, rustfs, files, backups, app-dbs, caddy (ACME
   # certs), ollama (model cache), tailscale (node state), and update-signal.
   # So every byte lives on the mounted data disk, is captured by that disk's
   # backup/snapshot, and can NEVER be wiped by `docker compose down -v` or a
@@ -95,7 +95,7 @@ volumes:
 networks:
   # Isolated bridge for CLI sandbox containers (compose profile `sandboxes`).
   # Sandboxes attach ONLY here: egress to the internet via NAT, no route to the
-  # default network's postgres/minio/web. Only sandboxd straddles both. The
+  # default network's postgres/objectstore/web. Only sandboxd straddles both. The
   # fixed `name:` matches SANDBOX_NETWORK in server/sandboxd. Created only when
   # the profile is active (it's referenced solely by sandboxd).
   sandbox:
@@ -155,8 +155,8 @@ x-app-env: &app-env
   # installs before any user exists.)
   ALLOWED_USER_ID: ${ALLOWED_USER_ID:-}
   # Any S3-compatible store works: the app speaks plain S3 only. The defaults
-  # point at the bundled `minio` service; override in .env for an external one.
-  S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+  # point at the bundled `objectstore` service; override in .env for an external one.
+  S3_ENDPOINT: ${S3_ENDPOINT:-http://objectstore:9000}
   S3_REGION: ${S3_REGION:-us-east-1}
   S3_BUCKET: ${S3_BUCKET:-mantle}
   S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set it in .env — scripts/install.sh writes one}
@@ -182,7 +182,7 @@ x-app-env: &app-env
   # of them behaves exactly as before.
   #
   # MANTLE_MCP_TERMINAL=1 puts `run_terminal` — a shell in THIS container, with
-  # postgres, minio, the file store and the master key — on the network-reachable
+  # postgres, the object store, the file store and the master key — on the network-reachable
   # connector. That makes a stolen OAuth bearer a root shell on the box, so it is
   # off unless an operator opts in per box. Over stdio the tool ships regardless
   # (spawning that process already grants full owner access). =0 turns it off
@@ -345,34 +345,99 @@ services:
       timeout: 3s
       retries: 20
 
-  minio:
-    # Pinned (was :latest) — the in-app update path re-pulls images, so a
-    # breaking upstream release would land mid-update. Override via env.
-    # Our own build (infra/minio/Dockerfile), not MinIO's: MinIO left open
-    # source, deleted minio/minio and minio/mc from Docker Hub (2026-09-11) and
-    # then locked the quay.io copies (401), so every roll and fresh install
-    # failed at the pull. Same release, built from upstream's AGPL source, with
-    # mc inside (the healthcheck uses it).
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
-    container_name: mantle_minio
+  # ── Object store: RustFS (S3-compatible, Apache-2.0) ─────────────────────
+  # The app speaks plain S3 only (packages/storage), so the store behind it is
+  # swappable. It was MinIO until MinIO left open source (2026); RustFS reads a
+  # copy of MinIO's single-drive data in place, which is how existing boxes
+  # move over (objectstore_init below). Data dir: ${MANTLE_DATA_DIR}/rustfs.
+  #
+  # One-shot, as root, before the store starts. Three cases:
+  #   rustfs/ already holds data  -> nothing to do (every boot after the first)
+  #   minio/ holds MinIO data     -> copy it to rustfs/ ONCE (disk space checked
+  #                                  first; via rustfs.partial so an interrupted
+  #                                  copy restarts clean). minio/ is never
+  #                                  touched: rolling back to a MinIO release
+  #                                  finds it exactly as it was. Writes after the
+  #                                  switch live only in rustfs/.
+  #   neither                     -> a new, empty store
+  # Then rustfs/ is handed to UID 10001, the user RustFS runs as. Must copy, not
+  # move or hardlink: RustFS rewrites its data dir on first start
+  # (.minio.sys -> .rustfs.sys), which would break the rollback.
+  objectstore_init:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-rustfs:${RUSTFS_IMAGE_TAG:-1.0.0}
+    container_name: mantle_objectstore_init
+    restart: "no"
+    user: "0:0"
+    entrypoint: ["sh", "-ec"]
+    command:
+      - |
+        D=/mantle-data; SRC=$$D/minio; DST=$$D/rustfs; TMP=$$D/rustfs.partial
+        if [ -d "$$DST" ] && [ -n "$$(ls -A "$$DST")" ]; then
+          echo "[objectstore_init] $$DST already holds the store; nothing to copy"
+        elif [ -d "$$SRC/.minio.sys" ]; then
+          need=$$(du -sk "$$SRC" | cut -f1)
+          free=$$(df -Pk "$$D" | awk 'NR==2 {print $$4}')
+          if [ "$$free" -lt $$((need + need / 5 + 102400)) ]; then
+            echo "[objectstore_init] not enough disk to copy $$SRC ($$need KiB, $$free KiB free): free space, then run the update again" >&2
+            exit 1
+          fi
+          echo "[objectstore_init] copying $$SRC ($$need KiB) to $$DST; $$SRC stays as it is, for rollback"
+          rm -rf "$$TMP"
+          cp -a "$$SRC" "$$TMP"
+          chown -R 10001:10001 "$$TMP"
+          rmdir "$$DST" 2>/dev/null || true
+          mv "$$TMP" "$$DST"
+          objects=$$(find "$$DST" -name xl.meta ! -path '*/.minio.sys/*' | wc -l)
+          printf 'copied_at=%s\nfrom=%s\nkib=%s\nobjects=%s\n' "$$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$SRC" "$$need" "$$objects" > "$$D/rustfs.copied-from-minio"
+          echo "[objectstore_init] copied $$objects objects"
+        else
+          mkdir -p "$$DST"
+          echo "[objectstore_init] new, empty store at $$DST"
+        fi
+        chown 10001:10001 "$$DST"
+    volumes:
+      - ${MANTLE_DATA_DIR:-./data}:/mantle-data
+
+  objectstore:
+    # Pinned: the in-app update path re-pulls, so a breaking upstream release
+    # would land mid-update. Our mirror of rustfs/rustfs, by digest
+    # (infra/rustfs/IMAGE, .github/workflows/rustfs-image.yml), so an upstream
+    # repo vanishing (the MinIO lesson) cannot break a pull. Override via env.
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-rustfs:${RUSTFS_IMAGE_TAG:-1.0.0}
+    container_name: mantle_objectstore
     restart: unless-stopped
     logging: *default-logging
     # ── Memory caps (mem_limit) — a GUARDRAIL, not a reservation ──────────────
     # These cap a runaway leak so one service can't take the whole box down;
     # they do NOT reserve memory, so the sum of all caps may exceed box RAM (the
     # 4 GB minimum box idles ~2.5 GB). Sized ~2-4× each service's steady state.
-    mem_limit: 512m
-    command: server /data --console-address ":9001"
+    # RustFS: reading every object of a 667 MB store peaked at 293 MiB and was
+    # OOM-killed under a 256m cap (2026-09-25), hence more than MinIO's 512m.
+    mem_limit: 1g
+    # RustFS disables its file-descriptor cache below this limit (it warns).
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    depends_on:
+      objectstore_init: { condition: service_completed_successfully }
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?set it in .env — scripts/install.sh writes one}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?set it in .env — scripts/install.sh writes one}
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:?set it in .env — scripts/install.sh writes one}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:?set it in .env — scripts/install.sh writes one}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_REGION: ${S3_REGION:-us-east-1}
+      # Empty = log to stdout, so docker's log rotation applies (the image
+      # default writes files under /logs inside the container).
+      RUSTFS_OBS_LOG_DIRECTORY: ""
     volumes:
-      - ${MANTLE_DATA_DIR:-./data}/minio:/data
+      - ${MANTLE_DATA_DIR:-./data}/rustfs:/data
     healthcheck:
-      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health/ready"]
       interval: 10s
       timeout: 5s
       retries: 12
+      # The very first probe lands before RustFS is ready and is logged as an
+      # ERROR (503). Harmless; the grace period keeps it from counting.
+      start_period: 10s
 
   # Apache Tika — document-parser fallback for formats our in-process parsers
   # don't cover (.odt / .ods / .odp / .pptx / .ppt / .doc / .rtf / .epub / …).
@@ -594,7 +659,7 @@ services:
     restart: "no"
     depends_on:
       postgres: { condition: service_healthy }
-      minio:    { condition: service_healthy }
+      objectstore: { condition: service_healthy }
     environment:
       <<: *app-env
 
@@ -620,7 +685,7 @@ services:
     mem_limit: ${WEB_MEM_LIMIT:-3g}
     depends_on:
       postgres:      { condition: service_healthy }
-      minio:         { condition: service_healthy }
+      objectstore:   { condition: service_healthy }
       migrate:       { condition: service_completed_successfully }
     environment:
       <<: *app-env
@@ -787,7 +852,7 @@ services:
   # and the container spec templated server-side. See server/sandboxd/src/main.ts.
   #
   # Sandbox containers live on the isolated `mantle_sandbox` network — egress
-  # only, NO route to postgres/minio/web. Each sandbox's /files is a host dir
+  # only, NO route to postgres/objectstore/web. Each sandbox's /files is a host dir
   # under MANTLE_SANDBOXES_HOST_DIR, mounted here at the SAME path (the updater's
   # trick) so the paths sandboxd mkdirs and the bind sources it hands the host
   # daemon are identical. Fresh installs enable this by default (install.sh
@@ -846,7 +911,7 @@ services:
   # turning the probe into an actual self-heal. Scope is deliberately narrow —
   # AUTOHEAL_CONTAINER_LABEL=autoheal means it ONLY touches services that opt in
   # with `labels: [autoheal=true]` (the api + the 8 heartbeat workers), never
-  # postgres/minio/caddy/web (whose healthchecks predate this and must NOT bounce
+  # postgres/objectstore/caddy/web (whose healthchecks predate this and must NOT bounce
   # on a blip — restarting postgres on a transient probe miss is worse than the
   # blip).
   #
@@ -910,7 +975,7 @@ services:
       - autoheal=true
     depends_on:
       postgres:      { condition: service_healthy }
-      minio:         { condition: service_healthy }
+      objectstore:   { condition: service_healthy }
       migrate:       { condition: service_completed_successfully }
     environment:
       <<: *app-env
@@ -938,7 +1003,7 @@ services:
       - autoheal=true
     depends_on:
       postgres:      { condition: service_healthy }
-      minio:         { condition: service_healthy }
+      objectstore:   { condition: service_healthy }
       migrate:       { condition: service_completed_successfully }
     environment:
       <<: *app-env
@@ -963,7 +1028,7 @@ services:
       <<: *app-env
 
   # Microsoft drive sync: delta-syncs enabled OneDrive / SharePoint document
-  # libraries into the brain as file nodes. Needs MinIO (file bytes → storage)
+  # libraries into the brain as file nodes. Needs the object store (file bytes → storage)
   # like the email worker.
   worker_microsoft:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
@@ -980,7 +1045,7 @@ services:
       - autoheal=true
     depends_on:
       postgres:      { condition: service_healthy }
-      minio:         { condition: service_healthy }
+      objectstore:   { condition: service_healthy }
       migrate:       { condition: service_completed_successfully }
     environment:
       <<: *app-env
@@ -1002,7 +1067,7 @@ services:
       - autoheal=true
     depends_on:
       postgres:      { condition: service_healthy }
-      minio:         { condition: service_healthy }
+      objectstore:   { condition: service_healthy }
       migrate:       { condition: service_completed_successfully }
     environment:
       <<: *app-env

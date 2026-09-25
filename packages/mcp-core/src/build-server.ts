@@ -20,7 +20,7 @@
  * enabled on a box and the client still reported it had no such tool).
  *
  * ONE tool is transport-dependent: `run_terminal` runs a shell in the brain's
- * OWN container — postgres, minio, the file store, the master key. Over stdio
+ * OWN container — postgres, the object store, the file store, the master key. Over stdio
  * that is no escalation at all (spawning the process already grants the owner's
  * full data access on a machine you control), so it ships. Over HTTP the
  * surface is reachable from the network and a stolen OAuth token would become a
@@ -248,7 +248,7 @@ export function registerMantleTools(
   // an MCP client gets command execution, and it is deliberately the contained
   // one: `run_terminal` (the brain's own shell) stays off this surface, while
   // `sandbox_exec` runs inside a container on an egress-only network with no
-  // route to postgres, minio or the web tier (docs/sandboxes.md).
+  // route to postgres, the object store or the web tier (docs/sandboxes.md).
   //
   // Bridged unconditionally, exactly as the in-app coder agent holds them: the
   // handlers already answer "sandboxes are not enabled on this box" when the

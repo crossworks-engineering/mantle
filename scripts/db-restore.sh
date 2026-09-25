@@ -54,4 +54,4 @@ docker exec -i "$CONTAINER" pg_restore -U postgres -d postgres --no-owner < "$DU
 N=$(docker exec "$CONTAINER" psql -U postgres -d postgres -tA -c "SELECT count(*) FROM nodes" 2>/dev/null || echo "0")
 echo "✔ Restore complete — public.nodes now has $N rows."
 echo "  Next:  docker compose up -d --wait    (migrate will be a no-op)"
-echo "  Don't forget the file bytes:  rsync your \$MANTLE_DATA_DIR/{files,minio} across too."
+echo "  Don't forget the file bytes:  rsync your \$MANTLE_DATA_DIR/{files,rustfs} across too."

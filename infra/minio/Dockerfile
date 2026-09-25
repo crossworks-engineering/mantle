@@ -17,8 +17,9 @@
 # /data as the volume. Source: https://github.com/minio/minio (tag
 # $MINIO_TAG) and https://github.com/minio/mc (tag $MC_TAG), AGPL-3.0.
 #
-# Stopgap: the long-term plan replaces MinIO with an S3-compatible store that
-# is still maintained. Until then, this pins the last community release.
+# Retired from compose: the object store is RustFS now (docker-compose.yml,
+# objectstore). Kept for rollback to a MinIO release and for reading an old
+# data/minio, until every box has run on RustFS long enough to drop it.
 
 ARG MINIO_TAG=RELEASE.2025-09-07T16-13-09Z
 ARG MC_TAG=RELEASE.2025-08-13T08-35-41Z

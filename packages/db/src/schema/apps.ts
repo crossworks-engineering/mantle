@@ -63,7 +63,7 @@ export type AppManifest = {
 
 /** Pointer to a bundled artifact in object storage. */
 export type BuildRef = {
-  /** MinIO key of the bundled ESM (`app-bundles/<owner>/<app>/<sha>.js`). */
+  /** Object-store key of the bundled ESM (content-addressed, see @mantle/storage contentKey). */
   storageKey: string;
   sha256: string;
   builtAt: string;

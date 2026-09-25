@@ -84,7 +84,7 @@ export function isBlockedIp(ip: string): boolean {
  * integrations could never execute. The carve is the narrowest one that
  * works, and BOTH bounds matter:
  *   - origin must equal SANDBOXD_URL's origin EXACTLY (no other private host
- *     inherits it — postgres/minio/web stay blocked);
+ *     inherits it — postgres/objectstore/web stay blocked);
  *   - path must start with `/svc/` — sandboxd's CONTROL verbs (/sandboxes,
  *     create/exec/rm) remain unreachable to model-driven fetches; only the
  *     data-plane proxy is exposed, and it is itself bearer-token-gated and

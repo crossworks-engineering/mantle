@@ -152,7 +152,8 @@ describe('brain-core override ↔ main compose', () => {
   it(`${COMPOSE}'s default (profile-less) service set is exactly the fleet shape`, () => {
     const DEFAULT_SERVICES = [
       'postgres',
-      'minio',
+      'objectstore_init',
+      'objectstore',
       'tika',
       'browser',
       'tailscale',
@@ -182,6 +183,24 @@ describe('brain-core override ↔ main compose', () => {
         `everywhere. Both are deliberate fleet decisions — update this pin in the same ` +
         `change, with a deploy note.`,
     ).toEqual([...DEFAULT_SERVICES].sort());
+  });
+
+  // objectstore_init copies a box's MinIO data to RustFS once. The script is
+  // inlined in BOTH compose files (the updater refreshes compose files, not
+  // infra/, so a separate script file would never reach deployed boxes). The
+  // two copies must stay identical, or dev would test a migration prod does
+  // not run.
+  it(`objectstore_init runs the same copy script in ${COMPOSE} and docker-compose.dev.yml`, () => {
+    const script = (rel: string) => {
+      const text = read(rel);
+      const start = text.indexOf('  objectstore_init:');
+      const body = text.slice(start, text.indexOf('\n    volumes:', start));
+      return body.slice(body.indexOf('      - |')).trim();
+    };
+    const prod = script(COMPOSE);
+    expect(prod).toContain('rustfs.partial');
+    expect(prod).toContain('chown 10001:10001');
+    expect(script('docker-compose.dev.yml')).toBe(prod);
   });
 
   it(`${COMPOSE_CORE} gates exactly the doc helpers + the six channel workers`, () => {

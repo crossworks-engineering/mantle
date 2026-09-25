@@ -1,6 +1,8 @@
 # Our own MinIO image: builds infra/minio/Dockerfile (MinIO + mc from upstream's
 # AGPL source) for amd64 + arm64 and pushes it to Docker Hub as
-# <namespace>/mantle-minio:<MINIO_TAG>, the image docker-compose.yml pins.
+# <namespace>/mantle-minio:<MINIO_TAG>. Compose ran it until the object store
+# moved to RustFS; it stays published for rollback to a MinIO release and for
+# reading an old data/minio (e.g. `objectstore:copy-from` after the switch).
 #
 # Why: MinIO stopped publishing free images (Docker Hub repos deleted about
 # 2026-09-11, quay.io copies locked soon after), so compose had nothing left to
@@ -49,13 +51,6 @@ jobs:
           [ -n "$tag" ] || { echo "::error::no ARG MINIO_TAG=RELEASE.* in infra/minio/Dockerfile"; exit 1; }
           echo "MINIO_TAG=$tag" >> "$GITHUB_ENV"
           echo "pinned: $tag"
-
-      # compose must pin the same tag, or boxes would pull something this job
-      # never built.
-      - name: Assert compose pins this tag
-        run: |
-          grep -qF "mantle-minio:\${MINIO_IMAGE_TAG:-${MINIO_TAG}}" docker-compose.yml \
-            || { echo "::error::docker-compose.yml does not pin mantle-minio:${MINIO_TAG}"; exit 1; }
 
       - uses: docker/setup-buildx-action@v3
 

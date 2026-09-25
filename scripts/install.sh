@@ -733,20 +733,21 @@ else
   upsert POSTGRES_PASSWORD postgres
   warn "POSTGRES_PASSWORD was unset with an existing postgres data dir — pinned to the compose default it was initialised with. Rotate it deliberately (ALTER USER + this line) if you want a strong one."
 fi
-# Same fresh-only rule for the object-store credentials (MinIO bakes its root
-# user/password in at first start, exactly like postgres).
+# Same fresh-only rule for the object-store credentials (the store bakes its
+# root user/password into its data dir at first start, exactly like postgres;
+# data/minio is the pre-RustFS dir, which objectstore_init copies over).
 if [[ -n "$(getval S3_SECRET_KEY)" ]]; then
   ensure S3_ACCESS_KEY   "gen_hex 12"
   ensure S3_SECRET_KEY   "gen_hex 24"
-elif [[ ! -d "$DATA_DIR/minio" && ! -d "$STACK_DIR/data/minio" ]]; then
+elif [[ ! -d "$DATA_DIR/minio" && ! -d "$STACK_DIR/data/minio" && ! -d "$DATA_DIR/rustfs" && ! -d "$STACK_DIR/data/rustfs" ]]; then
   ensure S3_ACCESS_KEY   "gen_hex 12"
   ensure S3_SECRET_KEY   "gen_hex 24"
 else
-  # Same reasoning as POSTGRES_PASSWORD above: pin the defaults MinIO baked in
+  # Same reasoning as POSTGRES_PASSWORD above: pin the defaults the store baked in
   # at first start, so the required-var check has something to read.
   upsert S3_ACCESS_KEY minio
   upsert S3_SECRET_KEY minio12345
-  warn "S3 keys were unset with an existing minio data dir — pinned to the compose defaults they were initialised with. Rotate them deliberately if you want strong ones."
+  warn "S3 keys were unset with an existing object-store data dir — pinned to the compose defaults they were initialised with. Rotate them deliberately if you want strong ones."
 fi
 upsert MANTLE_SITE_ADDRESS "$SITE_ADDRESS"
 # Which interface the front door listens on. 127.0.0.1 for a "this machine

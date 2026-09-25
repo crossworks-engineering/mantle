@@ -261,7 +261,7 @@ export async function downloadTelegramFile(
   // The plaintext bot token sits inside `bot.token`. We assemble the
   // CDN URL ourselves rather than going through grammy's `download()`
   // because we want bytes in memory, not on disk — the buffer goes
-  // straight to MinIO + Whisper.
+  // straight to the object store + Whisper.
   const url = `https://api.telegram.org/file/bot${bot.token}/${file.file_path}`;
   const res = await fetch(url);
   if (!res.ok) {

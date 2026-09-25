@@ -4,7 +4,7 @@
 #
 # Inspects every container in the `mantle` compose project (works for both the
 # prod docker-compose.yml and the dev docker-compose.dev.yml), reports health,
-# treats the known one-shots (migrate / ollama_pull) as OK when
+# treats the known one-shots (migrate / objectstore_init / ollama_pull) as OK when
 # they've completed cleanly, then confirms the app answers over HTTP.
 #
 # Exit 0 = all good; 1 = something is down. Run standalone or via install.sh.
@@ -37,7 +37,7 @@ if ! docker info >/dev/null 2>&1; then bad "Docker daemon isn't running."; exit 
 # One-shots that are HEALTHY when exited(0), not when "running".
 # (*_createbuckets: the service is gone (migrate creates the bucket now), but a box
 # installed before that keeps the exited container until an `up --remove-orphans`.)
-is_oneshot() { case "$1" in *_migrate|*_createbuckets|*_ollama_pull) return 0 ;; *) return 1 ;; esac; }
+is_oneshot() { case "$1" in *_migrate|*_objectstore_init|*_createbuckets|*_ollama_pull) return 0 ;; *) return 1 ;; esac; }
 
 mapfile -t NAMES < <(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Names}}' | sort)
 # Dev machines run the `mantle-dev` compose project (docker-compose.dev.yml);

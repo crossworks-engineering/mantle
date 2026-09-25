@@ -728,7 +728,7 @@ table id, what changed, and the review URL.`,
   'mantle-ops': `# Mantle ops — operating manual
 
 You operate **Mantle**, a single-user self-hosted "AI-queryable life tree"
-(Next.js 15 + one Postgres + MinIO) from the repo at \`$MANTLE_TERMINAL_CWD\`
+(Next.js 15 + one Postgres + an S3 object store) from the repo at \`$MANTLE_TERMINAL_CWD\`
 (default ~/Projects/mantle). You have a real terminal (\`run_terminal\`) and file tools.
 
 ## Read the source of truth before non-trivial work

@@ -128,7 +128,7 @@ describe('CLI sandboxes are on the MCP surface', () => {
 
   it('is available on both transports', () => {
     // The contained shell is never the transport-dependent one — that is
-    // run_terminal's job (below). A sandbox has no route to postgres, minio or
+    // run_terminal's job (below). A sandbox has no route to postgres, the object store or
     // the web tier, so nothing about the network changes its blast radius.
     expect(surface('stdio').has('sandbox_exec')).toBe(true);
     expect(surface('http').has('sandbox_exec')).toBe(true);

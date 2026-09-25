@@ -4,6 +4,51 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: the object store is RustFS; boxes copy their MinIO data over once (branch feat/objectstore-rustfs)
+
+MinIO left open source (repo archived, public images deleted, only the licensed
+AIStor build left), so the bundled object store is now RustFS (Apache-2.0,
+S3-compatible). The `minio` service is replaced by two:
+
+- `objectstore_init`, a one-shot that runs before the store. On a box with
+  MinIO data it copies `data/minio` to `data/rustfs` ONCE (free disk checked
+  first; staged in `rustfs.partial` so an interrupted copy restarts clean) and
+  records the counts in `data/rustfs.copied-from-minio`. `data/minio` is never
+  touched, so updating back to a MinIO release finds it exactly as it was;
+  objects written after the switch exist only in `data/rustfs`. A new box
+  gets an empty store. It copies rather than moves because RustFS rewrites
+  its data dir on first start.
+- `objectstore` (container `mantle_objectstore`), RustFS on `data/rustfs` as
+  UID 10001, `mem_limit: 1g` (a full read of a 667 MB store peaked at 293 MiB
+  and a 256m cap was OOM-killed), `nofile` 65536, console off.
+
+The image is `titanwest/mantle-rustfs:1.0.0`, a byte-for-byte mirror of
+`rustfs/rustfs:1.0.0` pinned by digest in `infra/rustfs/IMAGE` and published by
+the new `rustfs-image` workflow, so an upstream repo vanishing cannot break a
+pull again. `RUSTFS_IMAGE_TAG` replaces `MINIO_IMAGE_TAG`; `S3_ENDPOINT` now
+defaults to `http://objectstore:9000`. Dev compose runs the same (console on
+127.0.0.1:9001, creds unchanged).
+
+Tested before this release: RustFS on copies of three real boxes' MinIO data
+verified every object (10, 266 and 403), every S3 call the app makes passed,
+and this compose file migrated a copy end to end with `data/minio` left
+byte-identical.
+
+New: `objectstore:copy-from --endpoint=<url> [--apply]` copies whatever the
+store lacks from another S3 store (dry run by default): the repair for an
+upload that landed in MinIO during the switch, and a way in from any S3.
+`prod-db-tunnel.sh` / `prod-tailscale-serve.sh` default to
+`mantle_objectstore` (`MANTLE_MINIO_CONTAINER` still honoured); `reset.sh`
+wipes `data/rustfs` too. The MinIO image (`infra/minio`) stays published for
+rollback and for reading an old `data/minio`.
+
+Deploy note: a changed default service set (`minio` out, `objectstore_init` +
+`objectstore` in). Check free disk first (the copy needs the size of
+`data/minio` plus a margin; the init refuses and the update fails cleanly
+otherwise). After the roll: `docker logs mantle_objectstore_init`, then
+`docker exec mantle_web pnpm -C packages/storage objectstore:verify`. Delete
+`data/minio` only after a couple of weeks green.
+
 ## Unreleased: the object store goes backend-neutral; `createbuckets` is gone (branch feat/objectstore-neutral)
 
 Step 1 of moving off MinIO (to RustFS, planned): nothing outside the storage

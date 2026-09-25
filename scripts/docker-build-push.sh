@@ -5,7 +5,7 @@
 # server image — they differ only in the compose `command:` — built via the
 # `web` service. The media sidecar (`infra/media-sidecar`, compose profile
 # `media`) is a second, tiny image built from the root Dockerfile's `media`
-# stage. The base-image services (postgres/minio/tika/browser/ollama/
+# stage. The base-image services (postgres/objectstore/tika/browser/ollama/
 # tailscale/caddy) are NOT ours and are not pushed.
 #
 # Usage:

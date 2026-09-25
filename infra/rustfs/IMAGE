@@ -1,0 +1,9 @@
+# The object store image compose runs, mirrored to <namespace>/mantle-rustfs:TAG
+# by .github/workflows/rustfs-image.yml. Pinned by DIGEST: the mirror is the
+# exact upstream bytes (Apache-2.0, unmodified), and an upstream repo vanishing
+# (MinIO, 2026-09) cannot break a pull. To move: change both lines, change the
+# RUSTFS_IMAGE_TAG default in docker-compose.yml and the tag in
+# docker-compose.dev.yml, and copy data/rustfs aside first (RustFS's on-disk
+# format still moves between releases).
+SOURCE=rustfs/rustfs:1.0.0@sha256:8cc9801755448b71a786705ce76692c77e14936cccd87cf2fc31842e58f4d1ff
+TAG=1.0.0

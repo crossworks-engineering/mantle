@@ -6,7 +6,7 @@
 # 9000 / 9001 / 9998) are unchanged, so existing .env.local files keep working.
 name: mantle-dev
 
-# Mantle dev infra: just Postgres + MinIO.
+# Mantle dev infra: Postgres + the object store (RustFS) + Tika.
 # server/web, server/mcp, and workers run as native Node via `pnpm dev`.
 # Bring everything up with `pnpm up` (which runs scripts/up.sh).
 
@@ -37,24 +37,92 @@ services:
       timeout: 3s
       retries: 20
 
-  minio:
-    image: titanwest/mantle-minio:RELEASE.2025-09-07T16-13-09Z   # own build, see infra/minio/Dockerfile
-    container_name: mantle_dev_minio
+  # ── Object store: RustFS (S3-compatible, Apache-2.0) ─────────────────────
+  # The app speaks plain S3 only (packages/storage), so the store behind it is
+  # swappable. It was MinIO until MinIO left open source (2026); RustFS reads a
+  # copy of MinIO's single-drive data in place, which is how existing boxes
+  # move over (objectstore_init below). Data dir: ${MANTLE_DATA_DIR}/rustfs.
+  #
+  # One-shot, as root, before the store starts. Three cases:
+  #   rustfs/ already holds data  -> nothing to do (every boot after the first)
+  #   minio/ holds MinIO data     -> copy it to rustfs/ ONCE (disk space checked
+  #                                  first; via rustfs.partial so an interrupted
+  #                                  copy restarts clean). minio/ is never
+  #                                  touched: rolling back to a MinIO release
+  #                                  finds it exactly as it was. Writes after the
+  #                                  switch live only in rustfs/.
+  #   neither                     -> a new, empty store
+  # Then rustfs/ is handed to UID 10001, the user RustFS runs as. Must copy, not
+  # move or hardlink: RustFS rewrites its data dir on first start
+  # (.minio.sys -> .rustfs.sys), which would break the rollback.
+  objectstore_init:
+    image: titanwest/mantle-rustfs:1.0.0
+    container_name: mantle_dev_objectstore_init
+    restart: "no"
+    user: "0:0"
+    entrypoint: ["sh", "-ec"]
+    command:
+      - |
+        D=/mantle-data; SRC=$$D/minio; DST=$$D/rustfs; TMP=$$D/rustfs.partial
+        if [ -d "$$DST" ] && [ -n "$$(ls -A "$$DST")" ]; then
+          echo "[objectstore_init] $$DST already holds the store; nothing to copy"
+        elif [ -d "$$SRC/.minio.sys" ]; then
+          need=$$(du -sk "$$SRC" | cut -f1)
+          free=$$(df -Pk "$$D" | awk 'NR==2 {print $$4}')
+          if [ "$$free" -lt $$((need + need / 5 + 102400)) ]; then
+            echo "[objectstore_init] not enough disk to copy $$SRC ($$need KiB, $$free KiB free): free space, then run the update again" >&2
+            exit 1
+          fi
+          echo "[objectstore_init] copying $$SRC ($$need KiB) to $$DST; $$SRC stays as it is, for rollback"
+          rm -rf "$$TMP"
+          cp -a "$$SRC" "$$TMP"
+          chown -R 10001:10001 "$$TMP"
+          rmdir "$$DST" 2>/dev/null || true
+          mv "$$TMP" "$$DST"
+          objects=$$(find "$$DST" -name xl.meta ! -path '*/.minio.sys/*' | wc -l)
+          printf 'copied_at=%s\nfrom=%s\nkib=%s\nobjects=%s\n' "$$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$SRC" "$$need" "$$objects" > "$$D/rustfs.copied-from-minio"
+          echo "[objectstore_init] copied $$objects objects"
+        else
+          mkdir -p "$$DST"
+          echo "[objectstore_init] new, empty store at $$DST"
+        fi
+        chown 10001:10001 "$$DST"
+    volumes:
+      - ${MANTLE_DATA_DIR:-./data}:/mantle-data
+
+  objectstore:
+    # Same pinned mirror as docker-compose.yml.
+    image: titanwest/mantle-rustfs:1.0.0
+    container_name: mantle_dev_objectstore
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    # RustFS disables its file-descriptor cache below this limit (it warns).
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    depends_on:
+      objectstore_init: { condition: service_completed_successfully }
     environment:
-      MINIO_ROOT_USER: minio
-      MINIO_ROOT_PASSWORD: minio12345
+      # Dev keeps MinIO's old defaults, so existing .env.local files work.
+      RUSTFS_ACCESS_KEY: minio
+      RUSTFS_SECRET_KEY: minio12345
+      RUSTFS_VOLUMES: /data
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_REGION: ${S3_REGION:-us-east-1}
+      # Empty = log to stdout, so docker's log rotation applies (the image
+      # default writes files under /logs inside the container).
+      RUSTFS_OBS_LOG_DIRECTORY: ""
     ports:
       - "127.0.0.1:9000:9000"   # S3 API
       - "127.0.0.1:9001:9001"   # web console
     volumes:
-      - ${MANTLE_DATA_DIR:-./data}/minio:/data
+      - ${MANTLE_DATA_DIR:-./data}/rustfs:/data
     healthcheck:
-      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health/ready"]
       interval: 10s
       timeout: 5s
       retries: 12
+      # The very first probe lands before RustFS is ready and is logged as an
+      # ERROR (503). Harmless; the grace period keeps it from counting.
+      start_period: 10s
 
   # Apache Tika — the third-tier document parser (the first two being our
   # in-process pdf-parse / mammoth / SheetJS, and the vision worker for

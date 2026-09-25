@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Bring up Mantle dev infra (postgres + minio + tika), apply migrations, create
+# Bring up Mantle dev infra (postgres + object store + tika), apply migrations, create
 # the pg-boss schema, then run the dev servers. Idempotent — safe to run on a
 # clean machine or against an already-running stack.
 #
@@ -63,7 +63,7 @@ EOF
   exit 1
 fi
 
-echo "→ Bringing up postgres + minio (docker-compose.dev.yml)…"
+echo "→ Bringing up postgres + object store + tika (docker-compose.dev.yml)…"
 # Via the wrapper: the stack (and its data) belongs to the ORIGINAL clone,
 # even when this script is invoked from a worktree. The dev SERVERS below
 # still run from this tree — you want your branch's code against the one

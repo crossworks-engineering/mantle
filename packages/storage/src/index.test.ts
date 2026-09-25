@@ -5,6 +5,7 @@ import {
   __setClientForTests,
   clientConfig,
   contentKey,
+  copyMissingFrom,
   ensureBucket,
   listKeys,
   verifyObjects,
@@ -215,5 +216,72 @@ describe('verifyObjects', () => {
     });
     const r = await verifyObjects();
     expect(r.bad).toEqual([{ key, problem: 'read failed: NoSuchKey' }]);
+  });
+});
+
+describe('copyMissingFrom', () => {
+  const sha = (b: Buffer) => createHash('sha256').update(b).digest('hex');
+  const a = Buffer.from('already here');
+  const b = Buffer.from('only in the old store');
+  const lying = contentKey(sha(Buffer.from('not these bytes')));
+  const src: Record<string, { body: Buffer; type: string }> = {
+    [contentKey(sha(a))]: { body: a, type: 'text/plain' },
+    [contentKey(sha(b))]: { body: b, type: 'application/pdf' },
+    [lying]: { body: Buffer.from('tampered'), type: 'text/plain' },
+  };
+  const source = {
+    bucket: 'old',
+    label: 'http://old:9000/old',
+    client: {
+      send: async (cmd: { constructor: { name: string }; input: Record<string, unknown> }) => {
+        const name = cmd.constructor.name;
+        if (name === 'ListObjectsV2Command')
+          return {
+            Contents: Object.entries(src).map(([Key, o]) => ({ Key, Size: o.body.length })),
+            IsTruncated: false,
+          };
+        if (name === 'GetObjectCommand') {
+          const o = src[cmd.input.Key as string]!;
+          return { Body: Readable.from([o.body]), ContentType: o.type };
+        }
+        throw new Error(`source got ${name}`);
+      },
+    } as never,
+  };
+
+  function target() {
+    const puts: { key: string; type: unknown; bytes: number }[] = [];
+    fakeClient({
+      HeadObjectCommand: (input) => {
+        if (input.Key === contentKey(sha(a))) return {};
+        throw s3Error('NotFound', 404);
+      },
+      PutObjectCommand: (input) => {
+        puts.push({
+          key: input.Key as string,
+          type: input.ContentType,
+          bytes: (input.Body as Buffer).length,
+        });
+        return {};
+      },
+    });
+    return puts;
+  }
+
+  it('dry run lists what is missing and writes nothing', async () => {
+    const puts = target();
+    const r = await copyMissingFrom(source, { apply: false });
+    expect(r.objects).toBe(3);
+    expect(r.missing.sort()).toEqual([contentKey(sha(b)), lying].sort());
+    expect(r.copied).toBe(0);
+    expect(puts).toEqual([]);
+  });
+
+  it('apply copies missing objects with their content type, and refuses bad hashes', async () => {
+    const puts = target();
+    const r = await copyMissingFrom(source, { apply: true });
+    expect(r.copied).toBe(1);
+    expect(puts).toEqual([{ key: contentKey(sha(b)), type: 'application/pdf', bytes: b.length }]);
+    expect(r.bad).toEqual([{ key: lying, problem: 'sha256 mismatch in the source; not copied' }]);
   });
 });

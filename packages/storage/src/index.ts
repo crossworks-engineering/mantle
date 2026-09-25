@@ -234,12 +234,20 @@ export async function ensureBucket(): Promise<{
 export type StoredObject = { key: string; size: number; etag?: string };
 
 /** Every object in S3_BUCKET under `prefix`, paged through ListObjectsV2. */
-export async function* listKeys(prefix = ''): AsyncGenerator<StoredObject> {
+export function listKeys(prefix = ''): AsyncGenerator<StoredObject> {
+  return listKeysOf(client(), bucket(), prefix);
+}
+
+async function* listKeysOf(
+  c: S3Sender,
+  bucketName: string,
+  prefix = '',
+): AsyncGenerator<StoredObject> {
   let token: string | undefined;
   do {
-    const res = await client().send(
+    const res = await c.send(
       new ListObjectsV2Command({
-        Bucket: bucket(),
+        Bucket: bucketName,
         Prefix: prefix || undefined,
         ContinuationToken: token,
       }),
@@ -298,6 +306,70 @@ export async function verifyObjects(): Promise<VerifyReport> {
       else report.bad.push({ key: o.key, problem: 'sha256 mismatch' });
     } catch (err: unknown) {
       report.bad.push({ key: o.key, problem: `read failed: ${(err as Error).message}` });
+    }
+  }
+  return report;
+}
+
+export type CopyReport = {
+  source: string;
+  /** Objects listed in the source bucket. */
+  objects: number;
+  /** Source keys the target does not have. */
+  missing: string[];
+  /** Missing objects written to the target (0 on a dry run). */
+  copied: number;
+  bad: { key: string; problem: string }[];
+};
+
+/**
+ * Copy every object the target store lacks from another S3 store: the repair
+ * for writes that landed in the old store while a backend swap was rolling
+ * out, and a way in from any external S3. Existing target objects are never
+ * overwritten (the keys are content hashes, so same key = same bytes).
+ * Content-addressed objects are re-hashed on the way through. Dry run unless
+ * `apply`: it then only reports what is missing.
+ */
+export async function copyMissingFrom(
+  source: { client: S3Sender; bucket: string; label: string },
+  opts: { apply: boolean },
+): Promise<CopyReport> {
+  const report: CopyReport = {
+    source: source.label,
+    objects: 0,
+    missing: [],
+    copied: 0,
+    bad: [],
+  };
+  for await (const o of listKeysOf(source.client, source.bucket)) {
+    report.objects += 1;
+    if (await exists(o.key)) continue;
+    report.missing.push(o.key);
+    if (!opts.apply) continue;
+    try {
+      const res = await source.client.send(
+        new GetObjectCommand({ Bucket: source.bucket, Key: o.key }),
+      );
+      if (!res.Body) throw new Error('empty body');
+      const chunks: Buffer[] = [];
+      for await (const chunk of res.Body as Readable) chunks.push(chunk as Buffer);
+      const buf = Buffer.concat(chunks);
+      const m = CONTENT_KEY.exec(o.key);
+      if (m && hashBuffer(buf) !== m[1]) {
+        report.bad.push({ key: o.key, problem: 'sha256 mismatch in the source; not copied' });
+        continue;
+      }
+      await client().send(
+        new PutObjectCommand({
+          Bucket: bucket(),
+          Key: o.key,
+          Body: buf,
+          ContentType: res.ContentType,
+        }),
+      );
+      report.copied += 1;
+    } catch (err: unknown) {
+      report.bad.push({ key: o.key, problem: `copy failed: ${(err as Error).message}` });
     }
   }
   return report;

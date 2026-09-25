@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# (Re)publish a remote Mantle's DATA PLANE — Postgres + MinIO — on the tailnet
+# (Re)publish a remote Mantle's DATA PLANE — Postgres + object store — on the tailnet
 # via `tailscale serve --tcp` on the remote node, so devices on your tailnet can
 # reach them by MagicDNS (e.g. <your-brain>.<tailnet>.ts.net:5432) with no SSH tunnel.
 # See docs/remote-db-dev.md.
@@ -17,13 +17,14 @@
 #   PROD_SSH_HOST           SSH host/alias            (default: mantle-prod)
 #   MANTLE_TS_CONTAINER     Tailscale container       (default: mantle_tailscale)
 #   MANTLE_PG_CONTAINER     Postgres container        (default: mantle_pg)
-#   MANTLE_MINIO_CONTAINER  MinIO container           (default: mantle_minio)
+#   MANTLE_OBJECTSTORE_CONTAINER  object store container (default: mantle_objectstore;
+#                           MANTLE_MINIO_CONTAINER still honoured)
 set -euo pipefail
 
 PROD_SSH_HOST="${PROD_SSH_HOST:-mantle-prod}"
 TS="${MANTLE_TS_CONTAINER:-mantle_tailscale}"
 PG="${MANTLE_PG_CONTAINER:-mantle_pg}"
-MINIO="${MANTLE_MINIO_CONTAINER:-mantle_minio}"
+STORE="${MANTLE_OBJECTSTORE_CONTAINER:-${MANTLE_MINIO_CONTAINER:-mantle_objectstore}}"
 ACTION="${1:-up}"
 
 ip_of='docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"'
@@ -33,10 +34,10 @@ case "$ACTION" in
     ssh -o ConnectTimeout=20 "$PROD_SSH_HOST" "
       set -e
       PG_IP=\$($ip_of $PG)
-      MINIO_IP=\$($ip_of $MINIO)
-      echo \"resolved: pg=\$PG_IP minio=\$MINIO_IP\"
+      STORE_IP=\$($ip_of $STORE)
+      echo \"resolved: pg=\$PG_IP store=\$STORE_IP\"
       docker exec $TS tailscale serve --bg --tcp 5432 tcp://\$PG_IP:5432
-      docker exec $TS tailscale serve --bg --tcp 9000 tcp://\$MINIO_IP:9000
+      docker exec $TS tailscale serve --bg --tcp 9000 tcp://\$STORE_IP:9000
       echo '--- serve status ---'
       docker exec $TS tailscale serve status
     "
