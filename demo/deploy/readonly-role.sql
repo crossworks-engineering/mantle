@@ -23,6 +23,13 @@ begin
 end
 $$;
 
+-- Row security (migration 0159) filters every role that is neither the table
+-- owner nor a superuser, and demo_reader is neither: without this its reads
+-- come back empty. It reads the whole fictional brain as the owner would, so
+-- it skips the row policies. The write revokes below still hold; BYPASSRLS
+-- decides which rows it sees, not what it may do to them.
+alter role demo_reader bypassrls;
+
 grant connect on database postgres to demo_reader;
 
 -- Read everything the app reads. `auth` matters: session verification looks
