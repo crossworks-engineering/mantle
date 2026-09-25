@@ -124,6 +124,11 @@ attributable.
   path (search, passages, node reads, entity facts, turn retrieval) by node
   type, and secrets, Telegram chats, saved places and peers are hidden from
   team surfaces always (team-chat.md §6).
+- **One level system, enforced by the database.** Items, agents and tool
+  groups carry a level (admin > team > client > public). A below-admin agent
+  runs its whole turn on a limited Postgres login role, and row level
+  security decides what it reads: no per-tool checks to forget. See
+  [access-levels.md](./access-levels.md).
 - **One write path, provenance-stamped.** The single write tool files a
   review-queue task whose provenance (who, from which message, which
   attachments) is stamped **by the server, never from model arguments**: so
