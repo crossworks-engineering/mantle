@@ -89,8 +89,6 @@ export function levelForShareMode(
   return 'public';
 }
 
-const WORKSPACE_TYPES: readonly string[] = WORKSPACE_NODE_TYPES;
-
 /** Re-derive the level of `nodeIds` from their active links (workspace kinds
  *  only). `preferred` = a cascading parent's level, for its sub-pages. */
 async function syncLevelsFromShares(
@@ -113,7 +111,7 @@ async function syncLevelsFromShares(
   const modeByNode = new Map(links.map((l) => [l.nodeId, shareModeOf(l)]));
   const byTarget = new Map<ViewerLevel, string[]>();
   for (const r of rows) {
-    if (!WORKSPACE_TYPES.includes(r.type)) continue;
+    if (!(WORKSPACE_NODE_TYPES as readonly string[]).includes(r.type)) continue;
     const current = r.audience as ViewerLevel;
     const target = levelForShareMode(current, modeByNode.get(r.id) ?? null, preferred);
     if (target === current) continue;
