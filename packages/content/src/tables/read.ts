@@ -12,6 +12,7 @@ import { draftAbsFor } from '../table-storage';
 import { db, nodes, tables } from '@mantle/db';
 import type { TableRow, TableDetail, TableSort } from '@mantle/content-core/table-model';
 import { countsFromRegistry, detailOf, docsOf, rowOf, tabsFromStats } from './shared';
+import { currentViewerLevel } from '@mantle/db/viewer';
 
 type ListTablesOpts = { query?: string; tag?: string; sort?: TableSort };
 
@@ -90,13 +91,16 @@ export async function getTable(
   id: string,
   opts: { tabId?: string } = {},
 ): Promise<TableDetail | null> {
+  // Below admin (member logins Phase 0b) the draft is not readable: the
+  // published table only, and no draft file from disk either.
+  const published = currentViewerLevel() !== 'admin';
   const [row] = await db
     .select({
       node: nodes,
       data: tables.data,
-      draft: tables.draftData,
+      draft: published ? sql<null>`null` : tables.draftData,
       storagePath: tables.storagePath,
-      draftRev: tables.draftRev,
+      draftRev: published ? sql<null>`null` : tables.draftRev,
       stats: tables.stats,
     })
     .from(nodes)
@@ -107,7 +111,7 @@ export async function getTable(
   // Tab list: the DRAFT file's when one exists (a tab added/renamed in the
   // draft must show), else registry stats (published, no file open needed).
   let tabs = row.storagePath ? tabsFromStats(row.stats) : undefined;
-  if (row.storagePath) {
+  if (row.storagePath && !published) {
     const draftAbs = draftAbsFor(row.storagePath);
     if (existsSync(draftAbs)) {
       try {

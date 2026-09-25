@@ -976,18 +976,12 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'read_section',
       'tree_list',
       'node_read',
-      'entity_search',
-      'entity_neighbors',
-      'graph_path',
-      'entity_facts',
-      'entity_mentions',
       // file/folder reads (no create/rename)
       'folder_list',
       'folder_get_by_path',
       'file_list',
       'file_get',
       'file_read',
-      'folder_describe',
       // Showing a stored image is a file READ that renders instead of
       // returning text (see the `files` group). A member could already
       // file_read every one of these bytes; without this they simply could
@@ -1011,6 +1005,28 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'table_rows_list',
       'table_row_get',
       'table_aggregate',
+      'app_db_list',
+      'app_db_query',
+      // utilities the read loop needs
+      'summarize_text',
+      'read_result',
+      // the single write path: provenance-stamped request task
+      'team_request_create',
+    ],
+  },
+  {
+    slug: 'team-read-admin',
+    name: 'Team Chat reads that need admin level',
+    description:
+      "The team responder's reads that touch what a team-level role may never read: the knowledge graph (entity names are learned from every source, email included), events, tasks, contacts, and the private corpus (email_* / journal_*, still gated by `teamPrivateReads`). ADMIN level (member logins Phase 0b): the responder holds it while it runs at admin; lowering the responder to team first means removing this group, and the run-time level cap drops it regardless.",
+    toolSlugs: [
+      // A folder-description WRITE: a team-level role never writes.
+      'folder_describe',
+      'entity_search',
+      'entity_neighbors',
+      'graph_path',
+      'entity_facts',
+      'entity_mentions',
       'event_list',
       'event_get',
       'task_list',
@@ -1022,13 +1038,6 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'journal_get',
       'email_list',
       'email_get',
-      'app_db_list',
-      'app_db_query',
-      // utilities the read loop needs
-      'summarize_text',
-      'read_result',
-      // the single write path: provenance-stamped request task
-      'team_request_create',
     ],
   },
   {
@@ -1474,7 +1483,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     // a number with its derivation; authoring stays owner-side.
     // Not a delegate, no assist surface — it is resolved explicitly by the team
     // turn pipeline and nothing else.
-    toolGroupSlugs: ['team-read', 'formulas-eval'],
+    toolGroupSlugs: ['team-read', 'team-read-admin', 'formulas-eval'],
     // `visual_answers` rides on the `show_image` grant in `team-read`: the
     // documents a team shares are full of extracted diagrams and screenshots,
     // and describing one when it could be shown is the weaker answer on the

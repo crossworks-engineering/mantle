@@ -33,6 +33,7 @@ import {
 } from '@mantle/db';
 import { getContent } from '@mantle/storage';
 import { fileRowFromNode, type FileRow } from './shared';
+import { currentViewerLevel } from '@mantle/db/viewer';
 
 const TEXT_BYTE_CAP = 1_000_000; // 1 MB cap for content-in-DB caching.
 
@@ -225,6 +226,10 @@ export async function upsertFile(args: {
  * file, so callers 404 cleanly rather than taking a 500 from the S3 client.
  */
 async function storageBytesForNode(nodeId: string): Promise<Buffer | null> {
+  // An email attachment is part of the private corpus: never readable below
+  // admin (member logins Phase 0b), and the team role cannot read
+  // email_attachments anyway.
+  if (currentViewerLevel() !== 'admin') return null;
   const [attachment] = await db
     .select({ storageKey: emailAttachments.storageKey })
     .from(emailAttachments)

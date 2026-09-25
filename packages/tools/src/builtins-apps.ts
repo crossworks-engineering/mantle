@@ -48,6 +48,7 @@ import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { surfaceHiddenNodeTypes } from './team-visibility';
+import { currentViewerLevel } from '@mantle/db/viewer';
 
 const APP_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'app', lookup: 'app_list' },
@@ -655,6 +656,10 @@ const app_delete: BuiltinToolDef = {
 /** On a team surface, the apps shared with the team; null on owner surfaces
  *  (no filter). A team member must not read an app the owner never shared. */
 async function teamReachableApps(ctx: Parameters<BuiltinToolDef['handler']>[1]) {
+  // Below admin, row level security already limits app databases to apps at
+  // the viewer's level (member logins Phase 0b); the share lookup is only for
+  // an admin-level agent serving a team surface.
+  if (currentViewerLevel() !== 'admin') return null;
   return surfaceHiddenNodeTypes(ctx.surface) ? listTeamSharedAppIds(ctx.ownerId) : null;
 }
 
