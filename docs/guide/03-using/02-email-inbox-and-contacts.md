@@ -20,12 +20,12 @@ ignored. The same contacts list also decides who the assistant may *email*, so
 
 A contact can list **several email entries**, and each entry is either:
 
-- a **full address** (`jane@modular.co`) exactly that person, or
-- a **whole-domain wildcard** (`@modular.co`) *anyone* at that domain.
+- a **full address** (`jane@example.com`) exactly that person, or
+- a **whole-domain wildcard** (`@example.com`) *anyone* at that domain.
 
 So you can whitelist one person, or trust an entire organisation (your accountant,
 your company, your church group) in a single entry. (Wildcards match the exact
-domain; `@modular.co` does not include sub-domains like `mail.modular.co`, add
+domain; `@example.com` does not include sub-domains like `mail.example.com`, add
 those separately if a sender uses one.)
 
 **Empty contacts ⇒ an empty inbox.** Until you add at least one contact, nothing
@@ -52,7 +52,7 @@ still decides *whose mail* is kept.
 ## Adding contacts → mail flows in (with a backfill)
 
 Add a contact in **Contacts** (or just tell the assistant "save Jane at Modular,
-jane@modular.co"). The moment you add an email or `@domain` to a contact:
+jane@example.com"). The moment you add an email or `@domain` to a contact:
 
 1. their **future** mail starts being ingested, and
 2. Mantle **backfills the last 90 days** from that address/domain in the

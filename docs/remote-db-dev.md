@@ -28,8 +28,8 @@ The remote node publishes Postgres + MinIO on the tailnet with `tailscale serve
 --tcp`; any device signed into the same tailnet reaches them by MagicDNS:
 
 ```
-local dev server ──▶ mantle.taildc9091.ts.net:5432   (Postgres, over the tailnet)
-                 └──▶ mantle.taildc9091.ts.net:9000   (MinIO/S3, over the tailnet)
+local dev server ──▶ <your-brain>.<tailnet>.ts.net:5432   (Postgres, over the tailnet)
+                 └──▶ <your-brain>.<tailnet>.ts.net:9000   (MinIO/S3, over the tailnet)
 ```
 
 **One-time, on the prod node**: publish the data plane (see also
@@ -53,8 +53,8 @@ prod redeploy** if the tailnet endpoints stop responding. Remove the exposure wi
 2. Point `server/web/.env.local` at the MagicDNS name, using the *remote* creds
    (from the server's `.env`: `POSTGRES_PASSWORD`, `S3_SECRET_KEY`):
    ```sh
-   DATABASE_URL=postgres://postgres:<REMOTE_POSTGRES_PASSWORD>@mantle.taildc9091.ts.net:5432/postgres
-   S3_ENDPOINT=http://mantle.taildc9091.ts.net:9000
+   DATABASE_URL=postgres://postgres:<REMOTE_POSTGRES_PASSWORD>@<your-brain>.<tailnet>.ts.net:5432/postgres
+   S3_ENDPOINT=http://<your-brain>.<tailnet>.ts.net:9000
    S3_REGION=us-east-1
    S3_ACCESS_KEY=minio
    S3_SECRET_KEY=<REMOTE_S3_SECRET_KEY>

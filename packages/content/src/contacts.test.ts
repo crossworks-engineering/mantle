@@ -75,7 +75,7 @@ describe('normalizeEmail', () => {
 });
 
 describe('isPlausibleEmail', () => {
-  it.each(['a@b.co', 'jason@example.com', 'orders+sales@modular.co.za'])('accepts %s', (e) => {
+  it.each(['a@b.co', 'jason@example.com', 'orders+sales@example.co.za'])('accepts %s', (e) => {
     expect(isPlausibleEmail(e)).toBe(true);
   });
   it.each(['', 'no-at', 'no@dot', '@no-local.com', 'spaces in@x.com'])('rejects %p', (bad) => {
@@ -122,7 +122,7 @@ describe('deriveContactTitle', () => {
     );
   });
   it('falls back to email when name + company are empty', () => {
-    expect(deriveContactTitle({ email: 'orders@modular.co.za' })).toBe('orders@modular.co.za');
+    expect(deriveContactTitle({ email: 'orders@example.co.za' })).toBe('orders@example.co.za');
   });
   it('falls back to formatted cell when name + company + email empty', () => {
     expect(deriveContactTitle({ countryCode: '+27', cell: '760810774' })).toBe('+27 76 081 0774');
@@ -138,7 +138,7 @@ describe('deriveContactTitle', () => {
 });
 
 describe('classifyEntry', () => {
-  it.each(['jason@example.com', 'a@b.co', 'orders+sales@modular.co.za', '  Jason@Example.COM  '])(
+  it.each(['jason@example.com', 'a@b.co', 'orders+sales@example.co.za', '  Jason@Example.COM  '])(
     'classifies %p as address',
     (e) => expect(classifyEntry(e)).toBe('address'),
   );

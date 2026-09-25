@@ -22,13 +22,13 @@ so there's **no new secret column**, just plaintext `smtp_host`/`smtp_port`/
 ## The route: "research olive oil + email me"
 
 ```
-You → Saskia: "research drinking olive oil daily, email me at besties@crossworks.net"
+You → Saskia: "research drinking olive oil daily, email me at friend@example.com"
 │  trace: responder_turn (Saskia)
 ├─ invoke_agent('researcher', "...") ─▶ Researcher (child trace)
 │     └─ web_search(...) ─▶ Perplexity Sonar → cited answer   [cost attributed]
 │     └─ returns synthesis + sources to Saskia
 ├─ Saskia composes subject + body from the synthesis
-├─ email_send({ to: "besties@crossworks.net", subject, body })
+├─ email_send({ to: "friend@example.com", subject, body })
 │     └─ step: resolve send-account → @mantle/email sendEmail()
 │           → SMTP submission (smtp.<provider>:587/465, auth = app password)
 │           → provider relays → recipient inbox
@@ -36,7 +36,7 @@ You → Saskia: "research drinking olive oil daily, email me at besties@crosswor
 ```
 
 `from` defaults to the first send-enabled account (the one with SMTP configured);
-`besties@crossworks.net` is the **recipient**, not the sender.
+`friend@example.com` is the **recipient**, not the sender.
 
 ## The tool
 

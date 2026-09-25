@@ -87,7 +87,7 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
   // The description carries the real semantic payload ("Modular sells aluminium
   // profiles, used for printer projects") so the extractor produces useful
   // facts + entities on the contact's identity. Keeping the structured fields
-  // in the body too means search_nodes(q='@modular.co.za') still hits.
+  // in the body too means search_nodes(q='@example.co.za') still hits.
   if (node.type === 'contact') {
     const d = (node.data ?? {}) as Record<string, unknown>;
     const company = typeof d.company === 'string' ? d.company : '';

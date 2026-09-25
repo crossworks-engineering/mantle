@@ -13,9 +13,9 @@ name: mantle
 #                            to the sole auth.users row after you sign up)
 #   S3_ACCESS_KEY / S3_SECRET_KEY (REQUIRED — compose refuses to start without them)
 #   MANTLE_PUBLIC_URL       (recommended — public origin for share/email links,
-#                            e.g. https://mantle.crossworks.network)
+#                            e.g. https://brain.example.com)
 #   MANTLE_SITE_ADDRESS     (the address Caddy serves — a hostname gets automatic
-#                            HTTPS, e.g. mantle.crossworks.network; defaults to
+#                            HTTPS, e.g. brain.example.com; defaults to
 #                            :80 plain HTTP for local testing. Open 80+443 + DNS.)
 #   MANTLE_LOCAL_EMBEDDING_URL (default: http://ollama:11434/v1 — the bundled
 #                            embedder; no need to set unless pointing elsewhere)
@@ -288,7 +288,7 @@ x-app-env: &app-env
   MANTLE_DOCS_ROOT: /app/docs
   # Public origin for absolute links built outside an HTTP request — e.g. the
   # agent's page_share / email_page tools. Falls back to localhost in code if
-  # unset, so set it to the real host (https://mantle.crossworks.network).
+  # unset, so set it to the real host (https://brain.example.com).
   MANTLE_PUBLIC_URL: ${MANTLE_PUBLIC_URL:-}
   # CORS allowlist for detached frontends (comma-separated origins, or '*' for
   # the non-auth data API). OFF by default — same-origin clients need no CORS.

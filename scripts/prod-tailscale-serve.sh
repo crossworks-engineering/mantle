@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # (Re)publish a remote Mantle's DATA PLANE — Postgres + MinIO — on the tailnet
 # via `tailscale serve --tcp` on the remote node, so devices on your tailnet can
-# reach them by MagicDNS (e.g. mantle.taildc9091.ts.net:5432) with no SSH tunnel.
+# reach them by MagicDNS (e.g. <your-brain>.<tailnet>.ts.net:5432) with no SSH tunnel.
 # See docs/remote-db-dev.md.
 #
 # `tailscale serve` targets must be IPs, and docker container IPs change when a

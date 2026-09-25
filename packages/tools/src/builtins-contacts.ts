@@ -178,7 +178,7 @@ const contact_get: BuiltinToolDef = {
  *  spontaneously creating one would silently extend its own reach. */
 const ONLY_WHEN_ASKED =
   ' Use ONLY when the user explicitly asks to save / update / remove a contact ' +
-  '(e.g. "add this business card as a contact", "save Modular as orders@modular.co.za"). ' +
+  '(e.g. "add this business card as a contact", "save Modular as orders@example.co.za"). ' +
   "Never add contacts on your own initiative just because someone's name came up in conversation.";
 
 const contact_create: BuiltinToolDef = {
