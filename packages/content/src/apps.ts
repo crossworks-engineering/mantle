@@ -19,6 +19,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import {
+  asViewerLevel,
   db,
   nodes,
   apps,
@@ -117,6 +118,7 @@ function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
     hasDraft: s.draftSource != null,
     shareMode: s.shareSettings ? shareModeOf({ settings: s.shareSettings }) : null,
     isHub: s.hubAppId != null && s.hubAppId === n.id,
+    audience: asViewerLevel(n.audience),
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };

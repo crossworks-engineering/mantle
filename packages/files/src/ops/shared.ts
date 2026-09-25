@@ -7,7 +7,7 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import { ensureRoot, extOf, FILES_ROOT_LABEL, mimeForExt, TEXT_EXTS } from '../index';
-import { db, nodes, type Node } from '@mantle/db';
+import { asViewerLevel, db, nodes, type Node, type ViewerLevel } from '@mantle/db';
 
 export type FolderRow = {
   id: string;
@@ -26,6 +26,8 @@ export type FolderRow = {
   color: string | null;
   childFolderCount: number;
   fileCount: number;
+  /** Access level (admin > team > client > public); the owner UI's badge. */
+  audience: ViewerLevel;
   createdAt: string;
   updatedAt: string;
 };
@@ -47,6 +49,8 @@ export type FileRow = {
   /** Which mode the extractor LAST ran for this file ('metadata' spine vs full
    *  content). Null until first extraction. What a listing should badge. */
   indexingApplied: 'full' | 'metadata' | null;
+  /** Access level (admin > team > client > public); the owner UI's badge. */
+  audience: ViewerLevel;
   createdAt: string;
   updatedAt: string;
 };
@@ -159,6 +163,7 @@ export function folderRowFromNode(
     color: typeof data.color === 'string' && data.color ? data.color : null,
     childFolderCount,
     fileCount,
+    audience: asViewerLevel(row.audience),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -188,6 +193,7 @@ export function fileRowFromNode(row: Node): FileRow {
         : data.indexing_applied === 'full'
           ? 'full'
           : null,
+    audience: asViewerLevel(row.audience),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

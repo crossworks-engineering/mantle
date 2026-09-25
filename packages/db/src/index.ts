@@ -4,6 +4,7 @@ export {
   VIEWER_LEVELS,
   currentViewerLevel,
   isViewerLevel,
+  asViewerLevel,
   lowerLevel,
   withViewer,
   asSystem,

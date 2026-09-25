@@ -41,6 +41,11 @@ export function isViewerLevel(v: unknown): v is ViewerLevel {
   return typeof v === 'string' && (VIEWER_LEVELS as readonly string[]).includes(v);
 }
 
+/** A stored level as a level: anything unknown reads as admin (fail closed). */
+export function asViewerLevel(v: unknown): ViewerLevel {
+  return isViewerLevel(v) ? v : 'admin';
+}
+
 const store = new AsyncLocalStorage<{ level: LimitedLevel }>();
 
 /** The level the current code runs at: 'admin' outside any viewer scope. */

@@ -18,7 +18,15 @@
  * sidecar.
  */
 import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
-import { db, nodes, draws, notifyNodeIngested, type Node } from '@mantle/db';
+import {
+  asViewerLevel,
+  db,
+  nodes,
+  draws,
+  notifyNodeIngested,
+  type Node,
+  type ViewerLevel,
+} from '@mantle/db';
 import { sceneToText } from './scene-to-text';
 import { acceptSceneSvg, EXCALIDRAW_ENGINE } from './scene-svg';
 // The etag decision and the embedded-asset text bounds are shared with
@@ -107,6 +115,8 @@ export type DrawRow = {
    *  rendered (that is the whole point of the commit gate), so the list can
    *  only SAY it exists — see the badge in the preview pane. */
   hasDraft: boolean;
+  /** Access level (admin > team > client > public); the owner UI's badge. */
+  audience: ViewerLevel;
   createdAt: string;
   updatedAt: string;
 };
@@ -137,6 +147,7 @@ function rowOf(n: Node, hasSvg = false, hasDraft = false): DrawRow {
     visibility: d.visibility === 'public' ? 'public' : 'private',
     hasSvg,
     hasDraft,
+    audience: asViewerLevel(n.audience),
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };

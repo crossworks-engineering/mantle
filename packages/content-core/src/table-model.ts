@@ -20,6 +20,7 @@
 // The mathjs-backed engine (see table-formula-mathjs.ts). `table-formula.ts`
 // remains for one release as a revertible fallback and as the differential
 // baseline in table-formula-diff.test.ts; nothing else should import it.
+import type { AccessLevel } from '@mantle/client-types';
 import { evalFormulaMath as evalFormula } from './table-formula-mathjs';
 
 /** Isomorphic UUID — no `node:crypto`, no DB, so this module stays a
@@ -854,6 +855,8 @@ export type TableRow = {
   /** Quick stats for the list (cheap to compute from the doc). */
   columnCount: number;
   rowCount: number;
+  /** Access level (admin > team > client > public); the owner UI's badge. */
+  audience: AccessLevel;
   createdAt: string;
   updatedAt: string;
 };

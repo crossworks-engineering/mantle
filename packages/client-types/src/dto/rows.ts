@@ -11,6 +11,7 @@
  */
 
 import type { AppNav, AppOpenStat, AppTint } from '../app-nav';
+import type { AccessLevel } from './access';
 
 // ── Row/DTO shapes moved from the server packages (jackdaw split P0) ─────────
 // Sources: @mantle/content, @mantle/email, @mantle/microsoft, @mantle/runtime/agent
@@ -128,6 +129,8 @@ export type PageRow = {
   summary: string | null;
   visibility: PageVisibility;
   width: PageWidth;
+  /** Access level (admin > team > client > public); the owner UI's badge. */
+  audience: AccessLevel;
   createdAt: string;
   updatedAt: string;
 };
@@ -170,6 +173,8 @@ export type AppRow = {
   shareMode: ShareMode | null;
   /** Whether this app is the designated Team Hub (prefs.teamHubAppId). */
   isHub: boolean;
+  /** Access level (admin > team > client > public); the owner UI's badge. */
+  audience: AccessLevel;
   createdAt: string;
   updatedAt: string;
 };

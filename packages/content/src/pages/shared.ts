@@ -7,7 +7,7 @@
  * That is what keeps the seam acyclic — read/tree/draft/structure/embed all
  * depend on this, and it depends on none of them.
  */
-import type { Node } from '@mantle/db';
+import { asViewerLevel, type Node } from '@mantle/db';
 import type { PageRow } from '@mantle/client-types';
 
 export const PAGES_ROOT_LABEL = 'pages';
@@ -49,6 +49,7 @@ export function rowOf(n: Node): PageRow {
     summary: typeof d.summary === 'string' ? d.summary : null,
     visibility: d.visibility === 'public' ? 'public' : 'private',
     width: d.width === 'wide' ? 'wide' : 'narrow',
+    audience: asViewerLevel(n.audience),
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };

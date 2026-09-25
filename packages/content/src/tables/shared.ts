@@ -7,7 +7,7 @@
  * sync, and a direct grid edit would be silently overwritten by the next one.
  */
 import { eq, sql } from 'drizzle-orm';
-import { db, nodes, appTableExports, type Node } from '@mantle/db';
+import { asViewerLevel, db, nodes, appTableExports, type Node } from '@mantle/db';
 import {
   ensureTableDoc,
   emptyTableDoc,
@@ -81,6 +81,7 @@ export function rowOf(n: Node, counts: { columnCount: number; rowCount: number }
     appLink: appLinkOf(d),
     columnCount: counts.columnCount,
     rowCount: counts.rowCount,
+    audience: asViewerLevel(n.audience),
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };

@@ -10,7 +10,14 @@
  * + embedding land automatically on the next pg_notify('node_ingested').
  */
 import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested, type Node } from '@mantle/db';
+import {
+  asViewerLevel,
+  db,
+  nodes,
+  notifyNodeIngested,
+  type Node,
+  type ViewerLevel,
+} from '@mantle/db';
 
 export const NOTES_ROOT_LABEL = 'notes';
 
@@ -20,6 +27,8 @@ export type NoteRow = {
   content: string;
   tags: string[];
   summary: string | null;
+  /** Access level (admin > team > client > public); the owner UI's badge. */
+  audience: ViewerLevel;
   createdAt: string;
   updatedAt: string;
 };
@@ -32,6 +41,7 @@ function rowOf(n: Node): NoteRow {
     content: typeof d.content === 'string' ? d.content : '',
     tags: n.tags ?? [],
     summary: typeof d.summary === 'string' ? d.summary : null,
+    audience: asViewerLevel(n.audience),
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
