@@ -45,6 +45,22 @@ if [ "$EXISTING" = "t" ]; then
   exit 1
 fi
 
+# The viewer roles (member logins Phase 0b) are cluster objects: a dump does
+# not carry them, but its row policies and grants name them. Create them first
+# (no login; migrate sets the login and a password derived from
+# MANTLE_MASTER_KEY), or every policy fails to restore and a team-level agent
+# sees an empty brain.
+docker exec "$CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "
+DO \$\$
+DECLARE r text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['mantle_view_team', 'mantle_view_client', 'mantle_view_public'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT', r);
+    END IF;
+  END LOOP;
+END \$\$;"
+
 echo "▶ Restoring $DUMP → '$CONTAINER' (benign 'already exists' notices for auth/extensions are expected)"
 # No --clean: public is empty so tables create cleanly; pre-existing auth/exts
 # error benignly and pg_restore continues. We don't trust the exit code (it's
@@ -52,6 +68,16 @@ echo "▶ Restoring $DUMP → '$CONTAINER' (benign 'already exists' notices for 
 docker exec -i "$CONTAINER" pg_restore -U postgres -d postgres --no-owner < "$DUMP" || true
 
 N=$(docker exec "$CONTAINER" psql -U postgres -d postgres -tA -c "SELECT count(*) FROM nodes" 2>/dev/null || echo "0")
+# Row level security on nodes with no viewer policy = the policies were lost:
+# a team-level agent would see nothing. Loud, not fatal (the owner still works).
+RLS_LOST=$(docker exec "$CONTAINER" psql -U postgres -d postgres -tA -c \
+  "SELECT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.nodes'::regclass)
+     AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'nodes' AND policyname = 'nodes_viewer_read')" \
+  2>/dev/null || echo "f")
+if [ "$RLS_LOST" = "t" ]; then
+  echo "⚠ nodes has row level security on but no viewer policy — the policies did not restore." >&2
+  echo "  Team-level agents will see nothing until they are recreated (see migration 0159)." >&2
+fi
 echo "✔ Restore complete — public.nodes now has $N rows."
 echo "  Next:  docker compose up -d --wait    (migrate will be a no-op)"
 echo "  Don't forget the file bytes:  rsync your \$MANTLE_DATA_DIR/{files,rustfs} across too."
