@@ -150,7 +150,7 @@ export const openrouterImageAdapter: ImageGenDispatcher = {
       headers: {
         Authorization: `Bearer ${opts.apiKey}`,
         'content-type': 'application/json',
-        'HTTP-Referer': 'https://mantle.crossworks.network',
+        'HTTP-Referer': 'https://mantle-ai.tech',
         'X-Title': 'Mantle',
       },
       body: JSON.stringify(body),
