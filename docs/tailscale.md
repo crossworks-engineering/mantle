@@ -157,7 +157,7 @@ Running Tailscale *in Docker* has one real decision, and it matters:
 - **Shared network namespace** (`network_mode: service:tailscale`): the app
   container joins Tailscale's network directly. Simple in theory, but the app
   then **loses Docker's service DNS**: it can no longer reach `postgres`,
-  `minio`, or `ollama` by name, because it's living in Tailscale's network
+  `objectstore`, or `ollama` by name, because it's living in Tailscale's network
   stack instead of the compose bridge. That breaks the rest of the stack.
 
 - **Userspace Tailscale + a proxy** (chosen): the Tailscale container runs in
@@ -168,7 +168,7 @@ Running Tailscale *in Docker* has one real decision, and it matters:
 
 ```
    ┌─────────────── compose network (service DNS intact) ──────────────┐
-   │  web / agent ──▶ postgres, minio, ollama   (direct, by name)      │
+   │  web / agent ──▶ postgres, objectstore, ollama   (direct, by name)│
    │       │                                                            │
    │       │  routes flagged "via tailnet" only                        │
    │       ▼                                                            │

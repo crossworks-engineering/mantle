@@ -57,7 +57,8 @@ Your offsite sync should include, from `${MANTLE_DATA_DIR}` (default
 |---|---|
 | `backups/` | the rotated DB dumps (this feature's output) |
 | `files/` | your host-mirrored files (`/files` surface) |
-| `minio/` | attachment object bytes |
+| `rustfs/` | attachment object bytes: the RustFS object store's data dir, not plain files (a restore needs the same RustFS version; see below) |
+| `minio/` | only on boxes that ran MinIO before 2026-09: the pre-switch copy kept for rollback, removable once `objectstore:verify` has been green for a couple of weeks ([deploy.md §5c](./deploy.md#5c-object-store-rustfs)) |
 | `forum-uploads/` | quarantined member forum uploads awaiting review, the ONLY copy of a pending upload until you file it |
 
 One `rsync -a` of the `data/` directory (minus `postgres/`, the live cluster
@@ -73,18 +74,20 @@ and separate. Losing the key loses the vault; nothing else.
 Onto a fresh stack:
 
 ```bash
-docker compose down                      # keep volumes/binds for files/minio
+docker compose down                      # keep volumes/binds for files/rustfs
 # wipe ONLY the Postgres state (named volume or ${MANTLE_DATA_DIR}/postgres)
 docker compose up -d postgres --wait     # init scripts recreate extensions + auth
 bash scripts/db-restore.sh <path-to>/mantle-<ts>.dump
 docker compose up -d --wait
 ```
 
-Files, MinIO, and pending forum uploads restore by putting the `files/`,
-`minio/`, and `forum-uploads/` directories back under `${MANTLE_DATA_DIR}`
-while the stack is stopped. Then prove the object store is intact: every
-stored attachment's key is the sha256 of its bytes, so this re-hashes each one
-and exits non-zero on any mismatch or unreadable object:
+Files, the object store, and pending forum uploads restore by putting the
+`files/`, `rustfs/`, and `forum-uploads/` directories back under
+`${MANTLE_DATA_DIR}` while the stack is stopped. `rustfs/` is RustFS's own
+on-disk format, so restore it under the same RustFS version that wrote it
+(`RUSTFS_IMAGE_TAG`, default in `docker-compose.yml`). Then prove the object
+store is intact: every stored attachment's key is the sha256 of its bytes, so
+this re-hashes each one and exits non-zero on any mismatch or unreadable object:
 
 ```bash
 docker exec mantle_web pnpm -C packages/storage objectstore:verify

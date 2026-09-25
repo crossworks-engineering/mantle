@@ -120,7 +120,7 @@ Three deliberate constraints shape every decision:
 ## 2. The big picture
 
 A `pnpm dev` process tree of seven Node lanes, two Docker containers,
-one shared Postgres + MinIO behind them. Memory is the spine, every
+one shared Postgres + object store (RustFS) behind them. Memory is the spine, every
 ingest path lands a `nodes` row, which fires `pg_notify('node_ingested')`,
 which the extractor turns into searchable index + facts + entities.
 See [memory.md §0](./memory.md#0-the-flow-at-a-glance) for the
@@ -164,7 +164,7 @@ flowchart LR
 
     %% Shared infra
     PG[("postgres<br/>pgvector/pg_trgm/ltree<br/>public.* + auth.*<br/>pg_notify channels:<br/>node_ingested,<br/>telegram_message_inserted,<br/>summarize_due")]:::infra
-    MIN[("minio<br/>S3-compat<br/>bucket: mantle")]:::infra
+    MIN[("objectstore (RustFS)<br/>S3-compat<br/>bucket: mantle")]:::infra
 
     Web -- "Drizzle pool" --> PG
     Web -- "S3 SDK" --> MIN
@@ -198,7 +198,7 @@ processes orchestrated by `concurrently`).
 
 `pnpm dev` (`package.json:11`) runs eight concurrent lanes, named `web`,
 `api`, `mcp`, `worker`, `tg`, `files`, `docs`, and `events`. Plus Postgres and
-MinIO from docker-compose. That's it.
+the object store (RustFS) from docker-compose. That's it.
 
 > **`server/api` is gone (absorbed into `server/api`, v0.64.0).** The old `agent`
 > lane, the Telegram responder, extractor, summarizer, reflector, and heartbeat
@@ -210,7 +210,7 @@ MinIO from docker-compose. That's it.
 | Process            | What it does                                                                  |
 |--------------------|-------------------------------------------------------------------------------|
 | `postgres` (Docker)| Source of truth. Holds every row. Healthchecked, restart on failure.          |
-| `minio` (Docker)   | Object store for attachment bytes. Healthchecked.                             |
+| `objectstore` (Docker) | Object store for attachment bytes (RustFS; MinIO until 2026-09). Healthchecked. |
 | `web`              | Next.js dev server (Turbopack). Serves the UI **and every `/api/**` route** (incl. SSE): but is now a **pure client/API host**: the browser bundle fetches its data over `/api` and no longer imports `@mantle/db` (see [§3a](#3a-durable-runners-the-febe-split-and-live-turn-streaming)). Hosts the `/assistant` chat surface, which **enqueues** the turn onto the `api` runner (POST `/api/assistant/turn` returns `202` immediately) and renders the live stream. |
 | `api`              | **The durable runner** (`server/api/src/main.ts`). Runs assistant + Telegram turns and all background agent work (extractor, summarizer, reflector, heartbeats) as **durable [DBOS](https://docs.dbos.dev/) workflows** journaled to a Postgres system DB. No HTTP surface of its own; it's reached by enqueue (web) and reaches clients by publishing turn events over the Postgres `NOTIFY` bus. Absorbed the old `server/api` (v0.64.0). |
 | `mcp`              | MCP server (`server/mcp/src/server.ts`). Speaks stdio JSON-RPC to Claude Code.  |
@@ -445,19 +445,23 @@ shape across the codebase.
 
 ## 5. Data plane: object storage
 
-Attachment bytes (and eventually files) live in MinIO, an S3-compatible store
-that runs as a Docker container next to Postgres. The interface is the AWS S3
-SDK pointed at `http://127.0.0.1:9000`.
+Attachment bytes (and eventually files) live in an S3-compatible object
+store. The bundled one is RustFS (MinIO until 2026-09, when MinIO left open
+source), running as the `objectstore` Docker container next to Postgres. The
+interface is the AWS S3 SDK pointed at `S3_ENDPOINT` (`http://127.0.0.1:9000`
+in dev, `http://objectstore:9000` in prod); any S3-compatible server works, see
+[deploy.md §5c](./deploy.md#5c-object-store-rustfs).
 
-`packages/storage/src/index.ts` is the only file that knows about S3. It
-exposes five functions:
+`packages/storage/src/index.ts` is the only file that knows about S3, and it
+uses plain S3 calls only (no vendor admin API or CLI). The main functions:
 
 - `putContent(buf, contentType)`, uploads, deduplicating by sha256.
-- `getSignedUrl(key, ttl)`, mints a presigned GET URL.
 - `getContent(key)`, streams bytes back through Node (for proxied downloads
-  when the browser can't reach the MinIO endpoint).
+  when the browser can't reach the object store).
 - `deleteContent(key)`, single object delete.
 - `contentKey(sha256)` / `hashBuffer(buf)`, pure helpers.
+- `ensureBucket()` / `verifyObjects()` / `copyMissingFrom()`, behind the
+  `objectstore:ensure|verify|copy-from` CLI in `packages/storage`.
 
 Keys are **content-addressed**: `attachments/aa/bb/<full-sha256>`. Identical
 bytes always land at the same key, so dedup is automatic. The PutObject path
@@ -466,7 +470,7 @@ calls HeadObject first, if the key exists, the upload is short-circuited and
 
 Attachment downloads go through `server/web/app/api/attachments/[id]/route.ts`,
 which **streams** the bytes through Next rather than 302-redirecting to a
-presigned MinIO URL. This is deliberate: the MinIO endpoint
+presigned object-store URL. This is deliberate: the object-store endpoint
 (`127.0.0.1:9000` in dev, an internal docker hostname in prod) is generally
 not reachable by the user's browser. Proxying eats a tiny bit of bandwidth in
 exchange for never leaking the internal endpoint.
@@ -1770,7 +1774,7 @@ mantle/
 ├── infra/postgres/init/ # SQL run at first container boot
 ├── scripts/             # up.sh — only script that ships now
 ├── docs/                # this file + memory.md + ai-workers.md + others
-├── docker-compose.dev.yml   # postgres + minio + tika (dev — used by `pnpm start`)
+├── docker-compose.dev.yml   # postgres + rustfs + tika (dev, used by `pnpm start`)
 └── docker-compose.yml       # full production stack (Linux): built app images + bundled embedder
 ```
 
@@ -1800,7 +1804,7 @@ package; `pnpm-workspace.yaml` declares them.
 2. Verifies `server/web/.env.local` exists. Bails with the env vars you need
    to fill in.
 3. `docker compose -f docker-compose.dev.yml up -d --wait`, postgres +
-   minio + tika, health-checked.
+   rustfs (the object store) + tika, health-checked.
 4. `pnpm -C packages/storage objectstore:ensure`, creates the `mantle` bucket
    if it is missing, with the `.env.local` credentials (plain S3 CreateBucket,
    no vendor CLI). Idempotent.
@@ -1826,7 +1830,7 @@ Granular escape hatches in `package.json`:
 | `pnpm stop`        | Stop infra (keeps data)                                    |
 | `pnpm reset`       | Wipe the dev brain + rebuild from scratch (asks first)     |
 | `pnpm infra:up`    | Infra only                                                 |
-| `pnpm infra:logs`  | Tail postgres + minio                                      |
+| `pnpm infra:logs`  | Tail postgres + object store + tika                        |
 | `pnpm infra:psql`  | `docker exec -it mantle_dev_pg psql`                           |
 | `pnpm db:migrate`  | Drizzle migrate                                            |
 | `pnpm db:studio`   | Drizzle Studio (DB browser at localhost:4983)              |
@@ -1881,7 +1885,8 @@ commit between 0008 and 0009.
 **State lives in three places:**
 
 - `${MANTLE_DATA_DIR:-./data}/postgres` bind mount, Postgres cluster files.
-- `${MANTLE_DATA_DIR:-./data}/minio` bind mount, object bytes.
+- `${MANTLE_DATA_DIR:-./data}/rustfs` bind mount, object bytes (RustFS's data
+  dir; boxes that ran MinIO also keep the pre-switch `data/minio` for rollback).
 - `server/web/.env.local`, secrets (DATABASE_URL, SESSION_SECRET,
   MANTLE_MASTER_KEY, S3 creds, ALLOWED_USER_ID, OPENAI_API_KEY).
 
@@ -1896,7 +1901,7 @@ Everything else is rebuildable from source + those three.
 the app dumps Postgres on a schedule configured at **/settings/backups**
 (frequency, hour in the user's timezone, retention, destination folder) and
 rotates old dumps; the operator points their own offsite sync (rsync, rclone,
-restic, …) at that folder + `data/files` + `data/minio`. The manual `pg_dump`
+restic, …) at that folder + `data/files` + `data/rustfs`. The manual `pg_dump`
 path below remains for ad-hoc/pre-deploy snapshots:
 
 ```bash
@@ -1924,7 +1929,7 @@ bind-mounted data dirs + brings everything back up). Or, manually:
 
 ```bash
 docker compose -f docker-compose.dev.yml down
-rm -rf "${MANTLE_DATA_DIR:-./data}"/{postgres,minio}   # sudo on Linux (container-owned files)
+rm -rf "${MANTLE_DATA_DIR:-./data}"/{postgres,rustfs,minio}   # sudo on Linux (container-owned files)
 ```
 
 nukes the brain, note `down -v` alone does **not**: bind mounts survive
@@ -1960,7 +1965,7 @@ was fixed, accepted, or deliberately left (and why).
   on localhost; must land before public exposure.
 - **Attachment proxy** in `server/web/app/api/attachments/[id]/route.ts`
   streams bytes through Next. Fine functionally; in prod a CDN or
-  direct presigned-MinIO would scale better.
+  direct presigned object-store URLs would scale better.
 - **Next-externalized packages must be declared in `server/web`.** A
   dep that Next keeps external (its `serverExternalPackages` default
   list, e.g. `@aws-sdk/client-s3`, pulled in transitively via

@@ -2,7 +2,7 @@
 
 The owner UI lives in the jackdaw repo and runs **detached**: the browser app
 on your machine, the brain (this repo: server/web + server/api + Postgres +
-MinIO) on a box you can reach over HTTP. Nothing in jackdaw touches the
+the object store) on a box you can reach over HTTP. Nothing in jackdaw touches the
 database; every screen fetches over `/api/**` with a bearer token.
 
 ## On the brain (this repo)

@@ -10,8 +10,10 @@ DETAIL: The data directory was initialized by PostgreSQL version 17,
 ```
 
 So the upgrade is a **dump → fresh data dir → restore**, done deliberately per box.
-The stateless services in the stack (Tika, browserless/chromium, MinIO, Caddy,
+The stateless services in the stack (Tika, browserless/chromium, Caddy,
 Ollama, Tailscale) genuinely *are* pull-and-go; Postgres is the only one that is not.
+(The object store, RustFS, holds state too, but its image is pinned and moves
+only with a release; see [deploy.md §5c](./deploy.md#5c-object-store-rustfs).)
 
 ## The default and the escape hatch
 

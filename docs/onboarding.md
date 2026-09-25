@@ -63,7 +63,7 @@ replaced the older `actions.ts`); the stepper is `onboarding-client.tsx`.
 
 | # | Step | What it does |
 |---|------|--------------|
-| 1 | **Welcome** | timezone + locale (prefilled from the browser) → `updateProfilePreferences`, plus a **System status** panel that probes the infrastructure vitals, Postgres, the pg-boss schema, MinIO + the bucket, Tika, the required secrets, and Domain & HTTPS, and **blocks Continue on failure** (so a broken stack surfaces on screen one, not mid-wizard) |
+| 1 | **Welcome** | timezone + locale (prefilled from the browser) → `updateProfilePreferences`, plus a **System status** panel that probes the infrastructure vitals, Postgres, the pg-boss schema, the object store + the bucket, Tika, the required secrets, and Domain & HTTPS, and **blocks Continue on failure** (so a broken stack surfaces on screen one, not mid-wizard) |
 | 2 | **Your key** (required) | the one required key, OpenRouter. **Save & test** genuinely validates the key against OpenRouter's `/api/v1/key`; with a key already saved the button reads **Test saved key** |
 | 3 | **Models** | curated model cards. Assistant (top-tier): **Claude Sonnet 5** (recommended, $2/$10 per M tokens, 1M ctx), Claude Opus 4.8, GPT-5.5 (Azure-capable), Grok 4.20. Worker (fast): **Gemini 3.1 Flash Lite** (recommended), GPT-5.4 Nano/Mini (Azure-capable), Claude Haiku 4.5. Route: **OpenRouter**, or **Azure OpenAI** via the `custom` provider (endpoint + key) |
 | 4 | **Voice** | works by default on the OpenRouter key (grok voice ara); optionally add a dedicated **xAI** key for a smoother voice route |

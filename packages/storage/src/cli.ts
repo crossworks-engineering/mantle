@@ -5,8 +5,10 @@
  *   pnpm -C packages/storage objectstore:verify   re-hash every stored object
  *   pnpm -C packages/storage objectstore:copy-from --endpoint=<url> [--apply]
  *       copy objects the store lacks from another S3 store (dry run unless
- *       --apply). Optional --bucket, --access-key, --secret-key (default: this
- *       store's S3_BUCKET / S3_ACCESS_KEY / S3_SECRET_KEY).
+ *       --apply). Optional --bucket, --access-key, --secret-key, --region
+ *       (default: this store's S3_BUCKET / S3_ACCESS_KEY / S3_SECRET_KEY /
+ *       S3_REGION) and --path-style=false (default true: the usual source is
+ *       a self-hosted store, whatever style the target uses).
  *
  * `ensure` runs in compose's `migrate` gate on every boot and in scripts/up.sh
  * in dev. It replaced the old `createbuckets` service, which needed MinIO's
@@ -72,7 +74,13 @@ async function copyFrom(): Promise<void> {
   const accessKeyId = flag('access-key') ?? env('S3_ACCESS_KEY')!;
   const secretAccessKey = flag('secret-key') ?? env('S3_SECRET_KEY')!;
   const bucketName = flag('bucket') ?? env('S3_BUCKET')!;
-  const source = new S3Client({ ...base, endpoint, credentials: { accessKeyId, secretAccessKey } });
+  const source = new S3Client({
+    ...base,
+    endpoint,
+    credentials: { accessKeyId, secretAccessKey },
+    region: flag('region') ?? base.region,
+    forcePathStyle: flag('path-style') !== 'false',
+  });
   const r = await copyMissingFrom(
     { client: source, bucket: bucketName, label: `${endpoint}/${bucketName}` },
     { apply },

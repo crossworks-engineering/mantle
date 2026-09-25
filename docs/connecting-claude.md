@@ -73,7 +73,7 @@ server runs inside the existing `mantle_web` container, no extra install:
 }
 ```
 
-The container's own env supplies the DB / MinIO / embedder routes.
+The container's own env supplies the DB / object store / embedder routes.
 
 ### C. Remote server over SSH (the production shape)
 
@@ -164,7 +164,7 @@ inside the box. Two exceptions, both named below.
 
 ### The two that are not on it
 
-- **`run_terminal`** — a shell in the brain's OWN container: postgres, minio,
+- **`run_terminal`**: a shell in the brain's OWN container: postgres, the object store,
   the file store, the master key. Over **stdio** it ships, because spawning the
   process already grants the owner's full data access on a machine you control.
   Over the **HTTP connector** it is off, because a stolen bearer would become a

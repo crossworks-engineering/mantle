@@ -34,7 +34,7 @@ Companion: [`docker-compose.yml`](../docker-compose.yml) header comments,
 | **Prod**  | Contabo VPS | `docker compose pull && up -d` (no build on the VPS)                             |
 
 Persistent data is **bind-mounted** under `MANTLE_DATA_DIR` (default `./data`):
-`postgres/`, `minio/`, `files/`, `backups/`, `app-dbs/`, `caddy/` (certificates),
+`postgres/`, `rustfs/` (the object store), `files/`, `backups/`, `app-dbs/`, `caddy/` (certificates),
 `ollama/` (model cache), `tailscale/` (node state) and `update-signal/`. All of it
 is in the backup set; the only named volume is the Tailscale IPC socket.
 
@@ -45,7 +45,7 @@ Numbers from the author's production box (Contabo, **6 vCPU / 12 GB RAM /
 runs 23 of the 26 defined services plus the client container): it idled at
 **~2.5 GB RAM** total and **<5% CPU**; Ollama loads the embedder on demand (idle
 ~40 MB, ~1 GB while embedding); the `mantle-server` image is ~1.7 GB plus the infra
-images (Postgres, MinIO, Tika, the browser, Caddy; Ollama only with the
+images (Postgres, RustFS, Tika, the browser, Caddy; Ollama only with the
 `local-embedder` profile). What actually spikes a small
 box is not steady state; it's two specific events:
 
@@ -78,7 +78,7 @@ runaway from a container OOM to the host's, so set them back down there
 (`WEB_MEM_LIMIT=1.5g`, `API_MEM_LIMIT=1.5g`). A change takes effect when
 compose recreates the container (the next roll, or `docker compose up -d`).
 
-Disk grows with: email/attachment volume (MinIO + Postgres), the nightly
+Disk grows with: email/attachment volume (the object store + Postgres), the nightly
 backup rotation (~40 MB × keep-count at a ~700-node brain), and, dominantly
 on build-on-VPS boxes, Docker build cache, which is reclaimable.
 
@@ -221,12 +221,12 @@ is fine but harder to roll back from.
 ## 3. First deploy + data migration (VPS)
 
 The migration moves three things: **the database**, the **file bytes** (`files/`),
-and the **object store** (`minio/`).
+and the **object store** (`rustfs/`).
 
 ```bash
 # 3a. Pull images and prepare the data dir
 docker compose pull
-mkdir -p "$MANTLE_DATA_DIR"/{postgres,minio,files}
+mkdir -p "$MANTLE_DATA_DIR"/{postgres,rustfs,files}
 
 # 3b. Bring up ONLY postgres — its init creates the extensions + auth schema
 docker compose up -d postgres --wait
@@ -237,7 +237,9 @@ scripts/db-restore.sh backups/mantle-<ts>.dump
 
 # 3d. Copy the file bytes + object store from dev (bind-mount dirs → just rsync)
 rsync -a  dev-host:/path/to/dev/data/files/  "$MANTLE_DATA_DIR"/files/
-rsync -a  dev-host:/path/to/dev/data/minio/  "$MANTLE_DATA_DIR"/minio/
+rsync -a  dev-host:/path/to/dev/data/rustfs/  "$MANTLE_DATA_DIR"/rustfs/
+#   (Dev still on data/minio? Copy that to minio/ instead: objectstore_init
+#    copies it into rustfs/ on first start. See §5c.)
 #   (On dev these live wherever MANTLE_DATA_DIR pointed; for the dev compose,
 #    export the named volumes instead — see §4.)
 
@@ -277,15 +279,16 @@ On the **dev** machine:
 scripts/db-dump.sh          # writes backups/mantle-<ts>.dump
 
 # File bytes + object store. Since v0.103 these are plain bind-mounted dirs
-# (MinIO under ${MANTLE_DATA_DIR:-./data}/minio, the /files mirror at
+# (the object store under ${MANTLE_DATA_DIR:-./data}/rustfs, the /files mirror at
 # MANTLE_FILES_ROOT), so tar them straight off disk (sudo on Linux if the
 # files are container-owned):
 tar czf backups/files.tgz -C "$MANTLE_FILES_ROOT" .
-tar czf backups/minio.tgz -C "${MANTLE_DATA_DIR:-./data}/minio" .
+tar czf backups/rustfs.tgz -C "${MANTLE_DATA_DIR:-./data}/rustfs" .
 ```
 
-Copy `backups/mantle-<ts>.dump`, `files.tgz`, `minio.tgz` to the VPS; untar the
-two archives into `$MANTLE_DATA_DIR/files` and `/minio` (step 3d alternative).
+Copy `backups/mantle-<ts>.dump`, `files.tgz`, `rustfs.tgz` to the VPS; untar the
+two archives into `$MANTLE_DATA_DIR/files` and `/rustfs` (step 3d alternative).
+Both ends must run the same RustFS version (§5c).
 
 > The DB is moved by **dump/restore**, never by copying `postgres/` raw, that
 > only works same-PG-major + clean shutdown and is fragile. `pg_dump` is portable.
@@ -454,6 +457,95 @@ where it parked the public site (including the progress UI) behind web's
 ~2 min health-start window. On a release that changes neither the Caddyfile nor
 the floating `caddy:2-alpine` digest that is now a true no-op and caddy never
 stops serving.
+
+---
+
+## 5c. Object store (RustFS)
+
+Attachment and file bytes live in an S3 object store. The bundled one is
+[RustFS](https://github.com/rustfs/rustfs) (Apache-2.0), which replaced MinIO
+in 2026-09 after MinIO left open source (repo archived, public images deleted;
+the only image still published is the licensed AIStor build).
+
+**What runs.** Two services in `docker-compose.yml`:
+
+- `objectstore_init`, a one-shot that runs as root before the store starts. It
+  prepares `${MANTLE_DATA_DIR}/rustfs` (see the copy below) and hands it to UID
+  10001, the user RustFS runs as.
+- `objectstore` (container `mantle_objectstore`), image
+  `titanwest/mantle-rustfs:1.0.0`: our digest-pinned mirror of
+  `rustfs/rustfs:1.0.0` (`infra/rustfs/IMAGE`, built by
+  `.github/workflows/rustfs-image.yml`), so an upstream repo vanishing cannot
+  break a pull. S3 on `:9000` inside the compose network only, the web console
+  off, `mem_limit: 1g`. Override the tag with `RUSTFS_IMAGE_TAG`.
+
+The bucket (`S3_BUCKET`, default `mantle`) is created by the `migrate` one-shot
+(`pnpm -C packages/storage objectstore:ensure`) on every boot; there is no
+`createbuckets` service or `mc` any more. The app speaks plain S3 through
+`packages/storage` and never depends on which server answers.
+
+**The one-time copy from MinIO.** On the first update to a RustFS release,
+`objectstore_init` finds MinIO's data in `data/minio`, checks there is disk for
+a second copy, copies it to `data/rustfs` once, and records the time, size and
+object count in `data/rustfs.copied-from-minio`. RustFS reads MinIO's
+single-drive format in place. `data/minio` is never touched, so it stays as the
+rollback copy; a box that never ran MinIO just gets an empty `data/rustfs`. If
+the disk check fails the update stops with a clear message in the
+`mantle_objectstore_init` log: free space and run the update again. Every later
+boot sees `data/rustfs` already populated and does nothing.
+
+**Verify.** Every stored object is keyed by its sha256, so the store can be
+checked end to end:
+
+```bash
+docker exec mantle_web pnpm -C packages/storage objectstore:verify
+```
+
+It re-hashes every object and exits 1 if any fails. Run it after the switch,
+after any restore, and before deleting `data/minio`. Once it has been green for
+a couple of weeks, `data/minio` (and `data/rustfs.copied-from-minio`) can be
+removed.
+
+**Roll back.** Update to the previous release (Settings → Updates, or set
+`MANTLE_IMAGE_TAG` back as in §5 "Rollback"). Its compose runs MinIO on
+`data/minio`, which is exactly as it was before the switch. Objects written
+after the switch exist only in `data/rustfs`; if you need them, copy them into
+`data/minio` **before** rolling back (older releases do not have
+`objectstore:copy-from`). From the stack dir, with the `.env` values exported:
+
+```bash
+# a temporary MinIO on the old data, on the stack's network
+docker run -d --name mantle_minio_tmp --network mantle_default \
+  -e MINIO_ROOT_USER="$S3_ACCESS_KEY" -e MINIO_ROOT_PASSWORD="$S3_SECRET_KEY" \
+  -v "$MANTLE_DATA_DIR/minio:/data" \
+  titanwest/mantle-minio:RELEASE.2025-09-07T16-13-09Z server /data
+# copy what MinIO lacks from RustFS into it (drop --apply for a dry run)
+docker exec -e S3_ENDPOINT=http://mantle_minio_tmp:9000 mantle_web \
+  pnpm -C packages/storage objectstore:copy-from --endpoint=http://objectstore:9000 --apply
+docker rm -f mantle_minio_tmp
+```
+
+The MinIO image (`titanwest/mantle-minio`, built from source by `infra/minio`)
+is kept only for this: rollback and reading an old `data/minio`.
+
+**An external S3 instead.** Any S3-compatible service works. Set in `.env`:
+`S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, and
+`S3_FORCE_PATH_STYLE` (`true` for most self-hosted servers, `false` for AWS
+virtual-hosted buckets). Copy the existing objects across first, while the app
+still points at the bundled store:
+
+```bash
+docker exec -e S3_ENDPOINT=https://s3.example.com -e S3_REGION=<region> \
+  -e S3_BUCKET=<bucket> -e S3_ACCESS_KEY=<key> -e S3_SECRET_KEY=<secret> mantle_web \
+  sh -c 'pnpm -C packages/storage objectstore:ensure && \
+    pnpm -C packages/storage objectstore:copy-from --endpoint=http://objectstore:9000 \
+      --bucket=mantle --region=us-east-1 --path-style=true \
+      --access-key=<bundled S3_ACCESS_KEY> --secret-key=<bundled S3_SECRET_KEY> --apply'
+```
+
+Then change `.env`, run `docker compose up -d --wait`, and run
+`objectstore:verify`. The bundled `objectstore` keeps running (the app services
+wait on its healthcheck) but is no longer read or written.
 
 ---
 

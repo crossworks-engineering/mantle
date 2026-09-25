@@ -207,7 +207,7 @@ runbook: **https://mantle-ai.tech/ai-install.md**
 
 Hack on it: this repo is the **brain** (API, MCP, workers). Prereqs:
 **Node 26+**, **pnpm 11**, and **Docker** running (`pnpm start` boots
-Postgres/MinIO/Tika in containers):
+Postgres/RustFS/Tika in containers):
 
 ```bash
 git clone https://github.com/crossworks-engineering/mantle && cd mantle

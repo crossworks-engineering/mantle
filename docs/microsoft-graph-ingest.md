@@ -291,7 +291,7 @@ New worker `server/web/workers/microsoft-sync.ts`, structured exactly like
   - **Drives:** `GET /drives/{id}/root/delta` (or `/sites/{id}/drive`), page via
     `@odata.nextLink`, persist `@odata.deltaLink` per drive. For each
     added/changed `driveItem`: dedup on `(drive_id, item_id)`; download bytes
-    (`/content`), sha256 → MinIO via `@mantle/storage`, insert/attach the file
+    (`/content`), sha256 → the object store via `@mantle/storage`, insert/attach the file
     node, `notifyNodeIngested()`. Deletes → tombstone/remove the node.
   - **Mail:** `GET /me/mailFolders/.../messages/delta` → reuse the email insert +
     classify + contact-gate path.

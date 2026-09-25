@@ -180,7 +180,7 @@ flowchart TD
     OUT -. fires when threshold met .-> SD{{"pg_notify('summarize_due',<br/>chat_id)"}}
 
     %% Tier 6 fetch when full body needed
-    LOOP -. "file_read / email_get by id" .-> L6["Layer 6<br/>content_store<br/>(nodes + emails + minio)"]:::layer
+    LOOP -. "file_read / email_get by id" .-> L6["Layer 6<br/>content_store<br/>(nodes + emails + object store)"]:::layer
     L6 --> LOOP
 ```
 
@@ -576,7 +576,7 @@ sits behind it, and what's planned:
 | `conversation_digest` | `nodes` rows of `type='note'` with `tags @> ['conversation-digest']`. jsonb data carries summary, period, source turn ids | **Relational** + **jsonb** + **FTS** (tsvector) + **pgvector** (embedded at insert since 2026-06-10, `find_window` cosine-ranks digests; backfill older ones with `pnpm -C server/web backfill:digest-embeddings`) | ✓ Live (migration 0013) |
 | `profile` | `facts` table + `entities` + `entity_edges` for the graph axis (entity↔entity relations, traversed via `graph_path`) | **Relational** + **jsonb** + **pgvector** (every fact embedded) + **Graph** via tables + recursive CTEs (no Neo4j) | ✓ Live, see [`knowledge-graph.md`](./knowledge-graph.md) |
 | `content_index` | Columns on existing `nodes`: `title`, `tags`, `data.summary`, `data.entities`, `embedding`, `search_tsv` | **Relational** + **jsonb** + **FTS** (tsvector + GIN) + **pgvector** (IVFFlat) + **ltree** + **GIN** on tags array | Columns exist; population unbuilt |
-| `content_store` | Existing `nodes` + specialised tables (`emails`, `email_attachments`, `telegram_messages`, `secrets`, future `files`) + MinIO for attachment bytes | **Relational** + **jsonb** + **ltree** (hierarchical paths) + **S3** (object bytes via MinIO) | ✓ Live |
+| `content_store` | Existing `nodes` + specialised tables (`emails`, `email_attachments`, `telegram_messages`, `secrets`, future `files`) + the object store for attachment bytes | **Relational** + **jsonb** + **ltree** (hierarchical paths) + **S3** (object bytes via RustFS or any S3) | ✓ Live |
 
 ### 5.1 Storage tech axes: what each one is for
 
@@ -606,11 +606,12 @@ A glossary so the column above reads cleanly:
 - **ltree**: Postgres extension for hierarchical paths
   (`inbox.email_jason.2026.may`). GiST-indexed. Used on `nodes.path` so
   every layer can answer "everything under this branch" cheaply.
-- **S3** (MinIO): binary bytes only (attachment files). The metadata
-  + content-addressed key live in `nodes`; the bytes live in MinIO.
+- **S3** (RustFS, or any S3-compatible store): binary bytes only (attachment
+  files). The metadata + content-addressed key live in `nodes`; the bytes live
+  in the object store.
 
 The pattern: **everything that can fit in Postgres lives in Postgres.**
-MinIO is the only off-tier dependency, and only because raw file bytes
+The object store is the only off-tier dependency, and only because raw file bytes
 don't belong in a row.
 
 ### The `facts` table sketch (planned 0014)

@@ -37,8 +37,10 @@ stack:
 1. checks the Docker daemon,
 2. checks `server/web/.env.local` exists (and prints the exact `cp .env.example …`
    fix if not),
-3. `docker compose -f docker-compose.dev.yml up -d --wait` (postgres + minio + tika),
-4. ensures the MinIO `mantle` bucket,
+3. `docker compose -f docker-compose.dev.yml up -d --wait` (postgres + rustfs +
+   tika; an existing `data/minio` is copied to `data/rustfs` once, on first
+   start),
+4. ensures the `mantle` bucket (`pnpm -C packages/storage objectstore:ensure`),
 5. `pnpm -C packages/db migrate`,
 6. `pnpm -C server/web pgboss:init`, creates the `pgboss` schema _before_ the
    workers race each other to create it on a fresh DB,
@@ -86,7 +88,7 @@ db-less-dev.md in the jackdaw repo (moved with the frontend).
 
 "Start over." Requires typing `wipe` to confirm, then: takes a best-effort
 backup via `db-dump.sh`, `docker compose down -v`, deletes the bind-mounted
-`$MANTLE_DATA_DIR/{postgres,minio}` (from inside an Alpine container, since
+`$MANTLE_DATA_DIR/{postgres,rustfs,minio}` (from inside an Alpine container, since
 Postgres' files are container-uid-owned on Linux), comments out the now-stale
 `ALLOWED_USER_ID` in `.env.local` so the next signup becomes owner, then execs
 `up.sh`.
@@ -114,8 +116,8 @@ same no matter which directory you run it from:
 
 | File                           | Project         | Containers                                                                                                   | What it is                                                                                     |
 | ------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| `docker-compose.dev.yml`       | `mantle-dev`    | `mantle_dev_pg`, `mantle_dev_minio`, `mantle_dev_tika`, `mantle_dev_browser`                                 | Local dev **infra only**: the app runs on your host under `pnpm dev`                           |
-| `docker-compose.yml`           | `mantle`        | `mantle_pg`, `mantle_minio`, `mantle_tika`, `mantle_web`, `mantle_api`, `mantle_caddy`, `mantle_worker_*`, … | The deployed backend: ~25 services, most of them the _same_ image differing only by `command:` |
+| `docker-compose.dev.yml`       | `mantle-dev`    | `mantle_dev_pg`, `mantle_dev_objectstore`, `mantle_dev_tika`, `mantle_dev_browser`                           | Local dev **infra only**: the app runs on your host under `pnpm dev`                           |
+| `docker-compose.yml`           | `mantle`        | `mantle_pg`, `mantle_objectstore`, `mantle_tika`, `mantle_web`, `mantle_api`, `mantle_caddy`, `mantle_worker_*`, … | The deployed backend: ~25 services, most of them the _same_ image differing only by `command:` |
 | `docker-compose.client.yml`    | `mantle-client` | `mantle_client_web`, `mantle_client_caddy`                                                                   | The zero-secret owner UI (split out at v0.200)                                                 |
 | `e2e/stack/docker-compose.yml` | `mantle-e2e`    | `mantle_e2e_pg`, `mantle_e2e_minio`, `mantle_e2e_browser`                                                    | Throwaway stack for the Playwright suite                                                       |
 
@@ -138,16 +140,16 @@ The equivalents, plus what has no alias:
 ```bash
 docker compose -f docker-compose.dev.yml ps
 docker compose -f docker-compose.dev.yml restart postgres
-docker compose -f docker-compose.dev.yml logs -f --tail=100 minio
+docker compose -f docker-compose.dev.yml logs -f --tail=100 objectstore
 docker compose -f docker-compose.dev.yml stop                    # keep containers
 docker compose -f docker-compose.dev.yml start                   # bring them back
 docker compose -f docker-compose.dev.yml down -v                 # + named volumes
 ```
 
-Ports (all bound to `127.0.0.1`): Postgres `54323`, MinIO `9000` (API) and
+Ports (all bound to `127.0.0.1`): Postgres `54323`, RustFS `9000` (S3 API) and
 `9001` (console), Tika `9998`, headless Chromium `9222`.
 
-`down -v` is safe for data: since v0.103 Postgres and MinIO are **bind mounts**
+`down -v` is safe for data: since v0.103 Postgres and the object store are **bind mounts**
 under `MANTLE_DATA_DIR`, not named volumes, which is exactly why `reset.sh` has
 to delete those directories explicitly.
 
@@ -182,7 +184,7 @@ docker compose --profile local-embedder up -d    # one-off profile activation
 Ports: Caddy publishes `${MANTLE_BIND_ADDR:-0.0.0.0}` on `${MANTLE_HTTP_PORT:-80}`
 and `${MANTLE_HTTPS_PORT:-443}` (TCP + UDP for HTTP/3); the app itself is
 reachable only on `127.0.0.1:${MANTLE_WEB_DEBUG_PORT:-3000}`
-for debugging. Postgres and MinIO publish **nothing**: which is why
+for debugging. Postgres and the object store publish **nothing**: which is why
 `prod-db-tunnel.sh` resolves container IPs instead of a host port.
 
 `migrate` (migrations + `pgboss:init` + API provisioning + creating the
@@ -317,7 +319,7 @@ Because the init scripts pre-create `auth`, `auth.users` and the extensions,
 `pg_restore` prints benign "already exists" notices for those, expected. The
 script doesn't trust the exit code; it verifies by counting `public.nodes`
 afterwards. It **refuses to restore over a populated brain**. Don't forget the
-file bytes: rsync `$MANTLE_DATA_DIR/{files,minio}` across too.
+file bytes: rsync `$MANTLE_DATA_DIR/{files,rustfs}` across too.
 
 ### `scripts/app-dbs-restore.sh <tgz>`
 
@@ -328,7 +330,7 @@ exist), then `docker compose up -d --wait`, then this, with apps idle.
 
 ### `pnpm db:tunnel` / `db:tunnel:down` → `scripts/prod-db-tunnel.sh [up|down|status]`
 
-SSH-forwards a remote Mantle's **data plane** (Postgres _and_ MinIO) to local
+SSH-forwards a remote Mantle's **data plane** (Postgres _and_ the object store) to local
 ports, so a local dev server runs as a thin client over the deployed brain
 ([remote-db-dev.md](./remote-db-dev.md)). Those containers publish no host
 ports, so the script resolves their container IPs over SSH **every run** (they
@@ -336,13 +338,14 @@ change when a container is recreated). Both forwards ride one SSH connection, so
 `down` drops them together.
 
 Config via env: `PROD_SSH_HOST` (default `mantle-prod`), `MANTLE_PG_CONTAINER`,
-`MANTLE_MINIO_CONTAINER`, `PROD_DB_LOCAL_PORT` (55432), `PROD_S3_LOCAL_PORT`
-(9100). Holds no secrets, DB password and S3 keys stay in `.env.local`.
+`MANTLE_OBJECTSTORE_CONTAINER` (default `mantle_objectstore`; the old
+`MANTLE_MINIO_CONTAINER` is still honoured), `PROD_DB_LOCAL_PORT` (55432),
+`PROD_S3_LOCAL_PORT` (9100). Holds no secrets, DB password and S3 keys stay in `.env.local`.
 
 ### `pnpm tailscale:serve` → `scripts/prod-tailscale-serve.sh [up|status|reset]`
 
 The tunnel-free alternative: `tailscale serve --tcp` on the remote node
-publishes Postgres (5432) and MinIO (9000) on the tailnet by MagicDNS. Same
+publishes Postgres (5432) and the object store (9000) on the tailnet by MagicDNS. Same
 container-IP re-resolution problem, same solution, re-run `up` after a redeploy
 if the endpoints stop answering. **This is a standing exposure** to every device
 on your tailnet (scope with ACLs); `reset` removes it.
@@ -657,7 +660,7 @@ survive fresh worktrees.
 
 | Workflow                            | Trigger                                    | What                                                                                                                                                                                                                                                 |
 | ----------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/build-check.yml` | push to `feat/**` or `main`, PRs to `main` | typecheck + lint + format + vitest + the **production build** (the webpack/edge-runtime gate `tsc` and vitest miss). Hermetic, no Postgres/MinIO. Does not build images.                                                                             |
+| `.github/workflows/build-check.yml` | push to `feat/**` or `main`, PRs to `main` | typecheck + lint + format + vitest + the **production build** (the webpack/edge-runtime gate `tsc` and vitest miss). Hermetic, no Postgres/object store. Does not build images.                                                                             |
 | `.github/workflows/release.yml`     | push of a `v*` tag                         | builds `mantle-server` + `mantle-client` for amd64 and arm64 on native runners in parallel, merges digests into multi-arch manifests on Docker Hub, and cuts a GitHub Release carrying the deploy bundle so compose and image are versioned together |
 
 Release needs the `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets.

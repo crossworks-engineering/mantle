@@ -41,7 +41,7 @@ plain-language version.
   database notifications the instant content lands.
 - **Postgres**: the source of truth, with extensions for vectors (pgvector),
   hierarchical paths (ltree), and full-text search.
-- **Object storage** (MinIO/S3): attachment bytes, content-addressed.
+- **Object storage** (RustFS, or any S3): attachment bytes, content-addressed.
 - **Models**: chat via your chosen providers (or local), embeddings local-and-free
   by default, all behind a uniform provider-adapter layer so you can swap providers
   without touching call sites.

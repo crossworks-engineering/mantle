@@ -43,7 +43,7 @@ store, so ~seconds), and copies `.env.local`. Tear down with
 - Run the dev server on a non-default port when another session holds `:3000`
   (`PORT=3100 pnpm -C server/web dev`).
 - **The dev stack belongs to the original clone, not to your worktree.** Its
-  Postgres and MinIO data are bind mounts resolved relative to compose's working
+  Postgres and object-store (RustFS) data are bind mounts resolved relative to compose's working
   directory, and the compose project name is pinned (`mantle-dev`), so running
   compose from a worktree does not give you a separate stack, it gives you THE
   SAME containers pointed at a DIFFERENT data directory. `pnpm infra:up`,

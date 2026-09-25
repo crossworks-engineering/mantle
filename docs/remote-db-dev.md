@@ -1,7 +1,7 @@
 # Developing against a remote (production) database
 
 A workflow for running the **local codebase + dev server**, but pointed at a
-**deployed Postgres + MinIO** instead of the local dev containers. Useful when you
+**deployed Postgres + object store** instead of the local dev containers. Useful when you
 want to build/iterate against real data without replicating it locally, and it's
 the same thin-client shape a future Electron desktop build will use. For the
 architecture behind it (and what else it unlocks), see
@@ -17,19 +17,19 @@ zero-standing-exposure fallback when you're not on the tailnet.
 
 Both point **both** the DB and the object store at the deployment, on purpose:
 without the S3 side, an upload would write its row to the remote DB but its bytes
-to local MinIO, leaving a dangling file node in production (and remote file reads
+to the local object store, leaving a dangling file node in production (and remote file reads
 would 404 locally).
 
 ---
 
 ## Option A: Tailscale (recommended)
 
-The remote node publishes Postgres + MinIO on the tailnet with `tailscale serve
+The remote node publishes Postgres + the object store on the tailnet with `tailscale serve
 --tcp`; any device signed into the same tailnet reaches them by MagicDNS:
 
 ```
 local dev server ──▶ <your-brain>.<tailnet>.ts.net:5432   (Postgres, over the tailnet)
-                 └──▶ <your-brain>.<tailnet>.ts.net:9000   (MinIO/S3, over the tailnet)
+                 └──▶ <your-brain>.<tailnet>.ts.net:9000   (RustFS/S3, over the tailnet)
 ```
 
 **One-time, on the prod node**: publish the data plane (see also
@@ -51,12 +51,12 @@ prod redeploy** if the tailnet endpoints stop responding. Remove the exposure wi
    then sign in with the **same account** as the deployment) and confirm
    `tailscale status` lists the prod node.
 2. Point `server/web/.env.local` at the MagicDNS name, using the *remote* creds
-   (from the server's `.env`: `POSTGRES_PASSWORD`, `S3_SECRET_KEY`):
+   (from the server's `.env`: `POSTGRES_PASSWORD`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`):
    ```sh
    DATABASE_URL=postgres://postgres:<REMOTE_POSTGRES_PASSWORD>@<your-brain>.<tailnet>.ts.net:5432/postgres
    S3_ENDPOINT=http://<your-brain>.<tailnet>.ts.net:9000
    S3_REGION=us-east-1
-   S3_ACCESS_KEY=minio
+   S3_ACCESS_KEY=<REMOTE_S3_ACCESS_KEY>
    S3_SECRET_KEY=<REMOTE_S3_SECRET_KEY>
    S3_BUCKET=mantle
    ```
@@ -81,7 +81,7 @@ remote containers (IPs re-resolved each run):
 
 ```
 local dev server ──▶ 127.0.0.1:55432 ──ssh──▶ <pg container IP>:5432     (Postgres)
-                 └──▶ 127.0.0.1:9100  ──ssh──▶ <minio container IP>:9000  (MinIO/S3)
+                 └──▶ 127.0.0.1:9100  ──ssh──▶ <store container IP>:9000  (RustFS/S3)
 ```
 
 ```sh
@@ -96,7 +96,8 @@ dies on reboot / network drop; re-run `pnpm db:tunnel`.
 
 Config knobs (env overrides; defaults match the reference deployment):
 `PROD_SSH_HOST=mantle-prod`, `MANTLE_PG_CONTAINER=mantle_pg`,
-`MANTLE_MINIO_CONTAINER=mantle_minio`, `PROD_DB_LOCAL_PORT=55432`,
+`MANTLE_OBJECTSTORE_CONTAINER=mantle_objectstore` (the old
+`MANTLE_MINIO_CONTAINER` is still honoured), `PROD_DB_LOCAL_PORT=55432`,
 `PROD_S3_LOCAL_PORT=9100`.
 
 ---
@@ -133,4 +134,5 @@ Restore path + full replication steps: [`backups.md`](backups.md).
 ## Revert to a fully local stack
 
 Swap `DATABASE_URL` back to `…@127.0.0.1:54323/postgres` and `S3_ENDPOINT` to
-`http://127.0.0.1:9000` (key `minio12345`), then `pnpm start`.
+`http://127.0.0.1:9000` (the dev RustFS: access key `minio`, secret `minio12345`),
+then `pnpm start`.

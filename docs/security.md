@@ -12,8 +12,8 @@
 ## 1. Posture in one page
 
 - **Self-hosted, single-owner.** A brain runs on infrastructure you control.
-  All state lives under `${MANTLE_DATA_DIR}` on that host (Postgres, MinIO
-  files, per-app SQLite, backups). There is no vendor SaaS in the data path
+  All state lives under `${MANTLE_DATA_DIR}` on that host (Postgres, the object
+  store, files, per-app SQLite, backups). There is no vendor SaaS in the data path
   and no phone-home with content.
 - **What leaves the box:** prompts + retrieved context sent to the **model
   providers you configure** (or nothing, with local models), outbound email
