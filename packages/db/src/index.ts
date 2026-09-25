@@ -10,6 +10,13 @@ export {
   type LimitedLevel,
   type ViewerLevel,
 } from './viewer';
+export { ensureViewerRoles, LIMITED_LEVELS } from './viewer-roles';
+export {
+  ACCESS_MATRIX,
+  WORKSPACE_NODE_TYPES,
+  applyViewerGrants,
+  type TableAccess,
+} from './access-matrix';
 export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-workers-resolve';
 export { bumpAgentUsage } from './agents-resolve';
 export {

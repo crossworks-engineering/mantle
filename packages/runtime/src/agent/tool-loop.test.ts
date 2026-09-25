@@ -85,6 +85,10 @@ vi.mock('@mantle/tools', async () => ({
 }));
 
 vi.mock('@mantle/db', () => ({
+  // Infrastructure writes go through systemDb; the fake stands in for both.
+  get systemDb() {
+    return this.db;
+  },
   db: {
     insert: vi.fn(() => ({
       values: vi.fn((row: Record<string, unknown>) => ({

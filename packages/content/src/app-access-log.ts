@@ -10,7 +10,7 @@
  * best-effort trail, not a gate.
  */
 import { and, desc, eq } from 'drizzle-orm';
-import { db, appAccessLog, nodes } from '@mantle/db';
+import { db, systemDb, appAccessLog, nodes } from '@mantle/db';
 
 export type AppAccessKind = 'auth' | 'tool' | 'db';
 
@@ -24,7 +24,8 @@ export type AppAccessEntry = {
 };
 
 export function recordAppAccess(entry: AppAccessEntry): void {
-  void db
+  // systemDb: an access record is written even under a limited viewer role.
+  void systemDb
     .insert(appAccessLog)
     .values({
       ownerId: entry.ownerId,

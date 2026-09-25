@@ -1,5 +1,7 @@
 import { headers } from '../server/http-compat/headers';
-import { db, auditLog } from '@mantle/db';
+import { systemDb, auditLog } from '@mantle/db';
+// Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
+// turn under a limited role (member logins Phase 0b) still records them.
 import { isDetachedDev } from './auth-constants';
 
 /**
@@ -46,7 +48,7 @@ export type AuditEntry = {
 export async function logAudit(entry: AuditEntry): Promise<void> {
   // Detached dev has no local Postgres — the insert would throw on every call.
   if (isDetachedDev()) return;
-  await db.insert(auditLog).values({
+  await systemDb.insert(auditLog).values({
     actorId: entry.actorId ?? null,
     actorEmail: entry.actorEmail,
     action: entry.action,

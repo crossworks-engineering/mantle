@@ -34,6 +34,10 @@ vi.mock('@mantle/db', async (importOriginal) => {
   // access, and this factory replaces it before anything touches it.
   const actual = await importOriginal<typeof import('@mantle/db')>();
   return {
+    // Infrastructure writes go through systemDb; the fake stands in for both.
+    get systemDb() {
+      return this.db;
+    },
     isWriteRefused: actual.isWriteRefused,
     db: {
       select: () => ({

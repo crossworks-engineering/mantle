@@ -36,7 +36,8 @@ vi.mock('@mantle/db', async (importOriginal) => {
     then: (res: (v: unknown) => void, rej?: (e: unknown) => void) =>
       Promise.resolve(selectQueue.shift() ?? []).then(res, rej),
   };
-  return { ...actual, db: { ...actual.db, select: vi.fn(() => chain) } };
+  const fake = { ...actual.db, select: vi.fn(() => chain) };
+  return { ...actual, db: fake, systemDb: fake };
 });
 
 import { paramsOf } from './test-support';

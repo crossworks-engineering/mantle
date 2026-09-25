@@ -26,7 +26,9 @@
 
 import { createHash } from 'node:crypto';
 import { eq, inArray } from 'drizzle-orm';
-import { db, embeddingCache, embeddingConfig, isWriteRefused } from '@mantle/db';
+import { systemDb, embeddingCache, embeddingConfig, isWriteRefused } from '@mantle/db';
+// Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
+// turn under a limited role (member logins Phase 0b) still records them.
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import { currentTrace, step } from '@mantle/tracing';
 // `@mantle/voice` self-registers all built-in adapters on import. The
@@ -199,7 +201,7 @@ export async function resolveEmbeddingConfig(ownerId: string): Promise<Embedding
   if (cached && cached.expiresAt > Date.now()) return cached.config;
   let config: EmbeddingConfig = LOCAL_FALLBACK_CONFIG;
   try {
-    const [row] = await db
+    const [row] = await systemDb
       .select()
       .from(embeddingConfig)
       .where(eq(embeddingConfig.ownerId, ownerId))
@@ -438,7 +440,7 @@ async function doEmbed(
   //    vectors); a failover never pollutes the cache.
   const hashes = inputs.map((i) => hashKey(model, i));
   const out: (number[] | null)[] = inputs.map(() => null);
-  const cachedRows = await db
+  const cachedRows = await systemDb
     .select({ contentHash: embeddingCache.contentHash, embedding: embeddingCache.embedding })
     .from(embeddingCache)
     .where(inArray(embeddingCache.contentHash, hashes));
@@ -554,7 +556,7 @@ async function doEmbed(
       // checks the table ACL when the executor starts, before matching a row, so
       // even ON CONFLICT DO NOTHING is refused. The statement has to not run.
       try {
-        await db.insert(embeddingCache).values(cacheRows).onConflictDoNothing();
+        await systemDb.insert(embeddingCache).values(cacheRows).onConflictDoNothing();
       } catch (err) {
         // Narrow on purpose — anything that is not "the database refused to
         // write" is a real failure and must stay loud.
@@ -670,7 +672,7 @@ export function isRouteDownError(err: unknown): boolean {
  *  throws — a failed stamp must not break the embed that just succeeded. */
 async function stampFailover(ownerId: string): Promise<void> {
   try {
-    await db
+    await systemDb
       .update(embeddingConfig)
       .set({ lastFailoverAt: new Date(), updatedAt: new Date() })
       .where(eq(embeddingConfig.ownerId, ownerId));

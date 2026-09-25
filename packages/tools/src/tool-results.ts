@@ -21,7 +21,9 @@
 
 import { randomBytes } from 'node:crypto';
 import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
-import { db, toolResults, toolResultChunks } from '@mantle/db';
+import { systemDb, toolResults, toolResultChunks } from '@mantle/db';
+// Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
+// turn under a limited role (member logins Phase 0b) still records them.
 import { embed, embedBatch } from '@mantle/embeddings';
 import { envDynamic } from '@mantle/config';
 
@@ -175,7 +177,7 @@ export async function spillToolResult(args: {
 }): Promise<{ handle: string; bytes: number }> {
   const handle = newHandle();
   const bytes = byteLen(args.content);
-  await db.insert(toolResults).values({
+  await systemDb.insert(toolResults).values({
     id: handle,
     ownerId: args.ownerId,
     traceId: args.traceId,
@@ -287,7 +289,7 @@ export async function processToolResultForModel(args: {
 type ResultRow = { content: string; bytes: number; chunked: boolean; toolSlug: string };
 
 async function loadResult(ownerId: string, handle: string): Promise<ResultRow | null> {
-  const [row] = await db
+  const [row] = await systemDb
     .select({
       content: toolResults.content,
       bytes: toolResults.bytes,
@@ -377,11 +379,11 @@ async function ensureResultChunked(
   const maxChars = Math.max(BASE_CHUNK_CHARS, Math.ceil(content.length / TOOL_RESULT_MAX_CHUNKS));
   const chunks = chunkText(content, { maxChars }).slice(0, TOOL_RESULT_MAX_CHUNKS);
   if (chunks.length === 0) {
-    await db.update(toolResults).set({ chunked: true }).where(eq(toolResults.id, handle));
+    await systemDb.update(toolResults).set({ chunked: true }).where(eq(toolResults.id, handle));
     return;
   }
   const vectors = await embedBatch(ownerId, chunks);
-  await db.insert(toolResultChunks).values(
+  await systemDb.insert(toolResultChunks).values(
     chunks.map((text, i) => ({
       resultId: handle,
       ordinal: i,
@@ -389,7 +391,7 @@ async function ensureResultChunked(
       embedding: vectors[i],
     })),
   );
-  await db.update(toolResults).set({ chunked: true }).where(eq(toolResults.id, handle));
+  await systemDb.update(toolResults).set({ chunked: true }).where(eq(toolResults.id, handle));
 }
 
 /** Semantic search within one spilled result. Lazily chunks+embeds on first call. */
@@ -410,7 +412,7 @@ export async function queryResult(
 
   const queryVec = await embed(ownerId, q);
   const vec = JSON.stringify(queryVec);
-  const hits = await db
+  const hits = await systemDb
     .select({
       ordinal: toolResultChunks.ordinal,
       text: toolResultChunks.text,
@@ -431,7 +433,7 @@ export async function queryResult(
  *  removed. */
 export async function cleanupToolResults(maxAgeMs = TOOL_RESULT_TTL_MS): Promise<number> {
   const cutoff = new Date(Date.now() - maxAgeMs);
-  const rows = await db
+  const rows = await systemDb
     .delete(toolResults)
     .where(sql`${toolResults.createdAt} < ${cutoff.toISOString()}`)
     .returning({ id: toolResults.id });

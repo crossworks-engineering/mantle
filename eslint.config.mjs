@@ -13,6 +13,7 @@ import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 import nextPlugin from '@next/eslint-plugin-next';
 import mantlePlugin from './eslint-rules/pair-fill-foreground.mjs';
+import mantleDbPlugin from './eslint-rules/system-db-allowlist.mjs';
 
 export default tseslint.config(
   {
@@ -158,6 +159,13 @@ export default tseslint.config(
         },
       ],
     },
+  },
+  {
+    // systemDb reads past row level security (member logins Phase 0b): only
+    // the infrastructure modules allowlisted in the rule file may import it.
+    files: ['server/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}'],
+    plugins: { 'mantle-db': mantleDbPlugin },
+    rules: { 'mantle-db/system-db-allowlist': 'error' },
   },
   {
     // Tests + one-shot scripts: relax rules that only make sense for shipped code.

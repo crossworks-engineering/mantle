@@ -12,7 +12,9 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { eq, sql } from 'drizzle-orm';
-import { db, traces, traceSteps } from '@mantle/db';
+import { systemDb, traces, traceSteps } from '@mantle/db';
+// Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
+// turn under a limited role (member logins Phase 0b) still records them.
 import { truncateJson } from './truncate';
 import { runDurableStep } from './durable';
 import { errorMessage } from '@mantle/std';
@@ -316,7 +318,7 @@ async function writePrelude(ctx: TraceContext, steps: PreludeStep[]): Promise<vo
   try {
     // One statement: a child row may reference a parent in the same batch
     // (Postgres checks the FK at the end of the statement).
-    await db.insert(traceSteps).values(rows);
+    await systemDb.insert(traceSteps).values(rows);
   } catch (err) {
     logErr('write prelude', err);
   }
@@ -680,7 +682,7 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
   // the user-visible behaviour (reply gets sent, business logic works)
   // is preserved.
   try {
-    await db.insert(traces).values({
+    await systemDb.insert(traces).values({
       id,
       ownerId: init.ownerId,
       kind: init.kind,
@@ -723,7 +725,8 @@ export async function startTrace<T>(init: StartTraceInit, fn: () => Promise<T>):
         turnSeqCounters.delete(turnId);
       }
       const duration = Date.now() - ctx.startedAtMs;
-      db.update(traces)
+      systemDb
+        .update(traces)
         .set({
           status: ctx.status,
           finishedAt: new Date(),
@@ -792,7 +795,7 @@ export async function step<T>(
   // silent: the step throws inside its own open, which bubbles up and
   // kills the surrounding work.
   try {
-    await db.insert(traceSteps).values({
+    await systemDb.insert(traceSteps).values({
       id,
       traceId: trace.id,
       parentStepId: parentStepId,
@@ -872,7 +875,8 @@ export async function step<T>(
       throw err;
     } finally {
       const duration = Date.now() - stepInfo.startedAtMs;
-      db.update(traceSteps)
+      systemDb
+        .update(traceSteps)
         .set({
           status,
           finishedAt: new Date(),
@@ -940,7 +944,7 @@ export async function recordSkippedTrace(init: {
   const id = genId();
   const now = new Date();
   try {
-    await db.insert(traces).values({
+    await systemDb.insert(traces).values({
       id,
       ownerId: init.ownerId,
       kind: init.kind,
@@ -1002,7 +1006,7 @@ export async function recordIngest(init: {
   const id = genId();
   const now = new Date();
   try {
-    await db.insert(traces).values({
+    await systemDb.insert(traces).values({
       id,
       ownerId: init.ownerId,
       kind: 'content_ingest',
@@ -1024,7 +1028,7 @@ export async function recordIngest(init: {
     // standard truncateJson budget — full content lives on the
     // node itself.
     if (init.snippet && init.snippet.trim().length > 0) {
-      await db.insert(traceSteps).values({
+      await systemDb.insert(traceSteps).values({
         traceId: id,
         parentStepId: null,
         ordinal: 0,

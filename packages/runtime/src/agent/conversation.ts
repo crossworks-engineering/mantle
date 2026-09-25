@@ -26,6 +26,7 @@
 import { and, desc, eq, gte, inArray, isNull, lt, ne, notInArray, sql } from 'drizzle-orm';
 import {
   db,
+  currentViewerLevel,
   agents,
   assistantMessages,
   notSuperseded,
@@ -509,6 +510,13 @@ export async function loadConversationContext(args: {
   const { ownerId, agent, inboundText } = args;
   const hiddenTypes = args.excludeNodeTypes;
   const factVisible = hiddenTypes ? visibleFactSource(hiddenTypes) : undefined;
+  // Inside a viewer scope (a below-admin agent, member logins Phase 0b) the
+  // row rules decide what is read, and some arms are not readable at all:
+  // entity names and the relation graph (learned from every source, email
+  // included), the owner's own chat history and Journal. Those arms are
+  // skipped, not left to fail on a permission error.
+  const belowAdmin = currentViewerLevel() !== 'admin';
+  const entityNameCol = belowAdmin ? sql<string | null>`null` : entities.name;
   const memoryConfig = (agent.memoryConfig ?? {}) as AgentMemoryConfig;
   const historyLimit = memoryConfig.history_limit ?? 20;
   const windowHours = memoryConfig.history_window_hours ?? null;
@@ -533,18 +541,20 @@ export async function loadConversationContext(args: {
   // older rows are scored while the embedding and retrieval below run, so the
   // ~0.5 s never adds to the turn. Awaited where the history is built.
   const recallUse =
-    historyLimit > 0 && !isSmallTalk(inboundText)
+    historyLimit > 0 && !belowAdmin && !isSmallTalk(inboundText)
       ? await decisionUseEnabled(ownerId, 'history_recall')
       : null;
-  const rowsLoad = loadHistoryRows({
-    ownerId,
-    agentId: agent.id,
-    historyLimit,
-    windowHours,
-    excludeMessageId: args.excludeMessageId,
-    before: args.before,
-    recall: recallUse != null,
-  });
+  const rowsLoad = belowAdmin
+    ? Promise.resolve({ recentRows: [] as HistoryRow[], olderRows: [] as HistoryRow[] })
+    : loadHistoryRows({
+        ownerId,
+        agentId: agent.id,
+        historyLimit,
+        windowHours,
+        excludeMessageId: args.excludeMessageId,
+        before: args.before,
+        recall: recallUse != null,
+      });
   const historyLoad = rowsLoad.then(async ({ recentRows, olderRows }) => ({
     recentRows,
     recall: recallUse
@@ -558,7 +568,8 @@ export async function loadConversationContext(args: {
   // reason as history recall (~0.9 s, spike 13). Runs beside it, not after
   // it. Tier 1's plan comes first: its shown entries stay out of tiers 2/3,
   // its overflow joins the rules Jev scores.
-  const journalMode = args.includeJournal === false ? 'off' : journalTiersOf(memoryConfig);
+  const journalMode =
+    args.includeJournal === false || belowAdmin ? 'off' : journalTiersOf(memoryConfig);
   const userLane = memoryConfig.inject_journal !== false;
   const agentLane = memoryConfig.inject_working_notes !== false;
   const journalWanted =
@@ -654,25 +665,42 @@ export async function loadConversationContext(args: {
     // the index, then apply the adjustment within it (see @mantle/search hnsw.ts).
     const factPool = Math.min(Math.max(factLimit * 5, 50), 200);
     const rows = await withHnswPool(factPool, async (tx) => {
+      const factConds = and(
+        eq(facts.ownerId, ownerId),
+        isNull(facts.validTo),
+        sql`${facts.embedding} is not null`,
+        factVisible,
+      );
+      // Below admin the pool JOINS the visible source nodes: with a selective
+      // row rule the HNSW scan alone stops short (spike: recall@50 0.54 for
+      // a client-level role); the join makes it an exact search over the
+      // visible facts (recall 1.00, plan section 14b).
       const pooled = (await tx.execute(
-        sql`select id from ${facts}
-            where ${and(eq(facts.ownerId, ownerId), isNull(facts.validTo), sql`${facts.embedding} is not null`, factVisible)}
-            order by ${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector
-            limit ${factPool}`,
+        belowAdmin
+          ? sql`select ${facts.id} as id from ${facts}
+              join ${nodes} on ${nodes.id} = ${facts.sourceNodeId}
+              where ${factConds}
+              order by ${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector
+              limit ${factPool}`
+          : sql`select id from ${facts}
+              where ${factConds}
+              order by ${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector
+              limit ${factPool}`,
       )) as unknown as { id: string }[];
       if (pooled.length === 0) return [];
+      const hydrate = tx
+        .select({
+          content: facts.content,
+          kind: facts.kind,
+          entityId: facts.entityId,
+          entityName: entityNameCol,
+          sourceNodeId: facts.sourceNodeId,
+          dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
+        })
+        .from(facts)
+        .$dynamic();
       return (
-        tx
-          .select({
-            content: facts.content,
-            kind: facts.kind,
-            entityId: facts.entityId,
-            entityName: entities.name,
-            sourceNodeId: facts.sourceNodeId,
-            dist: sql<number>`${facts.embedding} <=> ${JSON.stringify(queryVec)}::vector`,
-          })
-          .from(facts)
-          .leftJoin(entities, eq(facts.entityId, entities.id))
+        (belowAdmin ? hydrate : hydrate.leftJoin(entities, eq(facts.entityId, entities.id)))
           .where(
             inArray(
               facts.id,
@@ -704,15 +732,18 @@ export async function loadConversationContext(args: {
   // surfaced them unless the message happened to be similar. Prepend the most
   // recent, deduped against whatever the vector search already returned.
   if (factLimit > 0) {
-    const prefRows = await db
+    const prefQuery = db
       .select({
         content: facts.content,
         kind: facts.kind,
-        entityName: entities.name,
+        entityName: entityNameCol,
         sourceNodeId: facts.sourceNodeId,
       })
       .from(facts)
-      .leftJoin(entities, eq(facts.entityId, entities.id))
+      .$dynamic();
+    const prefRows = await (
+      belowAdmin ? prefQuery : prefQuery.leftJoin(entities, eq(facts.entityId, entities.id))
+    )
       .where(
         and(
           eq(facts.ownerId, ownerId),
@@ -1162,7 +1193,7 @@ export async function loadConversationContext(args: {
   // relate ("Cross Works banks_with Nedbank") — structured knowledge no vector
   // query can return (memory.md §4.3, "expand each result's neighbourhood").
   let relations: RelationLine[] = [];
-  if (anchorEntityIds.length > 0) {
+  if (!belowAdmin && anchorEntityIds.length > 0) {
     const triples = await entityRelationsFor(ownerId, anchorEntityIds, { limit: RELATION_LIMIT });
     relations = triples.map((t) => ({
       subject: t.subject,

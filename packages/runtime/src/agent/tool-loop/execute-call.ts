@@ -17,7 +17,7 @@ import {
   type ValidateArgsResult,
   type ToolHandlerResult,
 } from '@mantle/tools';
-import { db, pendingToolCalls, type Tool } from '@mantle/db';
+import { systemDb, pendingToolCalls, type Tool } from '@mantle/db';
 import { fenceRetrieved } from '../messages';
 import type { ToolLoopArgs, ToolValidationMode } from '../tool-loop';
 import { REPEATED_FAILURE_LIMIT, type TurnGuards } from './guards';
@@ -109,7 +109,8 @@ export async function executeToolCall(p: {
         // args to /pending until they're approved or rejected. That's
         // an acceptable single-user tradeoff; if multi-tenant ever
         // happens, pendingToolCalls.args needs to be sealed too.
-        const [pending] = await db
+        // systemDb: the approval queue is infrastructure (written under any viewer).
+        const [pending] = await systemDb
           .insert(pendingToolCalls)
           .values({
             ownerId: args.ownerId,

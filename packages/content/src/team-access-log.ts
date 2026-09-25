@@ -8,7 +8,7 @@
  * not a gate — the gate is the per-request `isTeamMember` liveness check.
  */
 import { and, desc, eq } from 'drizzle-orm';
-import { db, teamAccessLog, nodes } from '@mantle/db';
+import { db, systemDb, teamAccessLog, nodes } from '@mantle/db';
 
 export type TeamAccessKind = 'auth' | 'turn' | 'api' | 'denied';
 
@@ -20,7 +20,8 @@ export type TeamAccessEntry = {
 };
 
 export function recordTeamAccess(entry: TeamAccessEntry): void {
-  void db
+  // systemDb: an access record is written even under a limited viewer role.
+  void systemDb
     .insert(teamAccessLog)
     .values({
       ownerId: entry.ownerId,

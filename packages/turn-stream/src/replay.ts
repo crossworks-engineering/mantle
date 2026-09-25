@@ -1,5 +1,7 @@
 import { and, asc, eq, gt } from 'drizzle-orm';
-import { db, turnStreamBuffer } from '@mantle/db';
+import { systemDb, turnStreamBuffer } from '@mantle/db';
+// Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
+// turn under a limited role (member logins Phase 0b) still records them.
 import type { TurnEvent } from '@mantle/client-types';
 
 /**
@@ -20,7 +22,7 @@ export async function getBufferedTurnEvents(
   turnId: string,
   sinceSeq: number,
 ): Promise<TurnEvent[]> {
-  const rows = await db
+  const rows = await systemDb
     .select({ event: turnStreamBuffer.event })
     .from(turnStreamBuffer)
     .where(

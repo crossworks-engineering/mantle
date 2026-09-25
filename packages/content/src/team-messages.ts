@@ -9,6 +9,7 @@
 import { and, count, desc, eq, gte, lt, sql as dsql } from 'drizzle-orm';
 import {
   db,
+  systemDb,
   teamMessages,
   teamReadCursors,
   contactTeamTokens,
@@ -18,6 +19,10 @@ import {
   type TeamMessage,
 } from '@mantle/db';
 import type { TeamMemberActivity } from '@mantle/client-types';
+
+// The member's thread (team_messages) is infrastructure in the access matrix:
+// a team turn runs under the team viewer role (member logins Phase 0b) and
+// still reads and writes its own thread, so those helpers use systemDb.
 export type { TeamMemberActivity };
 
 export type AppendTeamMessageInput = {
@@ -39,7 +44,7 @@ export type AppendTeamMessageInput = {
 /** Persist one turn row. Not fire-and-forget — the transcript IS the product
  *  here, so failures must surface to the turn pipeline. */
 export async function appendTeamMessage(input: AppendTeamMessageInput): Promise<TeamMessage> {
-  const [row] = await db
+  const [row] = await systemDb
     .insert(teamMessages)
     .values({
       ownerId: input.ownerId,
@@ -79,7 +84,7 @@ export type UpdateTeamMessageOutcomeInput = {
 export async function updateTeamMessageOutcome(
   args: UpdateTeamMessageOutcomeInput,
 ): Promise<TeamMessage | null> {
-  const [row] = await db
+  const [row] = await systemDb
     .update(teamMessages)
     .set({
       status: args.status,
@@ -112,7 +117,7 @@ export async function teamThreadHasAttachedNode(
   contactId: string,
   nodeId: string,
 ): Promise<boolean> {
-  const [row] = await db
+  const [row] = await systemDb
     .select({ id: teamMessages.id })
     .from(teamMessages)
     .where(
@@ -138,7 +143,7 @@ export async function listTeamThread(
     const cursor = new Date(opts.before);
     if (!Number.isNaN(cursor.getTime())) conds.push(lt(teamMessages.createdAt, cursor));
   }
-  const rows = await db
+  const rows = await systemDb
     .select()
     .from(teamMessages)
     .where(and(...conds))
@@ -164,7 +169,7 @@ export async function countTeamInboundSince(
   contactId: string,
   since: Date,
 ): Promise<number> {
-  const [row] = await db
+  const [row] = await systemDb
     .select({ n: count() })
     .from(teamMessages)
     .where(
