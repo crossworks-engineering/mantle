@@ -1,5 +1,15 @@
 export * from './schema/index';
-export { db, closeDb, type Db } from './client';
+export { db, systemDb, closeDb, type Db } from './client';
+export {
+  VIEWER_LEVELS,
+  currentViewerLevel,
+  isViewerLevel,
+  lowerLevel,
+  withViewer,
+  viewerRoleName,
+  type LimitedLevel,
+  type ViewerLevel,
+} from './viewer';
 export { getDefaultWorker, getAgentTtsWorker, bumpWorkerUsage } from './ai-workers-resolve';
 export { bumpAgentUsage } from './agents-resolve';
 export {

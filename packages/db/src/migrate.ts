@@ -41,6 +41,7 @@
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
 import { env } from '@mantle/config';
+import { ensureViewerRoles } from './viewer-roles';
 
 async function main() {
   const url = env('DATABASE_URL');
@@ -50,6 +51,11 @@ async function main() {
 
   try {
     const migrations = readMigrationFiles({ migrationsFolder: './migrations' });
+
+    // The viewer LOGIN roles first: migrations grant to them and name them in
+    // row level policies, and roles are cluster objects a restore does not
+    // bring back. Idempotent; also re-derives the passwords from the key.
+    await ensureViewerRoles(sql, env('MANTLE_MASTER_KEY') ?? null);
 
     await sql`create schema if not exists "drizzle"`;
     await sql`
