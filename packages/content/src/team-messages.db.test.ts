@@ -20,7 +20,7 @@ describe.skipIf(!URL)('listMemberChatActivity', () => {
   const chatty = randomUUID();
   const quiet = randomUUID();
   const admin = randomUUID();
-  const logins = [chatty, quiet, admin];
+  const logins: string[] = [chatty, quiet, admin];
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
