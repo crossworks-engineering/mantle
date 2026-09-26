@@ -41,7 +41,8 @@ item when the caller's level is at or above the item's level.
 ## 2. How it is enforced
 
 - **Limited LOGIN roles**: `mantle_view_team`, `mantle_view_client`,
-  `mantle_view_public`. Real login roles, never a `SET ROLE` on the superuser
+  `mantle_view_public`, plus `mantle_view_space` for a login's personal space
+  (member-logins.md section 5). Real login roles, never a `SET ROLE` on the superuser
   session (that is escapable). Their passwords are HKDF over
   `MANTLE_MASTER_KEY` with a fixed label: no new secret, no `.env` change.
   `ensureViewerRoles` creates or updates them at every migrate, before the
@@ -54,7 +55,8 @@ item when the caller's level is at or above the item's level.
   so no entry point can forget. `runToolLoop` refuses an `agentId` without
   `agentLevel`.
 - **Row rules** (migration 0159): nodes by brain owner + level + workspace
-  kind; chunks, pages, draws, tables, apps and app databases follow their
+  kind (0165 adds the personal-space rules and, for the team role with
+  `mantle.human` on only, other members' team-shared items); chunks, pages, draws, tables, apps and app databases follow their
   node; facts follow their source node (a fact with no source came from the
   owner's own chats and stays admin).
 - **Grants** come from one checked-in list, `ACCESS_MATRIX`
