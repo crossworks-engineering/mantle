@@ -23,8 +23,11 @@ async function teamTurnImpl(input: TeamTurnInput): Promise<TeamTurnRunResult> {
   DBOS.span?.setAttribute('mantle.runner', 'team_turn');
   DBOS.span?.setAttribute('mantle.owner_id', ownerId);
   DBOS.span?.setAttribute('mantle.surface', 'team');
-  DBOS.span?.setAttribute('mantle.contact_id', options.contactId);
-  DBOS.logger.info(`[team_turn] start (owner=${ownerId}, contact=${options.contactId})`);
+  // A member login's turn has no contact (users are the team): name the login.
+  if (options.contactId) DBOS.span?.setAttribute('mantle.contact_id', options.contactId);
+  if (options.loginId) DBOS.span?.setAttribute('mantle.login_id', options.loginId);
+  const who = options.loginId ? `login=${options.loginId}` : `contact=${options.contactId}`;
+  DBOS.logger.info(`[team_turn] start (owner=${ownerId}, ${who})`);
 
   let dto: TeamTurnRunResult;
   try {
@@ -52,9 +55,7 @@ async function teamTurnImpl(input: TeamTurnInput): Promise<TeamTurnRunResult> {
   } catch (err) {
     const msg = errorMessage(err);
     DBOS.span?.setAttribute('mantle.error', msg);
-    DBOS.logger.error(
-      `[team_turn] FAILED (owner=${ownerId}, contact=${options.contactId}): ${msg}`,
-    );
+    DBOS.logger.error(`[team_turn] FAILED (owner=${ownerId}, ${who}): ${msg}`);
     throw err;
   }
 
