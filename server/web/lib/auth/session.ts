@@ -12,7 +12,7 @@ import { RedirectError } from '../../server/http-compat/redirect-error';
 import { eq, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { db, authUsers, mobileTokens, countUsers } from '@mantle/db';
-import { loadAnchorId, loadLoginRow, type LoginRow } from './login-row';
+import { loadAnchorId, loadLoginRow, loadPersonalSpaceId, type LoginRow } from './login-row';
 import {
   isDetachedDev,
   isAuditSelfLogged,
@@ -82,6 +82,9 @@ export type MemberCaller = {
   loginId: string;
   /** The brain the member belongs to (the anchor's id). */
   anchorId: string;
+  /** The login's personal space (Phase 2): what their own items are keyed
+   *  to. Work on it only inside `withSpace` (lib/member-space.ts). */
+  spaceId: string;
   email: string;
   displayName: string | null;
   contactId: string | null;
@@ -272,6 +275,8 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
   if (row.role === 'member') {
     const anchorId = await getAnchorId();
     if (!anchorId) return null;
+    const spaceId = await loadPersonalSpaceId(row.id);
+    if (!spaceId) return null;
     return {
       kind: 'member',
       source,
@@ -279,6 +284,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
         role: 'member',
         loginId: row.id,
         anchorId,
+        spaceId,
         email: row.email,
         displayName: row.displayName,
         contactId: row.contactId,

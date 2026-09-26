@@ -4,8 +4,8 @@
  * every path reads the same columns: the role is taken from this row on every
  * request, never from a token.
  */
-import { eq } from 'drizzle-orm';
-import { authUsers, db, type LoginRole } from '@mantle/db';
+import { and, eq } from 'drizzle-orm';
+import { authUsers, db, spaces, type LoginRole } from '@mantle/db';
 
 export type LoginRow = {
   id: string;
@@ -42,4 +42,24 @@ export async function loadAnchorId(): Promise<string | null> {
     .where(eq(authUsers.isOwner, true))
     .limit(1);
   return row?.id ?? null;
+}
+
+/**
+ * The login's personal space (member logins Phase 2): made with the login by
+ * a trigger (migration 0165), so this only ever creates one for a row that
+ * predates it on a box mid-upgrade.
+ */
+export async function loadPersonalSpaceId(loginId: string): Promise<string | null> {
+  const find = async () =>
+    (
+      await db
+        .select({ id: spaces.id })
+        .from(spaces)
+        .where(and(eq(spaces.loginId, loginId), eq(spaces.kind, 'personal')))
+        .limit(1)
+    )[0]?.id ?? null;
+  const found = await find();
+  if (found) return found;
+  await db.insert(spaces).values({ kind: 'personal', loginId }).onConflictDoNothing();
+  return find();
 }
