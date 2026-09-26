@@ -1,10 +1,17 @@
 /**
  * The member Library (member logins, Phase 1): the brain items a member login
- * may read. There is no filter here on purpose. The caller runs these inside
- * `withViewer('team', …)`, and Postgres row security on the team role decides
- * what exists: team-, client- and public-level workspace items, published
- * content only (draft columns are never granted). A row this code cannot see
- * is simply absent, so a member can never reach an admin item by id.
+ * may read. There is no ACCESS filter here on purpose. The caller runs these
+ * inside `withViewer('team', …)`, and Postgres row security on the team role
+ * decides what exists: team-, client- and public-level workspace items,
+ * published content only (draft columns are never granted). A row this code
+ * cannot see is simply absent, so a member can never reach an admin item by id.
+ *
+ * The LIST is narrower than what row security allows: it shows only items set
+ * to exactly the reader's level. An open link makes an item client or public
+ * (the agent emailing a page with a link does that), and listing every such
+ * item to every member was a surprise nobody chose. Client and public items
+ * stay readable by id (a link inside a team page opens them), and the team
+ * agent can still read them; only the listing is narrowed. Jason, 2026-09-26.
  *
  * Read-only in Phase 1. Writing and personal spaces come in Phase 2.
  */
@@ -53,7 +60,8 @@ function rowOf(n: typeof nodes.$inferSelect): LibraryRow {
   };
 }
 
-/** The Library, newest first. `q` matches the title. */
+/** The Library, newest first: the items set to exactly the reader's level.
+ *  `q` matches the title. */
 export async function listLibrary(
   anchorId: string,
   opts: { kind?: LibraryKind; q?: string; limit?: number; offset?: number } = {},
@@ -64,6 +72,7 @@ export async function listLibrary(
   const q = opts.q?.trim();
   const where = and(
     eq(nodes.ownerId, anchorId),
+    eq(nodes.audience, currentViewerLevel()),
     opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...LIBRARY_KINDS]),
     q ? ilike(nodes.title, `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`) : undefined,
   );

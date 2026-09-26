@@ -140,7 +140,12 @@ The level is the truth; an item's share link (docs/sharing.md) follows it.
   is admin, a team-only link is team, an open link keeps client or public and
   drops anything higher to public. Cascaded sub-pages take the parent's
   level. So `node_share` / `page_share`, the hub app and the email link never
-  drift from the level.
+  drift from the level. (Closure items are the exception: revoking or
+  raising an item does not raise what it embeds.)
+- **What an open link means for members.** Client and public items are
+  readable by the team role, so a member can open one by id and the team
+  agent can read it. The member Library does not LIST them: it lists team
+  items only (docs/member-logins.md section 3).
 - **Admin-only kinds** (tasks, events, …) stay admin whatever link they
   carry. Setting one to admin removes an old link.
 - Migration 0161 re-derived every level from the links once, for the window

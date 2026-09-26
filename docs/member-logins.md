@@ -48,12 +48,19 @@
 | Route                           | What                                                                   |
 | ------------------------------- | ---------------------------------------------------------------------- |
 | `GET /api/member/shell`         | Who is signed in, the brain's brand, a member asset token              |
-| `GET /api/member/library`       | Team-, client- and public-level pages, notes, drawings, tables, files  |
+| `GET /api/member/library`       | Team-level pages, notes, drawings, tables, files (see below)           |
 | `GET /api/member/library/:id`   | One item with its published body                                       |
 | `GET /api/member/files/:id`     | File bytes (`?thumb=1` for a thumbnail); `?at=` works for `<img>` srcs |
 | `GET /api/member/draws/:id/svg` | A drawing's committed SVG                                              |
 | `GET /api/member/chat`          | The member's own thread with the team-level agent                      |
 | `POST /api/member/chat`         | Send a message; the reply lands in the thread                          |
+
+The Library LISTS only items set to exactly Team. Row security lets the team
+role read client- and public-level items too, and those stay readable by id
+(a link inside a team page opens them) and by the team agent. But an open
+link makes an item client or public, often as a side effect (the agent
+emailing a page with a link), so listing every such item to every member is
+not something an owner chose. To list an item to members, set it to Team.
 
 - **Chat** uses `team-responder`, and only once an admin has set it below
   admin (access-levels.md §5): members chat only with team-level agents, and

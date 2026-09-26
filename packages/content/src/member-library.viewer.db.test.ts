@@ -74,9 +74,15 @@ describe.skipIf(!URL)('member Library at the team level', () => {
     await expect(lib.listLibrary(anchor)).rejects.toThrow(/viewer scope/);
   });
 
-  it('lists team- and public-level items, never admin ones', async () => {
-    const { items } = await m.withViewer('team', () => lib.listLibrary(anchor, { q: tag }));
-    expect(items.map((i) => i.id).sort()).toEqual([ids.teamPage, ids.publicNote].sort());
+  it('lists only team-level items: never admin, and not open-link (public) ones', async () => {
+    const { items, total } = await m.withViewer('team', () => lib.listLibrary(anchor, { q: tag }));
+    expect(items.map((i) => i.id)).toEqual([ids.teamPage]);
+    expect(total).toBe(1);
+  });
+
+  it('still reads a public item by id at the team level', async () => {
+    const note = await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.publicNote));
+    expect(note?.type).toBe('note');
   });
 
   it('reads a team page (published doc only) and 404s an admin one', async () => {
