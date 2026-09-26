@@ -30,6 +30,7 @@ import {
   requireSpace,
   spaceNotFound,
 } from './member-space-core';
+import { notifySpaceItemChanged } from './member-space-events';
 
 /** The ltree path every personal file node carries (not under `files`). */
 export const SPACE_FILES_PATH = 'space_files';
@@ -174,6 +175,7 @@ export async function createMineFile(
       tags: ['file'],
     });
     await db.insert(spaceItems).values({ nodeId: id, authorLoginId: loginId });
+    await notifySpaceItemChanged(id, 'created', { spaceId, team: false });
     return id;
   } catch (err) {
     if (adopted) await removeSpaceFile(spaceId, id).catch(() => {});

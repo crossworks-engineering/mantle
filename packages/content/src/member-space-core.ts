@@ -14,7 +14,15 @@ import { currentSpaceScope, db, nodes } from '@mantle/db';
 export class SpaceItemStateError extends Error {
   constructor(
     readonly reason:
-      'not-found' | 'frozen' | 'not-draft' | 'not-submitted' | 'unsaved-draft' | 'quota' | 'embed',
+      | 'not-found'
+      | 'frozen'
+      | 'not-draft'
+      | 'not-submitted'
+      | 'unsaved-draft'
+      | 'quota'
+      | 'embed'
+      | 'not-shared'
+      | 'invalid',
     message: string,
     /** For `embed`: the referenced ids the item may not use. */
     readonly ids: string[] = [],

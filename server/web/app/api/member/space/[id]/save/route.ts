@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import {
   assertEditable,
-  commitDraw,
+  saveMineDraw,
   saveMinePage,
   getMineItem,
   saveMineTable,
@@ -49,7 +49,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         row.type === 'page' && doc
           ? await saveMinePage(spaceId, id, doc, { baseRev })
           : row.type === 'draw' && scene
-            ? await commitDraw(spaceId, id, scene, { baseRev, svg })
+            ? await saveMineDraw(spaceId, id, scene, { baseRev, svg })
             : null;
       if (!saved) return { kind: 'bad' as const };
       if (!saved.ok) return { kind: 'failed' as const, saved };

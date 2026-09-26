@@ -40,6 +40,8 @@ import { getPage } from './pages/read';
 import { commitPage, updatePage, type CommitPageResult } from './pages/draft';
 import { referencedDrawIds, referencedFileIds } from './doc-assets';
 import { mentionRefs } from './mention-refs';
+import { commitDraw, type CommitDrawResult } from './draws';
+import { notifySpaceItemChanged } from './member-space-events';
 import { deletePage, createPage } from './pages/tree';
 import type { PageDetail } from './pages/shared';
 import { getTable } from './tables/read';
@@ -257,6 +259,7 @@ export async function createMineItem(
   await db.insert(spaceItems).values({ nodeId: id, authorLoginId: loginId });
   const row = await getMineRow(spaceId, id);
   if (!row) throw new Error('createMineItem: the new item is not readable');
+  await notifySpaceItemChanged(id, 'created', { spaceId, team: false });
   return row;
 }
 
@@ -292,6 +295,10 @@ export async function setSharing(
     .update(spaceItems)
     .set({ sharing, updatedAt: new Date() })
     .where(eq(spaceItems.nodeId, id));
+  await notifySpaceItemChanged(id, 'state', {
+    spaceId,
+    team: sharing === 'team' || row.sharing === 'team',
+  });
   return (await getMineRow(spaceId, id))!;
 }
 
@@ -370,6 +377,7 @@ export async function submitItem(spaceId: string, id: string): Promise<SpaceItem
       updatedAt: new Date(),
     })
     .where(and(eq(spaceItems.nodeId, id), ne(spaceItems.reviewState, 'submitted')));
+  await notifySpaceItemChanged(id, 'state', { spaceId, team: row.sharing === 'team' });
   return (await getMineRow(spaceId, id))!;
 }
 
@@ -385,24 +393,35 @@ export async function recallItem(spaceId: string, id: string): Promise<SpaceItem
     .update(spaceItems)
     .set({ reviewState: 'draft', submittedAt: null, updatedAt: new Date() })
     .where(and(eq(spaceItems.nodeId, id), eq(spaceItems.reviewState, 'submitted')));
+  await notifySpaceItemChanged(id, 'state', { spaceId, team: row.sharing === 'team' });
   return (await getMineRow(spaceId, id))!;
 }
 
 /** Delete an own item. Refused while submitted (frozen). */
 export async function deleteMineItem(spaceId: string, id: string): Promise<boolean> {
   const row = await assertEditable(spaceId, id);
+  let gone: boolean;
   switch (row.type) {
     case 'page':
-      return deletePage(spaceId, id);
+      gone = await deletePage(spaceId, id);
+      break;
     case 'note':
-      return deleteNote(spaceId, id);
+      gone = await deleteNote(spaceId, id);
+      break;
     case 'draw':
-      return deleteDraw(spaceId, id);
+      gone = await deleteDraw(spaceId, id);
+      break;
     case 'table':
-      return deleteTable(spaceId, id);
+      gone = await deleteTable(spaceId, id);
+      break;
     case 'file':
-      return deleteMineFile(spaceId, id);
+      gone = await deleteMineFile(spaceId, id);
+      break;
   }
+  if (gone) {
+    await notifySpaceItemChanged(id, 'deleted', { spaceId, team: row.sharing === 'team' });
+  }
+  return gone;
 }
 
 /** "Save version" for an own table: publish its draft workbook (or a whole
@@ -418,6 +437,7 @@ export async function saveMineTable(
   if (doc !== undefined || (await savedState('table', id)).unsaved) {
     const t = await commitTable(spaceId, id, doc);
     if (!t) return null;
+    await notifySpaceItemChanged(id, 'saved');
   }
   return getMineItem(spaceId, id);
 }
@@ -471,7 +491,22 @@ export async function saveMinePage(
       bad,
     );
   }
-  return commitPage(spaceId, id, doc, opts);
+  const res = await commitPage(spaceId, id, doc, opts);
+  if (res.ok) await notifySpaceItemChanged(id, 'saved');
+  return res;
+}
+
+/** "Save version" for an own drawing (its SVG snapshot is what teammates see). */
+export async function saveMineDraw(
+  spaceId: string,
+  id: string,
+  scene: Record<string, unknown>,
+  opts: { baseRev?: number; svg?: string } = {},
+): Promise<CommitDrawResult> {
+  requireSpace(spaceId);
+  const res = await commitDraw(spaceId, id, scene, opts);
+  if (res.ok) await notifySpaceItemChanged(id, 'saved');
+  return res;
 }
 
 export type UpdateSpaceItemInput = { title?: string; icon?: string; content?: string };
@@ -502,6 +537,7 @@ export async function updateMineItem(
       if (title !== undefined) await renameMineFile(spaceId, id, title);
       break;
   }
+  await notifySpaceItemChanged(id, 'saved', { spaceId, team: row.sharing === 'team' });
   return getMineItem(spaceId, id);
 }
 
@@ -535,6 +571,24 @@ export async function listTeamDrafts(
     .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
     .where(where);
   return { items: rows.map(rowOf), total: count?.n ?? 0 };
+}
+
+/** One team draft's row (no body), or null when the caller may not read it. */
+export async function getTeamDraftRow(id: string): Promise<SpaceItemRow | null> {
+  requireTeamDrafts();
+  const [joined] = await db
+    .select({ node: nodes, item: spaceItems })
+    .from(nodes)
+    .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
+    .where(
+      and(
+        eq(nodes.id, id),
+        eq(spaceItems.sharing, 'team'),
+        inArray(nodes.type, [...SPACE_ITEM_KINDS]),
+      ),
+    )
+    .limit(1);
+  return joined ? rowOf(joined) : null;
 }
 
 /** One team draft with its published body, or null when the caller may not

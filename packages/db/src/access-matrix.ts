@@ -242,7 +242,16 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.entity_merge_dismissals'),
   none('public.recall_maps'),
   none('public.recall_nodes'),
-  none('public.node_comments', 'content'),
+  // Comments on personal items (Phase 2): the space role reads and writes its
+  // own login's comments on its own items; the team role reads the comments on
+  // teammates' team-shared items (human flag on). Brain threads stay admin.
+  {
+    table: 'public.node_comments',
+    read: 'all',
+    rule: 'team-drafts',
+    writer: 'content',
+    space: 'write',
+  },
   none('public.agent_groups'),
   none('public.channels'),
   none('public.curated_models'),

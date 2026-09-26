@@ -42,7 +42,9 @@ export type CommentViewer = {
 export function toNodeCommentDto(row: NodeCommentDbRow, viewer: CommentViewer): NodeComment {
   const mine =
     (row.authorKind === 'owner' && !!viewer.loginId && row.loginId === viewer.loginId) ||
-    (row.authorKind === 'member' && !!viewer.contactId && row.contactId === viewer.contactId);
+    (row.authorKind === 'member' && !!viewer.contactId && row.contactId === viewer.contactId) ||
+    // A member LOGIN (member logins Phase 2) writes as itself, no contact.
+    (row.authorKind === 'member' && !!viewer.loginId && row.loginId === viewer.loginId);
   return {
     id: row.id,
     nodeId: row.nodeId,

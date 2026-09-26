@@ -17,6 +17,16 @@ import { SCENE_SVG_MAX_BYTES, SpaceItemStateError, sceneWithinLimits } from '@ma
 import type { MemberCaller } from '@/lib/auth';
 import { TableOpsSchema } from '@/lib/table-ops-schema';
 
+/** A member's display name for a comment snapshot. */
+export function memberAuthor(member: MemberCaller): { loginId: string; name: string } {
+  const name = member.displayName?.trim() || member.email.split('@')[0] || 'Member';
+  return { loginId: member.loginId, name };
+}
+
+/** A comment body: bounded; the content layer trims and refuses empty. */
+export const CommentBody = z.object({ body: z.string().max(10_000) });
+export const CommentParams = z.object({ id: z.string().uuid(), commentId: z.string().uuid() });
+
 /** Run `fn` inside the member's own space. */
 export function inMySpace<T>(member: MemberCaller, fn: () => Promise<T>): Promise<T> {
   return withSpace({ spaceId: member.spaceId, loginId: member.loginId }, fn);
@@ -28,7 +38,7 @@ export const SpaceIdParams = z.object({ id: z.string().uuid() });
  *  can read, not-found as a 404; anything else rethrows to the opaque 500. */
 export function spaceStateResponse(err: unknown): Response {
   if (err instanceof SpaceItemStateError) {
-    const status = err.reason === 'not-found' ? 404 : 409;
+    const status = err.reason === 'not-found' ? 404 : err.reason === 'invalid' ? 400 : 409;
     return NextResponse.json(
       { error: err.message, reason: err.reason, ...(err.ids.length ? { ids: err.ids } : {}) },
       { status },

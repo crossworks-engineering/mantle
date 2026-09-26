@@ -34,6 +34,15 @@ export const MEMBER_ROUTES: readonly string[] = [
   // Files in the own space: upload, then the bytes (Phase 2, space disk root).
   'POST /api/member/space-files',
   'GET /api/member/space/:id/bytes',
+  // Comments on own items (shared or submitted) and teammates' shared items.
+  'GET /api/member/space/:id/comments',
+  'POST /api/member/space/:id/comments',
+  'DELETE /api/member/space/:id/comments/:commentId',
+  'GET /api/member/team-drafts/:id/comments',
+  'POST /api/member/team-drafts/:id/comments',
+  'DELETE /api/member/team-drafts/:id/comments/:commentId',
+  // Live changes to own and team-shared personal items (SSE).
+  'GET /api/member/realtime',
   // Teammates' team-shared items (Phase 2): team role, human flag on.
   'GET /api/member/team-drafts',
   'GET /api/member/team-drafts/:id',

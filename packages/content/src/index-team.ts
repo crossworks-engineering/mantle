@@ -244,6 +244,8 @@ export {
   updateMineItem,
   saveMineTable,
   saveMinePage,
+  saveMineDraw,
+  getTeamDraftRow,
   disallowedPageRefs,
   openTeamDraftFile,
   type CreateSpaceItemInput,
@@ -265,3 +267,18 @@ export {
   type OpenedSpaceFile,
   type SpaceFile,
 } from './member-space-files';
+export {
+  addMineComment,
+  addTeamDraftComment,
+  deleteMineComment,
+  deleteTeamDraftComment,
+  listMineComments,
+  listTeamDraftComments,
+  type SpaceCommentAuthor,
+} from './member-space-comments';
+export {
+  SPACE_ITEM_CHANGED_CHANNEL,
+  parseSpaceItemChange,
+  type SpaceItemChange,
+  type SpaceItemChangeKind,
+} from './member-space-events';
