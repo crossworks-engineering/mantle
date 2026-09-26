@@ -1,8 +1,8 @@
 # Team Forum: shared topic threads
 
 The Forum is the team's shared conversation surface at `/team/forum`, the
-successor to the per-member 1:1 Team Chat (which lives on read-only at
-`/team/assistant` as the "Chat archive"). A member creates a **topic**; the
+successor to the per-member 1:1 Team Chat (removed 2026-09-26; the owner
+still sees old transcripts as the "Chat archive" in `/team-admin`). A member creates a **topic**; the
 team responder answers; the thread continues, and **every team member can
 read every `team` topic**. Plan of record: "PLAN: Team Forum" (dev brain page
 71601ba2, signed off 2026-07-17). This document covers Phase 1 (forum core).
@@ -33,12 +33,11 @@ read-anything / write-nothing except `team_request_create`.
 
 ## 2. Surfaces
 
-| Surface                   | Who     | What                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/team/forum`             | members | Topic list (pinned first, unread dots, kind badges) + "New topic" dialog.                                                                                                                                                                                                                                                                                                                                                              |
-| `/team/forum/[id]`        | members | Linear multi-author transcript + composer; live turn streaming.                                                                                                                                                                                                                                                                                                                                                                        |
-| `/team/assistant`         | members | The old 1:1 thread, READ-ONLY (archive banner, no composer).                                                                                                                                                                                                                                                                                                                                                                           |
-| `/team-admin?view=topics` | owner   | All topics (incl. private), master-detail transcript with trace links, pin/unpin, owner reply (optionally marking the topic answered).                                                                                                                                                                                                                                                                                                 |
+| Surface                   | Who     | What                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/team/forum`             | members | Topic list (pinned first, unread dots, kind badges) + "New topic" dialog.                                                                                                                                                                                                                                                                                                                                                                     |
+| `/team/forum/[id]`        | members | Linear multi-author transcript + composer; live turn streaming.                                                                                                                                                                                                                                                                                                                                                                               |
+| `/team-admin?view=topics` | owner   | All topics (incl. private), master-detail transcript with trace links, pin/unpin, owner reply (optionally marking the topic answered).                                                                                                                                                                                                                                                                                                        |
 | `/team-admin` (Members)   | owner   | The same content read PERSON-first: one member's posts each paired with the answer it drew, the topics they started, the requests they filed. Backed by `listForumMemberActivity` / `listForumPostsByContact` / `listForumTopicsByAuthor` (`packages/content/src/forum/members.ts`), owner-scoped queries with **no visibility filter**, since the owner sees private topics too. Do not reuse them member-facing without `visibleTopicCond`. |
 
 ## 3. Turn pipeline
@@ -62,9 +61,10 @@ core, with three deliberate differences:
    conflicts and retries with backoff, and a stale-pending sweep (15 min)
    guarantees an abandoned turn can never wedge a topic.
 
-Turn ids ride the same `team-<contactId>.<nonce>` namespace as chat, so
-`/api/team/turn/[turnId]/stream` (SSE, full status labels) serves forum turns
-unchanged, with the same cross-member isolation.
+Turn ids ride the `team-<contactId>.<nonce>` namespace of the retired chat, so
+`/api/team/turn/[turnId]/stream` (SSE, full status labels) serves forum turns,
+with the same cross-member isolation. The path keeps its old name until the
+forum retires.
 
 ## 4. Surface provenance
 

@@ -20,13 +20,16 @@
  * `team_chat_list` / `team_chat_read` / `team_access_list` — OWNER-side admin
  * tools (granted via the `team-admin` group to the persona, never to the team
  * responder). They make team activity queryable by the brain: "what has Sam
- * asked about this week?".
+ * asked about this week?". Users are the team: the chats they read are member
+ * LOGIN threads; the retired team-code portal threads stay readable as
+ * history by contact id.
  */
 
 import {
   createTask,
   listNotifiableMembers,
   listTeamAccess,
+  listMemberChatActivity,
   listTeamMemberActivity,
   listTeamThread,
   nodeUrl,
@@ -37,7 +40,7 @@ import {
 } from '@mantle/content';
 import type { ToolPrecondition, BuiltinToolDef, ToolHandlerResult } from './types';
 import { str, strArr, strOpt, numOpt } from './coerce';
-import { errorMessage } from '@mantle/std';
+import { errorMessage, UUID_RE } from '@mantle/std';
 import { asSystem } from '@mantle/db/viewer';
 
 const TEAM_CONTACT_ID_PRE: readonly ToolPrecondition[] = [
@@ -279,15 +282,33 @@ const team_chat_list: BuiltinToolDef = {
   readOnly: true,
   name: 'List team chat members',
   description:
-    "List the brain's team members and their Team Chat activity: last message, thread size, membership since, token last used. Use for questions like 'who has been using team chat' or as the index before `team_chat_read`.",
+    "List the brain's member logins (the team) and their chat activity: last message, thread size, whether the login is still active. Use for questions like 'who has been chatting with the team agent' or as the index before `team_chat_read`. The portal_archive field lists old team-code portal threads (history only; read them by `contactId`).",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx): Promise<ToolHandlerResult> => {
     if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
       return { ok: false, error: 'owner-side tool — not available on the team surfaces' };
     }
-    const members = await listTeamMemberActivity(ctx.ownerId);
-    ctx.step?.setMeta({ count: members.length });
-    return { ok: true, output: { members, count: members.length } };
+    const [members, portal] = await Promise.all([
+      listMemberChatActivity(ctx.ownerId),
+      listTeamMemberActivity(ctx.ownerId),
+    ]);
+    const portal_archive = portal
+      .filter((p) => p.messageCount > 0)
+      .map((p) => ({
+        contactId: p.contactId,
+        contactName: p.contactName,
+        messageCount: p.messageCount,
+        lastMessageAt: p.lastMessageAt,
+      }));
+    ctx.step?.setMeta({ count: members.length, archive: portal_archive.length });
+    return {
+      ok: true,
+      output: {
+        members,
+        count: members.length,
+        ...(portal_archive.length ? { portal_archive } : {}),
+      },
+    };
   },
 };
 
@@ -297,13 +318,18 @@ const team_chat_read: BuiltinToolDef = {
   preconditions: TEAM_CONTACT_ID_PRE,
   name: 'Read a team chat thread',
   description:
-    "Read a window of one team member's Team Chat thread (ascending; newest window by default, `before` pages older). `contactId` comes from `team_chat_list` or `contact_find`. Use to answer 'what has <member> asked about'.",
+    "Read a window of one team member's chat thread (ascending; newest window by default, `before` pages older). Pass `loginId` (from `team_chat_list`) for a member login's thread, or `contactId` for an old team-code portal thread (history). Use to answer 'what has <member> asked about'.",
   inputSchema: {
     type: 'object',
     properties: {
+      loginId: {
+        type: 'string',
+        description: "The member login's id, from `team_chat_list`.",
+      },
       contactId: {
         type: 'string',
-        description: "The member's contact id, from `team_chat_list` or `contact_find`.",
+        description:
+          'A contact id from the portal_archive field of `team_chat_list`: reads that old team-code portal thread.',
       },
       before: {
         type: 'string',
@@ -317,19 +343,25 @@ const team_chat_read: BuiltinToolDef = {
         description: 'Max messages to return.',
       },
     },
-    required: ['contactId'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
       return { ok: false, error: 'owner-side tool — not available on the team surfaces' };
     }
-    const contactId = str(input.contactId);
-    if (!contactId) return { ok: false, error: 'contactId required' };
-    const messages = await listTeamThread(ctx.ownerId, contactId, {
+    const loginId = strOpt(input.loginId);
+    const contactId = strOpt(input.contactId);
+    if (!loginId && !contactId) {
+      return { ok: false, error: 'loginId (or contactId for a portal thread) required' };
+    }
+    if (loginId && !UUID_RE.test(loginId)) {
+      return { ok: false, error: 'loginId must be a login id from `team_chat_list`' };
+    }
+    const messages = await listTeamThread(ctx.ownerId, contactId ?? '', {
       before: strOpt(input.before),
       limit: numOpt(input.limit) ?? 50,
+      ...(loginId ? { loginId } : {}),
     });
-    ctx.step?.setMeta({ contactId, count: messages.length });
+    ctx.step?.setMeta({ ...(loginId ? { loginId } : { contactId }), count: messages.length });
     return {
       ok: true,
       output: {

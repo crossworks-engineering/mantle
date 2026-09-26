@@ -1,11 +1,10 @@
 /**
  * Forum cost-guard helpers shared by the topic-create and post-create routes.
- * One DAILY budget covers the whole team surface: team-chat turns + forum
- * posts count against the same cap (env TEAM_CHAT_DAILY_TURNS, default 100)
- * — a leaked 8-char token must never become a wallet drain, and moving the
- * conversation from chat to forum must not double the budget.
+ * One DAILY budget per team-code member: forum posts count against the cap
+ * (env TEAM_CHAT_DAILY_TURNS, default 100), so a leaked 8-char token never
+ * becomes a wallet drain. The member chat (a login) uses the same cap.
  */
-import { countForumMemberPostsSince, countTeamInboundSince } from '@mantle/content';
+import { countForumMemberPostsSince } from '@mantle/content';
 import { env } from '@mantle/config';
 
 export const FORUM_DAILY_CAP = (() => {
@@ -26,12 +25,8 @@ export function startOfTodayUtc(): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 }
 
-/** Today's spend against the shared budget: team-chat inbound + forum posts. */
+/** Today's spend against the daily budget: the member's forum posts. The
+ *  old team-code chat that also counted here is gone. */
 export async function forumDailySpend(ownerId: string, contactId: string): Promise<number> {
-  const since = startOfTodayUtc();
-  const [chat, forum] = await Promise.all([
-    countTeamInboundSince(ownerId, contactId, since),
-    countForumMemberPostsSince(ownerId, contactId, since),
-  ]);
-  return chat + forum;
+  return countForumMemberPostsSince(ownerId, contactId, startOfTodayUtc());
 }

@@ -442,9 +442,9 @@ async function runTeamTurnSteps(
     // channel only reaches a client on the legacy blocking response, so an
     // artifact not written here is never rendered at all.
     //
-    // Node reference only, never the base64. A member loads the bytes through
-    // `/api/team/messages/media/<nodeId>`, which authorizes off this
-    // very column — so an artifact WITHOUT a node id has nothing to point at and
+    // Node reference only, never the base64. A route that serves the bytes to
+    // the member must authorize off this very column (the retired team-code
+    // chat did), so an artifact WITHOUT a node id has nothing to point at and
     // is dropped rather than written as an unreachable row.
     //
     // A reply can also PLACE a picture itself with `![alt](media:<id>)`. Anything

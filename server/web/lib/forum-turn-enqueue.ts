@@ -1,9 +1,9 @@
 /**
  * Shared forum-turn enqueue — used by both topic-create and post-create
- * routes. Mints the turn id in the SAME `team-<contactId>.<nonce>` namespace
- * as Team Chat (the member's credential sets the contact half, so the id can
- * never address another member's turn) — which also means the existing
- * /api/team/turn/[turnId]/stream route serves forum turns untouched.
+ * routes. Mints the turn id in the `team-<contactId>.<nonce>` namespace (the
+ * member's credential sets the contact half, so the id can never address
+ * another member's turn), which the /api/team/turn/[turnId]/stream route
+ * serves.
  */
 import { getDbosClient } from '@/lib/dbos-client';
 import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';

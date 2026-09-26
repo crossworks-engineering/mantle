@@ -73,16 +73,16 @@ export {
 export {
   appendTeamMessage,
   updateTeamMessageOutcome,
-  countTeamInboundSince,
   countMemberInboundSince,
   listTeamThread,
   recentTeamMessages,
   listTeamMemberActivity,
+  listMemberChatActivity,
   markTeamThreadRead,
   type AppendTeamMessageInput,
   type UpdateTeamMessageOutcomeInput,
   type TeamMemberActivity,
-  teamThreadHasAttachedNode,
+  type MemberChatActivity,
 } from './team-messages';
 
 export {

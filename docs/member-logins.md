@@ -78,7 +78,9 @@ not something an owner chose. To list an item to members, set it to Team.
   One thread per login (`team_messages.login_id`, migration 0163), never in
   the owner's assistant stream. A member's rows carry the login and no
   contact (migration 0167). Limits per login: 6 messages a minute and the
-  team daily cap.
+  team daily cap. The admin reads member chats in `/team-admin` > Member
+  chats (`GET /api/team-admin/member-chats`) and with the `team_chat_list` /
+  `team_chat_read` tools (`loginId`).
 - **Not yet:** accept and return by an admin (Phase 4), running apps (Phase
   4b), attachments in chat. Own items: section 5.
 

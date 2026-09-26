@@ -1,8 +1,10 @@
 /**
- * GET /api/team/turn/[turnId]/stream — SSE for ONE in-flight TEAM turn: live
+ * GET /api/team/turn/[turnId]/stream — SSE for ONE in-flight FORUM turn: live
  * status + token deltas, replay-merged from turn_stream_buffer on reconnect.
  * Mirror of /api/assistant/turn/[turnId]/stream with the team gate instead of
- * the owner gate.
+ * the owner gate. The path is from the retired team-code chat (its POST
+ * /api/team/turn is gone); the forum mints its turn ids in the same namespace
+ * (lib/forum-turn-enqueue.ts), so the path stays until the forum retires.
  *
  * Members see FULL status labels (same narration the owner sees) — a
  * deliberate transparency decision (plan §15.5), which also means no filtering

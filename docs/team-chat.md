@@ -1,13 +1,21 @@
 # Team Chat: tokenized Contacts chat with the brain
 
-> **Status: FROZEN, superseded by the [Team Forum](./team-forum.md).** The 1:1
-> thread is an archive, not a surface: `POST /api/team/turn` returns **410**
-> unless `TEAM_CHAT_POST_ENABLED=1` (kept as the MS Teams-adapter seam), the
-> member composer at `/team/assistant` is gone, and `team_messages` therefore
-> takes no new rows. Everything below still describes the auth, isolation and
-> cost model accurately (the Forum reuses all of it) but read "turn" as
-> "forum turn". Existing transcripts stay readable at `/team/assistant`
-> (member) and under **Chat archive** on `/team-admin` (owner).
+> **Status: REMOVED (2026-09-26).** The 1:1 team-code chat is gone: its routes
+> (`POST /api/team/turn`, `GET /api/team/messages`, the
+> `/api/team/messages/{media,drawing}` doors) and the member screens
+> (`/team/assistant`, the hub's chat view) were deleted. It had taken no
+> message on any brain for weeks: posting was closed by default since the
+> [Team Forum](./team-forum.md) shipped. Users are the team now: a member LOGIN
+> chats with the team agent ([member-logins.md](./member-logins.md)).
+>
+> What STAYS until members have replacements: team codes and their login
+> (`/api/team/auth`, team SSO), the Forum (which reuses the auth, isolation and
+> cost model below; read "turn" as "forum turn", and its turns still stream
+> from `/api/team/turn/[turnId]/stream`), team-mode share links and app
+> admission, `/hub`, and the team workspace. Old portal transcripts stay
+> readable as history: **Chat archive** on `/team-admin` > Members, and
+> `team_chat_read` with a `contactId`. An admin revokes a team code from
+> `/team-admin` > Members; no screen mints new codes (new people get logins).
 >
 > **Originally BUILT** (v0.117.0, 2026-07-06; Phases 1+2 of the plan). Team members
 > (Contacts holding a team token) chat with the brain through a
@@ -54,13 +62,12 @@ by default (§6).
 
 ## 2. Surfaces
 
-| Surface           | Who                       | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ----------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/team`           | member                    | Token gate → the **Team Workspace**: a read-only mirror of the workspace shell (wordmark header in the brain's colour theme, section nav Notes/Pages/Tables/Apps/Tasks/Events, footer with shared folder chips + Assistant). Section lists are the owner's ACTIVE shares (team and public mode alike, `listTeamVisibleShares`); opening a card renders the content INLINE (v0.204: `ShareReader` → `GET /s/<token>/view`, the shared presenters from `@mantle/web-ui/share`, no iframe). `/view` is a sub-path of /s with the same authorization, so the share surface stays the only content door. Outside the app shell; in `PUBLIC_PATHS`; no server DB reads (detached-safe). |
-| `/team/assistant` | member                    | The forever-thread chat with the brain (`TeamChatClient`): composer, attachments, live streaming. Since v0.126.0 the thread uses the assistant chat's TURN layout (reply as a left-canvas document, the member's question as a sticky right-margin card, live status labels), see the header comment in `components/team-chat/team-chat-client.tsx` for what is deliberately NOT ported (rich dialect, thought trail, tool ledger).                                                                                                                                                                                                                                               |
-| `/hub`            | member                    | The Team Hub's home since the workspace took over `/team`: the designated hub APP full-bleed when the brain has one (see `docs/team-hub-app-sdk.md`), the built-in briefing hub otherwise. Same cookie as `/team`, members switch between the surfaces freely.                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `/team-admin`     | owner                     | Sidebar **Team** entry. **Members** tab: member index ordered by recent FORUM activity with unread badges; detail = that member's posts each paired with the agent answer it drew (`/traces` deep links), the topics they started, the requests they filed, their access log, and, only when one exists, their pre-Forum 1:1 transcript as a collapsed **Chat archive**. Topics tab: see [team-forum.md](./team-forum.md). Requests tab: open team requests with reply / mark-done + the upload review queue. Shared-links tab: every active share (public + team) with copy/open/revoke. **Settings** tab: private reads (§6), hub app, curated Dashboard tags.                  |
-| `/api/team/*`     | member (cookie or bearer) | The machine API, the same routes the web surface uses (`/api/team/workspace` + `/api/team/list` feed the workspace shell), so a future MS Teams adapter is a thin client, not a rebuild.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Surface       | Who                       | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/team`       | member                    | Token gate → the **Team Workspace**: a read-only mirror of the workspace shell (wordmark header in the brain's colour theme, section nav Notes/Pages/Tables/Apps/Tasks/Events, footer with shared folder chips + Assistant). Section lists are the owner's ACTIVE shares (team and public mode alike, `listTeamVisibleShares`); opening a card renders the content INLINE (v0.204: `ShareReader` → `GET /s/<token>/view`, the shared presenters from `@mantle/web-ui/share`, no iframe). `/view` is a sub-path of /s with the same authorization, so the share surface stays the only content door. Outside the app shell; in `PUBLIC_PATHS`; no server DB reads (detached-safe).                                                                                                          |
+| `/hub`        | member                    | The Team Hub's home since the workspace took over `/team`: the designated hub APP full-bleed when the brain has one (see `docs/team-hub-app-sdk.md`), the built-in briefing hub otherwise. Same cookie as `/team`, members switch between the surfaces freely.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `/team-admin` | owner                     | Sidebar **Team** entry. **Member chats** tab: every member login's chat with the team agent (read-only). **Members** tab: team-code holders ordered by recent FORUM activity with unread badges, each with a **Revoke code** action; detail = that member's posts each paired with the agent answer it drew (`/traces` deep links), the topics they started, the requests they filed, their access log, and, only when one exists, their pre-Forum 1:1 transcript as a collapsed **Chat archive**. Topics tab: see [team-forum.md](./team-forum.md). Requests tab: open team requests with reply / mark-done + the upload review queue. Shared-links tab: every active share (public + team) with copy/open/revoke. **Settings** tab: private reads (§6), hub app, curated Dashboard tags. |
+| `/api/team/*` | member (cookie or bearer) | The machine API, the same routes the web surface uses (`/api/team/workspace` + `/api/team/list` feed the workspace shell), so a future MS Teams adapter is a thin client, not a rebuild.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 ## 3. Auth
 
@@ -77,7 +84,8 @@ by default (§6).
 
 ## 4. Turn pipeline
 
-`POST /api/team/turn` (JSON or multipart) → per-contact rate limit + a
+(Historical: the chat's `POST /api/team/turn`, removed 2026-09-26; forum posts
+take the same path today.) Per-contact rate limit + a
 `TEAM_CHAT_DAILY_TURNS` daily cap (denials are access-logged) → enqueue the
 durable `TEAM_TURN_WORKFLOW` on the shared DBOS runner queue → the member
 subscribes to the SSE stream (`/api/team/turn/[turnId]/stream`, replay-merged
@@ -187,7 +195,7 @@ provenance, that's the point of "please update X, attached".)
 > Forum ([team-forum.md](team-forum.md)) deliberately reverses it for
 > shared-by-design topics, which become brain corpus in Forum Phase 3;
 > `private` forum topics stay excluded for exactly the reason above. The 1:1
-> chat itself is now a read-only archive (`/team/assistant`).
+> chat itself is removed; its transcripts are owner-side history only.
 
 ## 8. Request → task → reply loop
 

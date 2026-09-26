@@ -1,5 +1,7 @@
 /**
- * Caller resolution for the Team Chat surface (/team + /api/team/*).
+ * Caller resolution for the team-code surfaces (/team + /api/team/*): the
+ * forum, workspace, hub, comments and curated routes. (The team-code chat
+ * these once served is gone; a member login chats via /api/member/chat.)
  *
  * Three credentials resolve to the same identity:
  *   - the signed `mantle_team_chat` cookie (same-origin browser members,
@@ -79,7 +81,7 @@ export async function teamCallerName(
 }
 
 /**
- * Team turn ids are minted SERVER-SIDE and embed the contact they belong to:
+ * Forum turn ids are minted SERVER-SIDE and embed the contact they belong to:
  * `team-<contactId>.<nonce>`. This is the cross-member isolation boundary — a
  * member can't construct another member's id (contactId is set from their own
  * credential), and the stream route re-checks the embedded contact against the

@@ -1,13 +1,16 @@
 /**
- * Team Chat conversation store. One forever-thread per (owner, contact) —
- * the external mirror of the per-agent `assistant_messages` model. Writers are
- * the team turn pipeline (inbound member text, outbound responder reply);
- * readers are the member's own thread view, the admin preview, and the
- * owner-side `team_chat_*` tools that make team activity queryable by the
- * brain.
+ * Team chat conversation store. One forever-thread per member LOGIN
+ * (`login_id`), the external mirror of the per-agent `assistant_messages`
+ * model. Writers are the team turn pipeline (inbound member text, outbound
+ * responder reply); readers are the member's own thread view, the admin
+ * views, and the owner-side `team_chat_*` tools.
+ *
+ * Rows keyed by a contact (`contact_id`, no login) are the retired team-code
+ * portal chat: history only, read by the admin archive and `team_chat_read`.
  */
-import { and, count, desc, eq, gte, isNull, lt, sql as dsql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, isNull, lt, or, sql as dsql } from 'drizzle-orm';
 import {
+  authUsers,
   db,
   systemDb,
   teamMessages,
@@ -109,34 +112,6 @@ export async function updateTeamMessageOutcome(
  * returned in ASCENDING order for rendering. `before` is an ISO timestamp
  * cursor (the createdAt of the oldest message the caller already has).
  */
-/**
- * Did an agent attach this file node to a message in THIS contact's thread?
- *
- * The authorization for `/api/team/messages/media/<nodeId>`. Simpler than the
- * forum's: a team thread has exactly one member, so the contact id on the row
- * IS the visibility rule — no topic to resolve. Asked of the messages rather
- * than the file tree for the same reason (see forumTopicsWithAttachedNode).
- */
-export async function teamThreadHasAttachedNode(
-  ownerId: string,
-  contactId: string,
-  nodeId: string,
-): Promise<boolean> {
-  const [row] = await systemDb
-    .select({ id: teamMessages.id })
-    .from(teamMessages)
-    .where(
-      and(
-        eq(teamMessages.ownerId, ownerId),
-        eq(teamMessages.contactId, contactId),
-        eq(teamMessages.status, 'complete'),
-        dsql`${teamMessages.attachments} @> ${JSON.stringify([{ nodeId }])}::jsonb`,
-      ),
-    )
-    .limit(1);
-  return !!row;
-}
-
 export async function listTeamThread(
   ownerId: string,
   contactId: string,
@@ -176,27 +151,6 @@ export async function recentTeamMessages(
   return listTeamThread(ownerId, contactId, { limit, ...(loginId ? { loginId } : {}) });
 }
 
-/** Inbound turns this contact has sent since `since` — the daily-cap gate
- *  (a leaked token must never become a wallet drain). */
-export async function countTeamInboundSince(
-  ownerId: string,
-  contactId: string,
-  since: Date,
-): Promise<number> {
-  const [row] = await systemDb
-    .select({ n: count() })
-    .from(teamMessages)
-    .where(
-      and(
-        eq(teamMessages.ownerId, ownerId),
-        eq(teamMessages.contactId, contactId),
-        eq(teamMessages.direction, 'inbound'),
-        gte(teamMessages.createdAt, since),
-      ),
-    );
-  return row?.n ?? 0;
-}
-
 /** Inbound turns a member LOGIN has sent since `since`: the member chat's
  *  daily-cap gate (users are the team; a member needs no contact). */
 export async function countMemberInboundSince(
@@ -219,8 +173,8 @@ export async function countMemberInboundSince(
 }
 
 /**
- * The admin member-index: EVERY current team member (a live
- * contact_team_tokens row is the role), annotated with their thread's last
+ * The team-CODE holder index: every contact with a live
+ * contact_team_tokens row (the retired portal's membership), annotated with their thread's last
  * message + size + unread count. Ordered newest-activity-first in SQL, NULLS
  * LAST so a freshly enabled member with no thread still shows (at the bottom).
  */
@@ -243,6 +197,7 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
         from team_messages tmu
         where tmu.owner_id = ${contactTeamTokens.ownerId}
           and tmu.contact_id = ${contactTeamTokens.contactId}
+          and tmu.login_id is null
           and tmu.direction = 'inbound'
           and tmu.created_at > coalesce(
             (select c.last_read_at from team_read_cursors c
@@ -260,6 +215,7 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
         from team_messages tm
         where tm.owner_id = ${contactTeamTokens.ownerId}
           and tm.contact_id = ${contactTeamTokens.contactId}
+          and tm.login_id is null
         order by tm.created_at desc
         limit 1
       ) last_msg`,
@@ -271,6 +227,7 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
         from team_messages tm
         where tm.owner_id = ${contactTeamTokens.ownerId}
           and tm.contact_id = ${contactTeamTokens.contactId}
+          and tm.login_id is null
       ) msg_counts`,
       dsql`true`,
     )
@@ -287,6 +244,76 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
     lastMessageDirection: (r.lastMessageDirection ?? null) as 'inbound' | 'outbound' | null,
     messageCount: r.messageCount,
     unread: r.unread,
+  }));
+}
+
+/** One member login and its chat thread, for the owner's views. */
+export type MemberChatActivity = {
+  loginId: string;
+  /** Display name, else the part of the email before the @ (the name the
+   *  agent uses for the member). */
+  name: string;
+  email: string;
+  /** False when the login is disabled or no longer a member (its old
+   *  thread still shows). */
+  active: boolean;
+  lastMessageAt: string | null;
+  lastMessageText: string | null;
+  lastMessageDirection: 'inbound' | 'outbound' | null;
+  messageCount: number;
+};
+
+/**
+ * The owner's index of member chats (users are the team): every member login,
+ * plus any other login that still has a thread, annotated with its thread's
+ * last message and size. Newest activity first, NULLS LAST so a new member
+ * with no thread still shows. The retired team-code portal threads are not
+ * here; `listTeamMemberActivity` still indexes those as history.
+ */
+export async function listMemberChatActivity(ownerId: string): Promise<MemberChatActivity[]> {
+  const rows = await systemDb
+    .select({
+      loginId: authUsers.id,
+      displayName: authUsers.displayName,
+      email: authUsers.email,
+      role: authUsers.role,
+      disabledAt: authUsers.disabledAt,
+      lastMessageAt: dsql<string | null>`last_msg.created_at`,
+      lastMessageText: dsql<string | null>`last_msg.text`,
+      lastMessageDirection: dsql<string | null>`last_msg.direction`,
+      messageCount: dsql<number>`coalesce(msg_counts.n, 0)::int`,
+    })
+    .from(authUsers)
+    .leftJoin(
+      dsql`lateral (
+        select tm.created_at, tm.text, tm.direction
+        from team_messages tm
+        where tm.owner_id = ${ownerId} and tm.login_id = ${authUsers.id}
+        order by tm.created_at desc
+        limit 1
+      ) last_msg`,
+      dsql`true`,
+    )
+    .leftJoin(
+      dsql`lateral (
+        select count(*) as n
+        from team_messages tm
+        where tm.owner_id = ${ownerId} and tm.login_id = ${authUsers.id}
+      ) msg_counts`,
+      dsql`true`,
+    )
+    .where(or(eq(authUsers.role, 'member'), dsql`coalesce(msg_counts.n, 0) > 0`))
+    .orderBy(dsql`last_msg.created_at desc nulls last`, authUsers.email);
+
+  return rows.map((r) => ({
+    loginId: r.loginId,
+    name: r.displayName?.trim() || r.email.split('@')[0] || 'team member',
+    email: r.email,
+    active: r.role === 'member' && !r.disabledAt,
+    lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt).toISOString() : null,
+    lastMessageText: r.lastMessageText,
+    lastMessageDirection: (r.lastMessageDirection ?? null) as 'inbound' | 'outbound' | null,
+    messageCount: r.messageCount,
   }));
 }
 

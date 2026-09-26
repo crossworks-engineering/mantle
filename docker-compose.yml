@@ -251,10 +251,7 @@ x-app-env: &app-env
   MS_CLIENT_SECRET: ${MS_CLIENT_SECRET:-}
   MS_TENANT: ${MS_TENANT:-}
   MS_REDIRECT_URI: ${MS_REDIRECT_URI:-}
-  # Team Hub chat posting. OFF unless exactly "1" (`=== '1'` in code), so this
-  # is the only way to turn member chat on — it was unreachable on every box.
-  # The two limits are per-owner daily gates (forum-gate.ts).
-  TEAM_CHAT_POST_ENABLED: ${TEAM_CHAT_POST_ENABLED:-}
+  # Team forum limits: per-member daily gates (forum-gate.ts).
   TEAM_CHAT_DAILY_TURNS: ${TEAM_CHAT_DAILY_TURNS:-}
   TEAM_UPLOAD_DAILY_BYTES: ${TEAM_UPLOAD_DAILY_BYTES:-}
   # How many proxy hops sit in front of the app, for client-IP extraction in
