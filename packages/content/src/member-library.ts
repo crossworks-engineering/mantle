@@ -60,8 +60,18 @@ function rowOf(n: typeof nodes.$inferSelect): LibraryRow {
   };
 }
 
-/** The Library, newest first: the items set to exactly the reader's level.
- *  `q` matches the title. */
+/**
+ * Images cut out of a document during ingest (a PDF's pictures, a slide's
+ * screenshots) are file nodes that point back at their document through
+ * `data.sourceFileId`. They made up much of a real Library and read as noise
+ * ("… image 1 (p1)"), so the list leaves them out; they stay readable by id,
+ * which is how the page or document that shows them reaches them. Only FILES
+ * are dropped: a table or page made from a file is a real item of its own.
+ */
+const notExtractedFragment = sql`NOT (${nodes.type} = 'file' AND ${nodes.data} ? 'sourceFileId')`;
+
+/** The Library, newest first: the items set to exactly the reader's level,
+ *  without extracted image fragments. `q` matches the title. */
 export async function listLibrary(
   anchorId: string,
   opts: { kind?: LibraryKind; q?: string; limit?: number; offset?: number } = {},
@@ -74,6 +84,7 @@ export async function listLibrary(
     eq(nodes.ownerId, anchorId),
     eq(nodes.audience, currentViewerLevel()),
     opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...LIBRARY_KINDS]),
+    notExtractedFragment,
     q ? ilike(nodes.title, `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`) : undefined,
   );
   const [rows, [count]] = await Promise.all([
@@ -99,8 +110,13 @@ export type LibraryItem =
     });
 
 /** One Library item with its readable body, or null when the member's level
- *  cannot see it (or it is not a Library kind). */
-export async function getLibraryItem(anchorId: string, id: string): Promise<LibraryItem | null> {
+ *  cannot see it (or it is not a Library kind). `tabId` picks a table's tab
+ *  (default the first); the table's `tabs` list names them all. */
+export async function getLibraryItem(
+  anchorId: string,
+  id: string,
+  opts: { tabId?: string } = {},
+): Promise<LibraryItem | null> {
   assertLimited();
   const [n] = await db
     .select()
@@ -120,7 +136,7 @@ export async function getLibraryItem(anchorId: string, id: string): Promise<Libr
       return note ? { ...base, type: 'note', content: note.content } : null;
     }
     case 'table': {
-      const table = await getTable(anchorId, id);
+      const table = await getTable(anchorId, id, { tabId: opts.tabId, unknownTabIsFirst: true });
       return table ? { ...base, type: 'table', table } : null;
     }
     case 'draw':

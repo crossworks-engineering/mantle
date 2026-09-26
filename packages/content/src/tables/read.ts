@@ -89,7 +89,12 @@ export async function listTableTags(ownerId: string): Promise<{ tag: string; cou
 export async function getTable(
   ownerId: string,
   id: string,
-  opts: { tabId?: string } = {},
+  opts: {
+    tabId?: string;
+    /** An unknown `tabId` reads the first tab instead of throwing: for
+     *  readers whose tab id comes from outside (a member's query string). */
+    unknownTabIsFirst?: boolean;
+  } = {},
 ): Promise<TableDetail | null> {
   // Below admin (member logins Phase 0b) the draft is not readable: the
   // published table only, and no draft file from disk either. A member's own
@@ -122,7 +127,8 @@ export async function getTable(
       }
     }
   }
-  const tabId = opts.tabId ?? tabs?.[0]?.id;
+  const known = !opts.unknownTabIsFirst || tabs?.some((t) => t.id === opts.tabId);
+  const tabId = (known ? opts.tabId : undefined) ?? tabs?.[0]?.id;
   // Materialize the RESOLVED tab, not the caller's (possibly undefined) one:
   // when a draft tab_delete/tab_reorder changed the first tab, "default tab"
   // must mean the same tab on both the published and draft side (audit: the

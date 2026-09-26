@@ -23,6 +23,7 @@ describe.skipIf(!URL)('member Library at the team level', () => {
     adminPage: randomUUID(),
     publicNote: randomUUID(),
     task: randomUUID(),
+    fragment: randomUUID(),
   };
 
   beforeAll(async () => {
@@ -57,6 +58,11 @@ describe.skipIf(!URL)('member Library at the team level', () => {
         (${ids.adminPage}, ${anchor}, 'page', ${`${tag} admin page`}, 'pages', 'admin'),
         (${ids.publicNote}, ${anchor}, 'note', ${`${tag} public note`}, 'notes', 'public'),
         (${ids.task}, ${anchor}, 'task', ${`${tag} task`}, 'tasks', 'admin')`);
+    // An image cut out of a document at ingest: a file pointing at its source.
+    await m.systemDb.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, audience, data) values
+        (${ids.fragment}, ${anchor}, 'file', ${`${tag} report - image 1 (p1)`}, 'files', 'team',
+         ${JSON.stringify({ sourceFileId: ids.teamPage, mime_type: 'image/png' })}::jsonb)`);
     await m.systemDb.execute(sqlTag`
       insert into pages (node_id, doc, doc_text, draft_doc) values
         (${ids.teamPage}, '{"type":"doc","content":[]}'::jsonb, '', ${draft}::jsonb),
@@ -78,6 +84,13 @@ describe.skipIf(!URL)('member Library at the team level', () => {
     const { items, total } = await m.withViewer('team', () => lib.listLibrary(anchor, { q: tag }));
     expect(items.map((i) => i.id)).toEqual([ids.teamPage]);
     expect(total).toBe(1);
+  });
+
+  it('leaves images cut out of documents out of the list, but reads them by id', async () => {
+    const { items } = await m.withViewer('team', () => lib.listLibrary(anchor, { q: tag }));
+    expect(items.map((i) => i.id)).not.toContain(ids.fragment);
+    const frag = await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.fragment));
+    expect(frag?.type).toBe('file');
   });
 
   it('still reads a public item by id at the team level', async () => {
