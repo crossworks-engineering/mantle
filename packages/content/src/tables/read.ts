@@ -12,7 +12,7 @@ import { draftAbsFor } from '../table-storage';
 import { db, nodes, tables } from '@mantle/db';
 import type { TableRow, TableDetail, TableSort } from '@mantle/content-core/table-model';
 import { countsFromRegistry, detailOf, docsOf, rowOf, tabsFromStats } from './shared';
-import { currentViewerLevel } from '@mantle/db/viewer';
+import { readsDrafts } from '@mantle/db/viewer';
 
 type ListTablesOpts = { query?: string; tag?: string; sort?: TableSort };
 
@@ -92,8 +92,9 @@ export async function getTable(
   opts: { tabId?: string } = {},
 ): Promise<TableDetail | null> {
   // Below admin (member logins Phase 0b) the draft is not readable: the
-  // published table only, and no draft file from disk either.
-  const published = currentViewerLevel() !== 'admin';
+  // published table only, and no draft file from disk either. A member's own
+  // space (Phase 2) reads its own draft.
+  const published = !readsDrafts();
   const [row] = await db
     .select({
       node: nodes,

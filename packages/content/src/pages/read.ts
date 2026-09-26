@@ -11,7 +11,7 @@ import { db, entityEdges, nodes, pages } from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { Backlink, PageListRow, PageRow, PageSort } from '@mantle/client-types';
 import { EMPTY_DOC, detailOf, rowOf, type PageDetail } from './shared';
-import { currentViewerLevel } from '@mantle/db/viewer';
+import { currentSpaceScope, readsDrafts } from '@mantle/db/viewer';
 
 type ListPagesOpts = { query?: string; tag?: string; sort?: PageSort };
 
@@ -134,8 +134,9 @@ export async function listPageTags(ownerId: string): Promise<{ tag: string; coun
 
 export async function getPage(ownerId: string, id: string): Promise<PageDetail | null> {
   // Below admin (a team-level agent, member logins Phase 0b) the draft is the
-  // author's working copy and is not readable: the published doc only.
-  const published = currentViewerLevel() !== 'admin';
+  // author's working copy and is not readable: the published doc only. In a
+  // member's own space (Phase 2) the draft IS the reader's working copy.
+  const published = !readsDrafts();
   const [row] = await db
     .select({
       node: nodes,
@@ -170,7 +171,9 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
 
   const docChanged = doc !== rawDoc && row.doc !== null; // only persist if there's a row to update
   const draftChanged = draft !== rawDraft && rawDraft !== null;
-  if ((docChanged || draftChanged) && !published) {
+  // Never from a personal-space scope: its transaction ends with the request,
+  // before a fire-and-forget write would run.
+  if ((docChanged || draftChanged) && !published && !currentSpaceScope()) {
     void persistBlockIdBackfill(id, docChanged ? doc : null, draftChanged ? draft : null);
   }
 
