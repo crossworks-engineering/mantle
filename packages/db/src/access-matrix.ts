@@ -13,11 +13,13 @@
  * invisible to a limited role until it is added here: a missing grant fails a
  * query loudly (permission denied), it never leaks.
  *
- * Limited roles never write in Phase 0b. Member writes (their own space)
- * arrive in Phase 2 with a WITH CHECK rule.
+ * The level roles never write. The personal-space role (`mantle_view_space`,
+ * Phase 2) writes its own space only: `space` below lists its tables, and the
+ * row rules in migration 0165 hold every read and write to the space its
+ * transaction names (`mantle.space_id`).
  */
 import type postgres from 'postgres';
-import { LIMITED_LEVELS } from './viewer-roles';
+import { LIMITED_LEVELS, POOL_ROLES } from './viewer-roles';
 import { viewerRoleName } from './viewer';
 
 /** Node types that may go below admin. Mirrors mantle_workspace_kind() in
@@ -46,7 +48,23 @@ export type LimitedRead = 'none' | 'all' | readonly string[];
  *  - source-node: facts, visible when their source node is; no source = admin;
  *  - all-rows: configuration the loop needs; no per-row secrecy.
  */
-export type RowRule = 'none' | 'brain-level' | 'follows-node' | 'source-node' | 'all-rows';
+export type RowRule =
+  | 'none'
+  | 'brain-level'
+  | 'follows-node'
+  | 'source-node'
+  | 'all-rows'
+  // Other members' team-shared personal items: the team role only, and only
+  // with mantle.human on (a member request, never an agent). Phase 2.
+  | 'team-drafts';
+
+/**
+ * What the personal-space role may do on a table (Phase 2). `write` =
+ * SELECT, INSERT, UPDATE, DELETE on every column (drafts included: they are
+ * the member's own working copy). The row rules keep all of it inside the
+ * space the transaction names.
+ */
+export type SpaceAccess = 'none' | 'write';
 
 /**
  * Who writes it: `content` through `db` (so the viewer applies), `system`
@@ -60,6 +78,8 @@ export type TableAccess = {
   read: LimitedRead;
   rule: RowRule;
   writer: Writer;
+  /** The personal-space role. Absent = none. */
+  space?: SpaceAccess;
 };
 
 const none = (table: string, writer: Writer = 'admin'): TableAccess => ({
@@ -71,7 +91,7 @@ const none = (table: string, writer: Writer = 'admin'): TableAccess => ({
 
 export const ACCESS_MATRIX: readonly TableAccess[] = [
   // ── Brain content: readable at the viewer's level ─────────────────────────
-  { table: 'public.nodes', read: 'all', rule: 'brain-level', writer: 'content' },
+  { table: 'public.nodes', read: 'all', rule: 'brain-level', writer: 'content', space: 'write' },
   { table: 'public.content_chunks', read: 'all', rule: 'follows-node', writer: 'content' },
   { table: 'public.facts', read: 'all', rule: 'source-node', writer: 'content' },
   {
@@ -79,6 +99,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     read: ['node_id', 'doc', 'doc_text', 'version', 'created_at', 'updated_at'],
     rule: 'follows-node',
     writer: 'content',
+    space: 'write',
   },
   {
     table: 'public.draws',
@@ -95,6 +116,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     ],
     rule: 'follows-node',
     writer: 'content',
+    space: 'write',
   },
   {
     table: 'public.tables',
@@ -113,6 +135,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     ],
     rule: 'follows-node',
     writer: 'content',
+    space: 'write',
   },
   {
     table: 'public.apps',
@@ -130,6 +153,20 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     writer: 'content',
   },
   { table: 'public.app_databases', read: 'all', rule: 'follows-node', writer: 'content' },
+
+  // ── Personal spaces (Phase 2) ─────────────────────────────────────────────
+  // Sharing and review state of personal items. The team role reads the
+  // team-shared rows (team drafts, human requests only); the space role
+  // writes its own; the review side (return, accept) is admin.
+  {
+    table: 'public.space_items',
+    read: 'all',
+    rule: 'team-drafts',
+    writer: 'content',
+    space: 'write',
+  },
+  // Read only through mantle_is_brain_space() (security definer).
+  none('public.spaces'),
 
   // ── Configuration the turn loop reads (no per-row secrecy) ────────────────
   { table: 'public.agents', read: 'all', rule: 'all-rows', writer: 'admin' },
@@ -235,7 +272,7 @@ function quoteTable(table: string): string {
   return `"${schema}"."${name}"`;
 }
 
-/** The GRANT statements the matrix means, for one role. Pure. */
+/** The GRANT statements the matrix means, for one level role. Pure. */
 export function viewerGrantStatements(role: string): string[] {
   const out: string[] = [];
   for (const t of ACCESS_MATRIX) {
@@ -246,20 +283,31 @@ export function viewerGrantStatements(role: string): string[] {
   return out;
 }
 
+/** The GRANT statements for the personal-space role. Pure. */
+export function spaceGrantStatements(role: string = viewerRoleName('space')): string[] {
+  const out: string[] = [];
+  for (const t of ACCESS_MATRIX) {
+    if ((t.space ?? 'none') === 'none') continue;
+    out.push(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${quoteTable(t.table)} TO "${role}"`);
+  }
+  return out;
+}
+
 /**
- * Make the live grants equal the matrix: revoke everything the viewer roles
+ * Make the live grants equal the matrix: revoke everything the limited roles
  * hold on every table in the matrix, then grant what it lists. One
  * transaction, idempotent; migrate runs it after the migrations.
  */
 export async function applyViewerGrants(sql: ReturnType<typeof postgres>): Promise<void> {
-  const roles = LIMITED_LEVELS.map(viewerRoleName);
-  const roleList = roles.map((r) => `"${r}"`).join(', ');
+  const levelRoles = LIMITED_LEVELS.map(viewerRoleName);
+  const roleList = POOL_ROLES.map((r) => `"${viewerRoleName(r)}"`).join(', ');
   await sql.begin(async (tx) => {
     await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ${roleList}`);
     await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA auth FROM ${roleList}`);
     await tx.unsafe(`GRANT USAGE ON SCHEMA public, auth TO ${roleList}`);
-    for (const role of roles) {
+    for (const role of levelRoles) {
       for (const stmt of viewerGrantStatements(role)) await tx.unsafe(stmt);
     }
+    for (const stmt of spaceGrantStatements()) await tx.unsafe(stmt);
   });
 }

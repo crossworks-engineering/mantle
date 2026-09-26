@@ -12,9 +12,13 @@
  * until the matrix names it: a missing grant fails loudly, never leaks.
  */
 import type postgres from 'postgres';
-import { viewerRoleName, viewerRolePassword, type LimitedLevel } from './viewer';
+import { viewerRoleName, viewerRolePassword, type LimitedLevel, type PoolRole } from './viewer';
 
 export const LIMITED_LEVELS: readonly LimitedLevel[] = ['team', 'client', 'public'];
+
+/** Every limited LOGIN role: the three levels plus the personal-space role
+ *  (member logins Phase 2), which sees only the space its transaction names. */
+export const POOL_ROLES: readonly PoolRole[] = [...LIMITED_LEVELS, 'space'];
 
 /** Hard cap on connections per role, across every process of a box. */
 const ROLE_CONNECTION_LIMIT = 30;
@@ -24,7 +28,7 @@ const ROLE_CONNECTION_LIMIT = 30;
  *  role still exists (so migrations can grant to it) but cannot log in: a
  *  limited pool then fails loudly instead of falling back to admin. */
 export function viewerRoleStatements(
-  level: LimitedLevel,
+  level: PoolRole,
   masterKey: string | null,
   exists: boolean,
 ): string[] {
@@ -51,7 +55,7 @@ export async function ensureViewerRoles(
   const rows = await sql<{ rolname: string }[]>`
     select rolname from pg_roles where rolname like 'mantle_view_%'`;
   const existing = new Set(rows.map((r) => r.rolname));
-  for (const level of LIMITED_LEVELS) {
+  for (const level of POOL_ROLES) {
     for (const stmt of viewerRoleStatements(
       level,
       masterKey,

@@ -45,16 +45,17 @@ if [ "$EXISTING" = "t" ]; then
   exit 1
 fi
 
-# The viewer roles (member logins Phase 0b) are cluster objects: a dump does
-# not carry them, but its row policies and grants name them. Create them first
-# (no login; migrate sets the login and a password derived from
-# MANTLE_MASTER_KEY), or every policy fails to restore and a team-level agent
-# sees an empty brain.
+# The viewer roles (member logins Phase 0b, plus the personal-space role of
+# Phase 2) are cluster objects: a dump does not carry them, but its row
+# policies and grants name them. Create them first (no login; migrate sets the
+# login and a password derived from MANTLE_MASTER_KEY), or every policy fails
+# to restore: a team-level agent sees an empty brain and a member an empty
+# space.
 docker exec "$CONTAINER" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q -c "
 DO \$\$
 DECLARE r text;
 BEGIN
-  FOREACH r IN ARRAY ARRAY['mantle_view_team', 'mantle_view_client', 'mantle_view_public'] LOOP
+  FOREACH r IN ARRAY ARRAY['mantle_view_team', 'mantle_view_client', 'mantle_view_public', 'mantle_view_space'] LOOP
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
       EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT', r);
     END IF;

@@ -6,14 +6,66 @@ import { describe, expect, it } from 'vitest';
 import {
   asSystem,
   assertNoViewer,
+  currentScopeTx,
+  currentSpaceScope,
   currentViewerLevel,
   lowerLevel,
+  readsDrafts,
+  runInTxScope,
   viewerDatabaseUrl,
   viewerRoleName,
   viewerRolePassword,
   withViewer,
 } from './viewer';
 import { viewerRoleStatements } from './viewer-roles';
+
+describe('personal-space scope (Phase 2)', () => {
+  const space = { spaceId: 'space-a', loginId: 'login-a' };
+  const tx = { fake: 'tx' };
+  const inSpace = <T>(fn: () => Promise<T>) => runInTxScope({ level: 'team', space, tx }, fn);
+
+  it('runs at team, carries its space and its transaction, and reads drafts', async () => {
+    const seen = await inSpace(async () => ({
+      level: currentViewerLevel(),
+      space: currentSpaceScope(),
+      tx: currentScopeTx(),
+      drafts: readsDrafts(),
+    }));
+    expect(seen).toEqual({ level: 'team', space, tx, drafts: true });
+    expect([currentSpaceScope(), currentScopeTx(), readsDrafts()]).toEqual([null, null, true]);
+  });
+
+  it('cannot queue work', async () => {
+    await inSpace(async () => {
+      expect(() => assertNoViewer('a job')).toThrow(/cannot queue work/);
+    });
+  });
+
+  it("withViewer('admin') changes nothing: the space and its transaction stay", async () => {
+    const seen = await inSpace(() =>
+      withViewer('admin', async () => [currentSpaceScope(), currentScopeTx()]),
+    );
+    expect(seen).toEqual([space, tx]);
+  });
+
+  it('a lower withViewer leaves the space for the brain at that level (no drafts)', async () => {
+    const seen = await inSpace(() =>
+      withViewer('team', async () => [currentSpaceScope(), currentScopeTx(), readsDrafts()]),
+    );
+    expect(seen).toEqual([null, null, false]);
+  });
+
+  it('asSystem leaves the space for the admin pool', async () => {
+    const seen = await inSpace(() =>
+      asSystem(async () => [currentViewerLevel(), currentSpaceScope()]),
+    );
+    expect(seen).toEqual(['admin', null]);
+  });
+
+  it('a level scope never reads drafts', async () => {
+    expect(await withViewer('team', async () => readsDrafts())).toBe(false);
+  });
+});
 
 describe('withViewer', () => {
   it('runs at admin outside any scope', () => {

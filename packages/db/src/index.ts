@@ -1,8 +1,10 @@
 export * from './schema/index';
-export { db, systemDb, closeDb, type Db } from './client';
+export { db, systemDb, closeDb, withSpace, withTeamDrafts, type Db } from './client';
 export {
   VIEWER_LEVELS,
   currentViewerLevel,
+  currentSpaceScope,
+  readsDrafts,
   isViewerLevel,
   asViewerLevel,
   lowerLevel,
@@ -10,6 +12,7 @@ export {
   asSystem,
   viewerRoleName,
   type LimitedLevel,
+  type SpaceScope,
   type ViewerLevel,
 } from './viewer';
 export { ensureViewerRoles, LIMITED_LEVELS } from './viewer-roles';

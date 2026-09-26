@@ -46,22 +46,71 @@ export function asViewerLevel(v: unknown): ViewerLevel {
   return isViewerLevel(v) ? v : 'admin';
 }
 
-const store = new AsyncLocalStorage<{ level: LimitedLevel }>();
+/**
+ * A personal-space scope (member logins Phase 2, plan section 2b): the code
+ * inside acts for ONE space, on the space role (`mantle_view_space`).
+ */
+export type SpaceScope = {
+  spaceId: string;
+  /** The login acting (the member, or the owner an agent works for). */
+  loginId: string;
+};
 
-/** The level the current code runs at: 'admin' outside any viewer scope. */
+/** `tx`: a scope that must run in one transaction (its settings are
+ *  transaction-local) carries it here; `db` returns it for every query. */
+type Scope = { level: LimitedLevel; space?: SpaceScope; tx?: unknown };
+
+const store = new AsyncLocalStorage<Scope>();
+
+/** The level the current code runs at: 'admin' outside any viewer scope. A
+ *  personal-space scope runs at 'team' (a member's level), so everything that
+ *  refuses a limited caller (enqueue, admin agents) refuses it too. */
 export function currentViewerLevel(): ViewerLevel {
   return store.getStore()?.level ?? 'admin';
+}
+
+/** The personal-space scope the current code runs in, if any. */
+export function currentSpaceScope(): SpaceScope | null {
+  return store.getStore()?.space ?? null;
+}
+
+/**
+ * Whether the current code may read draft columns: the admin pool, or a
+ * personal-space scope (the member's own working copy). Every other limited
+ * scope reads published columns only; the draft columns are never granted to
+ * the level roles, so a read that forgets this fails loudly (42501).
+ */
+export function readsDrafts(): boolean {
+  return currentViewerLevel() === 'admin' || currentSpaceScope() !== null;
+}
+
+/** The transaction the current scope runs in, if it carries one. */
+export function currentScopeTx(): unknown {
+  return store.getStore()?.tx ?? null;
 }
 
 /**
  * Run `fn` at `level` (or lower, if the caller already runs lower). Every
  * `db` query inside, including after awaits, uses that level's limited pool.
- * `withViewer('admin', fn)` never raises a lower scope back to admin.
+ * `withViewer('admin', fn)` changes nothing: it never raises a lower scope
+ * back to admin and never leaves a scope's transaction. Any lower level
+ * starts a plain scope at that level: from inside a member's space request,
+ * `withViewer('team', …)` reads the brain's Library on the team pool.
  */
 export function withViewer<T>(level: ViewerLevel, fn: () => Promise<T>): Promise<T> {
   const next = lowerLevel(currentViewerLevel(), level);
-  if (next === 'admin') return fn();
+  if (level === 'admin' || next === 'admin') return fn();
   return store.run({ level: next }, fn);
+}
+
+/** Enter a scope that runs in one transaction at `level` (or lower). Only
+ *  client.ts calls this, with the transaction it opened on the right pool. */
+export function runInTxScope<T>(
+  scope: { level: LimitedLevel; space?: SpaceScope; tx: unknown },
+  fn: () => Promise<T>,
+): Promise<T> {
+  const level = lowerLevel(currentViewerLevel(), scope.level) as LimitedLevel;
+  return store.run({ ...scope, level }, fn);
 }
 
 /**
@@ -91,9 +140,13 @@ export function assertNoViewer(what: string): void {
   }
 }
 
-/** The Postgres LOGIN role for a limited level. Not `mantle_team`: that name
- *  is already the team visitor cookie. */
-export function viewerRoleName(level: LimitedLevel): string {
+/** A limited pool: one per level, plus the personal-space role. */
+export type PoolRole = LimitedLevel | 'space';
+
+/** The Postgres LOGIN role for a limited pool. Not `mantle_team`: that name
+ *  is already the team visitor cookie. `mantle_view_space` is the
+ *  personal-space role: it sees only the space its transaction names. */
+export function viewerRoleName(level: PoolRole): string {
   return `mantle_view_${level}`;
 }
 
@@ -103,7 +156,7 @@ export function viewerRoleName(level: LimitedLevel): string {
  * `ensureViewerRoles` can (re)set it at each migrate, after a restore, and
  * after a master-key change.
  */
-export function viewerRolePassword(masterKey: string, level: LimitedLevel): string {
+export function viewerRolePassword(masterKey: string, level: PoolRole): string {
   if (!masterKey) throw new Error('MANTLE_MASTER_KEY must be set to derive viewer role passwords');
   const key = hkdfSync(
     'sha256',
@@ -117,7 +170,7 @@ export function viewerRolePassword(masterKey: string, level: LimitedLevel): stri
 
 /** The connection URL for a limited level: the admin URL with the user and
  *  password swapped. Host, port, database and options stay. */
-export function viewerDatabaseUrl(adminUrl: string, level: LimitedLevel, password: string): string {
+export function viewerDatabaseUrl(adminUrl: string, level: PoolRole, password: string): string {
   const u = new URL(adminUrl);
   u.username = viewerRoleName(level);
   u.password = password; // base64url: nothing to escape

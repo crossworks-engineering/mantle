@@ -70,8 +70,59 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
     );
   });
 
+  it('the personal-space role holds exactly its tables, and only those', async () => {
+    const wanted = ACCESS_MATRIX.filter((t) => (t.space ?? 'none') === 'write')
+      .map((t) => t.table)
+      .sort();
+    const rows = await sql<{ t: string; p: string }[]>`
+      select table_schema || '.' || table_name as t, privilege_type as p
+      from information_schema.role_table_grants
+      where grantee = 'mantle_view_space' and table_schema in ('public', 'auth')`;
+    const tables = [...new Set(rows.map((r) => r.t))].sort();
+    expect(tables).toEqual(wanted);
+    for (const t of wanted) {
+      const privs = rows
+        .filter((r) => r.t === t)
+        .map((r) => r.p)
+        .sort();
+      expect(privs, t).toEqual(['DELETE', 'INSERT', 'SELECT', 'UPDATE']);
+    }
+  });
+
+  it('every space table has row level security on and a rule for the space role', async () => {
+    for (const t of ACCESS_MATRIX.filter((x) => (x.space ?? 'none') === 'write')) {
+      const [schema, name] = t.table.split('.');
+      const [rls] = await sql<{ on: boolean }[]>`
+        select relrowsecurity as on from pg_class
+        where relname = ${name!} and relnamespace = ${schema!}::regnamespace`;
+      expect(rls?.on, `${t.table} row level security`).toBe(true);
+      const cmds = await sql<{ cmd: string }[]>`
+        select cmd from pg_policies where schemaname = ${schema!} and tablename = ${name!}
+          and 'mantle_view_space' = any(roles)`;
+      expect(
+        cmds.map((c) => c.cmd),
+        t.table,
+      ).toContain('SELECT');
+    }
+  });
+
+  it('team drafts are the team role only: client and public have no rule', async () => {
+    for (const t of ACCESS_MATRIX.filter((x) => x.rule === 'team-drafts')) {
+      const [schema, name] = t.table.split('.');
+      const policies = await sql<{ roles: string[] }[]>`
+        select roles from pg_policies where schemaname = ${schema!} and tablename = ${name!}
+          and cmd = 'SELECT'`;
+      const covered = new Set(policies.flatMap((p) => p.roles));
+      expect(covered.has('mantle_view_team'), t.table).toBe(true);
+      expect(covered.has('mantle_view_client'), t.table).toBe(false);
+      expect(covered.has('mantle_view_public'), t.table).toBe(false);
+    }
+  });
+
   it('every filtered table has row level security on and a policy for each role', async () => {
-    const filtered = ACCESS_MATRIX.filter((t) => t.rule !== 'none' && t.rule !== 'all-rows');
+    const filtered = ACCESS_MATRIX.filter(
+      (t) => t.rule !== 'none' && t.rule !== 'all-rows' && t.rule !== 'team-drafts',
+    );
     for (const t of filtered) {
       const [schema, name] = t.table.split('.');
       const [rls] = await sql<{ on: boolean }[]>`

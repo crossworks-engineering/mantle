@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db } from './client';
+import { currentSpaceScope } from './viewer';
 
 /**
  * Announce that a content node was created, or had its content change, so the
@@ -16,6 +17,10 @@ import { db } from './client';
  * the caller's primary write (the row) is what matters.
  */
 export async function notifyNodeIngested(nodeId: string): Promise<void> {
+  // A write inside a personal-space scope is a personal item: never announced
+  // (member logins Phase 2; cost-safety: no save may start LLM work). The
+  // extractor gate's owner check stays the lock behind this.
+  if (currentSpaceScope()) return;
   try {
     await db.execute(sql`SELECT pg_notify('node_ingested', ${nodeId}::text)`);
   } catch (err) {

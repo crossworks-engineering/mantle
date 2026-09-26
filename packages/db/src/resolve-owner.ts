@@ -22,6 +22,7 @@ import { db } from './client';
 import { authUsers } from './schema/auth-users';
 import { env } from '@mantle/config';
 import { UUID_RE } from '@mantle/std';
+import { currentSpaceScope } from './viewer';
 
 /** Number of rows in auth.users. 0 ⇒ fresh install (signup is open). */
 export async function countUsers(): Promise<number> {
@@ -106,10 +107,13 @@ let brainOwnerIdCache: string | null = null;
  * Whether `ownerId` is the BRAIN, the owner every brain path keys on. Items
  * owned by anything else (a member's personal space, from member logins Phase
  * 2) must never be learned: no extraction, no Recall compile. Today the brain
- * is the anchor login; Phase 2 moves this onto `spaces.kind = 'brain'`, and
- * every caller keeps working because they ask here, not the anchor directly.
+ * is the anchor login, whose id is also the brain space's id (0165), so the
+ * answer did not change when nodes.owner_id moved to spaces.
  */
 export async function isBrainOwnerId(ownerId: string): Promise<boolean> {
+  // Inside a personal-space scope every row is the space's own: never the
+  // brain (and the space role may not read auth.users to find out).
+  if (currentSpaceScope()) return false;
   if (!brainOwnerIdCache) brainOwnerIdCache = await resolveSingleOwnerId();
   return brainOwnerIdCache !== null && ownerId === brainOwnerIdCache;
 }

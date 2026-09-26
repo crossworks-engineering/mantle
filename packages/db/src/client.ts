@@ -1,12 +1,17 @@
+import { sql as sqlTag } from 'drizzle-orm';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema/index';
 import { env } from '@mantle/config';
 import {
+  currentScopeTx,
+  currentSpaceScope,
   currentViewerLevel,
+  runInTxScope,
+  withViewer,
   viewerDatabaseUrl,
   viewerRolePassword,
-  type LimitedLevel,
+  type PoolRole,
 } from './viewer';
 
 declare global {
@@ -16,7 +21,7 @@ declare global {
 
   /** One small pool per limited level (see viewer.ts), opened on first use. */
   var __mantleViewerDbs:
-    | Map<LimitedLevel, { sql: ReturnType<typeof postgres>; db: PostgresJsDatabase<typeof schema> }>
+    | Map<PoolRole, { sql: ReturnType<typeof postgres>; db: PostgresJsDatabase<typeof schema> }>
     | undefined;
 }
 
@@ -53,7 +58,7 @@ function getAdminDb(): PostgresJsDatabase<typeof schema> {
  * so row level security filters every read. Fails loudly (never falls back to
  * the admin pool) when the master key is missing or the role cannot log in.
  */
-function getViewerDb(level: LimitedLevel): PostgresJsDatabase<typeof schema> {
+function getViewerDb(level: PoolRole): PostgresJsDatabase<typeof schema> {
   const pools = (globalThis.__mantleViewerDbs ??= new Map());
   const cached = pools.get(level);
   if (cached) return cached.db;
@@ -69,10 +74,64 @@ function getViewerDb(level: LimitedLevel): PostgresJsDatabase<typeof schema> {
   return client;
 }
 
-/** The pool for the current viewer scope (viewer.ts): admin outside one. */
+/** The handle for the current scope (viewer.ts): a scope's own transaction
+ *  (a personal space, team drafts), else the level's pool, else admin. */
 function getDb(): PostgresJsDatabase<typeof schema> {
+  const tx = currentScopeTx();
+  if (tx) return tx as PostgresJsDatabase<typeof schema>;
   const level = currentViewerLevel();
   return level === 'admin' ? getAdminDb() : getViewerDb(level);
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Run `fn` for ONE personal space (member logins Phase 2, plan section 2b).
+ * Opens a short transaction on the personal-space role (`mantle_view_space`)
+ * that sets `mantle.space_id` and `mantle.login_id`; every `db` query inside
+ * runs in it, so row level security shows and accepts only that space's rows.
+ * Keep it short: never hold one across an LLM call.
+ *
+ * Nesting: the same space reuses the open transaction; another space throws.
+ * `withViewer('team', …)` inside leaves the space for the brain's Library;
+ * `asSystem` leaves it for the admin pool.
+ */
+export async function withSpace<T>(
+  scope: { spaceId: string; loginId: string },
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (!UUID_RE.test(scope.spaceId) || !UUID_RE.test(scope.loginId)) {
+    throw new Error('withSpace: spaceId and loginId must be uuids');
+  }
+  const open = currentSpaceScope();
+  if (open && currentScopeTx()) {
+    if (open.spaceId !== scope.spaceId || open.loginId !== scope.loginId) {
+      throw new Error('withSpace: already acting for another space');
+    }
+    return fn();
+  }
+  return getViewerDb('space').transaction(async (tx) => {
+    await tx.execute(
+      sqlTag`select set_config('mantle.space_id', ${scope.spaceId}, true),
+                    set_config('mantle.login_id', ${scope.loginId}, true)`,
+    );
+    return runInTxScope({ level: 'team', space: { ...scope }, tx }, fn);
+  });
+}
+
+/**
+ * Run `fn` at the team level with the human flag on: the only scope in which
+ * other members' TEAM-SHARED personal items (team drafts) are visible, next
+ * to the Library (plan 2b: agents never read other people's drafts, and no
+ * agent path sets the flag). One short transaction on the team pool.
+ */
+export async function withTeamDrafts<T>(fn: () => Promise<T>): Promise<T> {
+  return withViewer('team', () =>
+    getViewerDb('team').transaction(async (tx) => {
+      await tx.execute(sqlTag`select set_config('mantle.human', 'on', true)`);
+      return runInTxScope({ level: 'team', tx }, fn);
+    }),
+  );
 }
 
 /**

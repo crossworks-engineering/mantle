@@ -45,6 +45,9 @@ describe.skipIf(!URL)('setting levels on Postgres', () => {
     };
     await m.db.execute(sqlTag`
       insert into auth.users (id, email, password_hash) values (${owner}, ${`${tag}@example.invalid`}, 'x')`);
+    // Items belong to a space (0165): this test's own owner is a brain row.
+    await m.db.execute(sqlTag`
+      insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
     await m.db.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path) values
         (${ids.page}, ${owner}, 'page', 'A page', 'pages'),
@@ -72,6 +75,7 @@ describe.skipIf(!URL)('setting levels on Postgres', () => {
     await m.db.execute(sqlTag`delete from tool_groups where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from shares where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);
+    await m.db.execute(sqlTag`delete from spaces where id = ${owner} or login_id = ${owner}`);
     await m.db.execute(sqlTag`delete from auth.users where id = ${owner}`);
     await m.closeDb();
   });
