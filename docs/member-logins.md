@@ -24,6 +24,9 @@
   exchange and every refresh re-read that login: a grant works only while it
   is an admin that is not disabled. Grants made before 0164 are attributed to
   the anchor.
+- **Web only.** The mobile companion calls admin routes only, so its login
+  (`/api/auth/mobile-login`) refuses a member (403 `member-login`) and mints
+  no token. A member signs in from a browser.
 - **The flag.** With `MANTLE_MEMBERS` off, a member row resolves to no session
   at all, and no member login can be created.
 

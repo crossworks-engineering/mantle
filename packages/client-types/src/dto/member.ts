@@ -75,5 +75,8 @@ export type MemberChatMessage = {
 /** GET /api/member/chat. `agent` null = chat not open yet (no team-level agent). */
 export type MemberChatThread = {
   agent: { slug: string; name: string } | null;
+  /** false = this login is not linked to a team contact, so it cannot send
+   *  (POST answers 409). Absent from brains before 0.232.260. */
+  linked?: boolean;
   messages: MemberChatMessage[];
 };

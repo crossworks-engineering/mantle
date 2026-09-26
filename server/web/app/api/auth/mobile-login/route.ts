@@ -9,11 +9,14 @@ import { handleTokenLogin } from '@/lib/token-login';
  * Kept as a stable alias of the shared token-login flow (lib/token-login.ts)
  * with the original 1-year TTL — every shipped companion build depends on this
  * path and response shape. The web client uses /api/auth/token (30d + refresh).
+ * Admins only: the companion calls admin routes only, so a member login is
+ * refused here (403 `member-login`) instead of getting a broken app.
  */
 export async function POST(req: Request) {
   return handleTokenLogin(req, {
     path: '/api/auth/mobile-login',
     channel: 'mobile',
     defaultLabel: 'Mobile device',
+    adminsOnly: true,
   });
 }

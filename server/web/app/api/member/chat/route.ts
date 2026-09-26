@@ -78,6 +78,7 @@ export async function GET(req: Request) {
   ]);
   const body: MemberChatThread = {
     agent,
+    linked: !!member.contactId,
     messages: rows.map((r) => ({
       id: r.id,
       direction: r.direction as 'inbound' | 'outbound',

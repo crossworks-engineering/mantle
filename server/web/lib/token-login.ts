@@ -30,7 +30,15 @@ const AUTH_FAILED_MESSAGE = 'Invalid email or password.';
 
 export async function handleTokenLogin(
   req: Request,
-  opts: { path: string; channel: string; ttlSeconds?: number; defaultLabel: string },
+  opts: {
+    path: string;
+    channel: string;
+    ttlSeconds?: number;
+    defaultLabel: string;
+    /** Refuse a member login (the mobile companion: every route it calls is
+     *  an admin route, so a member bearer would only collect 403s). */
+    adminsOnly?: boolean;
+  },
 ): Promise<NextResponse> {
   // Rate limit by client IP before bcrypt so a flood can't pin CPU. One shared
   // bucket across both token routes — a flood can't double its budget by
@@ -62,6 +70,25 @@ export async function handleTokenLogin(
       ...requestMetaFrom(req),
     });
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });
+  }
+
+  if (opts.adminsOnly) {
+    const [row] = await db
+      .select({ role: authUsers.role })
+      .from(authUsers)
+      .where(eq(authUsers.id, userId))
+      .limit(1);
+    // After the password check, so this cannot tell anyone whether an email
+    // exists. No token is minted.
+    if (row?.role !== 'admin') {
+      return NextResponse.json(
+        {
+          error: 'Member logins use the web app. Sign in from a browser instead.',
+          reason: 'member-login',
+        },
+        { status: 403 },
+      );
+    }
   }
 
   const label = parsed.data.deviceName ?? opts.defaultLabel;
