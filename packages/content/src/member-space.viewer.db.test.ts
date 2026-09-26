@@ -171,6 +171,15 @@ describe.skipIf(!URL)('member personal space', () => {
     });
   });
 
+  it('deletes a draft page (the Recall clean-up must not touch the space transaction)', async () => {
+    const extra = await asA(() =>
+      sp.createMineItem(spaceA, { type: 'page', title: `${tag} scratch` }),
+    );
+    await asA(() => draft.commitPage(spaceA, extra.id, doc('to delete')));
+    expect(await asA(() => sp.deleteMineItem(spaceA, extra.id))).toBe(true);
+    expect(await asA(() => sp.getMineRow(spaceA, extra.id))).toBeNull();
+  });
+
   it('deletes a draft item; a frozen one stays', async () => {
     expect(await asA(() => sp.deleteMineItem(spaceA, noteId))).toBe(true);
     expect(await asA(() => sp.deleteMineItem(spaceA, drawId))).toBe(true);

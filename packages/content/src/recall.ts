@@ -505,6 +505,11 @@ export async function recallAfterPageDelete(
   rootId: string | null,
 ): Promise<void> {
   try {
+    // Only the brain's pages were ever compiled. A personal-space page has
+    // nothing to clean up, and inside a member's space transaction even a
+    // swallowed failure here (the space role has no Recall grant) would abort
+    // the whole transaction and fail the delete.
+    if (!(await isBrainOwnerId(ownerId))) return;
     await removeRecallForPage(ownerId, pageId);
     if (rootId && rootId !== pageId) await recallAfterPageWrite(ownerId, rootId);
   } catch (err) {
