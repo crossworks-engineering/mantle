@@ -9,7 +9,15 @@
  * server/member-sweep.test.ts drives every manifest route with a member
  * session and proves each route NOT listed here refuses it.
  */
-export const MEMBER_ROUTES: readonly string[] = [];
+export const MEMBER_ROUTES: readonly string[] = [
+  // Who am I + the brain's brand (Phase 1).
+  'GET /api/member/shell',
+  // The Library: team-level items, read at the team level (Phase 1).
+  'GET /api/member/library',
+  'GET /api/member/library/:id',
+  'GET /api/member/files/:id',
+  'GET /api/member/draws/:id/svg',
+];
 
 export function isMemberRoute(method: string, pattern: string): boolean {
   return MEMBER_ROUTES.includes(`${method.toUpperCase()} ${pattern}`);

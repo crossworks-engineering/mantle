@@ -42,7 +42,12 @@ function isAssetPath(path: string): boolean {
     // admitted the path, so the gate 401'd the token before the route ran
     // (worked same-origin via cookie, broken only detached). Registering an
     // asset route means BOTH ends: getOwnerForAsset in the route AND here.
-    /^\/api\/draws\/[^/]+\/svg$/.test(path)
+    /^\/api\/draws\/[^/]+\/svg$/.test(path) ||
+    // Member Library bytes (member logins): file bytes and drawing SVGs a
+    // member may read. The routes call getMemberForAsset and read at the team
+    // level, so the token opens only what the member's level can see.
+    path.startsWith('/api/member/files/') ||
+    /^\/api\/member\/draws\/[^/]+\/svg$/.test(path)
   );
 }
 

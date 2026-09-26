@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
 const ANCHOR_ID = '33333333-3333-4333-8333-333333333333';
 const DISABLED_ADMIN_ID = '44444444-4444-4444-8444-444444444444';
+const ADMIN_ID = '55555555-5555-4555-8555-555555555555';
 
 vi.mock('../lib/auth/login-row', () => ({
   loadLoginRow: async (id: string) =>
@@ -30,22 +31,32 @@ vi.mock('../lib/auth/login-row', () => ({
           contactId: null,
           disabledAt: null,
         }
-      : id === DISABLED_ADMIN_ID
+      : id === ADMIN_ID
         ? {
-            id: DISABLED_ADMIN_ID,
-            email: 'gone@example.invalid',
+            id: ADMIN_ID,
+            email: 'admin@example.invalid',
             isOwner: false,
             displayName: null,
             role: 'admin',
             contactId: null,
-            disabledAt: new Date('2026-09-01T00:00:00Z'),
+            disabledAt: null,
           }
-        : null,
+        : id === DISABLED_ADMIN_ID
+          ? {
+              id: DISABLED_ADMIN_ID,
+              email: 'gone@example.invalid',
+              isOwner: false,
+              displayName: null,
+              role: 'admin',
+              contactId: null,
+              disabledAt: new Date('2026-09-01T00:00:00Z'),
+            }
+          : null,
   loadAnchorId: async () => ANCHOR_ID,
 }));
 
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
-import { isMemberRoute } from '../lib/auth/member-routes';
+import { MEMBER_ROUTES, isMemberRoute } from '../lib/auth/member-routes';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, 'route-manifest.gen.ts'));
@@ -138,6 +149,27 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     expect(checked).toBeGreaterThan(300);
     expect(failures).toEqual([]);
   }, 300_000);
+
+  it('lists only routes that exist', () => {
+    const known = new Set(manifest.flatMap((e) => e.methods.map((mt) => `${mt} ${e.pattern}`)));
+    expect(MEMBER_ROUTES.filter((r) => !known.has(r))).toEqual([]);
+  });
+
+  it('refuses an ADMIN on every member route (they are member-specific)', async () => {
+    const { buildSessionCookie } = await import('../lib/auth/tokens');
+    const adminCookie = `${SESSION_COOKIE_NAME}=${buildSessionCookie(ADMIN_ID).value}`;
+    for (const route of MEMBER_ROUTES) {
+      const [method, pattern] = route.split(' ') as [string, string];
+      const res = await app.request(concretePath(pattern), {
+        method,
+        headers: { cookie: adminCookie },
+      });
+      const body = (await res.json().catch(() => null)) as { reason?: string } | null;
+      // Byte routes answer a plain 401 to a non-member (no member session).
+      const refused = (res.status === 403 && body?.reason === 'admin-login') || res.status === 401;
+      expect(refused, `${route} → ${res.status}`).toBe(true);
+    }
+  });
 
   it('gives a disabled login no session at all', async () => {
     const { buildSessionCookie } = await import('../lib/auth/tokens');

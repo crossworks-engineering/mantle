@@ -214,3 +214,12 @@ export {
   type AccessShadowReport,
   type ShadowItem,
 } from './access-shadow';
+export {
+  LIBRARY_KINDS,
+  getLibraryItem,
+  isLibraryKind,
+  listLibrary,
+  type LibraryItem,
+  type LibraryKind,
+  type LibraryRow,
+} from './member-library';

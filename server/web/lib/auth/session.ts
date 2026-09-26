@@ -146,6 +146,29 @@ export async function getOwnerForAsset(req: Request): Promise<SessionUser | Next
 }
 
 /**
+ * The member twin of getOwnerForAsset, for the member Library's byte routes:
+ * a member session, or a `?at=` token minted for a member login (the member
+ * shell mints it with `act` = the login). The login is re-read, so a disabled
+ * or demoted login's token stops at once. The route reads at the team level.
+ */
+export async function getMemberForAsset(req: Request): Promise<MemberCaller | NextResponse> {
+  const res = await resolveLogin();
+  if (res?.kind === 'member') return res.member;
+  const at = new URL(req.url).searchParams.get('at');
+  const claims = at ? verifyAssetToken(at) : null;
+  if (claims?.act) {
+    const row = await loadLoginRow(claims.act);
+    if (row && row.role === 'member' && loginUsable(row)) {
+      const resolved = await resolvedFor(row, 'web');
+      if (resolved?.kind === 'member' && resolved.member.anchorId === claims.uid) {
+        return resolved.member;
+      }
+    }
+  }
+  return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+}
+
+/**
  * Resolve the owner from an `Authorization: Bearer <mobile-token>` header:
  * verify the signature, confirm the row is present/unrevoked/unexpired, bump
  * last_used_at. Returns null on any failure.
