@@ -15,7 +15,15 @@
   the provenance of what the member asks for. A member login needs one.
 - **Disabled.** `auth.users.disabled_at` set = the login cannot sign in,
   refresh a bearer or use a session it holds. Locking a login out (demote or
-  disable) also revokes its bearers.
+  disable) also revokes its mobile bearers and its MCP connector (OAuth)
+  grants, and drops its unclaimed pairing codes. Deleting a login deletes all
+  of them (FK cascade). Push devices are keyed to the brain, not a login, and
+  are not touched.
+- **Connector grants belong to a login.** An OAuth grant carries the login
+  that consented (`actor_id`, migration 0164). The MCP bearer check, the code
+  exchange and every refresh re-read that login: a grant works only while it
+  is an admin that is not disabled. Grants made before 0164 are attributed to
+  the anchor.
 - **The flag.** With `MANTLE_MEMBERS` off, a member row resolves to no session
   at all, and no member login can be created.
 

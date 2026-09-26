@@ -152,6 +152,7 @@ export async function POST(req: Request) {
   const code = await mintAuthCode({
     clientId: p.clientId,
     ownerId: user.id,
+    actorId: user.actor.id,
     codeChallenge: p.codeChallenge,
     codeChallengeMethod: p.codeChallengeMethod,
     redirectUri: p.redirectUri,

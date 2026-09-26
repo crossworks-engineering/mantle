@@ -28,12 +28,18 @@ const dbState = vi.hoisted(() => ({
   updates: [] as Record<string, unknown>[],
   deletes: 0,
   deleteThrows: false,
+  /** The `where` argument of every select, in order. */
+  selectWheres: [] as unknown[],
 }));
 
 vi.mock('@mantle/db', () => {
   const selectChain = () => {
     const chain: Record<string, unknown> = {};
-    for (const m of ['from', 'where', 'limit']) chain[m] = () => chain;
+    for (const m of ['from', 'innerJoin', 'limit']) chain[m] = () => chain;
+    chain['where'] = (w: unknown) => {
+      dbState.selectWheres.push(w);
+      return chain;
+    };
     chain['then'] = (resolve: (v: unknown[]) => void) =>
       resolve(dbState.selectResults.shift() ?? []);
     return chain;
@@ -56,6 +62,7 @@ vi.mock('@mantle/db', () => {
       },
       where: () => chain,
       then: (resolve: (v: unknown[]) => void) => resolve([]),
+      catch: () => chain,
     };
     return chain;
   };
@@ -83,6 +90,7 @@ vi.mock('@mantle/db', () => {
       'tokenHash',
       'refreshTokenHash',
       'ownerId',
+      'actorId',
       'clientId',
       'scope',
       'expiresAt',
@@ -91,7 +99,8 @@ vi.mock('@mantle/db', () => {
       'revokedAt',
       'createdAt',
     ]),
-    oauthAuthCodes: cols(['id', 'codeHash', 'clientId', 'expiresAt']),
+    oauthAuthCodes: cols(['id', 'codeHash', 'clientId', 'actorId', 'expiresAt']),
+    authUsers: cols(['id', 'role', 'disabledAt', 'email']),
     oauthClients: cols(['id', 'clientName', 'redirectUris']),
     resolveSingleOwnerId: vi.fn(),
   };
@@ -101,12 +110,20 @@ vi.mock('@mantle/content', () => ({
   loadProfilePreferences: vi.fn(),
   publicBaseUrl: () => 'https://brain.example.com',
 }));
-vi.mock('./auth/request', () => ({ bearerFrom: vi.fn() }));
+vi.mock('./auth/request', () => ({ bearerFrom: vi.fn(() => 'mtlmcp_at_x') }));
 
-import { refreshAccessToken, REFRESH_GRACE_SEC, ACCESS_TTL_SEC } from './mcp-oauth';
+import {
+  ownerFromBearer,
+  refreshAccessToken,
+  REFRESH_GRACE_SEC,
+  ACCESS_TTL_SEC,
+} from './mcp-oauth';
 
 const CLIENT = '11111111-1111-4111-8111-111111111111';
 const OWNER = '22222222-2222-4222-8222-222222222222';
+const ACTOR = '33333333-3333-4333-8333-333333333333';
+/** The login row actorMayConnect reads: a usable admin. */
+const ADMIN = { role: 'admin', disabledAt: null, email: 'a@example.com' };
 
 function tokenRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -114,6 +131,7 @@ function tokenRow(overrides: Partial<Record<string, unknown>> = {}) {
     tokenHash: 'oldaccesshash',
     refreshTokenHash: 'oldrefreshhash',
     ownerId: OWNER,
+    actorId: ACTOR,
     clientId: CLIENT,
     scope: 'mcp',
     expiresAt: new Date(Date.now() + 30 * 60_000),
@@ -133,6 +151,7 @@ beforeEach(() => {
   dbState.updates = [];
   dbState.deletes = 0;
   dbState.deleteThrows = false;
+  dbState.selectWheres = [];
   warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
 
@@ -142,7 +161,7 @@ afterEach(() => {
 
 describe('refreshAccessToken — concurrency-safe rotation', () => {
   it('forks a new row instead of rotating tokens in place', async () => {
-    dbState.selectResults = [[tokenRow()]];
+    dbState.selectResults = [[tokenRow()], [ADMIN]];
     const res = await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
 
     expect(res.ok).toBe(true);
@@ -156,6 +175,7 @@ describe('refreshAccessToken — concurrency-safe rotation', () => {
     expect(dbState.inserts).toHaveLength(1);
     expect(dbState.inserts[0]!['ownerId']).toBe(OWNER);
     expect(dbState.inserts[0]!['clientId']).toBe(CLIENT);
+    expect(dbState.inserts[0]!['actorId']).toBe(ACTOR);
 
     // The old row's access token is NOT invalidated: the update touches only
     // the refresh fuse + lastUsedAt, never tokenHash/expiresAt.
@@ -164,7 +184,7 @@ describe('refreshAccessToken — concurrency-safe rotation', () => {
   });
 
   it('puts the used refresh token on the grace fuse (never extends it)', async () => {
-    dbState.selectResults = [[tokenRow()]];
+    dbState.selectResults = [[tokenRow()], [ADMIN]];
     const before = Date.now();
     await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
 
@@ -176,7 +196,7 @@ describe('refreshAccessToken — concurrency-safe rotation', () => {
 
   it('keeps a shorter remaining life instead of extending to the grace window', async () => {
     const soon = new Date(Date.now() + 30_000); // 30 s left < 120 s grace
-    dbState.selectResults = [[tokenRow({ refreshExpiresAt: soon })]];
+    dbState.selectResults = [[tokenRow({ refreshExpiresAt: soon })], [ADMIN]];
     await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
 
     expect(dbState.updates[0]!['refreshExpiresAt']).toBe(soon);
@@ -188,7 +208,7 @@ describe('refreshAccessToken — concurrency-safe rotation', () => {
       refreshExpiresAt: new Date(Date.now() + (REFRESH_GRACE_SEC - 1) * 1000),
       lastUsedAt: new Date(),
     });
-    dbState.selectResults = [[inGrace]];
+    dbState.selectResults = [[inGrace], [ADMIN]];
     const res = await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
 
     expect(res.ok).toBe(true);
@@ -222,13 +242,45 @@ describe('refreshAccessToken — concurrency-safe rotation', () => {
   });
 
   it('sweeps fully-dead rows, and a failed sweep does not fail the grant', async () => {
-    dbState.selectResults = [[tokenRow()]];
+    dbState.selectResults = [[tokenRow()], [ADMIN]];
     await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
     expect(dbState.deletes).toBe(1);
 
-    dbState.selectResults = [[tokenRow()]];
+    dbState.selectResults = [[tokenRow()], [ADMIN]];
     dbState.deleteThrows = true;
     const res = await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
     expect(res.ok).toBe(true);
+  });
+});
+
+describe('a grant lives only as long as its login is a usable admin', () => {
+  const locked: [string, unknown[]][] = [
+    ['demoted to member', [{ ...ADMIN, role: 'member' }]],
+    ['disabled', [{ ...ADMIN, disabledAt: new Date() }]],
+    ['deleted', []],
+  ];
+  for (const [why, actorRows] of locked) {
+    it(`refuses a refresh when the login was ${why}`, async () => {
+      dbState.selectResults = [[tokenRow()], actorRows];
+      const res = await refreshAccessToken({ refreshToken: 'mtlmcp_rt_old', clientId: CLIENT });
+
+      expect(res).toEqual({ ok: false, error: 'invalid_grant' });
+      expect(dbState.inserts).toHaveLength(0); // no fork outlives the lockout
+      expect(dbState.updates).toHaveLength(0);
+    });
+  }
+
+  it('the bearer check joins the login and requires an enabled admin', async () => {
+    dbState.selectResults = [[{ id: 'row-1', ownerId: OWNER }]];
+    expect(await ownerFromBearer(new Request('https://brain.example.com/api/mcp'))).toBe(OWNER);
+
+    const where = JSON.stringify(dbState.selectWheres[0]);
+    expect(where).toContain('"__eq":["col:role","admin"]');
+    expect(where).toContain('"__isNull":"col:disabledAt"');
+  });
+
+  it('the bearer check answers null when no active admin grant matches', async () => {
+    dbState.selectResults = [[]];
+    expect(await ownerFromBearer(new Request('https://brain.example.com/api/mcp'))).toBeNull();
   });
 });

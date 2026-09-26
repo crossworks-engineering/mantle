@@ -1,6 +1,17 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { db, and, authUsers, eq, isNull, mobileTokens, nodes } from '@mantle/db';
+import {
+  db,
+  and,
+  authUsers,
+  eq,
+  isNull,
+  mobileTokens,
+  nodes,
+  oauthAccessTokens,
+  oauthAuthCodes,
+  pairingCodes,
+} from '@mantle/db';
 import { getOwnerOr401, membersEnabled } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 
@@ -92,12 +103,23 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   await db.transaction(async (tx) => {
     await tx.update(authUsers).set(changes).where(eq(authUsers.id, targetId));
     // Cookies re-read the row every request, so they stop at once. Bearers
-    // would too, but revoke them so the device list tells the truth.
+    // and connector (OAuth) grants would too (both re-check the login), but
+    // revoke them so the device and connector lists tell the truth. Unclaimed
+    // pairing codes die too, so a QR shown before the lockout cannot pair.
     if (lockingOut) {
+      const now = new Date();
       await tx
         .update(mobileTokens)
-        .set({ revokedAt: new Date() })
+        .set({ revokedAt: now })
         .where(and(eq(mobileTokens.userId, targetId), isNull(mobileTokens.revokedAt)));
+      await tx
+        .update(oauthAccessTokens)
+        .set({ revokedAt: now })
+        .where(and(eq(oauthAccessTokens.actorId, targetId), isNull(oauthAccessTokens.revokedAt)));
+      await tx.delete(oauthAuthCodes).where(eq(oauthAuthCodes.actorId, targetId));
+      await tx
+        .delete(pairingCodes)
+        .where(and(eq(pairingCodes.userId, targetId), isNull(pairingCodes.claimedAt)));
     }
   });
 
@@ -145,8 +167,9 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
     );
   }
 
-  // mobile_tokens / oauth rows cascade (FKs); the stateless session cookie dies
-  // on its next request — getSessionUser re-checks auth.users per request.
+  // mobile_tokens, pairing codes and the login's OAuth grants (actor_id,
+  // 0164) cascade (FKs); the stateless session cookie dies on its next
+  // request — getSessionUser re-checks auth.users per request.
   await db.delete(authUsers).where(eq(authUsers.id, targetId));
 
   auditFireAndForget({

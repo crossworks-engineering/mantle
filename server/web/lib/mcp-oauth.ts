@@ -15,6 +15,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { and, eq, gt, isNull, lt } from 'drizzle-orm';
 import { bearerFrom } from './auth/request';
 import {
+  authUsers,
   db,
   oauthAccessTokens,
   oauthAuthCodes,
@@ -141,6 +142,8 @@ export async function getClient(clientId: string): Promise<OAuthClient | null> {
 export async function mintAuthCode(input: {
   clientId: string;
   ownerId: string;
+  /** The consenting login (`SessionUser.actor.id`), not the anchor. */
+  actorId: string;
   codeChallenge: string;
   codeChallengeMethod: string;
   redirectUri: string;
@@ -151,6 +154,7 @@ export async function mintAuthCode(input: {
     codeHash: sha256Hex(code),
     clientId: input.clientId,
     ownerId: input.ownerId,
+    actorId: input.actorId,
     codeChallenge: input.codeChallenge,
     codeChallengeMethod: input.codeChallengeMethod,
     redirectUri: input.redirectUri,
@@ -170,9 +174,25 @@ export type TokenResponse = {
 
 type GrantResult = { ok: true; tokens: TokenResponse } | { ok: false; error: string };
 
+/**
+ * May this login hold (or keep using) a connector grant? An admin that is not
+ * disabled. A member, a disabled login or a deleted one may not: a grant lives
+ * only as long as the login that made it. Read from the row on every use,
+ * never from the token, like the session and bearer paths.
+ */
+async function actorMayConnect(actorId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ role: authUsers.role, disabledAt: authUsers.disabledAt, email: authUsers.email })
+    .from(authUsers)
+    .where(eq(authUsers.id, actorId))
+    .limit(1);
+  return !!row && row.role === 'admin' && !row.disabledAt && !!row.email;
+}
+
 async function issueTokens(
   clientId: string,
   ownerId: string,
+  actorId: string,
   scope: string,
 ): Promise<TokenResponse> {
   const accessToken = randomToken(ACCESS_PREFIX);
@@ -182,6 +202,7 @@ async function issueTokens(
     tokenHash: sha256Hex(accessToken),
     refreshTokenHash: sha256Hex(refreshToken),
     ownerId,
+    actorId,
     clientId,
     scope,
     expiresAt: new Date(now + ACCESS_TTL_SEC * 1000),
@@ -223,7 +244,10 @@ export async function exchangeAuthCode(input: {
     return { ok: false, error: 'invalid_grant' };
   }
 
-  const tokens = await issueTokens(row.clientId, row.ownerId, row.scope);
+  // The login may have been demoted or disabled between consent and exchange.
+  if (!(await actorMayConnect(row.actorId))) return { ok: false, error: 'invalid_grant' };
+
+  const tokens = await issueTokens(row.clientId, row.ownerId, row.actorId, row.scope);
   return { ok: true, tokens };
 }
 
@@ -271,8 +295,11 @@ export async function refreshAccessToken(input: {
   if (!row.refreshExpiresAt || row.refreshExpiresAt.getTime() < Date.now()) {
     return fail('refresh token expired');
   }
+  // Refresh forks new rows, so without this a locked-out login's connector
+  // would outlive every revoke that ran before the fork.
+  if (!(await actorMayConnect(row.actorId))) return fail('login is no longer an active admin');
 
-  const tokens = await issueTokens(row.clientId, row.ownerId, row.scope);
+  const tokens = await issueTokens(row.clientId, row.ownerId, row.actorId, row.scope);
 
   // Shorten (never extend) the presented refresh token's remaining life to the
   // grace window, and stamp the use. The old access token is left untouched.
@@ -309,6 +336,9 @@ export async function refreshAccessToken(input: {
 // ── Bearer validation (resource server) ──────────────────────────────────────
 
 /** Resolve the owner for a valid, unexpired, unrevoked access token, or null.
+ *  The login that holds the grant must still be a usable admin (read from its
+ *  row now, joined in the same query): a demoted, disabled or deleted login's
+ *  connector stops on its next call.
  *  Touches `last_used_at` best-effort for the Settings "connected clients" view. */
 export async function ownerFromBearer(req: Request): Promise<string | null> {
   const token = bearerFrom(req);
@@ -316,11 +346,14 @@ export async function ownerFromBearer(req: Request): Promise<string | null> {
   const [row] = await db
     .select({ id: oauthAccessTokens.id, ownerId: oauthAccessTokens.ownerId })
     .from(oauthAccessTokens)
+    .innerJoin(authUsers, eq(authUsers.id, oauthAccessTokens.actorId))
     .where(
       and(
         eq(oauthAccessTokens.tokenHash, sha256Hex(token)),
         isNull(oauthAccessTokens.revokedAt),
         gt(oauthAccessTokens.expiresAt, new Date()),
+        eq(authUsers.role, 'admin'),
+        isNull(authUsers.disabledAt),
       ),
     )
     .limit(1);

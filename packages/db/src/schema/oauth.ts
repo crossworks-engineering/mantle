@@ -16,8 +16,13 @@ import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
  * once and never persisted. Clients are PUBLIC (PKCE, no client secret), so
  * oauth_clients holds no secret to hash.
  *
- * The `owner_id` FKs into `auth.users` are declared in the SQL migration, not
- * here — Drizzle only manages public.* (see schema/auth-users.ts).
+ * The `owner_id` and `actor_id` FKs into `auth.users` are declared in the SQL
+ * migrations, not here — Drizzle only manages public.* (see
+ * schema/auth-users.ts).
+ *
+ * `owner_id` is the anchor (whose brain); `actor_id` is the LOGIN that
+ * consented (0164). A grant lives only while that login is a usable admin:
+ * the bearer check, the code exchange and every refresh re-read it.
  */
 
 /**
@@ -54,6 +59,8 @@ export const oauthAuthCodes = pgTable(
     clientId: uuid('client_id').notNull(),
     /** The consenting owner (auth.users.id) the eventual token is scoped to. */
     ownerId: uuid('owner_id').notNull(),
+    /** The login that consented (auth.users.id); the anchor for pre-0164 rows. */
+    actorId: uuid('actor_id').notNull(),
     /** PKCE S256 challenge; verified against the verifier at token exchange. */
     codeChallenge: text('code_challenge').notNull(),
     codeChallengeMethod: text('code_challenge_method').notNull().default('S256'),
@@ -87,6 +94,8 @@ export const oauthAccessTokens = pgTable(
     /** SHA-256 of the refresh token, rotated on each use; null if none issued. */
     refreshTokenHash: text('refresh_token_hash').unique(),
     ownerId: uuid('owner_id').notNull(),
+    /** The login the grant belongs to; checked on every use (0164). */
+    actorId: uuid('actor_id').notNull(),
     clientId: uuid('client_id').notNull(),
     scope: text('scope').notNull().default(''),
     /** Access-token expiry (≈1 h). */
@@ -101,6 +110,7 @@ export const oauthAccessTokens = pgTable(
   (t) => [
     index('oauth_access_tokens_owner_idx').on(t.ownerId),
     index('oauth_access_tokens_client_idx').on(t.clientId),
+    index('oauth_access_tokens_actor_idx').on(t.actorId),
   ],
 );
 
