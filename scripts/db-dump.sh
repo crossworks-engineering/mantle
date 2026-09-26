@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Back up the running Mantle stack under ./backups — ALL THREE halves of its state:
+# Back up the running Mantle stack under ./backups — ALL FOUR parts of its state:
 #   1. Postgres     → backups/mantle-<ts>.dump           (pg_dump -Fc; restore: db-restore.sh)
 #   2. App SQLite   → backups/mantle-app-dbs-<ts>.tgz    (per-app /apps databases;
 #      restore: app-dbs-restore.sh). These live on a SEPARATE volume from
@@ -7,6 +7,8 @@
 #   3. Table SQLite → backups/mantle-table-dbs-<ts>.tgz  (sqlite-native table
 #      workbooks under TABLE_DB_DIR; restore: untar into ${MANTLE_DATA_DIR}/table-dbs —
 #      the archive mirrors the live <owner>/<node>.sqlite layout).
+#   4. Space files  → backups/mantle-spaces-<ts>.tgz     (member personal-space file
+#      bytes under MANTLE_SPACES_ROOT; restore: untar into ${MANTLE_DATA_DIR}/spaces).
 #
 # Usage:   scripts/db-dump.sh
 #          MANTLE_PG_CONTAINER=other  MANTLE_APP_CONTAINER=other  scripts/db-dump.sh
@@ -99,6 +101,28 @@ else
   else
     rm -f "$TABLEDB_OUT"
     echo "⚠ table-db snapshot FAILED — table workbooks NOT backed up (Postgres dump is intact)." >&2
+  fi
+fi
+
+# --- Personal-space file bytes (member logins) -------------------------------
+# Plain files under MANTLE_SPACES_ROOT (<spaceId>/files/<nodeId>), written
+# once per upload and never edited in place, so a tar is consistent enough.
+# Loud but non-fatal; a box whose compose predates the spaces mount, or with
+# no member uploads yet, has nothing to back up.
+SPACES_OUT="backups/mantle-spaces-${TS}.tgz"
+if ! running "$APP_CONTAINER"; then
+  echo "⚠ app container '$APP_CONTAINER' not running — personal-space files NOT backed up." >&2
+elif ! docker exec "$APP_CONTAINER" sh -c 'test -n "$MANTLE_SPACES_ROOT" && test -d "$MANTLE_SPACES_ROOT"'; then
+  echo "▷ no personal-space files in '$APP_CONTAINER' — skipping."
+else
+  echo "▶ Archiving personal-space files via '$APP_CONTAINER' → $SPACES_OUT"
+  if docker exec "$APP_CONTAINER" sh -c \
+      'tar -C "$MANTLE_SPACES_ROOT" --exclude=./.upload-spool -czf - .' > "$SPACES_OUT"; then
+    echo "✔ Wrote $(du -h "$SPACES_OUT" | cut -f1) → $SPACES_OUT"
+    echo "  Restore personal-space files by untarring into \${MANTLE_DATA_DIR}/spaces"
+  else
+    rm -f "$SPACES_OUT"
+    echo "⚠ personal-space archive FAILED — member files NOT backed up (Postgres dump is intact)." >&2
   fi
 fi
 

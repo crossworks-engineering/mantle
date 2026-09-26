@@ -37,7 +37,11 @@ export function declaredTooLarge(headers: Headers, maxBytes: number): boolean {
 
 export async function readMultipartUpload(
   req: Request,
-  opts: { maxBytes: number },
+  opts: {
+    maxBytes: number;
+    /** Where the file part spools (default: the files
+     *  root's spool). Member uploads pass the spaces root's. */ spoolDir?: string;
+  },
 ): Promise<ParsedUpload> {
   if (declaredTooLarge(req.headers, opts.maxBytes)) throw new UploadTooLargeError(opts.maxBytes);
   if (!req.body) throw new Error('empty body');
@@ -89,7 +93,7 @@ export async function readMultipartUpload(
         return;
       }
       activeFile = stream;
-      filePromise = spoolUpload(stream, { maxBytes: opts.maxBytes })
+      filePromise = spoolUpload(stream, { maxBytes: opts.maxBytes, dir: opts.spoolDir })
         .then((spooled) => ({ filename: info.filename, spooled }))
         .catch((err: unknown) => {
           if (err instanceof UploadTooLargeError) err.filename = info.filename;

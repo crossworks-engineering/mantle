@@ -80,6 +80,20 @@ export {
 } from './disk';
 
 export {
+  SpacesRootUnavailableError,
+  spacesRoot,
+  spacesRootAvailable,
+  spaceDir,
+  spaceFilePath,
+  spaceSpoolDir,
+  adoptSpooledIntoSpace,
+  writeSpaceFile,
+  openSpaceFile,
+  readSpaceFile,
+  removeSpaceFile,
+} from './space-disk';
+
+export {
   DOCS_ROOT_LABEL,
   CHANGELOG_COLLECTION_KEY,
   docsRoot,

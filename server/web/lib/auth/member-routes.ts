@@ -31,9 +31,13 @@ export const MEMBER_ROUTES: readonly string[] = [
   'POST /api/member/space/:id/share',
   'POST /api/member/space/:id/submit',
   'POST /api/member/space/:id/recall',
+  // Files in the own space: upload, then the bytes (Phase 2, space disk root).
+  'POST /api/member/space-files',
+  'GET /api/member/space/:id/bytes',
   // Teammates' team-shared items (Phase 2): team role, human flag on.
   'GET /api/member/team-drafts',
   'GET /api/member/team-drafts/:id',
+  'GET /api/member/team-drafts/:id/bytes',
 ];
 
 export function isMemberRoute(method: string, pattern: string): boolean {

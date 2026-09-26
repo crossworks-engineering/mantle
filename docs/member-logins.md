@@ -131,24 +131,57 @@ can never set accepted.
 **Routes** (all in `MEMBER_ROUTES`, all through `inMySpace` or
 `withTeamDrafts`):
 
-| Route                                    | What                                          |
-| ---------------------------------------- | --------------------------------------------- |
-| `GET/POST /api/member/space`             | List Mine; create a page, note or drawing     |
-| `GET/PATCH/DELETE /api/member/space/:id` | One item with its body; rename; delete        |
-| `PUT /api/member/space/:id/draft`        | Autosave `{ doc \| scene, if_rev }`           |
-| `POST /api/member/space/:id/save`        | Save version `{ doc \| scene, if_rev, svg? }` |
-| `POST /api/member/space/:id/share`       | `{ sharing: 'private' \| 'team' }`            |
-| `POST /api/member/space/:id/submit`      | Submit the saved version for review           |
-| `POST /api/member/space/:id/recall`      | Take a submitted item back                    |
-| `GET /api/member/team-drafts[/:id]`      | Teammates' shared items, saved version only   |
+| Route                                    | What                                           |
+| ---------------------------------------- | ---------------------------------------------- |
+| `GET/POST /api/member/space`             | List Mine; create a page, note, drawing, table |
+| `GET/PATCH/DELETE /api/member/space/:id` | One item with its body; rename; delete         |
+| `PUT /api/member/space/:id/draft`        | Autosave `{ doc \| scene, if_rev }`            |
+| `POST /api/member/space/:id/save`        | Save version `{ doc \| scene, if_rev, svg? }`  |
+| `POST /api/member/space/:id/share`       | `{ sharing: 'private' \| 'team' }`             |
+| `POST /api/member/space/:id/submit`      | Submit the saved version for review            |
+| `POST /api/member/space/:id/recall`      | Take a submitted item back                     |
+| `POST /api/member/space-files`           | Upload a file (multipart, one `file` part)     |
+| `GET /api/member/space/:id/bytes`        | An own file's bytes (`?thumb=1`: thumbnail)    |
+| `GET /api/member/team-drafts[/:id]`      | Teammates' shared items, saved version only    |
+| `GET /api/member/team-drafts/:id/bytes`  | A teammate's team-shared file                  |
 
 The draft and save routes keep the owner routes' etag contract (`if_rev` in,
 `draft_rev` out, 409 with `current_rev`). State refusals answer 409 with a
 `reason` (`frozen`, `not-draft`, `not-submitted`, `unsaved-draft`, `quota`);
 another member's item is a plain 404.
 
-**Limits.** 2000 items per space; a page document at most 2 MB; drawings
-use the owner's scene and SVG limits.
+A table's draft takes a whole `table` document or an `ops` batch (the owner
+op schema); Save version publishes the draft workbook. `GET …/:id?tab=` picks
+a table's tab (unknown = the first).
+
+**Where the bytes live.** A personal table's workbook sits under
+`TABLE_DB_DIR/<spaceId>/` (tables were already keyed by owner). A personal
+file's bytes sit under `MANTLE_SPACES_ROOT/<spaceId>/files/<nodeId>`: its own
+bind mount (`/data/spaces` in docker-compose.yml, mounted into web and api),
+deliberately outside the brain's files tree, so the files watcher never sees
+it. The file node's path is `space_files`, not under `files`, so every brain
+file helper resolves no disk path for it. The filename is metadata (a rename
+touches no disk). `scripts/db-dump.sh` tars the root to
+`backups/mantle-spaces-<ts>.tgz`. A production process without
+`MANTLE_SPACES_ROOT` answers member uploads 503 instead of writing into the
+container.
+
+**The embed rule.** Save version refuses a page that embeds or links
+anything other than the member's own items and Library items (409 `embed`
+with the refused `ids`): never another member's item, shared or not, and
+never an admin-only brain item. Accept (Phase 4) moves an item's embed
+closure into the brain, so a foreign id would drag someone else's work
+along. Autosave is not checked; the draft is the author's alone.
+
+**Drafts stay the author's.** Below admin nothing reads a table's draft
+workbook: not a teammate, not a Library reader, not a team-level agent's
+table tools (`loadDocsFromFile` and the tools' `windowFile` read the
+published file unless the scope may read drafts).
+
+**Limits.** 2000 items per space; a page document at most 2 MB; a table
+document at most 5 MB per request (bigger grids go by op batches); drawings
+use the owner's scene and SVG limits. Files: 100 MB per upload, 2 GB per
+space (file bytes plus table workbooks), 500 MB of uploads a day.
 
 **Deleting a login** leaves its space and items behind (`login_id` goes
 null); deleting a space deletes its items. The 30-day purge of a deactivated
@@ -158,7 +191,6 @@ member's private items comes with the deactivation flow (Phase 4).
 existing owner id valid. Once personal items exist, never roll back below
 v0.232.255 (the extractor's owner check).
 
-**Not yet:** tables and files in a personal space (their bytes live on disk
-keyed by owner: the space disk root comes next), the save-time embed rule,
-comments on shared items, the `space_item_changed` realtime event, the
-my-space agent tools (on behalf of), the admin review screen (Phase 4).
+**Not yet:** comments on shared items, the
+`space_item_changed` realtime event, the my-space agent tools (on behalf
+of), the admin review screen (Phase 4).

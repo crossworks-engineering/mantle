@@ -263,6 +263,10 @@ x-app-env: &app-env
   # would key on a spoofable hop.
   MANTLE_TRUSTED_PROXIES: ${MANTLE_TRUSTED_PROXIES:-}
   MANTLE_FILES_ROOT: /data/files
+  # Personal-space file bytes (member logins): <root>/<spaceId>/files/<nodeId>.
+  # Its own bind mount, deliberately OUTSIDE /data/files so the files watcher
+  # never sees a member's private file. web AND api mount it; db-dump.sh tars it.
+  MANTLE_SPACES_ROOT: /data/spaces
   # Cap for the streamed /files uploader (POST /api/files/files), in MB. Bytes
   # spool to disk as they arrive, so this is a disk/UX number, not a memory
   # one. Keep it under the proxy's MANTLE_MAX_BODY_SIZE (default 1GB).
@@ -702,6 +706,8 @@ services:
       # Per-table SQLite (TABLE_DB_DIR=/data/table-dbs) — sqlite-native Tables.
       # Mounted into web AND api (handlers run in both processes).
       - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
+      # Personal-space file bytes (MANTLE_SPACES_ROOT=/data/spaces).
+      - ${MANTLE_DATA_DIR:-./data}/spaces:/data/spaces
       # READ-WRITE view of the tailscaled LocalAPI socket. Read drives the
       # /settings/network status tile + peer dropdown; write lets the app log
       # tailscaled in/out from the UI (Activate/Deactivate). RW is the one
@@ -991,6 +997,8 @@ services:
       # Per-table SQLite (TABLE_DB_DIR=/data/table-dbs) — same dual-mount
       # contract as app-dbs: agent table tools execute here too.
       - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
+      # Personal-space file bytes: the my-space agent tools read them here.
+      - ${MANTLE_DATA_DIR:-./data}/spaces:/data/spaces
 
   worker_email:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}

@@ -214,7 +214,11 @@ export function spoolDir(): string {
  */
 export async function spoolUpload(
   source: Readable,
-  opts: { maxBytes: number },
+  opts: {
+    maxBytes: number;
+    /** Default `spoolDir()`; member uploads spool
+     *  inside the spaces root (space-disk.ts) so adoption stays a rename. */ dir?: string;
+  },
 ): Promise<SpooledUpload> {
   // Nothing listens on `source` until `pipeline` below, and the awaits before
   // it leave a window: a client drop there destroys the stream with an error
@@ -223,7 +227,7 @@ export async function spoolUpload(
   // destroyed) and the cleanup below runs as usual.
   const holdError = () => {};
   source.on('error', holdError);
-  const dir = spoolDir();
+  const dir = opts.dir ?? spoolDir();
   try {
     await fs.mkdir(dir, { recursive: true });
   } catch (err) {
@@ -308,8 +312,7 @@ export async function adoptSpooled(
 
 /** Delete spool files older than `maxAgeMs` (default 2 h): residue from a
  *  process that died mid-upload. Cheap; the route fires it on each upload. */
-export async function sweepSpool(maxAgeMs = 2 * 60 * 60 * 1000): Promise<number> {
-  const dir = spoolDir();
+export async function sweepSpool(maxAgeMs = 2 * 60 * 60 * 1000, dir = spoolDir()): Promise<number> {
   let names: string[];
   try {
     names = await fs.readdir(dir);

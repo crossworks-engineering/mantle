@@ -7,7 +7,14 @@
  * sync, and a direct grid edit would be silently overwritten by the next one.
  */
 import { eq, sql } from 'drizzle-orm';
-import { asViewerLevel, db, nodes, appTableExports, type Node } from '@mantle/db';
+import {
+  asViewerLevel,
+  currentSpaceScope,
+  db,
+  nodes,
+  appTableExports,
+  type Node,
+} from '@mantle/db';
 import {
   ensureTableDoc,
   emptyTableDoc,
@@ -48,6 +55,10 @@ export async function appExportLinkOf(tableNodeId: string) {
  *  sync itself. Metadata edits (updateTable) stay allowed and don't call this. */
 export async function assertTableWritable(tableNodeId: string, appSync?: boolean): Promise<void> {
   if (appSync) return;
+  // A personal table is never app-bound (exports are brain tables), and the
+  // personal-space role holds no grant on the export registry: asking would
+  // fail, and inside a space transaction even a caught failure aborts it.
+  if (currentSpaceScope()) return;
   const link = await appExportLinkOf(tableNodeId);
   if (!link) return;
   const [app] = await db

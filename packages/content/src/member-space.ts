@@ -24,22 +24,51 @@ import {
   currentSpaceScope,
   currentViewerLevel,
   db,
+  withViewer,
   draws,
   nodes,
   pages,
   spaceItems,
+  tables,
   type ReviewState,
   type SpaceSharing,
 } from '@mantle/db';
-import { createDraw, deleteDraw, getDraw, getDrawSvg, type DrawDetail } from './draws';
-import { createNote, deleteNote, getNote, type NoteRow } from './notes';
+import { existsSync } from 'node:fs';
+import { createDraw, deleteDraw, getDraw, getDrawSvg, updateDraw, type DrawDetail } from './draws';
+import { createNote, deleteNote, getNote, updateNote, type NoteRow } from './notes';
 import { getPage } from './pages/read';
+import { commitPage, updatePage, type CommitPageResult } from './pages/draft';
+import { referencedDrawIds, referencedFileIds } from './doc-assets';
+import { mentionRefs } from './mention-refs';
 import { deletePage, createPage } from './pages/tree';
 import type { PageDetail } from './pages/shared';
+import { getTable } from './tables/read';
+import { createTable, deleteTable, updateTable } from './tables/write';
+import { commitTable } from './tables/draft';
+import type { TableDoc, WorkbookDoc } from '@mantle/content-core/table-model';
+import type { TableDetail } from '@mantle/content-core/table-model';
+import { draftAbsFor } from './table-storage';
+import {
+  deleteMineFile,
+  renameMineFile,
+  spaceFileOf,
+  type OpenedSpaceFile,
+  type SpaceFile,
+} from './member-space-files';
+import { openSpaceFile } from '@mantle/files';
+import {
+  SpaceItemStateError,
+  assertItemRoom,
+  requireSpace,
+  spaceNotFound as notFound,
+} from './member-space-core';
 
-/** What a personal space holds in this release. Tables and files follow with
- *  the space disk root (their bytes live on disk, keyed by owner). */
-export const SPACE_ITEM_KINDS = ['page', 'note', 'draw'] as const;
+export { SPACE_ITEM_LIMIT, SpaceItemStateError, assertItemRoom } from './member-space-core';
+
+/** What a personal space holds. A table's workbook sits under
+ *  TABLE_DB_DIR/<spaceId>/; a file's bytes under MANTLE_SPACES_ROOT/<spaceId>/
+ *  (member-space-files.ts). */
+export const SPACE_ITEM_KINDS = ['page', 'note', 'draw', 'table', 'file'] as const;
 export type SpaceItemKind = (typeof SPACE_ITEM_KINDS)[number];
 
 export function isSpaceItemKind(v: unknown): v is SpaceItemKind {
@@ -59,33 +88,6 @@ export type SpaceItemRow = {
   authorLoginId: string | null;
   updatedAt: string;
 };
-
-/** Thrown when an item may not change now: it is submitted (frozen), or the
- *  requested move is not allowed from its state (routes answer 409), or it is
- *  not the caller's to change at all (`not-found`, routes answer 404: another
- *  member's item looks exactly like one that does not exist). */
-export class SpaceItemStateError extends Error {
-  constructor(
-    readonly reason:
-      'not-found' | 'frozen' | 'not-draft' | 'not-submitted' | 'unsaved-draft' | 'quota',
-    message: string,
-  ) {
-    super(message);
-    this.name = 'SpaceItemStateError';
-  }
-}
-
-const notFound = () => new SpaceItemStateError('not-found', 'Not found.');
-
-/** The caller's own space scope, or a loud error: every "Mine" function runs
- *  inside `withSpace` for exactly this space. */
-function requireSpace(spaceId: string): { spaceId: string; loginId: string } {
-  const scope = currentSpaceScope();
-  if (!scope || scope.spaceId !== spaceId) {
-    throw new Error('personal space read outside its space scope: wrap it in withSpace');
-  }
-  return scope;
-}
 
 /** Team drafts run on the team role with the human flag; never at admin. */
 function requireTeamDrafts(): void {
@@ -174,16 +176,21 @@ export type SpaceItemBody =
   | { type: 'note'; note: NoteRow }
   /** Null for a teammate: the scene reader needs draft columns, so a team
    *  draft's drawing is shown from its published SVG route instead. */
-  | { type: 'draw'; draw: DrawDetail | null };
+  | { type: 'draw'; draw: DrawDetail | null }
+  /** Own: drafts included. A teammate: the saved version only. */
+  | { type: 'table'; table: TableDetail }
+  /** The metadata; the bytes stream from the item's bytes route. */
+  | { type: 'file'; file: SpaceFile };
 
 /** One own item with its body, drafts included (the author's working copy). */
 export async function getMineItem(
   spaceId: string,
   id: string,
+  opts: { tabId?: string } = {},
 ): Promise<{ row: SpaceItemRow; body: SpaceItemBody } | null> {
   const row = await getMineRow(spaceId, id);
   if (!row) return null;
-  const body = await bodyOf(spaceId, row.type, id);
+  const body = await bodyOf(spaceId, row.type, id, opts);
   return body ? { row, body } : null;
 }
 
@@ -191,6 +198,7 @@ async function bodyOf(
   ownerId: string,
   type: SpaceItemKind,
   id: string,
+  opts: { tabId?: string } = {},
 ): Promise<SpaceItemBody | null> {
   switch (type) {
     case 'page': {
@@ -205,17 +213,24 @@ async function bodyOf(
       const d = await getDraw(ownerId, id);
       return d ? { type, draw: d } : null;
     }
+    case 'table': {
+      // getTable reads drafts only where the scope may (own space); a
+      // teammate gets the saved version. An unknown tab reads the first.
+      const t = await getTable(ownerId, id, { tabId: opts.tabId, unknownTabIsFirst: true });
+      return t ? { type, table: t } : null;
+    }
+    case 'file': {
+      const f = await spaceFileOf(ownerId, id);
+      return f ? { type, file: f } : null;
+    }
   }
 }
 
 export type CreateSpaceItemInput =
   | { type: 'page'; title: string; doc?: Record<string, unknown>; icon?: string }
   | { type: 'note'; title: string; content?: string }
-  | { type: 'draw'; title: string; scene?: Record<string, unknown> };
-
-/** Items one personal space may hold (plan section 8, quotas). Folders a
- *  space makes for itself (the per-kind roots) do not count. */
-export const SPACE_ITEM_LIMIT = 2000;
+  | { type: 'draw'; title: string; scene?: Record<string, unknown> }
+  | { type: 'table'; title: string };
 
 /** Create an item in the caller's space: private, draft. */
 export async function createMineItem(
@@ -223,16 +238,7 @@ export async function createMineItem(
   input: CreateSpaceItemInput,
 ): Promise<SpaceItemRow> {
   const { loginId } = requireSpace(spaceId);
-  const [held] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(nodes)
-    .where(and(eq(nodes.ownerId, spaceId), ne(nodes.type, 'branch')));
-  if ((held?.n ?? 0) >= SPACE_ITEM_LIMIT) {
-    throw new SpaceItemStateError(
-      'quota',
-      `Your space is full (${SPACE_ITEM_LIMIT} items). Delete something first.`,
-    );
-  }
+  await assertItemRoom(spaceId);
   let id: string;
   switch (input.type) {
     case 'page':
@@ -243,6 +249,9 @@ export async function createMineItem(
       break;
     case 'draw':
       id = (await createDraw(spaceId, { title: input.title, scene: input.scene })).id;
+      break;
+    case 'table':
+      id = (await createTable(spaceId, { title: input.title })).id;
       break;
   }
   await db.insert(spaceItems).values({ nodeId: id, authorLoginId: loginId });
@@ -316,7 +325,21 @@ async function savedState(
       .limit(1);
     return { version: d?.version ?? null, unsaved: d?.hasDraft ?? false };
   }
-  return { version: null, unsaved: false }; // notes save as they go
+  if (type === 'table') {
+    const [t] = await db
+      .select({
+        version: tables.version,
+        storagePath: tables.storagePath,
+        hasDraft: sql<boolean>`${tables.draftData} IS NOT NULL`,
+      })
+      .from(tables)
+      .where(eq(tables.nodeId, id))
+      .limit(1);
+    // A file-backed table's working copy is its draft workbook on disk.
+    const draftFile = t?.storagePath ? existsSync(draftAbsFor(t.storagePath)) : false;
+    return { version: t?.version ?? null, unsaved: (t?.hasDraft ?? false) || draftFile };
+  }
+  return { version: null, unsaved: false }; // notes and files have no draft
 }
 
 /**
@@ -375,7 +398,111 @@ export async function deleteMineItem(spaceId: string, id: string): Promise<boole
       return deleteNote(spaceId, id);
     case 'draw':
       return deleteDraw(spaceId, id);
+    case 'table':
+      return deleteTable(spaceId, id);
+    case 'file':
+      return deleteMineFile(spaceId, id);
   }
+}
+
+/** "Save version" for an own table: publish its draft workbook (or a whole
+ *  document the caller sends). With nothing to save it answers the item as
+ *  it is: a second click on Save is not an error. Frozen while submitted. */
+export async function saveMineTable(
+  spaceId: string,
+  id: string,
+  doc?: TableDoc | WorkbookDoc,
+): Promise<{ row: SpaceItemRow; body: SpaceItemBody } | null> {
+  const row = await assertEditable(spaceId, id);
+  if (row.type !== 'table') return null;
+  if (doc !== undefined || (await savedState('table', id)).unsaved) {
+    const t = await commitTable(spaceId, id, doc);
+    if (!t) return null;
+  }
+  return getMineItem(spaceId, id);
+}
+
+/**
+ * The save-time embed rule (plan 2d; Jason 2026-09-26: never another
+ * member's team-shared item). A personal page may embed or link only the
+ * author's own items and Library items (brain items the team level can
+ * read). Returns the ids it may not use: another member's item (shared or
+ * not), an admin-only brain item, or an id that no longer resolves. Accept
+ * (Phase 4) moves an item's embed closure into the brain, so a foreign id
+ * here would drag someone else's work, or an admin secret's existence, along.
+ */
+export async function disallowedPageRefs(spaceId: string, doc: unknown): Promise<string[]> {
+  requireSpace(spaceId);
+  const ids = [
+    ...new Set([...referencedFileIds(doc), ...referencedDrawIds(doc), ...mentionRefs(doc).nodeIds]),
+  ];
+  if (ids.length === 0) return [];
+  const own = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, spaceId), inArray(nodes.id, ids)));
+  const ok = new Set(own.map((r) => r.id));
+  const rest = ids.filter((id) => !ok.has(id));
+  if (rest.length) {
+    // The Library, read as the team level reads it (row security decides).
+    const lib = await withViewer('team', () =>
+      db
+        .select({ id: nodes.id })
+        .from(nodes)
+        .where(and(sql`${nodes.ownerId} = mantle_brain_id()`, inArray(nodes.id, rest))),
+    );
+    for (const r of lib) ok.add(r.id);
+  }
+  return ids.filter((id) => !ok.has(id));
+}
+
+/** "Save version" for an own page, under the embed rule. */
+export async function saveMinePage(
+  spaceId: string,
+  id: string,
+  doc: Record<string, unknown>,
+  opts: { baseRev?: number } = {},
+): Promise<CommitPageResult> {
+  const bad = await disallowedPageRefs(spaceId, doc);
+  if (bad.length) {
+    throw new SpaceItemStateError(
+      'embed',
+      'This page uses items you cannot share: only your own items and Library items. Remove them, then save.',
+      bad,
+    );
+  }
+  return commitPage(spaceId, id, doc, opts);
+}
+
+export type UpdateSpaceItemInput = { title?: string; icon?: string; content?: string };
+
+/** Rename or re-icon an own item, or change a note's text. Frozen while
+ *  submitted. Returns the item with its body, or null when it is gone. */
+export async function updateMineItem(
+  spaceId: string,
+  id: string,
+  input: UpdateSpaceItemInput,
+): Promise<{ row: SpaceItemRow; body: SpaceItemBody } | null> {
+  const row = await assertEditable(spaceId, id);
+  const { title, icon, content } = input;
+  switch (row.type) {
+    case 'page':
+      await updatePage(spaceId, id, { title, icon });
+      break;
+    case 'note':
+      await updateNote(spaceId, id, { title, content });
+      break;
+    case 'draw':
+      await updateDraw(spaceId, id, { title, icon });
+      break;
+    case 'table':
+      await updateTable(spaceId, id, { title, icon });
+      break;
+    case 'file':
+      if (title !== undefined) await renameMineFile(spaceId, id, title);
+      break;
+  }
+  return getMineItem(spaceId, id);
 }
 
 // ── Team drafts ──────────────────────────────────────────────────────────────
@@ -414,6 +541,7 @@ export async function listTeamDrafts(
  *  read it (private, the brain's, or gone). */
 export async function getTeamDraftItem(
   id: string,
+  opts: { tabId?: string } = {},
 ): Promise<{ row: SpaceItemRow; body: SpaceItemBody } | null> {
   requireTeamDrafts();
   const [joined] = await db
@@ -435,7 +563,7 @@ export async function getTeamDraftItem(
     // published SVG through its own route instead.
     return { row, body: { type: 'draw', draw: null } };
   }
-  const body = await bodyOf(joined.node.ownerId, row.type, id);
+  const body = await bodyOf(joined.node.ownerId, row.type, id, opts);
   return body ? { row, body } : null;
 }
 
@@ -450,4 +578,21 @@ export async function getTeamDraftDrawSvg(id: string): Promise<string | null> {
     .where(and(eq(nodes.id, id), eq(nodes.type, 'draw'), eq(spaceItems.sharing, 'team')))
     .limit(1);
   return n ? getDrawSvg(n.ownerId, id) : null;
+}
+
+/** A team-shared file's bytes, or null. Row security decides whether the
+ *  caller may see the node; the bytes are then read from its own space. */
+export async function openTeamDraftFile(id: string): Promise<OpenedSpaceFile | null> {
+  requireTeamDrafts();
+  const [n] = await db
+    .select({ ownerId: nodes.ownerId })
+    .from(nodes)
+    .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
+    .where(and(eq(nodes.id, id), eq(nodes.type, 'file'), eq(spaceItems.sharing, 'team')))
+    .limit(1);
+  if (!n) return null;
+  const file = await spaceFileOf(n.ownerId, id);
+  if (!file) return null;
+  const opened = await openSpaceFile(n.ownerId, id);
+  return opened ? { file, ...opened } : null;
 }
