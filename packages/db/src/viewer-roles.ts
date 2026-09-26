@@ -61,7 +61,22 @@ export async function ensureViewerRoles(
       masterKey,
       existing.has(viewerRoleName(level)),
     )) {
-      await sql.unsafe(stmt);
+      await withRoleRetry(() => sql.unsafe(stmt));
+    }
+  }
+}
+
+/** Two processes setting the same (cluster-wide) role at once make Postgres
+ *  answer "tuple concurrently updated" (XX000) to one of them: parallel DB
+ *  test files do exactly that. The statements are idempotent, so try again. */
+async function withRoleRetry<T>(fn: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (attempt >= 5 || !/tuple concurrently updated/.test(msg)) throw err;
+      await new Promise((r) => setTimeout(r, 50 * attempt));
     }
   }
 }
