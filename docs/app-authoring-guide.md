@@ -25,7 +25,7 @@ explicitly grant it and an optional per-app SQLite database.
      locally, or
    - `app_file_write(id, path, content)`, one file at a time;
      `app_file_delete(id, path)` to remove one (can't delete the entry).
-3. **Grant data access** (see *Binding to data* below):
+3. **Grant data access** (see _Binding to data_ below):
    - `app_tools_set(id, tool_slugs)`, the runtime allowlist of tool slugs the
      app may call. The host refuses any slug not declared here.
    - `app_db_schema_set(id, schema_sql)`, optional per-app SQLite DDL.
@@ -76,7 +76,7 @@ app decides its own size, layout, and scrolling.** So:
 - A small form or list doesn't have to fill it, render a centred column
   (`mx-auto max-w-md`) and let the rest be empty; that's fine.
 - Viewport-height utilities (`h-dvh`, `min-h-screen`, `vh`/`vw`) are **real** here
-, use them. (The old guidance to avoid them applied to the previous
+  , use them. (The old guidance to avoid them applied to the previous
   auto-sizing frame and no longer holds.)
 - `host.ui.resize()` is a legacy no-op; there's nothing to resize; the frame is
   the viewport.
@@ -144,7 +144,7 @@ So to show your data in an app, you give it a tool that returns that data:
 
 Then `app_tools_set(id, ['that_slug'])` and call it from the app.
 
-**Recommended flow (this is the synergy):** first *explore the data yourself*
+**Recommended flow (this is the synergy):** first _explore the data yourself_
 with your own MCP read tools (`search`, `table_list`, `note_list`, …) to learn
 its real shape; then mint a recipe tool that returns precisely that; then build
 the app against it. You're binding the app to data you've actually inspected, so
@@ -207,7 +207,7 @@ Choose the direction deliberately, one master per table, ever:
 - Data managed **in Tables** → keep the table ordinary and declare a read
   tool for the app (the hub Tier-2 pattern). Never both on one table.
 
-(If the assistant only needs to *query* the data, no export is required at
+(If the assistant only needs to _query_ the data, no export is required at
 all — see the next section.)
 
 ## Reading app data from the brain (the assistant can query your apps)
@@ -215,14 +215,14 @@ all — see the next section.)
 The user's **assistant can read any of their apps' databases**: the responder
 holds two read-only tools, `app_db_list` (which apps have a DB + their tables)
 and `app_db_query` (a `SELECT` against one app by id). So data an app stores is
-answerable in normal conversation: *"how many open items in my tracker app?"*,
-*"what's in the inventory table?"*, no extra wiring by you, the author.
+answerable in normal conversation: _"how many open items in my tracker app?"_,
+_"what's in the inventory table?"_, no extra wiring by you, the author.
 
 Two things follow for how you design an app's schema:
 
 - **Give tables and columns clear, self-describing names.** The assistant reads
   the live schema (`sqlite_master`) to know what to query, so `tasks(title,
-  status, due_at)` is far more useful to it than `t(a, b, c)`.
+status, due_at)` is far more useful to it than `t(a, b, c)`.
 - **It is strictly read-only**: the database is opened read-only, so no query
   the assistant runs can ever mutate your app's data. (Writes still come only
   from the app itself via `host.db.exec`.)
@@ -291,7 +291,7 @@ Anonymous visitors. A public app can use **only its own SQLite database, and
 only for reads** (`host.db.query`). It gets **no brain tools at all**: every
 `host.tools.call` is refused on a public link, and `host.db.exec` (writes) is
 blocked. This is deliberate and enforced server-side: the whole brain is private
-data, and there's no way to expose a *slice* of it safely to the anonymous
+data, and there's no way to expose a _slice_ of it safely to the anonymous
 public, so the answer is "none." A public app is a self-contained, read-only
 view over data it already holds (or data baked into its bundle).
 
@@ -302,7 +302,7 @@ view over data it already holds (or data baked into its bundle).
 ### Team (your team members, identified)
 
 Team mode requires the visitor to enter a **team token**. You mint one per
-person by marking a Contact a *team member* (`/contacts` → the "Team member"
+person by marking a Contact a _team member_ (`/contacts` → the "Team member"
 toggle → the token is shown once; regenerate or remove to revoke). Entering a
 valid token identifies the visitor as that Contact, and from then on:
 
@@ -329,11 +329,12 @@ data." Treat any share link as a secret; revoke by turning the share off.
 
 A brain can designate one published app as its **Team Hub**: team members
 visiting `/hub` get that app full-screen, while the platform keeps the token
-gate, the live Team Chat, and the briefing reader core. (`/team` itself is the
+gate, the Forum link, and the briefing reader core. (`/team` itself is the
 read-only member **workspace**: see [`team-chat.md`](team-chat.md) §2; the
 same team cookie opens both surfaces.) Hub apps get one extra
 namespace, `host.hub.get()` (site name, member name, briefing sections, live
-stats), `host.hub.openChat()`, `host.hub.openBriefing(token)`, and the
+stats), `host.hub.openChat()` (opens the team Forum; the 1:1 chat is gone),
+`host.hub.openBriefing(token)`, and the
 built-in hub renders automatically if the app ever breaks.
 
 Everything else about building one is this guide, plus the hub-specific

@@ -5,7 +5,7 @@ designates to render as its Team Hub (served at `/hub` since the Team Workspace 
 canonical reference for hub-app authors (human or agent). It builds on the
 general mini-app reference, read
 [app-authoring-guide.md](app-authoring-guide.md) first for the build loop,
-allowed imports, and styling rules; this document covers what is *specific* to
+allowed imports, and styling rules; this document covers what is _specific_ to
 hub apps: the `host.hub` SDK, the designation lifecycle, the structure to
 follow, and the content-update patterns.
 
@@ -18,7 +18,7 @@ An ordinary `/apps` mini-app plus one namespace. When designated (Team admin →
 members. The shell keeps everything that must stay core:
 
 - the **member token gate** and cookie minting/revocation,
-- the **live Team Chat**,
+- the **Forum** link (the 1:1 Team Chat was removed 2026-09-26),
 - the **in-hub briefing reader** (team-shared pages),
 - per-member **access logging** and membership liveness checks.
 
@@ -30,7 +30,7 @@ network, no cookies; the only egress is the postMessage bridge.
 
 **The built-in hub is the safety net.** If the designation chain breaks at any
 link, pref unset, app deleted, build red, share revoked, bundle fails to fetch
-*or* fetches but never boots, members get the built-in hub. Designation can
+_or_ fetches but never boots, members get the built-in hub. Designation can
 never cost a team a working page.
 
 ## 2. The designation chain (how `/hub` decides what to render)
@@ -65,7 +65,7 @@ iframe.
 import { host } from '@host';
 
 host.hub.get(): Promise<HubData>    // REJECTS off the /team surface
-host.hub.openChat(): void           // shell switches to live Team Chat
+host.hub.openChat(): void           // shell opens the team Forum
 host.hub.openBriefing(token): void  // shell opens the in-hub reader
 
 type HubData = {
@@ -97,7 +97,7 @@ Rules that bind the SDK (and any future addition to it):
   embeds, restyles, or intercepts them.
 - **`openBriefing` only opens real sections.** The shell validates the token
   against the current `sections`; anything else is ignored. Deep-link by
-  *finding* a section (e.g. by title match), never by hardcoding a token.
+  _finding_ a section (e.g. by title match), never by hardcoding a token.
 - **`hub.get` is answered locally by the shell** from the `/api/team/hub`
   payload, extending `HubData` means extending that route, where it is gated
   and audited.
@@ -173,8 +173,8 @@ const [tiles, setTiles] = useState<Tile[] | null>(null);
 useEffect(() => {
   host.tools
     .call('table_rows_list', { table_id: WHATS_NEW_TABLE_ID })
-    .then((r) => setTiles(parseTiles(r)))        // validate + filter Active,
-    .catch(() => setTiles(FALLBACK_TILES));      // sort by Order, cap at N
+    .then((r) => setTiles(parseTiles(r))) // validate + filter Active,
+    .catch(() => setTiles(FALLBACK_TILES)); // sort by Order, cap at N
 }, []);
 ```
 
@@ -191,7 +191,7 @@ useEffect(() => {
 Notes that keep this safe and honest:
 
 - `table_rows_list` is a **builtin**, so it passes the team broker's
-  builtin-only gate; it runs under the *owner's* scope and is access-logged
+  builtin-only gate; it runs under the _owner's_ scope and is access-logged
   per member. It reads the **published** table, draft edits stay invisible
   until commit, which gives table updates the same review step as app
   publishes.
@@ -211,7 +211,7 @@ Read-acknowledgements, polls, per-section feedback: declare a schema with
 `host.db.query/exec`. Team members' writes are allowed and access-logged.
 
 **The attribution caveat (do not skip):** the app runs in the member's
-browser, so a `memberName` you write into SQLite is *advisory*, display it,
+browser, so a `memberName` you write into SQLite is _advisory_, display it,
 but never build permission or integrity logic on it. The host's per-member
 access log is the tamper-proof trail. Server-stamped writes (a reserved
 `$member_contact_id` binding substituted by the team db-broker) are the
@@ -240,13 +240,13 @@ reserved, not implemented. Propose additions there rather than overloading
 
 ## 7. Updating a live hub: the workflows
 
-| Change | Workflow | Live when |
-|---|---|---|
-| Copy / tiles (Tier 1) | edit `content.ts` → `app_build` → `app_publish` | next member page load |
-| Tiles (Tier 2) | edit table → `table_commit` | next hub load, no publish |
-| Layout / new section | edit `components/` → build → publish | next page load |
-| Briefing set / order | share or revoke team-mode pages (share time = order) | next hub load |
-| Revert to built-in hub | Team admin → Hub app → "Built-in hub" | immediately |
+| Change                 | Workflow                                             | Live when                 |
+| ---------------------- | ---------------------------------------------------- | ------------------------- |
+| Copy / tiles (Tier 1)  | edit `content.ts` → `app_build` → `app_publish`      | next member page load     |
+| Tiles (Tier 2)         | edit table → `table_commit`                          | next hub load, no publish |
+| Layout / new section   | edit `components/` → build → publish                 | next page load            |
+| Briefing set / order   | share or revoke team-mode pages (share time = order) | next hub load             |
+| Revert to built-in hub | Team admin → Hub app → "Built-in hub"                | immediately               |
 
 Members with `/hub` already open see updates on their next load; there is no
 live push to an open tab. The shell keeps the app mounted across chat/reader
