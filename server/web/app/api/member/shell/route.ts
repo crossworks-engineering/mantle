@@ -1,5 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { loadPreferencesFor, logoVersion } from '@mantle/content';
+import type { MemberShell } from '@mantle/client-types';
 import { buildAssetToken, getMemberOr401 } from '@/lib/auth';
 
 /**
@@ -16,8 +17,8 @@ export async function GET() {
     loadPreferencesFor(member.anchorId),
     loadPreferencesFor(member.loginId),
   ]);
-  return NextResponse.json({
-    role: 'member' as const,
+  const body: MemberShell = {
+    role: 'member',
     loginId: member.loginId,
     displayName: member.displayName,
     email: member.email,
@@ -44,5 +45,6 @@ export async function GET() {
     fontProseSize: brain.fontProseSize ?? null,
     logoVersion: logoVersion(brain.logoKey),
     logoDarkVersion: logoVersion(brain.logoDarkKey),
-  });
+  };
+  return NextResponse.json(body);
 }

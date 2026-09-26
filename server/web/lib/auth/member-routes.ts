@@ -17,6 +17,9 @@ export const MEMBER_ROUTES: readonly string[] = [
   'GET /api/member/library/:id',
   'GET /api/member/files/:id',
   'GET /api/member/draws/:id/svg',
+  // Chat with the team-level agent, the login's own thread (Phase 1).
+  'GET /api/member/chat',
+  'POST /api/member/chat',
 ];
 
 export function isMemberRoute(method: string, pattern: string): boolean {

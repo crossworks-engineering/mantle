@@ -1142,6 +1142,13 @@
       "when": 1790016000000,
       "tag": "0162_member_logins",
       "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1790016060000,
+      "tag": "0163_member_chat_thread",
+      "breakpoints": true
     }
   ]
 }

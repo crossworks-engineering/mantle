@@ -40,6 +40,15 @@ export type {
   AccessNodeUpdate,
   AccessNodeView,
 } from './dto/access';
+export type {
+  MemberChatMessage,
+  MemberChatThread,
+  MemberLibraryItem,
+  MemberLibraryKind,
+  MemberLibraryPage,
+  MemberLibraryRow,
+  MemberShell,
+} from './dto/member';
 
 // Types only at the root; the runtime constants (APP_TINTS, limits) are the
 // `@mantle/client-types/app-nav` subpath.

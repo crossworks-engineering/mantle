@@ -64,7 +64,7 @@ import {
   withTracePrelude,
 } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
-import { withAgentViewer } from '../agent/agent-viewer';
+import { agentLevel, withAgentViewer } from '../agent/agent-viewer';
 
 /** The one agent that serves the team surface. Provisioned by the manifest;
  *  resolved explicitly — priority/default selection never applies here. */
@@ -86,6 +86,13 @@ export type RunTeamTurnOptions = {
   /** Client-minted correlation id for live streaming (same contract as the
    *  owner surface — see docs/live-turn-streaming.md). */
   streamId?: string;
+  /** A MEMBER login's turn (member logins, plan section 5): the turn joins
+   *  that login's own thread, and the agent must be below admin (members
+   *  chat only with team-level agents). */
+  loginId?: string;
+  /** The agent to answer (default team-responder). A member turn refuses an
+   *  admin-level agent. */
+  agentSlug?: string;
 };
 
 export type TeamTurnResult = {
@@ -94,19 +101,32 @@ export type TeamTurnResult = {
   reply: string;
 };
 
-async function resolveTeamResponder(ownerId: string): Promise<Agent | null> {
+async function resolveTeamResponder(
+  ownerId: string,
+  slug: string = TEAM_RESPONDER_SLUG,
+): Promise<Agent | null> {
   const [row] = await db
     .select()
     .from(agents)
-    .where(
-      and(
-        eq(agents.ownerId, ownerId),
-        eq(agents.slug, TEAM_RESPONDER_SLUG),
-        eq(agents.enabled, true),
-      ),
-    )
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, slug), eq(agents.enabled, true)))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Members chat only with team-level agents (plan section 5). The member route
+ * checks this too; this is the engine's own refusal, so no caller can hand a
+ * member login an admin agent. Exported for the tests.
+ */
+export function assertMemberAgent(
+  agent: { slug: string; audience?: string | null },
+  loginId: string | undefined,
+): void {
+  if (loginId && agentLevel(agent) === 'admin') {
+    throw new Error(
+      `Agent '${agent.slug}' is at the admin level: a member login may only chat with a team-level agent.`,
+    );
+  }
 }
 
 /** Map a team thread window into prompt history. Pending/failed rows and the
@@ -133,12 +153,14 @@ export async function runTeamTurn(
   const displayText = options.displayText?.trim() || trimmed;
   const channel: TeamChannel = options.channel ?? 'web';
 
-  const agent = await resolveTeamResponder(ownerId);
+  const { loginId } = options;
+  const agent = await resolveTeamResponder(ownerId, options.agentSlug);
   if (!agent) {
     throw new Error(
-      "Team Chat isn't provisioned on this brain — the 'team-responder' agent is missing or disabled.",
+      `Team Chat isn't provisioned on this brain — the '${options.agentSlug ?? TEAM_RESPONDER_SLUG}' agent is missing or disabled.`,
     );
   }
+  assertMemberAgent(agent, loginId);
   if (!agent.apiKeyId) {
     throw new Error(`Agent '${agent.slug}' has no api_key_id set — edit at /settings/agents.`);
   }
@@ -175,6 +197,7 @@ export async function runTeamTurn(
       ownerId,
       contactId,
       memoryConfig.history_limit ?? 20,
+      loginId,
     );
     const history = teamThreadToHistory(teamHistoryRows);
 
@@ -186,6 +209,7 @@ export async function runTeamTurn(
         text: displayText,
         channel,
         attachments: options.attachments ?? [],
+        loginId: loginId ?? null,
       }),
     );
 
@@ -203,6 +227,7 @@ export async function runTeamTurn(
         agentId: agent.id,
         model: agent.model,
         status: 'pending',
+        loginId: loginId ?? null,
       }),
     );
 
@@ -283,6 +308,7 @@ export async function runTeamTurn(
           data: {
             surface: 'team',
             contact_id: contactId,
+            ...(loginId ? { login_id: loginId } : {}),
             channel,
             model: agent.model,
             agent_slug: agent.slug,

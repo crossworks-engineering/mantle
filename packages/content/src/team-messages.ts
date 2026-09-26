@@ -6,7 +6,7 @@
  * owner-side `team_chat_*` tools that make team activity queryable by the
  * brain.
  */
-import { and, count, desc, eq, gte, lt, sql as dsql } from 'drizzle-orm';
+import { and, count, desc, eq, gte, isNull, lt, sql as dsql } from 'drizzle-orm';
 import {
   db,
   systemDb,
@@ -39,6 +39,8 @@ export type AppendTeamMessageInput = {
   /** 'pending' inserts the durable "thinking…" bubble the turn pipeline
    *  finalizes later. Ignored when `error` is set (that's always 'failed'). */
   status?: 'pending' | 'complete';
+  /** A member login's turn: the row joins that login's own thread. */
+  loginId?: string | null;
 };
 
 /** Persist one turn row. Not fire-and-forget — the transcript IS the product
@@ -58,6 +60,7 @@ export async function appendTeamMessage(input: AppendTeamMessageInput): Promise<
       traceId: input.traceId ?? null,
       error: input.error ?? null,
       status: input.error ? 'failed' : (input.status ?? 'complete'),
+      loginId: input.loginId ?? null,
     })
     .returning();
   if (!row) throw new Error('appendTeamMessage: insert returned no row');
@@ -135,10 +138,18 @@ export async function teamThreadHasAttachedNode(
 export async function listTeamThread(
   ownerId: string,
   contactId: string,
-  opts: { before?: string; limit?: number } = {},
+  opts: { before?: string; limit?: number; loginId?: string } = {},
 ): Promise<TeamMessage[]> {
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
-  const conds = [eq(teamMessages.ownerId, ownerId), eq(teamMessages.contactId, contactId)];
+  // A member login's thread is its own: keyed by the login, never by the
+  // contact (the contact's team-portal rows are a different thread).
+  const conds = opts.loginId
+    ? [eq(teamMessages.ownerId, ownerId), eq(teamMessages.loginId, opts.loginId)]
+    : [
+        eq(teamMessages.ownerId, ownerId),
+        eq(teamMessages.contactId, contactId),
+        isNull(teamMessages.loginId),
+      ];
   if (opts.before) {
     const cursor = new Date(opts.before);
     if (!Number.isNaN(cursor.getTime())) conds.push(lt(teamMessages.createdAt, cursor));
@@ -158,8 +169,9 @@ export async function recentTeamMessages(
   ownerId: string,
   contactId: string,
   limit = 30,
+  loginId?: string,
 ): Promise<TeamMessage[]> {
-  return listTeamThread(ownerId, contactId, { limit });
+  return listTeamThread(ownerId, contactId, { limit, ...(loginId ? { loginId } : {}) });
 }
 
 /** Inbound turns this contact has sent since `since` — the daily-cap gate

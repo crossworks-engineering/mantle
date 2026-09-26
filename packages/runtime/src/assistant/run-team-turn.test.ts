@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { teamThreadToHistory } from './run-team-turn';
+import { assertMemberAgent, teamThreadToHistory } from './run-team-turn';
 import { isTeamPrivateReadsEnabled, TEAM_PRIVATE_READ_SLUGS } from '@mantle/content';
 import type { TeamMessage } from '@mantle/db';
 
@@ -97,5 +97,24 @@ describe('private-reads switch', () => {
       ? resolved
       : resolved.filter((s) => !gated.has(s));
     expect(on).toEqual(resolved);
+  });
+});
+
+describe('assertMemberAgent (member logins: team-level agents only)', () => {
+  it('refuses an admin-level agent for a member login', () => {
+    expect(() =>
+      assertMemberAgent({ slug: 'team-responder', audience: 'admin' }, 'login-1'),
+    ).toThrow(/admin level/);
+    // A stand-in with no level counts as admin: fail closed.
+    expect(() => assertMemberAgent({ slug: 'x' }, 'login-1')).toThrow(/admin level/);
+  });
+
+  it('allows a team-level agent for a member, and any agent for the team portal', () => {
+    expect(() =>
+      assertMemberAgent({ slug: 'team-responder', audience: 'team' }, 'login-1'),
+    ).not.toThrow();
+    expect(() =>
+      assertMemberAgent({ slug: 'team-responder', audience: 'admin' }, undefined),
+    ).not.toThrow();
   });
 });

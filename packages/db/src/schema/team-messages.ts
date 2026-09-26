@@ -47,6 +47,10 @@ export const teamMessages = pgTable(
     traceId: uuid('trace_id'),
     status: text('status').$type<'pending' | 'complete' | 'failed'>().default('complete').notNull(),
     error: text('error'),
+    /** A MEMBER login's thread (0163): set on a member's rows, null on team
+     *  portal rows. A member's thread is read by (owner, login). FK to
+     *  auth.users declared in the SQL (cross-schema). */
+    loginId: uuid('login_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
