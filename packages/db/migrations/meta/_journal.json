@@ -1170,6 +1170,13 @@
       "when": 1790016240000,
       "tag": "0166_spaces_validate",
       "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1790016300000,
+      "tag": "0167_member_chat_by_login",
+      "breakpoints": true
     }
   ]
 }

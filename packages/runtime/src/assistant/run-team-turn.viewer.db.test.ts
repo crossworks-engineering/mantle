@@ -162,6 +162,34 @@ describe.skipIf(!URL)('a team turn under the team viewer role', () => {
     expect(traces[0]!.n).toBeGreaterThan(0);
   });
 
+  it('a member LOGIN with no contact chats: its rows carry the login, not a contact', async () => {
+    // Users are the team (0167): a member login needs no contact.
+    const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
+      .$client;
+    const loginId = crypto.randomUUID();
+    await admin`insert into auth.users (id, email, password_hash, role)
+      values (${loginId}, ${`member-${loginId.slice(0, 8)}@example.invalid`}, 'x', 'member')`;
+    try {
+      const { runTeamTurn } = await import('./run-team-turn');
+      const result = await runTeamTurn(ownerId, 'hello from a member', {
+        loginId,
+        contactName: 'Test Member',
+      });
+      expect(result.reply).toBe('ok, done');
+      const rows = await admin<{ direction: string; contact_id: string | null }[]>`
+        select direction, contact_id from team_messages where login_id = ${loginId}
+        order by created_at`;
+      expect(rows.map((r) => [r.direction, r.contact_id])).toEqual([
+        ['inbound', null],
+        ['outbound', null],
+      ]);
+    } finally {
+      await admin`delete from team_messages where login_id = ${loginId}`;
+      await admin`delete from spaces where login_id = ${loginId}`;
+      await admin`delete from auth.users where id = ${loginId}`;
+    }
+  });
+
   it('control: the same turn with the agent at admin DOES see admin-only items', async () => {
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
       .$client;

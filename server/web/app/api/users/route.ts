@@ -112,14 +112,8 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-    // A member is a team contact with a login: the contact carries their name,
-    // their team limits and the provenance of what they ask for.
-    if (!parsed.data.contactId) {
-      return NextResponse.json(
-        { error: 'Pick the team contact this member login belongs to.' },
-        { status: 400 },
-      );
-    }
+    // Users are the team (Jason, 2026-09-26): a member login IS the team
+    // member. It needs no contact; its name is the login's display name.
   }
   if (parsed.data.contactId) {
     const [contact] = await db

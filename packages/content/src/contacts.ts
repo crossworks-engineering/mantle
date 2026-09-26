@@ -15,8 +15,8 @@
  * `email_send`/`email_page` enforce "recipient ∈ own_accounts ∪ contact_emails"
  * once the contacts list is non-empty. See docs/contacts.md.
  */
-import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
-import { db, nodes, type Node } from '@mantle/db';
+import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
+import { authUsers, db, nodes, type Node } from '@mantle/db';
 import {
   deriveContactTitle,
   digitsOnly,
@@ -224,6 +224,20 @@ export async function contactEmails(ownerId: string): Promise<string[]> {
     for (const a of addresses) set.add(a);
   }
   return [...set];
+}
+
+/**
+ * Every active login's email address, lower-cased: users are contacts in user
+ * form (Jason, 2026-09-26). Both email gates allow them, inbound and
+ * outbound, next to the contact list. A disabled login's address does not
+ * count. Logins all belong to this one brain, so there is no owner filter.
+ */
+export async function loginEmails(): Promise<string[]> {
+  const rows = await db
+    .select({ email: authUsers.email })
+    .from(authUsers)
+    .where(isNull(authUsers.disabledAt));
+  return [...new Set(rows.map((r) => r.email.trim().toLowerCase()).filter(Boolean))];
 }
 
 /** Raw email entries off a contact's `data` jsonb, with the legacy single

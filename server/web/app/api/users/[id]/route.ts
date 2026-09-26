@@ -67,22 +67,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       { status: 400 },
     );
   }
-  if (body.role === 'member' && body.contactId === null) {
-    return NextResponse.json({ error: 'A member login needs a team contact.' }, { status: 400 });
-  }
-  if (body.role === 'member' && body.contactId === undefined) {
-    const [row] = await db
-      .select({ contactId: authUsers.contactId })
-      .from(authUsers)
-      .where(eq(authUsers.id, targetId))
-      .limit(1);
-    if (!row?.contactId) {
-      return NextResponse.json(
-        { error: 'Link this login to a team contact before making it a member.' },
-        { status: 400 },
-      );
-    }
-  }
+  // Users are the team: a member login needs no contact (0167).
   if (body.contactId) {
     const [contact] = await db
       .select({ id: nodes.id })

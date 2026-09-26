@@ -78,6 +78,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
     ...actual,
     getPage: vi.fn(),
     contactEmails: vi.fn(async () => [] as string[]),
+    loginEmails: vi.fn(async () => [] as string[]),
     findContactsByEmails: vi.fn(async () => []),
     recordContactSent: vi.fn(async () => {}),
     // SYNC, and `{ html, imageFileIds }` — the real signature. The old stub was
@@ -90,7 +91,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
 });
 
 import { sendEmail, accountCanSend } from '@mantle/email';
-import { getPage, contactEmails, renderPageEmail } from '@mantle/content';
+import { getPage, contactEmails, loginEmails, renderPageEmail } from '@mantle/content';
 import { paramsOf } from './test-support';
 import { EMAIL_TOOLS } from './builtins-email';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -120,6 +121,7 @@ beforeEach(() => {
   vi.mocked(accountCanSend).mockReturnValue(true);
   // Default: the recipient IS a known contact.
   vi.mocked(contactEmails).mockResolvedValue(['friend@example.com']);
+  vi.mocked(loginEmails).mockResolvedValue([]);
   vi.mocked(sendEmail).mockResolvedValue({
     messageId: 'm1',
     accepted: ['friend@example.com'],
@@ -188,6 +190,14 @@ describe('email_send', () => {
       // still mail the user, just nobody else.
       vi.mocked(contactEmails).mockResolvedValue([]);
       const res = await send.handler({ ...OK_ARGS, to: 'me@example.com' }, ctx);
+      expect(res.ok).toBe(true);
+      expect(sendEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows a user of the brain: users are contacts in user form', async () => {
+      vi.mocked(contactEmails).mockResolvedValue([]);
+      vi.mocked(loginEmails).mockResolvedValue(['teammate@example.com']);
+      const res = await send.handler({ ...OK_ARGS, to: 'Teammate@Example.com' }, ctx);
       expect(res.ok).toBe(true);
       expect(sendEmail).toHaveBeenCalledTimes(1);
     });

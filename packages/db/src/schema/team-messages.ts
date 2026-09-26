@@ -28,9 +28,10 @@ export const teamMessages = pgTable(
       .primaryKey()
       .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
-    contactId: uuid('contact_id')
-      .notNull()
-      .references(() => nodes.id, { onDelete: 'cascade' }),
+    /** The team portal contact; null on a member LOGIN's rows (0167: users
+     *  are the team, a member needs no contact). Each row names a contact
+     *  or a login (CHECK team_messages_who_ck). */
+    contactId: uuid('contact_id').references(() => nodes.id, { onDelete: 'cascade' }),
     direction: text('direction').notNull(), // 'inbound' | 'outbound' (CHECK enforced in SQL)
     text: text('text').notNull(),
     agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),

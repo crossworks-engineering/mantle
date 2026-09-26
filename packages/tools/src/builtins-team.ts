@@ -96,12 +96,15 @@ const team_request_create: BuiltinToolDef = {
 
     // Provenance comes from the authenticated surface context, not the model.
     const { contactId, contactName } = surface;
+    const loginId = surface.kind === 'team' ? surface.loginId : undefined;
     const inboundMessageId = surface.kind === 'team' ? surface.inboundMessageId : undefined;
     let attachments: { nodeId: string }[] = [];
     if (inboundMessageId) {
-      const [msg] = await listTeamThread(ctx.ownerId, contactId, { limit: 200 }).then((rows) => [
-        rows.find((r) => r.id === inboundMessageId),
-      ]);
+      // A member login's thread is read by login; a portal thread by contact.
+      const [msg] = await listTeamThread(ctx.ownerId, contactId ?? '', {
+        limit: 200,
+        ...(loginId ? { loginId } : {}),
+      }).then((rows) => [rows.find((r) => r.id === inboundMessageId)]);
       attachments = (msg?.attachments ?? [])
         .filter((a) => typeof a.nodeId === 'string' && a.nodeId.length > 0)
         .map((a) => ({ nodeId: a.nodeId! }));
@@ -123,7 +126,8 @@ const team_request_create: BuiltinToolDef = {
           tags: [TEAM_REQUEST_TAG],
           extraData: {
             teamRequest: {
-              contactId,
+              contactId: contactId ?? null,
+              loginId: loginId ?? null,
               contactName: contactName ?? null,
               threadMessageId: inboundMessageId ?? null,
               // Forum provenance — which shared topic/post the ask came from,

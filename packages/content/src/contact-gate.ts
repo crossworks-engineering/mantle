@@ -1,9 +1,10 @@
 /**
  * Inbound email allowlist, derived from the contacts list. This is the SOLE
  * gate for what mail reaches the brain: a message is ingested iff its From
- * address matches a contact (an exact address OR a `@domain` wildcard) or is
- * one of the owner's own account addresses. Everything else is silently
- * rejected — never fetched, never stored.
+ * address matches a contact (an exact address OR a `@domain` wildcard), an
+ * active login (users are contacts in user form, 2026-09-26), or one of the
+ * owner's own account addresses. Everything else is silently rejected —
+ * never fetched, never stored.
  *
  * Mirrors the outbound send gate (`contactEmails`) but — unlike it — honours
  * `@domain` wildcards: a domain entry means "trust mail FROM this domain",
@@ -17,6 +18,7 @@
 import { and, eq } from 'drizzle-orm';
 import { db, emailAccounts, nodes } from '@mantle/db';
 import { partitionEmailEntries } from '@mantle/content-core/contacts-format';
+import { loginEmails } from './contacts';
 
 function domainOf(addr: string): string {
   const at = addr.lastIndexOf('@');
@@ -33,7 +35,7 @@ export interface ContactGate {
 }
 
 export async function loadContactGate(ownerId: string): Promise<ContactGate> {
-  const [contactRows, accountRows] = await Promise.all([
+  const [contactRows, accountRows, logins] = await Promise.all([
     db
       .select({ data: nodes.data })
       .from(nodes)
@@ -42,6 +44,7 @@ export async function loadContactGate(ownerId: string): Promise<ContactGate> {
       .select({ address: emailAccounts.address })
       .from(emailAccounts)
       .where(eq(emailAccounts.userId, ownerId)),
+    loginEmails(),
   ]);
 
   const exact = new Set<string>();
@@ -60,6 +63,9 @@ export async function loadContactGate(ownerId: string): Promise<ContactGate> {
 
   const ownAccounts = new Set<string>();
   for (const a of accountRows) ownAccounts.add(a.address.toLowerCase());
+  // The brain's users, admins and members: allowed like own accounts (they
+  // do not make the contact list "non-empty" either).
+  for (const e of logins) ownAccounts.add(e);
 
   const isEmpty = exact.size === 0 && domains.size === 0;
 

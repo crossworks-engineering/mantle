@@ -28,6 +28,7 @@ import {
   createShare,
   shareUrlForToken,
   contactEmails,
+  loginEmails,
   findContactsByEmails,
   recordContactSent,
   normalizeEmail,
@@ -61,7 +62,8 @@ function flatRecipients(...raws: (string | undefined)[]): string[] {
 }
 
 /** Recipients NOT permitted by the allowlist. The allowlist is the user's own
- *  account addresses plus their `contact` nodes. Fail CLOSED: with no contacts
+ *  account addresses, their `contact` nodes and the brain's active logins
+ *  (users are contacts in user form). Fail CLOSED: with no contacts
  *  yet, an agent can still email the user themselves but not arbitrary outside
  *  addresses — so a prompt-injected agent on a fresh install can't exfiltrate
  *  by emailing a stranger. Add a contact to permit sending to them. */
@@ -75,7 +77,12 @@ async function blockedRecipients(ownerId: string, addrs: string[]): Promise<stri
     .select({ address: emailAccounts.address })
     .from(emailAccounts)
     .where(eq(emailAccounts.userId, ownerId));
-  const allowed = new Set<string>([...contacts, ...accounts.map((a) => a.address.toLowerCase())]);
+  const logins = await loginEmails();
+  const allowed = new Set<string>([
+    ...contacts,
+    ...logins,
+    ...accounts.map((a) => a.address.toLowerCase()),
+  ]);
   return addrs.filter((a) => !allowed.has(normalizeEmail(a)));
 }
 

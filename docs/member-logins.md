@@ -1,7 +1,8 @@
 # Member logins
 
-> Phase 1 of the member logins plan (dev-brain plan v3.1). A member is a team
-> contact with their own login. It is off by default: set `MANTLE_MEMBERS=1`.
+> Phase 1 of the member logins plan (dev-brain plan v3.1). A member is a user
+> of the brain with the member role: users are the team. It is off by
+> default: set `MANTLE_MEMBERS=1`.
 > What a member may read is decided by Postgres row security at the team level
 > ([access-levels.md](./access-levels.md)), never by a check in each route.
 
@@ -10,9 +11,15 @@
 - **Two roles.** `auth.users.role` is `admin` or `member` (migration 0162).
   The anchor (`is_owner`) is always an admin. The role is read from the login
   row on every request, never from a token, so a change takes effect at once.
-- **A member is a team contact with a login.** `auth.users.contact_id` links
-  the login to its contact: the contact carries the name, the team limits and
-  the provenance of what the member asks for. A member login needs one.
+- **Users are the team** (Jason, 2026-09-26). A login with role member IS
+  the team member: it needs no contact, and its display name (else the part
+  of its email before the @) is how the agent and the admin see it. Contacts
+  are plain contacts; the old team switch and team codes on contacts belong
+  to the team portal, which is being retired. `auth.users.contact_id` is an
+  optional link, no longer required.
+- **Users are contacts in user form.** Every active login's email counts in
+  both email gates, inbound (`loadContactGate`) and outbound (the send
+  tools), next to the contact list. A disabled login's address does not.
 - **Disabled.** `auth.users.disabled_at` set = the login cannot sign in,
   refresh a bearer or use a session it holds. Locking a login out (demote or
   disable) also revokes its mobile bearers and its MCP connector (OAuth)
@@ -69,8 +76,9 @@ not something an owner chose. To list an item to members, set it to Team.
   admin (access-levels.md §5): members chat only with team-level agents, and
   the turn engine refuses an admin agent for a member (`assertMemberAgent`).
   One thread per login (`team_messages.login_id`, migration 0163), never in
-  the owner's assistant stream. The team surface's per-contact rate limit and
-  shared daily cap apply.
+  the owner's assistant stream. A member's rows carry the login and no
+  contact (migration 0167). Limits per login: 6 messages a minute and the
+  team daily cap.
 - **Not yet:** accept and return by an admin (Phase 4), running apps (Phase
   4b), attachments in chat. Own items: section 5.
 
@@ -78,8 +86,8 @@ not something an owner chose. To list an item to members, set it to Team.
 
 1. Set `MANTLE_MEMBERS=1` in the box's `.env` and roll.
 2. Set item levels and lower `team-responder` to team (access-levels.md §5).
-3. Settings > Logins: create a login with role member, linked to the
-   person's team contact.
+3. Settings > Users: create a user with role member, and hand the person
+   their email and password.
 
 ## 5. Personal spaces (Phase 2)
 

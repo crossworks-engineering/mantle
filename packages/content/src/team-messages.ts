@@ -27,7 +27,9 @@ export type { TeamMemberActivity };
 
 export type AppendTeamMessageInput = {
   ownerId: string;
-  contactId: string;
+  /** The team portal contact. Null for a member LOGIN's turn (0167): the
+   *  login is the team member, and `loginId` names the thread. */
+  contactId: string | null;
   direction: 'inbound' | 'outbound';
   text: string;
   agentId?: string | null;
@@ -188,6 +190,27 @@ export async function countTeamInboundSince(
       and(
         eq(teamMessages.ownerId, ownerId),
         eq(teamMessages.contactId, contactId),
+        eq(teamMessages.direction, 'inbound'),
+        gte(teamMessages.createdAt, since),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
+/** Inbound turns a member LOGIN has sent since `since`: the member chat's
+ *  daily-cap gate (users are the team; a member needs no contact). */
+export async function countMemberInboundSince(
+  ownerId: string,
+  loginId: string,
+  since: Date,
+): Promise<number> {
+  const [row] = await systemDb
+    .select({ n: count() })
+    .from(teamMessages)
+    .where(
+      and(
+        eq(teamMessages.ownerId, ownerId),
+        eq(teamMessages.loginId, loginId),
         eq(teamMessages.direction, 'inbound'),
         gte(teamMessages.createdAt, since),
       ),

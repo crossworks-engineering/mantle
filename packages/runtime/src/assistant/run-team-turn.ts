@@ -71,8 +71,10 @@ import { agentLevel, withAgentViewer } from '../agent/agent-viewer';
 export const TEAM_RESPONDER_SLUG = 'team-responder';
 
 export type RunTeamTurnOptions = {
-  /** The team member this turn belongs to (from the authenticated surface). */
-  contactId: string;
+  /** The team portal contact this turn belongs to (from the authenticated
+   *  surface). Absent for a member LOGIN's turn: users are the team (0167),
+   *  so `loginId` identifies the member instead. One of the two is required. */
+  contactId?: string;
   /** Display name for the member-identity context line + request provenance. */
   contactName?: string;
   /** What the member typed (their bubble). Defaults to `text` — they differ
@@ -148,8 +150,8 @@ export async function runTeamTurn(
 ): Promise<TeamTurnResult> {
   const trimmed = text.trim();
   if (!trimmed) throw new Error('runTeamTurn: empty text');
-  const { contactId } = options;
-  if (!contactId) throw new Error('runTeamTurn: contactId required');
+  const contactId = options.contactId ?? null;
+  if (!contactId && !options.loginId) throw new Error('runTeamTurn: contactId or loginId required');
   const displayText = options.displayText?.trim() || trimmed;
   const channel: TeamChannel = options.channel ?? 'web';
   const progress = { inboundWritten: false };
@@ -198,7 +200,7 @@ async function runTeamTurnSteps(
   options: RunTeamTurnOptions,
   progress: { inboundWritten: boolean },
 ): Promise<TeamTurnResult> {
-  const contactId = options.contactId!;
+  const contactId = options.contactId ?? null;
 
   const { loginId } = options;
   const agent = await resolveTeamResponder(ownerId, options.agentSlug);
@@ -242,7 +244,7 @@ async function runTeamTurnSteps(
     const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
     const teamHistoryRows = await recentTeamMessages(
       ownerId,
-      contactId,
+      contactId ?? '', // a login's thread is read by login
       memoryConfig.history_limit ?? 20,
       loginId,
     );
@@ -294,7 +296,8 @@ async function runTeamTurnSteps(
 
     // Member identity rides the VOLATILE block: per-contact text in the cached
     // prefix would bust the shared per-agent cache on every member switch.
-    const memberLine = `Team member: ${options.contactName ?? 'unknown name'} (contact ${contactId}). You are serving this person — an external team member, not the brain's owner.`;
+    const who = loginId ? `user ${loginId}` : `contact ${contactId}`;
+    const memberLine = `Team member: ${options.contactName ?? 'unknown name'} (${who}). You are serving this person — an external team member, not the brain's owner.`;
 
     // Shared responder-turn assembly (audit #5c), configured for the team
     // surface's HARD isolation: no identity/journal block, no heartbeats, no
@@ -383,14 +386,15 @@ async function runTeamTurnSteps(
             // from their own team thread, so the step's turnCount reflects
             // that thread, not the structurally-empty ctx history.
             loadContext: async () => ctx,
-            contextStepInput: { agentId: agent.id, contactId },
+            contextStepInput: { agentId: agent.id, contactId, loginId: loginId ?? null },
             contextStepExtra: { turnCount: history.length },
             buildMessages: () => messages,
             // The provenance channel: team_request_create reads WHO is asking
             // from here; owner-side tools see 'team' and refuse.
             surface: {
               kind: 'team',
-              contactId,
+              ...(contactId ? { contactId } : {}),
+              ...(loginId ? { loginId } : {}),
               contactName: options.contactName,
               privateReads,
               inboundMessageId: inbound.id,

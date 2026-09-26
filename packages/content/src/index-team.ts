@@ -74,6 +74,7 @@ export {
   appendTeamMessage,
   updateTeamMessageOutcome,
   countTeamInboundSince,
+  countMemberInboundSince,
   listTeamThread,
   recentTeamMessages,
   listTeamMemberActivity,

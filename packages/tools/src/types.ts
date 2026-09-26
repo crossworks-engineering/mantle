@@ -80,7 +80,11 @@ export type ToolHandlerContext = {
          *  (never from model args, which an injected prompt could forge);
          *  owner-only and send tools must refuse on this surface. */
         kind: 'team';
-        contactId: string;
+        /** The team portal contact. Absent on a member LOGIN's turn: users
+         *  are the team, and `loginId` names the member instead. */
+        contactId?: string;
+        /** A member login's turn (member logins): the login is the member. */
+        loginId?: string;
         contactName?: string;
         /** The owner's `teamPrivateReads` switch, read when the turn starts.
          *  Absent = OFF: the read tools hide the private corpus (email,

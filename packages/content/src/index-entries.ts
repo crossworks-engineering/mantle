@@ -102,6 +102,7 @@ export {
   updateContact,
   // Gate + activity helpers used by the send path
   contactEmails,
+  loginEmails,
   findContactsByEmails,
   recordContactSent,
   type ContactWriteResult,
