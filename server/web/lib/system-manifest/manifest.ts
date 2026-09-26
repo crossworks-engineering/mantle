@@ -1012,6 +1012,10 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'read_result',
       // the single write path: provenance-stamped request task
       'team_request_create',
+      // the member's own personal items, on behalf of the member this turn
+      // serves (member logins Phase 2; fail closed on any other surface)
+      'my_items_list',
+      'my_item_open',
     ],
   },
   {

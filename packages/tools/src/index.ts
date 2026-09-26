@@ -117,6 +117,7 @@ export { RUN_TOOLS, BANNED_ITEM_TOOLS, parsePlan } from './builtins-runs';
 export { REPLAY_TOOLS } from './builtins-replay';
 export { IMAGE_TOOLS } from './builtins-images';
 export { TEAM_TOOLS } from './builtins-team';
+export { MY_SPACE_TOOLS } from './builtins-my-space';
 export { RESEARCH_TOOLS, resolveOpenRouterKey } from './builtins-research';
 export { CURATION_TOOLS } from './builtins-curation';
 export { CRAWL_TOOLS } from './builtins-crawl';

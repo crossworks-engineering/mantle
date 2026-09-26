@@ -16,6 +16,7 @@ import { EVENT_TOOLS } from './builtins-events';
 import { PROFILE_TOOLS } from './builtins-profile';
 import { TASK_TOOLS } from './builtins-tasks';
 import { TEAM_TOOLS } from './builtins-team';
+import { MY_SPACE_TOOLS } from './builtins-my-space';
 import { PERSONA_TOOLS } from './builtins-persona';
 import { TERMINAL_TOOLS } from './builtins-terminal';
 import { SANDBOX_TOOLS } from './builtins-sandbox';
@@ -132,6 +133,9 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // manage tasks from chat. None require_confirm (trivially reversible).
   ...TASK_TOOLS,
   ...TEAM_TOOLS,
+  // The member's own personal items, read on behalf of the member a team
+  // turn serves (member logins Phase 2). Fail closed on any other surface.
+  ...MY_SPACE_TOOLS,
   // Persona self-edit — lets Saskia adjust her own style/relationship
   // notes when the user explicitly asks ("be more professional").
   // Scoped resolution + soft-retire; pure logic in @mantle/db.

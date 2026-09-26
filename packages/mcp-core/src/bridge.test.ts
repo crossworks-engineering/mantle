@@ -153,6 +153,11 @@ describe('every in-app tool reaches the MCP surface', () => {
     // Needs a live delivery surface (a Telegram chat / the web reply stream) to
     // play the audio into. Over MCP it could only ever error.
     synthesize_speech: 'needs a delivery surface the bridge cannot supply',
+    // Read a member's personal items on behalf of the member a team turn
+    // serves (member logins, plan 2e). MCP has no member to act for, so the
+    // tools could only ever answer "nobody to act for".
+    my_items_list: 'acts for the member of a team turn; MCP has none',
+    my_item_open: 'acts for the member of a team turn; MCP has none',
   };
 
   it('exposes every builtin slug over stdio, except the documented ones', () => {

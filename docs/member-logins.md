@@ -131,24 +131,30 @@ can never set accepted.
 **Routes** (all in `MEMBER_ROUTES`, all through `inMySpace` or
 `withTeamDrafts`):
 
-| Route                                    | What                                           |
-| ---------------------------------------- | ---------------------------------------------- |
-| `GET/POST /api/member/space`             | List Mine; create a page, note, drawing, table |
-| `GET/PATCH/DELETE /api/member/space/:id` | One item with its body; rename; delete         |
-| `PUT /api/member/space/:id/draft`        | Autosave `{ doc \| scene, if_rev }`            |
-| `POST /api/member/space/:id/save`        | Save version `{ doc \| scene, if_rev, svg? }`  |
-| `POST /api/member/space/:id/share`       | `{ sharing: 'private' \| 'team' }`             |
-| `POST /api/member/space/:id/submit`      | Submit the saved version for review            |
-| `POST /api/member/space/:id/recall`      | Take a submitted item back                     |
-| `POST /api/member/space-files`           | Upload a file (multipart, one `file` part)     |
-| `GET /api/member/space/:id/bytes`        | An own file's bytes (`?thumb=1`: thumbnail)    |
-| `GET /api/member/team-drafts[/:id]`      | Teammates' shared items, saved version only    |
-| `GET /api/member/team-drafts/:id/bytes`  | A teammate's team-shared file                  |
+| Route                                           | What                                            |
+| ----------------------------------------------- | ----------------------------------------------- |
+| `GET/POST /api/member/space`                    | List Mine; create a page, note, drawing, table  |
+| `GET/PATCH/DELETE /api/member/space/:id`        | One item with its body; rename; delete          |
+| `PUT /api/member/space/:id/draft`               | Autosave `{ doc \| scene, if_rev }`             |
+| `POST /api/member/space/:id/save`               | Save version `{ doc \| scene, if_rev, svg? }`   |
+| `POST /api/member/space/:id/share`              | `{ sharing: 'private' \| 'team' }`              |
+| `POST /api/member/space/:id/submit`             | Submit the saved version for review             |
+| `POST /api/member/space/:id/recall`             | Take a submitted item back                      |
+| `POST /api/member/space-files`                  | Upload a file (multipart, one `file` part)      |
+| `GET /api/member/space/:id/bytes`               | An own file's bytes (`?thumb=1`: thumbnail)     |
+| `GET /api/member/team-drafts[/:id]`             | Teammates' shared items, saved version only     |
+| `GET /api/member/team-drafts/:id/bytes`         | A teammate's team-shared file                   |
+| `GET/POST /api/member/space/:id/comments`       | The thread on an own item (shared or submitted) |
+| `DELETE …/space/:id/comments/:commentId`        | Remove an own comment                           |
+| `GET/POST /api/member/team-drafts/:id/comments` | The thread on a teammate's shared item          |
+| `DELETE …/team-drafts/:id/comments/:commentId`  | Remove an own comment                           |
+| `GET /api/member/realtime`                      | SSE: own and team-shared item changes           |
 
 The draft and save routes keep the owner routes' etag contract (`if_rev` in,
 `draft_rev` out, 409 with `current_rev`). State refusals answer 409 with a
-`reason` (`frozen`, `not-draft`, `not-submitted`, `unsaved-draft`, `quota`);
-another member's item is a plain 404.
+`reason` (`frozen`, `not-draft`, `not-submitted`, `unsaved-draft`, `quota`,
+`embed`, `not-shared`); an empty comment is a 400 (`invalid`); another
+member's item is a plain 404.
 
 A table's draft takes a whole `table` document or an `ops` batch (the owner
 op schema); Save version publishes the draft workbook. `GET …/:id?tab=` picks
@@ -191,6 +197,28 @@ member's private items comes with the deactivation flow (Phase 4).
 existing owner id valid. Once personal items exist, never roll back below
 v0.232.255 (the extractor's owner check).
 
-**Not yet:** comments on shared items, the
-`space_item_changed` realtime event, the my-space agent tools (on behalf
-of), the admin review screen (Phase 4).
+**Comments** (migration 0168). The author comments while an item is shared
+with the team or submitted (409 `not-shared` otherwise); a teammate while it
+is shared. Threads are stored with the brain's id as owner, so they survive
+Accept. Row security holds the reads: the space role sees the threads on its
+own items, the team role with the human flag the threads on teammates'
+shared items, and nothing below admin ever sees a brain item's thread. A
+teammate's comment is written on the admin pool (`asSystem`) after a
+team-drafts read proved the item visible: the team role never writes.
+
+**Live changes.** Every personal-space action (create, Save version, share,
+submit, recall, delete, a comment) raises `space_item_changed` inside its
+own transaction, so only committed changes are announced. The payload is
+ids and flags only. `GET /api/member/realtime` passes an event to a member
+when the item is in their own space or is (or just was) shared with the
+team: `{ type: 'space_item', id, kind, own }`. The client reloads.
+
+**Agents, on behalf of** (plan 2e). `my_items_list` and `my_item_open` (in
+`team-read`) read the personal items of the member a team turn serves. The
+member is the turn's own login, stamped on the team surface by the server,
+never named by the model; any other surface (an owner turn, a heartbeat, a
+run, MCP) finds nothing. Each call opens its own short space transaction
+(`mantle_personal_space(login)` maps the login to its space). Read, never
+learn: no search by meaning over personal items.
+
+**Not yet:** the admin review screen (Phase 4).
