@@ -10,7 +10,10 @@
  *  - No inheritance. Lowering an item offers its CLOSURE (what its share or
  *    its embeds need to keep working: a page's embedded files and drawings, a
  *    folder's contents, a drawing's images) as one explicit extra step.
- *    The closure is only ever LOWERED, never raised.
+ *    Raising an item offers the mirror step: closure items still BELOW it (a
+ *    folder taken back to admin whose files stay at team) can be raised with
+ *    it. Both are explicit (`withClosure`, `raiseClosure`); nothing follows
+ *    an item on its own.
  *  - An agent may hold only tool groups at or below its level, checked when
  *    either level changes (and at grant time, see agentGrantProblems).
  */
@@ -28,7 +31,7 @@ import {
 } from '@mantle/db';
 import { referencedDrawIds, referencedFileIds } from './doc-assets';
 import { getPage } from './pages/read';
-import { applyLevelToShare, type ShareSummary } from './shares';
+import { applyLevelToShare, getActiveShareForNode, type ShareSummary } from './shares';
 
 export type AccessItem = { id: string; type: string; title: string; audience: ViewerLevel };
 
@@ -114,18 +117,24 @@ export type SetItemAudienceResult = {
   /** Closure items still ABOVE the new level (not asked, or asked = false):
    *  the share or embeds that need them will not show them at this level. */
   stillAbove: AccessItem[];
+  /** Closure items raised with it (only when `raiseClosure`). */
+  raised: AccessItem[];
+  /** Closure items still BELOW the new level (not asked): people at their
+   *  level can still open them although the item itself went up. */
+  stillBelow: AccessItem[];
 };
 
 /**
  * Set a brain item's level. `withClosure` also lowers the closure items that
- * sit above the new level (never raises any). Refuses a non-workspace kind
- * below admin.
+ * sit above the new level; `raiseClosure` also raises the ones below it. The
+ * two are separate on purpose: "Lower them too" can never raise anything.
+ * Refuses a non-workspace kind below admin.
  */
 export async function setItemAudience(
   ownerId: string,
   nodeId: string,
   audience: string,
-  opts: { withClosure?: boolean } = {},
+  opts: { withClosure?: boolean; raiseClosure?: boolean } = {},
 ): Promise<SetItemAudienceResult> {
   if (!isViewerLevel(audience)) {
     throw new AccessError(
@@ -146,8 +155,9 @@ export async function setItemAudience(
     );
   }
 
-  const closure = audience === 'admin' ? [] : await accessClosure(ownerId, nodeId);
+  const closure = await accessClosure(ownerId, nodeId);
   const above = closure.filter((c) => isAbove(c.audience, audience));
+  const below = closure.filter((c) => isAbove(audience, c.audience));
   return db.transaction(async (tx) => {
     await tx
       .update(nodes)
@@ -169,10 +179,28 @@ export async function setItemAudience(
         );
       lowered = above.map((a) => ({ ...a, audience }));
     }
+    let raised: AccessItem[] = [];
+    if (opts.raiseClosure && below.length > 0) {
+      await tx
+        .update(nodes)
+        .set({ audience })
+        .where(
+          and(
+            eq(nodes.ownerId, ownerId),
+            inArray(
+              nodes.id,
+              below.map((b) => b.id),
+            ),
+          ),
+        );
+      raised = below.map((b) => ({ ...b, audience }));
+    }
     return {
       item: { id: row.id, type: row.type, title: row.title, audience },
       lowered,
       stillAbove: opts.withClosure ? [] : above,
+      raised,
+      stillBelow: opts.raiseClosure ? [] : below,
     };
   });
 }
@@ -192,10 +220,18 @@ export async function setItemLevel(
   ownerId: string,
   nodeId: string,
   audience: string,
-  opts: { withClosure?: boolean } = {},
+  opts: { withClosure?: boolean; raiseClosure?: boolean } = {},
 ): Promise<SetItemLevelResult> {
   const res = await setItemAudience(ownerId, nodeId, audience, opts);
   const share = await applyLevelToShare(ownerId, nodeId, res.item.audience);
+  // A raised closure item that carries a link of its OWN (a file shared on
+  // its own, say) must have that link follow it, or level and link drift: an
+  // open link on an item now at admin. Items without a link get none.
+  for (const r of res.raised) {
+    if (await getActiveShareForNode(ownerId, r.id)) {
+      await applyLevelToShare(ownerId, r.id, r.audience);
+    }
+  }
   return { ...res, share };
 }
 

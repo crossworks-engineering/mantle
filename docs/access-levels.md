@@ -24,7 +24,12 @@ item when the caller's level is at or above the item's level.
 - **No inheritance.** Lowering a folder does not lower its contents. The
   Access control offers the item's **closure** (a page's embedded files and
   drawings, a folder's contents, a drawing's images) as one explicit extra
-  step. The closure is only ever lowered, never raised.
+  step ("Lower them too", `withClosure`). Raising an item offers the mirror
+  step: closure items still below it (a folder taken back to admin whose
+  files stay at team, or a link revoked elsewhere) are listed, and "Raise
+  them too" (`raiseClosure`) raises them. The two are separate: lowering
+  never raises and raising never lowers. A raised item that carries its own
+  link has the link follow its new level.
 - **An agent's level is the switch.** A team-level agent runs every query of
   its turn on the team role, so it reads only team-, client- and public-level
   items. There is no other flag. `team-responder` ships at admin; an admin

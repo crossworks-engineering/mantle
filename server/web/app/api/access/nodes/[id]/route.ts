@@ -2,7 +2,7 @@
  * GET   /api/access/nodes/:id  -> the item's level, its closure (the embeds /
  *                                 folder contents its share needs), its link
  *                                 and what the control may offer.
- * PATCH /api/access/nodes/:id  { audience, withClosure? } -> set the level;
+ * PATCH /api/access/nodes/:id  { audience, withClosure?, raiseClosure? } -> set the level;
  *                                 the link follows it (none at admin, team-only
  *                                 at team, open at client and public).
  *
@@ -46,6 +46,8 @@ function linkView(share: ShareSummary | null): AccessLinkView | null {
 const PatchBody = z.object({
   audience: z.enum(VIEWER_LEVELS),
   withClosure: z.boolean().optional(),
+  /** Also raise the closure items still below the new level. */
+  raiseClosure: z.boolean().optional(),
 });
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -99,6 +101,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   try {
     const res = await setItemLevel(user.id, idParsed.data.id, parsed.data.audience, {
       withClosure: parsed.data.withClosure === true,
+      raiseClosure: parsed.data.raiseClosure === true,
     });
     const body: AccessNodeUpdate = { ...res, share: linkView(res.share) };
     return NextResponse.json(body);

@@ -101,7 +101,7 @@ export const access_set: BuiltinToolDef = {
   preconditions: NODE_ID_PRE,
   name: 'Set an access level',
   description:
-    "Set the level of one brain item, agent or tool group: admin (default), team, client or public. A caller sees what is at or below its level. Only pages, notes, drawings, tables, files, folders, apps and formulas go below admin. Lowering an item reports closure items still above it; `with_closure: true` lowers those too (never raises). The item's share link follows its level: none at admin, team-only at team (it lists in the team workspace), open at client and public. An agent's level decides what it reads: `team-responder` at team reads only team-level items. Takes effect at once. To read a level use `access_get`.",
+    "Set the level of one brain item, agent or tool group: admin (default), team, client or public. A caller sees what is at or below its level. Only pages, notes, drawings, tables, files, folders, apps and formulas go below admin. Lowering an item reports closure items still above it; `with_closure: true` lowers those too. Raising an item reports closure items still below it (a folder taken back to admin whose files stay at team); `raise_closure: true` raises those too. The item's share link follows its level: none at admin, team-only at team (it lists in the team workspace), open at client and public. An agent's level decides what it reads: `team-responder` at team reads only team-level items. Takes effect at once. To read a level use `access_get`.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -113,6 +113,12 @@ export const access_set: BuiltinToolDef = {
         type: 'boolean',
         default: false,
         description: "items only: also lower the item's embeds / folder contents",
+      },
+      raise_closure: {
+        type: 'boolean',
+        default: false,
+        description:
+          "items only: also raise the item's embeds / folder contents that sit below the new level",
       },
     },
     required: ['level'],
@@ -130,8 +136,14 @@ export const access_set: BuiltinToolDef = {
       if (nodeId) {
         const res = await setItemLevel(ctx.ownerId, nodeId, level, {
           withClosure: input.with_closure === true,
+          raiseClosure: input.raise_closure === true,
         });
-        ctx.step?.setOutput({ id: nodeId, level, lowered: res.lowered.length });
+        ctx.step?.setOutput({
+          id: nodeId,
+          level,
+          lowered: res.lowered.length,
+          raised: res.raised.length,
+        });
         return { ok: true, output: res };
       }
       if (agentSlug) {

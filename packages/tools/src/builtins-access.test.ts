@@ -36,12 +36,36 @@ describe('access tools', () => {
       item: { id: 'n1' },
       lowered: [{ id: 'f1' }],
       stillAbove: [],
+      raised: [],
+      stillBelow: [],
     });
     const res = await access_set.handler(
       { node_id: 'n1', level: 'team', with_closure: true },
       OWNER,
     );
-    expect(h.setItem).toHaveBeenCalledWith('o1', 'n1', 'team', { withClosure: true });
+    expect(h.setItem).toHaveBeenCalledWith('o1', 'n1', 'team', {
+      withClosure: true,
+      raiseClosure: false,
+    });
+    expect(res.ok).toBe(true);
+  });
+
+  it('pass raise_closure through on its own (MED 7)', async () => {
+    h.setItem.mockResolvedValueOnce({
+      item: { id: 'n1' },
+      lowered: [],
+      stillAbove: [],
+      raised: [{ id: 'f1' }],
+      stillBelow: [],
+    });
+    const res = await access_set.handler(
+      { node_id: 'n1', level: 'admin', raise_closure: true },
+      OWNER,
+    );
+    expect(h.setItem).toHaveBeenCalledWith('o1', 'n1', 'admin', {
+      withClosure: false,
+      raiseClosure: true,
+    });
     expect(res.ok).toBe(true);
   });
 

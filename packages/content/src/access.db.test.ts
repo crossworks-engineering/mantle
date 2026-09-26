@@ -1,7 +1,7 @@
 /**
  * Setting levels against a real, migrated Postgres (member logins Phase 0b):
- * the type ceiling, share closure (lowered on request, never raised), and the
- * agent / tool-group rule. Seeds its own owner and rows and removes them.
+ * the type ceiling, share closure (lowered or raised on request only, the two
+ * never mixed), and the agent / tool-group rule. Seeds its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/access.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -70,6 +70,7 @@ describe.skipIf(!URL)('setting levels on Postgres', () => {
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from agents where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from tool_groups where owner_id = ${owner}`);
+    await m.db.execute(sqlTag`delete from shares where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from auth.users where id = ${owner}`);
     await m.closeDb();
@@ -103,6 +104,32 @@ describe.skipIf(!URL)('setting levels on Postgres', () => {
     expect(res.lowered.map((i) => i.id)).toEqual([ids.child]);
     expect(await audienceOf(ids.child)).toBe('team');
     expect(await audienceOf(ids.publicChild), 'a public child stays public').toBe('public');
+  });
+
+  it('raising a folder reports what it holds below, and raises it only when asked (MED 7)', async () => {
+    // The public child carries its own open link: raising it must revoke it,
+    // or an admin item would keep an open link.
+    const linked = await a.setItemLevel(owner, ids.publicChild, 'public');
+    expect(linked.share).not.toBeNull();
+
+    const first = await a.setItemLevel(owner, ids.folder, 'admin');
+    expect(first.stillBelow.map((i) => i.id).sort()).toEqual([ids.child, ids.publicChild].sort());
+    expect(first.raised).toEqual([]);
+    expect(await audienceOf(ids.child), 'nothing follows on its own').toBe('team');
+
+    // "Lower them too" must never raise: withClosure alone leaves them below.
+    await a.setItemLevel(owner, ids.folder, 'admin', { withClosure: true });
+    expect(await audienceOf(ids.publicChild)).toBe('public');
+
+    const second = await a.setItemLevel(owner, ids.folder, 'admin', { raiseClosure: true });
+    expect(second.raised.map((i) => i.id).sort()).toEqual([ids.child, ids.publicChild].sort());
+    expect(await audienceOf(ids.child)).toBe('admin');
+    expect(await audienceOf(ids.publicChild)).toBe('admin');
+    const shares = await import('./shares');
+    expect(
+      await shares.getActiveShareForNode(owner, ids.publicChild),
+      'its link follows',
+    ).toBeNull();
   });
 
   it('an agent cannot be lowered while it holds a group above the new level', async () => {

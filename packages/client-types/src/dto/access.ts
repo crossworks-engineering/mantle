@@ -44,12 +44,18 @@ export type AccessNodeView = {
   canLink: boolean;
 };
 
-/** PATCH /api/access/nodes/:id { audience, withClosure? } */
+/** PATCH /api/access/nodes/:id { audience, withClosure?, raiseClosure? } */
 export type AccessNodeUpdate = {
   item: AccessItemView;
   /** Closure items lowered with it (only when `withClosure`). */
   lowered: AccessItemView[];
   /** Closure items still above the new level (when not `withClosure`). */
   stillAbove: AccessItemView[];
+  /** Closure items raised with it (only when `raiseClosure`). Absent from
+   *  brains before 0.232.264. */
+  raised?: AccessItemView[];
+  /** Closure items still below the new level (when not `raiseClosure`).
+   *  Absent from brains before 0.232.264. */
+  stillBelow?: AccessItemView[];
   share: AccessLinkView | null;
 };
