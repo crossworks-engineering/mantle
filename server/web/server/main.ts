@@ -64,7 +64,16 @@ const app = await createApp();
 const port = Number(process.env.PORT || 3000);
 const hostname = process.env.HOST || '0.0.0.0';
 
-const server = serve({ fetch: app.fetch, port, hostname }, (info) => {
+// overrideGlobalObjects: false is a SECURITY setting, not a tuning knob. By
+// default @hono/node-server swaps `global.Response` for its own class when
+// serve() runs, AFTER our modules loaded: NextResponse (server/http-compat)
+// still extends the original, so every route's `if (user instanceof Response)
+// return user` was false for the 401/403 that getOwnerOr401 returns, and the
+// handler ran on with the refusal object as its "user". That let a member
+// login (and a revoked bearer) into admin handlers; only the ones that query
+// by `user.id` crashed. Found live on dev, 2026-09-26. Pinned by
+// server-globals.test.ts.
+const server = serve({ fetch: app.fetch, port, hostname, overrideGlobalObjects: false }, (info) => {
   console.log(`[server] mantle server/web (hono) listening on http://${hostname}:${info.port}`);
 });
 
