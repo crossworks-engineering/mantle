@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { convergeManifestSkills, missingPersonaGroups } from './reconcile-util';
+import { convergeManifestSkills, groupsWithinLevel, missingPersonaGroups } from './reconcile-util';
 
 describe('missingPersonaGroups', () => {
   it('returns the manifest groups the agent does not yet hold', () => {
@@ -94,5 +94,27 @@ describe('convergeManifestSkills', () => {
 
   it('converging to an empty wanted set strips all manifest-owned skills, keeps operator ones', () => {
     expect(convergeManifestSkills(['rich_writing', 'custom'], [], owned)).toEqual(['custom']);
+  });
+});
+
+describe('groupsWithinLevel', () => {
+  const levels = new Map([
+    ['team-read', 'team'],
+    ['team-read-admin', 'admin'],
+  ]);
+  it('never re-adds an admin group to a team-level agent', () => {
+    expect(groupsWithinLevel(['team-read', 'team-read-admin'], 'team', levels)).toEqual([
+      'team-read',
+    ]);
+  });
+  it('keeps everything for an admin agent (and a missing level means admin)', () => {
+    expect(groupsWithinLevel(['team-read', 'team-read-admin'], 'admin', levels)).toEqual([
+      'team-read',
+      'team-read-admin',
+    ]);
+    expect(groupsWithinLevel(['team-read-admin'], null, levels)).toEqual(['team-read-admin']);
+  });
+  it('treats a group with no known level as admin', () => {
+    expect(groupsWithinLevel(['mystery'], 'team', levels)).toEqual([]);
   });
 });

@@ -48,7 +48,7 @@
  */
 import { and, eq, inArray } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
-import { db, agents, skills, type AgentParams } from '@mantle/db';
+import { db, agents, skills, toolGroups, type AgentParams } from '@mantle/db';
 import { loadProfilePreferences, updateProfilePreferences } from '@mantle/content';
 import { APP_VERSION } from '@mantle/client-types/version';
 import { applyManifest, seedToolCapabilities, seedManifestWorkers } from './seed';
@@ -58,7 +58,7 @@ import {
   PERSONA_MANIFEST,
   PERSONA_TOOL_GROUP_SLUGS,
 } from './manifest';
-import { convergeManifestSkills, missingPersonaGroups } from './reconcile-util';
+import { convergeManifestSkills, groupsWithinLevel, missingPersonaGroups } from './reconcile-util';
 import { env } from '@mantle/config';
 
 let ranThisProcess = false;
@@ -100,11 +100,22 @@ async function resolveOwnerId(): Promise<string | null> {
  * change land on an operator-persona box WITHOUT a manual SQL detach. Returns the
  * `slug:+added -removed` strings changed.
  */
+/** Every tool group's level, for the level check on reconcile grants. */
+async function toolGroupLevels(ownerId: string): Promise<Map<string, string>> {
+  const rows = await db
+    .select({ slug: toolGroups.slug, audience: toolGroups.audience })
+    .from(toolGroups)
+    .where(eq(toolGroups.ownerId, ownerId));
+  return new Map(rows.map((r) => [r.slug, r.audience]));
+}
+
 async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<string[]> {
+  const levels = await toolGroupLevels(ownerId);
   const responders = await db
     .select({
       id: agents.id,
       slug: agents.slug,
+      audience: agents.audience,
       groups: agents.toolGroupSlugs,
       skills: agents.skillSlugs,
     })
@@ -134,7 +145,11 @@ async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<stri
   const addable = present.map((p) => p.slug);
   const changes: string[] = [];
   for (const a of responders) {
-    const missingGroups = missingPersonaGroups(a.groups, PERSONA_TOOL_GROUP_SLUGS);
+    const missingGroups = groupsWithinLevel(
+      missingPersonaGroups(a.groups, PERSONA_TOOL_GROUP_SLUGS),
+      a.audience,
+      levels,
+    );
     const curSkills = a.skills ?? [];
     const nextSkills = convergeManifestSkills(curSkills, wantSkills, MANIFEST_SKILL_SLUGS, addable);
     const skillsChanged =
@@ -167,10 +182,12 @@ async function reconcilePersonaCapabilitiesByRole(ownerId: string): Promise<stri
  * `slug:+added -removed` strings changed.
  */
 async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
+  const levels = await toolGroupLevels(ownerId);
   const rows = await db
     .select({
       id: agents.id,
       slug: agents.slug,
+      audience: agents.audience,
       groups: agents.toolGroupSlugs,
       skills: agents.skillSlugs,
     })
@@ -182,7 +199,11 @@ async function grantSpecialistCapabilities(ownerId: string): Promise<string[]> {
     if (a.isPersona) continue;
     const row = bySlug.get(a.slug);
     if (!row) continue; // absent (or disabled) → provisionMissingSpecialists owns it
-    const missingGroups = missingPersonaGroups(row.groups, a.toolGroupSlugs ?? []);
+    const missingGroups = groupsWithinLevel(
+      missingPersonaGroups(row.groups, a.toolGroupSlugs ?? []),
+      row.audience,
+      levels,
+    );
     const curSkills = row.skills ?? [];
     const nextSkills = convergeManifestSkills(curSkills, a.skillSlugs, MANIFEST_SKILL_SLUGS);
     const skillsChanged =
