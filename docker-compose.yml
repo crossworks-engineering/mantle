@@ -209,6 +209,10 @@ x-app-env: &app-env
   # narrower than this anchor is the deploy footgun the plan §8 checklist
   # warns about.
   MANTLE_RUNS: ${MANTLE_RUNS:-}
+  # Member logins (docs/member-logins.md) — DARK unless MANTLE_MEMBERS=1 in the
+  # host .env. Read wherever a login row is resolved (web, api). It shipped in
+  # v0.232.259 without this line, so setting it in .env did nothing.
+  MANTLE_MEMBERS: ${MANTLE_MEMBERS:-}
   MANTLE_RUNS_WORKER_CONCURRENCY: ${MANTLE_RUNS_WORKER_CONCURRENCY:-}
   # Cap on the dedicated background-runs DBOS queue in server/api (slice 4 WP-F,
   # `RUNS_TURN_QUEUE`) — what keeps a run fanning out N worker turns from
