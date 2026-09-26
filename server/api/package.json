@@ -31,13 +31,13 @@
     "@mantle/tracing": "workspace:*",
     "@mantle/turn-stream": "workspace:*",
     "@mantle/voice": "workspace:*",
-    "drizzle-orm": "^0.45.2",
-    "pg-boss": "^12.30.0",
+    "drizzle-orm": "^0.45.3",
+    "pg-boss": "^12.33.4",
     "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@types/node": "^26.4.1",
-    "tsx": "^4.23.13",
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3"
   }
 }
