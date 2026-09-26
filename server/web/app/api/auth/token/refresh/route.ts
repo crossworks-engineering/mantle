@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { randomUUID } from 'node:crypto';
 import { db, authUsers, mobileTokens, eq } from '@mantle/db';
-import { buildMobileToken, mobileTokenJti, WEB_TOKEN_TTL_SECONDS } from '@/lib/auth';
+import { buildMobileToken, loginUsable, mobileTokenJti, WEB_TOKEN_TTL_SECONDS } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
@@ -43,12 +43,21 @@ export async function POST(req: Request) {
       revokedAt: mobileTokens.revokedAt,
       expiresAt: mobileTokens.expiresAt,
       email: authUsers.email,
+      role: authUsers.role,
+      disabledAt: authUsers.disabledAt,
     })
     .from(mobileTokens)
     .innerJoin(authUsers, eq(authUsers.id, mobileTokens.userId))
     .where(eq(mobileTokens.id, jti))
     .limit(1);
-  if (!row || row.revokedAt || row.expiresAt.getTime() <= Date.now()) {
+  // A disabled login (or a member while member logins are off) cannot keep a
+  // session alive by refreshing it.
+  if (
+    !row ||
+    row.revokedAt ||
+    row.expiresAt.getTime() <= Date.now() ||
+    !loginUsable({ email: row.email, role: row.role, disabledAt: row.disabledAt })
+  ) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 

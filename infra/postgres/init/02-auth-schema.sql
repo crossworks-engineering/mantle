@@ -17,7 +17,13 @@ CREATE TABLE IF NOT EXISTS auth.users (
   -- audit trail. No per-user access scope here (team tiers are a separate surface).
   is_owner      boolean     NOT NULL DEFAULT false,
   display_name  text,
-  last_login_at timestamptz
+  last_login_at timestamptz,
+  -- Member logins (0162): admin or member; the anchor is always admin. The
+  -- contact FK and the CHECK are added by migration 0162 (nodes does not exist
+  -- yet at cluster init).
+  role          text        NOT NULL DEFAULT 'admin',
+  contact_id    uuid,
+  disabled_at   timestamptz
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS users_single_owner_idx ON auth.users (is_owner) WHERE is_owner;

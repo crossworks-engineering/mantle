@@ -12,6 +12,7 @@ import { RedirectError } from '../../server/http-compat/redirect-error';
 import { eq, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { db, authUsers, mobileTokens, countUsers } from '@mantle/db';
+import { loadAnchorId, loadLoginRow, type LoginRow } from './login-row';
 import {
   isDetachedDev,
   isAuditSelfLogged,
@@ -70,6 +71,42 @@ export type SessionUser = { id: string; email: string; actor: Actor };
 export type AuthSource = 'web' | 'mobile';
 
 /**
+ * A MEMBER login (member logins, Phase 1). Deliberately has no `id`: the 280+
+ * call sites that scope by `user.id` cannot take a member by mistake, because
+ * the type checker refuses it. A member reaches only the member routes, which
+ * read at the team level through RLS (`withViewer('team', …)`).
+ */
+export type MemberCaller = {
+  role: 'member';
+  /** The login row (auth.users.id): own password, own thread, audit. */
+  loginId: string;
+  /** The brain the member belongs to (the anchor's id). */
+  anchorId: string;
+  email: string;
+  displayName: string | null;
+  contactId: string | null;
+};
+
+/** Member logins are dark unless the box opts in (`MANTLE_MEMBERS=1`). Off,
+ *  a member row resolves to no session at all: it cannot sign in. */
+export function membersEnabled(): boolean {
+  return env('MANTLE_MEMBERS')?.trim() === '1';
+}
+
+/** Whether a login row may hold a session at all: not disabled, and a member
+ *  only while member logins are on. */
+export function loginUsable(row: Pick<LoginRow, 'role' | 'disabledAt' | 'email'>): boolean {
+  if (!row.email || row.disabledAt) return false;
+  return row.role === 'admin' || membersEnabled();
+}
+
+/** Who is calling, resolved from the login row: an admin (today's
+ *  SessionUser) or a member. */
+type Resolved =
+  | { kind: 'admin'; user: SessionUser; source: AuthSource }
+  | { kind: 'member'; member: MemberCaller; source: AuthSource };
+
+/**
  * Owner gate for the byte-serving asset routes only. Resolves the session
  * (cookie/bearer) first; failing that, accepts a valid `?at=` asset token in the
  * URL — the one place a browser-native `src` can convey auth. Owner-scoped: the
@@ -89,6 +126,15 @@ export async function getOwnerForAsset(req: Request): Promise<SessionUser | Next
     // for, so per-login asset routes (the profile photo) can address that
     // row; absent, the actor is the anchor itself — the pre-claim behavior.
     if (claims) {
+      // A token minted for another login (`act`): that login must still be a
+      // usable ADMIN. Members are never minted one; this closes a revoked or
+      // demoted login's 2-hour window too.
+      if (claims.act && claims.act !== claims.uid) {
+        const row = await loadLoginRow(claims.act);
+        if (!row || row.role !== 'admin' || !loginUsable(row)) {
+          return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+        }
+      }
       return {
         id: claims.uid,
         email: '',
@@ -104,7 +150,7 @@ export async function getOwnerForAsset(req: Request): Promise<SessionUser | Next
  * verify the signature, confirm the row is present/unrevoked/unexpired, bump
  * last_used_at. Returns null on any failure.
  */
-async function getBearerUser(): Promise<SessionUser | null> {
+async function getBearerLogin(): Promise<Resolved | null> {
   const token = bearerFromHeader((await headers()).get('authorization'));
   if (!token) return null;
   const claims = verifyMobileToken(token);
@@ -118,24 +164,15 @@ async function getBearerUser(): Promise<SessionUser | null> {
   if (!tok || tok.revokedAt) return null;
   if (tok.expiresAt.getTime() <= Date.now()) return null;
 
-  const [row] = await db
-    .select({
-      id: authUsers.id,
-      email: authUsers.email,
-      isOwner: authUsers.isOwner,
-      displayName: authUsers.displayName,
-    })
-    .from(authUsers)
-    .where(eq(authUsers.id, claims.uid))
-    .limit(1);
-  if (!row || !row.email) return null;
+  const row = await loadLoginRow(claims.uid);
+  if (!row || !loginUsable(row)) return null;
 
   await db
     .update(mobileTokens)
     .set({ lastUsedAt: new Date() })
     .where(eq(mobileTokens.id, claims.jti));
 
-  return sessionUserFor(row);
+  return resolvedFor(row, 'mobile');
 }
 
 /**
@@ -176,12 +213,7 @@ let anchorIdCache: string | null = null;
 
 async function getAnchorId(): Promise<string | null> {
   if (anchorIdCache) return anchorIdCache;
-  const [row] = await db
-    .select({ id: authUsers.id })
-    .from(authUsers)
-    .where(eq(authUsers.isOwner, true))
-    .limit(1);
-  if (row) anchorIdCache = row.id;
+  anchorIdCache = await loadAnchorId();
   return anchorIdCache;
 }
 
@@ -211,6 +243,52 @@ async function sessionUserFor(row: ActorRow): Promise<SessionUser | null> {
   };
 }
 
+/** An admin row becomes a SessionUser (id = the anchor); a member row a
+ *  MemberCaller. Null when the brain has no anchor (a corrupt state). */
+async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved | null> {
+  if (row.role === 'member') {
+    const anchorId = await getAnchorId();
+    if (!anchorId) return null;
+    return {
+      kind: 'member',
+      source,
+      member: {
+        role: 'member',
+        loginId: row.id,
+        anchorId,
+        email: row.email,
+        displayName: row.displayName,
+        contactId: row.contactId,
+      },
+    };
+  }
+  const user = await sessionUserFor(row);
+  return user ? { kind: 'admin', user, source } : null;
+}
+
+/** Resolve the calling login, admin or member, cookie first then bearer. */
+async function resolveLogin(): Promise<Resolved | null> {
+  // DB-less dev: a detached frontend has no local Postgres, so the configured
+  // remote identity stands in for the cookie→authUsers lookup. Always an
+  // admin. No-op in prod.
+  const dev = detachedDevUser();
+  if (dev) return { kind: 'admin', user: dev, source: 'web' };
+
+  const c = (await cookies()).get(SESSION_COOKIE_NAME);
+  if (c) {
+    const data = verifySessionCookie(c.value);
+    if (data) {
+      const row = await loadLoginRow(data.uid);
+      if (row && loginUsable(row)) {
+        const resolved = await resolvedFor(row, 'web');
+        if (resolved) return resolved;
+      }
+    }
+  }
+  // Mobile companion: Authorization: Bearer <mobile-token>.
+  return getBearerLogin();
+}
+
 /** Resolve the current user AND how they authenticated. Cookie first ('web'),
  *  then a mobile bearer ('mobile'). Returns null when neither resolves. The
  *  source is what lets a turn be tagged with the right ConversationChannel. */
@@ -218,39 +296,16 @@ export async function getSessionUserWithSource(): Promise<{
   user: SessionUser;
   source: AuthSource;
 } | null> {
-  // DB-less dev: a detached frontend has no local Postgres, so the configured
-  // remote identity stands in for the cookie→authUsers lookup. No-op in prod.
-  const dev = detachedDevUser();
-  if (dev) return { user: dev, source: 'web' };
-
-  const c = (await cookies()).get(SESSION_COOKIE_NAME);
-  if (c) {
-    const data = verifySessionCookie(c.value);
-    if (data) {
-      const [row] = await db
-        .select({
-          id: authUsers.id,
-          email: authUsers.email,
-          isOwner: authUsers.isOwner,
-          displayName: authUsers.displayName,
-        })
-        .from(authUsers)
-        .where(eq(authUsers.id, data.uid))
-        .limit(1);
-      if (row && row.email) {
-        const user = await sessionUserFor(row);
-        if (user) return { user, source: 'web' };
-      }
-    }
-  }
-  // Mobile companion: Authorization: Bearer <mobile-token>.
-  const bearer = await getBearerUser();
-  return bearer ? { user: bearer, source: 'mobile' } : null;
+  // ADMINS only: every existing caller treats the result as the brain's owner.
+  // A member resolves to null here, so no admin path can take one.
+  const res = await resolveLogin();
+  return res?.kind === 'admin' ? { user: res.user, source: res.source } : null;
 }
 
-/** Returns the current user, or null. Safe in Server Components.
- *  Resolves a session cookie first; falls back to a mobile bearer token so
- *  every handler that already calls this also accepts the mobile companion. */
+/** Returns the current ADMIN user, or null (a member is null too). Safe in
+ *  Server Components. Resolves a session cookie first; falls back to a mobile
+ *  bearer token so every handler that already calls this also accepts the
+ *  mobile companion. */
 export async function getSessionUser(): Promise<SessionUser | null> {
   return (await getSessionUserWithSource())?.user ?? null;
 }
@@ -332,10 +387,54 @@ async function auditMutation(user: SessionUser): Promise<void> {
 export async function getOwnerOr401WithSource(): Promise<
   { user: SessionUser; source: AuthSource } | NextResponse
 > {
-  const res = await getSessionUserWithSource();
+  const res = await resolveLogin();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  // Deny by default: a member is refused by every admin gate. Member routes use
+  // getMemberOr401 and are listed in MEMBER_ROUTES (the auth sweep checks it).
+  if (res.kind === 'member') return memberRefused();
   await auditMutation(res.user);
-  return res;
+  return { user: res.user, source: res.source };
+}
+
+function memberRefused(): NextResponse {
+  return NextResponse.json(
+    { error: 'forbidden', reason: 'member-login', message: 'Not available to member logins.' },
+    { status: 403 },
+  );
+}
+
+/**
+ * The member gate (member logins, Phase 1): a MEMBER login, or 401 (no
+ * session) / 403 (an admin: member routes are member-specific, never a
+ * shared owner route). Only for routes in MEMBER_ROUTES
+ * (lib/auth/member-routes.ts); run the handler's reads under
+ * `withViewer('team', …)`.
+ */
+export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
+  const res = await resolveLogin();
+  if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (res.kind !== 'member') {
+    return NextResponse.json(
+      { error: 'forbidden', reason: 'admin-login', message: 'This route is for member logins.' },
+      { status: 403 },
+    );
+  }
+  return res.member;
+}
+
+/** The calling login's own row, admin or member: for the few routes about the
+ *  login itself (change its password, sign out, who am I). Never for brain
+ *  data. */
+export async function getLoginOr401(): Promise<
+  | { kind: 'admin'; loginId: string; email: string; user: SessionUser }
+  | { kind: 'member'; loginId: string; email: string; member: MemberCaller }
+  | NextResponse
+> {
+  const res = await resolveLogin();
+  if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  return res.kind === 'admin'
+    ? { kind: 'admin', loginId: res.user.actor.id, email: res.user.actor.email, user: res.user }
+    : { kind: 'member', loginId: res.member.loginId, email: res.member.email, member: res.member };
 }
 
 /**
@@ -347,13 +446,21 @@ export async function loginWithPassword(email: string, password: string): Promis
   // user who signed up "Jay@X.com" must be able to log in as "jay@x.com".
   // Handles any casing already stored (incl. legacy manually-inserted rows).
   const [row] = await db
-    .select({ id: authUsers.id, hash: authUsers.passwordHash })
+    .select({
+      id: authUsers.id,
+      email: authUsers.email,
+      hash: authUsers.passwordHash,
+      role: authUsers.role,
+      disabledAt: authUsers.disabledAt,
+    })
     .from(authUsers)
     .where(sql`lower(${authUsers.email}) = lower(${email})`)
     .limit(1);
   if (!row || !row.hash) return null;
   const ok = await bcrypt.compare(password, row.hash);
-  return ok ? row.id : null;
+  // Check the password first, so a disabled login answers like a wrong one
+  // (no account-state oracle), then refuse it.
+  return ok && loginUsable(row) ? row.id : null;
 }
 
 /** Update password hash. Caller is responsible for verifying the old password first. */

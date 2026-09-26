@@ -2,8 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
-import { db, authUsers, agents, asc, eq, sql } from '@mantle/db';
-import { getOwnerOr401 } from '@/lib/auth';
+import { db, authUsers, agents, and, asc, eq, nodes, sql } from '@mantle/db';
+import { getOwnerOr401, membersEnabled } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { errorMessage } from '@mantle/std';
@@ -13,8 +13,10 @@ import { errorMessage } from '@mantle/std';
  * account operates on the one brain (content stays keyed to the anchor); a row
  * here is just an identity for the audit trail.
  *
- * No permission tiers by design — every login is a full admin (access tiers are
- * a separate team-member surface). These routes emit their own `user.*` audit
+ * Two roles (member logins, Phase 1): an ADMIN login is a full co-owner; a
+ * MEMBER login (only while MANTLE_MEMBERS=1) is refused by every admin route
+ * and reads team-level items through the member routes. These routes emit
+ * their own `user.*` audit
  * events (the choke point skips its generic row for /api/users — see
  * AUDIT_SELF_LOGGED_PATHS).
  *
@@ -35,6 +37,9 @@ export async function GET() {
       email: authUsers.email,
       displayName: authUsers.displayName,
       isOwner: authUsers.isOwner,
+      role: authUsers.role,
+      contactId: authUsers.contactId,
+      disabledAt: authUsers.disabledAt,
       createdAt: authUsers.createdAt,
       lastLoginAt: authUsers.lastLoginAt,
       agentId: agents.id,
@@ -53,6 +58,7 @@ export async function GET() {
       agent: agentId ? { id: agentId, slug: agentSlug, name: agentName } : null,
     })),
     currentActorId: user.actor.id,
+    membersEnabled: membersEnabled(),
   });
 }
 
@@ -69,8 +75,12 @@ const CreateBody = z.object({
   password: z.string().min(8).max(1024),
   displayName: z.string().trim().min(1).max(120).optional(),
   /** Omit to keep today's behaviour exactly: the login shares the brain's
-   *  default agent, as every login did before 0143. */
+   *  default agent, as every login did before 0143. Admins only. */
   agent: AgentAssignmentBody.optional(),
+  /** 'member' only while MANTLE_MEMBERS=1. Default admin. */
+  role: z.enum(['admin', 'member']).optional(),
+  /** The team contact a member login belongs to. */
+  contactId: z.string().uuid().optional(),
 });
 
 export async function POST(req: Request) {
@@ -83,6 +93,39 @@ export async function POST(req: Request) {
       { error: 'Enter a valid email and a password of at least 8 characters.' },
       { status: 400 },
     );
+  }
+
+  const role = parsed.data.role ?? 'admin';
+  if (role === 'member') {
+    if (!membersEnabled()) {
+      return NextResponse.json(
+        { error: 'Member logins are off on this brain: set MANTLE_MEMBERS=1 to create one.' },
+        { status: 400 },
+      );
+    }
+    if (parsed.data.agent) {
+      return NextResponse.json(
+        {
+          error:
+            'A member login cannot own a personal assistant: members chat with team-level agents.',
+        },
+        { status: 400 },
+      );
+    }
+  }
+  if (parsed.data.contactId) {
+    const [contact] = await db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.id, parsed.data.contactId),
+          eq(nodes.ownerId, user.id),
+          eq(nodes.type, 'contact'),
+        ),
+      )
+      .limit(1);
+    if (!contact) return NextResponse.json({ error: 'Contact not found.' }, { status: 400 });
   }
 
   const email = parsed.data.email.trim().toLowerCase();
@@ -111,6 +154,8 @@ export async function POST(req: Request) {
       displayName: parsed.data.displayName ?? null,
       // Never the anchor — that's the first-run signup only.
       isOwner: false,
+      role,
+      contactId: parsed.data.contactId ?? null,
     });
   } catch (err) {
     const msg = errorMessage(err);
@@ -130,7 +175,7 @@ export async function POST(req: Request) {
     action: 'user.create',
     method: 'POST',
     path: '/api/users',
-    detail: { targetId: id, targetEmail: email },
+    detail: { targetId: id, targetEmail: email, role },
     ...requestMetaFrom(req),
   });
 

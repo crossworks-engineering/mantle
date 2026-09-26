@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getSessionUser, updatePassword, verifyPassword } from '@/lib/auth';
+import { getLoginOr401, updatePassword, verifyPassword } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
 import { firstIssue } from '@/lib/zod-issue';
@@ -16,13 +16,14 @@ const ChangePasswordBody = z
   });
 
 export async function POST(req: Request) {
-  const user = await getSessionUser();
-  if (!user) {
+  // Admin or member: a login changes its own password.
+  const login = await getLoginOr401();
+  if (login instanceof NextResponse) {
     return NextResponse.json({ error: 'Not signed in.' }, { status: 401 });
   }
-  // The LOGIN's own credential — always the actor, never the anchor `user.id`
+  // The LOGIN's own credential — always the login, never the anchor
   // (a co-admin changing "their" password must not rewrite the anchor's).
-  const actorId = user.actor.id;
+  const actorId = login.loginId;
 
   // Throttle even with a valid session — a hijacked cookie should not
   // be able to pin bcrypt CPU. 5/hour per user comfortably fits any
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
   await updatePassword(actorId, parsed.data.newPassword);
   auditFireAndForget({
     actorId,
-    actorEmail: user.actor.email,
+    actorEmail: login.email,
     action: 'auth.password_change',
     method: 'POST',
     path: '/api/auth/change-password',
