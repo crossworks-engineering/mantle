@@ -5,6 +5,9 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-library.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -26,8 +29,11 @@ describe.skipIf(!URL)('member Library at the team level', () => {
     fragment: randomUUID(),
   };
 
+  const tableRoot = mkdtempSync(path.join(tmpdir(), 'mantle-lib-tables-'));
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
+    process.env.TABLE_DB_DIR = tableRoot;
     // ONE key for every viewer DB test: roles are cluster-wide (28P01).
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
@@ -74,6 +80,7 @@ describe.skipIf(!URL)('member Library at the team level', () => {
     if (createdAnchor)
       await m.systemDb.execute(sqlTag`delete from auth.users where id = ${anchor}`);
     await m.closeDb();
+    rmSync(tableRoot, { recursive: true, force: true });
   });
 
   it('refuses to run outside a viewer scope', async () => {
@@ -109,5 +116,25 @@ describe.skipIf(!URL)('member Library at the team level', () => {
   it('shows a public-level reader only public items', async () => {
     const { items } = await m.withViewer('public', () => lib.listLibrary(anchor, { q: tag }));
     expect(items.map((i) => i.id)).toEqual([ids.publicNote]);
+  });
+
+  it('reads a team table’s published workbook only, never the admin’s unsaved draft', async () => {
+    const write = await import('./tables/write');
+    const draft = await import('./tables/draft');
+    const t = await write.createTable(anchor, { title: `${tag} team table` });
+    const col = t.data.columns[0]!.id;
+    await draft.commitTable(anchor, t.id, {
+      ...t.data,
+      rows: [{ id: randomUUID(), cells: { [col]: 'published cell' } }],
+    });
+    await m.systemDb.execute(sqlTag`update nodes set audience = 'team' where id = ${t.id}`);
+    const applied = await draft.applyTableOps(anchor, t.id, [
+      { op: 'row_add', cells: { [col]: 'admin draft secret' } },
+    ]);
+    expect(applied?.ok).toBe(true);
+    const item = await m.withViewer('team', () => lib.getLibraryItem(anchor, t.id));
+    const text = JSON.stringify(item);
+    expect(text).toContain('published cell');
+    expect(text).not.toContain('admin draft secret');
   });
 });

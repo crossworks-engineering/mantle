@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
-import { db, nodes, tables } from '@mantle/db';
+import { db, nodes, readsDrafts, tables } from '@mantle/db';
 import {
   ENGINE_VERSION,
   MATERIALIZE_MAX,
@@ -136,8 +136,11 @@ export function loadDocsFromFile(storagePath: string, opts: { tabId?: string } =
   const draftAbs = draftPathFor(abs);
   // A commit in the other process can consume the draft between the exists
   // check and the open — that's "no draft now", not an error (audit finding 7).
+  // Below admin the draft is never read (member logins): a Library reader, a
+  // teammate reading a shared table, or a team-level agent sees the published
+  // workbook only. Only the owner and the item's own space read the draft.
   let draftClipped: ReturnType<typeof readDocClipped> | null = null;
-  if (existsSync(draftAbs)) {
+  if (readsDrafts() && existsSync(draftAbs)) {
     try {
       draftClipped = readDocClipped(draftAbs, MATERIALIZE_MAX, opts.tabId);
     } catch (err) {
