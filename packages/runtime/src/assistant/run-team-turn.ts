@@ -152,6 +152,53 @@ export async function runTeamTurn(
   if (!contactId) throw new Error('runTeamTurn: contactId required');
   const displayText = options.displayText?.trim() || trimmed;
   const channel: TeamChannel = options.channel ?? 'web';
+  const progress = { inboundWritten: false };
+  try {
+    return await runTeamTurnSteps(ownerId, trimmed, displayText, channel, options, progress);
+  } catch (err) {
+    // A turn that fails BEFORE the inbound row is written (no agent, no key,
+    // retrieval down) used to leave nothing behind: the route had already
+    // answered 202, so the message simply vanished (audit MED 12). Record it
+    // with a failed reply, so the thread shows the message and "did not go
+    // through". Failures after that point mark their own pending row.
+    if (!progress.inboundWritten) {
+      await runDurableStep('record_team_failed_early', async () => {
+        await appendTeamMessage({
+          ownerId,
+          contactId,
+          direction: 'inbound',
+          text: displayText,
+          channel,
+          attachments: options.attachments ?? [],
+          loginId: options.loginId ?? null,
+        });
+        await appendTeamMessage({
+          ownerId,
+          contactId,
+          direction: 'outbound',
+          text: '',
+          channel,
+          error: errorMessage(err),
+          loginId: options.loginId ?? null,
+        });
+      }).catch((e) => console.error('[team-turn] could not record the failed turn:', e));
+      if (options.streamId) {
+        emitTurnLifecycle(options.streamId, ownerId, 'error', { message: errorMessage(err) });
+      }
+    }
+    throw err;
+  }
+}
+
+async function runTeamTurnSteps(
+  ownerId: string,
+  trimmed: string,
+  displayText: string,
+  channel: TeamChannel,
+  options: RunTeamTurnOptions,
+  progress: { inboundWritten: boolean },
+): Promise<TeamTurnResult> {
+  const contactId = options.contactId!;
 
   const { loginId } = options;
   const agent = await resolveTeamResponder(ownerId, options.agentSlug);
@@ -212,6 +259,7 @@ export async function runTeamTurn(
         loginId: loginId ?? null,
       }),
     );
+    progress.inboundWritten = true;
 
     // Durable "thinking…" bubble — same contract as the owner surface, so the
     // member UI + a reload mid-turn can bind to a stable outbound id. History
