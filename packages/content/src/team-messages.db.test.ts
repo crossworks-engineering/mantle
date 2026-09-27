@@ -66,4 +66,21 @@ describe.skipIf(!URL)('listMemberChatActivity', () => {
     // The other owner's row never counts; the name falls back to the email.
     expect(q).toMatchObject({ name: `quiet-${tag}`, messageCount: 0, lastMessageAt: null });
   });
+  it('admin readers get a private reply redacted; the member reads it in full (S3)', async () => {
+    const tm = await import('./team-messages');
+    await m.systemDb.execute(sqlTag`
+      insert into team_messages (owner_id, contact_id, login_id, direction, text, used_private, created_at)
+      values (${ownerId}, null, ${chatty}, 'outbound', 'your draft says: secret plan', true, now())`);
+    const admin = await tm.listTeamThread(ownerId, '', { loginId: chatty });
+    expect(admin.map((r) => r.text)).toEqual(['first', 'the reply', tm.PRIVATE_REPLY_PLACEHOLDER]);
+    const own = await tm.listTeamThread(ownerId, '', { loginId: chatty, withPrivate: true });
+    expect(own.at(-1)?.text).toBe('your draft says: secret plan');
+    // The turn's history is the member's own read.
+    const history = await tm.recentTeamMessages(ownerId, '', 20, chatty);
+    expect(history.at(-1)?.text).toBe('your draft says: secret plan');
+    // The admin index previews the last message: redacted too.
+    const [c] = (await tm.listMemberChatActivity(ownerId)).filter((r) => r.loginId === chatty);
+    expect(c?.lastMessageText).toBe(tm.PRIVATE_REPLY_PLACEHOLDER);
+    expect(JSON.stringify(await tm.listMemberChatActivity(ownerId))).not.toContain('secret plan');
+  });
 });

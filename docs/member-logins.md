@@ -245,6 +245,17 @@ run, MCP) finds nothing. Each call opens its own short space transaction
 (`mantle_personal_space(login)` maps the login to its space). Read, never
 learn: no search by meaning over personal items.
 
+Admins never see a member's private items, and that holds for the chat too
+(migration 0170). A team reply whose turn used a my-space tool, or that
+follows such a reply in the history the model saw, is marked `used_private`;
+the admin readers (the Member chats tab, `team_chat_read`, the
+`team_chat_list` preview) show a placeholder instead of its text, while the
+member reads their own thread in full. The my-space tool results are not
+journaled by the durable engine and never spill to the tool-result store.
+The durable engine's own step log still holds each model round's output
+(the reply as written), which no admin screen shows; it is database-level
+state only.
+
 **In the client** (jackdaw v0.6.146+) a member edits own pages, notes,
 drawings and tables in Mine over these routes. A personal drawing keeps no
 images (the routes store no scene files); a table edits one tab at a time

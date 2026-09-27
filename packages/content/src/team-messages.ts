@@ -84,6 +84,8 @@ export type UpdateTeamMessageOutcomeInput = {
    *  the note in run-team-turn.ts for why this is written HERE and not left to
    *  the live channel. */
   attachments?: ConversationAttachment[];
+  /** The reply may quote the member's private items (audit S3). */
+  usedPrivate?: boolean;
 };
 
 /** Finalize a pending outbound row (the durable "thinking…" bubble): fill the
@@ -101,21 +103,37 @@ export async function updateTeamMessageOutcome(
       ...(args.traceId !== undefined ? { traceId: args.traceId } : {}),
       ...(args.error !== undefined ? { error: args.error } : {}),
       ...(args.attachments !== undefined ? { attachments: args.attachments } : {}),
+      ...(args.usedPrivate ? { usedPrivate: true } : {}),
     })
     .where(and(eq(teamMessages.ownerId, args.ownerId), eq(teamMessages.id, args.id)))
     .returning();
   return row ?? null;
 }
 
+/** What an admin reads instead of a reply that may quote the member's
+ *  private items (audit S3: admins never see a member's private items). */
+export const PRIVATE_REPLY_PLACEHOLDER =
+  "[This reply used the member's private items. It is not shown to admins.]";
+
+/** A thread row as an admin may read it: a reply marked `usedPrivate` loses
+ *  its text and attachments. */
+export function redactPrivateReply(row: TeamMessage): TeamMessage {
+  return row.usedPrivate ? { ...row, text: PRIVATE_REPLY_PLACEHOLDER, attachments: [] } : row;
+}
+
 /**
  * A window of one contact's thread, newest-first from `before` (exclusive),
  * returned in ASCENDING order for rendering. `before` is an ISO timestamp
  * cursor (the createdAt of the oldest message the caller already has).
+ *
+ * Replies marked `usedPrivate` are REDACTED unless `withPrivate` is set: only
+ * the member's own reads (their chat view, the turn's history) pass it, so an
+ * admin path cannot forget to hide them.
  */
 export async function listTeamThread(
   ownerId: string,
   contactId: string,
-  opts: { before?: string; limit?: number; loginId?: string } = {},
+  opts: { before?: string; limit?: number; loginId?: string; withPrivate?: boolean } = {},
 ): Promise<TeamMessage[]> {
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
   // A member login's thread is its own: keyed by the login, never by the
@@ -137,18 +155,24 @@ export async function listTeamThread(
     .where(and(...conds))
     .orderBy(desc(teamMessages.createdAt))
     .limit(limit);
-  return rows.reverse();
+  rows.reverse();
+  return opts.withPrivate ? rows : rows.map(redactPrivateReply);
 }
 
 /** Most recent N turns of a thread in ASCENDING order — the context-loader
- *  shape (mirror of recentAssistantMessages). */
+ *  shape (mirror of recentAssistantMessages). The member's own turn: private
+ *  replies included. */
 export async function recentTeamMessages(
   ownerId: string,
   contactId: string,
   limit = 30,
   loginId?: string,
 ): Promise<TeamMessage[]> {
-  return listTeamThread(ownerId, contactId, { limit, ...(loginId ? { loginId } : {}) });
+  return listTeamThread(ownerId, contactId, {
+    limit,
+    withPrivate: true,
+    ...(loginId ? { loginId } : {}),
+  });
 }
 
 /** Inbound turns a member LOGIN has sent since `since`: the member chat's
@@ -188,6 +212,7 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
       lastMessageAt: dsql<string | null>`last_msg.created_at`,
       lastMessageText: dsql<string | null>`last_msg.text`,
       lastMessageDirection: dsql<string | null>`last_msg.direction`,
+      lastMessagePrivate: dsql<boolean | null>`last_msg.used_private`,
       messageCount: dsql<number>`coalesce(msg_counts.n, 0)::int`,
       // Inbound (member→brain) messages newer than the owner's read cursor —
       // a self-contained correlated subquery (no cursor row ⇒ epoch ⇒ all
@@ -211,7 +236,7 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
     .innerJoin(nodes, eq(nodes.id, contactTeamTokens.contactId))
     .leftJoin(
       dsql`lateral (
-        select tm.created_at, tm.text, tm.direction
+        select tm.created_at, tm.text, tm.direction, tm.used_private
         from team_messages tm
         where tm.owner_id = ${contactTeamTokens.ownerId}
           and tm.contact_id = ${contactTeamTokens.contactId}
@@ -240,7 +265,9 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
     memberSince: r.memberSince.toISOString(),
     tokenLastUsedAt: r.tokenLastUsedAt ? r.tokenLastUsedAt.toISOString() : null,
     lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt).toISOString() : null,
-    lastMessageText: r.lastMessageText,
+    // An admin view (the Member chats list, team_chat_list): a private reply
+    // shows the placeholder (audit S3).
+    lastMessageText: r.lastMessagePrivate ? PRIVATE_REPLY_PLACEHOLDER : r.lastMessageText,
     lastMessageDirection: (r.lastMessageDirection ?? null) as 'inbound' | 'outbound' | null,
     messageCount: r.messageCount,
     unread: r.unread,

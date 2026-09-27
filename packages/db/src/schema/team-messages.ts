@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { agents } from './agents';
 import { nodes } from './nodes';
 import type { ConversationAttachment } from './assistant-messages';
@@ -52,6 +52,10 @@ export const teamMessages = pgTable(
      *  portal rows. A member's thread is read by (owner, login). FK to
      *  auth.users declared in the SQL (cross-schema). */
     loginId: uuid('login_id'),
+    /** An outbound reply that may quote the member's PRIVATE items (0170,
+     *  audit S3): its turn read them with a my-space tool, or followed such a
+     *  reply. Admin readers show a placeholder instead of the text. */
+    usedPrivate: boolean('used_private').default(false).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

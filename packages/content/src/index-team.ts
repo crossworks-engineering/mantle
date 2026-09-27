@@ -75,6 +75,8 @@ export {
   updateTeamMessageOutcome,
   countMemberInboundSince,
   listTeamThread,
+  PRIVATE_REPLY_PLACEHOLDER,
+  redactPrivateReply,
   recentTeamMessages,
   listTeamMemberActivity,
   listMemberChatActivity,

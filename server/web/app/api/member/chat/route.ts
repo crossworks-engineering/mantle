@@ -76,10 +76,13 @@ export async function GET(req: Request) {
   const before = new URL(req.url).searchParams.get('before') ?? undefined;
   const [agent, rows] = await Promise.all([
     memberAgent(member),
+    // The member's own thread: their private replies in full (admin readers
+    // get them redacted, audit S3).
     listTeamThread(member.anchorId, '', {
       loginId: member.loginId,
       limit: 50,
       before,
+      withPrivate: true,
     }),
   ]);
   const body: MemberChatThread = {

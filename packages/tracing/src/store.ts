@@ -61,6 +61,10 @@ export type StartStepInit = {
   name: string;
   kind: TraceStepKind;
   input?: Record<string, unknown>;
+  /** false: never route this step through the durable executor, so its
+   *  result is not journaled. For a read whose result must not be kept (a
+   *  member's private item, audit S3); a resume simply runs it again. */
+  durable?: false;
 };
 
 /** Lifecycle phase of a step, for the optional step observer. */
@@ -854,7 +858,10 @@ export async function step<T>(
       // a crash-resume returns the recorded result instead of re-running the
       // LLM call / tool dispatch. Inert (pure passthrough) otherwise. The trace
       // bookkeeping around it stays best-effort and engine-agnostic.
-      const result = await runDurableStep(init.name, () => fn(handle));
+      const result =
+        init.durable === false
+          ? await fn(handle)
+          : await runDurableStep(init.name, () => fn(handle));
       if (stepInfo.skippedReason) {
         status = 'skipped';
         stepInfo.meta = { ...stepInfo.meta, skipped: stepInfo.skippedReason };

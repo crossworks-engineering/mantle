@@ -14,6 +14,7 @@ import {
   notifyPendingCreated,
   sanitizeToolError,
   UNTRUSTED_CONTENT_TOOL_SLUGS,
+  PRIVATE_OUTPUT_TOOL_SLUGS,
   type ValidateArgsResult,
   type ToolHandlerResult,
 } from '@mantle/tools';
@@ -49,6 +50,8 @@ export async function executeToolCall(p: {
       name: `tool: ${slug}`,
       kind: 'compute',
       input: { slug, args: redactedInput },
+      // A member's private content is never journaled (audit S3).
+      ...(PRIVATE_OUTPUT_TOOL_SLUGS.has(slug) ? { durable: false as const } : {}),
     },
     async (handle) => {
       if (argParseError) {
@@ -243,6 +246,10 @@ export async function toolResultPayload(p: {
     serialized = fenceRetrieved(serialized);
   }
   if (Buffer.byteLength(serialized, 'utf8') <= handling.inlineMaxBytes) return serialized;
+  // A member's private content is never spilled: the store outlives the turn
+  // and a handle in the trace would open it for an admin (audit S3). The
+  // my-space tools clip their own text, so it stays inline.
+  if (PRIVATE_OUTPUT_TOOL_SLUGS.has(slug)) return serialized;
   return step(
     {
       name: `spill_result: ${slug}`,

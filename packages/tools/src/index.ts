@@ -34,6 +34,7 @@ export {
 
 export { notFound, sanitizeToolError, type NotFoundResult } from './errors';
 export { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
+export { PRIVATE_OUTPUT_TOOL_SLUGS } from './private-output';
 export {
   registerDynamicSchema,
   getDynamicSchema,

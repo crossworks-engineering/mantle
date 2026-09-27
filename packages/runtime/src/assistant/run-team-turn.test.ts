@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assertMemberAgent, teamThreadToHistory } from './run-team-turn';
+import { assertMemberAgent, replyUsedPrivate, teamThreadToHistory } from './run-team-turn';
 import { isTeamPrivateReadsEnabled, TEAM_PRIVATE_READ_SLUGS } from '@mantle/content';
 import type { TeamMessage } from '@mantle/db';
 
@@ -116,5 +116,18 @@ describe('assertMemberAgent (member logins: team-level agents only)', () => {
     expect(() =>
       assertMemberAgent({ slug: 'team-responder', audience: 'admin' }, undefined),
     ).not.toThrow();
+  });
+});
+
+describe('replyUsedPrivate (audit S3)', () => {
+  it('marks a reply whose turn read the member’s private items', () => {
+    expect(replyUsedPrivate([{ slug: 'page_get' }, { slug: 'my_item_open' }], [])).toBe(true);
+    expect(replyUsedPrivate([{ slug: 'my_items_list' }], [])).toBe(true);
+    expect(replyUsedPrivate([{ slug: 'page_get' }], [])).toBe(false);
+  });
+
+  it('keeps marking while a private reply is in the history the model saw', () => {
+    expect(replyUsedPrivate([], [{ usedPrivate: false }, { usedPrivate: true }])).toBe(true);
+    expect(replyUsedPrivate([], [{ usedPrivate: false }, {}])).toBe(false);
   });
 });

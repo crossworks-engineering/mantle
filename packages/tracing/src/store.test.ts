@@ -230,3 +230,24 @@ describe('step() outside a trace — the silent-discard trap', () => {
     expect(persisted.length).toBeGreaterThan(0);
   });
 });
+
+describe('step durable:false (audit S3)', () => {
+  it('runs outside the durable executor, so its result is not journaled', async () => {
+    const { withDurableSteps } = await import('./durable');
+    const journaled: string[] = [];
+    const exec = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
+      journaled.push(name);
+      return fn();
+    };
+    await withDurableSteps(exec, () =>
+      startTrace({ ownerId: 'o', kind: 'responder_turn' }, async () => {
+        await step({ name: 'tool: my_item_open', kind: 'compute', durable: false }, async () => ({
+          ok: true,
+        }));
+        await step({ name: 'tool: page_get', kind: 'compute' }, async () => ({ ok: true }));
+      }),
+    );
+    expect(journaled).toContain('tool: page_get');
+    expect(journaled).not.toContain('tool: my_item_open');
+  });
+});

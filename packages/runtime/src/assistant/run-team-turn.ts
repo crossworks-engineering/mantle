@@ -64,6 +64,7 @@ import {
   withTracePrelude,
 } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
+import { PRIVATE_OUTPUT_TOOL_SLUGS } from '@mantle/tools';
 import { agentLevel, withAgentViewer } from '../agent/agent-viewer';
 
 /** The one agent that serves the team surface. Provisioned by the manifest;
@@ -129,6 +130,21 @@ export function assertMemberAgent(
       `Agent '${agent.slug}' is at the admin level: a member login may only chat with a team-level agent.`,
     );
   }
+}
+
+/**
+ * Whether a team reply may quote the member's PRIVATE items (audit S3): the
+ * turn read them with a my-space tool, or the history the model saw holds a
+ * reply that did (a follow-up can repeat what the earlier reply quoted).
+ */
+export function replyUsedPrivate(
+  toolCalls: readonly { slug: string }[],
+  history: readonly { usedPrivate?: boolean | null }[],
+): boolean {
+  return (
+    toolCalls.some((c) => PRIVATE_OUTPUT_TOOL_SLUGS.has(c.slug)) ||
+    history.some((r) => r.usedPrivate === true)
+  );
 }
 
 /** Map a team thread window into prompt history. Pending/failed rows and the
@@ -452,6 +468,10 @@ async function runTeamTurnSteps(
     // is the shared rule (inline-images.ts).
     const durableAttachments = durableAttachmentsFor(outcome.loop.artifacts, reply);
 
+    // Admins never see a member's private items (audit S3): a reply that read
+    // them with a my-space tool, or that follows such a reply in the history
+    // the model saw, is marked; the admin readers show a placeholder.
+    const usedPrivate = replyUsedPrivate(outcome.loop.toolCalls, teamHistoryRows);
     const finalized = await runDurableStep('finalize_team_outbound', () =>
       updateTeamMessageOutcome({
         ownerId,
@@ -460,6 +480,7 @@ async function runTeamTurnSteps(
         text: reply,
         model: agent.model,
         traceId: capturedTraceId,
+        usedPrivate,
         ...(durableAttachments.length ? { attachments: durableAttachments } : {}),
       }),
     );
