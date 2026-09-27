@@ -354,5 +354,13 @@ describe.skipIf(!URL)('member personal space: comments and change events', () =>
         .where(sqlTag`${m.nodeComments.id} = ${own!.id}`),
     ).catch((err: { cause?: { code?: string } }) => err.cause?.code ?? 'error');
     expect(moved).toBe('42501');
+    // Postgres refuses that through the read rule already; the update rule's
+    // own check is the second layer (S5). Pin it.
+    const [policy] = (await m.systemDb.execute(sqlTag`
+      select with_check from pg_policies
+      where tablename = 'node_comments' and policyname = 'node_comments_space_update'`)) as unknown as {
+      with_check: string;
+    }[];
+    expect(policy?.with_check).toContain('mantle_is_brain_space');
   });
 });
