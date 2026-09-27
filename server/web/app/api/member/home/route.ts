@@ -3,6 +3,7 @@ import { withViewer } from '@mantle/db';
 import {
   libraryCounts,
   listLibrary,
+  listMemberApps,
   loadProfilePreferences,
   resolveMemberHomeApp,
 } from '@mantle/content';
@@ -20,17 +21,19 @@ const SECTION_LIMIT = 30;
  * The rest is what the app's `host.hub.get()` answers, in the team hub's
  * shape (docs/team-hub-app-sdk.md): the site name, the member's name, the
  * newest team pages as sections (`token` is the page id: the member shell
- * opens it in the Library) and Library counts. Read at the team level.
+ * opens it in the Library), Library counts, and the other apps the member may
+ * run as launcher cards (`token` is the app id). Read at the team level.
  */
 export async function GET() {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
   const prefs = await loadProfilePreferences(member.anchorId);
-  const [homeApp, pages, counts] = await withViewer('team', () =>
+  const [homeApp, pages, counts, apps] = await withViewer('team', () =>
     Promise.all([
       resolveMemberHomeApp(member.anchorId, prefs.teamHubAppId),
       listLibrary(member.anchorId, { kind: 'page', limit: SECTION_LIMIT }),
       libraryCounts(member.anchorId),
+      listMemberApps(member.anchorId),
     ]),
   );
   return NextResponse.json({
@@ -48,6 +51,14 @@ export async function GET() {
         parentToken: null,
       })),
       counts,
+      apps: apps
+        .filter((a) => a.id !== homeApp?.appId)
+        .map((a) => ({
+          token: a.id,
+          title: a.title,
+          description: a.description,
+          updatedAt: a.updatedAt,
+        })),
     },
   });
 }

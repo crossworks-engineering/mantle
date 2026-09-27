@@ -402,5 +402,6 @@ app's level in its Access control; nothing else lists it to members.
   share is needed, the level is the access. Otherwise the member home shows
   its built-in view. Its `host.hub.get()` answers from `/api/member/home`: the
   site name, the member's name, the newest team pages as sections (a
-  section's `token` is the page id) and Library counts. The `/team` portal
+  section's `token` is the page id), Library counts and the other apps
+  members may run. The `/team` portal
   hub keeps its own rules (a team-mode share) until it is retired.
