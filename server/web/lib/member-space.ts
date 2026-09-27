@@ -15,6 +15,7 @@ import type { OpenedSpaceFile } from '@mantle/content';
 import { withSpace } from '@mantle/db';
 import { SCENE_SVG_MAX_BYTES, SpaceItemStateError, sceneWithinLimits } from '@mantle/content';
 import type { MemberCaller } from '@/lib/auth';
+import { rateLimit } from '@/lib/rate-limit';
 import { TableOpsSchema } from '@/lib/table-ops-schema';
 
 /** A member's display name for a comment snapshot. */
@@ -104,6 +105,31 @@ export const SaveBody = DraftBody.extend({
     .optional(),
 });
 
+/** Requests a member may make to the bytes routes, per login per minute.
+ *  A thumbnail may decode an image, so it has its own, smaller budget. */
+export const MEMBER_BYTES_PER_MIN = 240;
+export const MEMBER_THUMBS_PER_MIN = 60;
+
+/**
+ * The per-login rate limit on the member bytes routes (own and team files).
+ * Answers a 429 with Retry-After, or null to go on. Checked before any file
+ * is opened.
+ */
+export function memberBytesGate(req: Request, member: MemberCaller): Response | null {
+  const thumb = new URL(req.url).searchParams.get('thumb') === '1';
+  const gate = thumb
+    ? rateLimit(`member-thumbs:${member.loginId}`, {
+        max: MEMBER_THUMBS_PER_MIN,
+        windowMs: 60_000,
+      })
+    : rateLimit(`member-bytes:${member.loginId}`, { max: MEMBER_BYTES_PER_MIN, windowMs: 60_000 });
+  if (gate.ok) return null;
+  return NextResponse.json(
+    { error: 'Too many requests. Try again shortly.', reason: 'rate-limit' },
+    { status: 429, headers: { 'retry-after': String(gate.retryAfterSec) } },
+  );
+}
+
 /**
  * A personal file's bytes as a response: streamed with safe download
  * headers, or with `?thumb=1` a JPEG thumbnail (images and PDFs; 404 when the
@@ -125,6 +151,8 @@ export async function spaceFileResponse(
     const thumb = await thumbnailFor({
       sha256: file.sha256 ?? file.id,
       mimeType: file.mimeType,
+      // The size on disk: an oversized source is refused before any read.
+      sizeBytes: size,
       loadBytes: async () => {
         for await (const c of stream) chunks.push(c as Buffer);
         return Buffer.concat(chunks);

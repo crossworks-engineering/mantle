@@ -52,6 +52,37 @@ function thumbPath(sha256: string, maxDim: number): string {
   return path.join(thumbsRoot(), `${sha256}.${maxDim}.jpg`);
 }
 
+/** A marker for a content hash that could not be thumbnailed (too big, or
+ *  the decode failed). Same prefix as the cache file, so deleteThumbnailsFor
+ *  removes it too. It stops a repeat request from loading the source again. */
+function failPath(sha256: string, maxDim: number): string {
+  return path.join(thumbsRoot(), `${sha256}.${maxDim}.fail`);
+}
+
+/** How long a failure marker holds before a render is tried again. */
+const FAIL_TTL_MS = 24 * 60 * 60 * 1000;
+
+async function recentFailure(file: string): Promise<boolean> {
+  try {
+    return Date.now() - (await fs.stat(file)).mtimeMs < FAIL_TTL_MS;
+  } catch {
+    return false;
+  }
+}
+
+async function markFailure(file: string): Promise<void> {
+  try {
+    await fs.mkdir(thumbsRoot(), { recursive: true });
+    await fs.writeFile(file, '');
+  } catch {
+    /* best effort: the next request just tries again */
+  }
+}
+
+/** Renders in progress, by cache file: parallel requests for one image share
+ *  one decode instead of each loading the source. */
+const inflight = new Map<string, Promise<Buffer | null>>();
+
 /**
  * Return the cached thumbnail for a content hash, rendering it on miss.
  * `null` means "no thumbnail possible" (unsupported format, decode failure,
@@ -62,9 +93,13 @@ export async function thumbnailFor(args: {
   mimeType: string;
   /** Loads the ORIGINAL bytes; called only on cache miss. */
   loadBytes: () => Promise<Buffer | null>;
+  /** The source's size when the caller knows it: an oversized source is
+   *  refused BEFORE loadBytes reads it into memory. */
+  sizeBytes?: number | null;
   maxDim?: number;
 }): Promise<Buffer | null> {
   if (!isThumbable(args.mimeType)) return null;
+  if (args.sizeBytes != null && args.sizeBytes > THUMB_SOURCE_MAX_BYTES) return null;
   const dim = args.maxDim ?? THUMB_MAX_DIM;
   const file = thumbPath(args.sha256, dim);
   try {
@@ -72,15 +107,36 @@ export async function thumbnailFor(args: {
   } catch {
     /* miss — render below */
   }
+  const failed = failPath(args.sha256, dim);
+  if (await recentFailure(failed)) return null;
+  const running = inflight.get(file);
+  if (running) return running;
+  const render = renderThumbnail(args.loadBytes, args.mimeType, dim, file, failed);
+  inflight.set(file, render);
+  try {
+    return await render;
+  } finally {
+    inflight.delete(file);
+  }
+}
 
-  const original = await args.loadBytes();
-  if (!original || original.byteLength === 0 || original.byteLength > THUMB_SOURCE_MAX_BYTES) {
+async function renderThumbnail(
+  loadBytes: () => Promise<Buffer | null>,
+  mimeType: string,
+  dim: number,
+  file: string,
+  failed: string,
+): Promise<Buffer | null> {
+  const original = await loadBytes();
+  if (!original || original.byteLength === 0) return null;
+  if (original.byteLength > THUMB_SOURCE_MAX_BYTES) {
+    await markFailure(failed);
     return null;
   }
   try {
     // HEIC/HEIF → JPEG first (canvas can't decode them); pass-through for
     // everything else. Reuses the vision pipeline's transcode + its caps.
-    const { bytes } = await transcodeImageForVision(original, args.mimeType, null);
+    const { bytes } = await transcodeImageForVision(original, mimeType, null);
     const { createCanvas, loadImage } = await import('@napi-rs/canvas');
     const img = await loadImage(bytes);
     const w = img.width;
@@ -108,6 +164,7 @@ export async function thumbnailFor(args: {
     return jpeg;
   } catch (err) {
     console.warn('[files] thumbnail render failed:', err instanceof Error ? err.message : err);
+    await markFailure(failed);
     return null;
   }
 }

@@ -123,3 +123,56 @@ describe('deleteThumbnailsFor', () => {
     await deleteThumbnailsFor('f'.repeat(64)); // nothing there, must not throw
   });
 });
+
+describe('thumbnailFor under load (audit S1)', () => {
+  it('refuses an oversized source by its size, before reading it', async () => {
+    let loads = 0;
+    const out = await thumbnailFor({
+      sha256: '1'.repeat(64),
+      mimeType: 'image/png',
+      sizeBytes: 99 * 1024 * 1024,
+      loadBytes: async () => {
+        loads++;
+        return Buffer.alloc(1);
+      },
+    });
+    expect(out).toBeNull();
+    expect(loads).toBe(0);
+  });
+
+  it('remembers a failed render, so a repeat does not load the source again', async () => {
+    let loads = 0;
+    const args = {
+      sha256: '2'.repeat(64),
+      mimeType: 'image/png',
+      loadBytes: async () => {
+        loads++;
+        return Buffer.from('not a png at all');
+      },
+    };
+    expect(await thumbnailFor(args)).toBeNull();
+    expect(await thumbnailFor(args)).toBeNull();
+    expect(loads).toBe(1);
+    // A delete clears the marker with the derivatives.
+    await deleteThumbnailsFor('2'.repeat(64));
+    expect(await thumbnailFor(args)).toBeNull();
+    expect(loads).toBe(2);
+  });
+
+  it('parallel requests for one image share one load', async () => {
+    const png = await testPng(64, 64);
+    let loads = 0;
+    const args = {
+      sha256: '3'.repeat(64),
+      mimeType: 'image/png',
+      loadBytes: async () => {
+        loads++;
+        await new Promise((r) => setTimeout(r, 20));
+        return png;
+      },
+    };
+    const outs = await Promise.all(Array.from({ length: 8 }, () => thumbnailFor(args)));
+    expect(outs.every((o) => o !== null)).toBe(true);
+    expect(loads).toBe(1);
+  });
+});
