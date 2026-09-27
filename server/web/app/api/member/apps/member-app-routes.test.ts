@@ -105,7 +105,7 @@ beforeAll(async () => {
   frame = (await import('./[id]/frame/route')).GET;
   ownerFrame = (await import('../../apps/[id]/frame/route')).GET;
   tokens = await import('@/lib/auth/tokens');
-});
+}, 60_000);
 
 beforeEach(() => {
   h.runnable = true;

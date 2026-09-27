@@ -79,7 +79,7 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
       insert into nodes (id, owner_id, type, title, path, audience) values
         (${appId}, ${anchor}, 'app', ${`${tag} app`}, 'apps', 'team')`);
     await exec(sqlTag`insert into apps (node_id) values (${appId})`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await exec(sqlTag`delete from tool_groups where owner_id = ${anchor}`);

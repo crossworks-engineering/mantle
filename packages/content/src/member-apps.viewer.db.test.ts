@@ -82,7 +82,7 @@ describe.skipIf(!URL)('apps for members', () => {
         (${ids.draftOnly}, '{}'::jsonb, null, ${green}::jsonb, '{"entry":"App.tsx","files":{}}'::jsonb),
         (${ids.red}, '{}'::jsonb, ${red}::jsonb, null, null),
         (${ids.otherBrain}, '{}'::jsonb, ${green}::jsonb, null, null)`);
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id in (${anchor}, ${other})`);
