@@ -451,6 +451,25 @@ export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
   return res.member;
 }
 
+/**
+ * Is this member login still allowed in (audit S8)? For work that outlives
+ * the request that authenticated it, such as an open realtime stream: the
+ * row is re-read, so a deactivated login, a role change or members turned
+ * off on the box all end it.
+ */
+export async function memberLoginActive(loginId: string): Promise<boolean> {
+  const row = await loadLoginRow(loginId);
+  return !!row && row.role === 'member' && loginUsable(row);
+}
+
+/** When the calling request's session cookie expires (ms since epoch), or
+ *  null without one. */
+export async function sessionCookieExpiryMs(): Promise<number | null> {
+  const c = (await cookies()).get(SESSION_COOKIE_NAME);
+  const data = c ? verifySessionCookie(c.value) : null;
+  return data ? data.exp * 1000 : null;
+}
+
 /** The calling login's own row, admin or member: for the few routes about the
  *  login itself (change its password, sign out, who am I). Never for brain
  *  data. */
