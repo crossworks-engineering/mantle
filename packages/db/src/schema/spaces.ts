@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  bigint,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { authUsers } from './auth-users';
 import { nodes } from './nodes';
 
@@ -79,6 +88,27 @@ export const spaceItems = pgTable(
       .where(sql`${t.reviewState} = 'submitted'`),
     index('space_items_author_idx').on(t.authorLoginId),
   ],
+);
+
+/**
+ * The upload ledger of a personal space (migration 0169, audit D3): one row
+ * per member upload, kept when the file is deleted, so the daily upload cap
+ * counts what was uploaded, not what is still there. The space role inserts
+ * and reads its own rows; nothing below admin updates or deletes them.
+ */
+export const spaceUploads = pgTable(
+  'space_uploads',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    bytes: bigint('bytes', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('space_uploads_space_time_idx').on(t.spaceId, t.createdAt)],
 );
 
 export type Space = typeof spaces.$inferSelect;

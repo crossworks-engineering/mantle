@@ -421,4 +421,79 @@ describe.skipIf(!URL)('member personal space: tables and files', () => {
       }
     }
   });
+  // ── Quotas (audit D3) ─────────────────────────────────────────────────────
+
+  it('the daily cap counts uploads a member deleted (the ledger)', async () => {
+    const spooled = await spool('ledger bytes');
+    const id = await asA(() => sf.createMineFile(spaceA, { filename: `${tag} l.txt`, spooled }));
+    await asA(() => sp.deleteMineItem(spaceA, id));
+    const [row] = (await m.systemDb.execute(
+      sqlTag`select coalesce(sum(bytes), 0)::bigint as n from space_uploads where space_id = ${spaceA}`,
+    )) as unknown as { n: string }[];
+    expect(Number(row?.n)).toBeGreaterThanOrEqual('ledger bytes'.length);
+    // The member cannot erase the ledger (no update or delete rule).
+    const erased = await asA(() =>
+      m.db.execute(sqlTag`delete from space_uploads where space_id = ${spaceA} returning id`),
+    );
+    expect((erased as unknown as unknown[]).length).toBe(0);
+    // A spent budget refuses the next upload, and the headroom says so first.
+    const filler = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into space_uploads (id, space_id, bytes)
+      values (${filler}, ${spaceA}, ${sf.SPACE_DAILY_UPLOAD_BYTES})`);
+    try {
+      expect(await asA(() => sf.spaceUploadHeadroom(spaceA))).toBe(0);
+      const more = await spool('one more');
+      await expect(
+        asA(() => sf.createMineFile(spaceA, { filename: `${tag} m.txt`, spooled: more })),
+      ).rejects.toMatchObject({ reason: 'quota' });
+    } finally {
+      await m.systemDb.execute(sqlTag`delete from space_uploads where id = ${filler}`);
+    }
+  });
+
+  it('storage counts unsaved table drafts, and a full space refuses more', async () => {
+    const grid = await asA(() => sp.createMineItem(spaceA, { type: 'table', title: `${tag} q` }));
+    const before = await asA(() => sf.spaceStorageUsed(spaceA));
+    const got = await asA(() => sp.getMineItem(spaceA, grid.id));
+    const col = got?.body.type === 'table' ? got.body.table.data.columns[0]!.id : '';
+    await asA(() => td.applyTableOps(spaceA, grid.id, [{ op: 'row_add', cells: { [col]: 'x' } }]));
+    expect(await asA(() => sf.spaceStorageUsed(spaceA))).toBeGreaterThan(before);
+
+    const big = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, data)
+      values (${big}, ${spaceA}, 'file', 'big', 'space_files',
+              ${JSON.stringify({ size_bytes: sf.SPACE_STORAGE_LIMIT_BYTES })}::jsonb)`);
+    try {
+      await expect(asA(() => sf.assertSpaceStorage(spaceA, 1))).rejects.toMatchObject({
+        reason: 'quota',
+      });
+    } finally {
+      await m.systemDb.execute(sqlTag`delete from nodes where id = ${big}`);
+    }
+    await asA(() => sp.deleteMineItem(spaceA, grid.id));
+  });
+
+  it('quota checks in one space wait for each other (advisory lock)', async () => {
+    const order: string[] = [];
+    const first = asA(async () => {
+      await sf.assertSpaceStorage(spaceA);
+      order.push('first checked');
+      await new Promise((r) => setTimeout(r, 400));
+      order.push('first done');
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    const second = asA(async () => {
+      await sf.assertSpaceStorage(spaceA);
+      order.push('second checked');
+    });
+    // Another space is not held up.
+    await asB(async () => {
+      await sf.assertSpaceStorage(spaceB);
+      order.push('other space checked');
+    });
+    await Promise.all([first, second]);
+    expect(order).toEqual(['first checked', 'other space checked', 'first done', 'second checked']);
+  });
 });

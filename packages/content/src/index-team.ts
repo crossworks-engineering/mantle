@@ -265,6 +265,8 @@ export {
   createMineFile,
   openMineFile,
   spaceStorageUsed,
+  spaceUploadHeadroom,
+  assertSpaceStorage,
   type OpenedSpaceFile,
   type SpaceFile,
 } from './member-space-files';

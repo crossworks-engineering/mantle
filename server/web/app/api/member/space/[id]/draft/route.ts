@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import {
   applyTableOps,
   assertEditable,
+  assertSpaceStorage,
   saveDraft,
   saveDrawDraft,
   saveTableDraft,
@@ -28,12 +29,14 @@ import { firstIssue } from '@/lib/zod-issue';
  * `{ ok, draft_rev }`, a stale etag 409 with `current_rev`. Nothing is
  * published or indexed; the saved version (what teammates and a reviewer
  * see) changes only on Save version. Frozen while submitted (409 `frozen`).
+ * A table draft is refused once the space's storage is full (409 `quota`).
  */
 export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
   const params = SpaceIdParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
+  const bodyBytes = Number(req.headers.get('content-length')) || 0;
   const body = DraftBody.safeParse(await req.json().catch(() => null));
   if (!body.success) return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   const { spaceId } = member;
@@ -52,6 +55,9 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       const row = await assertEditable(spaceId, id);
       if (row.type === 'page' && doc) return saveDraft(spaceId, id, doc, { baseRev });
       if (row.type === 'draw' && scene) return saveDrawDraft(spaceId, id, scene, { baseRev });
+      // A table draft grows on disk: refuse it once the space is full (a
+      // request adds at most its own size, so the overshoot is bounded).
+      if (row.type === 'table' && (ops || table)) await assertSpaceStorage(spaceId, bodyBytes);
       if (row.type === 'table' && ops) {
         const r = await applyTableOps(spaceId, id, ops as unknown as TableOp[], ifRev);
         if (!r) return lockLost();

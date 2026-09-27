@@ -205,7 +205,13 @@ published file unless the scope may read drafts).
 **Limits.** 2000 items per space; a page document at most 2 MB; a table
 document at most 5 MB per request (bigger grids go by op batches); drawings
 use the owner's scene and SVG limits. Files: 100 MB per upload, 2 GB per
-space (file bytes plus table workbooks), 500 MB of uploads a day.
+space (file bytes plus table workbooks, unsaved drafts included), 500 MB of
+uploads a day. The daily cap reads an upload ledger (`space_uploads`,
+migration 0169), so deleting a file does not give its bytes back to today's
+budget. The upload route compares Content-Length with the space's headroom
+before it spools a byte, and a table draft is refused once the space is
+full. Every quota check takes a per-space advisory lock, so two parallel
+writes cannot both pass the same headroom.
 
 **Deleting a login** leaves its space and items behind (`login_id` goes
 null); deleting a space deletes its items. The 30-day purge of a deactivated

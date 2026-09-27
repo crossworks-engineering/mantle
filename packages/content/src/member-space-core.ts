@@ -45,6 +45,19 @@ export function requireSpace(spaceId: string): { spaceId: string; loginId: strin
   return scope;
 }
 
+/**
+ * Serialize one space's quota checks (audit D3): two uploads, or an upload
+ * and a table save, must not both pass the same headroom. A transaction
+ * advisory lock, held until the caller's space transaction ends, so the
+ * check and the write it guards are one step.
+ */
+export async function lockSpaceQuota(spaceId: string): Promise<void> {
+  requireSpace(spaceId);
+  await db.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`space-quota:${spaceId}`}, 0))`,
+  );
+}
+
 /** Items one personal space may hold (plan section 8, quotas). Folders a
  *  space makes for itself (the per-kind roots) do not count. */
 export const SPACE_ITEM_LIMIT = 2000;

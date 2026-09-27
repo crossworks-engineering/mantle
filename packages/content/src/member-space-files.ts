@@ -14,7 +14,15 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq, gt, sql } from 'drizzle-orm';
-import { afterCommit, afterRollback, db, nodes, spaceItems, tables } from '@mantle/db';
+import {
+  afterCommit,
+  afterRollback,
+  db,
+  nodes,
+  spaceItems,
+  spaceUploads,
+  tables,
+} from '@mantle/db';
 import {
   adoptSpooledIntoSpace,
   extOf,
@@ -23,10 +31,12 @@ import {
   removeSpaceFile,
   type SpooledUpload,
 } from '@mantle/files';
-import { promises as fs, type ReadStream } from 'node:fs';
+import { existsSync, promises as fs, statSync, type ReadStream } from 'node:fs';
+import { draftAbsFor } from './table-storage';
 import {
   SpaceItemStateError,
   assertItemRoom,
+  lockSpaceQuota,
   requireSpace,
   spaceNotFound,
 } from './member-space-core';
@@ -88,7 +98,8 @@ export async function spaceFileOf(ownerId: string, id: string): Promise<SpaceFil
   return n ? fileOf(n) : null;
 }
 
-/** Bytes a space holds on disk: its files plus its table workbooks. */
+/** Bytes a space holds on disk: its files plus its table workbooks, their
+ *  unsaved drafts included (a draft grows by op batches until Save). */
 export async function spaceStorageUsed(spaceId: string): Promise<number> {
   const [f] = await db
     .select({
@@ -96,28 +107,70 @@ export async function spaceStorageUsed(spaceId: string): Promise<number> {
     })
     .from(nodes)
     .where(and(eq(nodes.ownerId, spaceId), eq(nodes.type, 'file')));
-  const [t] = await db
-    .select({ n: sql<string>`coalesce(sum(${tables.sizeBytes}), 0)` })
+  const workbooks = await db
+    .select({ size: tables.sizeBytes, storagePath: tables.storagePath })
     .from(tables)
     .innerJoin(nodes, eq(nodes.id, tables.nodeId))
     .where(eq(nodes.ownerId, spaceId));
-  return Number(f?.n ?? 0) + Number(t?.n ?? 0);
+  let t = 0;
+  for (const w of workbooks) {
+    t += Number(w.size ?? 0);
+    if (!w.storagePath) continue;
+    const draft = draftAbsFor(w.storagePath);
+    if (existsSync(draft)) t += statSync(draft).size;
+  }
+  return Number(f?.n ?? 0) + t;
 }
 
+/** Bytes uploaded to a space in the last 24 hours, from the upload ledger:
+ *  a deleted file still counts, so upload-delete-upload cannot reset it. */
 async function uploadedToday(spaceId: string): Promise<number> {
   const [r] = await db
-    .select({
-      n: sql<string>`coalesce(sum((${nodes.data}->>'size_bytes')::bigint), 0)`,
-    })
-    .from(nodes)
+    .select({ n: sql<string>`coalesce(sum(${spaceUploads.bytes}), 0)` })
+    .from(spaceUploads)
     .where(
       and(
-        eq(nodes.ownerId, spaceId),
-        eq(nodes.type, 'file'),
-        gt(nodes.createdAt, sql`now() - interval '24 hours'`),
+        eq(spaceUploads.spaceId, spaceId),
+        gt(spaceUploads.createdAt, sql`now() - interval '24 hours'`),
       ),
     );
   return Number(r?.n ?? 0);
+}
+
+/**
+ * How many bytes the space may still take in one upload now: the smallest of
+ * the per-file cap, the storage left and today's upload budget left. The
+ * upload route compares the request's Content-Length with it BEFORE the body
+ * is spooled.
+ */
+export async function spaceUploadHeadroom(spaceId: string): Promise<number> {
+  requireSpace(spaceId);
+  const [used, today] = [await spaceStorageUsed(spaceId), await uploadedToday(spaceId)];
+  return Math.max(
+    0,
+    Math.min(
+      SPACE_FILE_MAX_BYTES,
+      SPACE_STORAGE_LIMIT_BYTES - used,
+      SPACE_DAILY_UPLOAD_BYTES - today,
+    ),
+  );
+}
+
+/**
+ * Refuse a write that would take the space past its storage limit (409
+ * `quota`). `incoming` is what the write adds, as far as the caller knows it
+ * (a table op batch is bounded by its request, so the space may overshoot by
+ * one request at most). Takes the space's quota lock first.
+ */
+export async function assertSpaceStorage(spaceId: string, incoming = 0): Promise<void> {
+  requireSpace(spaceId);
+  await lockSpaceQuota(spaceId);
+  if ((await spaceStorageUsed(spaceId)) + incoming > SPACE_STORAGE_LIMIT_BYTES) {
+    throw new SpaceItemStateError(
+      'quota',
+      `Your space is full (${mb(SPACE_STORAGE_LIMIT_BYTES)}). Delete something first.`,
+    );
+  }
 }
 
 const mb = (n: number) => `${Math.round(n / 1024 / 1024)} MB`;
@@ -143,12 +196,8 @@ export async function createMineFile(
       throw new SpaceItemStateError('quota', `Files can be at most ${mb(SPACE_FILE_MAX_BYTES)}.`);
     }
     await assertItemRoom(spaceId);
-    if ((await spaceStorageUsed(spaceId)) + spooled.size > SPACE_STORAGE_LIMIT_BYTES) {
-      throw new SpaceItemStateError(
-        'quota',
-        `Your space is full (${mb(SPACE_STORAGE_LIMIT_BYTES)}). Delete something first.`,
-      );
-    }
+    // Locked: a parallel upload waits here until this transaction ends.
+    await assertSpaceStorage(spaceId, spooled.size);
     if ((await uploadedToday(spaceId)) + spooled.size > SPACE_DAILY_UPLOAD_BYTES) {
       throw new SpaceItemStateError(
         'quota',
@@ -175,6 +224,7 @@ export async function createMineFile(
       tags: ['file'],
     });
     await db.insert(spaceItems).values({ nodeId: id, authorLoginId: loginId });
+    await db.insert(spaceUploads).values({ spaceId, bytes: spooled.size });
     await notifySpaceItemChanged(id, 'created', { spaceId, team: false });
     // The rows commit with the caller's space transaction, not here: if it
     // rolls back later, the adopted bytes would be an orphan nobody counts.

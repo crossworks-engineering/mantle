@@ -167,6 +167,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   // Read only through mantle_is_brain_space() (security definer).
   none('public.spaces'),
+  // The upload ledger (0169): the space role inserts and reads its own
+  // space's rows; the level roles never see it.
+  { table: 'public.space_uploads', read: 'none', rule: 'none', writer: 'content', space: 'write' },
 
   // ── Configuration the turn loop reads (no per-row secrecy) ────────────────
   { table: 'public.agents', read: 'all', rule: 'all-rows', writer: 'admin' },
