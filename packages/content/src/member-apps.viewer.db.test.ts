@@ -2,9 +2,10 @@
  * Apps for members on a real, migrated Postgres (member logins Phase 4b, plan
  * v3.1 section 4a): a member may run an app at team level or lower with a
  * green PUBLISHED build, never an admin app, a draft-only app, a red build or
- * another brain's app; the lookups work on the team role (no draft column is
- * read); the home app is honoured only while a member may run it; the access
- * log names the member login.
+ * another brain's app (the rule is in the query, so the admin pool proves
+ * it); the lookups work on the team role (no draft column is read); the home
+ * app is honoured only while a member may run it; the access log names the
+ * member login.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-apps.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -96,8 +97,11 @@ describe.skipIf(!URL)('apps for members', () => {
 
   const team = <T>(fn: () => Promise<T>) => m.withViewer('team', fn);
 
-  it('lists team-level and lower apps with a green published build, on the team role', async () => {
-    const apps = await team(() => ma.listMemberApps(anchor));
+  // The rule is written in the query, so the admin pool proves it. The team
+  // role adds row security keyed on the box's one brain (mantle_brain_id()),
+  // which this test's own brain is not: see the team-role case below.
+  it('lists team-level and lower apps with a green published build, by title', async () => {
+    const apps = await ma.listMemberApps(anchor);
     expect(apps.map((a) => a.id)).toEqual([ids.pub, ids.team]);
     expect(apps.find((a) => a.id === ids.team)).toMatchObject({
       description: 'Polls',
@@ -105,22 +109,33 @@ describe.skipIf(!URL)('apps for members', () => {
     });
   });
 
-  it('holds the rule in the query, not only in row security (the admin pool)', async () => {
-    const apps = await ma.listMemberApps(anchor);
-    expect(apps.map((a) => a.id)).toEqual([ids.pub, ids.team]);
+  it('never opens an admin app, a draft-only app, a red build or another brain', async () => {
     for (const id of [ids.admin, ids.draftOnly, ids.red, ids.otherBrain]) {
       expect(await ma.getMemberRunnableApp(anchor, id), id).toBeNull();
     }
   });
 
   it('opens a runnable app with its PUBLISHED build and manifest, never a draft', async () => {
-    const app = await team(() => ma.getMemberRunnableApp(anchor, ids.team));
+    const app = await ma.getMemberRunnableApp(anchor, ids.team);
     expect(app).toMatchObject({ id: ids.team, manifest: { toolSlugs: ['note_list'] } });
     expect(app?.publishedBuild.ok).toBe(true);
     expect(Object.keys(app ?? {})).not.toContain('draftBuild');
-    for (const id of [ids.admin, ids.draftOnly, ids.red, ids.otherBrain]) {
-      expect(await team(() => ma.getMemberRunnableApp(anchor, id)), id).toBeNull();
-    }
+  });
+
+  it('runs on the team role: only granted columns, and row security still applies', async () => {
+    // A draft column (never granted) would be "permission denied" here. Row
+    // security then hides a brain that is not this box's: nothing leaks.
+    expect(await team(() => ma.listMemberApps(anchor))).toEqual([]);
+    expect(await team(() => ma.getMemberRunnableApp(anchor, ids.team))).toBeNull();
+    expect(await team(() => ma.resolveMemberHomeApp(anchor, ids.team))).toBeNull();
+    expect(await team(() => lib.libraryCounts(anchor))).toEqual({
+      page: 0,
+      note: 0,
+      draw: 0,
+      table: 0,
+      file: 0,
+    });
+    await expect(lib.libraryCounts(anchor)).rejects.toThrow(/withViewer/);
   });
 
   it('gives team chat the data of team-level apps only', async () => {
@@ -132,13 +147,13 @@ describe.skipIf(!URL)('apps for members', () => {
   });
 
   it('honours the pinned home app only while a member may run it', async () => {
-    expect(await team(() => ma.resolveMemberHomeApp(anchor, ids.team))).toEqual({
+    expect(await ma.resolveMemberHomeApp(anchor, ids.team)).toEqual({
       appId: ids.team,
       title: `${tag} b team`,
     });
-    expect(await team(() => ma.resolveMemberHomeApp(anchor, ids.admin))).toBeNull();
-    expect(await team(() => ma.resolveMemberHomeApp(anchor, ids.draftOnly))).toBeNull();
-    expect(await team(() => ma.resolveMemberHomeApp(anchor, undefined))).toBeNull();
+    expect(await ma.resolveMemberHomeApp(anchor, ids.admin)).toBeNull();
+    expect(await ma.resolveMemberHomeApp(anchor, ids.draftOnly)).toBeNull();
+    expect(await ma.resolveMemberHomeApp(anchor, undefined)).toBeNull();
   });
 
   it('logs a member run by login and names the login to the admin', async () => {
@@ -161,14 +176,5 @@ describe.skipIf(!URL)('apps for members', () => {
       contactName: 'Pat Member',
       kind: 'db',
     });
-  });
-
-  it('counts the Library per kind at the team level', async () => {
-    await m.systemDb.execute(sqlTag`
-      insert into nodes (owner_id, type, title, path, audience) values
-        (${anchor}, 'note', ${`${tag} team note`}, 'notes', 'team'),
-        (${anchor}, 'note', ${`${tag} admin note`}, 'notes', 'admin')`);
-    const counts = await team(() => lib.libraryCounts(anchor));
-    expect(counts).toEqual({ page: 0, note: 1, draw: 0, table: 0, file: 0 });
   });
 });

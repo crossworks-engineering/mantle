@@ -130,20 +130,28 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
     }
   });
 
-  it('dispatches on the team role: the tool reads team items only', async () => {
+  it('dispatches on the team role: row security applies, unlike the admin pool', async () => {
+    // Row security on the team role is keyed on the box's one brain
+    // (mantle_brain_id()), which this test's brain is not: on the team role
+    // the tool sees none of its notes, on the admin pool it sees both. That
+    // difference is the proof the call ran on the limited role.
     const v = await verdict('note_list');
     if (!v.ok) throw new Error(v.reason);
-    const res = await m.withViewer('team', () =>
+    const run = () =>
       dispatch.dispatchTool(
         v.tool,
         {},
         { ownerId: anchor, surface: { kind: 'team', loginId: randomUUID(), privateReads: false } },
-      ),
+      );
+    const titles = (res: Awaited<ReturnType<typeof run>>) =>
+      (res.ok ? (res.output as { title: string }[]) : []).map((r) => r.title);
+    const asTeam = await m.withViewer('team', run);
+    expect(asTeam.ok).toBe(true);
+    expect(titles(asTeam)).toEqual([]);
+    const asAdmin = await run();
+    expect(titles(asAdmin)).toEqual(
+      expect.arrayContaining([`${tag} team note`, `${tag} admin note`]),
     );
-    expect(res.ok).toBe(true);
-    const titles = (res.ok ? (res.output as { title: string }[]) : []).map((r) => r.title);
-    expect(titles).toContain(`${tag} team note`);
-    expect(titles).not.toContain(`${tag} admin note`);
   });
 
   it('app_tools_set warns about every tool members of a team app cannot use', async () => {

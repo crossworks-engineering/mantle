@@ -70,6 +70,19 @@ function rowOf(n: typeof nodes.$inferSelect): LibraryRow {
  */
 const notExtractedFragment = sql`NOT (${nodes.type} = 'file' AND ${nodes.data} ? 'sourceFileId')`;
 
+/** What the Library lists: this brain's items of a Library kind set to
+ *  exactly the reader's level, without extracted image fragments. */
+function libraryWhere(anchorId: string, opts: { kind?: LibraryKind; q?: string } = {}) {
+  const q = opts.q?.trim();
+  return and(
+    eq(nodes.ownerId, anchorId),
+    eq(nodes.audience, currentViewerLevel()),
+    opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...LIBRARY_KINDS]),
+    notExtractedFragment,
+    q ? ilike(nodes.title, `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`) : undefined,
+  );
+}
+
 /** The Library, newest first: the items set to exactly the reader's level,
  *  without extracted image fragments. `q` matches the title. */
 export async function listLibrary(
@@ -79,14 +92,7 @@ export async function listLibrary(
   assertLimited();
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
   const offset = Math.max(opts.offset ?? 0, 0);
-  const q = opts.q?.trim();
-  const where = and(
-    eq(nodes.ownerId, anchorId),
-    eq(nodes.audience, currentViewerLevel()),
-    opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...LIBRARY_KINDS]),
-    notExtractedFragment,
-    q ? ilike(nodes.title, `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`) : undefined,
-  );
+  const where = libraryWhere(anchorId, opts);
   const [rows, [count]] = await Promise.all([
     db.select().from(nodes).where(where).orderBy(desc(nodes.updatedAt)).limit(limit).offset(offset),
     db
@@ -98,20 +104,13 @@ export async function listLibrary(
 }
 
 /** How many items the Library lists, per kind (zeros included): the stat
- *  tiles a members' home app shows. Same rule as `listLibrary`. */
+ *  tiles a members' home app shows. The same filter as `listLibrary`. */
 export async function libraryCounts(anchorId: string): Promise<Record<LibraryKind, number>> {
   assertLimited();
   const rows = await db
     .select({ type: nodes.type, n: sql<number>`count(*)::int` })
     .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, anchorId),
-        eq(nodes.audience, currentViewerLevel()),
-        inArray(nodes.type, [...LIBRARY_KINDS]),
-        notExtractedFragment,
-      ),
-    )
+    .where(libraryWhere(anchorId))
     .groupBy(nodes.type);
   const out = Object.fromEntries(LIBRARY_KINDS.map((k) => [k, 0])) as Record<LibraryKind, number>;
   for (const r of rows) if (isLibraryKind(r.type)) out[r.type] = r.n;
