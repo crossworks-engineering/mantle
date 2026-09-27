@@ -99,6 +99,26 @@ describe.skipIf(!URL)('my-space tools (on behalf of the member)', () => {
     expect(open.ok).toBe(false);
   });
 
+  it('finds nothing unless the surface is a member team turn (T1)', async () => {
+    // A login id on any other surface (forged or a future bug) opens nothing.
+    for (const surface of [
+      { kind: 'web', loginId: loginA },
+      { kind: 'forum', contactId: randomUUID(), topicId: randomUUID(), loginId: loginA },
+      { kind: 'telegram', telegramChatId: '1', loginId: loginA },
+    ]) {
+      const ctx = { ownerId: randomUUID(), surface } as unknown as ToolHandlerContext;
+      const list = await m.withViewer('team', () => t.my_items_list.handler({}, ctx));
+      const open = await m.withViewer('team', () => t.my_item_open.handler({ id: pageA }, ctx));
+      expect([surface.kind, list.ok, open.ok]).toEqual([surface.kind, false, false]);
+    }
+    // A team turn for a contact (no login) finds nothing either.
+    const contact = {
+      ownerId: randomUUID(),
+      surface: { kind: 'team', contactId: randomUUID() },
+    } as ToolHandlerContext;
+    expect((await m.withViewer('team', () => t.my_items_list.handler({}, contact))).ok).toBe(false);
+  });
+
   it('finds nothing without a member on the surface (owner turns, heartbeats, MCP)', async () => {
     expect((await call('my_items_list', {})).ok).toBe(false);
     expect((await call('my_item_open', { id: pageA })).ok).toBe(false);

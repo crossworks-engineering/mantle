@@ -123,6 +123,54 @@ describe.skipIf(!URL)('member personal space: comments and change events', () =>
     expect(seenByB?.map((c) => c.body)).toEqual(['first', 'reply']);
   });
 
+  it('the team role reads a teammate thread only with the human flag (T1)', async () => {
+    // A team-level agent runs on the same role without mantle.human: it must
+    // see nothing, even on a team-shared item.
+    const byAgent = await m.withViewer('team', () =>
+      m.db
+        .select()
+        .from(m.nodeComments)
+        .where(sqlTag`${m.nodeComments.nodeId} = ${pageId}`),
+    );
+    expect(byAgent).toEqual([]);
+    const byMember = await m.withTeamDrafts(() =>
+      m.db
+        .select()
+        .from(m.nodeComments)
+        .where(sqlTag`${m.nodeComments.nodeId} = ${pageId}`),
+    );
+    expect(byMember.length).toBe(2);
+    // The nodes rules hide a personal item from the plain team role too, so
+    // the behaviour above holds even without the comment rule's own human
+    // check. That check is the second layer: pin it so it cannot go quietly.
+    const [policy] = (await m.systemDb.execute(sqlTag`
+      select qual from pg_policies
+      where tablename = 'node_comments' and policyname = 'node_comments_team_drafts_read'`)) as unknown as {
+      qual: string;
+    }[];
+    expect(policy?.qual).toContain('mantle.human');
+  });
+
+  it('the space role writes only its own login’s comments, kept with the brain id (T1)', async () => {
+    const forge = (loginId: string, ownerId: string) =>
+      asA(() =>
+        m.db.insert(m.nodeComments).values({
+          ownerId,
+          nodeId: pageId,
+          authorKind: 'member',
+          loginId,
+          authorName: 'Forged',
+          body: 'forged',
+        }),
+      );
+    // Another login's name on the comment.
+    await expect(forge(loginB, anchor)).rejects.toThrow();
+    // Stored under the personal space instead of the brain.
+    await expect(forge(loginA, spaceA)).rejects.toThrow();
+    const bodies = (await asA(() => cm.listMineComments(spaceA, pageId)))?.map((c) => c.body);
+    expect(bodies).not.toContain('forged');
+  });
+
   it('nobody deletes another login’s comment', async () => {
     const [first, reply] = (await asA(() => cm.listMineComments(spaceA, pageId)))!;
     expect(await m.withTeamDrafts(() => cm.deleteTeamDraftComment(pageId, loginB, first!.id))).toBe(
