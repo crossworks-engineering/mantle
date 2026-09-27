@@ -201,4 +201,21 @@ describe.skipIf(!URL)('member personal space', () => {
     // Clean up the frozen page as the admin would (purge path).
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id in (${spaceA}, ${spaceB})`);
   });
+  it('lists Mine by review state, over the whole space (U10)', async () => {
+    const a = await asA(() => sp.createMineItem(spaceA, { type: 'note', title: `${tag} rs1` }));
+    const b = await asA(() => sp.createMineItem(spaceA, { type: 'note', title: `${tag} rs2` }));
+    await asA(() => sp.submitItem(spaceA, a.id));
+    const submitted = await asA(() =>
+      sp.listMine(spaceA, { q: `${tag} rs`, reviewStates: ['submitted'] }),
+    );
+    expect(submitted.items.map((i) => i.id)).toEqual([a.id]);
+    expect(submitted.total).toBe(1);
+    const drafts = await asA(() =>
+      sp.listMine(spaceA, { q: `${tag} rs`, reviewStates: ['draft'] }),
+    );
+    expect(drafts.items.map((i) => i.id)).toEqual([b.id]);
+    await asA(() => sp.recallItem(spaceA, a.id));
+    await asA(() => sp.deleteMineItem(spaceA, a.id));
+    await asA(() => sp.deleteMineItem(spaceA, b.id));
+  });
 });
