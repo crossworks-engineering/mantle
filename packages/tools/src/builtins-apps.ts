@@ -399,7 +399,11 @@ async function memberToolWarnings(ownerId: string, id: string, slugs: string[]) 
   const warnings: string[] = [];
   for (const slug of slugs) {
     const verdict = await memberAppToolVerdict(ownerId, slugs, slug);
-    if (!verdict.ok) warnings.push(`${verdict.reason} Members running this app get an error.`);
+    if (!verdict.ok) {
+      warnings.push(
+        `${verdict.reason} Members running this app get an error: declare a built-in tool from an enabled team-level group instead (\`tool_group_list\` shows levels), or keep the app at admin level.`,
+      );
+    }
   }
   return warnings;
 }
