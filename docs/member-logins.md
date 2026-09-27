@@ -72,7 +72,10 @@ link makes an item client or public, often as a side effect (the agent
 emailing a page with a link), so listing every such item to every member is
 not something an owner chose. To list an item to members, set it to Team.
 
-- **Chat** uses `team-responder`, and only once an admin has set it below
+- **Chat** happens in the owner app's assistant dock (jackdaw v0.6.146+),
+  with its three shapes (side column, movable window, full display): for a
+  member the dock renders the member's own thread over these two routes. It
+  uses `team-responder`, and only once an admin has set it below
   admin (access-levels.md §5): members chat only with team-level agents, and
   the turn engine refuses an admin agent for a member (`assertMemberAgent`).
   One thread per login (`team_messages.login_id`, migration 0163), never in
@@ -222,5 +225,11 @@ never named by the model; any other surface (an owner turn, a heartbeat, a
 run, MCP) finds nothing. Each call opens its own short space transaction
 (`mantle_personal_space(login)` maps the login to its space). Read, never
 learn: no search by meaning over personal items.
+
+**In the client** (jackdaw v0.6.146+) a member edits own pages, notes,
+drawings and tables in Mine over these routes. A personal drawing keeps no
+images (the routes store no scene files); a table edits one tab at a time
+with no import, tab editing or cross-tab references. The page editor keeps
+`@` as plain text for a member: there is no member mention source yet.
 
 **Not yet:** the admin review screen (Phase 4).
