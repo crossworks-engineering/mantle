@@ -46,10 +46,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   // The registry lock found no row: the item was submitted (or deleted)
   // after the state check above. Ask again so a frozen item answers 409
   // `frozen` instead of a bare 404.
-  const lockLost = async () => {
-    await assertEditable(spaceId, id);
-    return { ok: false as const };
-  };
+  const lockLost = () => assertEditable(spaceId, id);
   try {
     const res = await inMySpace(member, async () => {
       const row = await assertEditable(spaceId, id);
@@ -60,14 +57,20 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
       if (row.type === 'table' && (ops || table)) await assertSpaceStorage(spaceId, bodyBytes);
       if (row.type === 'table' && ops) {
         const r = await applyTableOps(spaceId, id, ops as unknown as TableOp[], ifRev);
-        if (!r) return lockLost();
+        if (!r) {
+          await lockLost();
+          return { ok: false as const };
+        }
         return r.ok
           ? { ok: true as const, rev: r.draftRev, createdIds: r.createdIds }
           : { ok: false as const, conflict: true as const, rev: r.currentRev };
       }
       if (row.type === 'table' && table) {
         const r = await saveTableDraft(spaceId, id, table as unknown as TableDoc, ifRev);
-        if (!r) return lockLost();
+        if (!r) {
+          await lockLost();
+          return { ok: false as const };
+        }
         return r.ok
           ? { ok: true as const, rev: r.draftRev }
           : { ok: false as const, conflict: true as const, rev: r.currentRev };
