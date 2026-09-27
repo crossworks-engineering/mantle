@@ -2,8 +2,8 @@
  * POST /api/team-admin/submissions/:id/accept
  *   { audience?: 'admin'|'team'|'client'|'public', parentPageId?, folderPath? }
  * Accept into the brain (plan 6.2): the item and its bundle move into the
- * brain with the same ids, at the chosen level (admin by default). 409
- * `recalled` when the author took it back first. The only member-logins
+ * brain with the same ids, at the chosen level (admin by default). 404 when
+ * it is not waiting any more (the author recalled it first). The only member-logins
  * path that announces anything to the extractor.
  */
 import { NextResponse } from '@/server/http-compat';

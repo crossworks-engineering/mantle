@@ -90,8 +90,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  *  `invalid`, 409 for the rest. */
 export class ReviewError extends Error {
   constructor(
-    readonly reason:
-      'not-found' | 'not-submitted' | 'recalled' | 'not-left-behind' | 'invalid' | 'too-large',
+    readonly reason: 'not-found' | 'not-submitted' | 'not-left-behind' | 'invalid' | 'too-large',
     message: string,
   ) {
     super(message);
@@ -99,7 +98,14 @@ export class ReviewError extends Error {
   }
 }
 
-const notFound = () => new ReviewError('not-found', 'Not found.');
+/** Not reviewable (any more). Deliberately one answer for "recalled by the
+ *  author", "handled by another admin" and "a private item": telling them
+ *  apart would tell an admin that a private item exists. */
+const notFound = () =>
+  new ReviewError(
+    'not-found',
+    'This item is not waiting for review. The author may have recalled it, or another admin handled it.',
+  );
 
 /** Why an admin sees the item: submitted for review, or left behind by a
  *  deactivated (or deleted) login while shared with the team. */
@@ -583,8 +589,7 @@ async function freeFileName(tx: Tx, brainId: string, folder: string, wanted: str
 
 /**
  * Accept a reviewable item into the brain (plan 6.2). One transaction: lock
- * the item's state row (a Recall that lands first wins: "recalled by the
- * author"), compute the bundle, re-own every item in it (same ids), move its
+ * the item's state row (a Recall that lands first wins: not found), compute the bundle, re-own every item in it (same ids), move its
  * bytes, mark every space_items row accepted (the row stays: it records the
  * author), discard leftover drafts, set the level, and announce each moved
  * item to the extractor once. Then, after the commit, the bytes are put in
@@ -613,7 +618,7 @@ export async function acceptReviewItem(
     result = await db.transaction(async (tx) => {
       // 1. The state row, locked. A Recall, Return or second Accept waits.
       const [locked] = await tx
-        .select({ state: spaceItems.reviewState, spaceId: nodes.ownerId, kind: spaces.kind })
+        .select({ kind: spaces.kind })
         .from(spaceItems)
         .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
         .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
@@ -622,15 +627,7 @@ export async function acceptReviewItem(
         .limit(1);
       if (!locked || locked.kind !== 'personal') throw notFound();
       const found = await reviewRow(id, tx);
-      if (!found) {
-        if (locked.state === 'draft') {
-          throw new ReviewError(
-            'recalled',
-            'The author recalled this item. It is no longer waiting for review.',
-          );
-        }
-        throw notFound();
-      }
+      if (!found) throw notFound();
       const spaceId = found.spaceId;
       const root: BundleItem = { id, type: found.row.type, title: found.row.title };
 
@@ -873,20 +870,7 @@ export async function returnReviewItem(
         ),
       )
       .returning({ sharing: spaceItems.sharing });
-    if (!updated.length) {
-      const [s] = await tx
-        .select({ state: spaceItems.reviewState })
-        .from(spaceItems)
-        .where(eq(spaceItems.nodeId, id))
-        .limit(1);
-      if (s?.state === 'draft') {
-        throw new ReviewError(
-          'recalled',
-          'The author recalled this item. It is no longer waiting for review.',
-        );
-      }
-      throw notFound();
-    }
+    if (!updated.length) throw notFound();
     await notifySpaceItemChanged(id, 'state', undefined, tx);
   });
 }

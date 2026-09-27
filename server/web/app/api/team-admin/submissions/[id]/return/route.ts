@@ -1,7 +1,7 @@
 /**
  * POST /api/team-admin/submissions/:id/return { note } : send a submitted
  * item back to its author with a note (shown as a banner; the author edits
- * and submits again). 409 `recalled` when the author took it back first.
+ * and submits again). 404 when it is not waiting any more.
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';

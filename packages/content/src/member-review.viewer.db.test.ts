@@ -232,8 +232,9 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
   it('a Recall that lands first wins over Accept', async () => {
     const A = spaceOf[loginA]!;
     await as(loginA, () => sp.recallItem(A, pageId));
+    // The same answer as for a private item: nothing tells them apart.
     await expect(rv.acceptReviewItem(anchor, pageId, reviewer())).rejects.toMatchObject({
-      reason: 'recalled',
+      reason: 'not-found',
     });
     expect(await ownerOf(pageId)).toBe(A);
     await as(loginA, () => sp.submitItem(A, pageId));
