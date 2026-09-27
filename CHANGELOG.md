@@ -4,6 +4,18 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.283: member types in the contract (audit M2, M3, S13, P2)
+
+- `@crossworks/client-types` publishes the personal-space wire shapes
+  (`MemberSpaceItemRow`, `MemberSpaceList`, `MemberSpaceFile`,
+  `MemberSpaceItemBody`, `MemberSpaceItem`, `MemberSpaceSharing`,
+  `MemberReviewState`) and the one member kind list
+  (`@crossworks/client-types/member-kinds`: `MEMBER_ITEM_KINDS`). The brain's
+  space row is that type, and compile-time checks tie its body, file and
+  enums to it. No wire change.
+- Migration 0168 drops each policy before creating it, so it re-runs by
+  hand (run 0171 after it). Boxes that ran it are unchanged.
+
 ## 0.232.281 and the patch after it: members run apps; app SQL is hardened
 
 - Members run team-level apps from their shell (docs/member-logins.md
