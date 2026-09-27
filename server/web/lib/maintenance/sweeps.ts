@@ -17,7 +17,12 @@
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
-import { findDuplicateCandidates, mergeEntities, type MergeCandidate } from '@mantle/content';
+import {
+  findDuplicateCandidates,
+  mergeEntities,
+  purgeDeactivatedSpaces,
+  type MergeCandidate,
+} from '@mantle/content';
 
 import { MAINTENANCE_TASKS, isFreeCost } from './registry';
 import { finishRun, hasRecentCronRun, recordRunStart } from './history';
@@ -129,6 +134,14 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
   // Turns, not traces: a trace can be closed while its assistant_messages row
   // is still 'pending', so these are genuinely separate surfaces.
   'turns-reap': async () => summariseTurnsReap(await reapStalePendingTurns()),
+  // Member logins plan 6.4: a deactivated login's private items, after 30 days.
+  'space-purge': async () => {
+    const r = await purgeDeactivatedSpaces();
+    if (r.skipped) return `skipped: ${r.skipped}`;
+    return r.items === 0
+      ? 'nothing to purge'
+      : `purged ${r.items} private item(s) in ${r.spaces} space(s); ${r.emptied} space(s) emptied`;
+  },
 };
 
 /** Double-fire guard: skip a sweep whose last cron run (any state — a failed

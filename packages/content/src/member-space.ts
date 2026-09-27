@@ -209,11 +209,14 @@ export async function getMineItem(
 ): Promise<{ row: SpaceItemRow; body: SpaceItemBody } | null> {
   const row = await getMineRow(spaceId, id);
   if (!row) return null;
-  const body = await bodyOf(spaceId, row.type, id, opts);
+  const body = await spaceItemBody(spaceId, row.type, id, opts);
   return body ? { row, body } : null;
 }
 
-async function bodyOf(
+/** A personal item's body, read for the space that owns it. Drafts are
+ *  read where the scope may (own space, or the admin pool: the review side
+ *  strips them, member-review.ts). */
+export async function spaceItemBody(
   ownerId: string,
   type: SpaceItemKind,
   id: string,
@@ -537,10 +540,10 @@ async function tableRefs(id: string, doc?: TableDoc | WorkbookDoc): Promise<Embe
     .from(tables)
     .where(eq(tables.nodeId, id))
     .limit(1);
-  if (!t?.storagePath) return { ids: [], refused: [] };
+  if (!t?.storagePath) return { ids: [], refused: [], embeds: [] };
   const draft = draftAbsFor(t.storagePath);
   const file = existsSync(draft) ? draft : resolveStoragePath(t.storagePath);
-  return existsSync(file) ? cellRefs(refLikeCells(file)) : { ids: [], refused: [] };
+  return existsSync(file) ? cellRefs(refLikeCells(file)) : { ids: [], refused: [], embeds: [] };
 }
 
 /** "Save version" for an own page, under the embed rule. */
@@ -681,7 +684,7 @@ export async function getTeamDraftItem(
     // published SVG through its own route instead.
     return { row, body: { type: 'draw', draw: null } };
   }
-  const body = await bodyOf(joined.node.ownerId, row.type, id, opts);
+  const body = await spaceItemBody(joined.node.ownerId, row.type, id, opts);
   return body ? { row, body } : null;
 }
 

@@ -81,7 +81,35 @@ describe('pageRefs', () => {
         ),
       ],
     };
-    expect(pageRefs(doc)).toEqual({ ids: [], refused: [] });
+    expect(pageRefs(doc)).toEqual({ ids: [], refused: [], embeds: [] });
+  });
+});
+
+/** Phase 4: Accept moves what renders inside an item and leaves links. */
+describe('embeds vs links', () => {
+  it('counts ids, src and href on a node as embeds; marks and mentions as links', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        { type: 'image', attrs: { nodeId: A } },
+        { type: 'image', attrs: { src: `media:${B}` } },
+        { type: 'childPage', attrs: { pageId: C } },
+        { type: 'fileEmbed', attrs: { href: `/api/member/space/${D}/bytes` } },
+        para(
+          { type: 'mention', attrs: { id: E, ref: 'node' } },
+          text('see', `/n/${F}`),
+          text('also', `media:${A}`),
+        ),
+      ],
+    };
+    const r = pageRefs(doc);
+    expect(r.embeds.sort()).toEqual([A, B, C, D].sort());
+    expect(r.ids.sort()).toEqual([A, B, C, D, E, F].sort());
+  });
+
+  it('never counts a drawing element link or a table cell as an embed', () => {
+    expect(sceneRefs({ elements: [{ type: 'rectangle', link: `media:${A}` }] }).embeds).toEqual([]);
+    expect(cellRefs([`media:${A}`]).embeds).toEqual([]);
   });
 });
 
@@ -108,7 +136,7 @@ describe('sceneRefs', () => {
         { type: 'rectangle', link: `/pages/${B}`, isDeleted: true },
       ],
     });
-    expect(r).toEqual({ ids: [A], refused: ['https://tracker.example/frame'] });
+    expect(r).toEqual({ ids: [A], refused: ['https://tracker.example/frame'], embeds: [] });
   });
 });
 
@@ -122,7 +150,7 @@ describe('cellRefs', () => {
       42,
       'v:1',
     ]);
-    expect(r).toEqual({ ids: [A, B], refused: [] });
+    expect(r).toEqual({ ids: [A, B], refused: [], embeds: [] });
     expect(cellRefs(['media:nope']).refused).toEqual(['nope']);
   });
 });

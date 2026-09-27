@@ -261,7 +261,8 @@ x-app-env: &app-env
   MANTLE_TRUSTED_PROXIES: ${MANTLE_TRUSTED_PROXIES:-}
   MANTLE_FILES_ROOT: /data/files
   # MANTLE_SPACES_ROOT (member personal-space file bytes) is NOT here: it is
-  # set only on the services that mount /data/spaces (web, api, worker_events).
+  # set only on the services that mount /data/spaces (web, api, worker_events,
+  # worker_maintenance).
   # A process without it refuses to write personal files instead of writing
   # them into its own container layer.
   # Cap for the streamed /files uploader (POST /api/files/files), in MB. Bytes
@@ -1190,6 +1191,13 @@ services:
       migrate:  { condition: service_completed_successfully }
     environment:
       <<: *app-env
+      MANTLE_SPACES_ROOT: /data/spaces
+    volumes:
+      # The nightly space-purge (member logins plan 6.4) deletes a deactivated
+      # login's private items after 30 days: the rows AND their bytes, so it
+      # writes both personal file bytes and personal table workbooks.
+      - ${MANTLE_DATA_DIR:-./data}/spaces:/data/spaces
+      - ${MANTLE_DATA_DIR:-./data}/table-dbs:/data/table-dbs
 
   # Runs worker — the runner-queue engine (docs/runs.md): dispatches queued
   # run items (tool/note now, worker agents in slice 2), runs responder resume

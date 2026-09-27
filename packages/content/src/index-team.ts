@@ -282,6 +282,36 @@ export {
   type SpaceCommentAuthor,
 } from './member-space-comments';
 export {
+  BUNDLE_MAX_ITEMS,
+  ReviewError,
+  acceptReviewItem,
+  addReviewComment,
+  countSubmitted,
+  deleteReviewComment,
+  discardLeftBehind,
+  getReviewItem,
+  listReviewComments,
+  listReviewQueue,
+  openReviewFile,
+  previewAccept,
+  returnReviewItem,
+  reviewDrawSvg,
+  type AcceptOptions,
+  type AcceptResult,
+  type Bundle,
+  type BundleItem,
+  type ReviewAuthor,
+  type ReviewItemRow,
+  type ReviewReason,
+} from './member-review';
+export {
+  SPACE_PURGE_GRACE_DAYS,
+  findSpacePurge,
+  purgeDeactivatedSpaces,
+  type SpacePurgeCandidate,
+  type SpacePurgeResult,
+} from './member-space-purge';
+export {
   SPACE_ITEM_CHANGED_CHANNEL,
   parseSpaceItemChange,
   type SpaceItemChange,

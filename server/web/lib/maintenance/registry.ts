@@ -125,6 +125,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       "Idempotent; a no-op once clean. Threshold sits well clear of the adapters' own guards (60s connect, 120s idle, 90s SDK retry envelope) and of a long tool-loop turn.",
   },
   {
+    slug: 'space-purge',
+    title: "Purge deactivated logins' private items",
+    description:
+      "Deletes the PRIVATE personal items of every login deactivated for 30 days or more (member logins plan 6.4, decided 2026-09-26), rows and bytes; a space left empty loses its MANTLE_SPACES_ROOT and TABLE_DB_DIR directories too. Team-shared and submitted items stay: an admin accepts or discards them from Team admin > Review. Counts only, never titles: admins never browse a member's private items.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'io',
+    schedulable: true,
+    script: 'scripts/space-purge.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Pure SQL and file removal. Needs the /data/spaces and /data/table-dbs mounts (worker_maintenance carries both); without MANTLE_SPACES_ROOT it skips rather than leave orphan bytes.',
+  },
+  {
     slug: 'traces-reap',
     title: 'Reap abandoned traces (all owners)',
     description:
