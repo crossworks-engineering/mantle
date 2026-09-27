@@ -38,8 +38,7 @@ import { createDraw, deleteDraw, getDraw, getDrawSvg, updateDraw, type DrawDetai
 import { createNote, deleteNote, getNote, updateNote, type NoteRow } from './notes';
 import { getPage } from './pages/read';
 import { commitPage, updatePage, type CommitPageResult } from './pages/draft';
-import { referencedDrawIds, referencedFileIds } from './doc-assets';
-import { mentionRefs } from './mention-refs';
+import { cellRefs, noteRefs, pageRefs, sceneRefs, type EmbedRefs } from './embed-refs';
 import { commitDraw, type CommitDrawResult } from './draws';
 import { notifySpaceItemChanged } from './member-space-events';
 import { deletePage, createPage } from './pages/tree';
@@ -50,6 +49,7 @@ import { commitTable } from './tables/draft';
 import type { TableDoc, WorkbookDoc } from '@mantle/content-core/table-model';
 import type { TableDetail } from '@mantle/content-core/table-model';
 import { draftAbsFor } from './table-storage';
+import { refLikeCells, resolveStoragePath } from '@mantle/tabledb';
 import {
   deleteMineFile,
   renameMineFile,
@@ -241,6 +241,13 @@ export async function createMineItem(
 ): Promise<SpaceItemRow> {
   const { loginId } = requireSpace(spaceId);
   await assertItemRoom(spaceId);
+  // A new item starts published (page, drawing) or has no draft (note): the
+  // embed rule holds from its first version.
+  if (input.type === 'page' && input.doc) await assertEmbeds(spaceId, pageRefs(input.doc), 'page');
+  if (input.type === 'note' && input.content)
+    await assertEmbeds(spaceId, noteRefs(input.content), 'note');
+  if (input.type === 'draw' && input.scene)
+    await assertEmbeds(spaceId, sceneRefs(input.scene), 'drawing');
   let id: string;
   switch (input.type) {
     case 'page':
@@ -435,6 +442,7 @@ export async function saveMineTable(
   const row = await assertEditable(spaceId, id);
   if (row.type !== 'table') return null;
   if (doc !== undefined || (await savedState('table', id)).unsaved) {
+    await assertEmbeds(spaceId, await tableRefs(id, doc), 'table');
     const t = await commitTable(spaceId, id, doc);
     // No row under the registry lock: submitted since the check above (the
     // frozen rule hides it) or gone. Re-check so a frozen item says so.
@@ -449,19 +457,19 @@ export async function saveMineTable(
 
 /**
  * The save-time embed rule (plan 2d; Jason 2026-09-26: never another
- * member's team-shared item). A personal page may embed or link only the
+ * member's team-shared item). A personal item may embed or link only the
  * author's own items and Library items (brain items the team level can
- * read). Returns the ids it may not use: another member's item (shared or
- * not), an admin-only brain item, or an id that no longer resolves. Accept
- * (Phase 4) moves an item's embed closure into the brain, so a foreign id
- * here would drag someone else's work, or an admin secret's existence, along.
+ * read). Returns what it may not use: another member's item (shared or
+ * not), an admin-only brain item, an id that no longer resolves, and what
+ * embed-refs.ts refuses outright (a non-uuid id, an entity mention, an
+ * external image). Accept (Phase 4) moves an item's embed closure into the
+ * brain, so a foreign id here would drag someone else's work, or an admin
+ * secret's existence, along.
  */
-export async function disallowedPageRefs(spaceId: string, doc: unknown): Promise<string[]> {
+export async function disallowedRefs(spaceId: string, refs: EmbedRefs): Promise<string[]> {
   requireSpace(spaceId);
-  const ids = [
-    ...new Set([...referencedFileIds(doc), ...referencedDrawIds(doc), ...mentionRefs(doc).nodeIds]),
-  ];
-  if (ids.length === 0) return [];
+  const { ids, refused } = refs;
+  if (ids.length === 0) return refused;
   const own = await db
     .select({ id: nodes.id })
     .from(nodes)
@@ -478,7 +486,44 @@ export async function disallowedPageRefs(spaceId: string, doc: unknown): Promise
     );
     for (const r of lib) ok.add(r.id);
   }
-  return ids.filter((id) => !ok.has(id));
+  return [...refused, ...ids.filter((id) => !ok.has(id))];
+}
+
+/** The embed rule for a page document (kept for its callers). */
+export function disallowedPageRefs(spaceId: string, doc: unknown): Promise<string[]> {
+  return disallowedRefs(spaceId, pageRefs(doc));
+}
+
+/** Refuse a save that breaks the embed rule (409 `embed` with the ids). */
+async function assertEmbeds(spaceId: string, refs: EmbedRefs, what: string): Promise<void> {
+  const bad = await disallowedRefs(spaceId, refs);
+  if (bad.length) {
+    throw new SpaceItemStateError(
+      'embed',
+      `This ${what} uses items you cannot share: only your own items and Library items. Remove them, then save.`,
+      bad,
+    );
+  }
+}
+
+/** The references a table's working copy holds (the draft workbook, or the
+ *  document sent with Save version). */
+async function tableRefs(id: string, doc?: TableDoc | WorkbookDoc): Promise<EmbedRefs> {
+  if (doc !== undefined) {
+    const tabs = 'tabs' in doc && Array.isArray(doc.tabs) ? doc.tabs : [doc as TableDoc];
+    return cellRefs(
+      tabs.flatMap((t) => (t.rows ?? []).flatMap((r) => Object.values(r.cells ?? {}))),
+    );
+  }
+  const [t] = await db
+    .select({ storagePath: tables.storagePath })
+    .from(tables)
+    .where(eq(tables.nodeId, id))
+    .limit(1);
+  if (!t?.storagePath) return { ids: [], refused: [] };
+  const draft = draftAbsFor(t.storagePath);
+  const file = existsSync(draft) ? draft : resolveStoragePath(t.storagePath);
+  return existsSync(file) ? cellRefs(refLikeCells(file)) : { ids: [], refused: [] };
 }
 
 /** "Save version" for an own page, under the embed rule. */
@@ -488,14 +533,7 @@ export async function saveMinePage(
   doc: Record<string, unknown>,
   opts: { baseRev?: number } = {},
 ): Promise<CommitPageResult> {
-  const bad = await disallowedPageRefs(spaceId, doc);
-  if (bad.length) {
-    throw new SpaceItemStateError(
-      'embed',
-      'This page uses items you cannot share: only your own items and Library items. Remove them, then save.',
-      bad,
-    );
-  }
+  await assertEmbeds(spaceId, pageRefs(doc), 'page');
   const res = await commitPage(spaceId, id, doc, opts);
   if (res.ok) await notifySpaceItemChanged(id, 'saved');
   return res;
@@ -509,6 +547,7 @@ export async function saveMineDraw(
   opts: { baseRev?: number; svg?: string } = {},
 ): Promise<CommitDrawResult> {
   requireSpace(spaceId);
+  await assertEmbeds(spaceId, sceneRefs(scene), 'drawing');
   const res = await commitDraw(spaceId, id, scene, opts);
   if (res.ok) await notifySpaceItemChanged(id, 'saved');
   return res;
@@ -530,6 +569,9 @@ export async function updateMineItem(
       await updatePage(spaceId, id, { title, icon });
       break;
     case 'note':
+      // A note has no draft: its text is what teammates and a reviewer read,
+      // so the embed rule holds on every change.
+      if (content !== undefined) await assertEmbeds(spaceId, noteRefs(content), 'note');
       await updateNote(spaceId, id, { title, content });
       break;
     case 'draw':

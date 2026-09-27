@@ -457,6 +457,35 @@ function resolveTabRow(db: SqliteDb, tabId?: string): TabRow | undefined {
   return tab;
 }
 
+/**
+ * Every text cell, in every tab, that could be a reference: a path (`/…`) or
+ * a scheme (`page:…`, `https://…`). What the member embed rule checks on Save
+ * version. Filtered in SQL, so a workbook of any size is fine.
+ */
+export function refLikeCells(absPath: string): string[] {
+  const db = openTableFile(absPath, { readOnly: true });
+  try {
+    const out: string[] = [];
+    const tabs = db.prepare(`SELECT physical_table FROM _tabs`).all() as unknown as TabRow[];
+    for (const t of tabs) {
+      const cols = db.prepare(`PRAGMA table_info(${t.physical_table})`).all();
+      for (const c of cols) {
+        const name = String(c.name).replace(/"/g, '""');
+        const rows = db
+          .prepare(
+            `SELECT "${name}" AS v FROM ${t.physical_table}
+              WHERE typeof("${name}") = 'text' AND ("${name}" LIKE '/%' OR "${name}" LIKE '%:%')`,
+          )
+          .all();
+        for (const r of rows) if (typeof r.v === 'string') out.push(r.v);
+      }
+    }
+    return out;
+  } finally {
+    db.close();
+  }
+}
+
 /** Materialize EVERY tab back into docs (whole-workbook read — export, the
  *  multi-tab commit path). Throws TableTooLargeError when the workbook's
  *  total row count exceeds `maxRows`. */

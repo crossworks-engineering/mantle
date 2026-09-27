@@ -180,12 +180,22 @@ without it answers member uploads 503 instead of writing into the container.
 A delete unlinks the bytes only after the space transaction commits, and a
 create that rolls back removes the bytes it wrote.
 
-**The embed rule.** Save version refuses a page that embeds or links
+**The embed rule.** Save version refuses an item that embeds or links
 anything other than the member's own items and Library items (409 `embed`
 with the refused `ids`): never another member's item, shared or not, and
 never an admin-only brain item. Accept (Phase 4) moves an item's embed
 closure into the brain, so a foreign id would drag someone else's work
-along. Autosave is not checked; the draft is the author's alone.
+along. It reads every reference (`packages/content/src/embed-refs.ts`): on a
+page every node's `nodeId`, `drawId` and `pageId`, mention chips, and every
+`src` and `href` on a node or a mark (the app's schemes `page:`, `media:`,
+`draw:`, `mention:node:`, and every id in a relative path such as `/n/<id>`
+or a member bytes URL); a note's markdown the same way, on every change (a
+note has no draft); a drawing's element links; a table's text cells that are
+a path or an app scheme. Refused outright: an id that is not a uuid, an
+entity mention (no member can read entities), an external image or embedded
+frame (a tracking pixel on teammates and the reviewer), and any other scheme.
+A plain external link is fine. Autosave is not checked; the draft is the
+author's alone.
 
 **Drafts stay the author's.** Below admin nothing reads a table's draft
 workbook: not a teammate, not a Library reader, not a team-level agent's

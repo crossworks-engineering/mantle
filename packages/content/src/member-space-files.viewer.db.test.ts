@@ -347,6 +347,72 @@ describe.skipIf(!URL)('member personal space: tables and files', () => {
       await expect(asA(() => sp.saveMinePage(spaceA, page.id, image))).rejects.toMatchObject({
         reason: 'embed',
       });
+
+      // Every other reference type (audit S2): a child page, a link mark, a
+      // member bytes URL. Library and own ids stay fine.
+      const refused = async (doc: unknown, ids: string[]) =>
+        expect(
+          asA(() => sp.saveMinePage(spaceA, page.id, doc as Record<string, unknown>)),
+        ).rejects.toMatchObject({ reason: 'embed', ids });
+      const link = (href: string) => ({
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [{ type: 'text', text: 'x', marks: [{ type: 'link', attrs: { href } }] }],
+          },
+        ],
+      });
+      await refused(
+        { type: 'doc', content: [{ type: 'childPage', attrs: { pageId: theirs.id } }] },
+        [theirs.id],
+      );
+      await refused(link(`/n/${adminPage}`), [adminPage]);
+      await refused(link(`/api/member/team-drafts/${theirs.id}/bytes`), [theirs.id]);
+      expect((await asA(() => sp.saveMinePage(spaceA, page.id, link(`page:${libPage}`)))).ok).toBe(
+        true,
+      );
+      // A malformed id is a 409, never Postgres's 22P02.
+      await refused({ type: 'doc', content: [{ type: 'image', attrs: { nodeId: 'x1' } }] }, ['x1']);
+
+      // Notes: checked on every change (a note has no draft).
+      await expect(
+        asA(() => sp.updateMineItem(spaceA, own.id, { content: `see [it](page:${theirs.id})` })),
+      ).rejects.toMatchObject({ reason: 'embed', ids: [theirs.id] });
+      await expect(
+        asA(() =>
+          sp.createMineItem(spaceA, {
+            type: 'note',
+            title: `${tag} n2`,
+            content: `![x](media:${adminPage})`,
+          }),
+        ),
+      ).rejects.toMatchObject({ reason: 'embed', ids: [adminPage] });
+
+      // Drawings: element links, checked on Save version.
+      const draw = await asA(() => sp.createMineItem(spaceA, { type: 'draw', title: `${tag} d` }));
+      await expect(
+        asA(() =>
+          sp.saveMineDraw(spaceA, draw.id, {
+            elements: [{ id: 'e1', type: 'rectangle', link: `/pages/${theirs.id}` }],
+          }),
+        ),
+      ).rejects.toMatchObject({ reason: 'embed', ids: [theirs.id] });
+
+      // Tables: the draft workbook's cells, checked on Save version.
+      const grid = await asA(() => sp.createMineItem(spaceA, { type: 'table', title: `${tag} t` }));
+      const got = await asA(() => sp.getMineItem(spaceA, grid.id));
+      const col = got?.body.type === 'table' ? got.body.table.data.columns[0]!.id : '';
+      await asA(() =>
+        td.applyTableOps(spaceA, grid.id, [
+          { op: 'row_add', cells: { [col]: `page:${theirs.id}` } },
+          { op: 'row_add', cells: { [col]: 'Note: plain text' } },
+        ]),
+      );
+      await expect(asA(() => sp.saveMineTable(spaceA, grid.id))).rejects.toMatchObject({
+        reason: 'embed',
+        ids: [theirs.id],
+      });
     } finally {
       await m.systemDb.execute(sqlTag`delete from nodes where id in (${libPage}, ${adminPage})`);
       if (madeAnchor) {

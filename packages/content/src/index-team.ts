@@ -247,6 +247,7 @@ export {
   saveMineDraw,
   getTeamDraftRow,
   disallowedPageRefs,
+  disallowedRefs,
   openTeamDraftFile,
   type CreateSpaceItemInput,
   type ListSpaceOpts,

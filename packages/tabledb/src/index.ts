@@ -13,6 +13,7 @@ export {
   readDocClipped,
   readDocFile,
   readWorkbookDoc,
+  refLikeCells,
   shapeHashOf,
   shapeHashOfFile,
   snapshotFile,
