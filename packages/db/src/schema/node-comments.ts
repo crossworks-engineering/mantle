@@ -38,6 +38,10 @@ export const nodeComments = pgTable(
     /** Display-name snapshot at post time. */
     authorName: text('author_name').notNull(),
     body: text('body').notNull(),
+    /** On a personal item (0171, audit S6): 'team' = written while the item
+     *  was shared with the team (teammates read it); 'review' = the author's
+     *  review talk while it was private and submitted (never teammates). */
+    threadScope: text('thread_scope').$type<'team' | 'review'>().default('team').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     editedAt: timestamp('edited_at', { withTimezone: true }),
   },

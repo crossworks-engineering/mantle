@@ -227,8 +227,17 @@ is shared. Threads are stored with the brain's id as owner, so they survive
 Accept. Row security holds the reads: the space role sees the threads on its
 own items, the team role with the human flag the threads on teammates'
 shared items, and nothing below admin ever sees a brain item's thread. A
-teammate's comment is written on the admin pool (`asSystem`) after a
-team-drafts read proved the item visible: the team role never writes.
+teammate's comment is written on the admin pool (`asSystem`) in one
+statement whose own condition is the proof (the item's sharing row, locked):
+an unshare or delete cannot slip in between, and the change event commits
+with it. The team role never writes.
+
+A thread is split by audience (migration 0171, `thread_scope`): what anyone
+writes while the item is shared is the team's; what the author writes while
+it is private and submitted is review talk, and teammates never read it,
+even after the item is shared later. A teammate can always delete their own
+comment, also after an unshare. An image's thumbnail is cached inside its
+own space (`<space>/thumbs`, by node id) and removed with the file.
 
 **Live changes.** Every personal-space action (create, Save version, share,
 submit, recall, delete, a comment) raises `space_item_changed` inside its

@@ -5,7 +5,8 @@ import { getMemberOr401 } from '@/lib/auth';
 import { CommentParams, notFound } from '@/lib/member-space';
 
 /** DELETE /api/member/team-drafts/:id/comments/:commentId : remove one of the
- *  member's own comments on a teammate's team-shared item. */
+ *  member's own comments on a teammate's item, shared now or unshared since
+ *  (it is the member's own comment to take back). */
 export async function DELETE(
   _req: Request,
   ctx: { params: Promise<{ id: string; commentId: string }> },

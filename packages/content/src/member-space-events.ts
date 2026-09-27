@@ -54,10 +54,13 @@ export async function notifySpaceItemChanged(
   id: string,
   kind: SpaceItemChangeKind,
   known?: { spaceId: string; team: boolean },
+  /** The transaction to announce in, when it is not the current scope's (an
+   *  admin-pool transaction opened by the caller). */
+  via: Pick<typeof db, 'select' | 'execute'> = db,
 ): Promise<void> {
   let change: SpaceItemChange | null = known ? { id, kind, ...known } : null;
   if (!change) {
-    const [r] = await db
+    const [r] = await via
       .select({ spaceId: nodes.ownerId, sharing: spaceItems.sharing })
       .from(nodes)
       .leftJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
@@ -66,5 +69,7 @@ export async function notifySpaceItemChanged(
     if (!r) return;
     change = { id, kind, spaceId: r.spaceId, team: r.sharing === 'team' };
   }
-  await db.execute(sql`SELECT pg_notify(${SPACE_ITEM_CHANGED_CHANNEL}, ${JSON.stringify(change)})`);
+  await via.execute(
+    sql`SELECT pg_notify(${SPACE_ITEM_CHANGED_CHANNEL}, ${JSON.stringify(change)})`,
+  );
 }

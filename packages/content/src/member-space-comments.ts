@@ -12,8 +12,13 @@
  * When commenting is open is the app's rule: the author, while the item is
  * shared with the team or submitted; a teammate, while it is shared. Writing
  * never starts LLM work.
+ *
+ * Split by audience (audit S6, Jason 2026-09-27): a comment written while the
+ * item is shared is the team's (`thread_scope` 'team'); one the author writes
+ * while it is private and submitted is review talk ('review'), which
+ * teammates never read, even after the item is shared later (0171).
  */
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { asSystem, db, nodeComments, type NodeCommentDbRow } from '@mantle/db';
 import { COMMENT_BODY_MAX } from './node-comments';
 import { SpaceItemStateError, requireSpace, spaceNotFound } from './member-space-core';
@@ -29,11 +34,15 @@ function cleanBody(body: string): string {
   return text;
 }
 
-async function thread(nodeId: string): Promise<NodeCommentDbRow[]> {
+async function thread(nodeId: string, teamOnly = false): Promise<NodeCommentDbRow[]> {
   return db
     .select()
     .from(nodeComments)
-    .where(eq(nodeComments.nodeId, nodeId))
+    .where(
+      teamOnly
+        ? and(eq(nodeComments.nodeId, nodeId), eq(nodeComments.threadScope, 'team'))
+        : eq(nodeComments.nodeId, nodeId),
+    )
     .orderBy(asc(nodeComments.createdAt));
 }
 
@@ -77,6 +86,8 @@ export async function addMineComment(
       loginId: author.loginId,
       authorName: author.name.trim().slice(0, 200) || 'Member',
       body: cleanBody(body),
+      // Private and submitted: review talk, never the team's (S6).
+      threadScope: row.sharing === 'team' ? 'team' : 'review',
     })
     .returning();
   if (!c) throw new Error('addMineComment: insert returned no row');
@@ -111,14 +122,19 @@ export async function deleteMineComment(
  *  (or not there). */
 export async function listTeamDraftComments(id: string): Promise<NodeCommentDbRow[] | null> {
   const row = await getTeamDraftRow(id);
-  return row ? thread(id) : null;
+  // The team's comments only (row security holds the same line, S6).
+  return row ? thread(id, true) : null;
 }
 
 /**
  * Comment on a teammate's team-shared item. The team role never writes, so
- * once the team-drafts read has proved the item visible to this member, the
- * row is written on the admin pool: attribution comes from the session, the
- * item from the proof. The one asSystem write in the personal-space code.
+ * the row is written on the admin pool, and the proof that the item is shared
+ * is part of the same statement (audit S4): the insert selects from the item's
+ * sharing row, locked, so an unshare or a delete cannot slip in between the
+ * check and the write, and the change event commits with the comment, so a
+ * failure after it cannot leave a comment the client retries into a
+ * duplicate. Attribution comes from the session. The one asSystem write in
+ * the personal-space code.
  */
 export async function addTeamDraftComment(
   anchorId: string,
@@ -126,49 +142,59 @@ export async function addTeamDraftComment(
   author: SpaceCommentAuthor,
   body: string,
 ): Promise<NodeCommentDbRow> {
-  const row = await getTeamDraftRow(id);
-  if (!row) throw spaceNotFound();
   const text = cleanBody(body);
-  const c = await asSystem(async () => {
-    const [inserted] = await db
-      .insert(nodeComments)
-      .values({
-        ownerId: anchorId,
-        nodeId: id,
-        authorKind: 'member',
-        loginId: author.loginId,
-        authorName: author.name.trim().slice(0, 200) || 'Member',
-        body: text,
-      })
-      .returning();
-    return inserted;
-  });
-  if (!c) throw new Error('addTeamDraftComment: insert returned no row');
-  await notifySpaceItemChanged(id, 'comment');
+  const name = author.name.trim().slice(0, 200) || 'Member';
+  const c = await asSystem(() =>
+    db.transaction(async (tx) => {
+      const rows = (await tx.execute(sql`
+        insert into node_comments (owner_id, node_id, author_kind, login_id, author_name, body, thread_scope)
+        select ${anchorId}, n.id, 'member', ${author.loginId}, ${name}, ${text}, 'team'
+          from space_items si
+          join nodes n on n.id = si.node_id
+         where si.node_id = ${id}
+           and si.sharing = 'team'
+           and n.type in ('page', 'note', 'draw', 'table', 'file')
+           and not mantle_is_brain_space(n.owner_id)
+         for share of si
+        returning id`)) as unknown as { id: string }[];
+      const newId = rows[0]?.id;
+      if (!newId) return null;
+      const [inserted] = await tx.select().from(nodeComments).where(eq(nodeComments.id, newId));
+      await notifySpaceItemChanged(id, 'comment', undefined, tx);
+      return inserted ?? null;
+    }),
+  );
+  if (!c) throw spaceNotFound();
   return c;
 }
 
-/** Delete one of the caller's own comments on a teammate's shared item. */
+/**
+ * Delete one of the caller's own comments on a teammate's item. No sharing
+ * proof (audit S6): the comment is the caller's own, so they may take it back
+ * after the item was unshared too. Only on a personal item, never a brain
+ * thread; the change event commits with the delete.
+ */
 export async function deleteTeamDraftComment(
   id: string,
   loginId: string,
   commentId: string,
 ): Promise<boolean> {
-  const row = await getTeamDraftRow(id);
-  if (!row) return false;
-  const gone = await asSystem(() =>
-    db
-      .delete(nodeComments)
-      .where(
-        and(
-          eq(nodeComments.id, commentId),
-          eq(nodeComments.nodeId, id),
-          eq(nodeComments.authorKind, 'member'),
-          eq(nodeComments.loginId, loginId),
-        ),
-      )
-      .returning({ id: nodeComments.id }),
+  return asSystem(() =>
+    db.transaction(async (tx) => {
+      const gone = await tx
+        .delete(nodeComments)
+        .where(
+          and(
+            eq(nodeComments.id, commentId),
+            eq(nodeComments.nodeId, id),
+            eq(nodeComments.authorKind, 'member'),
+            eq(nodeComments.loginId, loginId),
+            sql`exists (select 1 from nodes n where n.id = ${id} and not mantle_is_brain_space(n.owner_id))`,
+          ),
+        )
+        .returning({ id: nodeComments.id });
+      if (gone.length) await notifySpaceItemChanged(id, 'comment', undefined, tx);
+      return gone.length > 0;
+    }),
   );
-  if (gone.length) await notifySpaceItemChanged(id, 'comment');
-  return gone.length > 0;
 }

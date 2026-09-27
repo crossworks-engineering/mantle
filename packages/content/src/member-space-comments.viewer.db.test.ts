@@ -290,4 +290,69 @@ describe.skipIf(!URL)('member personal space: comments and change events', () =>
     await settle();
     expect(mine()).toBe(before);
   });
+  // ── Batch 2: S6 split by audience, S4 atomic teammate write, S5 ───────────
+
+  it('review talk stays hidden from teammates after the item is shared (S6)', async () => {
+    // The page is submitted and private; 'ready for review' was review talk.
+    await asA(() => sp.setSharing(spaceA, pageId, 'team'));
+    const mine = (await asA(() => cm.listMineComments(spaceA, pageId)))!.map((c) => c.body);
+    expect(mine).toContain('ready for review');
+    const theirs = (await m.withTeamDrafts(() => cm.listTeamDraftComments(pageId)))!.map(
+      (c) => c.body,
+    );
+    expect(theirs).toContain('first');
+    expect(theirs).not.toContain('ready for review');
+    // Row security holds the same line, whatever the app asks.
+    const raw = await m.withTeamDrafts(() =>
+      m.db
+        .select()
+        .from(m.nodeComments)
+        .where(sqlTag`${m.nodeComments.nodeId} = ${pageId}`),
+    );
+    expect(raw.map((c) => c.body)).not.toContain('ready for review');
+    // A comment the author writes while it is shared is the team's.
+    await asA(() => cm.addMineComment(spaceA, anchor, pageId, A, 'team can see this'));
+    const after = (await m.withTeamDrafts(() => cm.listTeamDraftComments(pageId)))!.map(
+      (c) => c.body,
+    );
+    expect(after).toContain('team can see this');
+  });
+
+  it('a teammate takes back an own comment after an unshare (S6)', async () => {
+    const b = await m.withTeamDrafts(() => cm.addTeamDraftComment(anchor, pageId, B, 'oops'));
+    await asA(() => sp.setSharing(spaceA, pageId, 'private'));
+    expect(await m.withTeamDrafts(() => cm.deleteTeamDraftComment(pageId, loginB, b.id))).toBe(
+      true,
+    );
+    // Still never another login's comment.
+    const [first] = (await asA(() => cm.listMineComments(spaceA, pageId)))!;
+    expect(await m.withTeamDrafts(() => cm.deleteTeamDraftComment(pageId, loginB, first!.id))).toBe(
+      false,
+    );
+  });
+
+  it('a teammate comment on a private or deleted item is a 404, never written (S4)', async () => {
+    // Private now (the test above unshared it).
+    await expect(
+      m.withTeamDrafts(() => cm.addTeamDraftComment(anchor, pageId, B, 'sneaky')),
+    ).rejects.toMatchObject({ reason: 'not-found' });
+    await expect(
+      m.withTeamDrafts(() => cm.addTeamDraftComment(anchor, randomUUID(), B, 'ghost')),
+    ).rejects.toMatchObject({ reason: 'not-found' });
+    const bodies = (await asA(() => cm.listMineComments(spaceA, pageId)))!.map((c) => c.body);
+    expect(bodies).not.toContain('sneaky');
+  });
+
+  it('the space role cannot re-point its own comment (S5)', async () => {
+    const [own] = (await asA(() => cm.listMineComments(spaceA, pageId)))!.filter(
+      (c) => c.loginId === loginA,
+    );
+    const moved = await asA(() =>
+      m.db
+        .update(m.nodeComments)
+        .set({ ownerId: spaceA })
+        .where(sqlTag`${m.nodeComments.id} = ${own!.id}`),
+    ).catch((err: { cause?: { code?: string } }) => err.cause?.code ?? 'error');
+    expect(moved).toBe('42501');
+  });
 });
