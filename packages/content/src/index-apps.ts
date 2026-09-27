@@ -84,6 +84,17 @@ export {
 } from './apps';
 
 export {
+  MEMBER_APP_LEVELS,
+  isMemberAppLevel,
+  listMemberApps,
+  getMemberRunnableApp,
+  listTeamLevelAppIds,
+  resolveMemberHomeApp,
+  type MemberAppCard,
+  type MemberRunnableApp,
+} from './member-apps';
+
+export {
   APP_NAV_CHANGED_CHANNEL,
   AppNavInvalidError,
   listAppNavItems,

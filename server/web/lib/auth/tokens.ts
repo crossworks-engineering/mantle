@@ -309,19 +309,23 @@ export function verifyTeamChatValue(value: string): { ownerId: string; contactId
 const APP_FRAME_TICKET_TTL_SECONDS = 120;
 
 /** Mint an app-frame ticket. `shareId` set ⇒ share surface (published build
- *  only); absent ⇒ owner surface (`uid` = the owner, draft build allowed).
- *  `contactId` records WHO a team-mode share visitor is, so the frame route
- *  can re-check membership LIVENESS — a removed member must lose access
- *  immediately, not at ticket expiry (the team-gate doctrine). */
+ *  only); `loginId` set ⇒ member surface (a member login, published build
+ *  only, /api/member/apps/:id/frame); neither ⇒ owner surface (`uid` = the
+ *  owner, draft build allowed). `contactId` records WHO a team-mode share
+ *  visitor is, so the frame route can re-check membership LIVENESS — a
+ *  removed member must lose access immediately, not at ticket expiry (the
+ *  team-gate doctrine); `loginId` does the same for a member login. */
 export function buildAppFrameTicket(opts: {
   ownerId: string;
   appId: string;
   shareId?: string;
   contactId?: string | null;
+  loginId?: string;
 }): string {
   const claims: Record<string, unknown> = { uid: opts.ownerId, app: opts.appId, k: 'f' };
   if (opts.shareId) claims.sh = opts.shareId;
   if (opts.contactId) claims.cid = opts.contactId;
+  if (opts.loginId) claims.mem = opts.loginId;
   return signClaims(claims, APP_FRAME_TICKET_TTL_SECONDS).value;
 }
 
@@ -329,17 +333,22 @@ export function buildAppFrameTicket(opts: {
  *  callers must still confirm the app (and share, when `shareId` is set)
  *  matches the route being served, and re-check team liveness via
  *  `contactId` on team-mode shares. */
-export function verifyAppFrameTicket(
-  value: string,
-): { ownerId: string; appId: string; shareId?: string; contactId?: string } | null {
+export type AppFrameTicket = {
+  ownerId: string;
+  appId: string;
+  shareId?: string;
+  contactId?: string;
+  /** A member login's ticket: only the member frame route may accept it. */
+  loginId?: string;
+};
+
+export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
   const claims = verifySigned(value, 'f');
   if (!claims || typeof claims.uid !== 'string' || typeof claims.app !== 'string') return null;
-  const out: { ownerId: string; appId: string; shareId?: string; contactId?: string } = {
-    ownerId: claims.uid,
-    appId: claims.app,
-  };
+  const out: AppFrameTicket = { ownerId: claims.uid, appId: claims.app };
   if (typeof claims.sh === 'string') out.shareId = claims.sh;
   if (typeof claims.cid === 'string') out.contactId = claims.cid;
+  if (typeof claims.mem === 'string') out.loginId = claims.mem;
   return out;
 }
 

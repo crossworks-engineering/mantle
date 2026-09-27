@@ -47,6 +47,15 @@ export const MEMBER_ROUTES: readonly string[] = [
   'GET /api/member/team-drafts',
   'GET /api/member/team-drafts/:id',
   'GET /api/member/team-drafts/:id/bytes',
+  // Apps (Phase 4b): run only. Team level or lower, published build only.
+  'GET /api/member/apps',
+  'POST /api/member/apps/:id/frame-ticket',
+  // Ticket-authed (a sandboxed iframe sends no cookie): a member ticket only.
+  'GET /api/member/apps/:id/frame',
+  'POST /api/member/apps/:id/tool-broker',
+  'POST /api/member/apps/:id/db-broker',
+  // The member home: the pinned home app and what its hub.get() answers.
+  'GET /api/member/home',
 ];
 
 export function isMemberRoute(method: string, pattern: string): boolean {

@@ -43,7 +43,7 @@ vi.mock('@mantle/decisions', async (importOriginal) => ({
 }));
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  listTeamSharedAppIds: vi.fn(async () => h.teamApps),
+  listTeamLevelAppIds: vi.fn(async () => h.teamApps),
 }));
 vi.mock('@mantle/content/app-broker', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -171,7 +171,7 @@ describe('read tools on a team surface', () => {
     expect(owner.ok).toBe(true);
   });
 
-  it('app_db_query refuses an app that is not shared with the team', async () => {
+  it('app_db_query refuses an app above team level', async () => {
     const res = await tool('app_db_query').handler(
       { app_id: 'app-private', sql: 'select 1' },
       TEAM_OFF,
@@ -180,7 +180,7 @@ describe('read tools on a team surface', () => {
     expect(h.appQuery).not.toHaveBeenCalled();
   });
 
-  it('app_db_query reads an app that IS shared with the team', async () => {
+  it('app_db_query reads an app at team level', async () => {
     h.teamApps = new Set(['app-team']);
     await tool('app_db_query').handler({ app_id: 'app-team', sql: 'select 1' }, TEAM_OFF);
     expect(h.appQuery).toHaveBeenCalledOnce();

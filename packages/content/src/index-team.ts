@@ -47,7 +47,6 @@ export {
 export {
   listTeamHubSections,
   listTeamApps,
-  listTeamSharedAppIds,
   teamHubContentCounts,
   resolveTeamHubApp,
   TEAM_HUB_STAT_TYPES,
@@ -222,6 +221,7 @@ export {
   getLibraryItem,
   isLibraryKind,
   listLibrary,
+  libraryCounts,
   type LibraryItem,
   type LibraryKind,
   type LibraryRow,

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { nodes } from './nodes';
+import { authUsers } from './auth-users';
 
 /**
  * Audit trail for the EXTERNAL app-share surface (/s/<token>/*). One row per
@@ -11,6 +12,8 @@ import { nodes } from './nodes';
  * anonymous public-mode visitor. SET NULL (not cascade) on contact deletion:
  * the history of "something happened" outlives the person's contact record.
  * `share_id` is informational (shares are soft-revoked, rows persist).
+ * `actor_id` is the member LOGIN that ran the app from the member shell
+ * (member logins Phase 4b, migration 0172); NULL on share-link rows.
  *
  * Owner-side broker calls (/api/apps/*) are deliberately NOT logged here —
  * this table answers "what did outsiders do", not "what did I do".
@@ -27,6 +30,7 @@ export const appAccessLog = pgTable(
       .references(() => nodes.id, { onDelete: 'cascade' }),
     shareId: uuid('share_id'),
     contactId: uuid('contact_id').references(() => nodes.id, { onDelete: 'set null' }),
+    actorId: uuid('actor_id').references(() => authUsers.id, { onDelete: 'set null' }),
     /** 'auth' | 'tool' | 'db' */
     kind: text('kind').notNull(),
     /** e.g. { slug } for tool calls, { op } for db statements. */
@@ -40,6 +44,7 @@ export const appAccessLog = pgTable(
     index('app_access_log_app_idx').on(t.appNodeId, t.createdAt.desc()),
     index('app_access_log_owner_idx').on(t.ownerId),
     index('app_access_log_contact_idx').on(t.contactId),
+    index('app_access_log_actor_idx').on(t.actorId),
   ],
 );
 

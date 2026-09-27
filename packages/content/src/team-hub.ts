@@ -129,28 +129,6 @@ export async function resolveTeamHubApp(
   return { appNodeId: teamHubAppId, shareToken: row.token };
 }
 
-/**
- * Ids of the apps a team member may reach: an ACTIVE team-mode share, the
- * same source of truth as the hub launcher. The team-read app-data tools
- * (app_db_list / app_db_query) filter on this, so a member can no longer read
- * the data of an app the owner never shared with the team.
- */
-export async function listTeamSharedAppIds(ownerId: string): Promise<Set<string>> {
-  const rows = await db
-    .select({ nodeId: shares.nodeId })
-    .from(shares)
-    .where(
-      and(
-        eq(shares.ownerId, ownerId),
-        eq(shares.nodeType, 'app'),
-        sql`${shares.settings}->>'mode' = 'team'`,
-        isNull(shares.revokedAt),
-        or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())),
-      ),
-    );
-  return new Set(rows.map((r) => r.nodeId));
-}
-
 export type TeamAppCard = {
   /** Share token — the hub launcher opens /s/<token>. */
   token: string;

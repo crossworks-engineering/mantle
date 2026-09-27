@@ -65,6 +65,9 @@ const SHARE_BROKER_RE =
  *  ticket (kind 'f'), accepted for THIS path shape only; the route re-verifies
  *  and binds the ticket to the app id. Mirrors the `?at=` asset-path carve. */
 const OWNER_FRAME_RE = /^\/api\/apps\/[^/]+\/frame$/;
+/** The member-surface frame document (member logins Phase 4b): same ticket
+ *  carve; the route accepts only a MEMBER ticket (`mem` claim). */
+const MEMBER_FRAME_RE = /^\/api\/member\/apps\/[^/]+\/frame$/;
 
 /** Old middleware matcher exclusion: bare image paths never hit the gate. */
 const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
@@ -199,8 +202,8 @@ export function gate(): MiddlewareHandler {
 
     // The sandbox frame document navigates with a `?t=` frame ticket — same
     // can't-carry-a-credential shape as the asset paths above, same narrow
-    // acceptance: this path only, GET only, kind 'f' only.
-    if (OWNER_FRAME_RE.test(path) && req.method === 'GET') {
+    // acceptance: these two paths only, GET only, kind 'f' only.
+    if ((OWNER_FRAME_RE.test(path) || MEMBER_FRAME_RE.test(path)) && req.method === 'GET') {
       const t = url.searchParams.get('t');
       if (t && (await verifySignedToken(t, secret)) && tokenKind(t) === 'f') {
         return proceed();

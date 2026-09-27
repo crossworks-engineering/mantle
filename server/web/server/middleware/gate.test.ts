@@ -32,6 +32,8 @@ function makeApp() {
   app.get('/api/apps/a1/frame', (c) => c.text('<!doctype html>'));
   app.post('/api/apps/a1/frame', (c) => c.text('nope'));
   app.get('/api/apps/a1/bundle', (c) => c.text('js'));
+  app.get('/api/member/apps/a1/frame', (c) => c.text('<!doctype html>'));
+  app.post('/api/member/apps/a1/tool-broker', (c) => c.json({ ok: true }));
   app.get('/settings', (c) => c.text('page'));
   return app;
 }
@@ -128,6 +130,18 @@ describe('gate: session & bearer', () => {
     ]) {
       expect((await app.request(`/api/apps/a1/frame?t=${bad}`)).status, bad).toBe(401);
     }
+  });
+
+  it('accepts a ?t= frame ticket on the member frame path, GET only, nothing else there', async () => {
+    const app = makeApp();
+    const t = mint({ exp: future(), k: 'f' });
+    expect((await app.request(`/api/member/apps/a1/frame?t=${t}`)).status).toBe(200);
+    // The ticket opens the frame document, never a member broker.
+    const post = { method: 'POST' };
+    expect((await app.request(`/api/member/apps/a1/tool-broker?t=${t}`, post)).status).toBe(401);
+    expect((await app.request(`/api/member/apps/a1/frame?t=${t}`, post)).status).toBe(401);
+    const asset = mint({ exp: future(), k: 'a' });
+    expect((await app.request(`/api/member/apps/a1/frame?t=${asset}`)).status).toBe(401);
   });
 
   it('redirects an uncredentialed page nav to /login?next= via proxy headers', async () => {

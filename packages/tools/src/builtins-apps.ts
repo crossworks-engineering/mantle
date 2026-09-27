@@ -26,7 +26,8 @@ import {
   AppSourceLimitError,
   NoGreenBuildError,
   type AppDetail,
-  listTeamSharedAppIds,
+  listTeamLevelAppIds,
+  isMemberAppLevel,
 } from '@mantle/content';
 import { buildApp, loadRuntimeExports } from '@mantle/app-build';
 import {
@@ -44,6 +45,7 @@ import {
 import { putContent } from '@mantle/storage';
 import { recordIngest } from '@mantle/tracing';
 import { resolveTool } from './resolve';
+import { memberAppToolVerdict } from './member-app-tools';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
@@ -388,12 +390,26 @@ const app_build: BuiltinToolDef = {
   },
 };
 
+/** For an app members can run (team level or lower): one warning per
+ *  declared tool the member broker would refuse, in the broker's own words
+ *  (member logins Phase 4b). An admin-level app gets none: only admins run it. */
+async function memberToolWarnings(ownerId: string, id: string, slugs: string[]) {
+  const app = await getApp(ownerId, id);
+  if (!app || !isMemberAppLevel(app.audience)) return [];
+  const warnings: string[] = [];
+  for (const slug of slugs) {
+    const verdict = await memberAppToolVerdict(ownerId, slugs, slug);
+    if (!verdict.ok) warnings.push(`${verdict.reason} Members running this app get an error.`);
+  }
+  return warnings;
+}
+
 const app_tools_set: BuiltinToolDef = {
   slug: 'app_tools_set',
   preconditions: APP_ID_PRE,
   name: "Declare a mini app's data tools",
   description:
-    'Set the list of api_tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist — the host refuses any slug not declared here. Each slug must be an existing tool you own (build them first via the toolsmith / API Console, or delegate to the `toolsmith` agent). Replaces the current list.',
+    'Set the list of api_tool slugs this app may call through the host bridge (host.tools.call). This IS the runtime allowlist — the host refuses any slug not declared here. Each slug must be an existing tool you own (build them first via the toolsmith / API Console, or delegate to the `toolsmith` agent). Replaces the current list. An app at team level or lower is run by members, who get only built-in tools from an enabled team-level tool group (no http, shell, recipe or confirm-gated tools); the result lists `warnings` for any declared tool they cannot use.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -424,8 +440,12 @@ const app_tools_set: BuiltinToolDef = {
     }
     const manifest = await setManifest(ctx.ownerId, id, { toolSlugs: slugs });
     if (!manifest) return { ok: false, error: `app ${id} not found` };
-    ctx.step?.setOutput({ id, tool_slugs: slugs });
-    return { ok: true, output: { id, tool_slugs: slugs } };
+    const warnings = await memberToolWarnings(ctx.ownerId, id, slugs);
+    ctx.step?.setOutput({ id, tool_slugs: slugs, warnings: warnings.length });
+    return {
+      ok: true,
+      output: { id, tool_slugs: slugs, ...(warnings.length ? { warnings } : {}) },
+    };
   },
 };
 
@@ -653,14 +673,15 @@ const app_delete: BuiltinToolDef = {
 // (the authoring group Appsmith gets) so the responder can be granted reads
 // without create/build/publish/delete.
 
-/** On a team surface, the apps shared with the team; null on owner surfaces
- *  (no filter). A team member must not read an app the owner never shared. */
+/** On a team surface, the apps at team level or lower; null on owner surfaces
+ *  (no filter). A team member must not read the data of an admin-level app
+ *  (member logins Phase 4b: the level is the access, not a share). */
 async function teamReachableApps(ctx: Parameters<BuiltinToolDef['handler']>[1]) {
   // Below admin, row level security already limits app databases to apps at
-  // the viewer's level (member logins Phase 0b); the share lookup is only for
-  // an admin-level agent serving a team surface.
+  // the viewer's level (member logins Phase 0b); this lookup is for an
+  // admin-level agent serving a team surface.
   if (currentViewerLevel() !== 'admin') return null;
-  return surfaceHiddenNodeTypes(ctx.surface) ? listTeamSharedAppIds(ctx.ownerId) : null;
+  return surfaceHiddenNodeTypes(ctx.surface) ? listTeamLevelAppIds(ctx.ownerId) : null;
 }
 
 const app_db_list: BuiltinToolDef = {

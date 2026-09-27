@@ -135,18 +135,25 @@ only reach owner data via:
 
 So to show your data in an app, you give it a tool that returns that data:
 
-- **Mint a purpose-built tool** with the Toolsmith MCP tools (also available over
-  MCP): `recipe_tool_create` composes existing tools/builtins (e.g. `note_list`,
-  `table_rows_list`, `search`) into one tool that returns exactly the shape the
-  app needs; `api_tool_create` wraps an external HTTP API.
-- Or **declare an existing owned tool** you already have, if it returns what you
-  need.
+- **Declare a built-in tool** that returns what you need (`note_list`,
+  `table_rows_list`, `table_query`, `search_nodes`, …). This is the only kind
+  that works for **everyone**: members running a team app and team-mode share
+  visitors get built-in tools only.
+- **Admin-only apps** may also use a purpose-built tool from the Toolsmith
+  MCP tools: `recipe_tool_create` composes existing tools into one tool that
+  returns exactly the shape the app needs; `api_tool_create` wraps an
+  external HTTP API. Members and share links are refused these (a recipe,
+  http or shell tool runs under the brain), so never give one to an app you
+  set to team level or share.
 
-Then `app_tools_set(id, ['that_slug'])` and call it from the app.
+Then `app_tools_set(id, ['that_slug'])` and call it from the app. For an app at
+team level or lower the result carries `warnings`: one per declared tool its
+members would be refused (see "Team apps" below).
 
 **Recommended flow (this is the synergy):** first _explore the data yourself_
 with your own MCP read tools (`search`, `table_list`, `note_list`, …) to learn
-its real shape; then mint a recipe tool that returns precisely that; then build
+its real shape; then pick the built-in tool that returns it (or, for an
+admin-only app, mint a recipe tool that returns precisely that); then build
 the app against it. You're binding the app to data you've actually inspected, so
 the queries are correct, not guessed.
 
@@ -324,6 +331,28 @@ out of an app you intend to share.
 **Rule of thumb:** public = "a read-only view of this app's own data, safe for
 anyone"; team = "identified, audited teammates who may use my tools and write
 data." Treat any share link as a secret; revoke by turning the share off.
+
+## Team apps (members run them)
+
+Members (member logins, [member-logins.md](member-logins.md) section 7) run
+apps from their own shell. Set the app's level to **Team** (its Access
+control) and publish it; members then find it under Apps. They run the
+PUBLISHED build only and never edit it.
+
+- **Tools:** a declared **built-in** tool that an enabled tool group at team
+  level or lower holds (usually `team-read`), with no confirmation. It runs
+  at the team level: it reads only team-level items. Recipe, http, shell and
+  MCP tools are refused, and so are `my_items_list`, `my_item_open`,
+  `summarize_text`, `team_request_create` and `read_result`. `app_tools_set`
+  lists a warning for each declared tool members would be refused.
+- **Data:** `host.db.query` and `host.db.exec` both work. The database is
+  shared by the whole team (not one per member): design for that (put who
+  wrote a row in the row if it matters; the app cannot learn the member from
+  the host yet).
+- **Home app:** the app pinned as the hub (Team admin > Settings) is also the
+  members' home page while it is at team level. `host.hub.get()` answers
+  there too: sections are the newest team pages, and a section's `token` is
+  the page id.
 
 ## Team Hub apps (a designated app as the /hub surface)
 

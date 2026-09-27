@@ -158,8 +158,8 @@ opts in:
   `mantle_peer`.
 - A team-mode shared app's tool calls (`/s/[token]/tool-broker`) run on the
   same team surface, with the same rules.
-- `app_db_list` / `app_db_query` on a team surface reach only apps with an
-  active team-mode share.
+- `app_db_list` / `app_db_query` on a team surface reach only apps at team
+  level or lower (member logins Phase 4b; before, an active team-mode share).
 - The next layer down is the level system ([access-levels.md](./access-levels.md)):
   once an admin lowers `team-responder` to team, the database itself limits
   what a team turn reads.

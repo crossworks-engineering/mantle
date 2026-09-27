@@ -97,6 +97,27 @@ export async function listLibrary(
   return { items: rows.map(rowOf), total: count?.n ?? 0 };
 }
 
+/** How many items the Library lists, per kind (zeros included): the stat
+ *  tiles a members' home app shows. Same rule as `listLibrary`. */
+export async function libraryCounts(anchorId: string): Promise<Record<LibraryKind, number>> {
+  assertLimited();
+  const rows = await db
+    .select({ type: nodes.type, n: sql<number>`count(*)::int` })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, anchorId),
+        eq(nodes.audience, currentViewerLevel()),
+        inArray(nodes.type, [...LIBRARY_KINDS]),
+        notExtractedFragment,
+      ),
+    )
+    .groupBy(nodes.type);
+  const out = Object.fromEntries(LIBRARY_KINDS.map((k) => [k, 0])) as Record<LibraryKind, number>;
+  for (const r of rows) if (isLibraryKind(r.type)) out[r.type] = r.n;
+  return out;
+}
+
 export type LibraryItem =
   | (LibraryRow & { type: 'page'; doc: unknown })
   | (LibraryRow & { type: 'note'; content: string })

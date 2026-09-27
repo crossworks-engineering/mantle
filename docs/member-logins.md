@@ -84,8 +84,8 @@ not something an owner chose. To list an item to members, set it to Team.
   team daily cap. The admin reads member chats in `/team-admin` > Member
   chats (`GET /api/team-admin/member-chats`) and with the `team_chat_list` /
   `team_chat_read` tools (`loginId`).
-- **Not yet:** running apps (Phase 4b), attachments in chat. Own items:
-  section 5; review by an admin: section 6.
+- **Not yet:** attachments in chat. Own items: section 5; review by an
+  admin: section 6; running apps: section 7.
 
 ## 4. Turning it on for a brain
 
@@ -347,3 +347,60 @@ Mine on Accept; accepted at team or above, the author finds it in the
 Library), read access for the author to an item accepted at admin (plan
 6.2: another of their items that shows an accepted image then shows it
 broken), a "member-authored" badge on accepted items.
+
+## 7. Apps for members (Phase 4b)
+
+A member RUNS apps. A member never creates, edits, builds, publishes, shares
+or deletes one: every `/api/apps/*` route stays admin only, and none is on
+`MEMBER_ROUTES`. What a member may run: an app at **team level or lower**
+with a green **published** build, never a draft
+(`packages/content/src/member-apps.ts`). The rule is written in each query
+and the routes read on the team role as well, so both locks hold. Set an
+app's level in its Access control; nothing else lists it to members.
+
+| Route                                    | What                                               |
+| ---------------------------------------- | -------------------------------------------------- |
+| `GET /api/member/apps`                   | The apps the member may run, and the home app id   |
+| `POST /api/member/apps/:id/frame-ticket` | A seconds-lived frame ticket that names the login  |
+| `GET /api/member/apps/:id/frame?t=`      | The frame document: the PUBLISHED build            |
+| `POST /api/member/apps/:id/tool-broker`  | `host.tools.call()` (rules below)                  |
+| `POST /api/member/apps/:id/db-broker`    | `host.db.query` / `host.db.exec` on the app SQLite |
+| `GET /api/member/home`                   | The home app and what its `host.hub.get()` answers |
+
+- **The frame.** A sandboxed iframe sends no cookie, so the member mints a
+  ticket (`mem` = the login) and the frame URL carries it. Only the member
+  frame route accepts a member ticket, and it re-checks that the login is
+  still an active member and the app still one they may run. The owner
+  frame route, which serves the draft, refuses a member ticket.
+- **Tools** (`packages/tools/src/member-app-tools.ts`, checked per call,
+  since `dispatchTool` checks none of this): the app declares the tool
+  (`manifest.toolSlugs`); it is a built-in (no http, shell, recipe or MCP
+  tool); it needs no confirmation; an ENABLED tool group at team level or
+  lower holds it; and it is not one of `my_items_list` / `my_item_open` (an
+  app could copy the member's private items into shared app data),
+  `summarize_text` (LLM work), `team_request_create` (a chat turn's write) or
+  `read_result`. The call runs on the team role, on a team surface that
+  names the login, with the private corpus off: row security decides what
+  it reads, and team refusals apply. `app_tools_set` returns `warnings` for
+  every declared tool a team-level app's members would be refused.
+- **Data.** Row security does not reach SQLite, so the db broker checks the
+  app itself (team level or lower, published) before it opens the database.
+  Team apps may write, as team-mode shares do. App data is shared per app,
+  not per member (v1): every member reads and writes the same database. The
+  SQLite work runs on the admin pool (it writes the app's registry rows).
+- **Cost.** A member write into an app table that is exported to the brain
+  schedules the export sync (debounced, hash-gated): bounded, not zero
+  (decided 2026-09-26). Exported tables stay admin level. Nothing else a
+  member app does starts LLM work.
+- **Audit.** Every ticket, tool call and database call lands in the app's
+  access log with the login (`app_access_log.actor_id`, migration 0172); the
+  app's Activity tab shows the member's name.
+- **Team chat** (`app_db_list` / `app_db_query` in `team-read`) reads the
+  data of team-level apps only, the same level rule.
+- **Home app.** The brain's pinned hub app (Team admin > Settings, the
+  `teamHubAppId` pref) is the members' home app while they may run it: no
+  share is needed, the level is the access. Otherwise the member home shows
+  its built-in view. Its `host.hub.get()` answers from `/api/member/home`: the
+  site name, the member's name, the newest team pages as sections (a
+  section's `token` is the page id) and Library counts. The `/team` portal
+  hub keeps its own rules (a team-mode share) until it is retired.

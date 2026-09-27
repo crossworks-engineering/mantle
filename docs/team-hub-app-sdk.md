@@ -101,6 +101,15 @@ Rules that bind the SDK (and any future addition to it):
 - **`hub.get` is answered locally by the shell** from the `/api/team/hub`
   payload, extending `HubData` means extending that route, where it is gated
   and audited.
+- **The member home is a second host** (member logins Phase 4b,
+  [member-logins.md](member-logins.md) section 7). The same app, pinned as
+  the hub and set to team level, is the members' home page. There `hub.get`
+  answers from `/api/member/home` in the same `HubData` shape, with two
+  differences: `sections` are the newest team-level pages (a section's
+  `token` is the page id, and `openBriefing` opens it in the member Library),
+  and `counts` are Library counts per kind (`page`, `note`, `draw`, `table`,
+  `file`). `openChat` opens the member's chat. Keep `token` opaque and the
+  app works on both hosts.
 
 Call the SDK defensively (`host.hub?.get`) so the same bundle renders on a
 box whose runtime predates the namespace.
