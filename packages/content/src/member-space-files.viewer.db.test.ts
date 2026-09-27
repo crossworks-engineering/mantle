@@ -7,7 +7,7 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-space-files.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -243,6 +243,53 @@ describe.skipIf(!URL)('member personal space: tables and files', () => {
     await asA(() => sp.recallItem(spaceA, fileId));
     expect(await asA(() => sp.deleteMineItem(spaceA, fileId))).toBe(true);
     expect(existsSync(path.join(root, 'spaces', spaceA, 'files', fileId))).toBe(false);
+  });
+
+  // ── Disk work follows the space transaction (D2, D5) ─────────────────────
+
+  const boom = <T>(fn: () => Promise<T>) =>
+    expect(
+      asA(async () => {
+        await fn();
+        throw new Error('later failure');
+      }),
+    ).rejects.toThrow('later failure');
+
+  it('a delete that rolls back keeps the bytes; one that commits removes them', async () => {
+    const spooled = await spool('keep me');
+    const id = await asA(() => sf.createMineFile(spaceA, { filename: `${tag} keep.txt`, spooled }));
+    const bytesAt = path.join(root, 'spaces', spaceA, 'files', id);
+    await boom(() => sp.deleteMineItem(spaceA, id));
+    expect(await asA(() => sp.getMineItem(spaceA, id))).not.toBeNull();
+    expect(readFileSync(bytesAt, 'utf8')).toBe('keep me');
+
+    const grid = await asA(() =>
+      sp.createMineItem(spaceA, { type: 'table', title: `${tag} keep` }),
+    );
+    const workbook = path.join(root, 'table-dbs', spaceA, `${grid.id}.sqlite`);
+    await boom(() => sp.deleteMineItem(spaceA, grid.id));
+    expect(await asA(() => sp.getMineItem(spaceA, grid.id))).not.toBeNull();
+    expect(existsSync(workbook)).toBe(true);
+
+    await asA(() => sp.deleteMineItem(spaceA, id));
+    await asA(() => sp.deleteMineItem(spaceA, grid.id));
+    expect(existsSync(bytesAt)).toBe(false);
+    expect(existsSync(workbook)).toBe(false);
+  });
+
+  it('a create that rolls back leaves no orphan bytes', async () => {
+    const before = new Set([
+      ...readdirSync(path.join(root, 'spaces', spaceA, 'files')),
+      ...readdirSync(path.join(root, 'table-dbs', spaceA)),
+    ]);
+    const spooled = await spool('orphan?');
+    await boom(() => sf.createMineFile(spaceA, { filename: `${tag} orphan.txt`, spooled }));
+    await boom(() => sp.createMineItem(spaceA, { type: 'table', title: `${tag} orphan` }));
+    const after = [
+      ...readdirSync(path.join(root, 'spaces', spaceA, 'files')),
+      ...readdirSync(path.join(root, 'table-dbs', spaceA)),
+    ].filter((f) => !before.has(f));
+    expect(after).toEqual([]);
   });
 
   it('storage used counts table workbooks', async () => {

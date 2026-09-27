@@ -8,7 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { db, nodes, tables } from '@mantle/db';
+import { afterCommit, afterRollback, db, nodes, tables } from '@mantle/db';
 import {
   MATERIALIZE_MAX,
   TableTooLargeError,
@@ -95,12 +95,14 @@ export async function createTable(ownerId: string, input: CreateTableInput): Pro
   // Sqlite-first (signed off 2026-07-15): the workbook file is written inside
   // the transaction, BEFORE the registry row that references it becomes
   // visible — a registry row pointing at a missing file can never be
-  // committed. On any failure the transaction rolls back and the orphan file
-  // is swept. JSONB `data`/`data_text` are dual-written through the
+  // committed. A failure inside it removes the file below. Inside a personal
+  // space this transaction is only a savepoint: the space transaction can
+  // still roll back after it, so the file is removed then too
+  // (afterRollback). JSONB `data`/`data_text` are dual-written through the
   // transition (rollback = clear storage_path, plan §9).
   const publishedAbs = publishedPath(ownerId, id);
   try {
-    return await db.transaction(async (tx) => {
+    const created = await db.transaction(async (tx) => {
       const [node] = await tx
         .insert(nodes)
         .values({
@@ -140,6 +142,8 @@ export async function createTable(ownerId: string, input: CreateTableInput): Pro
         tabId: res.stats.tabs[0]?.tabId,
       });
     });
+    afterRollback(() => removeTableFile(publishedAbs));
+    return created;
   } catch (err) {
     removeTableFile(publishedAbs);
     throw err;
@@ -208,12 +212,16 @@ export async function deleteTable(ownerId: string, id: string): Promise<boolean>
   await assertTableWritable(id);
   await db.delete(nodes).where(eq(nodes.id, id)); // `tables` row cascades.
   // Workbook files go AFTER the registry delete commits (a failed delete must
-  // never leave a registry row pointing at removed files). Best-effort; the
-  // sanity check reports orphaned files.
-  if (row.storagePath) {
-    const abs = resolveStoragePath(row.storagePath);
-    removeTableFile(abs);
-    removeTableFile(draftAbsFor(row.storagePath));
+  // never leave a registry row pointing at removed files). Inside a personal
+  // space the delete commits with the space transaction, so afterCommit waits
+  // for it; elsewhere it has committed already and this runs now.
+  // Best-effort; the sanity check reports orphaned files.
+  const storagePath = row.storagePath;
+  if (storagePath) {
+    await afterCommit(() => {
+      removeTableFile(resolveStoragePath(storagePath));
+      removeTableFile(draftAbsFor(storagePath));
+    });
   }
   return true;
 }

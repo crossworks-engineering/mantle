@@ -58,7 +58,50 @@ export type SpaceScope = {
 
 /** `tx`: a scope that must run in one transaction (its settings are
  *  transaction-local) carries it here; `db` returns it for every query. */
-type Scope = { level: LimitedLevel; space?: SpaceScope; tx?: unknown };
+type Scope = { level: LimitedLevel; space?: SpaceScope; tx?: unknown; hooks?: TxHooks };
+
+/** Work a scope's transaction owes the world outside the database, run once
+ *  it ends: `commit` after a commit, `rollback` after a rollback. */
+export type TxHooks = { commit: (() => unknown)[]; rollback: (() => unknown)[] };
+
+export function newTxHooks(): TxHooks {
+  return { commit: [], rollback: [] };
+}
+
+/** Run hooks in order. Each is best effort: the transaction has already
+ *  ended, so a failing hook is logged, never thrown. */
+export async function runTxHooks(list: (() => unknown)[], what: string): Promise<void> {
+  for (const fn of list) {
+    try {
+      await fn();
+    } catch (err) {
+      console.error(`[db] ${what} hook failed:`, err instanceof Error ? err.message : err);
+    }
+  }
+}
+
+/**
+ * Run `fn` once the current scope's transaction COMMITS (a personal space:
+ * `withSpace` is one transaction, and `db.transaction` inside it is only a
+ * savepoint). Outside such a scope there is no open transaction to wait for,
+ * so `fn` runs now. For effects outside the database that must never outrun
+ * the rows they belong to, such as unlinking a deleted item's bytes: a later
+ * failure rolls the delete back and the bytes are still there.
+ */
+export async function afterCommit(fn: () => unknown): Promise<void> {
+  const hooks = store.getStore()?.hooks;
+  if (hooks) hooks.commit.push(fn);
+  else await fn();
+}
+
+/**
+ * Run `fn` if the current scope's transaction ROLLS BACK: cleanup for bytes
+ * written next to rows that never commit (a create inside a personal space).
+ * Outside such a scope the write has already committed, so this does nothing.
+ */
+export function afterRollback(fn: () => unknown): void {
+  store.getStore()?.hooks?.rollback.push(fn);
+}
 
 const store = new AsyncLocalStorage<Scope>();
 
@@ -106,7 +149,7 @@ export function withViewer<T>(level: ViewerLevel, fn: () => Promise<T>): Promise
 /** Enter a scope that runs in one transaction at `level` (or lower). Only
  *  client.ts calls this, with the transaction it opened on the right pool. */
 export function runInTxScope<T>(
-  scope: { level: LimitedLevel; space?: SpaceScope; tx: unknown },
+  scope: { level: LimitedLevel; space?: SpaceScope; tx: unknown; hooks?: TxHooks },
   fn: () => Promise<T>,
 ): Promise<T> {
   const level = lowerLevel(currentViewerLevel(), scope.level) as LimitedLevel;

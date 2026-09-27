@@ -14,7 +14,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq, gt, sql } from 'drizzle-orm';
-import { db, nodes, spaceItems, tables } from '@mantle/db';
+import { afterCommit, afterRollback, db, nodes, spaceItems, tables } from '@mantle/db';
 import {
   adoptSpooledIntoSpace,
   extOf,
@@ -176,6 +176,9 @@ export async function createMineFile(
     });
     await db.insert(spaceItems).values({ nodeId: id, authorLoginId: loginId });
     await notifySpaceItemChanged(id, 'created', { spaceId, team: false });
+    // The rows commit with the caller's space transaction, not here: if it
+    // rolls back later, the adopted bytes would be an orphan nobody counts.
+    afterRollback(() => removeSpaceFile(spaceId, id));
     return id;
   } catch (err) {
     if (adopted) await removeSpaceFile(spaceId, id).catch(() => {});
@@ -223,7 +226,10 @@ export async function deleteMineFile(spaceId: string, id: string): Promise<boole
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, spaceId), eq(nodes.type, 'file')))
     .returning({ id: nodes.id });
   if (!gone.length) return false;
-  await removeSpaceFile(spaceId, id);
+  // The bytes go once the delete has COMMITTED: this runs inside the space
+  // transaction, and a later failure there keeps the row, which then needs
+  // its bytes.
+  await afterCommit(() => removeSpaceFile(spaceId, id));
   return true;
 }
 

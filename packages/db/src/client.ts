@@ -7,7 +7,9 @@ import {
   currentScopeTx,
   currentSpaceScope,
   currentViewerLevel,
+  newTxHooks,
   runInTxScope,
+  runTxHooks,
   withViewer,
   viewerDatabaseUrl,
   viewerRolePassword,
@@ -110,13 +112,24 @@ export async function withSpace<T>(
     }
     return fn();
   }
-  return getViewerDb('space').transaction(async (tx) => {
-    await tx.execute(
-      sqlTag`select set_config('mantle.space_id', ${scope.spaceId}, true),
-                    set_config('mantle.login_id', ${scope.loginId}, true)`,
-    );
-    return runInTxScope({ level: 'team', space: { ...scope }, tx }, fn);
-  });
+  // Disk work tied to this transaction (afterCommit / afterRollback) runs
+  // once it has ended, never inside it.
+  const hooks = newTxHooks();
+  let result: T;
+  try {
+    result = await getViewerDb('space').transaction(async (tx) => {
+      await tx.execute(
+        sqlTag`select set_config('mantle.space_id', ${scope.spaceId}, true),
+                      set_config('mantle.login_id', ${scope.loginId}, true)`,
+      );
+      return runInTxScope({ level: 'team', space: { ...scope }, tx, hooks }, fn);
+    });
+  } catch (err) {
+    await runTxHooks(hooks.rollback, 'rollback');
+    throw err;
+  }
+  await runTxHooks(hooks.commit, 'commit');
+  return result;
 }
 
 /**

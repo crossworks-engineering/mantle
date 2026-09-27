@@ -10,6 +10,8 @@ export {
   lowerLevel,
   withViewer,
   asSystem,
+  afterCommit,
+  afterRollback,
   viewerRoleName,
   type LimitedLevel,
   type SpaceScope,
