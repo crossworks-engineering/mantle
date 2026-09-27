@@ -10,9 +10,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { withViewer } from '@mantle/db';
 import { getMemberRunnableApp, type MemberRunnableApp } from '@mantle/content';
+import { isUuid } from '@mantle/std';
 import type { MemberCaller } from '@/lib/auth';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** The app, or a 404 response. */
 export async function memberAppOr404(
@@ -20,7 +19,7 @@ export async function memberAppOr404(
   id: string,
 ): Promise<MemberRunnableApp | NextResponse> {
   const notFound = NextResponse.json({ ok: false, error: 'app not found' }, { status: 404 });
-  if (!UUID_RE.test(id)) return notFound;
+  if (!isUuid(id)) return notFound;
   const app = await withViewer('team', () => getMemberRunnableApp(anchorId, id.toLowerCase()));
   return app ?? notFound;
 }
