@@ -45,9 +45,10 @@ export function parseSpaceItemChange(payload: string): SpaceItemChange | null {
 /**
  * Announce a change. `known` skips the lookup (a delete announces from the
  * row it read before the row went away; a share change passes the sharing it
- * replaced). Best effort by design: a missed event costs a manual reload.
- * The lookup runs in the caller's scope, which can always see the item it is
- * changing.
+ * replaced). NOT best effort: the notify runs inside the caller's
+ * transaction, so a failure here fails the write with it (and a rolled-back
+ * write sends nothing). The lookup runs in the caller's scope, which can
+ * always see the item it is changing.
  */
 export async function notifySpaceItemChanged(
   id: string,

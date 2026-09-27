@@ -140,7 +140,7 @@ can never set accepted.
 | ----------------------------------------------- | ----------------------------------------------- |
 | `GET/POST /api/member/space`                    | List Mine; create a page, note, drawing, table  |
 | `GET/PATCH/DELETE /api/member/space/:id`        | One item with its body; rename; delete          |
-| `PUT /api/member/space/:id/draft`               | Autosave `{ doc \| scene, if_rev }`             |
+| `PUT /api/member/space/:id/draft`               | Autosave `{ doc \| scene \| table \| ops, if_rev }` |
 | `POST /api/member/space/:id/save`               | Save version `{ doc \| scene, if_rev, svg? }`   |
 | `POST /api/member/space/:id/share`              | `{ sharing: 'private' \| 'team' }`              |
 | `POST /api/member/space/:id/submit`             | Submit the saved version for review             |
