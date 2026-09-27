@@ -201,6 +201,24 @@ describe.skipIf(!URL)('member personal space: tables and files', () => {
     expect(existsSync(path.join(root, 'files'))).toBe(false);
   });
 
+  it('a second upload with the same name gets the next free name, not a 500', async () => {
+    const again = await asA(async () =>
+      sf.createMineFile(spaceA, { filename: `Notes ${tag}.TXT`, spooled: await spool('two') }),
+    );
+    const third = await asA(async () =>
+      sf.createMineFile(spaceA, { filename: `notes ${tag}.txt`, spooled: await spool('three') }),
+    );
+    const names = async (id: string) => {
+      const got = await asA(() => sp.getMineItem(spaceA, id));
+      return got?.body.type === 'file' ? got.body.file.filename : null;
+    };
+    expect(await names(again)).toBe(`Notes ${tag}-2.TXT`);
+    // Case-insensitive: the first free name after both.
+    expect(await names(third)).toBe(`notes ${tag}-3.txt`);
+    await asA(() => sp.deleteMineItem(spaceA, again));
+    await asA(() => sp.deleteMineItem(spaceA, third));
+  });
+
   it('opens the own file; another member cannot; the brain file reader is blind', async () => {
     const opened = await asA(() => sf.openMineFile(spaceA, fileId));
     expect(opened?.size).toBe('hello from a member'.length);

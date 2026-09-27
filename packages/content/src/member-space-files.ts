@@ -41,6 +41,7 @@ import {
   spaceNotFound,
 } from './member-space-core';
 import { notifySpaceItemChanged } from './member-space-events';
+import { dedupeFilename } from './forum-uploads-meta';
 
 /** The ltree path every personal file node carries (not under `files`). */
 export const SPACE_FILES_PATH = 'space_files';
@@ -178,6 +179,22 @@ export async function assertSpaceStorage(spaceId: string, incoming = 0): Promise
 
 const mb = (n: number) => `${Math.round(n / 1024 / 1024)} MB`;
 
+/** The filenames this space's files already use (the unique index is per
+ *  owner, path and exact filename). At most SPACE_ITEM_LIMIT rows. */
+async function spaceFilenames(spaceId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ name: sql<string | null>`${nodes.data} ->> 'filename'` })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, spaceId),
+        eq(nodes.type, 'file'),
+        sql`${nodes.path}::text = ${SPACE_FILES_PATH}`,
+      ),
+    );
+  return new Set(rows.flatMap((r) => (r.name ? [r.name] : [])));
+}
+
 /**
  * Add an uploaded file to the caller's space: private, draft. The upload is
  * already spooled (and capped at SPACE_FILE_MAX_BYTES by the route). On any
@@ -193,8 +210,8 @@ export async function createMineFile(
   let adopted = false;
   const id = randomUUID();
   try {
-    const filename = cleanSpaceFilename(input.filename);
-    if (!filename) throw new Error('invalid filename');
+    const cleaned = cleanSpaceFilename(input.filename);
+    if (!cleaned) throw new Error('invalid filename');
     if (spooled.size > SPACE_FILE_MAX_BYTES) {
       throw new SpaceItemStateError('quota', `Files can be at most ${mb(SPACE_FILE_MAX_BYTES)}.`);
     }
@@ -207,6 +224,10 @@ export async function createMineFile(
         `You can upload ${mb(SPACE_DAILY_UPLOAD_BYTES)} a day. Try again tomorrow.`,
       );
     }
+    // A second upload with a name the space already holds files as
+    // `name-2.ext` (the Accept path's rule), not as a unique-index 500. The
+    // storage lock above serialises this space's uploads, so the name holds.
+    const filename = dedupeFilename(cleaned, await spaceFilenames(spaceId));
     await adoptSpooledIntoSpace(spaceId, id, spooled);
     adopted = true;
     const extension = extOf(filename);
