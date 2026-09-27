@@ -82,12 +82,12 @@ export {
 export {
   SpacesRootUnavailableError,
   spacesRoot,
+  spaceThumbsDir,
   spacesRootAvailable,
   spaceDir,
   spaceFilePath,
   spaceSpoolDir,
   adoptSpooledIntoSpace,
-  writeSpaceFile,
   openSpaceFile,
   readSpaceFile,
   removeSpaceFile,

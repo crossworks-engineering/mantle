@@ -9,7 +9,7 @@ import { NextResponse } from '@/server/http-compat';
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { z } from 'zod';
-import { thumbnailFor } from '@mantle/files';
+import { spaceThumbsDir, thumbnailFor } from '@mantle/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import type { OpenedSpaceFile } from '@mantle/content';
 import { withSpace } from '@mantle/db';
@@ -140,7 +140,7 @@ export async function spaceFileResponse(
   opened: OpenedSpaceFile | null,
 ): Promise<Response> {
   if (!opened) return notFound();
-  const { file, stream, size } = opened;
+  const { file, spaceId, stream, size } = opened;
   if (new URL(req.url).searchParams.get('thumb') === '1') {
     const chunks: Buffer[] = [];
     const etag = `"${file.sha256 ?? file.id}.thumb"`;
@@ -149,7 +149,11 @@ export async function spaceFileResponse(
       return new Response(null, { status: 304, headers: { etag } });
     }
     const thumb = await thumbnailFor({
-      sha256: file.sha256 ?? file.id,
+      // Keyed by the node id inside the space's own folder (audit S9): a
+      // private image's thumbnail never sits in the brain's shared cache,
+      // and it is removed with the file.
+      sha256: file.id,
+      cacheDir: spaceThumbsDir(spaceId),
       mimeType: file.mimeType,
       // The size on disk: an oversized source is refused before any read.
       sizeBytes: size,

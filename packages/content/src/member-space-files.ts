@@ -286,7 +286,13 @@ export async function deleteMineFile(spaceId: string, id: string): Promise<boole
   return true;
 }
 
-export type OpenedSpaceFile = { file: SpaceFile; stream: ReadStream; size: number };
+export type OpenedSpaceFile = {
+  file: SpaceFile;
+  /** The space that holds the bytes (the author's, for a teammate's file). */
+  spaceId: string;
+  stream: ReadStream;
+  size: number;
+};
 
 /** An own file's bytes, or null when it is not the caller's (or gone). */
 export async function openMineFile(spaceId: string, id: string): Promise<OpenedSpaceFile | null> {
@@ -294,5 +300,5 @@ export async function openMineFile(spaceId: string, id: string): Promise<OpenedS
   const file = await spaceFileOf(spaceId, id);
   if (!file) return null;
   const opened = await openSpaceFile(spaceId, id);
-  return opened ? { file, ...opened } : null;
+  return opened ? { file, spaceId, ...opened } : null;
 }

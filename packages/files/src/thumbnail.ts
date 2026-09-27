@@ -48,15 +48,15 @@ export function thumbsRoot(): string {
   return path.resolve(filesRoot(), '..', 'file-thumbs');
 }
 
-function thumbPath(sha256: string, maxDim: number): string {
-  return path.join(thumbsRoot(), `${sha256}.${maxDim}.jpg`);
+function thumbPath(sha256: string, maxDim: number, dir = thumbsRoot()): string {
+  return path.join(dir, `${sha256}.${maxDim}.jpg`);
 }
 
 /** A marker for a content hash that could not be thumbnailed (too big, or
  *  the decode failed). Same prefix as the cache file, so deleteThumbnailsFor
  *  removes it too. It stops a repeat request from loading the source again. */
-function failPath(sha256: string, maxDim: number): string {
-  return path.join(thumbsRoot(), `${sha256}.${maxDim}.fail`);
+function failPath(sha256: string, maxDim: number, dir = thumbsRoot()): string {
+  return path.join(dir, `${sha256}.${maxDim}.fail`);
 }
 
 /** How long a failure marker holds before a render is tried again. */
@@ -72,7 +72,7 @@ async function recentFailure(file: string): Promise<boolean> {
 
 async function markFailure(file: string): Promise<void> {
   try {
-    await fs.mkdir(thumbsRoot(), { recursive: true });
+    await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, '');
   } catch {
     /* best effort: the next request just tries again */
@@ -97,17 +97,21 @@ export async function thumbnailFor(args: {
    *  refused BEFORE loadBytes reads it into memory. */
   sizeBytes?: number | null;
   maxDim?: number;
+  /** Where the derivative is cached; default the brain's shared cache. A
+   *  member's private file passes its own space's folder (audit S9), so the
+   *  thumbnail never sits in the shared cache and goes with the file. */
+  cacheDir?: string;
 }): Promise<Buffer | null> {
   if (!isThumbable(args.mimeType)) return null;
   if (args.sizeBytes != null && args.sizeBytes > THUMB_SOURCE_MAX_BYTES) return null;
   const dim = args.maxDim ?? THUMB_MAX_DIM;
-  const file = thumbPath(args.sha256, dim);
+  const file = thumbPath(args.sha256, dim, args.cacheDir);
   try {
     return await fs.readFile(file);
   } catch {
     /* miss — render below */
   }
-  const failed = failPath(args.sha256, dim);
+  const failed = failPath(args.sha256, dim, args.cacheDir);
   if (await recentFailure(failed)) return null;
   const running = inflight.get(file);
   if (running) return running;
@@ -153,7 +157,7 @@ async function renderThumbnail(
     ctx.fillRect(0, 0, tw, th);
     ctx.drawImage(img, 0, 0, tw, th);
     const jpeg = canvas.toBuffer('image/jpeg', 82);
-    await fs.mkdir(thumbsRoot(), { recursive: true });
+    await fs.mkdir(path.dirname(file), { recursive: true });
     // Write-then-rename so a concurrent request never reads a half-written
     // cache file. Collisions are benign (same content ⇒ same output).
     const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;

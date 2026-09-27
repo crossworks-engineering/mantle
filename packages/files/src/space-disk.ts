@@ -103,18 +103,6 @@ export async function adoptSpooledIntoSpace(
   }
 }
 
-/** Write bytes a caller already holds (tests, small generated files). */
-export async function writeSpaceFile(
-  spaceId: string,
-  nodeId: string,
-  bytes: Buffer,
-): Promise<{ path: string; size: number }> {
-  const dest = spaceFilePath(spaceId, nodeId);
-  await fs.mkdir(path.dirname(dest), { recursive: true });
-  await fs.writeFile(dest, bytes);
-  return { path: dest, size: bytes.byteLength };
-}
-
 /** A read stream over one personal file, or null when the bytes are gone. */
 export async function openSpaceFile(
   spaceId: string,
@@ -144,4 +132,19 @@ export async function readSpaceFile(spaceId: string, nodeId: string): Promise<Bu
 /** Remove one personal file's bytes. Missing bytes are fine. */
 export async function removeSpaceFile(spaceId: string, nodeId: string): Promise<void> {
   await fs.rm(spaceFilePath(spaceId, nodeId), { force: true });
+  // Its thumbnails (and failure markers) go with it.
+  const thumbs = spaceThumbsDir(spaceId);
+  const id = safeId(nodeId, 'node id');
+  const entries = await fs.readdir(thumbs).catch(() => [] as string[]);
+  await Promise.all(
+    entries
+      .filter((e) => e.startsWith(`${id}.`))
+      .map((e) => fs.rm(path.join(thumbs, e), { force: true })),
+  );
+}
+
+/** Thumbnails of one space's images (audit S9): inside the space, keyed by
+ *  node id, never in the brain's shared cache. */
+export function spaceThumbsDir(spaceId: string): string {
+  return path.join(spaceDir(spaceId), 'thumbs');
 }

@@ -19,7 +19,7 @@
  * rule (a submitted item is edited by nobody until Accept, Return or Recall;
  * the row rules hold it too).
  */
-import { and, desc, eq, ilike, inArray, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import {
   currentSpaceScope,
   currentViewerLevel,
@@ -121,7 +121,22 @@ function titleFilter(q: string | undefined) {
   return t ? ilike(nodes.title, `%${t.replace(/[\\%_]/g, (c) => `\\${c}`)}%`) : undefined;
 }
 
-export type ListSpaceOpts = { kind?: SpaceItemKind; q?: string; limit?: number; offset?: number };
+export type ListSpaceOpts = {
+  kind?: SpaceItemKind;
+  q?: string;
+  /** Only items in these review states (audit U10: the member home's
+   *  "Returned" and "Waiting for review" lists read the whole space, not
+   *  the first page). An item with no state row counts as a draft. */
+  reviewStates?: readonly ReviewState[];
+  limit?: number;
+  offset?: number;
+};
+
+function reviewFilter(states?: readonly ReviewState[]) {
+  if (!states?.length) return undefined;
+  const listed = inArray(spaceItems.reviewState, [...states]);
+  return states.includes('draft') ? or(isNull(spaceItems.reviewState), listed) : listed;
+}
 
 function page(opts: ListSpaceOpts) {
   return {
@@ -143,6 +158,7 @@ export async function listMine(
     eq(nodes.ownerId, spaceId),
     opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...SPACE_ITEM_KINDS]),
     titleFilter(opts.q),
+    reviewFilter(opts.reviewStates),
   );
   const rows = await db
     .select({ node: nodes, item: spaceItems })
@@ -155,6 +171,7 @@ export async function listMine(
   const [count] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(nodes)
+    .leftJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
     .where(where);
   return { items: rows.map(rowOf), total: count?.n ?? 0 };
 }
@@ -695,5 +712,5 @@ export async function openTeamDraftFile(id: string): Promise<OpenedSpaceFile | n
   const file = await spaceFileOf(n.ownerId, id);
   if (!file) return null;
   const opened = await openSpaceFile(n.ownerId, id);
-  return opened ? { file, ...opened } : null;
+  return opened ? { file, spaceId: n.ownerId, ...opened } : null;
 }
