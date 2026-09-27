@@ -31,6 +31,10 @@ vi.mock('@mantle/content', async (importOriginal) => {
     writeDraftFile: vi.fn(),
     saveDraftSource: vi.fn(),
     setManifest: vi.fn(),
+    // app_tools_set reads the app's level to decide on member warnings; an
+    // admin-level app gets none (proven on Postgres in
+    // member-app-tools.viewer.db.test.ts).
+    getApp: vi.fn(async () => ({ audience: 'admin' })),
   };
 });
 vi.mock('@mantle/content/app-table-exports', async (importOriginal) => {
