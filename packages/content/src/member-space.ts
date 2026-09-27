@@ -436,7 +436,12 @@ export async function saveMineTable(
   if (row.type !== 'table') return null;
   if (doc !== undefined || (await savedState('table', id)).unsaved) {
     const t = await commitTable(spaceId, id, doc);
-    if (!t) return null;
+    // No row under the registry lock: submitted since the check above (the
+    // frozen rule hides it) or gone. Re-check so a frozen item says so.
+    if (!t) {
+      await assertEditable(spaceId, id);
+      return null;
+    }
     await notifySpaceItemChanged(id, 'saved');
   }
   return getMineItem(spaceId, id);

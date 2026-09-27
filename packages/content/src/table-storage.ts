@@ -208,7 +208,11 @@ export async function ensureFileBacked(
   node: EnsureFileNode,
   locked: EnsureLocked,
 ): Promise<{ storagePath: string; migrated: boolean }> {
-  if (locked?.storagePath) return { storagePath: locked.storagePath, migrated: false };
+  // A null lock means the caller holds no registry row (gone, or hidden by a
+  // personal space's frozen rule): rebuilding the published file from JSONB
+  // then would overwrite the real workbook. Refuse loudly.
+  if (!locked) throw new Error(`ensureFileBacked without a locked registry row for ${node.id}`);
+  if (locked.storagePath) return { storagePath: locked.storagePath, migrated: false };
   const [row] = await tx
     .select({ data: tables.data, draftData: tables.draftData })
     .from(tables)

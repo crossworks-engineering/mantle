@@ -145,11 +145,16 @@ export async function saveTableDraft(
   // the draft to JSONB only, invisible to every file-backed read surface
   // (audit finding 4). draft_rev bumps on every batch (the op route's etag).
   return await withTableRegistryLock(id, async (tx, locked) => {
-    const currentRev = locked?.draftRev ?? 0;
+    // No locked row: the table went away, or (inside a personal space) it was
+    // submitted after the caller's state check and the row rules now hide it.
+    // Stop here. Carrying on rebuilt the PUBLISHED workbook from the JSONB
+    // mirror (empty for a multi-tab table) under review and answered ok.
+    if (!locked) return null;
+    const currentRev = locked.draftRev;
     if (opts.ifRev !== undefined && currentRev !== opts.ifRev) {
       return { ok: false as const, conflict: true as const, currentRev };
     }
-    let storagePath = locked?.storagePath ?? null;
+    let storagePath = locked.storagePath;
     if (!storagePath && workbook) {
       // A workbook draft has no JSONB mirror — the file is its ONLY carrier,
       // so a legacy table converts to file-backed before the draft lands.
@@ -164,7 +169,7 @@ export async function saveTableDraft(
         // Guard against the LARGEST doc this write would clobber: the draft
         // can have grown past the published stats via op batches.
         const effRows = Math.max(
-          locked?.totalRows ?? 0,
+          locked.totalRows ?? 0,
           statsOrNull(draftAbsFor(storagePath))?.totalRows ?? 0,
         );
         if (effRows > MATERIALIZE_MAX) throw new TableTooLargeError(effRows, MATERIALIZE_MAX);
@@ -237,7 +242,8 @@ export async function commitTable(
   // window (there is no whole doc to post).
   if (data === undefined) {
     const result = await withTableRegistryLock(id, async (tx, locked) => {
-      if (!locked?.storagePath) {
+      if (!locked) return null; // gone, or frozen in a personal space
+      if (!locked.storagePath) {
         // Legacy JSONB table: its draft (if any) lives in draftData — fall
         // through to the doc path semantics via the mirror.
         const [p] = await tx
@@ -350,6 +356,7 @@ export async function commitTable(
   // never fork).
   const publishedAbs = publishedPath(ownerId, id);
   const result = await withTableRegistryLock(id, async (tx, locked) => {
+    if (!locked) return null; // gone, or frozen in a personal space
     // Shape-hash gate (plan §6): cell-only edits keep the existing summary/
     // entities — the extractor sees them and skips its LLM pass, refreshing
     // only the cheap deterministic layers (profile chunks, embedding).
@@ -403,6 +410,6 @@ export async function commitTable(
     });
   });
 
-  await notifyNodeIngested(id);
+  if (result) await notifyNodeIngested(id);
   return result;
 }

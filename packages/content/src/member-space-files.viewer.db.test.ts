@@ -130,6 +130,44 @@ describe.skipIf(!URL)('member personal space: tables and files', () => {
     expect(await asB(() => sp.getMineItem(spaceB, tableId))).toBeNull();
   });
 
+  it('an autosave racing Submit leaves the published workbook intact (D1)', async () => {
+    const { fileStats } = await import('@mantle/tabledb');
+    const row = await asA(() => sp.createMineItem(spaceA, { type: 'table', title: `${tag} race` }));
+    const got = await asA(() => sp.getMineItem(spaceA, row.id));
+    const col = got?.body.type === 'table' ? got.body.table.data.columns[0]!.id : '';
+    await asA(() =>
+      td.applyTableOps(spaceA, row.id, [
+        { op: 'row_add', cells: { [col]: 'kept 1' } },
+        { op: 'row_add', cells: { [col]: 'kept 2' } },
+        { op: 'tab_add', tabId: 'two', name: 'Two' },
+      ]),
+    );
+    await asA(() => sp.saveMineTable(spaceA, row.id));
+    const file = path.join(root, 'table-dbs', spaceA, `${row.id}.sqlite`);
+    const before = fileStats(file);
+    expect(before.tabs.length).toBe(2);
+
+    // The autosave passed its state check; Submit commits before its lock.
+    const raced = await asA(async () => {
+      await sp.assertEditable(spaceA, row.id);
+      await m.systemDb.execute(
+        sqlTag`update space_items set review_state = 'submitted' where node_id = ${row.id}`,
+      );
+      return td.saveTableDraft(spaceA, row.id, {
+        tabs: [{ name: 'Sheet1', columns: [], rows: [] }],
+      });
+    });
+    expect(raced).toBeNull();
+    expect(fileStats(file).totalRows).toBe(before.totalRows);
+    expect(fileStats(file).tabs.length).toBe(2);
+    // What the route asks next: the item is frozen, a 409 not a 404.
+    await expect(asA(() => sp.assertEditable(spaceA, row.id))).rejects.toMatchObject({
+      reason: 'frozen',
+    });
+    await asA(() => sp.recallItem(spaceA, row.id));
+    await asA(() => sp.deleteMineItem(spaceA, row.id));
+  });
+
   it('deletes a draft table and its workbook files', async () => {
     const extra = await asA(() =>
       sp.createMineItem(spaceA, { type: 'table', title: `${tag} scratch grid` }),
