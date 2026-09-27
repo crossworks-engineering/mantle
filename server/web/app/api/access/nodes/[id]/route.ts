@@ -17,6 +17,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { firstIssue } from '@/lib/zod-issue';
 import {
   AccessError,
+  acceptedAuthors,
   accessClosure,
   canShareNode,
   countPageDescendants,
@@ -67,10 +68,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .where(and(eq(nodes.id, idParsed.data.id), eq(nodes.ownerId, user.id)))
     .limit(1);
   if (!item) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
-  const [closure, share, childCount] = await Promise.all([
+  const [closure, share, childCount, authors] = await Promise.all([
     accessClosure(user.id, item.id),
     getActiveShareForNode(user.id, item.id),
     item.type === 'page' ? countPageDescendants(user.id, item.id) : Promise.resolve(0),
+    acceptedAuthors(user.id, [item.id]),
   ]);
   const { path, ...rest } = item;
   const body: AccessNodeView = {
@@ -82,6 +84,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     // link only where the item can carry one (not a folder outside files).
     canLower: isWorkspaceKind(item.type),
     canLink: canShareNode({ type: item.type, path }),
+    // A member wrote it and an admin accepted it (member logins Phase 4).
+    author: authors.get(item.id) ?? null,
   };
   return NextResponse.json(body);
 }

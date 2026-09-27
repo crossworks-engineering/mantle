@@ -305,6 +305,17 @@ export {
   type ReviewReason,
 } from './member-review';
 export {
+  acceptedAuthors,
+  acceptedDrawSvg,
+  acceptedRow,
+  getAcceptedItem,
+  isAuthorOfAcceptedFile,
+  listAccepted,
+  type AcceptedAuthor,
+  type AcceptedItem,
+  type AcceptedRow,
+} from './member-accepted';
+export {
   SPACE_PURGE_GRACE_DAYS,
   findSpacePurge,
   purgeDeactivatedSpaces,

@@ -94,12 +94,16 @@ export async function getTable(
     /** An unknown `tabId` reads the first tab instead of throwing: for
      *  readers whose tab id comes from outside (a member's query string). */
     unknownTabIsFirst?: boolean;
+    /** The saved table only, even where the scope reads drafts: for a reader
+     *  on the admin pool who must not see an admin's working copy (the
+     *  author of an accepted item, member-accepted.ts). */
+    publishedOnly?: boolean;
   } = {},
 ): Promise<TableDetail | null> {
   // Below admin (member logins Phase 0b) the draft is not readable: the
   // published table only, and no draft file from disk either. A member's own
   // space (Phase 2) reads its own draft.
-  const published = !readsDrafts();
+  const published = opts.publishedOnly === true || !readsDrafts();
   const [row] = await db
     .select({
       node: nodes,
@@ -133,7 +137,7 @@ export async function getTable(
   // when a draft tab_delete/tab_reorder changed the first tab, "default tab"
   // must mean the same tab on both the published and draft side (audit: the
   // payload mixed published tab A with draft tab B).
-  const { data, draft, totalRows, docClipped } = docsOf(row, tabId);
+  const { data, draft, totalRows, docClipped } = docsOf(row, tabId, { publishedOnly: published });
   return detailOf(row.node, data, draft, {
     totalRows,
     docClipped,

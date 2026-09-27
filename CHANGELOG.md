@@ -4,6 +4,19 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.285: what a member wrote stays theirs to read (Phase 4 "not yet")
+
+- A member lists what they wrote and an admin accepted
+  (`GET /api/member/accepted`) and reads each one's saved version at any
+  level (`GET /api/member/accepted/:id`), never an admin's draft. An image
+  or drawing they wrote, accepted at admin, still renders in their other
+  drafts. Nobody else gets anything new (docs/member-logins.md section 6).
+- The member-authored badge: the member Library and the admin Access panel
+  carry `author: { name, acceptedAt }` on an accepted item.
+- `@crossworks/client-types`: `MemberAcceptedRow`, `MemberAcceptedPage`,
+  `MemberAcceptedItem`, `MemberItemAuthor`; `author` on `MemberLibraryRow`
+  and `AccessNodeView`. Additive; older clients ignore them.
+
 ## 0.232.283: member types in the contract (audit M2, M3, S13, P2)
 
 - `@crossworks/client-types` publishes the personal-space wire shapes

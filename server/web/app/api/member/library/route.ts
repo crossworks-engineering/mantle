@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { withViewer } from '@mantle/db';
-import { LIBRARY_KINDS, listLibrary } from '@mantle/content';
+import { LIBRARY_KINDS, acceptedAuthors, listLibrary } from '@mantle/content';
 import { getMemberOr401 } from '@/lib/auth';
 
 const Query = z.object({
@@ -15,7 +15,9 @@ const PAGE_SIZE = 50;
  * GET /api/member/library?kind=&q=&page= : the items a MEMBER may read,
  * newest first (member logins, Phase 1). Runs at the team level: Postgres row
  * security decides what exists, so there is no filter in this code to get
- * wrong.
+ * wrong. An item a member wrote and an admin accepted carries its `author`
+ * (the member-authored badge; Phase 4), read on the admin pool for exactly
+ * the ids the team level returned.
  */
 export async function GET(req: Request) {
   const member = await getMemberOr401();
@@ -26,5 +28,10 @@ export async function GET(req: Request) {
   const res = await withViewer('team', () =>
     listLibrary(member.anchorId, { kind, q, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
   );
-  return NextResponse.json({ ...res, page, pageSize: PAGE_SIZE });
+  const authors = await acceptedAuthors(
+    member.anchorId,
+    res.items.map((i) => i.id),
+  );
+  const items = res.items.map((i) => ({ ...i, author: authors.get(i.id) ?? null }));
+  return NextResponse.json({ ...res, items, page, pageSize: PAGE_SIZE });
 }

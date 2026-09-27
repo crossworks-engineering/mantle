@@ -4,7 +4,7 @@
  * brain enforces it with row security) and chats with the team-level agent in
  * its own thread.
  */
-import type { AccessLevel } from './access';
+import type { AccessLevel, MemberItemAuthor } from './access';
 import type { MemberItemKind } from '../member-kinds';
 
 /** GET /api/member/shell */
@@ -41,6 +41,9 @@ export type MemberLibraryRow = {
   summary: string | null;
   audience: AccessLevel;
   updatedAt: string;
+  /** A member wrote it and an admin accepted it (the member-authored badge).
+   *  Absent from brains before 0.232.285. */
+  author?: MemberItemAuthor | null;
 };
 
 /** GET /api/member/library?kind=&q=&page= */
@@ -138,3 +141,40 @@ export type MemberSpaceItem<TDoc = unknown, TTable = unknown> = {
   row: MemberSpaceItemRow;
   body: MemberSpaceItemBody<TDoc, TTable>;
 };
+
+// ── Accepted items (member logins Phase 4, plan 6.2) ────────────────────
+
+/** An item this member wrote and an admin accepted into the brain. */
+export type MemberAcceptedRow = {
+  id: string;
+  type: MemberItemKind;
+  title: string;
+  icon: string | null;
+  /** The level the admin chose: at team or lower it is in the Library too. */
+  audience: AccessLevel;
+  acceptedAt: string | null;
+  updatedAt: string;
+};
+
+/** GET /api/member/accepted?kind=&page= (brains from 0.232.285) */
+export type MemberAcceptedPage = {
+  items: MemberAcceptedRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+/** GET /api/member/accepted/:id -> { item }: the SAVED version, whatever its
+ *  level; a drawing shows from /api/member/draws/:id/svg, a file's bytes
+ *  from /api/member/files/:id. */
+export type MemberAcceptedItem =
+  | (MemberAcceptedRow & { type: 'page'; doc: unknown })
+  | (MemberAcceptedRow & { type: 'note'; content: string })
+  | (MemberAcceptedRow & { type: 'table'; table: unknown })
+  | (MemberAcceptedRow & { type: 'draw' })
+  | (MemberAcceptedRow & {
+      type: 'file';
+      filename: string;
+      mimeType: string | null;
+      sizeBytes: number | null;
+    });

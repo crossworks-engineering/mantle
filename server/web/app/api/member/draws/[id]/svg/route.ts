@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { withSpace, withTeamDrafts, withViewer } from '@mantle/db';
-import { getDrawSvg, getTeamDraftDrawSvg } from '@mantle/content';
+import { acceptedDrawSvg, getDrawSvg, getTeamDraftDrawSvg } from '@mantle/content';
 import { getMemberForAsset } from '@/lib/auth';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -10,7 +10,9 @@ const IdParams = z.object({ id: z.string().uuid() });
  * MEMBER, as an image (member logins, Phase 1). Never the scene or the draft.
  * Looked up in the three places a member may read, each under its own row
  * rules: the Library (team level), the member's own space (Phase 2), then
- * teammates' team-shared drawings. Anything else is a 404. No render
+ * teammates' team-shared drawings, and last a drawing this member wrote and
+ * an admin accepted, whatever its level (Phase 4, plan 6.2: the author rule
+ * is in the query). Anything else is a 404. No render
  * fallback: a drawing with no snapshot yet shows as missing until it is saved.
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -24,7 +26,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     (await withSpace({ spaceId: member.spaceId, loginId: member.loginId }, () =>
       getDrawSvg(member.spaceId, id),
     )) ??
-    (await withTeamDrafts(() => getTeamDraftDrawSvg(id)));
+    (await withTeamDrafts(() => getTeamDraftDrawSvg(id))) ??
+    (await acceptedDrawSvg(member.anchorId, member.loginId, id));
   if (!svg) {
     return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
   }

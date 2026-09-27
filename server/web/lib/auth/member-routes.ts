@@ -56,6 +56,11 @@ export const MEMBER_ROUTES: readonly string[] = [
   'POST /api/member/apps/:id/db-broker',
   // The member home: the pinned home app and what its hub.get() answers.
   'GET /api/member/home',
+  // What the member wrote and an admin accepted (Phase 4, plan 6.2): the
+  // list and the saved version, for the author only, on the admin pool with
+  // the author rule in every query (member-accepted.ts).
+  'GET /api/member/accepted',
+  'GET /api/member/accepted/:id',
 ];
 
 export function isMemberRoute(method: string, pattern: string): boolean {

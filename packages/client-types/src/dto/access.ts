@@ -30,6 +30,11 @@ export type AccessLinkView = {
 };
 
 /** GET /api/access/nodes/:id */
+/** Who wrote a brain item, when a member wrote it and an admin accepted it
+ *  (member logins Phase 4): the member-authored badge. `name` is the login's
+ *  display name ("A member" without one, "Removed member" once deleted). */
+export type MemberItemAuthor = { name: string; acceptedAt: string | null };
+
 export type AccessNodeView = {
   item: AccessItemView;
   /** What the item's link or embeds need: a page's files and drawings, a
@@ -42,6 +47,9 @@ export type AccessNodeView = {
   canLower: boolean;
   /** Whether the item can carry a link (a folder only under `files`). */
   canLink: boolean;
+  /** Set when a member wrote it and an admin accepted it into the brain (the
+   *  member-authored badge). Absent from brains before 0.232.285. */
+  author?: MemberItemAuthor | null;
 };
 
 /** PATCH /api/access/nodes/:id { audience, withClosure?, raiseClosure? } */

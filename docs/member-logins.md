@@ -342,11 +342,33 @@ D6). The purge refuses to run where the spaces root is missing or
 read-only, so it never deletes rows and keeps their bytes. A login enabled
 again before the 30 days keeps everything.
 
-**Not yet:** the author's own list of what was accepted (the item leaves
-Mine on Accept; accepted at team or above, the author finds it in the
-Library), read access for the author to an item accepted at admin (plan
-6.2: another of their items that shows an accepted image then shows it
-broken), a "member-authored" badge on accepted items.
+**What the author keeps** (plan 6.2 and 6.3, 0.232.285). Accept takes the
+item out of Mine, but its `space_items` row stays and names the author, so:
+
+| Route                          | What                                             |
+| ------------------------------ | ------------------------------------------------ |
+| `GET /api/member/accepted`     | The author's accepted items, newest accept first |
+| `GET /api/member/accepted/:id` | One of them, the SAVED version, at any level     |
+
+- **Read access, at any level.** The author reads what they wrote even when
+  the admin accepted it at admin: the saved version only (a page's committed
+  doc, a table's saved workbook, never an admin's working draft, since a
+  table's draft file is skipped too). `/api/member/files/:id` and
+  `/api/member/draws/:id/svg` fall back to the same rule after the team-level
+  lookup misses, so an accepted image still renders in the author's other
+  drafts. Nobody else gets anything new: another member, a returned or
+  recalled item and an item of another brain are all a plain 404.
+- **The rule lives in the query.** An item above the member's level is not
+  visible to the team role and the limited roles hold no grant on
+  `space_items`, so `packages/content/src/member-accepted.ts` runs on the
+  admin pool and writes the rule into every query: the row names this login
+  as the author, its state is `accepted`, and the item belongs to this brain.
+  It refuses to run inside a viewer scope.
+- **The member-authored badge.** The Library (list and item) and the admin's
+  Access panel (`GET /api/access/nodes/:id`) carry `author: { name,
+acceptedAt }` on an accepted item: the login's display name, "A member"
+  without one (never the email), "Removed member" once the login is deleted.
+  An admin's own item has no author.
 
 ## 7. Apps for members (Phase 4b)
 

@@ -159,6 +159,7 @@ export type DocsRow = { storagePath: string | null; data: unknown; draft: unknow
 export function docsOf(
   row: DocsRow,
   tabId?: string,
+  opts: { publishedOnly?: boolean } = {},
 ): {
   data: TableDoc;
   draft: TableDoc | null;
@@ -166,7 +167,7 @@ export function docsOf(
   docClipped: boolean;
 } {
   if (row.storagePath) {
-    const loaded = loadDocsFromFile(row.storagePath, { tabId });
+    const loaded = loadDocsFromFile(row.storagePath, { tabId, publishedOnly: opts.publishedOnly });
     return {
       data: loaded.data,
       draft: loaded.draft,

@@ -39,8 +39,12 @@ export type {
   AccessLinkView,
   AccessNodeUpdate,
   AccessNodeView,
+  MemberItemAuthor,
 } from './dto/access';
 export type {
+  MemberAcceptedItem,
+  MemberAcceptedPage,
+  MemberAcceptedRow,
   MemberChatMessage,
   MemberChatThread,
   MemberLibraryItem,
