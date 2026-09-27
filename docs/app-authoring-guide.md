@@ -162,7 +162,9 @@ the queries are correct, not guessed.
 For app-local state (caches, user-entered rows, preferences). Declare DDL via
 `app_db_schema_set(id, "CREATE TABLE IF NOT EXISTS …")`; the host provisions the
 DB on first use. At runtime use `host.db.query/exec`. `ATTACH`, `DETACH`,
-`PRAGMA`, and `VACUUM INTO` are blocked. Treat schema as **append-only**: there
+`VACUUM` and every `PRAGMA` except `table_info` / `table_xinfo` are blocked.
+Each statement may run 5 seconds at most and return 50,000 rows at most (add
+a LIMIT or aggregate), and no single string or blob may pass 16 MiB. Treat schema as **append-only**: there
 are no destructive migrations; add columns/tables, use views for renames.
 
 **Seeding reference data**: when the app needs pre-loaded lookup data (a
@@ -339,20 +341,23 @@ apps from their own shell. Set the app's level to **Team** (its Access
 control) and publish it; members then find it under Apps. They run the
 PUBLISHED build only and never edit it.
 
-- **Tools:** a declared **built-in** tool that an enabled tool group at team
-  level or lower holds (usually `team-read`), with no confirmation. It runs
-  at the team level: it reads only team-level items. Recipe, http, shell and
-  MCP tools are refused, and so are `my_items_list`, `my_item_open`,
-  `summarize_text`, `team_request_create` and `read_result`. `app_tools_set`
-  lists a warning for each declared tool members would be refused.
-- **Data:** `host.db.query` and `host.db.exec` both work. The database is
-  shared by the whole team (not one per member): design for that (put who
-  wrote a row in the row if it matters; the app cannot learn the member from
-  the host yet).
+- **Tools:** a declared **read-only built-in** tool that an enabled tool
+  group at team level or lower holds (usually `team-read`), with no
+  confirmation. It runs at the team level: it reads team-, client- and
+  public-level items, never admin ones. Recipe, http, shell and MCP tools are
+  refused, so are built-ins that write, and so are `my_items_list`,
+  `my_item_open`, `summarize_text`, `search_chunks`, `team_request_create`
+  and `read_result`. `app_tools_set`, `app_publish` and `access_set` list a
+  warning for each declared tool members would be refused.
+- **Data:** `host.db.query` and `host.db.exec` both work on a team-level app;
+  on a client- or public-level app members only read. The database is shared
+  by the whole team (not one per member): design for that (put who wrote a
+  row in the row if it matters; the app cannot learn the member from the
+  host yet).
 - **Home app:** the app pinned as the hub (Team admin > Settings) is also the
-  members' home page while it is at team level. `host.hub.get()` answers
-  there too: sections are the newest team pages, and a section's `token` is
-  the page id.
+  members' home page while it is at team level or lower with a green
+  published build. `host.hub.get()` answers there too: sections are the
+  newest team pages, and a section's `token` is the page id.
 
 ## Team Hub apps (a designated app as the /hub surface)
 

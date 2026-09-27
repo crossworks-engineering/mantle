@@ -375,33 +375,55 @@ app's level in its Access control; nothing else lists it to members.
 - **Tools** (`packages/tools/src/member-app-tools.ts`, checked per call,
   since `dispatchTool` checks none of this): the app declares the tool
   (`manifest.toolSlugs`); it is a built-in (no http, shell, recipe or MCP
-  tool); it needs no confirmation; an ENABLED tool group at team level or
-  lower holds it; and it is not one of `my_items_list` / `my_item_open` (an
-  app could copy the member's private items into shared app data),
-  `summarize_text` (LLM work), `team_request_create` (a chat turn's write) or
-  `read_result`. The call runs on the team role, on a team surface that
-  names the login, with the private corpus off: row security decides what
-  it reads, and team refusals apply. `app_tools_set` returns `warnings` for
-  every declared tool a team-level app's members would be refused.
+  tool); the built-in is marked read-only (an app loop has no model in
+  between, so a writing or spending built-in an admin put in a team-level
+  group for chat stays out); it needs no confirmation; an ENABLED tool group
+  at team level or lower holds it; and neither its slug nor its built-in is
+  one of `my_items_list` / `my_item_open` (an app could copy the member's
+  private items into shared app data), `summarize_text` and `search_chunks`
+  (LLM work: passage scoring calls the decider), `team_request_create` (a
+  chat turn's write) or `read_result`. The call runs on the team role, on a
+  team surface that names the login, with the private corpus off: row
+  security decides what it reads (team, client and public items), and team
+  refusals apply. `app_tools_set`, `app_publish` and `access_set` on an app
+  return `warnings` for every declared tool its members would be refused.
 - **Data.** Row security does not reach SQLite, so the db broker checks the
   app itself (team level or lower, published) before it opens the database.
-  Team apps may write, as team-mode shares do. App data is shared per app,
-  not per member (v1): every member reads and writes the same database. The
-  SQLite work runs on the admin pool (it writes the app's registry rows).
+  Members read every app they may run, and write only to a TEAM-level app,
+  as team-mode shares do; a client- or public-level app is read-only for
+  them, so nothing a member writes shows to anonymous visitors (decided
+  2026-09-27). App data is shared per app, not per member (v1): every member
+  reads and writes the same database. The SQLite work runs on the admin pool
+  (it writes the app's registry rows).
+- **SQL limits** (every app SQL caller: members, share links, the owner,
+  `app_db_query`; `packages/content/src/app-sql-runner.ts`). Each statement
+  runs in a worker thread, so a slow one never blocks the server: 5 seconds
+  at most, 50,000 rows at most, 16 MiB per string or blob. The engine's
+  authorizer refuses ATTACH, DETACH, VACUUM (any form) and every PRAGMA but
+  `table_info` / `table_xinfo`, whatever comments or spacing the text hides
+  them behind (audit 2026-09-27).
 - **Cost.** A member write into an app table that is exported to the brain
-  schedules the export sync (debounced, hash-gated): bounded, not zero
-  (decided 2026-09-26). Exported tables stay admin level. Nothing else a
-  member app does starts LLM work.
+  schedules the export sync (debounced, hash-gated, and at most two minutes
+  after a burst of writes starts): bounded, not zero (decided 2026-09-26).
+  Exported tables stay admin level. Nothing else a member app does starts
+  LLM work.
 - **Audit.** Every ticket, tool call and database call lands in the app's
-  access log with the login (`app_access_log.actor_id`, migration 0172); the
-  app's Activity tab shows the member's name.
+  access log with the login (`app_access_log.actor_id`, migration 0172),
+  refused ones included, each marked `via: member`; the app's Activity tab
+  shows the member's name, or "Removed member" once the login is deleted. A
+  request with a malformed body is not logged.
 - **Team chat** (`app_db_list` / `app_db_query` in `team-read`) reads the
-  data of team-level apps only, the same level rule.
+  data of apps at team level or lower (published or not), the same level
+  rule. Before 0.232.281 it read apps with an active team-mode share; levels
+  follow links, so on every box checked on 2026-09-27 the two sets were the
+  same.
 - **Home app.** The brain's pinned hub app (Team admin > Settings, the
   `teamHubAppId` pref) is the members' home app while they may run it: no
-  share is needed, the level is the access. Otherwise the member home shows
-  its built-in view. Its `host.hub.get()` answers from `/api/member/home`: the
-  site name, the member's name, the newest team pages as sections (a
-  section's `token` is the page id), Library counts and the other apps
-  members may run. The `/team` portal
-  hub keeps its own rules (a team-mode share) until it is retired.
+  share is needed, the level is the access. Pinning an admin-level app sets
+  it to team level (the picker says so). Otherwise the member home shows its
+  built-in view, and `/api/member/home` answers `{ homeApp: null, hub: null }`.
+  With a home app, `host.hub.get()` answers from that route: the site name,
+  the member's name, the newest team pages as sections (a section's `token`
+  is the page id), Library counts and the other apps members may run. The
+  `/team` portal hub keeps its own rules (a team-mode share) until it is
+  retired.

@@ -74,8 +74,11 @@ export function isFromApp(m: unknown): m is FromApp {
  *  renders, handed to a designated hub app so it can render the same things its
  *  own way. Mirrors the /api/team/hub response; every field is member-safe by
  *  construction (sections are the owner's team-mode page shares, stats are
- *  whitelisted coarse counts). `memberName` is display-grade — a hub app must
- *  never build permission logic on it. */
+ *  whitelisted coarse counts). The member shell's home answers the same shape
+ *  from /api/member/home: sections are team-level pages with the page id as
+ *  `token`, counts are Library counts, apps are the apps members may run
+ *  (member logins Phase 4b). Treat `token` as opaque. `memberName` is
+ *  display-grade — a hub app must never build permission logic on it. */
 export type HubData = {
   /** Brain's site-name pref; null ⇒ the app should fall back to its own label. */
   siteName: string | null;

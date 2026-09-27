@@ -93,7 +93,7 @@ describe.skipIf(!URL)('apps for members', () => {
       sqlTag`delete from auth.users where id in (${anchor}, ${other}, ${member})`,
     );
     await m.closeDb();
-  });
+  }, 60_000);
 
   const team = <T>(fn: () => Promise<T>) => m.withViewer('team', fn);
 
@@ -165,7 +165,7 @@ describe.skipIf(!URL)('apps for members', () => {
       detail: { op: 'exec' },
     });
     let rows: Awaited<ReturnType<typeof log.listAppAccess>> = [];
-    for (let i = 0; i < 50 && rows.length === 0; i++) {
+    for (let i = 0; i < 250 && rows.length === 0; i++) {
       await new Promise((r) => setTimeout(r, 20));
       rows = await log.listAppAccess(anchor, ids.team);
     }
@@ -176,5 +176,29 @@ describe.skipIf(!URL)('apps for members', () => {
       contactName: 'Pat Member',
       kind: 'db',
     });
+  });
+
+  it('names a login without a display name by its email, and a deleted one as removed', async () => {
+    const plain = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into auth.users (id, email, password_hash, role, display_name)
+      values (${plain}, ${`${tag}-sam@example.invalid`}, 'x', 'member', '  ')`);
+    log.recordAppAccess({
+      ownerId: anchor,
+      appNodeId: ids.pub,
+      actorId: plain,
+      kind: 'tool',
+      detail: { via: 'member', slug: 'note_list' },
+    });
+    let rows: Awaited<ReturnType<typeof log.listAppAccess>> = [];
+    for (let i = 0; i < 250 && rows.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      rows = await log.listAppAccess(anchor, ids.pub);
+    }
+    expect(rows[0]).toMatchObject({ actorId: plain, contactName: `${tag}-sam` });
+    await m.systemDb.execute(sqlTag`delete from spaces where login_id = ${plain}`);
+    await m.systemDb.execute(sqlTag`delete from auth.users where id = ${plain}`);
+    const [after] = await log.listAppAccess(anchor, ids.pub);
+    expect(after).toMatchObject({ actorId: null, contactId: null, contactName: 'Removed member' });
   });
 });

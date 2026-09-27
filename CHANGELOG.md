@@ -4,6 +4,24 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.281 and the patch after it: members run apps; app SQL is hardened
+
+- Members run team-level apps from their shell (docs/member-logins.md
+  section 7): published build only, a run-only tool broker (read-only
+  built-ins from an enabled team-level group), writes only to team-level
+  apps, access log by login (migration 0172), the pinned hub app as the
+  members' home.
+- **App SQL, every caller** (share links, members, the owner, `app_db_query`):
+  each statement now runs in a worker thread with a 5 second limit, 50,000
+  rows and 16 MiB per string or blob at most. The engine refuses ATTACH,
+  DETACH, VACUUM and every PRAGMA but `table_info` / `table_xinfo`. Before,
+  a leading comment slipped VACUUM INTO past the check, and one endless
+  query froze the web process. An app that ran `VACUUM` itself, or queries
+  more than 50,000 rows at once, now gets an error.
+- Team Chat's `app_db_list` / `app_db_query` read apps at team level or
+  lower (before: apps with an active team-mode share; the same set on every
+  box checked).
+
 ## Unreleased: the object store is RustFS; boxes copy their MinIO data over once (branch feat/objectstore-rustfs)
 
 MinIO left open source (repo archived, public images deleted, only the licensed

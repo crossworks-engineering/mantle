@@ -32,6 +32,8 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
     'admin_only',
     'my_items_list',
     'off_group',
+    'quick_sum',
+    'note_create',
   ];
 
   const exec = (q: ReturnType<typeof sqlTag>) => m.systemDb.execute(q);
@@ -65,10 +67,12 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
         (${anchor}, 'confirm_thing', 'n', 'd', ${b('note_list')}::jsonb, true),
         (${anchor}, 'admin_only', 'n', 'd', ${b('note_list')}::jsonb, false),
         (${anchor}, 'my_items_list', 'n', 'd', ${b('my_items_list')}::jsonb, false),
-        (${anchor}, 'off_group', 'n', 'd', ${b('note_list')}::jsonb, false)`);
+        (${anchor}, 'off_group', 'n', 'd', ${b('note_list')}::jsonb, false),
+        (${anchor}, 'quick_sum', 'n', 'd', ${b('summarize_text')}::jsonb, false),
+        (${anchor}, 'note_create', 'n', 'd', ${b('note_create')}::jsonb, false)`);
     await exec(sqlTag`
       insert into tool_groups (owner_id, slug, name, tool_slugs, audience, enabled) values
-        (${anchor}, 'g-team', 'g', ARRAY['note_list','shell_thing','confirm_thing','my_items_list','page_list'], 'team', true),
+        (${anchor}, 'g-team', 'g', ARRAY['note_list','shell_thing','confirm_thing','my_items_list','page_list','quick_sum','note_create'], 'team', true),
         (${anchor}, 'g-admin', 'g', ARRAY['admin_only','note_list'], 'admin', true),
         (${anchor}, 'g-off', 'g', ARRAY['off_group'], 'team', false)`);
     await exec(sqlTag`
@@ -88,7 +92,7 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
     await exec(sqlTag`delete from spaces where login_id = ${anchor}`);
     await exec(sqlTag`delete from auth.users where id = ${anchor}`);
     await m.closeDb();
-  });
+  }, 60_000);
 
   it('allows a declared built-in from an enabled team-level group', async () => {
     const v = await verdict('note_list');
@@ -110,6 +114,14 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
   it('refuses a non-builtin handler and a confirm-gated tool', async () => {
     expect(await verdict('shell_thing')).toMatchObject({ ok: false, status: 403 });
     expect(await verdict('confirm_thing')).toMatchObject({ ok: false, status: 403 });
+  });
+
+  it('refuses a refused builtin under another slug (the rule reads the handler too)', async () => {
+    expect(await verdict('quick_sum')).toMatchObject({ ok: false, status: 403 });
+  });
+
+  it('refuses a builtin that writes, even from a team-level group', async () => {
+    expect(await verdict('note_create')).toMatchObject({ ok: false, status: 403 });
   });
 
   it("refuses the member's private-item readers even in a team group", async () => {
@@ -174,5 +186,21 @@ describe.skipIf(!URL)('member app tool broker rules', () => {
       { ownerId: anchor, surface: { kind: 'web' } },
     );
     expect(quiet.ok && (quiet.output as { warnings?: string[] }).warnings).toBeUndefined();
+  });
+
+  it('access_set on an app warns about the tools members would be refused', async () => {
+    const def = builtins.BUILTIN_TOOLS.find((t) => t.slug === 'access_set');
+    if (!def) throw new Error('access_set is not a builtin any more');
+    await exec(
+      sqlTag`update apps set manifest = '{"toolSlugs":["note_list","note_create"]}'::jsonb where node_id = ${appId}`,
+    );
+    const res = await def.handler(
+      { node_id: appId, level: 'team' },
+      { ownerId: anchor, surface: { kind: 'web' } },
+    );
+    expect(res.ok).toBe(true);
+    const warnings = (res.ok ? (res.output as { warnings?: string[] }).warnings : []) ?? [];
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("'note_create'");
   });
 });
