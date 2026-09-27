@@ -38,7 +38,6 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
   const loginE = randomUUID();
   const spaceOf: Record<string, string> = {};
   let anchor: string;
-  let madeAnchor = false;
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-review-'));
   const reviewer = () => ({ loginId: anchor, name: 'Reviewer' });
 
@@ -83,16 +82,15 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     const sub = await admin.listen('node_ingested', (id: string) => announced.push(id));
     unlisten = () => sub.unlisten();
 
-    const found = (await exec<{ id: string | null }>(sqlTag`select mantle_brain_id() as id`))[0]
-      ?.id;
-    if (found) anchor = found;
-    else {
-      anchor = randomUUID();
-      madeAnchor = true;
-      await m.systemDb.execute(sqlTag`
-        insert into auth.users (id, email, password_hash, is_owner)
-        values (${anchor}, ${`${tag}-owner@example.invalid`}, 'x', true)`);
-    }
+    // A brain of this test's own: the reviewing admin's login and a brain
+    // space row with its id. Not mantle_brain_id(): test files run in
+    // parallel, and another file may create and delete the shared anchor.
+    anchor = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into auth.users (id, email, password_hash, role)
+      values (${anchor}, ${`${tag}-admin@example.invalid`}, 'x', 'admin')`);
+    await m.systemDb.execute(sqlTag`
+      insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`);
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values
         (${loginA}, ${`${tag}-a@example.invalid`}, 'x', 'member'),
@@ -118,11 +116,9 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     }
     await m.systemDb.execute(sqlTag`
       delete from auth.users where id in (${loginA}, ${loginB}, ${loginC}, ${loginD}, ${loginE})`);
-    if (madeAnchor) {
-      await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${anchor}`);
-      await m.systemDb.execute(sqlTag`delete from spaces where id = ${anchor}`);
-      await m.systemDb.execute(sqlTag`delete from auth.users where id = ${anchor}`);
-    }
+    await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${anchor}`);
+    await m.systemDb.execute(sqlTag`delete from spaces where login_id = ${anchor}`);
+    await m.systemDb.execute(sqlTag`delete from auth.users where id = ${anchor}`);
     await m.closeDb();
     rmSync(root, { recursive: true, force: true });
   });
