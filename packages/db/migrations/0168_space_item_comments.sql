@@ -20,6 +20,9 @@
 -- to it.
 -- Each CREATE POLICY drops its name first, so the file re-runs by hand (audit
 -- S13). The runner applies it once; boxes that already ran it are unchanged.
+-- A hand re-run restores the 0168 versions of node_comments_team_drafts_read
+-- and node_comments_space_update: run 0171 after it, or those two lose the
+-- review-talk and re-point rules (tests S5, S6).
 ALTER TABLE "public"."node_comments" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 DROP POLICY IF EXISTS "node_comments_space_read" ON "public"."node_comments";
