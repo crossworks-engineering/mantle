@@ -171,6 +171,56 @@ describe.skipIf(!URL)('member personal space: comments and change events', () =>
     expect(bodies).not.toContain('forged');
   });
 
+  it('an owner read never reaches a personal item’s thread (S7)', async () => {
+    const nc = await import('./node-comments');
+    const [first] = (await asA(() => cm.listMineComments(spaceA, pageId)))!;
+    // Stored with the brain's id, but the node is a space's: not the owner's.
+    expect(await nc.listNodeComments(anchor, pageId)).toEqual([]);
+    expect(await nc.getNodeComment(anchor, first!.id)).toBeNull();
+    expect(await nc.deleteNodeComment(anchor, first!.id)).toBe(false);
+    // The brain's own thread still reads.
+    expect((await nc.listNodeComments(anchor, brainPage)).map((c) => c.body)).toEqual([
+      'admin only talk',
+    ]);
+  });
+
+  it('the owner comments channel carries brain nodes only (S7)', async () => {
+    const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
+      .$client;
+    const seen: string[] = [];
+    const sub = await admin.listen('comments_changed', (p: string) => {
+      seen.push(String(JSON.parse(p)?.nodeId));
+    });
+    try {
+      await asA(() => cm.addMineComment(spaceA, anchor, pageId, A, 'quiet'));
+      await m.systemDb.execute(sqlTag`
+        insert into node_comments (owner_id, node_id, author_kind, login_id, author_name, body)
+        values (${anchor}, ${brainPage}, 'owner', ${anchor}, 'Admin', 'loud')`);
+      await settle();
+      expect(seen).toContain(brainPage);
+      expect(seen).not.toContain(pageId);
+    } finally {
+      await sub.unlisten();
+      await m.systemDb.execute(
+        sqlTag`delete from node_comments where node_id = ${brainPage} and body = 'loud'`,
+      );
+      const mine = (await asA(() => cm.listMineComments(spaceA, pageId)))!;
+      const quiet = mine.find((c) => c.body === 'quiet');
+      if (quiet) await asA(() => cm.deleteMineComment(spaceA, pageId, quiet.id));
+    }
+  });
+
+  it('only the level roles may map a login to its space (S10)', async () => {
+    const denied = await asA(() =>
+      m.db.execute(sqlTag`select mantle_personal_space(${loginB}::uuid) as id`),
+    ).catch((err: { cause?: { code?: string } }) => err.cause?.code);
+    expect(denied).toBe('42501');
+    const rows = (await m.withViewer('team', () =>
+      m.db.execute(sqlTag`select mantle_personal_space(${loginB}::uuid) as id`),
+    )) as unknown as { id: string }[];
+    expect(rows[0]?.id).toBe(spaceB);
+  });
+
   it('nobody deletes another login’s comment', async () => {
     const [first, reply] = (await asA(() => cm.listMineComments(spaceA, pageId)))!;
     expect(await m.withTeamDrafts(() => cm.deleteTeamDraftComment(pageId, loginB, first!.id))).toBe(
@@ -219,6 +269,8 @@ describe.skipIf(!URL)('member personal space: comments and change events', () =>
       'created:false',
       'state:true', // shared
       'comment:true',
+      'comment:true',
+      'comment:true', // S7's quiet comment and its delete
       'comment:true',
       'comment:true', // the teammate's delete
       'state:true', // unshared: teammates must drop it

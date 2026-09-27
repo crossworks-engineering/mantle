@@ -8,7 +8,7 @@
  * DTO mapping: `mine` is viewer-relative, so the lib returns raw records and
  * `toNodeCommentDto` computes `mine` from the viewer the route resolved.
  */
-import { and, asc, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { agents, db, nodeComments, nodes, shares, type NodeCommentDbRow } from '@mantle/db';
 import type { NodeComment, NodeCommentAuthorKind } from '@mantle/client-types';
 export type { NodeComment, NodeCommentAuthorKind };
@@ -57,6 +57,18 @@ export function toNodeCommentDto(row: NodeCommentDbRow, viewer: CommentViewer): 
   };
 }
 
+/**
+ * The comment sits on one of the owner's OWN nodes (audit S7). A personal
+ * item's thread is stored with the brain's id too (so it survives Accept),
+ * but the node belongs to a space: without this an admin who knows the id
+ * would read, edit or delete a member's thread after it went private.
+ */
+const onOwnersNode = (ownerId: string) =>
+  inArray(
+    nodeComments.nodeId,
+    db.select({ id: nodes.id }).from(nodes).where(eq(nodes.ownerId, ownerId)),
+  );
+
 /** The thread, oldest first. Empty when the node isn't this owner's. */
 export async function listNodeComments(
   ownerId: string,
@@ -65,7 +77,13 @@ export async function listNodeComments(
   return db
     .select()
     .from(nodeComments)
-    .where(and(eq(nodeComments.ownerId, ownerId), eq(nodeComments.nodeId, nodeId)))
+    .where(
+      and(
+        eq(nodeComments.ownerId, ownerId),
+        eq(nodeComments.nodeId, nodeId),
+        onOwnersNode(ownerId),
+      ),
+    )
     .orderBy(asc(nodeComments.createdAt));
 }
 
@@ -76,7 +94,9 @@ export async function getNodeComment(
   const [row] = await db
     .select()
     .from(nodeComments)
-    .where(and(eq(nodeComments.id, commentId), eq(nodeComments.ownerId, ownerId)))
+    .where(
+      and(eq(nodeComments.id, commentId), eq(nodeComments.ownerId, ownerId), onOwnersNode(ownerId)),
+    )
     .limit(1);
   return row ?? null;
 }
@@ -144,7 +164,9 @@ export async function updateNodeComment(
   const [row] = await db
     .update(nodeComments)
     .set({ body: text, editedAt: new Date() })
-    .where(and(eq(nodeComments.id, commentId), eq(nodeComments.ownerId, ownerId)))
+    .where(
+      and(eq(nodeComments.id, commentId), eq(nodeComments.ownerId, ownerId), onOwnersNode(ownerId)),
+    )
     .returning();
   return row ?? null;
 }
@@ -175,7 +197,9 @@ export async function isNodeTeamVisible(ownerId: string, nodeId: string): Promis
 export async function deleteNodeComment(ownerId: string, commentId: string): Promise<boolean> {
   const rows = await db
     .delete(nodeComments)
-    .where(and(eq(nodeComments.id, commentId), eq(nodeComments.ownerId, ownerId)))
+    .where(
+      and(eq(nodeComments.id, commentId), eq(nodeComments.ownerId, ownerId), onOwnersNode(ownerId)),
+    )
     .returning({ id: nodeComments.id });
   return rows.length > 0;
 }

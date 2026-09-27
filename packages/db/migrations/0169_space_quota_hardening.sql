@@ -28,3 +28,34 @@ DROP POLICY IF EXISTS "space_uploads_space_insert" ON "public"."space_uploads";
 CREATE POLICY "space_uploads_space_insert" ON "public"."space_uploads" FOR INSERT
   TO mantle_view_space
   WITH CHECK ("space_id" = "public"."mantle_space_id"());
+--> statement-breakpoint
+-- S7: the owner's comments channel (0149) carried personal items too: the
+-- owner SSE got a member's personal node ids and the timing of their threads.
+-- Notify only for comments on BRAIN nodes. SECURITY DEFINER so the node
+-- lookup is not hidden by the writer's row rules; the search_path is pinned.
+create or replace function "public"."notify_comments_changed"()
+  returns trigger language plpgsql security definer
+  set search_path = pg_catalog, public as $$
+declare
+  r record;
+begin
+  if tg_op = 'DELETE' then r := old; else r := new; end if;
+  if exists (select 1 from "public"."nodes" n
+              where n.id = r.node_id and "public"."mantle_is_brain_space"(n.owner_id)) then
+    perform pg_notify(
+      'comments_changed',
+      json_build_object('ownerId', r.owner_id, 'nodeId', r.node_id)::text
+    );
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
+end
+$$;
+--> statement-breakpoint
+-- S10: mantle_personal_space(login) maps a login to its space. It is for the
+-- my-space agent tools, which run in an agent turn at a limited level; the
+-- personal-space role and any other role have no use for it.
+REVOKE EXECUTE ON FUNCTION "public"."mantle_personal_space"(uuid) FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION "public"."mantle_personal_space"(uuid)
+  TO mantle_view_team, mantle_view_client, mantle_view_public;
