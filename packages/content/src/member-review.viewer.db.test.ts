@@ -437,10 +437,14 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
     expect(existsSync(path.join(root, 'table-dbs', D))).toBe(false);
   });
 
-  it('an active login is never purged', async () => {
+  it('a login enabled again is never purged', async () => {
     const E = spaceOf[loginE]!;
     const p = await as(loginE, () => sp.createMineItem(E, { type: 'page', title: `${tag} e` }));
-    await pg.purgeDeactivatedSpaces({ graceDays: 0 });
+    await m.systemDb.execute(
+      sqlTag`update auth.users set disabled_at = now() - interval '40 days' where id = ${loginE}`,
+    );
+    await m.systemDb.execute(sqlTag`update auth.users set disabled_at = null where id = ${loginE}`);
+    await pg.purgeDeactivatedSpaces();
     expect(await ownerOf(p.id)).toBe(E);
   });
 });
