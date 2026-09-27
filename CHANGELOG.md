@@ -4,6 +4,14 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.286: member uploads with a taken name; client v0.6.153
+
+- A member uploading a file whose name their space already holds got a 500;
+  it now files as `name-2.ext` (the rule Accept uses).
+- Paired with jackdaw v0.6.153: the Accepted source on each member screen,
+  the author byline, and the member-authored badge in the Library and the
+  admin Access panel.
+
 ## 0.232.285: what a member wrote stays theirs to read (Phase 4 "not yet")
 
 - A member lists what they wrote and an admin accepted
