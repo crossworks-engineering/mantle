@@ -150,6 +150,8 @@ describe.skipIf(!URL)('apps for members', () => {
     expect(await ma.resolveMemberHomeApp(anchor, ids.team)).toEqual({
       appId: ids.team,
       title: `${tag} b team`,
+      icon: null,
+      color: null,
     });
     expect(await ma.resolveMemberHomeApp(anchor, ids.admin)).toBeNull();
     expect(await ma.resolveMemberHomeApp(anchor, ids.draftOnly)).toBeNull();
