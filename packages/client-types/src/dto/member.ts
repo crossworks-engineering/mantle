@@ -5,6 +5,7 @@
  * its own thread.
  */
 import type { AccessLevel } from './access';
+import type { MemberItemKind } from '../member-kinds';
 
 /** GET /api/member/shell */
 export type MemberShell = {
@@ -30,7 +31,7 @@ export type MemberShell = {
   logoDarkVersion: string | null;
 };
 
-export type MemberLibraryKind = 'page' | 'note' | 'draw' | 'table' | 'file';
+export type MemberLibraryKind = MemberItemKind;
 
 export type MemberLibraryRow = {
   id: string;
@@ -79,4 +80,61 @@ export type MemberChatThread = {
    *  (POST answers 409). Absent from brains before 0.232.260. */
   linked?: boolean;
   messages: MemberChatMessage[];
+};
+
+// ── Personal spaces (member logins Phase 2) ──────────────────────────────
+
+export type MemberSpaceSharing = 'private' | 'team';
+export type MemberReviewState = 'draft' | 'submitted' | 'returned' | 'accepted';
+
+/** One item of a personal space: GET /api/member/space[/team] rows. */
+export type MemberSpaceItemRow = {
+  id: string;
+  type: MemberItemKind;
+  title: string;
+  icon: string | null;
+  sharing: MemberSpaceSharing;
+  reviewState: MemberReviewState;
+  submittedAt: string | null;
+  returnedNote: string | null;
+  /** The login that wrote it (team drafts show whose it is). */
+  authorLoginId: string | null;
+  updatedAt: string;
+};
+
+/** GET /api/member/space?kind=&q=&page= (and /space/team) */
+export type MemberSpaceList = {
+  items: MemberSpaceItemRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+/** A space file's metadata; the bytes stream from the item's bytes route. */
+export type MemberSpaceFile = {
+  id: string;
+  filename: string;
+  extension: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256: string | null;
+};
+
+/**
+ * An item's body. The page, drawing and table shapes are the brain's own
+ * editor models (content-core); the contract leaves them to the client, which
+ * narrows them with `TDoc` / `TTable`.
+ */
+export type MemberSpaceItemBody<TDoc = unknown, TTable = unknown> =
+  | { type: 'page'; page: { doc: TDoc; draft: TDoc | null; draftRev?: number; title: string } }
+  | { type: 'note'; note: { content: string; title: string } }
+  /** Null for a teammate: their drawing shows from its saved SVG route. */
+  | { type: 'draw'; draw: { scene: TDoc; draft: TDoc | null; draftRev?: number } | null }
+  | { type: 'table'; table: TTable }
+  | { type: 'file'; file: MemberSpaceFile };
+
+/** GET /api/member/space/:id (and the team read): the row and its body. */
+export type MemberSpaceItem<TDoc = unknown, TTable = unknown> = {
+  row: MemberSpaceItemRow;
+  body: MemberSpaceItemBody<TDoc, TTable>;
 };

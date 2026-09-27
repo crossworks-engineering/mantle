@@ -82,6 +82,10 @@ gh run watch "$(gh run list -w release -L1 --json databaseId -q '.[0].databaseId
 
 # ── 1. (VPS) BACK UP THE BRAIN — cheap insurance, mandatory before a migration ─
 ssh mantle-prod 'cd ~/mantle && bash scripts/db-dump.sh'      # → backups/mantle-<ts>.dump
+#   A full backup is FOUR files with one timestamp: mantle-<ts>.dump plus the
+#   app-dbs, table-dbs and spaces .tgz archives. No spaces archive = the box
+#   still runs a db-dump.sh from before 0.232.271 (a roll refreshes it); the
+#   members' personal files are then not in that backup.
 
 # ── 2. (VPS) pull the new multi-arch image (.env tracks :latest) ──────────────
 ssh mantle-prod 'cd ~/mantle && docker compose pull'

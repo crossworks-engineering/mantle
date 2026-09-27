@@ -18,11 +18,17 @@
 -- The brain test is mantle_is_brain_space() (0165, security definer): the
 -- space role holds no grant on auth.users, so mantle_brain_id() is not open
 -- to it.
+-- Each CREATE POLICY drops its name first, so the file re-runs by hand (audit
+-- S13). The runner applies it once; boxes that already ran it are unchanged.
 ALTER TABLE "public"."node_comments" ENABLE ROW LEVEL SECURITY;
+--> statement-breakpoint
+DROP POLICY IF EXISTS "node_comments_space_read" ON "public"."node_comments";
 --> statement-breakpoint
 CREATE POLICY "node_comments_space_read" ON "public"."node_comments" FOR SELECT
   TO mantle_view_space
   USING (EXISTS (SELECT 1 FROM "public"."nodes" n WHERE n.id = "node_comments"."node_id"));
+--> statement-breakpoint
+DROP POLICY IF EXISTS "node_comments_space_insert" ON "public"."node_comments";
 --> statement-breakpoint
 CREATE POLICY "node_comments_space_insert" ON "public"."node_comments" FOR INSERT
   TO mantle_view_space
@@ -31,16 +37,22 @@ CREATE POLICY "node_comments_space_insert" ON "public"."node_comments" FOR INSER
               AND "login_id" = "public"."mantle_login_id"()
               AND "public"."mantle_is_brain_space"("owner_id"));
 --> statement-breakpoint
+DROP POLICY IF EXISTS "node_comments_space_update" ON "public"."node_comments";
+--> statement-breakpoint
 CREATE POLICY "node_comments_space_update" ON "public"."node_comments" FOR UPDATE
   TO mantle_view_space
   USING (EXISTS (SELECT 1 FROM "public"."nodes" n WHERE n.id = "node_comments"."node_id")
          AND "login_id" = "public"."mantle_login_id"())
   WITH CHECK ("login_id" = "public"."mantle_login_id"() AND "author_kind" = 'member');
 --> statement-breakpoint
+DROP POLICY IF EXISTS "node_comments_space_delete" ON "public"."node_comments";
+--> statement-breakpoint
 CREATE POLICY "node_comments_space_delete" ON "public"."node_comments" FOR DELETE
   TO mantle_view_space
   USING (EXISTS (SELECT 1 FROM "public"."nodes" n WHERE n.id = "node_comments"."node_id")
          AND "login_id" = "public"."mantle_login_id"());
+--> statement-breakpoint
+DROP POLICY IF EXISTS "node_comments_team_drafts_read" ON "public"."node_comments";
 --> statement-breakpoint
 CREATE POLICY "node_comments_team_drafts_read" ON "public"."node_comments" FOR SELECT
   TO mantle_view_team

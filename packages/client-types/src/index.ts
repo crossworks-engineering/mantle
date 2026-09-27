@@ -47,8 +47,16 @@ export type {
   MemberLibraryKind,
   MemberLibraryPage,
   MemberLibraryRow,
+  MemberReviewState,
   MemberShell,
+  MemberSpaceFile,
+  MemberSpaceItem,
+  MemberSpaceItemBody,
+  MemberSpaceItemRow,
+  MemberSpaceList,
+  MemberSpaceSharing,
 } from './dto/member';
+export type { MemberItemKind } from './member-kinds';
 
 // Types only at the root; the runtime constants (APP_TINTS, limits) are the
 // `@mantle/client-types/app-nav` subpath.

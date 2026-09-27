@@ -34,6 +34,17 @@ import {
   type SpaceSharing,
 } from '@mantle/db';
 import { existsSync } from 'node:fs';
+import type {
+  MemberReviewState,
+  MemberSpaceFile,
+  MemberSpaceItemBody,
+  MemberSpaceItemRow,
+  MemberSpaceSharing,
+} from '@mantle/client-types';
+import {
+  MEMBER_ITEM_KINDS as SPACE_ITEM_KINDS,
+  type MemberItemKind as SpaceItemKind,
+} from '@mantle/client-types/member-kinds';
 import { createDraw, deleteDraw, getDraw, getDrawSvg, updateDraw, type DrawDetail } from './draws';
 import { createNote, deleteNote, getNote, updateNote, type NoteRow } from './notes';
 import { getPage } from './pages/read';
@@ -70,26 +81,15 @@ export { SPACE_ITEM_LIMIT, SpaceItemStateError, assertItemRoom } from './member-
 /** What a personal space holds. A table's workbook sits under
  *  TABLE_DB_DIR/<spaceId>/; a file's bytes under MANTLE_SPACES_ROOT/<spaceId>/
  *  (member-space-files.ts). */
-export const SPACE_ITEM_KINDS = ['page', 'note', 'draw', 'table', 'file'] as const;
-export type SpaceItemKind = (typeof SPACE_ITEM_KINDS)[number];
+export {
+  MEMBER_ITEM_KINDS as SPACE_ITEM_KINDS,
+  isMemberItemKind as isSpaceItemKind,
+  type MemberItemKind as SpaceItemKind,
+} from '@mantle/client-types/member-kinds';
 
-export function isSpaceItemKind(v: unknown): v is SpaceItemKind {
-  return typeof v === 'string' && (SPACE_ITEM_KINDS as readonly string[]).includes(v);
-}
-
-export type SpaceItemRow = {
-  id: string;
-  type: SpaceItemKind;
-  title: string;
-  icon: string | null;
-  sharing: SpaceSharing;
-  reviewState: ReviewState;
-  submittedAt: string | null;
-  returnedNote: string | null;
-  /** The login that wrote it (team drafts show whose it is). */
-  authorLoginId: string | null;
-  updatedAt: string;
-};
+/** The row is the published contract's own type (audit M3), so the wire
+ *  shape the client reads cannot drift from what the brain sends. */
+export type SpaceItemRow = MemberSpaceItemRow;
 
 /** Team drafts run on the team role with the human flag; never at admin. */
 function requireTeamDrafts(): void {
@@ -200,6 +200,18 @@ export type SpaceItemBody =
   | { type: 'table'; table: TableDetail }
   /** The metadata; the bytes stream from the item's bytes route. */
   | { type: 'file'; file: SpaceFile };
+
+// Compile-time locks (audit M3): what the brain sends must fit the published
+// contract, and the database's enums must equal the contract's. Changing
+// either side without the other fails the typecheck here.
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+const contractLocks: [
+  SpaceItemBody extends MemberSpaceItemBody ? true : false,
+  Same<SpaceSharing, MemberSpaceSharing>,
+  Same<ReviewState, MemberReviewState>,
+  Same<SpaceFile, MemberSpaceFile>,
+] = [true, true, true, true];
+void contractLocks;
 
 /** One own item with its body, drafts included (the author's working copy). */
 export async function getMineItem(

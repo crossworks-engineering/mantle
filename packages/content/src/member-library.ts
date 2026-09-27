@@ -20,14 +20,20 @@ import { asViewerLevel, currentViewerLevel, db, nodes, type ViewerLevel } from '
 import { getNote } from './notes';
 import { getPage } from './pages/read';
 import { getTable } from './tables/read';
+import {
+  MEMBER_ITEM_KINDS as LIBRARY_KINDS,
+  isMemberItemKind as isLibraryKind,
+  type MemberItemKind as LibraryKind,
+} from '@mantle/client-types/member-kinds';
 
-/** What the Library lists. Folders, apps and formulas come later. */
-export const LIBRARY_KINDS = ['page', 'note', 'draw', 'table', 'file'] as const;
-export type LibraryKind = (typeof LIBRARY_KINDS)[number];
-
-export function isLibraryKind(v: unknown): v is LibraryKind {
-  return typeof v === 'string' && (LIBRARY_KINDS as readonly string[]).includes(v);
-}
+/** What the Library lists: the member item kinds, the one list shared with
+ *  personal spaces and the client (audit M2). Folders, apps and formulas
+ *  come later. */
+export {
+  MEMBER_ITEM_KINDS as LIBRARY_KINDS,
+  isMemberItemKind as isLibraryKind,
+  type MemberItemKind as LibraryKind,
+} from '@mantle/client-types/member-kinds';
 
 export type LibraryRow = {
   id: string;
