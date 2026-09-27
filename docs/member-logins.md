@@ -172,10 +172,13 @@ bind mount (`/data/spaces` in docker-compose.yml, mounted into web and api),
 deliberately outside the brain's files tree, so the files watcher never sees
 it. The file node's path is `space_files`, not under `files`, so every brain
 file helper resolves no disk path for it. The filename is metadata (a rename
-touches no disk). `scripts/db-dump.sh` tars the root to
-`backups/mantle-spaces-<ts>.tgz`. A production process without
-`MANTLE_SPACES_ROOT` answers member uploads 503 instead of writing into the
-container.
+touches no disk). `scripts/db-dump.sh` and the scheduled backup tar the root
+to `backups/mantle-spaces-<ts>.tgz`; `scripts/db-restore.sh` puts it back with
+the dump. Only web, api and the events worker (which runs the scheduled
+backup, read-only mount) carry `MANTLE_SPACES_ROOT`; a production process
+without it answers member uploads 503 instead of writing into the container.
+A delete unlinks the bytes only after the space transaction commits, and a
+create that rolls back removes the bytes it wrote.
 
 **The embed rule.** Save version refuses a page that embeds or links
 anything other than the member's own items and Library items (409 `embed`

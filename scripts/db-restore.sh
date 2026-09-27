@@ -8,6 +8,12 @@
 #   3. scripts/db-restore.sh backups/mantle-<ts>.dump
 #   4. docker compose up -d --wait               # migrate is now a no-op; app starts
 #
+# Members' personal-space file bytes come back in the same step: when a
+# mantle-spaces-<ts>.tgz with the dump's timestamp sits next to the dump (both
+# db-dump.sh and the scheduled backup write one), it is untarred into
+# ${MANTLE_DATA_DIR:-./data}/spaces, only if that folder is still empty.
+# MANTLE_SPACES_ARCHIVE=<path> names another archive.
+#
 # Because the init scripts pre-create the `auth` schema, `auth.users`, and the
 # pgvector/ltree/… extensions, pg_restore will print a handful of "already
 # exists" notices for THOSE objects — that is expected and harmless (they're
@@ -80,5 +86,29 @@ if [ "$RLS_LOST" = "t" ]; then
   echo "  Team-level agents will see nothing until they are recreated (see migration 0159)." >&2
 fi
 echo "✔ Restore complete — public.nodes now has $N rows."
+
+# Personal-space file bytes (member logins). The rows restored above point at
+# them; without them every member file answers "gone".
+DATA_DIR="${MANTLE_DATA_DIR:-}"
+if [ -z "$DATA_DIR" ] && [ -f .env ]; then
+  DATA_DIR="$(sed -n 's/^MANTLE_DATA_DIR=//p' .env | tail -1 | tr -d "\"'")"
+fi
+DATA_DIR="${DATA_DIR:-./data}"
+STAMP="$(basename "$DUMP" .dump)"
+STAMP="${STAMP#mantle-}"
+SPACES_TGZ="${MANTLE_SPACES_ARCHIVE:-$(dirname "$DUMP")/mantle-spaces-${STAMP}.tgz}"
+SPACES_DIR="$DATA_DIR/spaces"
+if [ ! -f "$SPACES_TGZ" ]; then
+  echo "▷ no personal-space archive at $SPACES_TGZ — member files not restored (none backed up, or pass MANTLE_SPACES_ARCHIVE=<tgz>)."
+elif [ -d "$SPACES_DIR" ] && [ -n "$(ls -A "$SPACES_DIR" 2>/dev/null | grep -vx '.upload-spool')" ]; then
+  echo "⚠ $SPACES_DIR is not empty — member files NOT restored. Untar $SPACES_TGZ there by hand if you mean it." >&2
+else
+  mkdir -p "$SPACES_DIR"
+  tar -C "$SPACES_DIR" -xzf "$SPACES_TGZ"
+  echo "✔ Restored personal-space files → $SPACES_DIR"
+fi
+
 echo "  Next:  docker compose up -d --wait    (migrate will be a no-op)"
 echo "  Don't forget the file bytes:  rsync your \$MANTLE_DATA_DIR/{files,rustfs} across too."
+echo "  Table workbooks: untar mantle-table-dbs-<ts>.tgz into \$MANTLE_DATA_DIR/table-dbs;"
+echo "  app databases: scripts/app-dbs-restore.sh after the stack is up."

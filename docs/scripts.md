@@ -286,13 +286,17 @@ Refuses when the tree is dirty unless you pass `-f`.
 
 ### `pnpm db:dump` → `scripts/db-dump.sh`
 
-Backs up **all three halves** of a running stack's state into `./backups`:
+Backs up **all four parts** of a running stack's state into `./backups`:
 
-| Output                      | What                                         | Restore with                            |
-| --------------------------- | -------------------------------------------- | --------------------------------------- |
-| `mantle-<ts>.dump`          | Postgres (`pg_dump -Fc --no-owner`)          | `scripts/db-restore.sh`                 |
-| `mantle-app-dbs-<ts>.tgz`   | per-app SQLite (`/apps` databases)           | `scripts/app-dbs-restore.sh`            |
-| `mantle-table-dbs-<ts>.tgz` | file-backed table workbooks (`TABLE_DB_DIR`) | untar into `$MANTLE_DATA_DIR/table-dbs` |
+| Output                      | What                                                      | Restore with                                    |
+| --------------------------- | --------------------------------------------------------- | ----------------------------------------------- |
+| `mantle-<ts>.dump`          | Postgres (`pg_dump -Fc --no-owner`)                       | `scripts/db-restore.sh`                         |
+| `mantle-app-dbs-<ts>.tgz`   | per-app SQLite (`/apps` databases)                        | `scripts/app-dbs-restore.sh`                    |
+| `mantle-table-dbs-<ts>.tgz` | file-backed table workbooks (`TABLE_DB_DIR`)              | untar into `$MANTLE_DATA_DIR/table-dbs`         |
+| `mantle-spaces-<ts>.tgz`    | members' personal-space file bytes (`MANTLE_SPACES_ROOT`) | `scripts/db-restore.sh` (same step as the dump) |
+
+The scheduled backup (`/settings/backups`) writes the same `mantle-spaces-<ts>.tgz`
+next to its dump.
 
 The SQLite halves live on a **separate volume from Postgres**, so `pg_dump`
 alone would silently miss them. They're snapshotted with `VACUUM INTO` inside
@@ -318,8 +322,13 @@ docker compose up -d --wait              # migrate is now a no-op
 Because the init scripts pre-create `auth`, `auth.users` and the extensions,
 `pg_restore` prints benign "already exists" notices for those, expected. The
 script doesn't trust the exit code; it verifies by counting `public.nodes`
-afterwards. It **refuses to restore over a populated brain**. Don't forget the
-file bytes: rsync `$MANTLE_DATA_DIR/{files,rustfs}` across too.
+afterwards. It **refuses to restore over a populated brain**. It then puts the
+members' personal-space files back: when `mantle-spaces-<ts>.tgz` with the
+dump's timestamp sits next to the dump, it is untarred into
+`$MANTLE_DATA_DIR/spaces` (read from the environment or `.env`, default
+`./data`), only while that folder is empty. `MANTLE_SPACES_ARCHIVE=<tgz>` names
+another archive. Don't forget the other file bytes: rsync
+`$MANTLE_DATA_DIR/{files,rustfs}` across too.
 
 ### `scripts/app-dbs-restore.sh <tgz>`
 

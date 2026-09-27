@@ -233,6 +233,8 @@ docker compose up -d postgres --wait
 
 # 3c. Restore the DB dump you took on dev (see §4) BEFORE the app starts.
 #     A few "already exists" notices for auth/vector/ltree are expected + benign.
+#     A mantle-spaces-<ts>.tgz beside the dump (members' personal-space files)
+#     is untarred into $MANTLE_DATA_DIR/spaces in the same step.
 scripts/db-restore.sh backups/mantle-<ts>.dump
 
 # 3d. Copy the file bytes + object store from dev (bind-mount dirs → just rsync)

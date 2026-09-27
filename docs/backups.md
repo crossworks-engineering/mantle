@@ -30,8 +30,14 @@ Engine: [`packages/content/src/backup.ts`](../packages/content/src/backup.ts).
   `mantle-<ts>.dump` via a `.part` temp name (a partial dump can never be
   mistaken for a good one), then verified against the `PGDMP` magic bytes
   before being promoted.
+- Beside each dump the same run snapshots the table workbooks
+  (`mantle-table-dbs-<ts>/`), the app databases (`mantle-app-dbs-<ts>/`) and
+  members' personal-space file bytes (`mantle-spaces-<ts>.tgz`, the only copy
+  of a member's upload). Each is loud but non-fatal: a failure there never
+  spoils the Postgres dump.
 - Rotation deletes beyond `keep`, and only files matching Mantle's own
-  `mantle-*.dump` pattern, anything else in the folder is never touched.
+  `mantle-*.dump` pattern (with their siblings), anything else in the folder
+  is never touched.
 - The scheduler is a cheap tick hosted by the **events worker**: when the
   wall-clock hour in your timezone matches the configured hour (and the last
   run is old enough to rule out a double-fire), it runs. Consequence: backups
@@ -60,6 +66,7 @@ Your offsite sync should include, from `${MANTLE_DATA_DIR}` (default
 | `rustfs/` | attachment object bytes: the RustFS object store's data dir, not plain files (a restore needs the same RustFS version; see below) |
 | `minio/` | only on boxes that ran MinIO before 2026-09: the pre-switch copy kept for rollback, removable once `objectstore:verify` has been green for a couple of weeks ([deploy.md §5c](./deploy.md#5c-object-store-rustfs)) |
 | `forum-uploads/` | quarantined member forum uploads awaiting review, the ONLY copy of a pending upload until you file it |
+| `spaces/` | members' personal-space file bytes (also archived by every backup as `mantle-spaces-<ts>.tgz`) |
 
 One `rsync -a` of the `data/` directory (minus `postgres/`, the live cluster
 files are useless mid-write; the dumps are the DB backup) covers everything.
@@ -80,6 +87,10 @@ docker compose up -d postgres --wait     # init scripts recreate extensions + au
 bash scripts/db-restore.sh <path-to>/mantle-<ts>.dump
 docker compose up -d --wait
 ```
+
+`db-restore.sh` also puts members' personal-space files back from the
+`mantle-spaces-<ts>.tgz` beside the dump (into `${MANTLE_DATA_DIR}/spaces`,
+only while that folder is empty).
 
 Files, the object store, and pending forum uploads restore by putting the
 `files/`, `rustfs/`, and `forum-uploads/` directories back under

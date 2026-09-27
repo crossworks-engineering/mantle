@@ -8,7 +8,7 @@
 #      workbooks under TABLE_DB_DIR; restore: untar into ${MANTLE_DATA_DIR}/table-dbs —
 #      the archive mirrors the live <owner>/<node>.sqlite layout).
 #   4. Space files  → backups/mantle-spaces-<ts>.tgz     (member personal-space file
-#      bytes under MANTLE_SPACES_ROOT; restore: untar into ${MANTLE_DATA_DIR}/spaces).
+#      bytes under MANTLE_SPACES_ROOT; restore: scripts/db-restore.sh does it with the dump).
 #
 # Usage:   scripts/db-dump.sh
 #          MANTLE_PG_CONTAINER=other  MANTLE_APP_CONTAINER=other  scripts/db-dump.sh
@@ -119,7 +119,7 @@ else
   if docker exec "$APP_CONTAINER" sh -c \
       'tar -C "$MANTLE_SPACES_ROOT" --exclude=./.upload-spool -czf - .' > "$SPACES_OUT"; then
     echo "✔ Wrote $(du -h "$SPACES_OUT" | cut -f1) → $SPACES_OUT"
-    echo "  Restore personal-space files by untarring into \${MANTLE_DATA_DIR}/spaces"
+    echo "  scripts/db-restore.sh restores personal-space files with the dump"
   else
     rm -f "$SPACES_OUT"
     echo "⚠ personal-space archive FAILED — member files NOT backed up (Postgres dump is intact)." >&2
