@@ -212,7 +212,6 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
       lastMessageAt: dsql<string | null>`last_msg.created_at`,
       lastMessageText: dsql<string | null>`last_msg.text`,
       lastMessageDirection: dsql<string | null>`last_msg.direction`,
-      lastMessagePrivate: dsql<boolean | null>`last_msg.used_private`,
       messageCount: dsql<number>`coalesce(msg_counts.n, 0)::int`,
       // Inbound (member→brain) messages newer than the owner's read cursor —
       // a self-contained correlated subquery (no cursor row ⇒ epoch ⇒ all
@@ -236,7 +235,7 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
     .innerJoin(nodes, eq(nodes.id, contactTeamTokens.contactId))
     .leftJoin(
       dsql`lateral (
-        select tm.created_at, tm.text, tm.direction, tm.used_private
+        select tm.created_at, tm.text, tm.direction
         from team_messages tm
         where tm.owner_id = ${contactTeamTokens.ownerId}
           and tm.contact_id = ${contactTeamTokens.contactId}
@@ -265,9 +264,7 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
     memberSince: r.memberSince.toISOString(),
     tokenLastUsedAt: r.tokenLastUsedAt ? r.tokenLastUsedAt.toISOString() : null,
     lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt).toISOString() : null,
-    // An admin view (the Member chats list, team_chat_list): a private reply
-    // shows the placeholder (audit S3).
-    lastMessageText: r.lastMessagePrivate ? PRIVATE_REPLY_PLACEHOLDER : r.lastMessageText,
+    lastMessageText: r.lastMessageText,
     lastMessageDirection: (r.lastMessageDirection ?? null) as 'inbound' | 'outbound' | null,
     messageCount: r.messageCount,
     unread: r.unread,
@@ -308,12 +305,13 @@ export async function listMemberChatActivity(ownerId: string): Promise<MemberCha
       lastMessageAt: dsql<string | null>`last_msg.created_at`,
       lastMessageText: dsql<string | null>`last_msg.text`,
       lastMessageDirection: dsql<string | null>`last_msg.direction`,
+      lastMessagePrivate: dsql<boolean | null>`last_msg.used_private`,
       messageCount: dsql<number>`coalesce(msg_counts.n, 0)::int`,
     })
     .from(authUsers)
     .leftJoin(
       dsql`lateral (
-        select tm.created_at, tm.text, tm.direction
+        select tm.created_at, tm.text, tm.direction, tm.used_private
         from team_messages tm
         where tm.owner_id = ${ownerId} and tm.login_id = ${authUsers.id}
         order by tm.created_at desc
@@ -338,7 +336,9 @@ export async function listMemberChatActivity(ownerId: string): Promise<MemberCha
     email: r.email,
     active: r.role === 'member' && !r.disabledAt,
     lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt).toISOString() : null,
-    lastMessageText: r.lastMessageText,
+    // An admin view (the Member chats list, team_chat_list): a private reply
+    // shows the placeholder (audit S3).
+    lastMessageText: r.lastMessagePrivate ? PRIVATE_REPLY_PLACEHOLDER : r.lastMessageText,
     lastMessageDirection: (r.lastMessageDirection ?? null) as 'inbound' | 'outbound' | null,
     messageCount: r.messageCount,
   }));
