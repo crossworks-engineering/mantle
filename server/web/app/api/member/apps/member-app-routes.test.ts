@@ -230,8 +230,9 @@ describe('member tool broker', () => {
   });
 
   it('looks up a well-formed id in lower case and never a malformed one', async () => {
-    await toolBroker(post({ slug: 'note_list' }), params(APP.toUpperCase()));
-    expect(h.lookups).toEqual([APP]);
+    const lettered = 'abcdef12-3456-4789-8abc-def012345678';
+    await toolBroker(post({ slug: 'note_list' }), params(lettered.toUpperCase()));
+    expect(h.lookups).toEqual([lettered]);
     h.lookups.length = 0;
     const res = await toolBroker(post({ slug: 'note_list' }), params('not-a-uuid'));
     expect(res.status).toBe(404);
@@ -311,8 +312,10 @@ describe('member frame', () => {
   });
 
   it('opens the frame when the URL carries the app id in upper case', async () => {
-    const t = tokens.buildAppFrameTicket({ ownerId: ANCHOR, appId: APP, loginId: LOGIN });
-    const res = await frame(frameReq(t, APP.toUpperCase()), params(APP.toUpperCase()));
+    const lettered = 'abcdef12-3456-4789-8abc-def012345678';
+    const t = tokens.buildAppFrameTicket({ ownerId: ANCHOR, appId: lettered, loginId: LOGIN });
+    const upper = lettered.toUpperCase();
+    const res = await frame(frameReq(t, upper), params(upper));
     expect(res.status).toBe(200);
   });
 
