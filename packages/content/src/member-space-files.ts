@@ -75,14 +75,17 @@ function fileOf(node: typeof nodes.$inferSelect): SpaceFile {
   };
 }
 
-/** A display filename: the last path segment, no control characters,
- *  trimmed and bounded. Case and spaces are kept (it is a name a person
- *  reads; the bytes are stored by id, so it is never a path). */
+/** A display filename: the last path segment, no control characters and no
+ *  invisible direction or zero-width marks (`invoice` + U+202E + `fdp.exe`
+ *  reads as `invoiceexe.pdf`), trimmed and bounded. Case and spaces are kept
+ *  (it is a name a person reads; the bytes are stored by id, so it is never
+ *  a path). */
 export function cleanSpaceFilename(raw: string): string | null {
   const base = raw.replace(/^.*[\\/]/, '');
   const clean = base
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '')
     .trim()
     .slice(0, 200);
   return clean && clean !== '.' && clean !== '..' ? clean : null;
