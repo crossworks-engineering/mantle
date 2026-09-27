@@ -62,9 +62,27 @@ describe('assertSafe', () => {
     expect(() => assertSafe('  PrAgMa foreign_keys = ON')).toThrow(/not allowed/i);
   });
 
-  it('does not flag a plain VACUUM (no INTO target)', () => {
-    // `VACUUM` rewrites the app's own file in place — no file escape, so allowed.
-    expect(() => assertSafe('VACUUM')).not.toThrow();
+  it('flags a plain VACUUM too (it attaches a temp database and rewrites the file)', () => {
+    expect(() => assertSafe('VACUUM')).toThrow(/not allowed/i);
+  });
+
+  it('finds a blocked verb after a comment, inside a statement or after a semicolon', () => {
+    // Audit 2026-09-27: a first-word check let these through.
+    for (const sql of [
+      "/**/VACUUM INTO '/tmp/x.sqlite'",
+      "-- note\nVACUUM INTO '/tmp/x.sqlite'",
+      "/* a */ ATTACH DATABASE '/tmp/x.db' AS x",
+      "SELECT 1; ATTACH DATABASE '/tmp/x.db' AS x",
+      '/**/ PRAGMA journal_mode = DELETE',
+    ]) {
+      expect(() => assertSafe(sql), sql).toThrow(/not allowed/i);
+    }
+  });
+
+  it('does not flag a blocked word inside a string literal or a comment', () => {
+    expect(() => assertSafe("SELECT 'attach' AS w, 'vacuum into' AS v")).not.toThrow();
+    expect(() => assertSafe('SELECT 1 -- pragma talk')).not.toThrow();
+    expect(() => assertSafe("SELECT name FROM pragma_table_info('t')")).not.toThrow();
   });
 
   it('does not flag identifiers that merely start with a blocked word', () => {

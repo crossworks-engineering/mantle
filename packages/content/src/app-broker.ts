@@ -20,6 +20,8 @@ import { and, eq } from 'drizzle-orm';
 import { db, nodes, appDatabases } from '@mantle/db';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
+import { stripLiterals } from '@mantle/tabledb';
+import { runAppSql } from './app-sql-runner';
 
 /** Root dir for per-app SQLite files. A dedicated volume in prod (see compose);
  *  one file per app: <root>/<owner>/<app>.sqlite. When APP_DB_DIR is unset
@@ -124,8 +126,12 @@ async function openSqliteReadOnly(file: string): Promise<SqliteDb> {
   return handle;
 }
 
-/** Statements an app must not run through the broker (file/engine escapes). */
-const BLOCKED = /^\s*(attach|detach|vacuum\s+into|pragma)\b/i;
+/** Verbs an app must not use anywhere in a statement (file and engine
+ *  escapes). Checked on the text with string literals and comments stripped
+ *  (audit 2026-09-27: a leading SQL comment let VACUUM INTO pass a
+ *  first-word check), and backed by the engine authorizer in
+ *  app-sql-runner.ts, which is the real lock. */
+const BLOCKED = /\b(attach|detach|vacuum|pragma)\b/i;
 /**
  * The one PRAGMA family apps MAY run: read-only schema introspection
  * (`PRAGMA table_info(<table>)` / `table_xinfo`). Generated apps legitimately
@@ -139,9 +145,9 @@ const INTROSPECTION =
   /^\s*pragma\s+table_x?info\s*\(\s*(?:"[^"]*"|'[^']*'|`[^`]*`|\[[^\]]*\]|[A-Za-z_][A-Za-z0-9_$]*)\s*\)\s*;?\s*$/i;
 export function assertSafe(sql: string): void {
   if (INTROSPECTION.test(sql)) return;
-  if (BLOCKED.test(sql)) {
+  if (BLOCKED.test(stripLiterals(sql))) {
     throw new Error(
-      'statement not allowed (ATTACH/DETACH/PRAGMA/VACUUM INTO are blocked; the one exception is read-only `PRAGMA table_info(<table>)`)',
+      'statement not allowed (ATTACH/DETACH/PRAGMA/VACUUM are blocked; the one exception is read-only `PRAGMA table_info(<table>)`)',
     );
   }
 }
@@ -277,13 +283,12 @@ export async function appDbQuery(
   } catch {
     (await openSqlite(reg.storagePath)).close();
   }
-  const handle = await openSqliteReadOnly(reg.storagePath);
-  try {
-    const rows = handle.prepare(sql).all(...params);
-    return rows as DbRows;
-  } finally {
-    handle.close();
-  }
+  return (await runAppSql(reg.storagePath, {
+    sql,
+    params,
+    mode: 'all',
+    readOnly: true,
+  })) as DbRows;
 }
 
 /** Run a write statement against the app's own database. */
@@ -296,14 +301,13 @@ export async function appDbExec(
 ): Promise<DbExecResult> {
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
-  const handle = await openSqlite(reg.storagePath);
-  let res: DbExecResult;
-  try {
-    const r = handle.prepare(sql).run(...params);
-    res = { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) };
-  } finally {
-    handle.close();
-  }
+  await mkdir(path.dirname(reg.storagePath), { recursive: true });
+  const res = (await runAppSql(reg.storagePath, {
+    sql,
+    params,
+    mode: 'run',
+    readOnly: false,
+  })) as DbExecResult;
   // Best-effort: keep the registry's size_bytes truthful after a write (a write
   // is the only thing that grows the file). Never fail the exec over this.
   try {
@@ -501,12 +505,13 @@ export async function appDbReadQuery(
   } catch {
     return { rows: [], empty: true };
   }
-  const handle = await openSqliteReadOnly(reg.storagePath);
-  try {
-    return { rows: handle.prepare(sql).all(...params) as DbRows, empty: false };
-  } finally {
-    handle.close();
-  }
+  const rows = (await runAppSql(reg.storagePath, {
+    sql,
+    params,
+    mode: 'all',
+    readOnly: true,
+  })) as DbRows;
+  return { rows, empty: false };
 }
 
 /** The app's live table/view schema, read from `sqlite_master` (the actual

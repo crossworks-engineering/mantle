@@ -38,6 +38,7 @@ export {
   SQL_ROW_CAP_MAX,
   assertReadOnlySelect,
   runTableSql,
+  stripLiterals,
 } from './sql-runner';
 export type { SqlRunResult } from './sql-runner';
 
