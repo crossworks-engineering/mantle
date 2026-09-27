@@ -343,4 +343,7 @@ read-only, so it never deletes rows and keeps their bytes. A login enabled
 again before the 30 days keeps everything.
 
 **Not yet:** the author's own list of what was accepted (the item leaves
-Mine on Accept), a "member-authored" badge on accepted items.
+Mine on Accept; accepted at team or above, the author finds it in the
+Library), read access for the author to an item accepted at admin (plan
+6.2: another of their items that shows an accepted image then shows it
+broken), a "member-authored" badge on accepted items.

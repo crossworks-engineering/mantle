@@ -589,10 +589,11 @@ async function freeFileName(tx: Tx, brainId: string, folder: string, wanted: str
 
 /**
  * Accept a reviewable item into the brain (plan 6.2). One transaction: lock
- * the item's state row (a Recall that lands first wins: not found), compute the bundle, re-own every item in it (same ids), move its
- * bytes, mark every space_items row accepted (the row stays: it records the
- * author), discard leftover drafts, set the level, and announce each moved
- * item to the extractor once. Then, after the commit, the bytes are put in
+ * the item's state row (a Recall that lands first wins: not found), compute
+ * the bundle, re-own every item in it (same ids), stage its bytes, mark every
+ * space_items row accepted (the row stays: it records the author), discard
+ * leftover drafts, set the level, and announce each moved item to the
+ * extractor once. Then, after the commit, the bytes are put in
  * place and the item's link follows its level.
  */
 export async function acceptReviewItem(
