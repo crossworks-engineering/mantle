@@ -84,8 +84,8 @@ not something an owner chose. To list an item to members, set it to Team.
   team daily cap. The admin reads member chats in `/team-admin` > Member
   chats (`GET /api/team-admin/member-chats`) and with the `team_chat_list` /
   `team_chat_read` tools (`loginId`).
-- **Not yet:** accept and return by an admin (Phase 4), running apps (Phase
-  4b), attachments in chat. Own items: section 5.
+- **Not yet:** running apps (Phase 4b), attachments in chat. Own items:
+  section 5; review by an admin: section 6.
 
 ## 4. Turning it on for a brain
 
@@ -136,24 +136,24 @@ can never set accepted.
 **Routes** (all in `MEMBER_ROUTES`, all through `inMySpace` or
 `withTeamDrafts`):
 
-| Route                                           | What                                            |
-| ----------------------------------------------- | ----------------------------------------------- |
-| `GET/POST /api/member/space`                    | List Mine; create a page, note, drawing, table  |
-| `GET/PATCH/DELETE /api/member/space/:id`        | One item with its body; rename; delete          |
+| Route                                           | What                                                |
+| ----------------------------------------------- | --------------------------------------------------- |
+| `GET/POST /api/member/space`                    | List Mine; create a page, note, drawing, table      |
+| `GET/PATCH/DELETE /api/member/space/:id`        | One item with its body; rename; delete              |
 | `PUT /api/member/space/:id/draft`               | Autosave `{ doc \| scene \| table \| ops, if_rev }` |
-| `POST /api/member/space/:id/save`               | Save version `{ doc \| scene, if_rev, svg? }`   |
-| `POST /api/member/space/:id/share`              | `{ sharing: 'private' \| 'team' }`              |
-| `POST /api/member/space/:id/submit`             | Submit the saved version for review             |
-| `POST /api/member/space/:id/recall`             | Take a submitted item back                      |
-| `POST /api/member/space-files`                  | Upload a file (multipart, one `file` part)      |
-| `GET /api/member/space/:id/bytes`               | An own file's bytes (`?thumb=1`: thumbnail)     |
-| `GET /api/member/team-drafts[/:id]`             | Teammates' shared items, saved version only     |
-| `GET /api/member/team-drafts/:id/bytes`         | A teammate's team-shared file                   |
-| `GET/POST /api/member/space/:id/comments`       | The thread on an own item (shared or submitted) |
-| `DELETE …/space/:id/comments/:commentId`        | Remove an own comment                           |
-| `GET/POST /api/member/team-drafts/:id/comments` | The thread on a teammate's shared item          |
-| `DELETE …/team-drafts/:id/comments/:commentId`  | Remove an own comment                           |
-| `GET /api/member/realtime`                      | SSE: own and team-shared item changes           |
+| `POST /api/member/space/:id/save`               | Save version `{ doc \| scene, if_rev, svg? }`       |
+| `POST /api/member/space/:id/share`              | `{ sharing: 'private' \| 'team' }`                  |
+| `POST /api/member/space/:id/submit`             | Submit the saved version for review                 |
+| `POST /api/member/space/:id/recall`             | Take a submitted item back                          |
+| `POST /api/member/space-files`                  | Upload a file (multipart, one `file` part)          |
+| `GET /api/member/space/:id/bytes`               | An own file's bytes (`?thumb=1`: thumbnail)         |
+| `GET /api/member/team-drafts[/:id]`             | Teammates' shared items, saved version only         |
+| `GET /api/member/team-drafts/:id/bytes`         | A teammate's team-shared file                       |
+| `GET/POST /api/member/space/:id/comments`       | The thread on an own item (shared or submitted)     |
+| `DELETE …/space/:id/comments/:commentId`        | Remove an own comment                               |
+| `GET/POST /api/member/team-drafts/:id/comments` | The thread on a teammate's shared item              |
+| `DELETE …/team-drafts/:id/comments/:commentId`  | Remove an own comment                               |
+| `GET /api/member/realtime`                      | SSE: own and team-shared item changes               |
 
 The draft and save routes keep the owner routes' etag contract (`if_rev` in,
 `draft_rev` out, 409 with `current_rev`). State refusals answer 409 with a
@@ -214,8 +214,9 @@ full. Every quota check takes a per-space advisory lock, so two parallel
 writes cannot both pass the same headroom.
 
 **Deleting a login** leaves its space and items behind (`login_id` goes
-null); deleting a space deletes its items. The 30-day purge of a deactivated
-member's private items comes with the deactivation flow (Phase 4).
+null); deleting a space deletes its rows, never its bytes on its own. A
+DEACTIVATED login's private items are purged after 30 days, rows and bytes
+(section 6).
 
 **Rollback.** 0165 is safe under older code: the brain row keeps every
 existing owner id valid. Once personal items exist, never roll back below
@@ -271,4 +272,75 @@ images (the routes store no scene files); a table edits one tab at a time
 with no import, tab editing or cross-tab references. The page editor keeps
 `@` as plain text for a member: there is no member mention source yet.
 
-**Not yet:** the admin review screen (Phase 4).
+## 6. Review and accept (Phase 4)
+
+**What an admin sees of a space.** Exactly two things, named in every query
+of `packages/content/src/member-review.ts` (the admin pool bypasses row
+security, so the rule lives in the query): an item SUBMITTED for review, and
+an item a deactivated (or deleted) login left SHARED with the team. Never a
+private item: every review route answers an id of a private item, of a
+recalled item and of one another admin already handled with the same 404,
+so nothing tells them apart. Chat replies marked `used_private` stay
+redacted for admins (section 5).
+
+**Routes** (owner only, `/team-admin` > Review in the client):
+
+| Route                                               | What                                             |
+| --------------------------------------------------- | ------------------------------------------------ |
+| `GET /api/team-admin/submissions`                   | The queue: submitted (oldest first), left behind |
+| `GET /api/team-admin/submissions/:id[?tab=]`        | The saved body (never a draft) and the thread    |
+| `GET /api/team-admin/submissions/:id/bundle`        | What Accept would move, links that stay behind   |
+| `GET /api/team-admin/submissions/:id/bytes[?node=]` | The file, or a file in its bundle (`?thumb=1`)   |
+| `GET /api/team-admin/submissions/:id/svg[?node=]`   | A drawing's saved SVG, or one in its bundle      |
+| `GET/POST /api/team-admin/submissions/:id/comments` | The thread; the reviewer's review talk           |
+| `DELETE …/submissions/:id/comments/:commentId`      | Take back an own review comment                  |
+| `POST /api/team-admin/submissions/:id/accept`       | `{ audience?, parentPageId?, folderPath? }`      |
+| `POST /api/team-admin/submissions/:id/return`       | `{ note }`: back to the author                   |
+| `POST /api/team-admin/submissions/:id/discard`      | Delete a left-behind item (inactive author only) |
+
+**The thread.** The reviewer writes review talk (`thread_scope` 'review',
+author kind `owner`): the author reads it in their own thread, teammates
+never do. The admin reads the review talk, plus the team's comments while
+the item is shared with the team. Comments are open while the item is
+submitted.
+
+**Return** puts a submitted item back to `returned` with the note (the
+member sees it as a banner, edits, and submits again).
+
+**Accept** (plan 6.2) is one transaction per bundle. The bundle is the item
+plus everything that renders inside it, repeated until nothing new joins:
+`embed-refs.ts` splits every reference into EMBEDS (an id, `src` or `href`
+on a node: an image, a file embed, an embedded drawing or child page; a
+drawing's file refs) and LINKS (a link mark, a mention chip, a drawing's
+element link, a table cell). Embeds of the author's own items move; links
+stay where they are, and the dialog says how many point at items that stay
+in a personal space. Every moved item keeps its node id (links stay valid),
+goes to the brain at the level the admin picks (admin by default), loses any
+leftover draft, and its `space_items` row goes to `accepted` with the
+reviewer (the row stays: it records the author). A page lands at the top of
+Pages or under a chosen brain page; files land in a chosen Files folder
+(`files` by default) under a safe, unique name. Bytes move beside the rows:
+a file is copied into the folder under a dot name the files watcher ignores,
+renamed into place after the commit, and its space copy removed; a table's
+workbook is snapshotted into `TABLE_DB_DIR/<brain>/` and the old one removed
+after the commit. A rollback removes what was staged. Accept is the ONE
+place a personal item is announced to the extractor: once per moved item,
+inside the transaction, so it is heard only on commit. A Recall that lands
+first wins (Accept then answers 404). A DB test walks every table with an
+`owner_id` column and asserts no row keeps the space as owner of a moved
+item (the owner-copy registry).
+
+**Deactivation** (plan 6.4). Deactivate a login in Settings > Users (never
+delete it). Its sessions stop at once. What it shared with the team, and
+what it submitted, shows up in the Review queue as "left behind": accept or
+discard. Its private items are purged 30 days after the deactivation by the
+nightly `space-purge` maintenance task (`pnpm -C server/web space:purge`
+for a dry run, `--apply` to run it by hand): rows and bytes, counts only,
+never titles. A space the purge leaves empty loses its
+`MANTLE_SPACES_ROOT/<space>` and `TABLE_DB_DIR/<space>` directories (audit
+D6). The purge refuses to run where the spaces root is missing or
+read-only, so it never deletes rows and keeps their bytes. A login enabled
+again before the 30 days keeps everything.
+
+**Not yet:** the author's own list of what was accepted (the item leaves
+Mine on Accept), a "member-authored" badge on accepted items.
