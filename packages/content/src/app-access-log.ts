@@ -49,8 +49,9 @@ export type AppAccessRow = {
   id: string;
   contactId: string | null;
   /** Who, by name at read time: the contact's, or for a member login its
-   *  display name (else the part of its email before the @). Null for
-   *  anonymous (public) visitors or a since-deleted contact or login. */
+   *  display name (else the part of its email before the @); "Removed
+   *  member" once that login is deleted. Null for anonymous (public)
+   *  visitors or a since-deleted contact. */
   contactName: string | null;
   /** The member login, when a member ran the app from the member shell. */
   actorId: string | null;
@@ -76,7 +77,7 @@ export async function listAppAccess(
       actorId: appAccessLog.actorId,
       actorName: sql<
         string | null
-      >`coalesce(nullif(${authUsers.displayName}, ''), split_part(${authUsers.email}, '@', 1))`,
+      >`coalesce(nullif(trim(${authUsers.displayName}), ''), split_part(${authUsers.email}, '@', 1))`,
       kind: appAccessLog.kind,
       detail: appAccessLog.detail,
       createdAt: appAccessLog.createdAt,
@@ -90,7 +91,12 @@ export async function listAppAccess(
   return rows.map((r) => ({
     id: r.id,
     contactId: r.contactId,
-    contactName: r.contactName ?? r.actorName ?? null,
+    // A member row whose login was deleted keeps no name (SET NULL): say so,
+    // rather than let it read as an anonymous public visitor.
+    contactName:
+      r.contactName ??
+      r.actorName ??
+      (r.detail && (r.detail as { via?: unknown }).via === 'member' ? 'Removed member' : null),
     actorId: r.actorId,
     kind: r.kind as AppAccessKind,
     detail: r.detail,

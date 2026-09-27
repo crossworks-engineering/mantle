@@ -17,9 +17,9 @@ const Body = z.object({
  * host.tools.call() (member logins Phase 4b, plan 4a). Run-only and checked
  * at dispatch time, every call (memberAppToolVerdict): declared by the app,
  * a built-in, no confirmation, in an enabled team-level tool group, not on
- * the refused list. Then it runs on the TEAM role, on a team surface that
- * names the login (so team refusals apply, unlike the web surface the share
- * brokers used), with the private corpus off.
+ * the refused list, read-only. Then it runs on the TEAM role, on a team
+ * surface that names the login (so team refusals apply), with the private
+ * corpus off. Refused calls are logged too.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const member = await getMemberOr401();
@@ -41,17 +41,16 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const { slug, input } = parsed.data;
   const verdict = await memberAppToolVerdict(member.anchorId, app.manifest.toolSlugs ?? [], slug);
-  if (!verdict.ok) {
-    return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
-  }
-
   recordAppAccess({
     ownerId: member.anchorId,
     appNodeId: app.id,
     actorId: member.loginId,
     kind: 'tool',
-    detail: { slug },
+    detail: verdict.ok ? { via: 'member', slug } : { via: 'member', slug, refused: verdict.reason },
   });
+  if (!verdict.ok) {
+    return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
+  }
   const result = await withViewer('team', () =>
     dispatchTool(verdict.tool, input, {
       ownerId: member.anchorId,

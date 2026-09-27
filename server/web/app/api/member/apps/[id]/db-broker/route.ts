@@ -12,9 +12,11 @@ import { rateLimit } from '@/lib/rate-limit';
  * POST /api/member/apps/:id/db-broker: a member's run of an app calls
  * host.db.query / host.db.exec on the app's own SQLite (member logins Phase
  * 4b). Row security does not reach SQLite, so the audience check is explicit
- * (memberAppOr404: team level or lower, published). Team apps may write, as
- * team-mode shares do. App data is shared per app, not per member (v1):
- * every member reads and writes the same database.
+ * (memberAppOr404: team level or lower, published). Only a TEAM-level app
+ * takes writes, as team-mode shares do; a client- or public-level app is
+ * read-only for members, so nothing a member writes shows to anonymous
+ * visitors of a public app (decided 2026-09-27). App data is shared per app,
+ * not per member (v1): every member reads and writes the same database.
  *
  * The SQLite work runs on the admin pool: it writes the app's database
  * registry rows, which the team role cannot.
@@ -38,14 +40,27 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const app = await memberAppOr404(member.anchorId, id);
   if (app instanceof Response) return app;
 
+  const { op, sql, params } = parsed.data;
+  if (op === 'exec' && app.audience !== 'team') {
+    recordAppAccess({
+      ownerId: member.anchorId,
+      appNodeId: app.id,
+      actorId: member.loginId,
+      kind: 'db',
+      detail: { via: 'member', op, refused: 'read-only' },
+    });
+    return NextResponse.json(
+      { ok: false, error: 'This app is read-only for team members.' },
+      { status: 403 },
+    );
+  }
   recordAppAccess({
     ownerId: member.anchorId,
     appNodeId: app.id,
     actorId: member.loginId,
     kind: 'db',
-    detail: { op: parsed.data.op },
+    detail: { via: 'member', op },
   });
-  const { op, sql, params } = parsed.data;
   try {
     const output =
       op === 'query'

@@ -16,7 +16,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const { id } = await ctx.params;
   const t = new URL(req.url).searchParams.get('t');
   const ticket = t ? verifyAppFrameTicket(t) : null;
-  if (!ticket?.loginId || ticket.shareId || ticket.appId !== id) {
+  // The ticket carries the app id as stored (lower case).
+  if (!ticket?.loginId || ticket.shareId || ticket.appId !== id.toLowerCase()) {
     return new NextResponse('frame ticket required', { status: 401 });
   }
   // Liveness: the ticket proves who the member WAS at mint time.

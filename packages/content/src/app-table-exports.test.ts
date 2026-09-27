@@ -11,7 +11,7 @@ vi.mock('@mantle/db', () => ({
   notifyNodeIngested: () => undefined,
 }));
 
-const { assertTableIdent, columnTypeOf } = await import('./app-table-exports');
+const { assertTableIdent, columnTypeOf, exportSyncDelay } = await import('./app-table-exports');
 
 /**
  * The export sync derives the brain Table's typed columns from SQLite declared
@@ -64,5 +64,16 @@ describe('assertTableIdent', () => {
     expect(() => assertTableIdent('a.b')).toThrow(/invalid/i);
     expect(() => assertTableIdent('sqlite_master')).toThrow(/invalid/i);
     expect(() => assertTableIdent('')).toThrow(/invalid/i);
+  });
+});
+
+describe('exportSyncDelay', () => {
+  it('debounces a burst but never past two minutes after its first write', () => {
+    const t0 = 1_000_000;
+    expect(exportSyncDelay(t0, t0)).toBe(15_000);
+    expect(exportSyncDelay(t0, t0 + 60_000)).toBe(15_000);
+    // Members writing every few seconds all day: the sync still runs.
+    expect(exportSyncDelay(t0, t0 + 110_000)).toBe(10_000);
+    expect(exportSyncDelay(t0, t0 + 200_000)).toBe(0);
   });
 });

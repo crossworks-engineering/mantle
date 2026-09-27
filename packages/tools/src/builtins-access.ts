@@ -17,6 +17,7 @@ import { errorMessage } from '@mantle/std';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { str, strOpt } from './coerce';
 import { NODE_ID_PRE } from './builtins-common';
+import { appMemberToolWarnings } from './member-app-tools';
 
 const LEVELS = ['admin', 'team', 'client', 'public'];
 
@@ -138,13 +139,17 @@ export const access_set: BuiltinToolDef = {
           withClosure: input.with_closure === true,
           raiseClosure: input.raise_closure === true,
         });
+        // An app set to team level or lower is run by members: say which of
+        // its declared tools they would be refused (member logins Phase 4b).
+        const warnings =
+          res.item.type === 'app' ? await appMemberToolWarnings(ctx.ownerId, nodeId) : [];
         ctx.step?.setOutput({
           id: nodeId,
           level,
           lowered: res.lowered.length,
           raised: res.raised.length,
         });
-        return { ok: true, output: res };
+        return { ok: true, output: warnings.length ? { ...res, warnings } : res };
       }
       if (agentSlug) {
         const [row] = await db

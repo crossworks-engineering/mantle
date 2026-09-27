@@ -27,7 +27,6 @@ import {
   NoGreenBuildError,
   type AppDetail,
   listTeamLevelAppIds,
-  isMemberAppLevel,
 } from '@mantle/content';
 import { buildApp, loadRuntimeExports } from '@mantle/app-build';
 import {
@@ -45,7 +44,7 @@ import {
 import { putContent } from '@mantle/storage';
 import { recordIngest } from '@mantle/tracing';
 import { resolveTool } from './resolve';
-import { memberAppToolVerdict } from './member-app-tools';
+import { appMemberToolWarnings } from './member-app-tools';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
@@ -390,24 +389,6 @@ const app_build: BuiltinToolDef = {
   },
 };
 
-/** For an app members can run (team level or lower): one warning per
- *  declared tool the member broker would refuse, in the broker's own words
- *  (member logins Phase 4b). An admin-level app gets none: only admins run it. */
-async function memberToolWarnings(ownerId: string, id: string, slugs: string[]) {
-  const app = await getApp(ownerId, id);
-  if (!app || !isMemberAppLevel(app.audience)) return [];
-  const warnings: string[] = [];
-  for (const slug of slugs) {
-    const verdict = await memberAppToolVerdict(ownerId, slugs, slug);
-    if (!verdict.ok) {
-      warnings.push(
-        `${verdict.reason} Members running this app get an error: declare a built-in tool from an enabled team-level group instead (\`tool_group_list\` shows levels), or keep the app at admin level.`,
-      );
-    }
-  }
-  return warnings;
-}
-
 const app_tools_set: BuiltinToolDef = {
   slug: 'app_tools_set',
   preconditions: APP_ID_PRE,
@@ -444,7 +425,7 @@ const app_tools_set: BuiltinToolDef = {
     }
     const manifest = await setManifest(ctx.ownerId, id, { toolSlugs: slugs });
     if (!manifest) return { ok: false, error: `app ${id} not found` };
-    const warnings = await memberToolWarnings(ctx.ownerId, id, slugs);
+    const warnings = await appMemberToolWarnings(ctx.ownerId, id);
     ctx.step?.setOutput({ id, tool_slugs: slugs, warnings: warnings.length });
     return {
       ok: true,
@@ -635,8 +616,18 @@ const app_publish: BuiltinToolDef = {
     try {
       const app = await publishApp(ctx.ownerId, id);
       if (!app) return { ok: false, error: `app ${id} not found` };
-      ctx.step?.setOutput({ id, published: true });
-      return { ok: true, output: { id, url: nodeUrl(id), name: app.title, published: true } };
+      const warnings = await appMemberToolWarnings(ctx.ownerId, id);
+      ctx.step?.setOutput({ id, published: true, warnings: warnings.length });
+      return {
+        ok: true,
+        output: {
+          id,
+          url: nodeUrl(id),
+          name: app.title,
+          published: true,
+          ...(warnings.length ? { warnings } : {}),
+        },
+      };
     } catch (err) {
       if (err instanceof NoGreenBuildError) return { ok: false, error: err.message };
       return { ok: false, error: errorMessage(err) };

@@ -48,6 +48,8 @@ export type MemberAppCard = {
 export type MemberRunnableApp = {
   id: string;
   title: string;
+  icon: string | null;
+  color: AppTint | null;
   audience: ViewerLevel;
   manifest: AppManifest;
   publishedBuild: BuildRef;
@@ -105,6 +107,7 @@ export async function getMemberRunnableApp(
     .select({
       id: nodes.id,
       title: nodes.title,
+      data: nodes.data,
       audience: nodes.audience,
       manifest: apps.manifest,
       publishedBuild: apps.publishedBuild,
@@ -114,9 +117,12 @@ export async function getMemberRunnableApp(
     .where(and(eq(nodes.id, appId), runnableWhere(anchorId)))
     .limit(1);
   if (!row?.publishedBuild?.ok) return null;
+  const d = (row.data ?? {}) as Record<string, unknown>;
   return {
     id: row.id,
     title: row.title,
+    icon: projectAppIcon(d.icon) ?? null,
+    color: projectAppTint(d.color) ?? null,
     audience: asViewerLevel(row.audience),
     manifest: (row.manifest ?? {}) as AppManifest,
     publishedBuild: row.publishedBuild,
@@ -148,8 +154,8 @@ export async function listTeamLevelAppIds(anchorId: string): Promise<Set<string>
 export async function resolveMemberHomeApp(
   anchorId: string,
   homeAppId: string | undefined,
-): Promise<{ appId: string; title: string } | null> {
+): Promise<{ appId: string; title: string; icon: string | null; color: AppTint | null } | null> {
   if (!homeAppId) return null;
   const app = await getMemberRunnableApp(anchorId, homeAppId);
-  return app ? { appId: app.id, title: app.title } : null;
+  return app ? { appId: app.id, title: app.title, icon: app.icon, color: app.color } : null;
 }

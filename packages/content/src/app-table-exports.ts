@@ -318,19 +318,31 @@ export async function removeAppTableExport(
 // the same from web or api.
 
 const SYNC_DEBOUNCE_MS = 15_000;
-const pending = new Map<string, NodeJS.Timeout>();
+/** A steady stream of writes (members using a team app all day) must not
+ *  postpone the sync forever: it runs at most this long after the first
+ *  write of a burst. */
+const SYNC_MAX_WAIT_MS = 120_000;
+const pending = new Map<string, { timer: NodeJS.Timeout; firstAt: number }>();
+
+/** How long to wait before the sync, for a write at `now` in a burst whose
+ *  first write was at `firstAt`: the debounce, cut short by the max wait. */
+export function exportSyncDelay(firstAt: number, now: number): number {
+  return Math.max(0, Math.min(SYNC_DEBOUNCE_MS, firstAt + SYNC_MAX_WAIT_MS - now));
+}
 
 export function scheduleAppTableExportSync(ownerId: string, appNodeId: string): void {
   const key = `${ownerId}:${appNodeId}`;
   const existing = pending.get(key);
-  if (existing) clearTimeout(existing);
-  const t = setTimeout(() => {
+  if (existing) clearTimeout(existing.timer);
+  const firstAt = existing?.firstAt ?? Date.now();
+  const wait = exportSyncDelay(firstAt, Date.now());
+  const timer = setTimeout(() => {
     pending.delete(key);
     syncAppTableExports(ownerId, appNodeId).catch((err) => {
       console.error('[app-table-exports] sync failed', appNodeId, err);
     });
-  }, SYNC_DEBOUNCE_MS);
+  }, wait);
   // Never hold a process open for a pending sync (dev servers, tests, CLIs).
-  t.unref?.();
-  pending.set(key, t);
+  timer.unref?.();
+  pending.set(key, { timer, firstAt });
 }
