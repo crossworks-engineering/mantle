@@ -23,6 +23,7 @@ const h = vi.hoisted(() => ({
   accepted: null as unknown,
   acceptedCalls: [] as unknown[][],
   drawSteps: [] as string[],
+  svgFilters: [] as unknown[][],
 }));
 
 const member = {
@@ -94,6 +95,10 @@ vi.mock('@mantle/content', async (importOriginal) => ({
     h.drawSteps.push(`accepted:${anchor}:${login}`);
     return '<svg>ok</svg>';
   }),
+  memberDrawSvg: vi.fn(async (...args: unknown[]) => {
+    h.svgFilters.push(args);
+    return '<svg>images the member may see</svg>';
+  }),
   listAccepted: vi.fn(async (...args: unknown[]) => {
     h.acceptedCalls.push(args);
     return { items: [], total: 0 };
@@ -126,6 +131,7 @@ beforeEach(() => {
   h.accepted = null;
   h.acceptedCalls = [];
   h.drawSteps = [];
+  h.svgFilters = [];
 });
 
 describe('GET /api/member/files/:id', () => {
@@ -202,6 +208,13 @@ describe('GET /api/member/draws/:id/svg', () => {
     expect(res.status).toBe(200);
     expect(h.drawSteps.at(-1)).toBe(`accepted:${ANCHOR}:${LOGIN}`);
     expect(h.drawSteps.indexOf(`accepted:${ANCHOR}:${LOGIN}`)).toBeGreaterThan(0);
+  });
+
+  it('sends only what the image filter leaves, for this member and this drawing', async () => {
+    const { GET } = await import('../draws/[id]/svg/route');
+    const res = await GET(new Request(`http://x/api/member/draws/${FILE}/svg`), ctx(FILE));
+    expect(await res.text()).toBe('<svg>images the member may see</svg>');
+    expect(h.svgFilters).toEqual([[ANCHOR, LOGIN, FILE, '<svg>ok</svg>']]);
   });
 });
 

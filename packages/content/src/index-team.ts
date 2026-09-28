@@ -317,6 +317,7 @@ export {
   type AcceptedItem,
   type AcceptedRow,
 } from './member-accepted';
+export { memberDrawSvg, memberVisibleDrawFileIds } from './member-draw-images';
 export {
   SPACE_PURGE_GRACE_DAYS,
   findSpacePurge,

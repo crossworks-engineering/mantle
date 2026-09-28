@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { withSpace, withTeamDrafts, withViewer } from '@mantle/db';
-import { acceptedDrawSvg, getDrawSvg, getTeamDraftDrawSvg } from '@mantle/content';
+import { acceptedDrawSvg, getDrawSvg, getTeamDraftDrawSvg, memberDrawSvg } from '@mantle/content';
 import { getMemberForAsset } from '@/lib/auth';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -14,6 +14,11 @@ const IdParams = z.object({ id: z.string().uuid() });
  * an admin accepted, whatever its level (Phase 4, plan 6.2: the author rule
  * is in the query). Anything else is a 404. No render
  * fallback: a drawing with no snapshot yet shows as missing until it is saved.
+ *
+ * The snapshot inlines its images' bytes, so it is sent with only the images
+ * whose file the member may read (the member files route's rule: team level,
+ * or the member's own accepted file). An admin image in a team drawing is
+ * taken out and its frame shows empty.
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const member = await getMemberForAsset(req);
@@ -31,7 +36,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!svg) {
     return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
   }
-  return new Response(svg, {
+  return new Response(await memberDrawSvg(member.anchorId, member.loginId, id, svg), {
     status: 200,
     headers: {
       'content-type': 'image/svg+xml; charset=utf-8',

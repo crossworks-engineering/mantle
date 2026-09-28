@@ -93,3 +93,57 @@ export function acceptSceneSvg(svg: unknown): string | null {
   }
   return trimmed;
 }
+
+/** One tag's attributes, quoted values skipped whole (a `>` inside quotes
+ *  does not end the tag). */
+const ATTRS = `(?:[^>"']|"[^"]*"|'[^']*')*`;
+/** A `<symbol>` open or close tag, or a whole `<image>` / `<feImage>`
+ *  element (self-closed, closed by its end tag, or left open). */
+const SVG_IMAGE_TOKENS = new RegExp(
+  `<symbol\\b${ATTRS}>|<\\/symbol\\s*>|<(image|feImage)\\b${ATTRS}?(?:\\/>|>[\\s\\S]*?<\\/\\1\\s*>|>)`,
+  'gi',
+);
+
+/** The scene file id a symbol id names, both ways exportToSvg writes it:
+ *  `image-<fileId>`, or `image-crop-<fileId>-<hash>` (the hash is decimal). */
+function symbolFileIds(tag: string): string[] {
+  const m = /\sid\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(tag);
+  const id = m?.[1] ?? m?.[2] ?? '';
+  const out: string[] = [];
+  const crop = /^image-crop-(.+)-\d+$/.exec(id);
+  if (crop?.[1]) out.push(crop[1]);
+  const plain = /^image-(.+)$/.exec(id);
+  if (plain?.[1]) out.push(plain[1]);
+  return out;
+}
+
+/**
+ * A drawing's saved SVG with every embedded image the reader may not see
+ * taken out (member logins: a team-level drawing may hold an admin image).
+ * exportToSvg puts each scene image in a `<symbol id="image-<fileId>">`
+ * holding one `<image href="data:…">` (the bytes themselves), and draws it
+ * with `<use href="#…">`. An `<image>` stays only inside a symbol whose file
+ * id is in `allowedFileIds`; every other one (another file's, one outside a
+ * symbol, an `<feImage>`) is removed, so its frame shows empty. Fail closed:
+ * markup this does not recognise loses its images, never keeps them.
+ */
+export function keepSvgImages(svg: string, allowedFileIds: ReadonlySet<string>): string {
+  let inAllowedSymbol = false;
+  return svg.replace(SVG_IMAGE_TOKENS, (token: string) => {
+    if (/^<symbol\b/i.test(token)) {
+      inAllowedSymbol = symbolFileIds(token).some((id) => allowedFileIds.has(id));
+      return token;
+    }
+    if (/^<\/symbol/i.test(token)) {
+      inAllowedSymbol = false;
+      return token;
+    }
+    return inAllowedSymbol && /^<image\b/i.test(token) ? token : '';
+  });
+}
+
+/** True when the SVG embeds any image at all (the common drawing does not,
+ *  and then there is nothing to check). */
+export function svgHasImages(svg: string): boolean {
+  return /<(?:image|feImage)\b/i.test(svg);
+}

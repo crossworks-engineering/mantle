@@ -48,7 +48,7 @@ export {
   type LockedDrawRow,
 } from './draws';
 export { sceneToText } from './scene-to-text';
-export { acceptSceneSvg, SCENE_SVG_MAX_BYTES, EXCALIDRAW_ENGINE } from './scene-svg';
+export { acceptSceneSvg, keepSvgImages, SCENE_SVG_MAX_BYTES, EXCALIDRAW_ENGINE } from './scene-svg';
 export {
   APPS_ROOT_LABEL,
   DEFAULT_ENTRY,

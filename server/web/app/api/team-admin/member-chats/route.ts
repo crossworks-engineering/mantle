@@ -13,6 +13,7 @@ import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { listMemberChatActivity, listTeamThread } from '@mantle/content';
 import { UUID_RE } from '@mantle/std';
+import type { MemberChatsResponse } from '@mantle/client-types';
 
 const THREAD_WINDOW = 50;
 
@@ -28,7 +29,9 @@ export async function GET(req: Request) {
     login && UUID_RE.test(login) && members.some((m) => m.loginId === login)
       ? login
       : (members[0]?.loginId ?? null);
-  if (!selectedId) return NextResponse.json({ members, selected: null });
+  if (!selectedId) {
+    return NextResponse.json({ members, selected: null } satisfies MemberChatsResponse);
+  }
 
   const thread = await listTeamThread(user.id, '', {
     loginId: selectedId,
@@ -42,7 +45,7 @@ export async function GET(req: Request) {
       loginId: selectedId,
       thread: thread.map((m) => ({
         id: m.id,
-        direction: m.direction,
+        direction: m.direction as 'inbound' | 'outbound',
         text: m.text,
         status: m.status,
         error: m.error,
@@ -51,5 +54,5 @@ export async function GET(req: Request) {
       })),
       windowSize: THREAD_WINDOW,
     },
-  });
+  } satisfies MemberChatsResponse);
 }

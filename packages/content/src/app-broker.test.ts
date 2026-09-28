@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   appDbExec,
   appDbQuery,
+  ensureAppDatabase,
   assertSafe,
   assertSafeScript,
   appDbFiles,
@@ -9,8 +10,21 @@ import {
   vacuumIntoStatement,
   snapshotDestPath,
 } from './app-broker';
+import { APP_SCHEMA_TIMEOUT_MS, runAppSql } from './app-sql-runner';
 
-const h = vi.hoisted(() => ({ storagePath: '' }));
+const h = vi.hoisted(() => ({ storagePath: '', timeoutMs: undefined as number | undefined }));
+
+/** The real runner, watched: the schema tests check the DDL goes through it
+ *  (not a main-thread exec), and shorten its time limit for the endless case. */
+vi.mock('./app-sql-runner', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./app-sql-runner')>();
+  return {
+    ...actual,
+    runAppSql: vi.fn((file: string, opts: Parameters<typeof actual.runAppSql>[1]) =>
+      actual.runAppSql(file, { ...opts, timeoutMs: h.timeoutMs ?? opts.timeoutMs }),
+    ),
+  };
+});
 
 /** Minimal registry: one app whose SQLite file lives in a temp dir. Everything
  *  appDbQuery/appDbExec need from Postgres is the existing-row lookup (plus the
@@ -339,5 +353,83 @@ describe('seedRowsIntoHandle', () => {
       /not a valid table name/i,
     );
     db.close();
+  });
+});
+
+/**
+ * An app's schema DDL (audit item C) runs in the SQL runner like every other
+ * app statement: a worker with the engine authorizer and a time limit, one
+ * transaction. It used to run here on the main thread with no timeout, so an
+ * endless statement in a schema froze the whole process. Last in the file:
+ * the endless case leaves its killed write behind in this process.
+ */
+describe('ensureAppDatabase applies the schema DDL through the SQL runner', () => {
+  const owner = 'owner-1';
+  const app = 'app-1';
+  const scripts = () => vi.mocked(runAppSql).mock.calls.filter(([, o]) => o.mode === 'script');
+  const names = async () =>
+    (
+      await appDbQuery(
+        owner,
+        app,
+        "SELECT name FROM sqlite_master WHERE name LIKE 'sv%' ORDER BY name",
+      )
+    ).map((r) => r.name);
+
+  it('applies a newer schema version as one script in the runner', async () => {
+    vi.mocked(runAppSql).mockClear();
+    const schemaSql =
+      'CREATE TABLE sv_polls (id INTEGER PRIMARY KEY, title TEXT); CREATE INDEX sv_polls_title ON sv_polls (title);';
+    const reg = await ensureAppDatabase(owner, app, { schemaSql, schemaVersion: 1 });
+    expect(reg.schemaVersion).toBe(1);
+    expect(scripts()).toEqual([
+      [
+        h.storagePath,
+        { sql: schemaSql, mode: 'script', readOnly: false, timeoutMs: APP_SCHEMA_TIMEOUT_MS },
+      ],
+    ]);
+    expect(await names()).toEqual(['sv_polls', 'sv_polls_title']);
+  });
+
+  it('does not re-run a version already applied', async () => {
+    vi.mocked(runAppSql).mockClear();
+    await ensureAppDatabase(owner, app, {
+      schemaSql: 'CREATE TABLE sv_polls (x);',
+      schemaVersion: 1,
+    });
+    expect(scripts()).toEqual([]);
+  });
+
+  it('refuses a schema with ATTACH before it reaches the file', async () => {
+    vi.mocked(runAppSql).mockClear();
+    await expect(
+      ensureAppDatabase(owner, app, {
+        schemaSql: "CREATE TABLE sv_x (x); ATTACH DATABASE '/tmp/x.db' AS o;",
+        schemaVersion: 2,
+      }),
+    ).rejects.toThrow(/not allowed/);
+    expect(scripts()).toEqual([]);
+    expect(await names()).not.toContain('sv_x');
+  });
+
+  it('stops an endless schema statement without blocking the event loop; the version stays', async () => {
+    h.timeoutMs = 400;
+    let ticks = 0;
+    const tick = setInterval(() => (ticks += 1), 20);
+    try {
+      await expect(
+        ensureAppDatabase(owner, app, {
+          schemaSql:
+            'CREATE TABLE sv_early (x); CREATE TABLE sv_big AS WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT x FROM c;',
+          schemaVersion: 2,
+        }),
+      ).rejects.toThrow(/longer than 400 ms/);
+    } finally {
+      clearInterval(tick);
+      h.timeoutMs = undefined;
+    }
+    expect(ticks).toBeGreaterThan(5);
+    expect((await ensureAppDatabase(owner, app)).schemaVersion).toBe(1);
+    expect(await names()).toEqual(['sv_polls', 'sv_polls_title']);
   });
 });

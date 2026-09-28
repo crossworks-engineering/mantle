@@ -24,25 +24,22 @@ import {
   type ViewerLevel,
 } from '@mantle/db';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
-import type { AppTint } from '@mantle/client-types';
+import type { AppTint, MemberAppCard, MemberAppLevel, MemberHomeApp } from '@mantle/client-types';
 
-/** The app levels a member may run: team and below. */
-export const MEMBER_APP_LEVELS = ['team', 'client', 'public'] as const satisfies ViewerLevel[];
+/** The app levels a member may run: team and below. Pinned to the published
+ *  `MemberAppLevel` in server/web/lib/client-types-drift.test.ts. */
+export const MEMBER_APP_LEVELS = [
+  'team',
+  'client',
+  'public',
+] as const satisfies readonly MemberAppLevel[];
 
-export function isMemberAppLevel(level: unknown): boolean {
+export function isMemberAppLevel(level: unknown): level is MemberAppLevel {
   return (MEMBER_APP_LEVELS as readonly string[]).includes(asViewerLevel(level));
 }
 
-/** One launcher card. */
-export type MemberAppCard = {
-  id: string;
-  title: string;
-  icon: string | null;
-  color: AppTint | null;
-  description: string | null;
-  audience: ViewerLevel;
-  updatedAt: string;
-};
+/** One launcher card: the published contract type. */
+export type { MemberAppCard };
 
 /** A runnable app: what the frame and the brokers need, published only. */
 export type MemberRunnableApp = {
@@ -82,18 +79,23 @@ export async function listMemberApps(anchorId: string): Promise<MemberAppCard[]>
     .where(runnableWhere(anchorId))
     .orderBy(asc(nodes.title))
     .limit(500);
-  return rows.map((r) => {
+  return rows.flatMap((r): MemberAppCard[] => {
+    // The query already keeps to these levels; a row outside them is never
+    // a card, whatever the column holds.
+    if (!isMemberAppLevel(r.audience)) return [];
     const d = (r.data ?? {}) as Record<string, unknown>;
     const description = (r.manifest as AppManifest | null)?.description;
-    return {
-      id: r.id,
-      title: r.title,
-      icon: projectAppIcon(d.icon) ?? null,
-      color: projectAppTint(d.color) ?? null,
-      description: typeof description === 'string' && description.trim() ? description : null,
-      audience: asViewerLevel(r.audience),
-      updatedAt: r.updatedAt.toISOString(),
-    };
+    return [
+      {
+        id: r.id,
+        title: r.title,
+        icon: projectAppIcon(d.icon) ?? null,
+        color: projectAppTint(d.color) ?? null,
+        description: typeof description === 'string' && description.trim() ? description : null,
+        audience: r.audience,
+        updatedAt: r.updatedAt.toISOString(),
+      },
+    ];
   });
 }
 
@@ -154,7 +156,7 @@ export async function listTeamLevelAppIds(anchorId: string): Promise<Set<string>
 export async function resolveMemberHomeApp(
   anchorId: string,
   homeAppId: string | undefined,
-): Promise<{ appId: string; title: string; icon: string | null; color: AppTint | null } | null> {
+): Promise<MemberHomeApp | null> {
   if (!homeAppId) return null;
   const app = await getMemberRunnableApp(anchorId, homeAppId);
   return app ? { appId: app.id, title: app.title, icon: app.icon, color: app.color } : null;

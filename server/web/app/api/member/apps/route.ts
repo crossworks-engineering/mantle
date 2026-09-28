@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { withViewer } from '@mantle/db';
 import { listMemberApps, loadProfilePreferences, resolveMemberHomeApp } from '@mantle/content';
+import type { MemberAppList } from '@mantle/client-types';
 import { getMemberOr401 } from '@/lib/auth';
 
 /**
@@ -19,5 +20,5 @@ export async function GET() {
       resolveMemberHomeApp(member.anchorId, prefs.teamHubAppId),
     ]),
   );
-  return NextResponse.json({ apps, homeAppId: home?.appId ?? null });
+  return NextResponse.json({ apps, homeAppId: home?.appId ?? null } satisfies MemberAppList);
 }

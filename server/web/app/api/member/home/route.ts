@@ -8,6 +8,8 @@ import {
   resolveMemberHomeApp,
 } from '@mantle/content';
 import { APP_VERSION } from '@mantle/client-types/version';
+import type { MemberHomeData } from '@mantle/client-types';
+import type { HubData } from '@mantle/share-ui/app-bridge-protocol';
 import { getMemberOr401 } from '@/lib/auth';
 import { memberName } from '@/lib/member-apps';
 
@@ -33,7 +35,7 @@ export async function GET() {
     resolveMemberHomeApp(member.anchorId, prefs.teamHubAppId),
   );
   // Most brains pin nothing: the built-in home needs no hub data.
-  if (!homeApp) return NextResponse.json({ homeApp: null, hub: null });
+  if (!homeApp) return NextResponse.json({ homeApp: null, hub: null } satisfies MemberHomeData);
   const [pages, counts, apps] = await withViewer('team', () =>
     Promise.all([
       listLibrary(member.anchorId, { kind: 'page', limit: SECTION_LIMIT }),
@@ -65,5 +67,5 @@ export async function GET() {
           updatedAt: a.updatedAt,
         })),
     },
-  });
+  } satisfies MemberHomeData<HubData>);
 }
