@@ -25,6 +25,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const manifestPath = join(here, 'route-manifest.gen.ts');
 const hasManifest = existsSync(manifestPath);
 
+// vitest.global-setup.ts generates the manifest; in CI a missing one is a
+// failure, never a silent skip of a security sweep.
+if (!hasManifest && process.env.CI) {
+  throw new Error('server/web/server/route-manifest.gen.ts is missing: the sweep cannot run');
+}
 if (!hasManifest) {
   console.warn(
     '[auth-sweep] server/web/server/route-manifest.gen.ts is missing — run `pnpm -C server/web route-manifest` (typecheck does it) to enable this sweep',

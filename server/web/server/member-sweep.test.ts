@@ -74,6 +74,11 @@ import { MEMBER_ROUTES, isMemberRoute } from '../lib/auth/member-routes';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, 'route-manifest.gen.ts'));
+// vitest.global-setup.ts generates the manifest; in CI a missing one is a
+// failure, never a silent skip of a security sweep.
+if (!hasManifest && process.env.CI) {
+  throw new Error('server/web/server/route-manifest.gen.ts is missing: the sweep cannot run');
+}
 
 const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
 
