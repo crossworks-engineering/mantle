@@ -1310,6 +1310,13 @@
       "when": 1790017440000,
       "tag": "0186_needs_you_notify",
       "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1790017500000,
+      "tag": "0187_client_level",
+      "breakpoints": true
     }
   ]
 }

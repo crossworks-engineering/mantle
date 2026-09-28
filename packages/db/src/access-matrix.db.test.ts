@@ -10,11 +10,14 @@ import {
   ACCESS_MATRIX,
   WORKSPACE_NODE_TYPES,
   applyViewerGrants,
-  type TableAccess,
+  readFor,
+  ruleFor,
 } from './access-matrix';
+import type { LimitedLevel } from './viewer';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const ROLES = ['mantle_view_team', 'mantle_view_client', 'mantle_view_public'];
+const LEVELS: LimitedLevel[] = ['team', 'client', 'public'];
 
 describe.skipIf(!URL)('access matrix on the migrated database', () => {
   let sql: ReturnType<typeof postgres>;
@@ -44,18 +47,40 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
     return { tables: tables.map((r) => r.t), cols, other: other[0]!.n };
   }
 
-  const wholeTables = ACCESS_MATRIX.filter((t) => t.read === 'all').map((t) => t.table);
-  const columnTables = ACCESS_MATRIX.filter((t): t is TableAccess & { read: readonly string[] } =>
-    Array.isArray(t.read),
-  );
-
-  it.each(ROLES)('%s holds exactly the matrix: SELECT only, named columns only', async (role) => {
-    const live = await liveGrants(role);
+  // Per role (client logins C1): the client role differs from the others.
+  it.each(LEVELS)('mantle_view_%s holds exactly its matrix: SELECT only, named columns only', async (level) => {
+    const live = await liveGrants(`mantle_view_${level}`);
     expect(live.other, 'no write privilege of any kind').toBe(0);
-    expect(live.tables).toEqual([...wholeTables].sort());
-    for (const t of columnTables) {
+    const whole = ACCESS_MATRIX.filter((t) => readFor(t, level) === 'all').map((t) => t.table);
+    expect(live.tables).toEqual([...whole].sort());
+    for (const t of ACCESS_MATRIX) {
+      const read = readFor(t, level);
+      if (!Array.isArray(read)) continue;
       const cols = live.cols.filter((c) => c.t === t.table).map((c) => c.c);
-      expect(cols.sort(), t.table).toEqual([...t.read].sort());
+      expect(cols.sort(), t.table).toEqual([...read].sort());
+    }
+    // Tables the role may not read carry no column grant either.
+    for (const t of ACCESS_MATRIX.filter((x) => readFor(x, level) === 'none')) {
+      expect(live.cols.filter((c) => c.t === t.table), `${t.table} columns`).toEqual([]);
+    }
+  });
+
+  it('level-rows tables: RLS on, the client role filtered by level, the others all rows', async () => {
+    for (const t of ACCESS_MATRIX.filter((x) => LEVELS.some((l) => ruleFor(x, l) === 'level-rows'))) {
+      const [schema, name] = t.table.split('.');
+      const [rls] = await sql<{ on: boolean }[]>`
+        select relrowsecurity as on from pg_class
+        where relname = ${name!} and relnamespace = ${schema!}::regnamespace`;
+      expect(rls?.on, `${t.table} row level security`).toBe(true);
+      const policies = await sql<{ roles: string[]; qual: string }[]>`
+        select roles, qual from pg_policies where schemaname = ${schema!} and tablename = ${name!}
+          and cmd = 'SELECT'`;
+      for (const level of LEVELS) {
+        const mine = policies.filter((p) => p.roles.includes(`mantle_view_${level}`));
+        expect(mine.length, `${t.table} policy for ${level}`).toBe(1);
+        if (ruleFor(t, level) === 'level-rows') expect(mine[0]!.qual).toMatch(/audience/);
+        else expect(mine[0]!.qual, `${t.table} ${level}`).toBe('true');
+      }
     }
   });
 
@@ -121,7 +146,11 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
 
   it('every filtered table has row level security on and a policy for each role', async () => {
     const filtered = ACCESS_MATRIX.filter(
-      (t) => t.rule !== 'none' && t.rule !== 'all-rows' && t.rule !== 'team-drafts',
+      (t) =>
+        t.rule !== 'none' &&
+        t.rule !== 'all-rows' &&
+        t.rule !== 'team-drafts' &&
+        t.rule !== 'level-rows',
     );
     for (const t of filtered) {
       const [schema, name] = t.table.split('.');

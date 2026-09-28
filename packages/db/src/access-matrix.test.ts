@@ -7,7 +7,13 @@ import { describe, expect, it } from 'vitest';
 import { Table, getTableColumns, is } from 'drizzle-orm';
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import * as schema from './schema';
-import { ACCESS_MATRIX, NEVER_GRANTED_COLUMNS, viewerGrantStatements } from './access-matrix';
+import {
+  ACCESS_MATRIX,
+  NEVER_GRANTED_COLUMNS,
+  readFor,
+  ruleFor,
+  viewerGrantStatements,
+} from './access-matrix';
 
 const tables = Object.values(schema).filter((v) => is(v, Table)) as unknown as PgTable[];
 const nameOf = (t: PgTable) => {
@@ -61,13 +67,34 @@ describe('access matrix', () => {
 
   it('every readable table has a row rule, and every unreadable one has none', () => {
     for (const t of ACCESS_MATRIX) {
-      if (t.read === 'none') expect(t.rule, t.table).toBe('none');
-      else expect(t.rule, t.table).not.toBe('none');
+      for (const level of ['team', 'client', 'public'] as const) {
+        const at = `${t.table} (${level})`;
+        if (readFor(t, level) === 'none') expect(ruleFor(t, level), at).toBe('none');
+        else expect(ruleFor(t, level), at).not.toBe('none');
+      }
     }
   });
 
+  it('only the client role differs from the shared matrix (client logins C1)', () => {
+    for (const t of ACCESS_MATRIX) {
+      expect(t.byRole?.team, t.table).toBeUndefined();
+      expect(t.byRole?.public, t.table).toBeUndefined();
+    }
+    const client = (table: string) => ACCESS_MATRIX.find((t) => t.table === table)!;
+    expect(ruleFor(client('public.agents'), 'client')).toBe('level-rows');
+    expect(ruleFor(client('public.tool_groups'), 'client')).toBe('level-rows');
+    expect(readFor(client('auth.users'), 'client')).toBe('none');
+    // The team role still reads every agent: team delegation to admin agents.
+    expect(ruleFor(client('public.agents'), 'team')).toBe('all-rows');
+  });
+
+  it('renders no grant on auth.users for the client role', () => {
+    expect(viewerGrantStatements('client').some((s) => s.includes('"auth"."users"'))).toBe(false);
+    expect(viewerGrantStatements('team').some((s) => s.includes('"auth"."users"'))).toBe(true);
+  });
+
   it('renders SELECT-only grants, column lists where named', () => {
-    const stmts = viewerGrantStatements('mantle_view_team');
+    const stmts = viewerGrantStatements('team');
     expect(stmts.every((s) => s.startsWith('GRANT SELECT'))).toBe(true);
     expect(stmts).toContain('GRANT SELECT ON "public"."nodes" TO "mantle_view_team"');
     expect(stmts.find((s) => s.includes('"public"."pages"'))).toMatch(

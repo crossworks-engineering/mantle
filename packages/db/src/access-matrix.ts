@@ -20,7 +20,7 @@
  */
 import type postgres from 'postgres';
 import { LIMITED_LEVELS, POOL_ROLES } from './viewer-roles';
-import { viewerRoleName } from './viewer';
+import { viewerRoleName, type LimitedLevel } from './viewer';
 
 /** Node types that may go below admin. Mirrors mantle_workspace_kind() in
  *  migration 0159; access-matrix.db.test.ts pins the two together. */
@@ -56,7 +56,11 @@ export type RowRule =
   | 'all-rows'
   // Other members' team-shared personal items: the team role only, and only
   // with mantle.human on (a member request, never an agent). Phase 2.
-  | 'team-drafts';
+  | 'team-drafts'
+  // Rows at or below the viewer's level by the row's own `audience` column
+  // (client logins C1: agents and tool groups for the client role, so a
+  // client-level turn never even loads an agent or a group above client).
+  | 'level-rows';
 
 /**
  * What the personal-space role may do on a table (Phase 2). `write` =
@@ -75,12 +79,29 @@ export type Writer = 'content' | 'system' | 'admin';
 
 export type TableAccess = {
   table: string;
+  /** What the level roles read (each, unless `byRole` says otherwise). */
   read: LimitedRead;
   rule: RowRule;
   writer: Writer;
   /** The personal-space role. Absent = none. */
   space?: SpaceAccess;
+  /**
+   * Where ONE level role differs from `read` / `rule` (client logins C1,
+   * the per-role matrix). The team role keeps what it had: invoke_agent and
+   * the delegate roster load admin agents under a team viewer.
+   */
+  byRole?: Partial<Record<LimitedLevel, { read?: LimitedRead; rule?: RowRule }>>;
 };
+
+/** What `level`'s role may SELECT on `t`. */
+export function readFor(t: TableAccess, level: LimitedLevel): LimitedRead {
+  return t.byRole?.[level]?.read ?? t.read;
+}
+
+/** The row rule that filters `t` for `level`'s role. */
+export function ruleFor(t: TableAccess, level: LimitedLevel): RowRule {
+  return t.byRole?.[level]?.rule ?? t.rule;
+}
 
 const none = (table: string, writer: Writer = 'admin'): TableAccess => ({
   table,
@@ -185,19 +206,37 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { table: 'public.space_uploads', read: 'none', rule: 'none', writer: 'content', space: 'write' },
 
   // ── Configuration the turn loop reads (no per-row secrecy) ────────────────
-  { table: 'public.agents', read: 'all', rule: 'all-rows', writer: 'admin' },
+  // The client role reads agents and tool groups at client level and below
+  // only (migration 0187): the team role keeps every row, because a
+  // team-level agent may still delegate to an admin agent.
+  {
+    table: 'public.agents',
+    read: 'all',
+    rule: 'all-rows',
+    writer: 'admin',
+    byRole: { client: { rule: 'level-rows' } },
+  },
   { table: 'public.tools', read: 'all', rule: 'all-rows', writer: 'admin' },
-  { table: 'public.tool_groups', read: 'all', rule: 'all-rows', writer: 'admin' },
+  {
+    table: 'public.tool_groups',
+    read: 'all',
+    rule: 'all-rows',
+    writer: 'admin',
+    byRole: { client: { rule: 'level-rows' } },
+  },
   { table: 'public.skills', read: 'all', rule: 'all-rows', writer: 'admin' },
   { table: 'public.embedding_config', read: 'all', rule: 'all-rows', writer: 'admin' },
   { table: 'public.ai_workers', read: 'all', rule: 'all-rows', writer: 'admin' },
   { table: 'public.profiles', read: 'all', rule: 'all-rows', writer: 'admin' },
-  // mantle_brain_id() reads the anchor row; nothing else of a login.
+  // mantle_brain_id() reads the anchor row; nothing else of a login. The
+  // client role holds no grant here: mantle_brain_id() is SECURITY DEFINER
+  // since migration 0187, so it needs none.
   {
     table: 'auth.users',
     read: ['id', 'is_owner', 'created_at'],
     rule: 'all-rows',
     writer: 'admin',
+    byRole: { client: { read: 'none', rule: 'none' } },
   },
 
   // ── Infrastructure: written through systemDb, never read by a viewer ─────
@@ -249,6 +288,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.mobile_tokens'),
   none('public.pairing_codes'),
   none('public.member_invites'),
+  // "What clients see" acknowledgements (0187): an admin's record.
+  none('public.client_report_acks'),
   none('public.mantle_peers'),
   none('public.peer_shares'),
   none('public.peer_share_scopes'),
@@ -295,11 +336,13 @@ function quoteTable(table: string): string {
 }
 
 /** The GRANT statements the matrix means, for one level role. Pure. */
-export function viewerGrantStatements(role: string): string[] {
+export function viewerGrantStatements(level: LimitedLevel): string[] {
+  const role = viewerRoleName(level);
   const out: string[] = [];
   for (const t of ACCESS_MATRIX) {
-    if (t.read === 'none') continue;
-    const cols = t.read === 'all' ? '' : ` (${t.read.map((c) => `"${c}"`).join(', ')})`;
+    const read = readFor(t, level);
+    if (read === 'none') continue;
+    const cols = read === 'all' ? '' : ` (${read.map((c) => `"${c}"`).join(', ')})`;
     out.push(`GRANT SELECT${cols} ON ${quoteTable(t.table)} TO "${role}"`);
   }
   return out;
@@ -321,14 +364,13 @@ export function spaceGrantStatements(role: string = viewerRoleName('space')): st
  * transaction, idempotent; migrate runs it after the migrations.
  */
 export async function applyViewerGrants(sql: ReturnType<typeof postgres>): Promise<void> {
-  const levelRoles = LIMITED_LEVELS.map(viewerRoleName);
   const roleList = POOL_ROLES.map((r) => `"${viewerRoleName(r)}"`).join(', ');
   await sql.begin(async (tx) => {
     await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ${roleList}`);
     await tx.unsafe(`REVOKE ALL ON ALL TABLES IN SCHEMA auth FROM ${roleList}`);
     await tx.unsafe(`GRANT USAGE ON SCHEMA public, auth TO ${roleList}`);
-    for (const role of levelRoles) {
-      for (const stmt of viewerGrantStatements(role)) await tx.unsafe(stmt);
+    for (const level of LIMITED_LEVELS) {
+      for (const stmt of viewerGrantStatements(level)) await tx.unsafe(stmt);
     }
     for (const stmt of spaceGrantStatements()) await tx.unsafe(stmt);
   });
