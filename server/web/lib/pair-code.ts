@@ -15,7 +15,7 @@ import { buildMobileToken } from '@/lib/auth';
  * claim is one conditional UPDATE (unclaimed AND unexpired) so two claims of
  * the same frame cannot both win; it is bound to the login that asked for
  * it, and claims only while that login is still an admin that is not
- * disabled. Every failure to claim is the same `null` — the phone shows one
+ * disabled. Every failure to claim is the same `null`: the phone shows one
  * line.
  */
 export const PAIR_CODE_TTL_SEC = 90;
