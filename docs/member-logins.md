@@ -15,8 +15,9 @@
   the team member: it needs no contact, and its display name (else the part
   of its email before the @) is how the agent and the admin see it. Contacts
   are plain contacts; the old team switch and team codes on contacts belonged
-  to the team portal, retired in Phase 6 (section 9): a team code now opens
-  nothing, and only redeems an invite once. `auth.users.contact_id` is an
+  to the team portal, retired in Phase 6 (section 9). Team codes are gone
+  (migration 0178): an old code opens nothing and redeems nothing, and an
+  invite link is the only way in. `auth.users.contact_id` is an
   optional link, no longer required. When set it must be a contact of this
   brain, and a contact links to one login at most: a second login on it is
   a 409.
@@ -130,8 +131,8 @@ the `MANTLE_MEMBERS` flag).
    9, "The team portal is retired").
 2. Invite the person (section 9): pick their contact, or type an email, and
    hand them the invite link. They set their own password and are signed in.
-   A person who still holds an old team code can use it instead of the
-   invite code, once.
+   An old team code no longer works (migration 0178): send an invite link,
+   also to a person who used to hold a code.
 3. Or, as before: Settings > Users, create a user with role member, and hand
    the person their email and password.
 
@@ -541,9 +542,11 @@ is a member login. Nobody hands a password around. The table is
 `member_invites` (migration 0174, modelled on `pairing_codes`); the logic is
 `packages/content/src/member-invites.ts`.
 
-- **The code.** 16 characters from the team-token alphabet (no look-alikes),
-  about 93 bits. Only its hash is stored (the team-token hash); the plaintext
-  is in the create answer once. It lives 72 hours and redeems once.
+- **The code.** 16 characters from a 54-character alphabet with no
+  look-alikes (the one team codes used), about 92 bits. Only its SHA-256 is
+  stored (`hashInviteCode`, the hash team codes used, so an invite made
+  before 0178 still redeems); the plaintext is in the create answer once. It
+  lives 72 hours and redeems once. Only a 16-character code is looked up.
 - **One open invite per contact** (a partial unique index). A new invite for
   the same contact, or the same email, revokes the old one: re-inviting
   replaces the link.
@@ -569,18 +572,18 @@ is a member login. Nobody hands a password around. The table is
   | `POST /api/auth/invite/accept` | `{ code, password, email? }`: redeem. `MemberInviteAccepted` `{ ok, email }` and the session cookie, as `/api/auth/login` sets it |
 
   Accept: a password under 8 characters is a 400 before any code is looked
-  at. Every other failure (unknown, used, revoked or expired code; a team
-  code with no open invite; an `email` that is not the invite's; a login
-  that took the email meanwhile) is the same 401 with the same message, so
+  at. Every other failure (unknown, used, revoked or expired code; an old
+  team code; an `email` that is not the invite's; a login that took the
+  email meanwhile) is the same 401 with the same message, so
   the route is no oracle. `email` is a check, never a choice: the login is
   always made with the invite's email (login emails pass the email gates,
   section 1). Both routes are rate limited per IP (preview 30, accept 10 a
   minute) and for the whole brain (300 and 60), and accept limits before
   bcrypt. Audit: `auth.invite_accepted` or `auth.invite_failed`.
 
-- **One transaction.** The redeem locks the invite, deletes the contact's
-  team code, creates the login (role member, the invite's contact and
-  name), links the contact's history to the login (below), marks the invite
+- **One transaction.** The redeem locks the invite, creates the login (role
+  member, the invite's contact and name), links the contact's history to
+  the login (below), marks the invite
   redeemed and writes a `team_access_log` row (`kind` auth, `event`
   invite_redeemed, `login_id` the new login). Any failure rolls all of it
   back. Two racing redeems of one code: one wins.
@@ -610,11 +613,12 @@ is a member login. Nobody hands a password around. The table is
     own `GET /api/member/chat` never shows them.
   - `team_access_list` takes a `loginId` filter and returns each row's
     `loginId`.
-- **Old team codes.** An 8-char team code works in place of the invite code
-  while its contact has an open invite, and only once: the redeem deletes
-  the contact's `contact_team_tokens` row (Jason, 2026-09-28). With no open
-  invite a team code redeems nothing and stays as it was; a code revoked
-  while a redeem runs does not redeem.
+- **Old team codes no longer work** (migration 0178). Until then an 8-char
+  team code redeemed an open invite for its contact once, in place of the
+  invite code. Now it is just a wrong code: the same 401 (and the same 404
+  on the preview) as any other. Invite links only; a person who held a code
+  needs an invite link like anyone else. The audit and the access log still
+  write `via: 'invite'`.
 - **Contract.** `MemberInviteRow`, `MemberInviteState` (`open`, `redeemed`,
   `expired`), `MemberInviteList`, `MemberInviteCreated`,
   `MemberInvitePreview`, `MemberInviteAccepted` in `@mantle/client-types`
@@ -649,10 +653,10 @@ is a member login. Nobody hands a password around. The table is
     commits that shipped them); an edited prompt is kept. The change goes
     through Studio prose versioning, so the old default is v1, one revert
     away.
-  - Kept: `contact_team_tokens` and the code check invites need
-    (`verifyTeamToken`), `team_messages` / `team_access_log` /
-    `team_read_cursors` with their admin readers. The forum tables and the
-    archive export were kept until migration 0177 dropped them (below).
+  - Kept: `team_messages` / `team_access_log` / `team_read_cursors` with
+    their admin readers. The forum tables and the archive export were kept
+    until migration 0177 dropped them, and the team codes until 0178
+    (below).
 - **Team links are retired** (Phase 6 stage 6, migration 0176). Members read
   team items by level with their own logins, so a team item has no link:
   - 0176 revoked every team-mode link that was not revoked yet, an expired
@@ -694,6 +698,35 @@ is a member login. Nobody hands a password around. The table is
   A topic with no archive page aborts the migration. Details, with every
   foreign key and how it was dropped: [team-forum.md](./team-forum.md)
   section 8. Test: `packages/db/src/drop-forum-tables.db.test.ts`.
+- **Team codes are dropped** (Phase 6, migration 0178). The last thing a
+  code did was redeem an invite once (above); with that gone,
+  `contact_team_tokens` went. Its one foreign key (`contact_id` to `nodes`,
+  ON DELETE CASCADE, `contact_team_tokens_contact_id_fkey`; `owner_id` has
+  none, and nothing references the table) is dropped by name, then the
+  table without CASCADE, so an unknown dependency fails the migration. No
+  other row changes: contacts, logins, invites, apps, sandboxes and the old
+  portal history (`team_messages`, `team_access_log`, `team_read_cursors`)
+  all stay. Gone with it: `verifyTeamToken`, the team-code minting and
+  status helpers (`team-tokens.ts`; the invite code's alphabet and hash
+  moved to `member-invites.ts`), and `ContactRow.team` (when a code was
+  made and last used).
+  - **The Chat archive needs no code.** `GET /api/team-admin/members`
+    (the Members tab) lists every contact with old portal chat, newest
+    activity first, with or without a login made from it; it listed code
+    holders before, so a contact whose code was redeemed dropped off and
+    now shows again. A code holder who never chatted is not listed; their
+    access log stays readable with `team_access_list`. Each row keeps
+    `tokenLastUsedAt` (always null) and `memberSince` (now the first portal
+    message) one contract cycle. `team_chat_list` (`portal_archive`),
+    `team_chat_read` with a `contactId`, Member chats' `portalThread` and
+    `team_chat_read`'s `portal_history` read the chat by contact or login
+    as before.
+  - Tests: `packages/db/src/drop-contact-team-tokens.db.test.ts` (the FK
+    list, no CASCADE, every count kept, a second run a no-op),
+    `server/web/app/api/team-admin/members/members-archive.db.test.ts`,
+    `packages/content/src/member-invites.db.test.ts` (an 8-char code
+    redeems nothing; a pre-0178 invite still redeems) and
+    `member-invites.test.ts` (the alphabet and the hash).
 - **Tests.** `packages/content/src/member-invites.db.test.ts` and
   `member-history-links.db.test.ts` (Postgres: 0175's backfill and the
   redeem's), `packages/tools/src/builtins-team-portal.db.test.ts`,
