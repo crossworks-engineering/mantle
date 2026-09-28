@@ -3,7 +3,7 @@
  *
  * GET renders the consent page ("Allow Claude to access your Mantle brain") once
  * the owner is signed in; if they're not, it bounces to /login?next=… and comes
- * back. POST is the Allow/Deny decision: Allow mints a single-use PKCE-bound code
+ * back. A member login gets a plain refusal page (403): only admins connect. POST is the Allow/Deny decision: Allow mints a single-use PKCE-bound code
  * and 302s back to the client's registered redirect_uri with code+state.
  *
  * This endpoint USES the Mantle session (unlike the other OAuth routes, which
@@ -15,7 +15,7 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { NextResponse } from '@/server/http-compat';
-import { getSessionUser } from '@/lib/auth';
+import { getLoginOr401, type SessionUser } from '@/lib/auth';
 import { requestOrigin } from '@/lib/auth-constants';
 import { getClient, isRemoteMcpEnabled, mintAuthCode, DEFAULT_SCOPE } from '@/lib/mcp-oauth';
 import { env } from '@mantle/config';
@@ -61,6 +61,18 @@ function htmlError(message: string, status = 400): Response {
   );
 }
 
+/** Who is signed in: an admin, a member (who cannot connect a client), or
+ *  nobody. A member used to read as nobody here and was sent to /login, where
+ *  they were already signed in: a loop with no way out. */
+async function signedIn(): Promise<SessionUser | 'member' | null> {
+  const login = await getLoginOr401();
+  if (login instanceof Response) return null;
+  return login.kind === 'admin' ? login.user : 'member';
+}
+
+const MEMBER_REFUSED =
+  'Member logins cannot connect MCP clients to this brain. Ask an admin of this brain.';
+
 /** Bind the consent form to (user, client, redirect, challenge) so only a POST
  *  originating from the page we rendered to THIS signed-in user is honoured. */
 function consentToken(userId: string, p: AuthorizeParams): string {
@@ -99,7 +111,8 @@ export async function GET(req: Request) {
   const validated = await validate(p);
   if (validated instanceof Response) return validated;
 
-  const user = await getSessionUser();
+  const user = await signedIn();
+  if (user === 'member') return htmlError(MEMBER_REFUSED, 403);
   if (!user) {
     // Bounce through login, then return to this exact authorize request.
     const next = encodeURIComponent(url.pathname + url.search);
@@ -134,7 +147,8 @@ export async function POST(req: Request) {
   const validated = await validate(p);
   if (validated instanceof Response) return validated;
 
-  const user = await getSessionUser();
+  const user = await signedIn();
+  if (user === 'member') return htmlError(MEMBER_REFUSED, 403);
   if (!user) return htmlError('your session expired — start the connection again', 401);
 
   if (!consentTokenValid(get('consent_token'), consentToken(user.id, p))) {
