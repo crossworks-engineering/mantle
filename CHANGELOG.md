@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
-## 0.232.301: team codes retired (Phase 6, migration 0178)
+## 0.232.301: team codes retired (0178) and admin private items (Phase 7, 0179)
 
 - Migration 0178 drops `contact_team_tokens` (its one FK to nodes dropped by
   name first, then the table without CASCADE). Contacts, their old portal
@@ -17,6 +17,15 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   archive), newest first. `TeamMemberActivity.tokenLastUsedAt` is always null
   (deprecated one cycle); `memberSince` is the first portal message.
   `ContactRow.team` is gone.
+
+- Phase 7: an admin keeps items private in their own space (routes
+  `/api/admin/space*`, mirroring the member ones with no share, submit,
+  recall or comments) and accepts them into the brain themselves
+  (`POST /api/admin/space/:id/accept`, the Team admin accept body and
+  answer; no author badge). While private, an admin's item may embed any
+  brain item. Migration 0179 limits the team-drafts read rules to member
+  spaces, so a member promoted to admin never exposes later edits to
+  members. The review queue shows only member-written items.
 
 ## 0.232.300: client v0.6.161
 
