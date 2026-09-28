@@ -76,9 +76,11 @@ if [ -n "$LABEL" ]; then
     const boxes = Array.isArray(raw) ? raw : raw.boxes ?? [];
     const b = boxes.find((x) => x && x.label === label);
     if (!b) { console.error(`no box labelled "${label}" in ${file}`); process.exit(1); }
-    console.log([b.ssh ?? "", b.stack ?? "", b.url ?? ""].join("\t"));
+    console.log([b.ssh ?? "", b.stack ?? "", b.url ?? ""].join("\x1f"));
   ' "$FLEET" "$LABEL") || die "box lookup failed"
-  IFS=$'\t' read -r cfg_ssh cfg_stack cfg_url <<< "$BOX" || true
+  # Unit separator, not a tab: read merges runs of a whitespace IFS, so an
+  # empty "stack" between two tabs would shift the url into it.
+  IFS=$'\x1f' read -r cfg_ssh cfg_stack cfg_url <<< "$BOX" || true
   SSH_ALIAS=${SSH_ALIAS:-$cfg_ssh}; STACK=${STACK:-$cfg_stack}; URL=${URL:-$cfg_url}
   [ -n "$SSH_ALIAS" ] || die "box \"$LABEL\" has no \"ssh\" in $FLEET"
 fi

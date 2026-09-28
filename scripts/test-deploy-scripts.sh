@@ -863,6 +863,11 @@ printf '{"boxes":[{"label":"box-a","url":"","ssh":"fakebox","stack":"%s"}]}\n' "
 FAKE_STACK_ENV="" MANTLE_FLEET_FILE="$RS/fleet.json" roll_sh box-a v8
 check "box from the fleet file (label, ssh, stack)" sh -c "test '$rc' = 0 && grep -q '===== fakebox → v8' '$RS/out'"
 
+roll_box fleetnostack
+printf '{"boxes":[{"label":"box-b","url":"https://brain.example.com","ssh":"fakebox"}]}\n' > "$RS/fleet.json"
+MANTLE_FLEET_FILE="$RS/fleet.json" roll_sh box-b v8
+check "a fleet box with a url and no stack: the stack comes from the updater, not the url" sh -c "test '$rc' = 0 && ! grep -q 'not an absolute path' '$RS/out'"
+
 # ═════════════════════════════════════════════════════════════════════════════
 echo
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"
