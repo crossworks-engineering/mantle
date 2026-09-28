@@ -4,6 +4,28 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.316: admins are told what waits for them
+
+- **"Needs you" live event.** Migration 0186 raises `needs_you_changed`
+  (payload: the brain's owner id) from triggers whenever something starts or
+  stops waiting for an admin: a member submits or recalls, an admin returns,
+  accepts, takes over, gives back or discards, a login is deactivated or
+  reactivated, a team request is filed, done, reopened or deleted. Saves,
+  shares and edits never fire it. Notify-only: nothing listening starts LLM
+  work (a test pins the two listeners).
+- **`GET /api/team-admin/needs-you`** (admins only): the Review queue
+  (submitted, left behind) and open requests as counts, plus the newest of
+  each by title and author, never content. The owner live stream sends
+  `needs_you` when they may have moved. Contract type `NeedsYou`.
+- **Phone push** to active admin devices only (never a member's, a
+  deactivated admin's or an unattributed device), once per arrival, title
+  and member name only; follows the approvals toggle.
+- The Requests badge counts with a count query (it stopped at 100).
+- Scratch test databases get the access matrix grants, as migrate gives them.
+- The client half (rail notice, toast, tab title and favicon, browser
+  notification opt-in, desktop dock badge and bounce) ships in the next
+  client release.
+
 ## 0.232.315: client v0.6.168
 
 - Pairs the client at jackdaw v0.6.168: the Access popover says how many
