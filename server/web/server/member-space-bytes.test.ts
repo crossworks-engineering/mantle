@@ -58,6 +58,8 @@ vi.mock('@mantle/content', async (orig) => {
   };
   return {
     ...actual,
+    // No item of these members is with an admin (audit F07's guard).
+    isWithAdmin: async () => false,
     openMineFile: async (spaceId: string, id: string) => {
       h.opened.push(spaceId);
       if (store[id] !== spaceId) return null;
