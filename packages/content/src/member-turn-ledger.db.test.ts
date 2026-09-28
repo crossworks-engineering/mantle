@@ -22,11 +22,13 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
   const pat = randomUUID();
   const sam = randomUUID();
   const since = new Date(Date.now() - 60 * 60 * 1000);
+  // Turn ids are global (the primary key): prefix them per run.
+  const tid = (id: string) => `${tag}.${id}`;
   const claim = (loginId: string, turnId: string, dailyTurns = 3, dailyTokens = 0) =>
     ledger.claimMemberTurn({
       ownerId: anchor,
       loginId,
-      turnId,
+      turnId: tid(turnId),
       since,
       limits: { dailyTurns, dailyTokens },
     });
@@ -62,13 +64,13 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
   });
 
   it('gives a released slot back', async () => {
-    await ledger.releaseMemberTurn('pat.c');
+    await ledger.releaseMemberTurn(tid('pat.c'));
     expect(await claim(pat, 'pat.e')).toEqual({ ok: true, fresh: true });
   });
 
   it('ignores turns claimed before the window', async () => {
     await admin`update member_turn_ledger set created_at = now() - interval '2 days'
-                 where turn_id in ('pat.a', 'pat.b')`;
+                 where turn_id in (${tid('pat.a')}, ${tid('pat.b')})`;
     expect(await claim(pat, 'pat.f')).toEqual({ ok: true, fresh: true });
   });
 
@@ -93,7 +95,7 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
       await new Promise((r) => setTimeout(r, 400));
       expect(settled).toBe(false);
       await tx`insert into member_turn_ledger (turn_id, owner_id, login_id)
-               values ('race.first', ${anchor}, ${who})`;
+               values (${tid('race.first')}, ${anchor}, ${who})`;
     });
     expect(await second).toEqual({ ok: false, reason: 'daily_cap', used: 1 });
     await admin`delete from auth.users where id = ${who}`;
