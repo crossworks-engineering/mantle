@@ -4,6 +4,19 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.292: invites in the client; old team history follows the login (Phase 6 stage 3)
+
+- Paired with jackdaw v0.6.157: Team admin > Invites (Invite as member on a
+  code holder, copy the link and code, revoke), the public /invite page, a
+  notice on the old team code gate, and the Users role picker always shows.
+- Migration 0175: team_access_log.login_id; a redeemed contact's access log
+  and comments are linked to its member login (also at redeem time). Old
+  portal chats stay with the contact: admins see them beside the member's
+  thread (member-chats portalThread, team_chat_read portal_history), the
+  member never does, and they never enter the model's context.
+- Removing a team link keeps the item at team level (team sub-pages too);
+  team_access_list filters by loginId.
+
 ## 0.232.291: members always on, member invites, app SQL in child processes
 
 - Phase 6 stage 1: the MANTLE_MEMBERS flag is gone; member logins work on
