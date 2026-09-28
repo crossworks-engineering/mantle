@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import { setShareCascade } from '@/lib/shares';
-import type { LoweredItem } from '@mantle/content';
+import { ClientLinkRetiredError, type LoweredItem } from '@mantle/content';
 
 const Body = z.object({ nodeId: z.string().uuid(), on: z.boolean() });
 
@@ -22,7 +22,16 @@ export async function POST(req: Request) {
   }
   const { nodeId, on } = parsed.data;
   const alsoLowered: LoweredItem[] = [];
-  const result = await setShareCascade(user.id, nodeId, on, alsoLowered);
+  let result: { ok: boolean; count: number };
+  try {
+    result = await setShareCascade(user.id, nodeId, on, alsoLowered);
+  } catch (err) {
+    // A client page shares no sub-pages by link (client logins C1).
+    if (err instanceof ClientLinkRetiredError) {
+      return NextResponse.json({ error: err.message, reason: err.reason }, { status: 400 });
+    }
+    throw err;
+  }
   if (!result.ok) return NextResponse.json({ error: 'node is not shared' }, { status: 409 });
   return NextResponse.json({ ok: true, count: result.count, alsoLowered });
 }

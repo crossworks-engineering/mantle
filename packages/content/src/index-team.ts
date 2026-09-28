@@ -40,6 +40,7 @@ export {
   levelForShareMode,
   applyLevelToShare,
   TeamLinkRetiredError,
+  ClientLinkRetiredError,
   type ShareMode,
   type ShareableType,
   type ShareSummary,

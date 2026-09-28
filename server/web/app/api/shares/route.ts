@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { countPageDescendants, type LoweredItem } from '@mantle/content';
+import { ClientLinkRetiredError, countPageDescendants, type LoweredItem } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 import { createShare, getActiveShareForNode } from '@/lib/shares';
 
@@ -47,6 +47,10 @@ export async function POST(req: Request) {
       alsoLowered,
     });
   } catch (err) {
+    // A client item has no open link (client logins C1).
+    if (err instanceof ClientLinkRetiredError) {
+      return NextResponse.json({ error: err.message, reason: err.reason }, { status: 400 });
+    }
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'failed to create share' },
       { status: 400 },

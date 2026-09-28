@@ -330,7 +330,8 @@ export type UnshareItemResult = {
  * Turn an item's link off (the share DELETE route, `node_unshare`,
  * `page_unshare`). Removing an open link is setting the item to admin by
  * hand, with the same closure rule: what it embeds is reported, never raised
- * on its own. Revokes by share id first so an expired link is retired too.
+ * on its own. A client item's old link is revoked and the item stays at
+ * client (client logins C1). Revokes by share id first so an expired link is retired too.
  * (Team links, which left their item at team, are retired: member logins
  * Phase 6 stage 6.)
  */
@@ -342,6 +343,14 @@ export async function unshareItem(ownerId: string, shareId: string): Promise<Uns
     .limit(1);
   const revoked = await revokeShareTree(ownerId, shareId);
   if (!row) return { revoked, stillBelow: [] };
+  // A client item keeps its level (client logins C1): its old link is gone,
+  // and client means signed-in clients, which no link decides.
+  const [node] = await db
+    .select({ audience: nodes.audience })
+    .from(nodes)
+    .where(and(eq(nodes.id, row.nodeId), eq(nodes.ownerId, ownerId)))
+    .limit(1);
+  if (node?.audience === 'client') return { revoked, stillBelow: [] };
   const res = await setItemLevel(ownerId, row.nodeId, 'admin');
   return { revoked, stillBelow: res.stillBelow };
 }

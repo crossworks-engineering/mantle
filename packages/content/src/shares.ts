@@ -65,8 +65,11 @@ export function canShareNode(node: { type: string; path: string | null }): boole
 
 // ─── Levels drive links ──────────────────────────────────────────────────────
 // A workspace item's level (nodes.audience) is the truth; its link follows it
-// (docs/access-levels.md §7). Client and public items carry an open link; admin
-// and team items carry none. Team links are retired (member logins Phase 6
+// (docs/access-levels.md §7). Public items carry an open link; admin, team and
+// client items carry none. Client means "signed-in clients" (client logins
+// C1), never an open link: no path makes a new link on a client item
+// (ClientLinkRetiredError, inside createShare), and no link, old or new,
+// changes a client item's level. Team links are retired (member logins Phase 6
 // stage 6): members read team items by level with their own logins, migration
 // 0176 revoked every team link, and nothing makes one (TeamLinkRetiredError).
 // Every share mutation below re-derives the level from the link it leaves, so
@@ -74,9 +77,26 @@ export function canShareNode(node: { type: string; path: string | null }): boole
 // link, sub-page cascade) cannot drift from the level. Tasks, events and
 // other non-workspace kinds stay admin whatever link they carry.
 
-/** The link a level needs: none at admin or team, open below. */
+/** The link a level needs: an open one at public, none above (client logins
+ *  C1: client is signed-in clients, not a link). */
 export function shareModeForLevel(level: ViewerLevel): ShareMode | null {
-  return level === 'client' || level === 'public' ? 'public' : null;
+  return level === 'public' ? 'public' : null;
+}
+
+/** Thrown when a link is asked for on a client item (client logins C1): client
+ *  items are for signed-in clients, and public is the only level with an
+ *  open link. Thrown inside createShare, so every path that makes a link
+ *  (node_share, page_share, POST /api/shares, the email link, the sub-page
+ *  cascade) meets it. */
+export class ClientLinkRetiredError extends Error {
+  readonly reason = 'client-links-retired';
+  constructor() {
+    super(
+      'Client items have no open link: clients sign in to read them. ' +
+        'For an open link anyone can use, set the item to public (access_set, or the Access control).',
+    );
+    this.name = 'ClientLinkRetiredError';
+  }
 }
 
 /** Thrown when a caller asks for a team-mode link. Team links are retired
@@ -98,25 +118,27 @@ function assertLinkMode(mode: string | undefined): void {
 }
 
 /**
- * The level a node's link implies. `mode` null = no active link: admin,
- * except that a node at team stays at team (team is a level members read by,
- * not a link), unless `preferred` is admin (the cascading parent it followed
- * went to admin); and a sub-page whose cascading parent is at team goes to
- * team with it. An open link keeps a node already at client or public where
- * it is, and drops anything higher to public. `preferred` (a cascading
- * parent's level) wins for an open link: sub-pages match their parent.
+ * The level a node's link implies. A node at client stays at client whatever
+ * its link says (client logins C1: until the old client links are retired
+ * they are still live, and no re-sync may flip them, or their embeds, to
+ * public or admin). `mode` null = no active link: admin, except that a node
+ * at team stays at team (team is a level members read by, not a link),
+ * unless `preferred` is admin (the cascading parent it followed went to
+ * admin); and a sub-page whose cascading parent is at team goes to team with
+ * it. An open link keeps a node at public and drops anything higher to
+ * public. `preferred` = a cascading parent's level; a client parent never
+ * makes a sub-page client through a link.
  */
 export function levelForShareMode(
   current: ViewerLevel,
   mode: ShareMode | null,
   preferred?: ViewerLevel,
 ): ViewerLevel {
+  if (current === 'client') return 'client';
   if (mode === null) {
     if (preferred === 'team' && current !== 'admin') return 'team';
     return current === 'team' && preferred !== 'admin' ? 'team' : 'admin';
   }
-  if (preferred === 'client' || preferred === 'public') return preferred;
-  if (current === 'client' || current === 'public') return current;
   return 'public';
 }
 
@@ -350,7 +372,7 @@ export async function createShare(
 ): Promise<ShareSummary> {
   assertLinkMode(opts.mode);
   const [node] = await q
-    .select({ id: nodes.id, type: nodes.type, path: nodes.path })
+    .select({ id: nodes.id, type: nodes.type, path: nodes.path, audience: nodes.audience })
     .from(nodes)
     .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
     .limit(1);
@@ -358,6 +380,12 @@ export async function createShare(
   if (!isShareable(node.type)) throw new Error(`type '${node.type}' is not shareable`);
   if (node.type === 'branch' && !isShareableFolderPath(node.path)) {
     throw new Error('only folders under files can be shared');
+  }
+  // Client items are for signed-in clients (client logins C1). Before the
+  // idempotent return: an old client link is not handed out again either.
+  // A cascading client parent's sub-pages are refused the same way.
+  if (node.audience === 'client' || opts.preferred === 'client') {
+    throw new ClientLinkRetiredError();
   }
 
   const existing = await getActiveShareForNode(ownerId, nodeId, q);
@@ -521,6 +549,11 @@ export async function setShareCascade(
 ): Promise<{ ok: boolean; count: number }> {
   const parent = await getActiveShareForNode(ownerId, parentNodeId);
   if (!parent) return { ok: false, count: 0 };
+  // An old link on a client page shares no sub-pages (client logins C1):
+  // refused before anything changes, not half way through the subtree.
+  if (on && (await levelOf(ownerId, parentNodeId)) === 'client') {
+    throw new ClientLinkRetiredError();
+  }
 
   await db
     .update(shares)

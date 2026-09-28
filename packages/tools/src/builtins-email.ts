@@ -25,6 +25,7 @@ import {
   docToText,
   renderPageEmail,
   cidForPageImage,
+  ClientLinkRetiredError,
   createShare,
   shareUrlForToken,
   contactEmails,
@@ -317,12 +318,15 @@ const email_page: BuiltinToolDef = {
 
     // Optionally mint a public link and surface it in the email footer + text.
     let shareUrl: string | undefined;
+    let linkRefused: string | undefined;
     if (input.includeLink === true) {
       try {
         const share = await createShare(ctx.ownerId, pageId);
         shareUrl = shareUrlForToken(share.token);
-      } catch {
+      } catch (err) {
         // Non-fatal: send the page without the online link if sharing fails.
+        // A client page has no open link (client logins C1): say so.
+        if (err instanceof ClientLinkRetiredError) linkRefused = err.message;
       }
     }
     const footerHtml = shareUrl
@@ -387,6 +391,7 @@ const email_page: BuiltinToolDef = {
           rejected: res.rejected,
           inlineImages: attachments.length,
           ...(shareUrl ? { shareUrl } : {}),
+          ...(linkRefused ? { linkRefused } : {}),
         },
       };
     } catch (err) {

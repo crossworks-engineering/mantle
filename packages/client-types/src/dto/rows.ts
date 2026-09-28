@@ -815,6 +815,15 @@ export interface OnboardingModelChoices {
  */
 export type ShareMode = 'public';
 
+/**
+ * Why a link was refused (the `reason` of a 400 from the share routes):
+ * `team-links-retired` for a team link (member logins Phase 6), and
+ * `client-links-retired` for any link on an item at client level (client
+ * logins C1): client means signed-in clients, and public is the only level
+ * with an open link.
+ */
+export type ShareRetiredReason = 'team-links-retired' | 'client-links-retired';
+
 export type TeamVisibleShare = {
   /** Share token — the workspace opens /s/<token>. */
   token: string;
