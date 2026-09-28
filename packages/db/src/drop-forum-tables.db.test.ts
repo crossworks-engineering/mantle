@@ -99,8 +99,8 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
       JSON.stringify({ source: 'forum-archive', forumArchive: { kind } });
     await sql`insert into nodes (id, owner_id, type, title, path, data) values
       (${id.contact}, ${owner}, 'contact', 'A member', 'contacts', '{}'::jsonb),
-      (${id.archiveIndex}, ${owner}, 'page', 'Forum archive', 'pages', ${archive('index')}::jsonb),
-      (${id.archiveTopic}, ${owner}, 'page', 'A topic', 'pages', ${archive('topic')}::jsonb),
+      (${id.archiveIndex}, ${owner}, 'page', 'Forum archive', 'pages', ${archive('index')}::text::jsonb),
+      (${id.archiveTopic}, ${owner}, 'page', 'A topic', 'pages', ${archive('topic')}::text::jsonb),
       (${id.filedFile}, ${owner}, 'file', 'jam.txt', 'files.review.forum_archive', '{}'::jsonb),
       (${id.dumpFile}, ${owner}, 'file', 'forum.json', 'files.archive', '{}'::jsonb),
       (${id.appNode}, ${owner}, 'app', 'An app', 'apps', '{}'::jsonb)`;
@@ -163,6 +163,9 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
   it('drops the four tables and leaves every other row, with the same counts', async () => {
     const before = await counts();
     expect(before.owner_nodes).toBe(6);
+    expect(before.archive_pages).toBeGreaterThanOrEqual(2);
+    expect(before.apps).toBeGreaterThanOrEqual(1);
+    expect(before.sandboxes).toBeGreaterThanOrEqual(1);
     await runDrop();
 
     expect(await forumTablesPresent()).toEqual([]);
