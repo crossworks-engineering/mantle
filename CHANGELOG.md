@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
-## 0.232.303: Phase 6 compatibility fields removed
+## 0.232.305: Phase 6 compatibility fields removed
 
 - The fields Phase 6 kept for one client cycle are gone (every box runs
   client v0.6.162 or newer): `TeamMemberActivity.tokenLastUsedAt`, the
@@ -13,6 +13,19 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   admin answers (upload badges and lists, `dashboardTags`, member `forum`
   and forum post paging). The unused frozen `Forum*` types leave
   `@mantle/client-types`.
+
+## 0.232.304: client v0.6.163
+
+- Paired with jackdaw v0.6.163: the client no longer reads the retired
+  one-cycle fields (the hub-app `modeChanged` fallback and the forum badge
+  types are gone).
+
+## 0.232.303: member file links take an asset token
+
+- The gate admits a member's `?at=` asset token on the member space byte
+  routes (`/api/member/space/:id/bytes`), as it already did for admins.
+  Another member's file is still a 404 in the token's own space, and a token
+  from another brain is a 401.
 
 ## 0.232.302: client v0.6.162
 
