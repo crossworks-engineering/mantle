@@ -6,13 +6,85 @@
  * those tasks for the /team-admin Requests view and closes the loop by posting
  * the owner's resolution back into the member's thread.
  */
-import { and, desc, eq, sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
+import { and, count, desc, eq, gte, sql } from 'drizzle-orm';
+import { TEAM_REQUEST_SOURCE, db, nodes, notifyNodeIngested, systemDb } from '@mantle/db';
 import { appendTeamMessage } from './team-messages';
 import type { TeamRequest } from '@mantle/client-types';
 export type { TeamRequest };
 
 export const TEAM_REQUEST_TAG = 'team-request';
+
+/**
+ * How many requests a member may file through the team agent (audit F08).
+ * Each one is an admin task in the review queue; the caps keep a runaway or
+ * injected turn from flooding it. Per turn = per inbound message; per day =
+ * the last 24 hours, per member login.
+ */
+export const TEAM_REQUESTS_PER_TURN = 3;
+export const TEAM_REQUESTS_PER_DAY = 20;
+
+/**
+ * Team requests already filed: those stamped with this inbound message (the
+ * turn), or by this requester since `since`. Read on the system connection:
+ * the team turn runs on the limited team role, which cannot see admin tasks,
+ * and an under-count would open the cap.
+ */
+export async function countTeamRequestsFiled(
+  ownerId: string,
+  by:
+    | { threadMessageId: string }
+    | { loginId: string; since: Date }
+    | { contactId: string; since: Date },
+): Promise<number> {
+  const conds = [
+    eq(nodes.ownerId, ownerId),
+    eq(nodes.type, 'task'),
+    sql`${TEAM_REQUEST_TAG} = ANY(${nodes.tags})`,
+  ];
+  if ('threadMessageId' in by) {
+    conds.push(sql`${nodes.data}->'teamRequest'->>'threadMessageId' = ${by.threadMessageId}`);
+  } else {
+    conds.push(gte(nodes.createdAt, by.since));
+    conds.push(
+      'loginId' in by
+        ? sql`${nodes.data}->'teamRequest'->>'loginId' = ${by.loginId}`
+        : sql`${nodes.data}->'teamRequest'->>'contactId' = ${by.contactId}`,
+    );
+  }
+  const [row] = await systemDb
+    .select({ n: count() })
+    .from(nodes)
+    .where(and(...conds));
+  return row?.n ?? 0;
+}
+
+/**
+ * An admin acted on a team request (edited it, closed it, answered it): stamp
+ * `data.reviewed_at` so the extractor may index it from now on
+ * (extract-exempt.ts), and announce it once, as an ordinary task's insert is
+ * announced. A no-op for any other task and for one already reviewed. Called
+ * from the admin paths only (the task routes and tools, the Requests reply).
+ */
+export async function markTeamRequestReviewed(ownerId: string, taskId: string): Promise<boolean> {
+  const rows = await db
+    .update(nodes)
+    .set({
+      data: sql`coalesce(${nodes.data}, '{}'::jsonb) || jsonb_build_object('reviewed_at', ${new Date().toISOString()}::text)`,
+    })
+    .where(
+      and(
+        eq(nodes.id, taskId),
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'task'),
+        sql`${nodes.data}->>'source' = ${TEAM_REQUEST_SOURCE}`,
+        sql`coalesce(${nodes.data}->>'reviewed_at', '') = ''`,
+      ),
+    )
+    .returning({ id: nodes.id });
+  if (!rows.length) return false;
+  await notifyNodeIngested(taskId);
+  return true;
+}
 
 type TeamRequestData = {
   contactId?: string | null;
@@ -65,6 +137,7 @@ export async function listTeamRequests(
       priority: typeof d.priority === 'string' ? d.priority : 'normal',
       createdAt: r.createdAt.toISOString(),
       contactId: typeof tr.contactId === 'string' ? tr.contactId : null,
+      loginId: typeof tr.loginId === 'string' && tr.loginId ? tr.loginId : null,
       contactName: typeof tr.contactName === 'string' ? tr.contactName : null,
       notifiedAt: typeof tr.notifiedAt === 'string' ? tr.notifiedAt : null,
     };
@@ -133,6 +206,9 @@ export async function notifyTeamRequester(
       updatedAt: new Date(),
     })
     .where(and(eq(nodes.id, taskId), eq(nodes.ownerId, ownerId)));
+  // Answering the member is an admin acting on the request: from now on the
+  // extractor may index it (audit F08).
+  await markTeamRequestReviewed(ownerId, taskId);
 
   return { ok: true, contactId, loginId };
 }

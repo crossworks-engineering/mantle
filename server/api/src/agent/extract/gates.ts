@@ -147,9 +147,10 @@ export async function admitForExtraction(
     });
     return { proceed: false };
   }
-  // Exempt nodes (the Forum archive pages, member logins Phase 6) are
-  // refused before ANY pass: no side pass, no embedding, no key check. They
-  // carry every forum topic, private ones too, and stay out of the brain.
+  // Exempt nodes are refused before ANY pass: no side pass, no embedding, no
+  // key check. The Forum archive pages (member logins Phase 6) carry every
+  // forum topic, private ones too, and stay out of the brain; a team request
+  // a member filed waits until an admin acts on it (extract-exempt.ts).
   if (isExtractExempt(node)) {
     await recordSkippedTrace({
       kind: 'extractor_run',
@@ -160,7 +161,9 @@ export async function admitForExtraction(
       details: {
         node_type: node.type,
         worker_slug: worker.slug,
-        hint: 'Forum archive pages are never indexed (data.source = forum-archive).',
+        hint:
+          'Forum archive pages are never indexed (data.source = forum-archive); a team request ' +
+          'is indexed once an admin edits, closes or answers it (data.reviewed_at).',
       },
     });
     return { proceed: false };
