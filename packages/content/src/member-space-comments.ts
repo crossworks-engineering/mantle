@@ -133,8 +133,10 @@ export async function listTeamDraftComments(id: string): Promise<NodeCommentDbRo
  * sharing row, locked, so an unshare or a delete cannot slip in between the
  * check and the write, and the change event commits with the comment, so a
  * failure after it cannot leave a comment the client retries into a
- * duplicate. Attribution comes from the session. The one asSystem write in
- * the personal-space code.
+ * duplicate. Attribution comes from the session. Only a MEMBER's space
+ * (migration 0179): an admin's private item takes no teammate comment, even
+ * with a 'team' row left over from before a promotion. The one asSystem
+ * write in the personal-space code.
  */
 export async function addTeamDraftComment(
   anchorId: string,
@@ -155,6 +157,7 @@ export async function addTeamDraftComment(
            and si.sharing = 'team'
            and n.type in ('page', 'note', 'draw', 'table', 'file')
            and not mantle_is_brain_space(n.owner_id)
+           and mantle_member_space(n.owner_id)
          for share of si
         returning id`)) as unknown as { id: string }[];
       const newId = rows[0]?.id;

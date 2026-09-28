@@ -22,6 +22,11 @@
  * a personal space. Bytes move beside the rows: staged before the commit,
  * put in place after it, removed again on a rollback.
  *
+ * Only a MEMBER's item is ever reviewable (Phase 7): an admin's own private
+ * items are never in the queue, the count, a Return or a review comment, not
+ * even when submitted before the login was promoted. An admin accepts their
+ * own items themselves (`acceptOwnItem`), through the same move.
+ *
  * Cost-safety: Accept is the ONE place a personal item is announced to the
  * extractor, once per moved item, inside the transaction (delivered on
  * commit, never for a rollback). Nothing else here starts LLM work.
@@ -70,10 +75,12 @@ import { COMMENT_BODY_MAX } from './node-comments';
 import { notifySpaceItemChanged } from './member-space-events';
 import {
   SPACE_ITEM_KINDS,
+  savedState,
   spaceItemBody,
   type SpaceItemBody,
   type SpaceItemKind,
 } from './member-space';
+import { SpaceItemStateError, spaceNotFound } from './member-space-core';
 import { spaceFileOf, type OpenedSpaceFile } from './member-space-files';
 import { DRAWS_ROOT_LABEL, getDrawSvg } from './draws';
 import { NOTES_ROOT_LABEL } from './notes';
@@ -135,13 +142,20 @@ export type ReviewItemRow = {
 /** A login that cannot use the brain any more: deactivated, or deleted. */
 const authorInactive = or(isNull(authUsers.id), isNotNull(authUsers.disabledAt))!;
 
+/** Written by a MEMBER login (or one since deleted, which only a member's
+ *  left-behind item can be): never an admin's own private item (Phase 7).
+ *  Needs `authUsers` left-joined on the item's author. */
+const authorIsMember = or(isNull(authUsers.id), eq(authUsers.role, 'member'))!;
+
 /**
  * The one condition under which an admin reads a personal item (see the
- * module comment). `spaces.kind = 'personal'` keeps brain items out.
+ * module comment). `spaces.kind = 'personal'` keeps brain items out, and
+ * `authorIsMember` every admin's own space.
  */
 const reviewable: SQL = and(
   eq(spaces.kind, 'personal'),
   inArray(nodes.type, [...SPACE_ITEM_KINDS]),
+  authorIsMember,
   or(
     eq(spaceItems.reviewState, 'submitted'),
     and(
@@ -215,14 +229,23 @@ export async function listReviewQueue(): Promise<{
   };
 }
 
-/** How many items wait for review (the nav badge). */
-export async function countSubmitted(): Promise<number> {
-  const [r] = await db
+/** How many items wait for review (the nav badge). `via` reads on another
+ *  connection (a test's one snapshot). */
+export async function countSubmitted(via: Pick<Tx, 'select'> = db): Promise<number> {
+  const [r] = await via
     .select({ n: sql<number>`count(*)::int` })
     .from(spaceItems)
     .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
     .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
-    .where(and(eq(spaces.kind, 'personal'), eq(spaceItems.reviewState, 'submitted')));
+    .leftJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
+    .where(
+      and(
+        eq(spaces.kind, 'personal'),
+        eq(spaceItems.reviewState, 'submitted'),
+        inArray(nodes.type, [...SPACE_ITEM_KINDS]),
+        authorIsMember,
+      ),
+    );
   return r?.n ?? 0;
 }
 
@@ -305,7 +328,8 @@ export async function addReviewComment(
       .where(and(eq(spaceItems.nodeId, id), eq(spaces.kind, 'personal')))
       .for('share', { of: spaceItems })
       .limit(1);
-    if (!si || (si.state !== 'submitted' && !(await reviewRow(id, tx)))) throw notFound();
+    // Reviewable at all (a member's item), else it does not exist for an admin.
+    if (!si || !(await reviewRow(id, tx))) throw notFound();
     if (si.state !== 'submitted') {
       throw new ReviewError('not-submitted', 'Only a submitted item takes review comments.');
     }
@@ -602,6 +626,139 @@ export async function acceptReviewItem(
   reviewer: { loginId: string },
   opts: AcceptOptions = {},
 ): Promise<AcceptResult> {
+  return moveIntoBrain(brainId, id, opts, {
+    locate: async (tx) => {
+      // The state row, locked. A Recall, Return or second Accept waits.
+      const [locked] = await tx
+        .select({ kind: spaces.kind })
+        .from(spaceItems)
+        .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+        .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+        .where(eq(spaceItems.nodeId, id))
+        .for('update', { of: spaceItems })
+        .limit(1);
+      if (!locked || locked.kind !== 'personal') throw notFound();
+      const found = await reviewRow(id, tx);
+      if (!found) throw notFound();
+      return {
+        spaceId: found.spaceId,
+        root: { id, type: found.row.type, title: found.row.title },
+      };
+    },
+    // The state rows: accepted, by whom. They stay: they record the author.
+    settle: async (tx, ids, now) => {
+      await tx
+        .update(spaceItems)
+        .set({
+          reviewState: 'accepted',
+          reviewedBy: reviewer.loginId,
+          reviewedAt: now,
+          acceptedAt: now,
+          updatedAt: now,
+        })
+        .where(inArray(spaceItems.nodeId, ids));
+    },
+  });
+}
+
+/**
+ * An ADMIN accepts one of their OWN private items into the brain (member
+ * logins Phase 7, Jason 2026-09-28): no review, no queue. The same move as a
+ * reviewed Accept (bundle, same ids, re-own, bytes, drafts discarded, the
+ * extractor told once per moved item, one transaction), with its own guard:
+ * the item is in the caller's own personal space, the caller is a usable
+ * admin login, the item is not accepted, and it has no unsaved edits (the
+ * brain gets the SAVED version, as Submit sends it). Anything else is
+ * `not-found` (another login's item looks like a missing one) or
+ * `unsaved-draft`.
+ *
+ * The bundle's `space_items` rows are DROPPED, not marked accepted: an
+ * admin's own item has no author record, so it never carries the
+ * "member-authored" badge (member-accepted.ts) and never lists as a member's
+ * accepted item.
+ */
+export async function acceptOwnItem(
+  brainId: string,
+  own: { spaceId: string; loginId: string },
+  id: string,
+  opts: AcceptOptions = {},
+): Promise<AcceptResult> {
+  return moveIntoBrain(brainId, id, opts, {
+    locate: async (tx) => {
+      // The item, locked, in the caller's own personal space.
+      const [locked] = await tx
+        .select({
+          type: nodes.type,
+          title: nodes.title,
+          state: spaceItems.reviewState,
+        })
+        .from(nodes)
+        .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+        .leftJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
+        .where(
+          and(
+            eq(nodes.id, id),
+            eq(nodes.ownerId, own.spaceId),
+            eq(spaces.kind, 'personal'),
+            eq(spaces.loginId, own.loginId),
+            inArray(nodes.type, [...SPACE_ITEM_KINDS]),
+          ),
+        )
+        .for('update', { of: nodes })
+        .limit(1);
+      if (!locked || locked.state === 'accepted') throw spaceNotFound();
+      // Only an admin accepts without review; a member never does.
+      const [login] = await tx
+        .select({ id: authUsers.id })
+        .from(authUsers)
+        .where(
+          and(
+            eq(authUsers.id, own.loginId),
+            eq(authUsers.role, 'admin'),
+            isNull(authUsers.disabledAt),
+          ),
+        )
+        .limit(1);
+      if (!login) throw spaceNotFound();
+      const type = locked.type as SpaceItemKind;
+      if ((await savedState(type, id, tx)).unsaved) {
+        throw new SpaceItemStateError(
+          'unsaved-draft',
+          'This item has unsaved changes. Save a version first, then accept it.',
+        );
+      }
+      return { spaceId: own.spaceId, root: { id, type, title: locked.title } };
+    },
+    // No author record for an admin's own item (see above).
+    settle: async (tx, ids) => {
+      await tx.delete(spaceItems).where(inArray(spaceItems.nodeId, ids));
+    },
+  });
+}
+
+/** The two ends of an Accept that differ between a reviewed item and an
+ *  admin's own: how the item is found and locked, and what happens to the
+ *  bundle's state rows. Everything between is `moveIntoBrain`. */
+type AcceptSteps = {
+  /** Lock the item and prove the caller may accept it (throws otherwise). */
+  locate: (tx: Tx) => Promise<{ spaceId: string; root: BundleItem }>;
+  /** Settle the bundle's `space_items` rows once everything has moved. */
+  settle: (tx: Tx, ids: string[], now: Date) => Promise<void>;
+};
+
+/**
+ * The move itself, shared by both Accepts: in one transaction, locate and
+ * lock the item, compute the bundle, re-own every item in it (same ids),
+ * stage its bytes, settle the state rows, discard leftover drafts, and
+ * announce each moved item to the extractor once. After the commit the bytes
+ * are put in place and the item's link follows its level.
+ */
+async function moveIntoBrain(
+  brainId: string,
+  id: string,
+  opts: AcceptOptions,
+  steps: AcceptSteps,
+): Promise<AcceptResult> {
   const audience: ViewerLevel = opts.audience ?? 'admin';
   if (!isViewerLevel(audience)) throw new ReviewError('invalid', 'Pick a level.');
   const folder = opts.folderPath?.trim() || 'files';
@@ -617,20 +774,8 @@ export async function acceptReviewItem(
   let result: AcceptResult;
   try {
     result = await db.transaction(async (tx) => {
-      // 1. The state row, locked. A Recall, Return or second Accept waits.
-      const [locked] = await tx
-        .select({ kind: spaces.kind })
-        .from(spaceItems)
-        .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
-        .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
-        .where(eq(spaceItems.nodeId, id))
-        .for('update', { of: spaceItems })
-        .limit(1);
-      if (!locked || locked.kind !== 'personal') throw notFound();
-      const found = await reviewRow(id, tx);
-      if (!found) throw notFound();
-      const spaceId = found.spaceId;
-      const root: BundleItem = { id, type: found.row.type, title: found.row.title };
+      // 1. The item, located and locked by the caller's own rule.
+      const { spaceId, root } = await steps.locate(tx);
 
       // 2. Destinations, checked before anything moves.
       let parent: { id: string; path: string } | null = null;
@@ -799,17 +944,8 @@ export async function acceptReviewItem(
         }
       }
 
-      // 5. The state rows: accepted, by whom. They stay: they record the author.
-      await tx
-        .update(spaceItems)
-        .set({
-          reviewState: 'accepted',
-          reviewedBy: reviewer.loginId,
-          reviewedAt: now,
-          acceptedAt: now,
-          updatedAt: now,
-        })
-        .where(inArray(spaceItems.nodeId, ids));
+      // 5. The state rows, settled by the caller's rule.
+      await steps.settle(tx, ids, now);
 
       // 6. Announced once per moved item, in this transaction: the extractor
       //    hears of it on commit, when the item is the brain's.
@@ -868,6 +1004,9 @@ export async function returnReviewItem(
           eq(spaceItems.reviewState, 'submitted'),
           sql`exists (select 1 from nodes n join spaces s on s.id = n.owner_id
                        where n.id = ${id} and s.kind = 'personal')`,
+          // A member's item only: never an admin's own (Phase 7).
+          sql`not exists (select 1 from auth.users u
+                           where u.id = ${spaceItems.authorLoginId} and u.role <> 'member')`,
         ),
       )
       .returning({ sharing: spaceItems.sharing });

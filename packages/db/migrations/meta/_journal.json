@@ -1254,6 +1254,13 @@
       "when": 1790016960000,
       "tag": "0178_drop_contact_team_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1790017020000,
+      "tag": "0179_admin_private_spaces",
+      "breakpoints": true
     }
   ]
 }
