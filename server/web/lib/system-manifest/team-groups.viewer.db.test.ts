@@ -2,14 +2,20 @@
  * Every tool in a TEAM-level manifest group, run on the team viewer role
  * (member logins Phase 0b). A team-level group may only hold tools that work
  * at team level: they return team items or nothing, and never fail on a table
- * or column the team role may not read. Needs a migrated copy of a
- * provisioned brain:
- *   MANTLE_TEST_BRAIN_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/system-manifest/team-groups.viewer.db.test.ts
+ * or column the team role may not read.
+ *
+ * Seeds its own team-level items under the shared test anchor (a page, a
+ * table, a note, a file and a folder) so it runs on the shared test database
+ * (CI), and removes them after (the anchor stays).
+ *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/system-manifest/team-groups.viewer.db.test.ts
  */
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MANIFEST_TOOL_GROUPS } from './manifest';
 
-const URL = process.env.MANTLE_TEST_BRAIN_DATABASE_URL;
+const URL = process.env.MANTLE_TEST_DATABASE_URL;
 /** The groups migration 0159 sets to team level. */
 const TEAM_LEVEL_GROUPS = ['team-read', 'formulas-eval'];
 
@@ -26,36 +32,54 @@ describe.skipIf(!URL)('team-level tool groups on the team viewer role', () => {
   let admin: Parameters<typeof m.ensureViewerRoles>[0];
   let ownerId = '';
   const ids: Record<string, string> = {};
-  const lowered: string[] = [];
+  const tag = `team-groups-${crypto.randomUUID().slice(0, 8)}`;
+  const root = mkdtempSync(path.join(tmpdir(), 'mantle-team-groups-'));
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key'; // shared: roles are cluster-wide
+    process.env.TABLE_DB_DIR = path.join(root, 'table-dbs');
+    process.env.MANTLE_FILES_ROOT = path.join(root, 'files');
     m = await import('@mantle/db');
+    const { ensureTestAnchor } = await import('@mantle/db/test-support');
+    const c = await import('@mantle/content');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
-    const [o] = await admin<Row[]>`select id from auth.users where is_owner`;
-    ownerId = o!.id as string;
-    // One of each workspace kind at team level (restored after).
-    for (const type of ['page', 'table', 'note', 'file', 'branch', 'app', 'draw']) {
-      const [r] = await admin<Row[]>`
-        select id, audience from nodes where owner_id = ${ownerId} and type = ${type}
-        order by (audience <> 'admin') desc, updated_at desc limit 1`;
-      if (!r) continue;
-      ids[type] = r.id as string;
-      if (r.audience === 'admin') {
-        await admin`update nodes set audience = 'team' where id = ${r.id as string}`;
-        lowered.push(r.id as string);
-      }
-    }
-    const [v] = await admin<Row[]>`
-      select embedding::text as v from content_chunks where embedding is not null limit 1`;
-    h.vec = JSON.parse(v!.v as string) as number[];
+    ownerId = await ensureTestAnchor(admin);
+    h.vec = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
+    const vec = `[${h.vec.join(',')}]`;
+
+    // One of each workspace kind the tools read, at team level.
+    ids.page = (await c.createPage(ownerId, { title: `${tag} page` })).id;
+    ids.note = (await c.createNote(ownerId, { title: `${tag} note`, content: 'team note' })).id;
+    const col = crypto.randomUUID();
+    ids.table = (
+      await c.createTable(ownerId, {
+        title: `${tag} table`,
+        data: {
+          columns: [{ id: col, name: 'Name', type: 'text' }],
+          rows: [{ id: crypto.randomUUID(), cells: { [col]: 'a row' } }],
+        },
+      })
+    ).id;
+    ids.branch = crypto.randomUUID();
+    ids.file = crypto.randomUUID();
+    await admin`insert into nodes (id, owner_id, type, title, path, audience) values
+      (${ids.branch}, ${ownerId}, 'branch', ${`${tag} folder`}, 'files', 'team')`;
+    await admin`insert into nodes (id, owner_id, type, title, path, audience, data) values
+      (${ids.file}, ${ownerId}, 'file', ${`${tag} file.txt`}, 'files', 'team',
+       ${JSON.stringify({ filename: `${tag}.txt`, mime_type: 'text/plain' })}::jsonb)`;
+    const all = Object.values(ids);
+    await admin`update nodes set audience = 'team', embedding = ${vec}::vector
+      where id in ${admin(all)}`;
   });
 
   afterAll(async () => {
-    for (const id of lowered) await admin`update nodes set audience = 'admin' where id = ${id}`;
+    if (admin && Object.keys(ids).length) {
+      await admin`delete from nodes where id in ${admin(Object.values(ids))}`;
+    }
     await m?.closeDb();
+    rmSync(root, { recursive: true, force: true });
   });
 
   it('no tool in a team-level group fails on a permission error', async () => {

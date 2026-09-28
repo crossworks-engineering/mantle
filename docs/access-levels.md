@@ -95,6 +95,21 @@ them (the control). Tests: `packages/db/src/*.db.test.ts`,
 `packages/content/src/access*.test.ts`,
 `packages/runtime/src/assistant/run-team-turn.viewer.db.test.ts`.
 
+All of them run in CI on the shared test database
+(`MANTLE_TEST_DATABASE_URL`): the team-turn, team-groups and shadow-report
+tests seed a minimal brain of their own (the shared test anchor from
+`@mantle/db/test-support`, a team-level agent and tool group, items at team
+and admin level with one fixed embedding) instead of needing a copy of a
+provisioned brain. `packages/db/src/nodes-owner-rls.db.test.ts` pins the
+owner check in the nodes read rule directly: a team-level node the brain does
+not own (a personal space, another brain-kind space) is invisible to every
+level role. The agent-level wrap on each of the five entry points
+(`loadConversationContext`, `runToolLoop`, `assembleResponderTurn`,
+`runResponderLoop`, `runTeamTurn`) has its own unit test
+(`packages/runtime/src/{agent,assistant}/*.level.test.ts`, no database): each
+records `currentViewerLevel()` inside the entry point's collaborators, so
+removing any one wrap fails a test.
+
 ## 4. Setting levels
 
 - MCP / assistant: `access_get`, `access_set`, `access_shadow_report` (tool

@@ -703,7 +703,9 @@ is a member login. Nobody hands a password around. The table is
   archive pages and the files the export filed stay, and stay un-indexed.
   A topic with no archive page aborts the migration. Details, with every
   foreign key and how it was dropped: [team-forum.md](./team-forum.md)
-  section 8. Test: `packages/db/src/drop-forum-tables.db.test.ts`.
+  section 8. Test: `packages/db/src/drop-forum-tables.db.test.ts` (on a
+  scratch database of its own, migrated from scratch and dropped after: its
+  DROP CONSTRAINT locks `nodes` and deadlocked with other DB test files).
 - **Team codes are dropped** (Phase 6, migration 0178). The last thing a
   code did was redeem an invite once (above); with that gone,
   `contact_team_tokens` went. Its one foreign key (`contact_id` to `nodes`,
@@ -729,7 +731,8 @@ is a member login. Nobody hands a password around. The table is
     `team_chat_read`'s `portal_history` read the chat by contact or login
     as before.
   - Tests: `packages/db/src/drop-contact-team-tokens.db.test.ts` (the FK
-    list, no CASCADE, every count kept, a second run a no-op),
+    list, no CASCADE, every count kept, a second run a no-op; on its own
+    scratch database, like the forum drop test),
     `server/web/app/api/team-admin/members/members-archive.db.test.ts`,
     `packages/content/src/member-invites.db.test.ts` (an 8-char code
     redeems nothing; a pre-0178 invite still redeems) and

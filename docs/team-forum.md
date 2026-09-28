@@ -273,7 +273,8 @@ export route, the Drizzle schema, the quarantine helpers of `@mantle/files`
   quarantine directory (`forum-uploads/`, a sibling of the files root) is
   left on disk; nothing reads it now.
 
-**Tests.** `packages/db/src/drop-forum-tables.db.test.ts` (Postgres: the
+**Tests.** `packages/db/src/drop-forum-tables.db.test.ts` (Postgres, on a
+scratch database of its own that the test migrates and drops: the
 tables gone after migrate; put back and seeded, 0177 refuses an unexported
 topic, fails on an unknown view, drops the four tables and leaves the archive
 pages, filed files, apps and their nodes, sandboxes, team messages and team
