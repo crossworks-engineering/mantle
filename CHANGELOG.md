@@ -17,7 +17,6 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   archive), newest first. `TeamMemberActivity.tokenLastUsedAt` is always null
   (deprecated one cycle); `memberSince` is the first portal message.
   `ContactRow.team` is gone.
-
 - Phase 7: an admin keeps items private in their own space (routes
   `/api/admin/space*`, mirroring the member ones with no share, submit,
   recall or comments) and accepts them into the brain themselves
