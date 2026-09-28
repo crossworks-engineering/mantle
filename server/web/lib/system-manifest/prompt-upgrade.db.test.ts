@@ -80,11 +80,11 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
                         ${['team_member_list', 'team_notify']})`;
     for (const slug of ['team_member_list', 'team_notify']) {
       await admin`insert into tools (owner_id, slug, name, description, handler)
-                  values (${u}, ${slug}, ${slug}, 'x', ${{ kind: 'builtin', ref: slug } as never})`;
+                  values (${u}, ${slug}, ${slug}, 'x', ${JSON.stringify({ kind: 'builtin', ref: slug })}::jsonb)`;
     }
     await admin`insert into tools (owner_id, slug, name, description, handler)
                 values (${brains.edited}, 'team_notify', 'My notifier', 'x',
-                        ${{ kind: 'http', url: 'https://example.invalid' } as never})`;
+                        ${JSON.stringify({ kind: 'http', url: 'https://example.invalid' })}::jsonb)`;
   });
 
   afterAll(async () => {
