@@ -28,6 +28,7 @@ import {
 import { journalKindSql, journalLearnedSql, journalSortSql } from './journal';
 import { loadProfilePreferences } from './profile-preferences';
 import { purposeArchetypeLabel } from '@mantle/content-core/onboarding-questions';
+import { PURPOSE_MAX_CHARS } from '@mantle/client-types/purpose-limits';
 
 /** Hard caps so the blocks can never balloon, however many entries exist. */
 const MAX_PER_GROUP = 6;
@@ -35,8 +36,9 @@ const MAX_TOTAL = 30;
 const MAX_ENTRY_CHARS = 280;
 /** Open questions shown in the working-notes tail. */
 const MAX_OPEN_QUESTIONS = 5;
-/** Cap the injected purpose so a runaway paste can't bloat every turn's prompt. */
-const MAX_PURPOSE_CHARS = 600;
+/** Cap the injected purpose so a runaway paste can't bloat every turn's prompt.
+ *  The save routes refuse longer input; this guards rows stored before they did. */
+const MAX_PURPOSE_CHARS = PURPOSE_MAX_CHARS;
 
 /** One journal entry, reduced to what the old identity block needs, newest
  *  first (the DB query orders them); within a group that order is kept. */
