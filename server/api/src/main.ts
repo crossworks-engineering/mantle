@@ -25,6 +25,7 @@ import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
 import { installTurnStreamObserver } from './turn-stream-observer';
 import { installTurnSuggestionHook } from './turn-suggestion';
 import { startTurnCancelListener, stopTurnCancelListener } from './turn-cancel';
+import { runForumArchiveBootTask } from './forum-archive-boot';
 // Import workflow modules for their registration side-effects (registerWorkflow
 // runs at import, before launch).
 import './workflows/ping';
@@ -143,6 +144,11 @@ async function main(): Promise<void> {
   // enqueuer (registered above) to keep runtime.ts free of a workflow import
   // cycle (the workflow imports handleTelegramMessage from runtime.ts).
   await startAgentRuntime({ enqueueTelegramTurn });
+
+  // One-time boot task (member logins Phase 6): export the retired team forum
+  // into the admin-level Forum archive while any topic lacks its page. One
+  // count query once done; never blocks boot, never throws, no LLM work.
+  void runForumArchiveBootTask((line) => DBOS.logger.info(line));
 
   let shuttingDown = false;
   const shutdown = (sig: string) => {
