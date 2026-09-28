@@ -23,6 +23,7 @@ const PUBLIC = [
   // ops/files.ts
   'upsertFile',
   'readFileById',
+  'openFileById',
   'countDerivedFromFile',
   'drawsReferencingFile',
   'deleteFileById',

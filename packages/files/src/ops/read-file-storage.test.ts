@@ -30,7 +30,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
 
 vi.mock('@mantle/storage', () => ({ getContent: (key: string) => getContent(key) }));
 
-const { readFileById } = await import('./files');
+const { readFileById, openFileById } = await import('./files');
 
 /** A file node as email sync writes it: name on `title`, NO `data.filename`,
  *  bytes in object storage rather than the host-mirrored tree. */
@@ -94,5 +94,58 @@ describe('readFileById — object-storage fallback', () => {
 
     expect(res!.bytes.toString()).toBe('hello');
     expect(getContent).not.toHaveBeenCalled();
+  });
+});
+
+describe('openFileById: the streaming twin', () => {
+  const drain = async (stream: Readable) => {
+    const chunks: Buffer[] = [];
+    for await (const c of stream) chunks.push(Buffer.from(c as Buffer));
+    return Buffer.concat(chunks).toString();
+  };
+
+  it('streams a file on disk with its size from stat, without reading it first', async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const root = mkdtempSync(join(tmpdir(), 'open-file-'));
+    mkdirSync(join(root, 'docs'));
+    writeFileSync(join(root, 'docs', 'big.bin'), 'DISK-BYTES');
+    const saved = process.env.MANTLE_FILES_ROOT;
+    process.env.MANTLE_FILES_ROOT = root;
+    try {
+      selectQueue.push([{ ...attachmentNode({ filename: 'big.bin' }), path: 'files.docs' }]);
+      const res = await openFileById(args);
+      expect(res!.size).toBe(10);
+      // A file stream, not a buffer wrapped in one: it has a path.
+      expect((res!.stream as Readable & { path?: string }).path).toBe(
+        join(root, 'docs', 'big.bin'),
+      );
+      expect(await drain(res!.stream)).toBe('DISK-BYTES');
+      expect(getContent).not.toHaveBeenCalled();
+    } finally {
+      if (saved === undefined) delete process.env.MANTLE_FILES_ROOT;
+      else process.env.MANTLE_FILES_ROOT = saved;
+    }
+  });
+
+  it('streams inline content and a storage-only attachment, like readFileById', async () => {
+    selectQueue.push([attachmentNode({ content: 'hello' })]);
+    const inline = await openFileById(args);
+    expect(inline!.size).toBe(5);
+    expect(await drain(inline!.stream)).toBe('hello');
+
+    selectQueue.push([attachmentNode()], [{ storageKey: 'attachments/02/17/abc' }]);
+    getContent.mockResolvedValue({ body: Readable.from([Buffer.from('%PDF-1.7')]) });
+    const stored = await openFileById(args);
+    expect(stored!.size).toBe(8);
+    expect(await drain(stored!.stream)).toBe('%PDF-1.7');
+  });
+
+  it('is null for a missing node or bytes that are nowhere', async () => {
+    selectQueue.push([]);
+    await expect(openFileById(args)).resolves.toBeNull();
+    selectQueue.push([attachmentNode()], []);
+    await expect(openFileById(args)).resolves.toBeNull();
   });
 });
