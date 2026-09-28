@@ -1,5 +1,13 @@
 # Team Forum: shared topic threads
 
+> **Status: CLOSED (member logins Phase 6, 2026-09-28).** Team contacts become
+> member logins through invites ([member-logins.md](./member-logins.md)
+> section 9); a member chats with the team agent from their own login. Every
+> forum write now answers 410 `forum-closed` (section 8), and the forum's
+> content lives on as the admin-level **Forum archive** pages. Reads stay open
+> until the forum code is deleted. The rest of this document describes the
+> forum as it ran.
+
 The Forum is the team's shared conversation surface at `/team/forum`, the
 successor to the per-member 1:1 Team Chat (removed 2026-09-26; the owner
 still sees old transcripts as the "Chat archive" in `/team-admin`). A member creates a **topic**; the
@@ -130,3 +138,96 @@ reply into the originating topic), **P3** brain ingestion (shadow
 topics never ingested, see the scope note in
 [team-chat.md](team-chat.md) §7), **P5** forum hierarchy inline in the
 Requests tab.
+
+## 8. Closed, and the Forum archive (Phase 6)
+
+**Writes are closed.** A new topic (`POST /api/team/forum/topics`), a reply
+(`POST /api/team/forum/topics/[id]/posts`), a staged upload
+(`POST /api/team/forum/uploads`) and the admin's post
+(`POST /api/team-admin/forum/post`) answer, once the caller's credential
+resolves (an anonymous caller still gets its 401):
+
+```json
+{
+  "error": "The team forum is closed. …",
+  "reason": "forum-closed",
+  "inviteHint": "Ask the brain admin for an invite link: …"
+}
+```
+
+with status 410 (`server/web/lib/forum-closed.ts`). `enqueueForumTurn`
+throws `ForumClosedError`, so no path starts a new forum turn; a turn already
+queued before the freeze runs to completion. Reads stay open until the
+deletion stage.
+
+**The archive.** `exportForumArchive`
+(`packages/content/src/forum/export.ts`) freezes the forum into pages:
+
+- One **"Forum archive"** page, and under it one page per topic, private
+  topics included. The page is admin level (the default for a new item), so
+  only admins see it. A topic page lists every post in order: the author's
+  name and kind (member, owner, agent), the time (UTC), the body as it was
+  written (markdown), and for an agent reply the agent's name, its model and a
+  `/traces/<id>` link. Attachments are links (mention chips) to their file
+  nodes; an upload the admin dismissed, or whose bytes were gone, is named
+  without a link.
+- **Uploads nobody reviewed** (`staged` or `pending`) are filed into
+  `files/review/forum-archive` (flagged metadata-only: indexed by name, type
+  and folder, the content is never read) and linked from their post; the
+  `forum_uploads` row flips to `filed`. One whose quarantine bytes are gone
+  stays as it was and is named in the page and the dump. The quarantine
+  (`forum-uploads/`, a sibling of the files root) is not a bind mount in
+  `docker-compose.yml`, so on a box the bytes of an unreviewed upload do not
+  survive a container recreate; expect most of them to be gone there.
+- **One JSON dump** of the whole forum (topics, posts, uploads, request
+  tasks) at `files/archive/forum-<date>.json`, metadata-only.
+- A **request task** filed from a topic (`data.teamRequest.topicId`) gets
+  `data.teamRequest.archivePageId`.
+
+**Nothing is indexed, nothing spends.** Archive pages carry
+`data.source = 'forum-archive'`. The node insert trigger still announces each
+page on `node_ingested`, but the extractor's admission gate refuses it before
+any pass (disposition `extract_exempt`: no summary, embedding, chunks or
+facts), and the boot drain and the missed-event sweep leave it out
+(`isExtractExempt` / `unextractedNodeConds` in
+`packages/db/src/extract-exempt.ts`). The filed uploads and the dump are
+metadata-only: no LLM, one local spine embedding each. The export itself calls
+no model and no embedder. So search and the agents never read the archive
+pages; an admin reads them in Pages.
+
+**Idempotent.** `forum_topics.node_id` (reserved since migration 0123, unused
+until now) is the per-topic done-marker. A run adopts what an interrupted run
+left (a topic page by its topic id, a filed upload by its upload id), so
+running it again creates nothing. A topic with an agent reply still pending is
+deferred to a later run. A transaction-scoped advisory lock keeps two runs
+apart; the second one answers `busy`.
+
+**Who runs it.** Both call the same function:
+
+| Trigger                             | What                                                                                                                                                                                                             |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| api server boot                     | `server/api/src/forum-archive-boot.ts`: at every start, one count query; the export runs only while a topic has no page. Never blocks boot, never throws                                                         |
+| `GET /api/team-admin/forum/export`  | Admin only. `{ unexported }`: topics with no page yet                                                                                                                                                            |
+| `POST /api/team-admin/forum/export` | Admin only. 200 with `{ status: 'done', exported, deferred, alreadyExported, archivePageId, dumpFileId, uploadsFiled, uploadsMissing, tasksLinked }`; 409 `{ error, reason: 'busy' }` while a run holds the lock |
+
+**Showing a page to the team, by hand.** The archive stays admin level on
+purpose: private topics sit next to team ones. To share one topic page, an
+admin opens it in Pages and sets its level in the Access control (or
+`PATCH /api/access/nodes/<page id>` with `{ "audience": "team" }`, or
+`access_set` from the assistant; see [access-levels.md](./access-levels.md)
+section 4). Check the page first: a private topic's page carries "Private
+topic" in its first line. Lowering a page does not lower the files it links
+(no inheritance, and a mention chip is not part of the page's closure): set
+each file's level the same way if the team should open it. The page stays out
+of the brain either way: its level decides who may open it, not whether it
+is indexed.
+
+**Tests.** `packages/content/src/forum/export.db.test.ts` (Postgres: two runs,
+no duplicates, the cost checks, the lock, deferral and adoption),
+`server/web/app/api/team/forum/forum-closed-routes.test.ts`,
+`server/web/app/api/team-admin/forum/export/export-route.test.ts`,
+`server/api/src/forum-archive-boot.test.ts` and the `extract_exempt` case in
+`server/api/src/agent/extract/gates.test.ts`.
+
+**Left for the deletion stage:** the forum routes, screens, tables and
+turn pipeline go; the archive pages, filed files, dump and task links stay.

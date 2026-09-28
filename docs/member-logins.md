@@ -586,6 +586,11 @@ is a member login. Nobody hands a password around. The table is
   `expired`), `MemberInviteList`, `MemberInviteCreated`,
   `MemberInvitePreview`, `MemberInviteAccepted` in `@mantle/client-types`
   (`dto/member-invites.ts`).
+- **The forum is closed.** With invites in place the team forum takes no
+  new topics, replies, uploads or admin posts (410 `forum-closed`, with an
+  `inviteHint` telling the person to ask for an invite). Its content is kept
+  as admin-level "Forum archive" pages, never indexed; see
+  [team-forum.md](./team-forum.md) section 8.
 - **Tests.** `packages/content/src/member-invites.db.test.ts` (Postgres),
   `server/web/app/api/auth/invite/invite-routes.test.ts` and
   `server/web/app/api/team-admin/invites/invites-admin-routes.test.ts`; the
