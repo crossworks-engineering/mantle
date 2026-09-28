@@ -12,8 +12,9 @@
  * table (no CASCADE); the tables go and every other row stays, with the same
  * counts; a second run is a no-op.
  *
- * The seeded rows are left in place (the test database is throwaway, and
- * apps, app nodes and sandboxes are never deleted, not even by a test).
+ * It runs on a scratch database of its own (migrated from scratch, dropped
+ * after), never the shared test database: its DROP CONSTRAINT locks nodes
+ * and deadlocked with other test files deleting nodes.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/drop-forum-tables.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -21,6 +22,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres from 'postgres';
+import { createMigratedScratchDatabase } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const MIGRATIONS = join(__dirname, '..', 'migrations');
@@ -35,6 +37,7 @@ const statementsOf = (file: string) =>
 type Row = Record<string, unknown>;
 
 describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
+  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
   let sql: ReturnType<typeof postgres>;
   let goneAfterMigrate: string[] = [];
   const owner = randomUUID();
@@ -63,9 +66,7 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
         select relname as t from pg_class c join pg_namespace n on n.oid = c.relnamespace
          where n.nspname = 'public' and c.relname = any(${FORUM_TABLES}) order by 1`
     ).map((r) => r.t);
-  /** Every count the drop must leave alone, for the seeded owner only: other
-   *  DB test files run in parallel on this database and add or delete rows
-   *  brain-wide (agents, nodes), so a global count is not stable. */
+  /** Every count the drop must leave alone, for the seeded owner. */
   const counts = async () => {
     const [r] = await sql<Row[]>`
       select (select count(*) from nodes where owner_id = ${owner})::int as owner_nodes,
@@ -81,12 +82,12 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
   };
 
   beforeAll(async () => {
-    sql = postgres(URL!, { max: 1, onnotice: () => {} });
-    // The migration drop tests rebuild tables that reference nodes (ALTER
-    // TABLE ... ADD FOREIGN KEY locks nodes); two of them at once deadlock.
-    // One session lock, shared by every such test, runs them one at a time;
-    // sql.end() releases it.
-    await sql`select pg_advisory_lock(hashtext('mantle-migration-drop-tests'))`;
+    // A database of this test's own, migrated from scratch: rebuilding and
+    // dropping tables that reference nodes (ADD / DROP CONSTRAINT) locks
+    // nodes, which deadlocks with any other test file deleting nodes on the
+    // shared database (opposite lock order). Here nothing else runs.
+    scratch = await createMigratedScratchDatabase(URL!);
+    sql = postgres(scratch.url, { max: 1, onnotice: () => {} });
     goneAfterMigrate = await forumTablesPresent();
     // The tables as the forum had them.
     for (const file of [
@@ -126,15 +127,12 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
                       'text/plain', 10, 'filed', ${id.filedFile})`;
     await sql`insert into forum_read_cursors (owner_id, reader_id, topic_id)
               values (${owner}, ${id.contact}, ${id.topic})`;
-  }, 60_000);
+  }, 180_000);
 
   afterAll(async () => {
-    // Leave no forum table behind if a test failed midway.
-    if ((await forumTablesPresent()).includes('forum_topics')) {
-      await sql`delete from forum_topics where node_id is null`;
-    }
-    await runDrop();
-    await sql.end();
+    // The whole scratch database goes, whatever a failed test left in it.
+    await sql?.end();
+    await scratch?.drop();
   });
 
   it('the migrated database has no forum table', () => {

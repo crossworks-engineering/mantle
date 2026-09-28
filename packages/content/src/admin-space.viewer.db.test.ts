@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { notifyBarrier } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -63,7 +64,13 @@ describe.skipIf(!URL)('admin private items', () => {
     type: 'doc',
     content: [{ type: 'paragraph', content: [{ type: 'text', text: t }] }],
   });
-  const settle = () => new Promise((r) => setTimeout(r, 300));
+  /** Every node_ingested notification committed so far has arrived. */
+  const settle = () =>
+    notifyBarrier(
+      (m.systemDb as unknown as { $client: Parameters<typeof notifyBarrier>[0] }).$client,
+      'node_ingested',
+      { seen: (s) => announced.includes(s) },
+    );
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;

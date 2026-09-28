@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./schema": "./src/schema/index.ts",
     "./client": "./src/client.ts",
-    "./viewer": "./src/viewer.ts"
+    "./viewer": "./src/viewer.ts",
+    "./test-support": "./src/test-support.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

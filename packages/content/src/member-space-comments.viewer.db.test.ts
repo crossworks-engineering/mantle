@@ -6,6 +6,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureTestAnchor, notifyBarrier, pollUntil } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -25,14 +26,22 @@ describe.skipIf(!URL)('member personal space: comments and change events', () =>
   let spaceA: string;
   let spaceB: string;
   let anchor: string;
-  let madeAnchor = false;
   const brainPage = randomUUID();
 
   const asA = <T>(fn: () => Promise<T>) => m.withSpace({ spaceId: spaceA, loginId: loginA }, fn);
   const asB = <T>(fn: () => Promise<T>) => m.withSpace({ spaceId: spaceB, loginId: loginB }, fn);
   const A = { loginId: loginA, name: 'Ann' };
   const B = { loginId: loginB, name: 'Ben' };
-  const settle = () => new Promise((r) => setTimeout(r, 250));
+  /** Every space_item_changed event committed so far has arrived. */
+  const settle = () =>
+    notifyBarrier(
+      (m.systemDb as unknown as { $client: Parameters<typeof notifyBarrier>[0] }).$client,
+      'space_item_changed',
+      {
+        payload: (s) => JSON.stringify({ id: s }),
+        seen: (s) => events.some((e) => e.id === s),
+      },
+    );
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -50,19 +59,8 @@ describe.skipIf(!URL)('member personal space: comments and change events', () =>
     });
     unlisten = () => sub.unlisten();
 
-    const found = (
-      (await m.systemDb.execute(sqlTag`select mantle_brain_id() as id`)) as unknown as {
-        id: string | null;
-      }[]
-    )[0]?.id;
-    if (found) anchor = found;
-    else {
-      anchor = randomUUID();
-      madeAnchor = true;
-      await m.systemDb.execute(sqlTag`
-        insert into auth.users (id, email, password_hash, is_owner)
-        values (${anchor}, ${`${tag}-owner@example.invalid`}, 'x', true)`);
-    }
+    // The shared test anchor (never deleted by a test).
+    anchor = await ensureTestAnchor(admin);
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values
         (${loginA}, ${`${tag}-a@example.invalid`}, 'x', 'member'),
@@ -90,10 +88,6 @@ describe.skipIf(!URL)('member personal space: comments and change events', () =>
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id in (${spaceA}, ${spaceB})`);
     await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${loginA}, ${loginB})`);
     await m.systemDb.execute(sqlTag`delete from auth.users where id in (${loginA}, ${loginB})`);
-    if (madeAnchor) {
-      await m.systemDb.execute(sqlTag`delete from spaces where id = ${anchor}`);
-      await m.systemDb.execute(sqlTag`delete from auth.users where id = ${anchor}`);
-    }
     await m.closeDb();
   });
 
@@ -196,7 +190,8 @@ describe.skipIf(!URL)('member personal space: comments and change events', () =>
       await m.systemDb.execute(sqlTag`
         insert into node_comments (owner_id, node_id, author_kind, login_id, author_name, body)
         values (${anchor}, ${brainPage}, 'owner', ${anchor}, 'Admin', 'loud')`);
-      await settle();
+      // Committed after the quiet one: once it is here, the quiet one would be.
+      await pollUntil(() => seen.includes(brainPage), { what: 'the brain comment event' });
       expect(seen).toContain(brainPage);
       expect(seen).not.toContain(pageId);
     } finally {

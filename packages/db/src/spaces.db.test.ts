@@ -8,6 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureTestAnchor } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const INSUFFICIENT_PRIVILEGE = '42501';
@@ -23,7 +24,6 @@ describe.skipIf(!URL)('personal spaces under row level security', () => {
   let m: Db;
   let sqlTag: typeof import('drizzle-orm').sql;
   let anchor: string;
-  let createdAnchor = false;
   const tag = `spaces-${randomUUID().slice(0, 8)}`;
   const loginA = randomUUID();
   const loginB = randomUUID();
@@ -56,18 +56,8 @@ describe.skipIf(!URL)('personal spaces under row level security', () => {
     // Grants come from migrate (applyViewerGrants); re-applying them here would
     // race the access-matrix test's own reset (tuple concurrently updated).
 
-    const owner = (await m.systemDb.execute(
-      sqlTag`select id from auth.users where is_owner limit 1`,
-    )) as unknown as { id: string }[];
-    if (owner[0]) {
-      anchor = owner[0].id;
-    } else {
-      anchor = randomUUID();
-      createdAnchor = true;
-      await m.systemDb.execute(sqlTag`
-        insert into auth.users (id, email, password_hash, is_owner)
-        values (${anchor}, ${`${tag}-owner@example.invalid`}, 'x', true)`);
-    }
+    // The shared test anchor (never deleted by a test).
+    anchor = await ensureTestAnchor(admin);
     // Two member logins: the trigger gives each a personal space.
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values
@@ -103,10 +93,6 @@ describe.skipIf(!URL)('personal spaces under row level security', () => {
     await m.systemDb.execute(sqlTag`delete from nodes where title like ${`${tag}%`}`);
     await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${loginA}, ${loginB})`);
     await m.systemDb.execute(sqlTag`delete from auth.users where id in (${loginA}, ${loginB})`);
-    if (createdAnchor) {
-      await m.systemDb.execute(sqlTag`delete from spaces where id = ${anchor}`);
-      await m.systemDb.execute(sqlTag`delete from auth.users where id = ${anchor}`);
-    }
     await m.closeDb();
   });
 

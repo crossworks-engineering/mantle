@@ -13,8 +13,9 @@
  * instead of being dropped with the table (no CASCADE); the table goes and
  * every other row stays, with the same counts; a second run is a no-op.
  *
- * The seeded rows are left in place (the test database is throwaway, and
- * apps, app nodes and sandboxes are never deleted, not even by a test).
+ * It runs on a scratch database of its own (migrated from scratch, dropped
+ * after), never the shared test database: its DROP CONSTRAINT locks nodes
+ * and deadlocked with other test files deleting nodes.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/drop-contact-team-tokens.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -22,6 +23,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres from 'postgres';
+import { createMigratedScratchDatabase } from './test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const MIGRATIONS = join(__dirname, '..', 'migrations');
@@ -35,6 +37,7 @@ const statementsOf = (file: string) =>
 type Row = Record<string, unknown>;
 
 describe.skipIf(!URL)('migration 0178: drop contact_team_tokens', () => {
+  let scratch: Awaited<ReturnType<typeof createMigratedScratchDatabase>> | undefined;
   let sql: ReturnType<typeof postgres>;
   let goneAfterMigrate = false;
   const owner = randomUUID();
@@ -59,8 +62,7 @@ describe.skipIf(!URL)('migration 0178: drop contact_team_tokens', () => {
       select to_regclass('public.contact_team_tokens')::text as t`;
     return r!.t !== null;
   };
-  /** Every count the drop must leave alone, for the seeded brain (other test
-   *  files write rows brain-wide while this one runs). */
+  /** Every count the drop must leave alone, for the seeded brain. */
   const counts = async () => {
     const [r] = await sql<Row[]>`
       select (select count(*) from nodes where owner_id = ${owner})::int as nodes,
@@ -77,12 +79,12 @@ describe.skipIf(!URL)('migration 0178: drop contact_team_tokens', () => {
   };
 
   beforeAll(async () => {
-    sql = postgres(URL!, { max: 1, onnotice: () => {} });
-    // The migration drop tests rebuild tables that reference nodes (ALTER
-    // TABLE ... ADD FOREIGN KEY locks nodes); two of them at once deadlock.
-    // One session lock, shared by every such test, runs them one at a time;
-    // sql.end() releases it.
-    await sql`select pg_advisory_lock(hashtext('mantle-migration-drop-tests'))`;
+    // A database of this test's own, migrated from scratch: rebuilding and
+    // dropping tables that reference nodes (ADD / DROP CONSTRAINT) locks
+    // nodes, which deadlocks with any other test file deleting nodes on the
+    // shared database (opposite lock order). Here nothing else runs.
+    scratch = await createMigratedScratchDatabase(URL!);
+    sql = postgres(scratch.url, { max: 1, onnotice: () => {} });
     goneAfterMigrate = !(await tablePresent());
     // The table as the team codes had it.
     for (const stmt of statementsOf('0112_contact_team_tokens.sql')) await sql.unsafe(stmt);
@@ -107,12 +109,12 @@ describe.skipIf(!URL)('migration 0178: drop contact_team_tokens', () => {
               values (${id.access}, ${owner}, ${id.contact}, 'auth', '{}'::jsonb)`;
     await sql`insert into contact_team_tokens (id, owner_id, contact_id, token_hash)
               values (${id.teamToken}, ${owner}, ${id.contact}, ${`hash-${tag}`})`;
-  }, 60_000);
+  }, 180_000);
 
   afterAll(async () => {
-    // Leave no code table behind if a test failed midway.
-    await runDrop();
-    await sql.end();
+    // The whole scratch database goes, whatever a failed test left in it.
+    await sql?.end();
+    await scratch?.drop();
   });
 
   it('the migrated database has no contact_team_tokens', () => {

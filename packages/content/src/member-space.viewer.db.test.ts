@@ -8,6 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { notifyBarrier } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -21,6 +22,13 @@ describe.skipIf(!URL)('member personal space', () => {
   let sqlTag: typeof import('drizzle-orm').sql;
   let unlisten: () => Promise<void>;
   const announced: string[] = [];
+  /** Every node_ingested notification committed so far has arrived. */
+  const announcedSoFar = () =>
+    notifyBarrier(
+      (m.systemDb as unknown as { $client: Parameters<typeof notifyBarrier>[0] }).$client,
+      'node_ingested',
+      { seen: (s) => announced.includes(s) },
+    );
   const tag = `mspace-${randomUUID().slice(0, 8)}`;
   const loginA = randomUUID();
   const loginB = randomUUID();
@@ -188,7 +196,7 @@ describe.skipIf(!URL)('member personal space', () => {
   });
 
   it('nothing in the space was ever announced to the extractor', async () => {
-    await new Promise((r) => setTimeout(r, 300));
+    await announcedSoFar();
     expect(announced.filter((id) => [pageId, noteId, drawId].includes(id))).toEqual([]);
   });
 

@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -23,7 +24,6 @@ describe.skipIf(!URL)('table tools never read a draft below admin', () => {
   const tag = `tdguard-${randomUUID().slice(0, 8)}`;
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-tdguard-'));
   let anchor: string;
-  let madeAnchor = false;
   let tableId: string;
 
   beforeAll(async () => {
@@ -38,19 +38,8 @@ describe.skipIf(!URL)('table tools never read a draft below admin', () => {
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
       .$client;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
-    const found = (
-      (await m.systemDb.execute(sqlTag`select mantle_brain_id() as id`)) as unknown as {
-        id: string | null;
-      }[]
-    )[0]?.id;
-    if (found) anchor = found;
-    else {
-      anchor = randomUUID();
-      madeAnchor = true;
-      await m.systemDb.execute(sqlTag`
-        insert into auth.users (id, email, password_hash, is_owner)
-        values (${anchor}, ${`${tag}-owner@example.invalid`}, 'x', true)`);
-    }
+    // The shared test anchor (never deleted by a test).
+    anchor = await ensureTestAnchor(admin);
     const col = randomUUID();
     const t = await c.createTable(anchor, {
       title: `${tag} grid`,
@@ -71,10 +60,6 @@ describe.skipIf(!URL)('table tools never read a draft below admin', () => {
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`delete from nodes where id = ${tableId}`);
-    if (madeAnchor) {
-      await m.systemDb.execute(sqlTag`delete from spaces where id = ${anchor}`);
-      await m.systemDb.execute(sqlTag`delete from auth.users where id = ${anchor}`);
-    }
     await m.closeDb();
     rmSync(root, { recursive: true, force: true });
   });
