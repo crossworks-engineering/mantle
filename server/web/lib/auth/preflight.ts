@@ -1,10 +1,11 @@
 /**
  * Shared preflight for the unauthenticated credential-exchange endpoints:
- * the two token exchanges (`/s/<token>/auth`, `/api/team/auth`) and the two SSO
- * handoffs (`/api/auth/sso`, `/api/team/sso`).
+ * the share token exchange (`/s/<token>/auth`) and the SSO handoff
+ * (`/api/auth/sso`). (The team-code `/api/team/auth` and `/api/team/sso` were
+ * retired in member logins Phase 6.)
  *
- * All four accept a short secret from a caller who has not authenticated yet,
- * so all four throttle before doing any work and answer a throttled caller
+ * Both accept a short secret from a caller who has not authenticated yet, so
+ * both throttle before doing any work and answer a throttled caller
  * identically. What they must NOT share is the policy: each keeps its own
  * bucket names and caps, because a per-share exchange and a brain-level SSO
  * upgrade have genuinely different budgets.

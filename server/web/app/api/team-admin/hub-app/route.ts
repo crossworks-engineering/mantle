@@ -1,7 +1,9 @@
 /**
- * Owner-only designation of the TEAM HUB APP — the mini-app the /team shell
- * renders full-bleed in place of the built-in hub (see @mantle/content/team-hub
- * `resolveTeamHubApp` for the chain that must hold at read time).
+ * Owner-only designation of the HOME APP: the mini-app a member login's home
+ * renders full-bleed in place of the built-in member home
+ * (`resolveMemberHomeApp`, GET /api/member/home). The pref is still named
+ * `teamHubAppId`: the retired team-code /hub (member logins Phase 6) was its
+ * first reader.
  *
  * PUT { appId } — designate: requires a green PUBLISHED build, then ensures the
  * app's active share exists and is TEAM-mode (members authenticate to

@@ -44,15 +44,9 @@ export const PUBLIC_PATHS = [
   '/api/oauth',
   '/.well-known/oauth-authorization-server',
   '/.well-known/oauth-protected-resource',
-  // Team surfaces: /api/team/* self-authenticates with contact team tokens
-  // (signed team-chat cookie or bearer), never the session cookie. The /team
-  // and /hub UI moved to the CLIENT app with the member carve — here they are
-  // redirect stubs for canonical-domain bookmarks, public for the same
-  // reason. The owner's admin view (/team-admin) lives in the client app too,
-  // behind the owner credential.
-  '/team',
-  '/hub',
-  '/api/team',
+  // /team, /hub and /api/team/* (the team-code portal) were retired in member
+  // logins Phase 6: their old page URLs redirect to /login BEFORE this gate
+  // (server/pages/stubs.ts mountRetiredTeamPages) and the API paths are gone.
 ];
 
 /**

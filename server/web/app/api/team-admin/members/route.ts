@@ -1,24 +1,18 @@
 /**
- * GET /api/team-admin/members?contact=<id>&apage=<n> — the Members tab's data,
- * serialized exactly as the old SSR page computed it: the roster LEFT-joined
- * to forum activity in memory (a freshly enabled member who never posted
- * still shows), most-recent-post-first, plus the selected member's activity
- * detail (posts+answers page, authored topics, filed requests, chat archive,
- * access log).
+ * GET /api/team-admin/members?contact=<id> — the Members tab's data: the
+ * team-code roster (contacts that held a code, newest first) plus the
+ * selected contact's filed requests, old portal chat (the "Chat archive")
+ * and access log.
  *
- * Deliberately read-only: the SSR page used to advance the pre-Forum chat
- * cursor as a RENDER side effect — that moved to an explicit
- * POST /api/team-admin/members/[contactId]/thread-read, fired by the client
- * after the pane is actually on screen.
+ * The forum parts are gone with the forum (member logins Phase 6: its
+ * content lives on as the admin-level Forum archive pages). `forum`, `posts`,
+ * `postTotal` and `authored` stay in the answer, always empty, one contract
+ * cycle for client builds that still read them.
  */
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
   listTeamMemberActivity,
-  listForumMemberActivity,
-  listForumPostsByContact,
-  countForumPostsByContact,
-  listForumTopicsByAuthor,
   listTeamRequests,
   listTeamThread,
   listTeamAccess,
@@ -33,24 +27,14 @@ export async function GET(req: Request) {
   if (user instanceof Response) return user;
   const url = new URL(req.url);
   const contact = url.searchParams.get('contact') ?? undefined;
-  const apage = Math.max(1, Number.parseInt(url.searchParams.get('apage') ?? '1', 10) || 1);
 
-  const [badges, roster, forumActivity] = await Promise.all([
+  const [badges, roster] = await Promise.all([
     teamAdminBadges(user.id),
     listTeamMemberActivity(user.id),
-    listForumMemberActivity(user.id),
   ]);
-  const forumByContact = new Map(forumActivity.map((f) => [f.contactId, f]));
   const members = roster
-    .map((m) => ({ ...m, forum: forumByContact.get(m.contactId) ?? null }))
-    .sort((a, b) => {
-      const aAt = a.forum?.lastPostAt ?? null;
-      const bAt = b.forum?.lastPostAt ?? null;
-      if (aAt && bAt) return bAt.localeCompare(aAt);
-      if (aAt) return -1;
-      if (bAt) return 1;
-      return b.memberSince.localeCompare(a.memberSince);
-    });
+    .map((m) => ({ ...m, forum: null }))
+    .sort((a, b) => b.memberSince.localeCompare(a.memberSince));
 
   const selectedId =
     contact && members.some((m) => m.contactId === contact)
@@ -62,16 +46,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ badges, members, selected: null });
   }
 
-  const [posts, postTotal, authored, requests, thread, access] = await Promise.all([
-    listForumPostsByContact(user.id, selectedId, {
-      limit: ACTIVITY_PAGE_SIZE,
-      offset: (apage - 1) * ACTIVITY_PAGE_SIZE,
-    }),
-    countForumPostsByContact(user.id, selectedId),
-    listForumTopicsByAuthor(user.id, selectedId, { limit: 20 }),
+  const [requests, thread, access] = await Promise.all([
     listTeamRequests(user.id, { status: 'all', limit: 50, contactId: selectedId }),
     // Only touch the frozen chat store when this member actually has an
-    // archive — on a post-Forum brain that query would always return [].
+    // archive.
     selectedMember.messageCount > 0
       ? listTeamThread(user.id, selectedId, { limit: ARCHIVE_SHOWN })
       : Promise.resolve([]),
@@ -85,11 +63,11 @@ export async function GET(req: Request) {
     members,
     selected: {
       contactId: selectedId,
-      activityPage: apage,
+      activityPage: 1,
       activityPageSize: ACTIVITY_PAGE_SIZE,
-      posts,
-      postTotal,
-      authored,
+      posts: [],
+      postTotal: 0,
+      authored: [],
       requests,
       thread,
       access,

@@ -4,11 +4,13 @@ import { env } from '@mantle/config';
 
 /**
  * Redirect stubs for the surfaces that moved to the CLIENT app with the split
- * (ports of app/login, app/hub, app/team/[[...rest]] page stubs). They keep
- * canonical-domain bookmarks and the gate's unauthenticated 307→/login chain
- * working by forwarding to MANTLE_CLIENT_ORIGIN; with no client origin
- * configured they fall back to a static pointer card — an explanation, never
- * a loop.
+ * (ports of the app/login page stub). They keep canonical-domain bookmarks and
+ * the gate's unauthenticated 307→/login chain working by forwarding to
+ * MANTLE_CLIENT_ORIGIN; with no client origin configured they fall back to a
+ * static pointer card — an explanation, never a loop.
+ *
+ * /team and /hub (the team-code portal) were retired in member logins
+ * Phase 6: see mountRetiredTeamPages.
  */
 
 function clientOrigin(): string {
@@ -27,52 +29,41 @@ function movedCard(heading: string, bodyHtml: string): string {
 </div>`;
 }
 
+/**
+ * The retired team-code portal pages (member logins Phase 6): /team, anything
+ * under it, and /hub. A team member signs in with a member login now (invites,
+ * docs/member-logins.md section 9), so an old bookmark goes to /login.
+ *
+ * Mounted BEFORE the auth gate (server/app.ts), so it answers the same for
+ * everyone: no `next=/team` (the page is gone) and no query carried over (an
+ * old link may hold a team code). The paths are not in PUBLIC_PATHS; a
+ * credentialed nav never reaches the gate for them either.
+ */
+export function mountRetiredTeamPages(app: Hono): void {
+  const toLogin = (c: Context) => c.redirect('/login', 307);
+  for (const path of ['/team', '/team/*', '/hub', '/hub/*']) app.get(path, toLogin);
+}
+
 export function mountStubs(app: Hono): void {
-  app.get('/login', (c) => {
+  app.get('/login', async (c) => {
     const origin = clientOrigin();
     const next = new URL(c.req.url).searchParams.get('next');
     if (origin) {
       return c.redirect(`${origin}/login${next ? `?next=${encodeURIComponent(next)}` : ''}`, 307);
     }
-    return c.redirect('/team', 307);
-  });
-
-  app.get('/hub', async (c) => {
-    const origin = clientOrigin();
-    if (origin) return c.redirect(`${origin}/hub`, 307);
+    // No client origin: explain, never redirect (this stub used to send the
+    // browser to /team, which now comes straight back here).
     const { htmlPage } = await import('./template');
     return c.html(
       htmlPage(
-        { title: 'Team Hub' },
+        { title: 'Sign in' },
         movedCard(
-          'The team hub has moved',
-          'This brain serves its team hub from a separate app address. Ask the brain&rsquo;s admin for the current link.',
+          'Sign in from the app',
+          'This brain serves its sign-in page from a separate app address. Ask the brain&rsquo;s admin for the current link.',
         ),
       ),
     );
   });
-
-  // /team + /team/<anything> — forward the full path + query.
-  const teamStub = async (c: Context) => {
-    const origin = clientOrigin();
-    const url = new URL(c.req.url);
-    if (origin) {
-      const suffix = url.pathname === '/team' ? '' : url.pathname.slice('/team'.length);
-      return c.redirect(`${origin}/team${suffix}${url.search}`, 307);
-    }
-    const { htmlPage } = await import('./template');
-    return c.html(
-      htmlPage(
-        { title: 'Team' },
-        movedCard(
-          'The team workspace has moved',
-          'This brain serves its member workspace from a separate app address. Ask the brain&rsquo;s admin for the current team link.',
-        ),
-      ),
-    );
-  };
-  app.get('/team', teamStub);
-  app.get('/team/*', teamStub);
 
   // /n/<id> — the canonical node permalink, which lives in the CLIENT app.
   //

@@ -1,10 +1,10 @@
 /**
  * The owner SSO handoff handler — POST /api/auth/sso (route re-exports this;
  * lives in lib with relative imports so the co-located vitest run resolves it,
- * same pattern as token-login.ts / team-sso.ts).
+ * same pattern as token-login.ts).
  *
- * The owner counterpart of the member `/api/team/sso` upgrade, and it exists
- * for the same reason. Until v0.204 the owner UI decided "am I split?" with
+ * It began as the owner counterpart of the team-code `/api/team/sso` upgrade
+ * (retired in member logins Phase 6). Until v0.204 the owner UI decided "am I split?" with
  * `runtimeApiBase() !== ''`, which is TRUE on every same-origin box that sets
  * a base — so owners on a one-domain deployment authenticated in BEARER mode
  * and hold no session cookie. The API surface doesn't care (the bearer is a
@@ -21,7 +21,7 @@
  * between carriers, it does not widen it — which is also why a caller who is
  * already on a cookie is served idempotently rather than refused.
  *
- * Unlike the team route this takes NO `next` and never redirects: it is called
+ * Unlike the retired team route this takes NO `next` and never redirects: it is called
  * by `fetch` from our own shell, not by a top-level form navigation, so there
  * is no open-redirect surface to constrain and the bearer rides the
  * Authorization header rather than a form body.

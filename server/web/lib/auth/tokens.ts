@@ -19,8 +19,9 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { SESSION_COOKIE_NAME } from '../auth-constants';
 import { env } from '@mantle/config';
 
-/** The `k` claim: mobile bearer, asset token, team visitor, team chat, app frame. */
-type TokenKind = 'm' | 'a' | 't' | 'c' | 'f';
+/** The `k` claim: mobile bearer, asset token, team visitor, app frame. 'c'
+ *  (the retired team-chat credential) is reserved: no verifier takes it. */
+type TokenKind = 'm' | 'a' | 't' | 'f';
 
 /**
  * Claims whose signature, kind and expiry have already been checked. Every
@@ -246,52 +247,11 @@ export function verifyTeamVisitorValue(
   return { shareId: claims.sh, contactId: claims.cid };
 }
 
-// ── Team-chat cookies (`k:'c'`) ──────────────────────────────────────────────
-// Set after a team member enters their contact team token on the /team chat
-// surface. Unlike the app-share visitor cookie (`k:'t'`, bound to ONE share and
-// path-scoped to it), this is BRAIN-LEVEL: the claims carry who they are
-// (`cid`) and whose brain (`own`), and the cookie rides `/` so it reaches both
-// /team (the page) and /api/team/* (the routes). Safe at path `/` because the
-// only verifier that accepts kind 'c' is verifyTeamChatValue below — the
-// session/mobile/asset verifiers all reject it — so it can never escalate.
-// Stateless signature + expiry here; LIVENESS is re-checked on every request.
-
-export const TEAM_CHAT_COOKIE = 'mantle_team_chat';
-const TEAM_CHAT_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days, then re-enter the token.
-
-/**
- * Mint the signed team-chat credential for an (owner, contact) pair. One
- * format, two carriers: same-origin browsers get it as the `mantle_team_chat`
- * cookie value; the split client app holds it in localStorage and sends it as
- * `Authorization: Bearer` (resolveTeamChatCaller verifies both identically).
- */
-export function buildTeamChatToken(
-  ownerId: string,
-  contactId: string,
-): { value: string; maxAgeSec: number; expiresAt: number } {
-  const { value, exp } = signClaims(
-    { own: ownerId, cid: contactId, k: 'c' },
-    TEAM_CHAT_TTL_SECONDS,
-  );
-  return { value, maxAgeSec: TEAM_CHAT_TTL_SECONDS, expiresAt: exp };
-}
-
-/** Mint the team-chat cookie value for an (owner, contact) pair. */
-export function buildTeamChatCookie(
-  ownerId: string,
-  contactId: string,
-): { value: string; maxAgeSec: number } {
-  const { value, maxAgeSec } = buildTeamChatToken(ownerId, contactId);
-  return { value, maxAgeSec };
-}
-
-/** Verify a team-chat cookie value: signature, expiry, kind (`k:'c'`). No DB —
- *  callers must still confirm membership is live (isTeamMember). */
-export function verifyTeamChatValue(value: string): { ownerId: string; contactId: string } | null {
-  const claims = verifySigned(value, 'c');
-  if (!claims || typeof claims.own !== 'string' || typeof claims.cid !== 'string') return null;
-  return { ownerId: claims.own, contactId: claims.cid };
-}
+// ── Team-chat cookies (`k:'c'`): retired ─────────────────────────────────────
+// The brain-level team-chat credential (the `mantle_team_chat` cookie, and the
+// same value as a bearer) went with /team, /hub and /api/team/* in member
+// logins Phase 6. Nothing mints or accepts kind 'c' any more; the kind stays
+// reserved so an old value can never be read as something else.
 
 // ── App-frame tickets (`k:'f'`) ──────────────────────────────────────────────
 // The mini-app sandbox iframe navigates to a real URL (/api/apps/[id]/frame or

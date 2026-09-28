@@ -100,6 +100,37 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
     expect(failures).toEqual([]);
   }, 120_000);
 
+  // Member logins Phase 6 retired the team-code portal: its pages redirect to
+  // /login for everyone (before the gate, so no `next` and no query that may
+  // carry a team code), and its API is gone rather than public.
+  it('the retired /team and /hub pages redirect to /login, signed in or not', async () => {
+    const { buildSessionCookie } = await import('../lib/auth');
+    const session = `mantle_session=${buildSessionCookie('11111111-1111-4111-8111-111111111111').value}`;
+    const failures: string[] = [];
+    for (const path of ['/team', '/team/forum/abc?code=ABCD2345', '/team/apps', '/hub', '/hub/x']) {
+      for (const cookie of [undefined, session]) {
+        const res = await app.request(path, cookie ? { headers: { cookie } } : {});
+        const loc = res.headers.get('location');
+        if (res.status !== 307 || loc !== '/login') {
+          failures.push(`${path}${cookie ? ' (signed in)' : ''} -> ${res.status} ${loc}`);
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it('the retired /api/team surface is neither public nor routed', async () => {
+    expect(
+      manifest.filter((e) => /^\/(api\/team(\/|-portal)|team(\/|$)|hub(\/|$))/.test(e.pattern)),
+    ).toEqual([]);
+    const anon = await app.request('/api/team/auth', { method: 'POST' });
+    expect(anon.status).toBe(401);
+    const { buildSessionCookie } = await import('../lib/auth');
+    const cookie = `mantle_session=${buildSessionCookie('11111111-1111-4111-8111-111111111111').value}`;
+    const signedIn = await app.request('/api/team/forum/topics', { headers: { cookie } });
+    expect(signedIn.status).toBe(404);
+  });
+
   it('lists which manifest routes are public, so a new public prefix is a visible diff', () => {
     const publicPatterns = manifest
       .filter((e) => isPublic(concretePath(e.pattern)))
@@ -120,7 +151,6 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
         '/api/federation',
         '/api/mcp',
         '/api/oauth',
-        '/api/team',
         '/api/version',
         '/pair',
         '/s',

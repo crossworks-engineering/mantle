@@ -1,11 +1,13 @@
 /**
  * Owner-only backing API for the Team admin surface's settings. GET returns
- * the Settings tab's data (read posture, hub-app designation + candidates,
- * curated dashboard tags — what the old SSR page computed); PATCH flips the
- * `teamPrivateReads` switch (whether the Team Chat responder may read the
- * owner's email + journal on a member's behalf). Session/bearer-gated — under
- * `/api/team-admin`, which is NOT in PUBLIC_PATHS (only `/api/team` is), so it
- * carries the owner credential, never a team token.
+ * the Settings tab's data (read posture, the member home app designation +
+ * candidates); PATCH flips the `teamPrivateReads` switch (whether the team
+ * responder may read the owner's email + journal on a member's behalf).
+ * Session/bearer-gated: `/api/team-admin` is not in PUBLIC_PATHS.
+ *
+ * `dashboardTags` fed the retired /hub's curated sections (member logins
+ * Phase 6). It stays in the answer, with nothing available, one contract
+ * cycle for client builds that still read it.
  */
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
@@ -14,18 +16,16 @@ import {
   loadProfilePreferences,
   isTeamPrivateReadsEnabled,
   listApps,
-  listTeamShareTags,
 } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const [badges, prefs, apps, sharedPageTags] = await Promise.all([
+  const [badges, prefs, apps] = await Promise.all([
     teamAdminBadges(user.id),
     loadProfilePreferences(user.id),
     listApps(user.id, { limit: 200 }),
-    listTeamShareTags(user.id, 'page'),
   ]);
   // Designation candidates: published apps only (the PATCH API enforces it
   // too). Include the current designee even if its build went red, LABELLED —
@@ -43,7 +43,7 @@ export async function GET() {
     privateReads: isTeamPrivateReadsEnabled(prefs),
     hubAppId,
     hubCandidates,
-    dashboardTags: { selected: prefs.teamHubTags ?? [], available: sharedPageTags },
+    dashboardTags: { selected: prefs.teamHubTags ?? [], available: [] },
   });
 }
 
