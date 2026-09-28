@@ -389,6 +389,25 @@ images (the routes store no scene files); a table edits one tab at a time
 with no import, tab editing or cross-tab references. The page editor keeps
 `@` as plain text for a member: there is no member mention source yet.
 
+- A member's item links open from any source: `/n/<id>` (the team agent's
+  citations), `/pages/<id>`, `/draw/<id>`, `/notes/<id>` and `/tables/<id>`
+  find the item in Mine, then Team drafts, the Library, then Accepted, read
+  its kind from that answer and open it on the kind's screen. A member never
+  calls `/api/nodes`.
+- Autosave: a brain 5xx (not a proxy 502, 503 or 504) retries once, then
+  says "The server could not save this" (not the network). The typing
+  stays; the next edit tries again. While an editor holds typing it could
+  not save, closing or reloading the tab asks first. Member writes drop NUL
+  characters (the brain strips them too).
+- A save refused as `frozen` (submitted from another tab) keeps the editor
+  on screen, read-only, with the typing, until the member picks "Show it as
+  it is now". Submit and Accept wait for a pending title rename first.
+- The over-60 KB rescue copy in localStorage is keyed by the login, only
+  that login's copies are replayed, sign-out clears them all, and boot
+  sweeps expired ones.
+- A table conflict after a lost ops response rebases: the brain's copy
+  becomes the base, and the grid keeps typing done during the retry backoff.
+
 ## 6. Review and accept (Phase 4)
 
 **What an admin sees of a space.** Exactly two things, named in every query
@@ -877,6 +896,17 @@ is a member login. Nobody hands a password around. The table is
   `server/web/app/api/users/users-list-route.test.ts` (the exact answer
   shapes, with the one-cycle fields gone), the share
   tool tests and the auth sweep (the deleted routes are not routed).
+
+**In the client.** `/invite` drops `?code=` from the address once read. A
+password over 1024 characters is reported as too long. A contact whose
+invite was accepted shows "Has a member login" instead of "Invite as
+member". Team admin > Requests shows Reply and "View their chat" for a
+request with a login or a contact (`TeamRequest.loginId`); a login's chat
+link opens Member chats for that login. "Sign out everywhere" sits in the
+account menu (admins and members) and on a login's Devices card in
+Settings > Users. jackdaw CI runs the member e2e on a mock brain
+(`pnpm e2e:member`) and a real-brain `member-smoke.spec.ts` (invite, redeem,
+upload into Mine, load the image by `?at=`).
 
 ## 10. Admin private items (Phase 7)
 
