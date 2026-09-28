@@ -6,12 +6,19 @@
  * Token: 16 random bytes (128-bit) as base64url (~22 url-safe chars).
  */
 import { randomBytes } from 'node:crypto';
-import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { db, nodes, shares, WORKSPACE_NODE_TYPES, type Share, type ViewerLevel } from '@mantle/db';
 import type { ShareMode } from '@mantle/client-types';
 import { env } from '@mantle/config';
 
 export type { ShareMode };
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+/** Where a share read or write runs: the pool, or a caller's transaction
+ *  (`setItemLevel` writes the level and the link as one). Every function
+ *  below that takes one runs ALL its reads and writes through it: a write on
+ *  the pool while the caller's transaction holds the row would wait on itself. */
+export type ShareDb = typeof db | Tx;
 
 /** Node types that may be shared publicly. Sensitive types are excluded.
  *  `branch` = a FILES FOLDER only — sharing one shares every file under it,
@@ -95,15 +102,16 @@ async function syncLevelsFromShares(
   ownerId: string,
   nodeIds: readonly string[],
   preferred?: ViewerLevel,
+  q: ShareDb = db,
 ): Promise<void> {
   const ids = [...new Set(nodeIds)];
   if (ids.length === 0) return;
   const [rows, links] = await Promise.all([
-    db
+    q
       .select({ id: nodes.id, type: nodes.type, audience: nodes.audience })
       .from(nodes)
       .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, ids))),
-    db
+    q
       .select({ nodeId: shares.nodeId, settings: shares.settings })
       .from(shares)
       .where(and(eq(shares.ownerId, ownerId), inArray(shares.nodeId, ids), activePredicate())),
@@ -118,7 +126,7 @@ async function syncLevelsFromShares(
     byTarget.set(target, [...(byTarget.get(target) ?? []), r.id]);
   }
   for (const [audience, targetIds] of byTarget) {
-    await db
+    await q
       .update(nodes)
       .set({ audience })
       .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, targetIds)));
@@ -126,8 +134,8 @@ async function syncLevelsFromShares(
 }
 
 /** The level of one node (admin when unknown). */
-async function levelOf(ownerId: string, nodeId: string): Promise<ViewerLevel> {
-  const [row] = await db
+async function levelOf(ownerId: string, nodeId: string, q: ShareDb = db): Promise<ViewerLevel> {
+  const [row] = await q
     .select({ audience: nodes.audience })
     .from(nodes)
     .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
@@ -145,24 +153,25 @@ export async function applyLevelToShare(
   ownerId: string,
   nodeId: string,
   level: ViewerLevel,
+  q: ShareDb = db,
 ): Promise<ShareSummary | null> {
   const want = shareModeForLevel(level);
-  const current = await getActiveShareForNode(ownerId, nodeId);
+  const current = await getActiveShareForNode(ownerId, nodeId, q);
   if (want === null) {
-    if (current) await revokeShareTree(ownerId, current.id);
+    if (current) await revokeShareTree(ownerId, current.id, q);
     return null;
   }
   if (!current) {
-    const [node] = await db
+    const [node] = await q
       .select({ type: nodes.type, path: nodes.path })
       .from(nodes)
       .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
       .limit(1);
     if (!node || !canShareNode(node)) return null;
-    return createShare(ownerId, nodeId, { mode: want });
+    return createShare(ownerId, nodeId, { mode: want }, q);
   }
   if (current.mode === want) return current;
-  await applyShareMode(ownerId, current.id, want);
+  await applyShareMode(ownerId, current.id, want, q);
   return { ...current, mode: want };
 }
 
@@ -207,13 +216,16 @@ function toSummary(s: Share): ShareSummary {
 }
 
 /** Switch a share between public and team admission (owner-scoped). Merges
- *  into `settings` so other keys survive. Returns false when no such share. */
+ *  into `settings` so other keys survive. Returns false when no such share.
+ *  `preferred` = a cascading parent's level, for a sub-page's link. */
 export async function setShareMode(
   ownerId: string,
   shareId: string,
   mode: ShareMode,
+  preferred?: ViewerLevel,
+  q: ShareDb = db,
 ): Promise<boolean> {
-  const rows = await db
+  const rows = await q
     .update(shares)
     .set({ settings: sql`${shares.settings} || ${JSON.stringify({ mode })}::jsonb` })
     .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
@@ -221,6 +233,8 @@ export async function setShareMode(
   await syncLevelsFromShares(
     ownerId,
     rows.map((r) => r.nodeId),
+    preferred,
+    q,
   );
   return rows.length > 0;
 }
@@ -298,8 +312,9 @@ function activePredicate() {
 export async function getActiveShareForNode(
   ownerId: string,
   nodeId: string,
+  q: ShareDb = db,
 ): Promise<ShareSummary | null> {
-  const [row] = await db
+  const [row] = await q
     .select()
     .from(shares)
     .where(and(eq(shares.ownerId, ownerId), eq(shares.nodeId, nodeId), activePredicate()))
@@ -311,14 +326,17 @@ export async function getActiveShareForNode(
  * Create (or return the existing) active share for a node. Idempotent —
  * "one link per item": if an active link exists, it's returned unchanged.
  * Validates owner + shareable type. `mode` sets a NEW link's admission
- * (default public); an existing link keeps its own.
+ * (default public); an existing link keeps its own. `preferred` = the level
+ * the node's link should leave it at (a cascading parent's level), so a
+ * sub-page never passes through public on its way to client.
  */
 export async function createShare(
   ownerId: string,
   nodeId: string,
-  opts: { mode?: ShareMode } = {},
+  opts: { mode?: ShareMode; preferred?: ViewerLevel } = {},
+  q: ShareDb = db,
 ): Promise<ShareSummary> {
-  const [node] = await db
+  const [node] = await q
     .select({ id: nodes.id, type: nodes.type, path: nodes.path })
     .from(nodes)
     .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
@@ -329,10 +347,25 @@ export async function createShare(
     throw new Error('only folders under files can be shared');
   }
 
-  const existing = await getActiveShareForNode(ownerId, nodeId);
+  const existing = await getActiveShareForNode(ownerId, nodeId, q);
   if (existing) return existing;
 
-  const [row] = await db
+  // An expired link is not active but still holds the one-link slot
+  // (shares_node_active_uq is WHERE revoked_at IS NULL): retire it first, or
+  // the insert below violates the index.
+  await q
+    .update(shares)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(shares.ownerId, ownerId),
+        eq(shares.nodeId, nodeId),
+        isNull(shares.revokedAt),
+        lte(shares.expiresAt, new Date()),
+      ),
+    );
+
+  const [row] = await q
     .insert(shares)
     .values({
       ownerId,
@@ -343,13 +376,17 @@ export async function createShare(
     })
     .returning();
   if (!row) throw new Error('failed to create share');
-  await syncLevelsFromShares(ownerId, [nodeId]);
+  await syncLevelsFromShares(ownerId, [nodeId], opts.preferred, q);
   return toSummary(row);
 }
 
 /** Revoke a share by id (owner-scoped). Returns true if a row was revoked. */
-export async function revokeShare(ownerId: string, shareId: string): Promise<boolean> {
-  const rows = await db
+export async function revokeShare(
+  ownerId: string,
+  shareId: string,
+  q: ShareDb = db,
+): Promise<boolean> {
+  const rows = await q
     .update(shares)
     .set({ revokedAt: new Date() })
     .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
@@ -357,6 +394,8 @@ export async function revokeShare(ownerId: string, shareId: string): Promise<boo
   await syncLevelsFromShares(
     ownerId,
     rows.map((r) => r.nodeId),
+    undefined,
+    q,
   );
   return rows.length > 0;
 }
@@ -423,8 +462,12 @@ export async function listActiveShares(ownerId: string): Promise<ActiveShareList
 /** All descendant PAGE ids under a page (children, grandchildren, …) via the
  *  parent_id tree. `UNION` (not UNION ALL) is cycle-safe. Mirrors
  *  {@link countPageDescendants}. */
-export async function listPageDescendantIds(ownerId: string, parentId: string): Promise<string[]> {
-  const result = await db.execute<{ id: string }>(sql`
+export async function listPageDescendantIds(
+  ownerId: string,
+  parentId: string,
+  q: ShareDb = db,
+): Promise<string[]> {
+  const result = await q.execute<{ id: string }>(sql`
     WITH RECURSIVE descendants AS (
       SELECT id FROM ${nodes}
        WHERE parent_id = ${parentId} AND owner_id = ${ownerId} AND type = 'page'
@@ -466,12 +509,15 @@ export async function setShareCascade(
   if (ids.length === 0) return { ok: true, count: 0 };
 
   if (on) {
+    // Sub-pages follow the parent's level (a client parent keeps them client),
+    // passed into every step so a sub-page never passes through a level below
+    // it (an open link alone would put it at public first).
+    const level = await levelOf(ownerId, parentNodeId);
     for (const id of ids) {
-      const child = await createShare(ownerId, id, { mode: parent.mode }); // idempotent
-      if (child.mode !== parent.mode) await setShareMode(ownerId, child.id, parent.mode);
+      const child = await createShare(ownerId, id, { mode: parent.mode, preferred: level }); // idempotent
+      if (child.mode !== parent.mode) await setShareMode(ownerId, child.id, parent.mode, level);
     }
-    // Sub-pages follow the parent's level (a client parent keeps them client).
-    await syncLevelsFromShares(ownerId, ids, await levelOf(ownerId, parentNodeId));
+    await syncLevelsFromShares(ownerId, ids, level);
     return { ok: true, count: ids.length };
   }
 
@@ -491,27 +537,28 @@ export async function applyShareMode(
   ownerId: string,
   shareId: string,
   mode: ShareMode,
+  q: ShareDb = db,
 ): Promise<boolean> {
-  const [row] = await db
+  const [row] = await q
     .select()
     .from(shares)
     .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
     .limit(1);
   if (!row) return false;
 
-  const ok = await setShareMode(ownerId, shareId, mode);
+  const ok = await setShareMode(ownerId, shareId, mode, undefined, q);
   if (!ok) return false;
 
   if (shareCascadeOf(row)) {
-    const ids = await listPageDescendantIds(ownerId, row.nodeId);
+    const ids = await listPageDescendantIds(ownerId, row.nodeId, q);
     if (ids.length > 0) {
-      await db
+      await q
         .update(shares)
         .set({ settings: sql`${shares.settings} || ${JSON.stringify({ mode })}::jsonb` })
         .where(
           and(eq(shares.ownerId, ownerId), inArray(shares.nodeId, ids), isNull(shares.revokedAt)),
         );
-      await syncLevelsFromShares(ownerId, ids, await levelOf(ownerId, row.nodeId));
+      await syncLevelsFromShares(ownerId, ids, await levelOf(ownerId, row.nodeId, q), q);
     }
   }
   return true;
@@ -519,18 +566,22 @@ export async function applyShareMode(
 
 /** Revoke a share, cascading to the subtree when it cascades. Drop-in for
  *  {@link revokeShare} on the owner DELETE path. */
-export async function revokeShareTree(ownerId: string, shareId: string): Promise<boolean> {
-  const [row] = await db
+export async function revokeShareTree(
+  ownerId: string,
+  shareId: string,
+  q: ShareDb = db,
+): Promise<boolean> {
+  const [row] = await q
     .select()
     .from(shares)
     .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
     .limit(1);
-  if (!row) return revokeShare(ownerId, shareId); // already gone / not found — idempotent
+  if (!row) return revokeShare(ownerId, shareId, q); // already gone / not found — idempotent
 
   // Descendants and the parent revoke in ONE transaction: a failure between
   // the two used to leave the subtree revoked while the parent stayed live.
-  const ids = shareCascadeOf(row) ? await listPageDescendantIds(ownerId, row.nodeId) : [];
-  const revoked = await db.transaction(async (tx) => {
+  const ids = shareCascadeOf(row) ? await listPageDescendantIds(ownerId, row.nodeId, q) : [];
+  const revoked = await q.transaction(async (tx) => {
     const now = new Date();
     if (ids.length > 0) {
       await tx
@@ -547,6 +598,6 @@ export async function revokeShareTree(ownerId: string, shareId: string): Promise
       .returning({ id: shares.id });
     return rows.length > 0;
   });
-  await syncLevelsFromShares(ownerId, [row.nodeId, ...ids]);
+  await syncLevelsFromShares(ownerId, [row.nodeId, ...ids], undefined, q);
   return revoked;
 }

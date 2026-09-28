@@ -17,7 +17,7 @@
  *  - An agent may hold only tool groups at or below its level, checked when
  *    either level changes (and at grant time, see agentGrantProblems).
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   agents,
   db,
@@ -25,13 +25,20 @@ import {
   isViewerLevel,
   lowerLevel,
   nodes,
+  shares,
   toolGroups,
   WORKSPACE_NODE_TYPES,
   type ViewerLevel,
 } from '@mantle/db';
 import { referencedDrawIds, referencedFileIds } from './doc-assets';
 import { getPage } from './pages/read';
-import { applyLevelToShare, getActiveShareForNode, type ShareSummary } from './shares';
+import {
+  applyLevelToShare,
+  getActiveShareForNode,
+  revokeShareTree,
+  type ShareDb,
+  type ShareSummary,
+} from './shares';
 
 export type AccessItem = { id: string; type: string; title: string; audience: ViewerLevel };
 
@@ -135,6 +142,7 @@ export async function setItemAudience(
   nodeId: string,
   audience: string,
   opts: { withClosure?: boolean; raiseClosure?: boolean } = {},
+  q: ShareDb = db,
 ): Promise<SetItemAudienceResult> {
   if (!isViewerLevel(audience)) {
     throw new AccessError(
@@ -142,7 +150,7 @@ export async function setItemAudience(
       'invalid_level',
     );
   }
-  const [row] = await db
+  const [row] = await q
     .select({ id: nodes.id, type: nodes.type, title: nodes.title })
     .from(nodes)
     .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
@@ -158,7 +166,7 @@ export async function setItemAudience(
   const closure = await accessClosure(ownerId, nodeId);
   const above = closure.filter((c) => isAbove(c.audience, audience));
   const below = closure.filter((c) => isAbove(audience, c.audience));
-  return db.transaction(async (tx) => {
+  return q.transaction(async (tx) => {
     await tx
       .update(nodes)
       .set({ audience })
@@ -214,7 +222,9 @@ export type SetItemLevelResult = SetItemAudienceResult & {
 /**
  * The owner's one lever on an item: set its level, then make its link match
  * (levels drive links, docs/access-levels.md §7). Closure items only get the
- * level, never a link of their own: they are reached through the item.
+ * level, never a link of their own: they are reached through the item. Level
+ * and link change in ONE transaction: a link that cannot be made leaves the
+ * level where it was, not an item at client with no link.
  */
 export async function setItemLevel(
   ownerId: string,
@@ -222,17 +232,47 @@ export async function setItemLevel(
   audience: string,
   opts: { withClosure?: boolean; raiseClosure?: boolean } = {},
 ): Promise<SetItemLevelResult> {
-  const res = await setItemAudience(ownerId, nodeId, audience, opts);
-  const share = await applyLevelToShare(ownerId, nodeId, res.item.audience);
-  // A raised closure item that carries a link of its OWN (a file shared on
-  // its own, say) must have that link follow it, or level and link drift: an
-  // open link on an item now at admin. Items without a link get none.
-  for (const r of res.raised) {
-    if (await getActiveShareForNode(ownerId, r.id)) {
-      await applyLevelToShare(ownerId, r.id, r.audience);
+  return db.transaction(async (tx) => {
+    const res = await setItemAudience(ownerId, nodeId, audience, opts, tx);
+    const share = await applyLevelToShare(ownerId, nodeId, res.item.audience, tx);
+    // A raised closure item that carries a link of its OWN (a file shared on
+    // its own, say) must have that link follow it, or level and link drift: an
+    // open link on an item now at admin. Items without a link get none.
+    for (const r of res.raised) {
+      if (await getActiveShareForNode(ownerId, r.id, tx)) {
+        await applyLevelToShare(ownerId, r.id, r.audience, tx);
+      }
     }
-  }
-  return { ...res, share };
+    return { ...res, share };
+  });
+}
+
+export type UnshareItemResult = {
+  /** Whether a live link was revoked (false: already gone or not found). */
+  revoked: boolean;
+  /** Closure items still BELOW admin after the unshare (a page's embedded
+   *  files at client, say): the link is gone but people at their level can
+   *  still open them. Raise them with the Access control or `access_set`
+   *  (`raiseClosure`). */
+  stillBelow: AccessItem[];
+};
+
+/**
+ * Turn an item's link off (the share DELETE route, `node_unshare`,
+ * `page_unshare`). No link is admin, so this is setting the item to admin by
+ * hand, with the same closure rule: what it embeds is reported, never raised
+ * on its own. Revokes by share id first so an expired link is retired too.
+ */
+export async function unshareItem(ownerId: string, shareId: string): Promise<UnshareItemResult> {
+  const [row] = await db
+    .select({ nodeId: shares.nodeId })
+    .from(shares)
+    .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
+    .limit(1);
+  const revoked = await revokeShareTree(ownerId, shareId);
+  if (!row) return { revoked, stillBelow: [] };
+  const res = await setItemLevel(ownerId, row.nodeId, 'admin');
+  return { revoked, stillBelow: res.stillBelow };
 }
 
 /** The tool groups an agent holds that sit ABOVE `level`. */
