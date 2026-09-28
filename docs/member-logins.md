@@ -20,10 +20,35 @@
   invite link is the only way in. `auth.users.contact_id` is an
   optional link, no longer required. When set it must be a contact of this
   brain, and a contact links to one login at most: a second login on it is
-  a 409.
+  a 409. Since migration 0181 a partial unique index on
+  `auth.users.contact_id` makes that a rule (two links at once: the loser
+  gets the same 409). 0181 stops, naming the contact ids, on a box that
+  already holds two logins on one contact: unlink the extra login
+  (`PATCH /api/users/:id` `{ "contactId": null }`) and upgrade again.
 - **Users are contacts in user form.** Every active login's email counts in
   both email gates, inbound (`loadContactGate`) and outbound (the send
   tools), next to the contact list. A disabled login's address does not.
+- **Sessions end (migration 0181, final audit F06).** The session cookie
+  and the `?at=` asset token carry the login's `auth.users.session_epoch`,
+  signed, and every request compares it with the row; bearers
+  (`mobile_tokens`) are rows and are revoked by row. `endLoginSessions`
+  (lib/auth/session.ts) bumps the epoch and revokes the login's bearers, so
+  every session the login holds ends on its next request. It runs on:
+  - a password change (`POST /api/auth/change-password`): the device that
+    asked stays signed in (a cookie caller gets a fresh cookie, a bearer
+    caller keeps its own bearer; every other bearer is revoked);
+  - an admin password reset (`POST /api/users/:id/password`);
+  - disable, and enable again (so a copied cookie cannot come back), and a
+    role change (`PATCH /api/users/:id`; the same role again changes
+    nothing);
+  - sign out everywhere: `POST /api/auth/logout` `{ "everywhere": true }`
+    for the login's own sessions, and `PATCH /api/users/:id`
+    `{ "signOut": true }` for an admin ending another login's.
+
+  A cookie minted before 0181 carries no epoch and counts as 0, so existing
+  sessions keep working until the login's first bump. MCP connector (OAuth)
+  grants are not sessions: only a lockout (below) revokes them.
+
 - **Disabled.** `auth.users.disabled_at` set = the login cannot sign in,
   refresh a bearer or use a session it holds. Locking a login out (demote or
   disable) also:
@@ -374,7 +399,8 @@ first wins (Accept then answers 404). A DB test walks every table with an
 item (the owner-copy registry).
 
 **Deactivation** (plan 6.4). Deactivate a login in Settings > Users (never
-delete it). Its sessions stop at once. What it shared with the team, and
+delete it). Its sessions stop at once, and stay stopped if it is enabled
+again (the session epoch, section 1). What it shared with the team, and
 what it submitted, shows up in the Review queue as "left behind": accept or
 discard. Its private items are purged 30 days after the deactivation by the
 nightly `space-purge` maintenance task (`pnpm -C server/web space:purge`
@@ -519,7 +545,9 @@ new brain route: each piece uses one that already served members.
 - **Password.** The account menu has Change password, over
   `POST /api/auth/change-password`, which changes the signed-in LOGIN's own
   password for an admin or a member (it sits under `/api/auth`, a public
-  path, and checks the session itself). Other sessions stay signed in. A
+  path, and checks the session itself). Every other session of the login
+  ends (the session epoch, section 1); the browser that asked gets a fresh
+  cookie and stays signed in. A
   wrong current password answers 401 `Current password is incorrect.`, so
   the client reads that answer itself rather than treating the 401 as a
   dead session. Five attempts an hour per login. A member's name and photo
@@ -579,8 +607,17 @@ is a member login. Nobody hands a password around. The table is
   the route is no oracle. `email` is a check, never a choice: the login is
   always made with the invite's email (login emails pass the email gates,
   section 1). Both routes are rate limited per IP (preview 30, accept 10 a
-  minute) and for the whole brain (300 and 60), and accept limits before
-  bcrypt. Audit: `auth.invite_accepted` or `auth.invite_failed`.
+  minute: every request counts) and for the whole brain on FAILED codes
+  only (600 previews, 120 accepts a minute), and accept limits before
+  bcrypt. Counting only failures means honest invitees never spend the
+  brain-wide budget: at the old caps (300 and 60 of all requests) six
+  addresses could lock real invitees out (final audit F31). The brain-wide
+  cap guards against a distributed flood, not against guessing (a code
+  carries about 92 bits); it trips only when at least 12 addresses (accept)
+  or 20 (preview) keep failing at their full per-IP rate within one minute,
+  and then for the rest of that minute (`INVITE_LIMITS`,
+  lib/member-invites.ts). Audit: `auth.invite_accepted` or
+  `auth.invite_failed`.
 
 - **One transaction.** The redeem locks the invite, creates the login (role
   member, the invite's contact and name), links the contact's history to

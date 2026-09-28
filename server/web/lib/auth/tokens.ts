@@ -216,8 +216,9 @@ export function mobileTokenJti(token: string): string | null {
 // Authorization header, so a
 // detached/Electron client (cross-origin, no cookie) can't otherwise load them.
 // Delivered in the URL (`?at=`), so the TTL is deliberately short to bound a
-// leaked URL; no revocation row (unlike mobile tokens) — TTL + secret rotation
-// is the kill switch. Scope is byte-serving only: the gate accepts it for asset
+// leaked URL; no revocation row (unlike mobile tokens): the TTL, the login's
+// session epoch (`ep`, compared with the row on use) and secret rotation are
+// the kill switches. Scope is byte-serving only: the gate accepts it for asset
 // paths exclusively, and the session verifier rejects any kinded token.
 
 const ASSET_TOKEN_TTL_SECONDS = 2 * 60 * 60; // 2h — one working session.
