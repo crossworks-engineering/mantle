@@ -54,20 +54,27 @@ describe.skipIf(!URL)('needs you: the live event and the counts', () => {
     content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
   });
 
-  /** What `fn` sent on the channel: every notification committed before a
-   *  barrier sentinel has arrived by the time the sentinel has. */
-  const sent = async (fn: () => Promise<unknown>): Promise<string[]> => {
-    events.length = 0;
-    await fn();
-    const admin = (m.systemDb as unknown as { $client: Parameters<typeof ts.notifyBarrier>[0] })
-      .$client;
+  const admin = () =>
+    (m.systemDb as unknown as { $client: Parameters<typeof ts.notifyBarrier>[0] }).$client;
+  /** Wait until everything committed so far has reached the listener. */
+  const drain = async (): Promise<string> => {
     let sentinel = '';
-    await ts.notifyBarrier(admin, CHANNEL, {
+    await ts.notifyBarrier(admin(), CHANNEL, {
       seen: (s) => {
         sentinel = s;
         return events.includes(s);
       },
     });
+    return sentinel;
+  };
+  /** What `fn` sent on the channel: drained before (a step before it may
+   *  still be arriving) and after (notifications arrive in commit order, so
+   *  once the barrier's sentinel is here, everything `fn` committed is). */
+  const sent = async (fn: () => Promise<unknown>): Promise<string[]> => {
+    await drain();
+    events.length = 0;
+    await fn();
+    const sentinel = await drain();
     return events.filter((e) => e !== sentinel);
   };
 
@@ -82,7 +89,7 @@ describe.skipIf(!URL)('needs you: the live event and the counts', () => {
     const id = randomUUID();
     await m.systemDb.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path, tags, data) values
-        (${id}, ${anchor}, 'task', ${title}, ${`/tasks/${id}`},
+        (${id}, ${anchor}, 'task', ${title}, 'tasks',
          ${sqlTag`array[${sqlTag.join(
            tags.map((t) => sqlTag`${t}`),
            sqlTag`, `,
