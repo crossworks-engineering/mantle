@@ -541,20 +541,14 @@ async function ensureBrainRoot(tx: Tx, brainId: string, label: string, title: st
     });
 }
 
-/** A file name the brain folder and the brain's slugs do not hold yet. */
+/** A file name the brain folder does not hold yet. A file's slug is unique
+ *  per folder (migration 0184), so the folder is the whole check. */
 async function freeFileName(tx: Tx, brainId: string, folder: string, wanted: string) {
   const taken = await tx
     .select({ slug: nodes.slug, filename: sql<string | null>`${nodes.data}->>'filename'` })
     .from(nodes)
     .where(
-      and(
-        eq(nodes.ownerId, brainId),
-        sql`${nodes.type} <> 'branch'`,
-        or(
-          sql`lower(${nodes.slug}) like lower(${`${wanted.replace(/\.[^.]*$/, '')}%`})`,
-          and(eq(nodes.type, 'file'), sql`${nodes.path}::text = ${folder}`),
-        ),
-      ),
+      and(eq(nodes.ownerId, brainId), eq(nodes.type, 'file'), sql`${nodes.path}::text = ${folder}`),
     );
   const names = new Set<string>();
   for (const t of taken) {

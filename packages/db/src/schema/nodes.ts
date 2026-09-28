@@ -100,13 +100,18 @@ export const nodes = pgTable(
     index('nodes_superseded_by_idx')
       .on(t.supersededBy)
       .where(sql`${t.supersededBy} is not null`),
-    // Slug uniqueness applies to NON-branch nodes only. Folders (branches)
-    // rely on path-uniqueness below — two folders under different parents may
-    // share a name (e.g. each upload surface's dated `…/YYYY-MM-DD`). See
-    // migration 0032.
+    // Owner-wide slug uniqueness applies to nodes that are neither folders nor
+    // files. Folders (branches) rely on path-uniqueness below — two folders
+    // under different parents may share a name (e.g. each upload surface's
+    // dated `…/YYYY-MM-DD`). See migration 0032.
     uniqueIndex('nodes_owner_slug_uq')
       .on(t.ownerId, t.slug)
-      .where(sql`${t.slug} is not null and ${t.type} <> 'branch'`),
+      .where(sql`${t.slug} is not null and ${t.type} not in ('branch', 'file')`),
+    // A file's slug is its filename, unique per FOLDER (its path), like on
+    // disk: the same name may live in two folders. Migrations 0184/0185.
+    uniqueIndex('nodes_file_owner_path_slug_uq')
+      .on(t.ownerId, t.path, t.slug)
+      .where(sql`${t.slug} is not null and ${t.type} = 'file'`),
     // One branch per (owner, path). Emails and files legitimately share
     // paths so this is a partial index gated on type='branch'.
     uniqueIndex('nodes_branch_owner_path_uq')

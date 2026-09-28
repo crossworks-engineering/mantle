@@ -91,6 +91,17 @@ rewrite of every descendant. Make a new folder + move files instead.
 
 **Files are renameable**, basename only; the extension is preserved.
 
+**A file name is unique per folder, not per brain.** A file node's `slug`
+is its filename, and the unique index on it is
+`(owner_id, path, slug) where type = 'file'`
+(`nodes_file_owner_path_slug_uq`, migrations 0184/0185), the same rule the
+disk has. So `church/notes.md` and `church/sermons/notes.md` are two nodes.
+Until 0185 the owner-wide `nodes_owner_slug_uq` covered files too, and the
+watcher could not create a node for the second one (it stayed on disk,
+invisible and unsearchable). Nothing looks a file up by slug: routes, shares
+and links use the node id, and the file ops key a file by folder + filename.
+Other non-folder node types keep the owner-wide slug rule.
+
 ---
 
 ## 5. Editable vs binary

@@ -146,46 +146,13 @@ export async function upsertFile(args: {
     ...(content != null ? { content } : {}),
   };
 
-  let row: Node;
-  if (existing) {
-    const oldData = (existing.data ?? {}) as Record<string, unknown>;
-    // Preserve summary / entities from the extractor across edits unless
-    // the content changed — in which case we clear them so the next
-    // extractor run gets a fresh shot.
-    const sameContent = oldData.sha256 === written.sha256;
-    const preserved = sameContent
-      ? {
-          summary: oldData.summary,
-          summary_model: oldData.summary_model,
-          summary_at: oldData.summary_at,
-          entities: oldData.entities,
-        }
-      : {};
-    // Title: an explicit one wins; otherwise keep whatever the node already
-    // carries when it differs from the filename (something deliberately
-    // named it), and fall back to the filename. Blindly resetting to the
-    // filename here used to erase a caller's title on every re-upsert.
-    const existingTitle = typeof existing.title === 'string' ? existing.title : '';
-    const nextTitle =
-      args.title?.trim() ||
-      (existingTitle && existingTitle !== filename ? existingTitle : filename);
-    const [updated] = await db
-      .update(nodes)
-      .set({
-        title: nextTitle,
-        data: { ...preserved, ...newData },
-        updatedAt: new Date(),
-        ...(sameContent ? {} : { embedding: null }),
-      })
-      .where(eq(nodes.id, existing.id))
-      .returning();
-    if (!updated) throw new Error('upsertFile: update returned no row');
-    row = updated;
-    // Notify the extractor again only when content changed.
-    if (!sameContent) {
-      await notifyNodeIngested(updated.id);
-    }
-  } else {
+  // Insert first when no row owns the name. A file is unique per (owner,
+  // folder, filename) (migration 0184), so the only clash left is a race:
+  // the files watcher saw the bytes written above and inserted the node
+  // between our lookup and this insert. That node IS this file; fall through
+  // and update it like any existing row, so the caller's title/data/tags land.
+  let target: Node | undefined = existing;
+  if (!target) {
     const [inserted] = await db
       .insert(nodes)
       .values({
@@ -197,14 +164,69 @@ export async function upsertFile(args: {
         data: newData,
         tags: [...new Set(['file', ...(args.tags ?? [])])],
       })
+      .onConflictDoNothing({
+        target: [nodes.ownerId, nodes.path, nodes.slug],
+        where: sql`${nodes.slug} is not null and ${nodes.type} = 'file'`,
+      })
       .returning();
-    if (!inserted) throw new Error('upsertFile: insert returned no row');
-    row = inserted;
     // pg_notify('node_ingested') is fired by migration 0018's trigger;
     // no explicit notify needed for fresh inserts.
+    if (inserted) return fileRowFromNode(inserted);
+    [target] = await db
+      .select()
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, args.ownerId),
+          eq(nodes.type, 'file'),
+          sql`${nodes.path}::text = ${args.parentPath}`,
+          eq(nodes.slug, filename),
+        ),
+      )
+      .limit(1);
+    if (!target) throw new Error('upsertFile: insert returned no row');
   }
 
-  return fileRowFromNode(row);
+  const oldData = (target.data ?? {}) as Record<string, unknown>;
+  // Preserve summary / entities from the extractor across edits unless
+  // the content changed — in which case we clear them so the next
+  // extractor run gets a fresh shot.
+  const sameContent = oldData.sha256 === written.sha256;
+  const preserved = sameContent
+    ? {
+        summary: oldData.summary,
+        summary_model: oldData.summary_model,
+        summary_at: oldData.summary_at,
+        entities: oldData.entities,
+      }
+    : {};
+  // Title: an explicit one wins; otherwise keep whatever the node already
+  // carries when it differs from the filename (something deliberately
+  // named it), and fall back to the filename. Blindly resetting to the
+  // filename here used to erase a caller's title on every re-upsert.
+  const existingTitle = typeof target.title === 'string' ? target.title : '';
+  const nextTitle =
+    args.title?.trim() || (existingTitle && existingTitle !== filename ? existingTitle : filename);
+  const [updated] = await db
+    .update(nodes)
+    .set({
+      title: nextTitle,
+      data: { ...preserved, ...newData },
+      // Only when the caller brings tags: a plain re-upsert leaves them be,
+      // and the race path above must still land them on the watcher's row.
+      ...(args.tags?.length ? { tags: [...new Set([...target.tags, 'file', ...args.tags])] } : {}),
+      updatedAt: new Date(),
+      ...(sameContent ? {} : { embedding: null }),
+    })
+    .where(eq(nodes.id, target.id))
+    .returning();
+  if (!updated) throw new Error('upsertFile: update returned no row');
+  // Notify the extractor again only when content changed.
+  if (!sameContent) {
+    await notifyNodeIngested(updated.id);
+  }
+
+  return fileRowFromNode(updated);
 }
 
 /**
@@ -599,8 +621,30 @@ export async function syncFileFromDisk(args: {
       data: newData,
       tags: ['file'],
     })
+    // A file is unique per (owner, folder, filename): migration 0184. The one
+    // clash left is a race: an upload wrote these bytes and inserted its node
+    // between our lookup and this insert. That node IS this file; no-op.
+    .onConflictDoNothing({
+      target: [nodes.ownerId, nodes.path, nodes.slug],
+      where: sql`${nodes.slug} is not null and ${nodes.type} = 'file'`,
+    })
     .returning({ id: nodes.id });
-  if (!inserted) throw new Error('syncFileFromDisk: insert returned no row');
+  if (!inserted) {
+    const [winner] = await db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, args.ownerId),
+          eq(nodes.type, 'file'),
+          sql`${nodes.path}::text = ${args.parentPath}`,
+          eq(nodes.slug, filename),
+        ),
+      )
+      .limit(1);
+    if (!winner) throw new Error('syncFileFromDisk: insert returned no row');
+    return { status: 'noop', nodeId: winner.id };
+  }
   return { status: 'inserted', nodeId: inserted.id };
 }
 

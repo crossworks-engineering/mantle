@@ -41,6 +41,7 @@ import {
 } from '@mantle/files';
 import { waitForOwner } from '@mantle/db';
 import { runWorker } from './_runner';
+import { describeError } from './describe-error';
 import { env } from '@mantle/config';
 
 // Resolved at startup via waitForOwner — ALLOWED_USER_ID when set, else the sole
@@ -110,7 +111,10 @@ async function handleUpsert(absPath: string): Promise<void> {
       console.log(`[files-watch] ${res.status} ${loc.parentPath}/${loc.filename}`);
     }
   } catch (err) {
-    console.error('[files-watch] upsert failed', absPath, err);
+    // One line, not the error object: a wrapped query error carries the whole
+    // INSERT and the file's text. The file stays on disk with no node (folder
+    // delete refuses while it is there: untrackedFilesOnDisk).
+    console.error(`[files-watch] upsert failed ${absPath}: ${describeError(err)}`);
   }
 }
 
@@ -128,7 +132,7 @@ async function handleUnlink(absPath: string): Promise<void> {
       console.log(`[files-watch] deleted ${loc.parentPath}/${loc.filename}`);
     }
   } catch (err) {
-    console.error('[files-watch] unlink failed', absPath, err);
+    console.error(`[files-watch] unlink failed ${absPath}: ${describeError(err)}`);
   }
 }
 
