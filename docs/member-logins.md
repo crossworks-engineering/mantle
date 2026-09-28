@@ -1235,3 +1235,63 @@ an admin", its own `?review=with-admin` read; a brain before 0183 answers
 `changedByAdmin` says so instead of the picture. A page frozen inside a
 submitted item (409 `frozen` with `ids`) names and links that item, and
 Submit's 409 `unsaved-draft` lists the items to save first, each a link.
+
+## 12. "Needs you": admins are told what waits (2026-09-28)
+
+An admin must never be blind to work waiting for them: items members
+submitted for review (and what deactivated logins left behind) and open
+team requests.
+
+**The event.** Migration 0186 raises `needs_you_changed`, with the brain's
+owner id as the payload (the `pending_changed` convention), from triggers,
+so no write path can forget it:
+
+- `space_items`: a row enters or leaves `submitted` or `taken`, a taken
+  item changes hands, an item is accepted (a left-behind item is a draft
+  until then), or a submitted, taken or team-shared row is deleted
+  (Discard). Saves, comments and sharing changes do not fire.
+- `auth.users`: a role change or a (re)activation (it moves items between
+  "submitted" and "left behind", and releases a gone admin's taken items).
+- `nodes`: a `team-request` task starts or stops being open (filed, done,
+  reopened, deleted). Edits and board moves do not fire.
+
+NOTIFY is transactional, so a bundle moved in one transaction wakes each
+listener once and a rolled-back write sends nothing. The trigger functions
+only notify (`SECURITY DEFINER` for the brain id lookup: a member's write
+runs as the space role). Exactly two listeners, pinned by
+`server/web/lib/needs-you-listeners.test.ts`: the owner live stream
+(`lib/realtime.ts`, sent as `needs_you` on `/api/realtime`, which refuses
+members) and the push worker. Neither starts LLM work.
+
+**The count.** `GET /api/team-admin/needs-you` (admins only) answers
+`NeedsYou` (`@mantle/client-types`): `review.submitted`,
+`review.leftBehind`, `requests.open`, `total`, and the newest item of each
+queue as `{ id, title, from, at }`, never content. The numbers come from
+count queries over the same conditions as the lists (`countReviewQueue`,
+`countOpenTeamRequests`), never from a capped list, so every window and
+device agrees. The Requests badge (`teamAdminBadges`) uses the same count;
+it used to stop at 100.
+
+**The phone.** The push worker pushes an ARRIVAL only (the newest item of a
+queue, started waiting in the last two minutes, not pushed before), to
+devices of active admin logins only (`listAdminSubscriptions`: a member's,
+a deactivated admin's or an unattributed device is never listed). The
+lock screen shows the title and the member's name. It follows the
+approvals toggle in the push preferences. The mobile companion has no Team
+admin screen yet, so a tap opens the app.
+
+**The client** (jackdaw): a live "N waiting" notice at the top of the rail,
+a toast when something arrives, the browser tab title and favicon, an
+opt-in browser notification, and in the desktop app the dock badge, a dock
+bounce (macOS) or taskbar flash (Linux) until focused, and a native
+notification.
+
+**Tests.** `packages/content/src/needs-you.viewer.db.test.ts` (on its own
+scratch database: the event fires once on submit, recall, return, take
+over, give back, accept, discard, deactivation and reactivation, request
+open, done, reopen and delete, and never on a save, a share, an edit or an
+untagged task; the count agrees with the queue on one snapshot and has no
+cap; the functions only notify), `server/web/lib/push/needs-you.test.ts`,
+`server/web/lib/push/admin-subscriptions.db.test.ts`,
+`server/web/lib/realtime.needs-you.test.ts` (members' stream never gets it;
+another owner's change is dropped).
