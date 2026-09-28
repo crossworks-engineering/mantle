@@ -7,7 +7,7 @@ import { loadFolderListing } from '@/components/share/folder-presenter';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 /**
- * The share view as JSON — for a client that renders the presenter itself (no
+ * The share view as JSON, for a client that renders the presenter itself (no
  * /s iframe). Same data the /s HTML page renders, same authorization (an
  * active token). Invalid/revoked tokens 404 uniformly. `mode` is always
  * 'public' (team links are retired); kept so the answer keeps its shape.

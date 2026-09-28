@@ -58,9 +58,9 @@ async function isOwnContact(ownerId: string, contactId: string): Promise<boolean
 
 /**
  * Result of minting a contact's team code:
- *   { token }            — newly minted; the PLAINTEXT code, shown once.
- *   { alreadyMember }    — the contact already had one; NOT re-minted.
- *   null                 — the contact doesn't exist / isn't this owner's.
+ *   { token }            newly minted; the PLAINTEXT code, shown once.
+ *   { alreadyMember }    the contact already had one; NOT re-minted.
+ *   null                 the contact doesn't exist or isn't this owner's.
  */
 export type EnableTeamResult = { token: string } | { alreadyMember: true } | null;
 

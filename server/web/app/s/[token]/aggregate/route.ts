@@ -23,7 +23,7 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
  * Legacy JSONB tables never reach here: their whole doc ships in the share
  * view, so the reader computes locally with `computeAggregate`.
  *
- * Authorization is the rows route's, verbatim — an active table share, and a
+ * Authorization is the rows route's, verbatim: an active table share, and a
  * uniform 404 for everything else so a URL never reveals that a token exists.
  */
 

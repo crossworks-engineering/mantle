@@ -20,7 +20,7 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
  * symbols may be supplied, and a ceiling on the size of each value (a
  * megabyte-long string would otherwise be concatenated and returned).
  *
- * Authorization matches the rows route exactly — an active formula share.
+ * Authorization matches the rows route exactly: an active formula share.
  * Everything else 404s uniformly so a URL never reveals that a token exists.
  */
 

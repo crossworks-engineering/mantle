@@ -490,7 +490,7 @@ export async function listPageDescendantIds(
 /**
  * Turn subtree sharing on/off for a page (the "Share sub-pages" switch). Flips
  * `settings.cascade` on the parent's active share, then:
- *   on  — shares every descendant page (idempotent) at the parent's level.
+ *   on:  shares every descendant page (idempotent) at the parent's level.
  *   off — revokes every descendant page's active share.
  * No-op (ok:false) if the parent isn't currently shared. Returns how many
  * descendant shares were created/updated (on) or revoked (off).

@@ -14,8 +14,8 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
  * second layer; neither one is load-bearing alone.
  *
  * Authorization mirrors /s/:token/a/:fileId exactly: the token must be active,
- * and the node behind the token must actually be a draw (getDrawSvg filters ownerId + type). Uniform 404 so a
- * URL never reveals that a token exists.
+ * and the node behind the token must actually be a draw (getDrawSvg filters
+ * ownerId + type). Uniform 404 so a URL never reveals that a token exists.
  */
 
 function notFound() {

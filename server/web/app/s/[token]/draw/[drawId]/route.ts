@@ -8,8 +8,8 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
  * The sibling `/s/:token/draw` serves a drawing that is itself the shared
  * node; this one serves a drawing a shared *page* places with
  * `![alt](draw:<id>)`. Authorization mirrors `/s/:token/a/:fileId` exactly:
- * the token must be active, and the id must appear in the shared page's own doc — a share never becomes
- * a way to read arbitrary drawings by id.
+ * the token must be active, and the id must appear in the shared page's own
+ * doc, so a share never becomes a way to read arbitrary drawings by id.
  *
  * Cache-only, deliberately. Rendering a missing snapshot spawns a browser, and
  * anonymous share traffic does not get to do that (see
