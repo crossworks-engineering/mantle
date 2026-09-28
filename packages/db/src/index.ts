@@ -34,6 +34,12 @@ export {
   type ResolvedContextRef,
 } from './context-ref-resolve';
 export { notifyNodeIngested, notifyNodeIndexed } from './notify';
+export {
+  FORUM_ARCHIVE_SOURCE,
+  isExtractExempt,
+  extractExemptSql,
+  unextractedNodeConds,
+} from './extract-exempt';
 export { isWriteRefused } from './write-refused';
 export {
   countUsers,

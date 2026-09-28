@@ -25,7 +25,7 @@
  */
 
 import postgres from 'postgres';
-import { and, asc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
   db,
   agents,
@@ -35,6 +35,7 @@ import {
   telegramMessages,
   telegramChats,
   telegramAccounts,
+  unextractedNodeConds,
   waitForOwner,
   type Agent,
 } from '@mantle/db';
@@ -402,12 +403,9 @@ async function drainUnextractedNodes(ownerId: string): Promise<void> {
   const windowHours = Number(env('MANTLE_EXTRACT_DRAIN_WINDOW_HOURS')) || 168;
   const limit = Number(env('MANTLE_EXTRACT_DRAIN_LIMIT')) || 1000;
   const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
-  const conds = and(
-    eq(nodes.ownerId, ownerId),
-    ne(nodes.type, 'branch'),
-    gte(nodes.createdAt, since),
-    isNull(nodes.embedding),
-  );
+  // Exempt nodes (the Forum archive, @mantle/db extract-exempt.ts) are left
+  // out: they have no embedding by design and must never be queued.
+  const conds = unextractedNodeConds(ownerId, since);
   const countRows = await db
     .select({ total: sql<number>`count(*)::int` })
     .from(nodes)
@@ -460,10 +458,7 @@ async function sweepMissedExtractions(ownerId: string): Promise<void> {
     .from(nodes)
     .where(
       and(
-        eq(nodes.ownerId, ownerId),
-        ne(nodes.type, 'branch'),
-        gte(nodes.createdAt, since),
-        isNull(nodes.embedding),
+        unextractedNodeConds(ownerId, since),
         sql`NOT EXISTS (SELECT 1 FROM public.traces t WHERE t.subject_id = ${nodes.id} AND t.kind = 'extractor_run')`,
       ),
     )
