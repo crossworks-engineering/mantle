@@ -716,7 +716,9 @@ set_files() {
 }
 
 # newest_set_kb <dir>: size in KB of the newest backup set ("" when none).
+# The names below are ours (mantle-<stamp>.<ext>), so ls is safe here.
 newest_set_kb() {
+  # shellcheck disable=SC2012
   nsk_dump=$(ls -1 "$1"/mantle-*.dump 2>/dev/null | sort -r | head -1)
   [ -n "$nsk_dump" ] || return 0
   nsk_ts=${nsk_dump##*/mantle-}; nsk_ts=${nsk_ts%.dump}
@@ -729,6 +731,7 @@ newest_set_kb() {
 # %Y%m%d-%H%M%S, so lexical order is time order. Only this directory is ever
 # pruned: backups/ itself holds the operator's own dumps and is never touched.
 prune_pre_roll() {
+  # shellcheck disable=SC2012
   ls -1 "$1"/mantle-*.dump 2>/dev/null | sort -r | tail -n +"$(($2 + 1))" | while IFS= read -r ppr_dump; do
     ppr_ts=${ppr_dump##*/mantle-}; ppr_ts=${ppr_ts%.dump}
     set_files "$1" "$ppr_ts" | while IFS= read -r ppr_f; do rm -f "$ppr_f"; done
@@ -786,6 +789,7 @@ pre_roll_backup() {
   # An empty pattern file is not portable across greps: no earlier files
   # means every file is new.
   if [ -s "$prb_before" ]; then
+    # shellcheck disable=SC2010
     prb_new=$(ls -1 "$prb_dir" 2>/dev/null | grep -vxF -f "$prb_before")
   else
     prb_new=$(ls -1 "$prb_dir" 2>/dev/null)
@@ -842,7 +846,6 @@ prune_repo() {
   fi
   pr_list=$(docker image ls --no-trunc --format '{{.ID}} {{.Repository}}:{{.Tag}}' "$pr_repo" 2>/dev/null) || return 0
   pr_newest=$(printf '%s\n' "$pr_list" | awk 'NF { print $1 }' | awk '!seen[$0]++' | head -2)
-  pr_n=0
   printf '%s\n' "$pr_list" | while read -r pr_id pr_ref; do
     [ -n "$pr_id" ] && [ -n "$pr_ref" ] || continue
     # Exact repository only: the reference filter is exact already, this

@@ -69,6 +69,7 @@ if [ -n "$LABEL" ]; then
   FLEET=${MANTLE_FLEET_FILE:-$ROOT/.mantle-fleet.json}
   [ -f "$FLEET" ] || die "no $FLEET: pass --ssh <alias> or add the box there (see .mantle-fleet.example.json)"
   command -v node >/dev/null || die "node is needed to read $FLEET"
+  # shellcheck disable=SC2016  # JavaScript, not shell: nothing to expand
   BOX=$(node -e '
     const [file, label] = process.argv.slice(1);
     const raw = JSON.parse(require("fs").readFileSync(file, "utf8"));
@@ -88,6 +89,7 @@ rsh() { ssh -o BatchMode=yes -o ConnectTimeout=10 "$SSH_ALIAS" "$@"; }
 # Stack dir and signal dir, from the updater container itself (the only
 # authoritative answer; a directory that merely looks right is not evidence).
 UPD_JSON=$(rsh docker inspect mantle_updater) || die "cannot inspect mantle_updater on $SSH_ALIAS (no updater on this box?)"
+# shellcheck disable=SC2016  # JavaScript, not shell: nothing to expand
 read -r UPD_STACK SIGDIR < <(node -e '
   const j = JSON.parse(require("fs").readFileSync(0, "utf8"))[0] ?? {};
   const env = (j.Config?.Env ?? []).find((e) => e.startsWith("MANTLE_STACK_DIR=")) ?? "";

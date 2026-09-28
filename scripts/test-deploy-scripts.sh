@@ -31,6 +31,11 @@
 #            only the target, and stops loudly on a lost app, sandbox or
 #            app-db file
 
+# Test code: single-quoted shell bodies are expanded by the shell they are
+# handed to (SC2016), and ls over fixture dirs whose names we chose is fine
+# (SC2010, SC2012). File-wide, so it sits before the first command.
+# shellcheck disable=SC2010,SC2012,SC2016
+
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -335,9 +340,10 @@ dump_run() { # <name> <env...>: run db-dump.sh from a copy of scripts/, into $WO
   local name="$1"; shift
   mkdir -p "$WORK/dumptree-$name/scripts"
   cp "$ROOT/scripts/db-dump.sh" "$WORK/dumptree-$name/scripts/"
+  # shellcheck disable=SC2086  # DUMP_SHELL may be two words ("busybox sh")
   env PATH="$WORK/dumpbin:$PATH" MANTLE_DUMP_DIR="$WORK/dump-$name" \
     FAKE_RUNNING="mantle_pg mantle_web" "$@" \
-    bash "$WORK/dumptree-$name/scripts/db-dump.sh" > "$WORK/dump-$name.log" 2>&1
+    ${DUMP_SHELL:-bash} "$WORK/dumptree-$name/scripts/db-dump.sh" > "$WORK/dump-$name.log" 2>&1
 }
 count_in() { ls -1 "$1" 2>/dev/null | grep -c "$2" || true; }
 
@@ -365,6 +371,15 @@ check "app container down, strict: all three file parts named" grep -q 'NOT back
 
 if command -v dash >/dev/null 2>&1; then
   check "db-dump.sh parses as POSIX sh (the updater runs it under busybox sh)" dash -n "$ROOT/scripts/db-dump.sh"
+fi
+if command -v busybox >/dev/null 2>&1; then
+  # The sidecar's shell: the strict contract must hold there, not just in bash.
+  DUMP_SHELL="busybox sh" dump_run bb-ok MANTLE_DUMP_STRICT=1 && rc=0 || rc=$?
+  check "busybox sh: all four parts, exit 0" sh -c "test '$rc' = 0 && test \"\$(ls -1 '$WORK/dump-bb-ok' | wc -l | tr -d ' ')\" = 4"
+  DUMP_SHELL="busybox sh" dump_run bb-strict FAKE_FAIL=appdb MANTLE_DUMP_STRICT=1 && rc=0 || rc=$?
+  check "busybox sh: a failed part, strict, exits 3" test "$rc" = 3
+  DUMP_SHELL="busybox sh" dump_run bb-nopg FAKE_FAIL=pg MANTLE_DUMP_STRICT=1 && rc=0 || rc=$?
+  check "busybox sh: pg_dump fails, exits non-zero, no .dump left" sh -c "test '$rc' != 0 && ! ls '$WORK/dump-bb-nopg' 2>/dev/null | grep -q dump"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
