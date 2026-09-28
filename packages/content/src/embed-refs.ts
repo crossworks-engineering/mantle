@@ -41,6 +41,7 @@ const UUID_ANY = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g
 /** C0 and C1 controls, DEL and whitespace. A browser's URL parser drops tabs
  *  and newlines anywhere in a URL and controls and spaces at its ends, so a
  *  scheme is tested with all of them removed. */
+// eslint-disable-next-line no-control-regex -- matching controls is the point
 const URL_NOISE = /[\u0000-\u0020\u007f-\u009f\s]/g;
 /** Attributes that hold a node id, on any node type. */
 const ID_ATTRS = ['nodeId', 'drawId', 'pageId'] as const;
