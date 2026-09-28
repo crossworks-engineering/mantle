@@ -27,6 +27,9 @@
 #            opt-out) and a whole roll refused with nothing changed when it fails
 #   prune:   after an OK roll only old mantle-server / mantle-client images go;
 #            the rollback pair, the running pair and other repositories stay
+#   roll:    scripts/roll.sh backs up first (its own exit status), requests
+#            only the target, and stops loudly on a lost app, sandbox or
+#            app-db file
 
 set -euo pipefail
 
@@ -554,6 +557,170 @@ rm "$T/state/mantle_web"
 FAKE_TS=20260105-000000 roll_loop "$T"
 check "no running server before the roll: server images left alone" sh -c "! grep -q mantle-server '$T/state/removed' 2>/dev/null"
 check "no running server before the roll: says so" grep -q 'image prune: test/mantle-server skipped' "$T/sig/update.log"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "roll.sh: backup first, request only the target, stop on any count drop"
+# `ssh <opts> <host> <cmd>` runs <cmd> locally (stdin passes through), and a
+# docker stub plays the box: counts come from files in $RS, the updater
+# consumes request.json on the next status read (applying FAKE_DROP), and
+# `docker run -v <dir>:/s alpine sh -c ...` runs its command against <dir>.
+RB="$WORK/rollbin"; mkdir -p "$RB"
+cat > "$RB/ssh" <<'STUB'
+#!/bin/sh
+while [ $# -gt 0 ]; do case "$1" in -o) shift 2 ;; -*) shift ;; *) break ;; esac; done
+shift   # the host
+echo "ssh $*" >> "$RS/calls"
+exec sh -c "$*"
+STUB
+cat > "$RB/docker" <<'STUB'
+#!/bin/sh
+echo "docker $*" >> "$RS/calls"
+case "$1" in
+  inspect)
+    if [ "$2" = mantle_updater ]; then
+      printf '[{"Config":{"Env":["PATH=/bin","MANTLE_STACK_DIR=%s"]},"Mounts":[{"Source":"%s","Destination":"/signal"}]}]\n' "${FAKE_STACK_ENV-$RS/stack}" "$RS/sig"
+      exit 0
+    fi
+    echo healthy; exit 0 ;;
+  run)
+    src=""; cmd=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -v) src=${2%%:*}; shift 2 ;;
+        -c) cmd=$2; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    exec sh -c "$(printf '%s' "$cmd" | sed "s#/s/#$src/#g")" ;;
+  exec)
+    case "$*" in
+      *"from apps"*) cat "$RS/apps" ;;
+      *"from sandboxes"*) cat "$RS/sandboxes" ;;
+      *APP_DB_DIR*) cat "$RS/appdbs" ;;
+      *status.json*)
+        # FAKE_LAG: status reads the updater takes before it picks the
+        # request up (the window where status.json still shows the LAST run).
+        lag=$(cat "$RS/lag" 2>/dev/null || echo "${FAKE_LAG:-0}")
+        if [ -f "$RS/sig/request.json" ] && [ "$lag" -gt 0 ]; then
+          echo $((lag - 1)) > "$RS/lag"
+        elif [ -f "$RS/sig/request.json" ]; then
+          cp "$RS/sig/request.json" "$RS/request.seen"
+          t=$(sed -n 's/.*"target":"\([^"]*\)".*/\1/p' "$RS/sig/request.json")
+          rm -f "$RS/sig/request.json"
+          case "${FAKE_DROP:-}" in
+            apps) echo $(( $(cat "$RS/apps") - 1 )) > "$RS/apps" ;;
+            files) echo $(( $(cat "$RS/appdbs") - 1 )) > "$RS/appdbs" ;;
+          esac
+          printf '{"phase":"%s","target":"%s","started_at":"NEW","finished_at":"F","ok":%s,"error":"%s"}\n' \
+            "${FAKE_PHASE:-done}" "$t" "${FAKE_OK:-true}" "${FAKE_ERR:-}" > "$RS/sig/status.json"
+          echo "[updater] pre-roll backup ok: mantle-x.dump" > "$RS/sig/update.log"
+        fi
+        cat "$RS/sig/status.json" ;;
+      *update.log*) grep 'pre-roll backup ok' "$RS/sig/update.log" ;;
+      *api/version*) echo '{"version":"fake"}' ;;
+      *) : ;;
+    esac
+    exit 0 ;;
+esac
+exit 0
+STUB
+chmod +x "$RB/ssh" "$RB/docker"
+
+roll_box() { # <name>: a fake box; its db-dump.sh follows FAKE_DUMP (ok, fail, lossy)
+  RS="$WORK/rollbox-$1"; mkdir -p "$RS/stack/scripts" "$RS/stack/infra/updater" "$RS/sig"
+  echo 11 > "$RS/apps"; echo 2 > "$RS/sandboxes"; echo 7 > "$RS/appdbs"
+  printf '{"phase":"done","target":"v7","started_at":"OLD","finished_at":"F0","ok":true,"error":""}\n' > "$RS/sig/status.json"
+  printf '#!/bin/sh\necho old updater\n' > "$RS/stack/infra/updater/updater.sh"
+  : > "$RS/stack/.env"
+  cat > "$RS/stack/scripts/db-dump.sh" <<'DUMP'
+#!/bin/sh
+echo "db-dump strict=${MANTLE_DUMP_STRICT:-}" >> "$RS/calls"
+case "${FAKE_DUMP:-ok}" in
+  ok) echo "✔ Wrote 1M → backups/mantle-20260105-000000.dump"; exit 0 ;;
+  fail) echo "✗ pg_dump FAILED" >&2; exit 1 ;;
+  lossy) echo "✔ Wrote 1M → backups/mantle-20260105-000000.dump"; echo "⚠ app-db snapshot FAILED — per-app SQLite NOT backed up" >&2; exit 0 ;;
+esac
+DUMP
+}
+roll_sh() { # <args...>: run roll.sh against $RS; exit code in $rc, output in $RS/out
+  rc=0
+  PATH="$RB:$PATH" RS="$RS" ROLL_POLL_SECS=0 ROLL_TIMEOUT_SECS=5 ROLL_HEALTH_TIMEOUT_SECS=5 \
+    bash "$ROOT/scripts/roll.sh" "$@" > "$RS/out" 2>&1 || rc=$?
+}
+
+roll_box happy
+roll_sh --ssh fakebox v8
+check "happy: exit 0" test "$rc" = 0
+check "happy: db-dump ran strict" grep -qx 'db-dump strict=1' "$RS/calls"
+check "happy: backup before the request" \
+  test "$(grep -nE '^db-dump|alpine' "$RS/calls" | head -1 | cut -d: -f2 | cut -c1-7)" = "db-dump"
+check "happy: request.json held only the target" test "$(cat "$RS/request.seen")" = '{"target":"v8"}'
+check "happy: stack dir read from the updater" grep -q "(stack $RS/stack)" "$RS/out"
+check "happy: prints /api/version" grep -q 'version: {"version":"fake"}' "$RS/out"
+check "happy: counts printed before and after" sh -c "grep -q 'before: apps=11 sandboxes=2 app-db files=7' '$RS/out' && grep -q 'after:  apps=11 sandboxes=2 app-db files=7' '$RS/out'"
+
+roll_box dumpfail
+FAKE_DUMP=fail roll_sh --ssh fakebox v8
+check "dump fails: exit 1" test "$rc" = 1
+check "dump fails: says so" grep -q 'BACKUP FAILED: db-dump.sh exited non-zero' "$RS/out"
+check "dump fails: nothing requested" sh -c "test ! -e '$RS/request.seen' && test ! -e '$RS/sig/request.json'"
+
+roll_box lossy
+FAKE_DUMP=lossy roll_sh --ssh fakebox v8
+check "old db-dump loses a part but exits 0: stopped" sh -c "test '$rc' = 1 && grep -q 'BACKUP INCOMPLETE' '$RS/out'"
+check "old db-dump loses a part: nothing requested" test ! -e "$RS/sig/request.json"
+
+roll_box dropapps
+FAKE_DROP=apps roll_sh --ssh fakebox v8
+check "an app lost in the roll: exit 3" test "$rc" = 3
+check "an app lost in the roll: loud, with the numbers" grep -q 'COUNTS DROPPED.*apps 11→10' "$RS/out"
+
+roll_box dropfiles
+FAKE_DROP=files roll_sh --ssh fakebox v8
+check "an app-db file lost in the roll: exit 3" sh -c "test '$rc' = 3 && grep -q 'app-db files 7→6' '$RS/out'"
+
+roll_box notok
+FAKE_OK=false FAKE_PHASE=error FAKE_ERR="compose up failed" roll_sh --ssh fakebox v8
+check "updater reports ok:false: exit 1 with its error" sh -c "test '$rc' = 1 && grep -q 'ROLL NOT OK: compose up failed' '$RS/out'"
+
+roll_box updaterdumps
+printf 'pre_roll_backup() {\n  :\n}\n' > "$RS/stack/infra/updater/updater.sh"
+roll_sh --ssh fakebox v8
+check "updater takes its own backup: roll.sh does not dump twice" sh -c "test '$rc' = 0 && ! grep -q '^db-dump' '$RS/calls'"
+check "updater takes its own backup: its log line is checked" grep -q 'grep pre-roll backup ok' "$RS/calls"
+roll_box updateroptout
+printf 'pre_roll_backup() {\n  :\n}\n' > "$RS/stack/infra/updater/updater.sh"
+printf 'MANTLE_PRE_ROLL_BACKUP=0\n' > "$RS/stack/.env"
+roll_sh --ssh fakebox v8
+check "updater backup switched off in .env: roll.sh dumps itself" grep -qx 'db-dump strict=1' "$RS/calls"
+
+roll_box dry
+roll_sh --dry-run --ssh fakebox v8
+check "dry run: exit 0, no dump, no request" \
+  sh -c "test '$rc' = 0 && ! grep -q '^db-dump' '$RS/calls' && test ! -e '$RS/request.seen' && ! grep -q alpine '$RS/calls'"
+
+roll_box busy
+printf '{"phase":"rolling","target":"v7","started_at":"OLD","finished_at":"","ok":null,"error":""}\n' > "$RS/sig/status.json"
+roll_sh --ssh fakebox v8
+check "an update already running: refused before anything" sh -c "test '$rc' = 1 && ! grep -q '^db-dump' '$RS/calls'"
+
+roll_box rerun
+# Re-rolling the tag the box already runs: status.json names the SAME target
+# as finished until the updater claims the request. Only a new started_at
+# tells this run from the last one.
+printf '{"phase":"done","target":"v8","started_at":"OLD","finished_at":"F0","ok":true,"error":""}\n' > "$RS/sig/status.json"
+FAKE_LAG=3 roll_sh --ssh fakebox v8
+check "same-tag re-roll: waits for the NEW run, not the last one's status" \
+  sh -c "test '$rc' = 0 && grep -q '^status: .*\"started_at\":\"NEW\"' '$RS/out'"
+
+roll_box badtag
+roll_sh --ssh fakebox 'v8;rm'
+check "a tag outside the whitelist: usage error" test "$rc" = 2
+
+roll_box fleet
+printf '{"boxes":[{"label":"box-a","url":"","ssh":"fakebox","stack":"%s"}]}\n' "$RS/stack" > "$RS/fleet.json"
+FAKE_STACK_ENV="" MANTLE_FLEET_FILE="$RS/fleet.json" roll_sh box-a v8
+check "box from the fleet file (label, ssh, stack)" sh -c "test '$rc' = 0 && grep -q '===== fakebox → v8' '$RS/out'"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo
