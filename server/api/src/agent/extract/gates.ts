@@ -11,7 +11,8 @@
  *
  *  - The worker and the node are resolved first, because every later trace
  *    names them.
- *  - `branch` is refused regardless of config; a conversation digest is
+ *  - An exempt node (the Forum archive, @mantle/db extract-exempt.ts) and
+ *    `branch` are refused regardless of config; a conversation digest is
  *    refused because re-summarising an authored summary destroys it; a
  *    telegram turn is embedded but never summarised.
  *  - The two SIDE passes (auto-table, embedded images) run mid-chain, after
@@ -31,7 +32,7 @@
  */
 
 import { eq, sql } from 'drizzle-orm';
-import { db, nodes, contentChunks, type ExtractorParams } from '@mantle/db';
+import { db, nodes, contentChunks, isExtractExempt, type ExtractorParams } from '@mantle/db';
 import { embed } from '@mantle/embeddings';
 import { effectiveBrainDepth, resolveEffectiveIndexing, metadataSpineText } from '@mantle/files';
 import { recordSkippedTrace } from '@mantle/tracing';
@@ -143,6 +144,24 @@ export async function admitForExtraction(
       subjectKind: 'node',
       disposition: 'not_brain_owner',
       details: { worker_slug: worker.slug },
+    });
+    return { proceed: false };
+  }
+  // Exempt nodes (the Forum archive pages, member logins Phase 6) are
+  // refused before ANY pass: no side pass, no embedding, no key check. They
+  // carry every forum topic, private ones too, and stay out of the brain.
+  if (isExtractExempt(node)) {
+    await recordSkippedTrace({
+      kind: 'extractor_run',
+      ownerId,
+      subjectId: nodeId,
+      subjectKind: 'node',
+      disposition: 'extract_exempt',
+      details: {
+        node_type: node.type,
+        worker_slug: worker.slug,
+        hint: 'Forum archive pages are never indexed (data.source = forum-archive).',
+      },
     });
     return { proceed: false };
   }

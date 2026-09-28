@@ -165,6 +165,26 @@ describe('admitForExtraction — refusals', () => {
     expect(h.embed).not.toHaveBeenCalled();
   });
 
+  it('refuses a Forum archive page before any pass, whatever the allowlist says', async () => {
+    // Member logins Phase 6: the archive holds private topics too and must
+    // never be indexed. Nothing downstream may run, not even the free-looking
+    // side passes or the local embedder.
+    h.resolveExtractor.mockResolvedValue({ ...WORKER, params: { target_types: ['*'] } });
+    h.selectQueue.push([node({ type: 'page', data: { source: 'forum-archive' } })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('extract_exempt');
+    expect(h.autoTable).not.toHaveBeenCalled();
+    expect(h.embeddedImages).not.toHaveBeenCalled();
+    expect(h.embed).not.toHaveBeenCalled();
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+    expect(h.updates).toEqual([]);
+  });
+
+  it('admits an ordinary page (the exemption is the source, not the type)', async () => {
+    h.selectQueue.push([node({ type: 'page', data: { source: 'editor' } })]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+  });
+
   it('refuses a hard-skip type whatever the allowlist says', async () => {
     // `branch` is refused in code, not in config — a worker configured with
     // '*' must not reach folder rows.

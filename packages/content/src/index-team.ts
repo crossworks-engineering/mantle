@@ -149,6 +149,18 @@ export {
   forumTopicsWithAttachedNode,
 } from './forum';
 
+// The Forum archive (Phase 6). Straight from its module, not the pinned
+// ./forum barrel (forum-exports.test.ts).
+export {
+  exportForumArchive,
+  countUnexportedForumTopics,
+  FORUM_ARCHIVE_TITLE,
+  FORUM_ARCHIVE_TAG,
+  FORUM_ARCHIVE_UPLOADS_PATH,
+  FORUM_ARCHIVE_DUMP_PATH,
+  type ForumExportResult,
+} from './forum/export';
+
 export {
   listStagedForumUploads,
   bindForumUploadsTx,
@@ -170,10 +182,10 @@ export {
 export {
   attachmentKindForMime,
   topicFolderSlug,
-  dedupeFilename,
   formatAttachmentSize,
   type ForumAttachmentKind,
 } from './forum-uploads-meta';
+export { dedupeFilename } from './dedupe-filename';
 
 export {
   recordTeamAccess,

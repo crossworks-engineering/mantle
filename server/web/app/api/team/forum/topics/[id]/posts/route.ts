@@ -1,5 +1,6 @@
 /**
  * POST /api/team/forum/topics/[id]/posts — a member's reply in a topic.
+ * CLOSED (Phase 6): answers 410 `forum-closed` (lib/forum-closed.ts).
  * Unless the post waves the agent off (`noReply`, defaulted ON in `discussion`
  * topics by the client), the durable forum turn is enqueued and the agent
  * answers into the same topic. Members cannot post into closed topics; the
@@ -13,6 +14,7 @@ import { resolveTeamChatCaller, teamCallerName } from '@/lib/team-chat-gate';
 import { enqueueForumTurn } from '@/lib/forum-turn-enqueue';
 import { forumDailySpend, FORUM_DAILY_CAP } from '@/lib/forum-gate';
 import { resolveStagedAttachments } from '@/lib/forum-attachments';
+import { FORUM_CLOSED, forumClosedResponse } from '@/lib/forum-closed';
 import { appendForumPost, getForumTopic, recordTeamAccess } from '@mantle/content';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
@@ -35,6 +37,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid topic id' }, { status: 400 });
   const topicId = idParsed.data.id;
+
+  // Phase 6: the forum is closed; nothing below runs (lib/forum-closed.ts).
+  if (FORUM_CLOSED) {
+    recordTeamAccess({
+      ownerId,
+      contactId,
+      kind: 'denied',
+      detail: { reason: 'forum_closed', surface: 'forum', action: 'post', topicId },
+    });
+    return forumClosedResponse();
+  }
 
   const gate = rateLimit(`forum-post:${contactId}`, { max: 6, windowMs: 60_000 });
   if (!gate.ok) {

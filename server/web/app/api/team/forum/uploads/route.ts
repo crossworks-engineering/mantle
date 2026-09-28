@@ -1,5 +1,6 @@
 /**
  * POST /api/team/forum/uploads — stage member file uploads for a forum post.
+ * CLOSED (Phase 6): answers 410 `forum-closed` (lib/forum-closed.ts).
  *
  * Multipart (`file` entries, ≤5 per request; optional `topicId` when the
  * reply composer knows its topic). Bytes go to the QUARANTINE (outside the
@@ -19,6 +20,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { resolveTeamChatCaller } from '@/lib/team-chat-gate';
 import { UPLOAD_DAILY_BYTES } from '@/lib/forum-gate';
 import { reconcileForumQuarantine } from '@/lib/forum-quarantine';
+import { FORUM_CLOSED, forumClosedResponse } from '@/lib/forum-closed';
 import {
   attachmentKindForMime,
   deleteStagedForumUploadRow,
@@ -48,6 +50,18 @@ export async function POST(req: Request) {
   const caller = await resolveTeamChatCaller(req);
   if (!caller) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { ownerId, contactId, channel } = caller;
+
+  // Phase 6: the forum is closed, and an upload only exists to be posted;
+  // nothing below runs (lib/forum-closed.ts).
+  if (FORUM_CLOSED) {
+    recordTeamAccess({
+      ownerId,
+      contactId,
+      kind: 'denied',
+      detail: { reason: 'forum_closed', surface: 'forum-uploads' },
+    });
+    return forumClosedResponse();
+  }
 
   const gate = rateLimit(`forum-upload:${contactId}`, { max: 10, windowMs: 60_000 });
   if (!gate.ok) {

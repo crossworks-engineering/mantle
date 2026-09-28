@@ -2,6 +2,7 @@
  * Owner-only: post into a forum topic as the brain admin (an `owner` post —
  * no agent turn fires; the owner IS the answer). Optionally flips the topic's
  * status in the same call ("answer and mark answered"). Session-gated.
+ * CLOSED (Phase 6): answers 410 `forum-closed` (lib/forum-closed.ts).
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
@@ -9,6 +10,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { appendForumPost, loadProfilePreferences, setForumTopicStatus } from '@mantle/content';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { FORUM_CLOSED, forumClosedResponse } from '@/lib/forum-closed';
 
 const Body = z.object({
   topicId: z.string().uuid(),
@@ -19,6 +21,8 @@ const Body = z.object({
 export async function POST(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
+  // Phase 6: the forum is closed; nothing below runs (lib/forum-closed.ts).
+  if (FORUM_CLOSED) return forumClosedResponse();
 
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
