@@ -36,12 +36,12 @@
 
 ## 2. Identity & credentials
 
-| Credential                                            | Who holds it                         | Scope                                                                                                                                            | Revocation                                                  |
-| ----------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
-| Owner/admin login + session cookie                    | you and named admins                 | the whole app                                                                                                                                    | change password; delete the admin user                      |
-| **Member login** + session cookie                     | a person you invited (role member)   | the member routes only (`MEMBER_ROUTES`): the Library, their chat with the team agent, their personal space, member apps; read at the team level | disable, demote or delete the login, instant, mid-session   |
-| **Team token** (8 chars, shown once, SHA-256 at rest) | a Contact you flagged as team member | team-mode `/s` shares only (until member logins stage 6), and one invite redeem in place of the invite code; nothing else                        | flip the toggle or delete the contact, instant, mid-session |
-| Share token (~128-bit CSPRNG in the URL)              | anyone with the link                 | exactly one shared item (or one public app)                                                                                                      | turn the share off                                          |
+| Credential                                                  | Who holds it                       | Scope                                                                                                                                            | Revocation                                                |
+| ----------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| Owner/admin login + session cookie                          | you and named admins               | the whole app                                                                                                                                    | change password; delete the admin user                    |
+| **Member login** + session cookie                           | a person you invited (role member) | the member routes only (`MEMBER_ROUTES`): the Library, their chat with the team agent, their personal space, member apps; read at the team level | disable, demote or delete the login, instant, mid-session |
+| **Team token** (8 chars, SHA-256 at rest; no longer minted) | a Contact that held a team code    | one invite redeem in place of the invite code, while the contact has an open invite; nothing else (team links retired, member logins stage 6)    | revoke the invite; delete the contact                     |
+| Share token (~128-bit CSPRNG in the URL)                    | anyone with the link               | exactly one shared item (or one public app)                                                                                                      | turn the share off                                        |
 
 Notes that matter to a reviewer:
 
@@ -85,8 +85,8 @@ Two structural points:
   there is no "safe slice" of a private brain to expose to anonymous visitors,
   so the answer is none (enforced by a hard server-side gate, not convention).
 - **Identified beats anonymous.** Everything with real capability requires a
-  member login (or, on a team-mode share, a team token that maps to a named
-  Contact), and every action is logged against that name.
+  member login, and every action is logged against that name. (Team-mode
+  shares, where a team token named the visitor, are retired.)
 
 ## 4. The assistant's guard rails
 
@@ -175,11 +175,11 @@ even when _you_ wrote them:
   SQLite. `ATTACH`/`PRAGMA` are blocked. The assistant's cross-app access is
   opened read-only _at the engine level_ (any write throws), so no crafted
   query can mutate app data.
-- **Share modes bound external capability** (§3): public = own-data,
-  read-only, zero brain tools; team = identified members, declared tools +
-  writes, everything audited to the person on the app's **Activity** tab.
-  Even team mode refuses non-builtin handlers; a shared app can never hand a
-  visitor server-side HTTP or shell execution under the owner's account.
+- **A share link bounds external capability** (§3): own data, read-only,
+  zero brain tools. Members run apps from their own logins (declared builtin
+  tools + writes on team-level apps, everything audited to the person on the
+  app's **Activity** tab); a shared app can never hand a visitor server-side
+  HTTP or shell execution under the owner's account.
 - **Durability is first-class.** App DBs run in WAL mode and are snapshotted
   into the standard backup via `VACUUM INTO` (consistent under load), with
   loud reporting when any DB can't be snapshotted.

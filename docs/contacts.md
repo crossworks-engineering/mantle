@@ -132,21 +132,18 @@ chars, look-alike-free alphabet). The `/contacts` UI mints it via a header
 "Team member" switch (shown-once dialog with copy; regenerate + remove
 confirms; a list badge marks members).
 
-The token now opens only team-mode shares (`/s/<token>`, see
-[`app-authoring-guide.md`](./app-authoring-guide.md)), audited against the
-contact, and it can redeem a member invite once in place of the invite code
+The token opens nothing now: its only use is to redeem a member invite once
+in place of the invite code, while its contact has an open invite
 ([member-logins.md](./member-logins.md) section 9). The Team Workspace
 (`/team`), its Assistant and forum, and the Team Hub (`/hub`) were retired in
-member logins Phase 6 ([team-chat.md](./team-chat.md)): team contacts become
-member logins through invites. Membership is the single source of truth:
-disabling the toggle or deleting the contact deletes the row, and because
-every request re-checks liveness, access dies immediately, mid-session.
+member logins Phase 6 ([team-chat.md](./team-chat.md)), and team links on
+`/s` with them (stage 6): team contacts become member logins through
+invites. Nothing mints, rotates or revokes a code any more
+(`POST /api/contacts/[id]/team` is gone); an unwanted invite is revoked
+instead, and deleting the contact deletes its row.
 
-Helpers live in `packages/content/src/team-tokens.ts`
-(`enableTeamMember` / `rotateTeamToken` / `disableTeamMember` /
-`verifyTeamToken` + a status map); `ContactRow` carries
-`team: { since, lastUsedAt } | null`; the API is
-`POST /api/contacts/[id]/team` (`enable | rotate | disable`).
+Helpers live in `packages/content/src/team-tokens.ts` (`verifyTeamToken` +
+a status map); `ContactRow` carries `team: { since, lastUsedAt } | null`.
 
 ---
 

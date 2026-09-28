@@ -250,12 +250,8 @@ Shared-links registry all follow. The `/s/[token]` page is deliberately **split*
 hand-written parser over a fixed grammar with no path to a global scope. It is
 capped anyway (60/min per IP, 200 input symbols, 1000 chars per value, 512KB
 body). Authorization mirrors the shared-table rows route: an active formula
-share plus, in team mode, a live team session; everything else 404s uniformly.
-
-**Team mode caveat**: `formula` is not in `TEAM_WORKSPACE_TYPES` (a deliberate
-whitelist), so a team-mode formula share does **not** list in the /team
-workspace; the link must be passed along directly, and the ShareControl hint
-says so. Adding formulas to the workspace is deferred work.
+share; everything else 404s uniformly. (Team-mode links, and the team session
+they needed, were retired in member logins Phase 6 stage 6.)
 
 ## 9. The mathematician
 

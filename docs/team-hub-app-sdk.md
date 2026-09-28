@@ -50,17 +50,18 @@ never cost a team a working page.
 ```
 prefs.teamHubAppId  →  app exists under this owner
                     →  green PUBLISHED build
-                    →  active TEAM-mode share
+                    →  app at a level members may run (team, client, public)
 ```
 
-Designation (the Team-admin picker, or `PUT /api/team-admin/hub-app`) ensures
-the app's share exists and is team-mode, then sets the pref. Undesignating
+Designation (the Team-admin picker, or `PUT /api/team-admin/hub-app`) puts an
+app still at admin at team level, then sets the pref; it makes no share link
+(team links were retired in member logins Phase 6 stage 6). Undesignating
 clears the pref only. Members are always served the **published** build,
 drafts never leave the owner editor.
 
-Brokered traffic (bundle, tool calls, SQLite) goes through the app's team-mode
-share routes, so the member's identity is re-derived server-side on every call
-and every access is logged per member.
+Brokered traffic (bundle, tool calls, SQLite) goes through the member app
+routes (`/api/member/apps/:id/*`), so the member's login is re-checked
+server-side on every call and every access is logged per member.
 
 Since the v0.200 member carve, `/hub` rendered on the **client origin** and the
 broker calls crossed to the server origin with the member's signed team
@@ -262,13 +263,13 @@ reserved, not implemented. Propose additions there rather than overloading
 
 ## 7. Updating a live hub: the workflows
 
-| Change                 | Workflow                                             | Live when                 |
-| ---------------------- | ---------------------------------------------------- | ------------------------- |
-| Copy / tiles (Tier 1)  | edit `content.ts` → `app_build` → `app_publish`      | next member page load     |
-| Tiles (Tier 2)         | edit table → `table_commit`                          | next hub load, no publish |
-| Layout / new section   | edit `components/` → build → publish                 | next page load            |
-| Briefing set / order   | share or revoke team-mode pages (share time = order) | next hub load             |
-| Revert to built-in hub | Team admin → Hub app → "Built-in hub"                | immediately               |
+| Change                 | Workflow                                        | Live when                 |
+| ---------------------- | ----------------------------------------------- | ------------------------- |
+| Copy / tiles (Tier 1)  | edit `content.ts` → `app_build` → `app_publish` | next member page load     |
+| Tiles (Tier 2)         | edit table → `table_commit`                     | next hub load, no publish |
+| Layout / new section   | edit `components/` → build → publish            | next page load            |
+| Briefing set / order   | set pages to team level or back (newest first)  | next hub load             |
+| Revert to built-in hub | Team admin → Hub app → "Built-in hub"           | immediately               |
 
 Members with `/hub` already open see updates on their next load; there is no
 live push to an open tab. The shell keeps the app mounted across chat/reader
@@ -292,7 +293,7 @@ that must survive a reload goes in SQLite (Tier 3).
 
 - **Members see the built-in hub instead of the app**: the chain broke.
   Check, in order: pref set (Team-admin picker shows the app), published build
-  green (`app_get`), share active and team-mode. The picker labels a
+  green (`app_get`), app at team level or lower. The picker labels a
   designated app whose build went red.
 - **Members see "Loading…" then the built-in hub**: the bundle booted badly
   (module-level throw) or an import failed; the shell's ready-watchdog fired.

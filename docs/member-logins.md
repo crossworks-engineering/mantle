@@ -16,7 +16,7 @@
   of its email before the @) is how the agent and the admin see it. Contacts
   are plain contacts; the old team switch and team codes on contacts belonged
   to the team portal, retired in Phase 6 (section 9): a team code now opens
-  only team-mode `/s` shares, and redeems an invite once. `auth.users.contact_id` is an
+  nothing, and only redeems an invite once. `auth.users.contact_id` is an
   optional link, no longer required. When set it must be a contact of this
   brain, and a contact links to one login at most: a second login on it is
   a 409.
@@ -452,8 +452,8 @@ app's level in its Access control; nothing else lists it to members.
   return `warnings` for every declared tool its members would be refused.
 - **Data.** Row security does not reach SQLite, so the db broker checks the
   app itself (team level or lower, published) before it opens the database.
-  Members read every app they may run, and write only to a TEAM-level app,
-  as team-mode shares do; a client- or public-level app is read-only for
+  Members read every app they may run, and write only to a TEAM-level app
+  (as the retired team-mode shares did); a client- or public-level app is read-only for
   them, so nothing a member writes shows to anonymous visitors (decided
   2026-09-27). App data is shared per app, not per member (v1): every member
   reads and writes the same database. The SQLite work runs on the admin pool
@@ -494,13 +494,13 @@ app's level in its Access control; nothing else lists it to members.
 - **Home app.** The brain's pinned hub app (Team admin > Settings, the
   `teamHubAppId` pref) is the members' home app while they may run it: no
   share is needed, the level is the access. Pinning an admin-level app sets
-  it to team level (the picker says so). Otherwise the member home shows its
+  it to team level (`PUT /api/team-admin/hub-app` answers `levelChanged`, and
+  `modeChanged` with the same value for one contract cycle); it makes no
+  share link. Otherwise the member home shows its
   built-in view, and `/api/member/home` answers `{ homeApp: null, hub: null }`.
   With a home app, `host.hub.get()` answers from that route: the site name,
   the member's name, the newest team pages as sections (a section's `token`
-  is the page id), Library counts and the other apps members may run. The
-  `/team` portal hub keeps its own rules (a team-mode share) until it is
-  retired.
+  is the page id), Library counts and the other apps members may run.
 - **Contract.** The response shapes are published in
   `@crossworks/client-types` (`packages/client-types/src/dto/member-apps.ts`):
   `MemberAppCard`, `MemberAppList`, `MemberHomeApp`, `MemberHomeData<THub>`
@@ -629,8 +629,7 @@ is a member login. Nobody hands a password around. The table is
   - Every `/api/team/*` route (auth, sso, workspace, list, hub, curated,
     comments, the turn stream, the forum) and `/api/team-portal` are gone,
     with the raw team-code bearer and the signed team-chat credential (kind
-    `c`, cookie or bearer): nothing mints or accepts it, so it no longer
-    opens team-mode `/s` shares either.
+    `c`, cookie or bearer): nothing mints or accepts it.
   - The admin forum routes, `/api/team-admin/topics`,
     `/api/team-admin/members/:id/thread-read` and `dashboard-tags` are gone.
     `/api/team-admin/members`, `requests` and `settings` keep their answer
@@ -650,10 +649,43 @@ is a member login. Nobody hands a password around. The table is
     commits that shipped them); an edited prompt is kept. The change goes
     through Studio prose versioning, so the old default is v1, one revert
     away.
-  - Kept until stage 6: team-mode `/s` share admission (the share-scoped
-    visitor cookie), `contact_team_tokens` and the code check invites need,
-    `team_messages` / `team_access_log` / `team_read_cursors` with their
-    admin readers, the forum tables and the archive export.
+  - Kept: `contact_team_tokens` and the code check invites need
+    (`verifyTeamToken`), `team_messages` / `team_access_log` /
+    `team_read_cursors` with their admin readers, the forum tables and the
+    archive export (their drop is a later stage).
+- **Team links are retired** (Phase 6 stage 6, migration 0176). Members read
+  team items by level with their own logins, so a team item has no link:
+  - 0176 revoked every team-mode link that was not revoked yet, an expired
+    one included. It changes no item's level: a team item stays at team with
+    no link (the level is the truth; an expired or revoked team or client
+    link leaves the item at its level).
+  - Nothing makes a team link. Setting an item to team removes its open link
+    (a cascaded sub-page follows its parent to team). `PATCH /api/shares/:id`
+    with `mode: 'team'` answers 400 `{ error, reason: 'team-links-retired' }`,
+    whose message says members use their own logins and to set the level to
+    team instead; `node_share` and `page_share` refuse `mode: 'team'` with
+    the same message (their `mode` enum is `['public']`), and
+    `createShare` / `applyShareMode` throw `TeamLinkRetiredError`. Public
+    links work as before.
+  - The share read path never serves a team row, even one 0176 missed
+    (`activePredicate` in shares.ts), and a new link on such an item revokes
+    it first.
+  - An old team link on `/s/<token>` answers a plain page (410, `noindex`):
+    "Sign in as a member", with a link to `/login` and a line to ask the admin
+    for an invite. Any other dead token keeps the uniform 404.
+  - Deleted: `lib/team-gate.ts` and the token prompt island,
+    `POST /s/:token/auth`, the share-scoped team visitor cookie
+    (`mantle_team`, kind `t`, now reserved and refused by every verifier),
+    the contact id (`cid`) on frame tickets, `POST /api/contacts/:id/team`
+    (enable, rotate, revoke a team code: nothing mints a code now; an
+    unwanted invite is revoked instead), the unused team-hub share resolver,
+    and the team-token helpers only those used. The `/s` app brokers admit on
+    the active share alone: the tool broker refuses every call (403, "members
+    use the app's Mantle tools from their own login"), the db broker takes
+    queries only, and `/s/:token/view` always answers `mode: 'public'`.
+  - Contract: `ShareMode` is `'public'` (it was `'public' | 'team'`), so
+    `AccessLinkView.mode` and `AppRow.shareMode` are `'public'` (or null).
+    `DELETE /api/shares/:id` no longer answers `keptTeam`.
 - **Tests.** `packages/content/src/member-invites.db.test.ts` and
   `member-history-links.db.test.ts` (Postgres: 0175's backfill and the
   redeem's), `packages/tools/src/builtins-team-portal.db.test.ts`,
@@ -662,8 +694,15 @@ is a member login. Nobody hands a password around. The table is
   `server/web/app/api/team-admin/invites/invites-admin-routes.test.ts`; the
   member and auth sweeps cover the new routes. The retirement:
   `server/web/server/auth-sweep.test.ts` (the redirects, `/api/team` gone),
-  `server/web/server/pages/stubs.test.ts`, `lib/team-gate.test.ts`,
-  `lib/auth-tokens.test.ts` (kind `c` refused everywhere),
+  `server/web/server/pages/stubs.test.ts`,
+  `lib/auth-tokens.test.ts` (kinds `c` and `t` refused everywhere),
   `server/api/src/workflows/forum-turn-retired{,.db}.test.ts`,
   `lib/system-manifest/prompt-upgrade.db.test.ts` and the manifest drift
-  guard.
+  guard. Team links (stage 6): `packages/content/src/retire-team-links.db.test.ts`
+  (0176 on seeded rows, the read path, the old-token check),
+  `shares-levels.db.test.ts` and `shares-mode.test.ts` (team takes no link,
+  refusals), `server/web/server/pages/share-retired-team.test.ts` (the sign-in
+  page), `server/web/app/s/share-link-brokers.test.ts`,
+  `server/web/app/api/shares/[id]/share-mode-route.test.ts`,
+  `server/web/app/api/team-admin/hub-app/hub-app-route.test.ts`, the share
+  tool tests and the auth sweep (the deleted routes are not routed).

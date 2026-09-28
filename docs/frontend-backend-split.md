@@ -348,8 +348,10 @@ authenticated with cookies, and cookies don't cross origins. The member carve
   happen in the parent page, so the client-origin hub passes an absolute
   `apiBase` + a bearer-attaching `fetcher`; the `/s` sub-paths a client-origin
   page calls (`bundle`/`tool-broker`/`db-broker`, plus `view`/`rows` for the
-  inline reader) accept the bearer (`resolveShareVisitorFromRequest`) and get
-  the `/api/**` CORS treatment, and ONLY they.
+  inline reader) accepted the bearer (`resolveShareVisitorFromRequest`) and get
+  the `/api/**` CORS treatment, and ONLY they. (The team bearer and team links
+  are retired since member logins Phase 6: those paths take the share token
+  alone.)
 - **`/team-admin` rehomed under the owner bearer**: per-tab
   `GET /api/team-admin/*` routes + a client page in `jackdaw`; the old
   render side effects (mark thread/topic read) became explicit POSTs.
