@@ -4,7 +4,9 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   db,
   agents,
+  assistantMessages,
   channels,
+  nodes,
   applyPersonaUpdate,
   noteRef,
   type Agent,
@@ -494,12 +496,67 @@ export async function renameAssignedAgent(
   return row ? toSummary(row) : null;
 }
 
-export async function deleteAgent(userId: string, id: string): Promise<boolean> {
-  const rows = await db
-    .delete(agents)
-    .where(and(eq(agents.id, id), eq(agents.ownerId, userId)))
-    .returning({ id: agents.id });
-  return rows.length > 0;
+/** What happens to a deleted agent's conversation.
+ *  - `keep` (the default): the 0127 behaviour. The agent row goes; its
+ *    `assistant_messages` stay with `agent_id` NULL (still replayable) and its
+ *    digests stay (still in find_window and search).
+ *  - `delete`: the stream goes with the agent. Its `assistant_messages` rows
+ *    and its `conversation-digest` notes are removed in the same transaction.
+ *    Read cursors and channels CASCADE either way. Telegram transport rows
+ *    (`telegram_messages` + their `telegram_message` nodes) are ingested brain
+ *    content like emails and are left alone. */
+export type AgentConversationMode = 'keep' | 'delete';
+
+export type DeleteAgentResult = {
+  conversation: AgentConversationMode;
+  deletedMessages: number;
+  deletedDigests: number;
+};
+
+export async function deleteAgent(
+  userId: string,
+  id: string,
+  opts: { conversation?: AgentConversationMode } = {},
+): Promise<DeleteAgentResult | null> {
+  const conversation = opts.conversation ?? 'keep';
+  return db.transaction(async (tx) => {
+    // Lock the row first so a concurrent turn cannot land a message between
+    // the purge and the delete (it would be orphaned by the SET NULL).
+    const [agent] = await tx
+      .select({ id: agents.id })
+      .from(agents)
+      .where(and(eq(agents.id, id), eq(agents.ownerId, userId)))
+      .for('update')
+      .limit(1);
+    if (!agent) return null;
+
+    let deletedMessages = 0;
+    let deletedDigests = 0;
+    if (conversation === 'delete') {
+      const msgs = await tx
+        .delete(assistantMessages)
+        .where(and(eq(assistantMessages.ownerId, userId), eq(assistantMessages.agentId, id)))
+        .returning({ id: assistantMessages.id });
+      deletedMessages = msgs.length;
+      // Digests key off data.agent_id (the summarizer's contract), not the
+      // agent:<slug> tag, which a later agent could reuse.
+      const digests = await tx
+        .delete(nodes)
+        .where(
+          and(
+            eq(nodes.ownerId, userId),
+            eq(nodes.type, 'note'),
+            sql`${nodes.tags} @> ARRAY['conversation-digest']::text[]`,
+            sql`${nodes.data}->>'agent_id' = ${id}`,
+          ),
+        )
+        .returning({ id: nodes.id });
+      deletedDigests = digests.length;
+    }
+
+    await tx.delete(agents).where(and(eq(agents.id, id), eq(agents.ownerId, userId)));
+    return { conversation, deletedMessages, deletedDigests };
+  });
 }
 
 /* ---------------------------------------------------------------------------

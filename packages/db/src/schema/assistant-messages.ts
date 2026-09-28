@@ -56,7 +56,10 @@ export type ConversationExternalRef = {
  * agent with chat history 500'd. The runtime always stamps agent_id on
  * insert, so NULL only ever means "this agent was deleted"; the pre-0049
  * fold-in bug (NULL rows matching every agent's thread) was wildcard-matching
- * CODE, extinct — every reader filters by a concrete agent id.
+ * CODE, extinct — every thread reader filters by a concrete agent id
+ * (replay_window reads by owner, which is how kept orphans stay replayable).
+ * Keeping is the default; `DELETE /api/agents/:id?conversation=delete` removes
+ * the rows (and the agent's digests) instead, see docs/conversation.md §6b.
  */
 export const assistantMessages = pgTable(
   'assistant_messages',

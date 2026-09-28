@@ -150,14 +150,23 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   return NextResponse.json({ agent: row });
 }
 
-export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+// `?conversation=keep|delete`. Absent = keep, the pre-existing behaviour, so a
+// client that sends a bare DELETE is unchanged. See deleteAgent.
+const ConversationParam = z.enum(['keep', 'delete']).default('keep');
+
+export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) {
     return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   }
-  const ok = await deleteAgent(user.id, idParsed.data.id);
-  if (!ok) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
-  return NextResponse.json({ ok: true });
+  const modeRaw = new URL(req.url).searchParams.get('conversation') ?? undefined;
+  const mode = ConversationParam.safeParse(modeRaw);
+  if (!mode.success) {
+    return NextResponse.json({ error: 'conversation must be keep or delete.' }, { status: 400 });
+  }
+  const result = await deleteAgent(user.id, idParsed.data.id, { conversation: mode.data });
+  if (!result) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+  return NextResponse.json({ ok: true, ...result });
 }
