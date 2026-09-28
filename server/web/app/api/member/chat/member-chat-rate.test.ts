@@ -1,7 +1,8 @@
 /**
  * POST /api/member/chat: the 6-a-minute limit, per login, with the REAL
  * limiter (the idempotency test mocks it away). Without a database or DBOS:
- * the agent lookup, the daily cap and the workflow client are faked.
+ * the agent lookup, the daily cap, the turn ledger and the workflow client
+ * are faked.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -34,6 +35,10 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   countMemberInboundSince: vi.fn(async () => 0),
   recordTeamAccess: vi.fn(),
+  // The turn ledger (member-turn-ledger.ts) always has room here: this file
+  // pins the per-minute limiter, the ledger has its own tests.
+  claimMemberTurn: vi.fn(async () => ({ ok: true, fresh: true })),
+  releaseMemberTurn: vi.fn(async () => undefined),
 }));
 
 vi.mock('@/lib/dbos-client', () => ({
