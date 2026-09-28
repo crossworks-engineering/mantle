@@ -3,8 +3,8 @@
  * that became a member login gets its old portal history linked to the
  * login. Migration 0175's backfill (re-run here on seeded rows: it only fills
  * NULLs, so it is idempotent) links the contact's team_access_log rows and
- * member node_comments; rows of other contacts, of a contact with two member
- * logins, and rows already naming a login are untouched. The invite redeem
+ * member node_comments; rows of other contacts, of a contact with no linked
+ * login, and rows already naming a login are untouched. The invite redeem
  * does the same for the contact it redeems, in its transaction. And
  * listTeamAccess filters by login and returns it.
  * Seeds its own brain row, logins and contacts, removes them.
@@ -32,7 +32,10 @@ describe.skipIf(!URL)('member history links (0175 and the invite redeem)', () =>
   const c = {
     ana: randomUUID(), // has one member login
     bo: randomUUID(), // no login
-    cy: randomUUID(), // two member logins: ambiguous
+    // Two member logins used to make a contact ambiguous for 0175. Since 0181
+    // a contact links to one login at most, so cy's logins are not linked to
+    // it at all: its rows stay untouched, as the ambiguous ones did.
+    cy: randomUUID(),
     dee: randomUUID(), // redeemed through an invite in this test
   };
   const logins = {
@@ -88,8 +91,8 @@ describe.skipIf(!URL)('member history links (0175 and the invite redeem)', () =>
       (${task}, ${anchor}, 'task', 'a task', 'tasks', '{}'::jsonb)`;
     await admin`insert into auth.users (id, email, password_hash, role, contact_id) values
       (${logins.ana}, ${email('ana-login')}, 'x', 'member', ${c.ana}),
-      (${logins.cy1}, ${email('cy1')}, 'x', 'member', ${c.cy}),
-      (${logins.cy2}, ${email('cy2')}, 'x', 'member', ${c.cy}),
+      (${logins.cy1}, ${email('cy1')}, 'x', 'member', null),
+      (${logins.cy2}, ${email('cy2')}, 'x', 'member', null),
       (${logins.solo}, ${email('solo')}, 'x', 'member', null),
       (${logins.other}, ${email('other')}, 'x', 'member', null)`;
     // Portal history: events per contact, one of Ana's already naming a login
@@ -134,7 +137,7 @@ describe.skipIf(!URL)('member history links (0175 and the invite redeem)', () =>
       ['member', logins.ana],
       ['owner', null],
     ]);
-    // No login, or two: untouched.
+    // No linked login: untouched.
     expect(await logLogins(c.bo)).toEqual([null]);
     expect(await logLogins(c.cy)).toEqual([null]);
     expect(await commentLogins(c.bo)).toEqual([['member', null]]);
