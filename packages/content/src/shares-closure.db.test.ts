@@ -7,13 +7,71 @@
  *  - `setItemLevel` writes level and link as one: a link that fails leaves
  *    the level where it was;
  *  - a cascaded sub-page never passes through a level below its parent's.
- * Seeds its own owner, rows and test triggers and removes them.
+ * The pool is real; a thin wrapper around it records the levels written to
+ * nodes and can refuse one link's insert (no DDL on shared tables: other DB
+ * test files run beside this one). Seeds its own owner and rows and removes
+ * them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/shares-closure.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
+
+const h = vi.hoisted(() => ({
+  /** Levels written to nodes, while recording. */
+  audiences: null as string[] | null,
+  /** A node whose link insert fails, when set. */
+  refuseLinkFor: null as string | null,
+}));
+
+vi.mock('@mantle/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/db')>();
+  type Fn = (...args: unknown[]) => unknown;
+  type Builder = Record<string, Fn>;
+  // Wraps the pool and every transaction (nested ones too) the same way.
+  const watch = <T extends object>(q: T): T =>
+    new Proxy(q, {
+      get(target, p) {
+        const v = Reflect.get(target, p) as unknown;
+        if (typeof v !== 'function') return v;
+        const fn = (v as Fn).bind(target);
+        if (p === 'transaction') {
+          return (cb: (tx: object) => unknown, ...rest: unknown[]) =>
+            fn((tx: object) => cb(watch(tx)), ...rest);
+        }
+        if (p === 'update') {
+          return (table: unknown) => {
+            const b = fn(table) as Builder;
+            if (table !== actual.nodes || !h.audiences) return b;
+            const set = b.set!.bind(b);
+            b.set = (vals) => {
+              const audience = (vals as { audience?: string }).audience;
+              if (audience) h.audiences?.push(audience);
+              return set(vals);
+            };
+            return b;
+          };
+        }
+        if (p === 'insert') {
+          return (table: unknown) => {
+            const b = fn(table) as Builder;
+            if (table !== actual.shares || !h.refuseLinkFor) return b;
+            const values = b.values!.bind(b);
+            b.values = (vals) => {
+              if ((vals as { nodeId?: string }).nodeId === h.refuseLinkFor) {
+                throw new Error('test: link refused');
+              }
+              return values(vals);
+            };
+            return b;
+          };
+        }
+        return fn;
+      },
+    });
+  return { ...actual, db: watch(actual.db) };
+});
 
 describe.skipIf(!URL)('levels and links at the edges on Postgres', () => {
   type Db = typeof import('@mantle/db');
@@ -34,11 +92,7 @@ describe.skipIf(!URL)('levels and links at the edges on Postgres', () => {
     teamSub: randomUUID(),
   };
   const tag = `share-closure-${owner.slice(0, 8)}`;
-  // Identifiers for this run's test triggers (hex only: safe to inline).
-  const suffix = owner.replace(/-/g, '').slice(0, 12);
-  const log = `test_audience_log_${suffix}`;
 
-  const run = (text: string) => m.db.execute(sqlTag.raw(text));
   const audienceOf = async (id: string) =>
     (
       (await m.db.execute(sqlTag`select audience from nodes where id = ${id}`)) as unknown as {
@@ -82,11 +136,8 @@ describe.skipIf(!URL)('levels and links at the edges on Postgres', () => {
   });
 
   afterAll(async () => {
-    await run(`drop trigger if exists ${log}_trg on nodes`);
-    await run(`drop function if exists ${log}_fn()`);
-    await run(`drop table if exists ${log}`);
-    await run(`drop trigger if exists test_refuse_${suffix}_trg on shares`);
-    await run(`drop function if exists test_refuse_${suffix}_fn()`);
+    h.audiences = null;
+    h.refuseLinkFor = null;
     await m.db.execute(sqlTag`delete from shares where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from spaces where id = ${owner} or login_id = ${owner}`);
@@ -128,54 +179,35 @@ describe.skipIf(!URL)('levels and links at the edges on Postgres', () => {
   });
 
   it('a link that cannot be made leaves the level where it was (one transaction)', async () => {
-    await run(`
-      create function test_refuse_${suffix}_fn() returns trigger language plpgsql as $$
-      begin
-        if new.node_id = '${ids.refused}' then raise exception 'test: link refused'; end if;
-        return new;
-      end $$`);
-    await run(`
-      create trigger test_refuse_${suffix}_trg before insert on shares
-        for each row execute function test_refuse_${suffix}_fn()`);
+    h.refuseLinkFor = ids.refused;
     try {
-      await expect(a.setItemLevel(owner, ids.refused, 'client')).rejects.toThrow();
-      expect(await audienceOf(ids.refused)).toBe('admin');
+      await expect(a.setItemLevel(owner, ids.refused, 'client')).rejects.toThrow(
+        /test: link refused/,
+      );
     } finally {
-      await run(`drop trigger if exists test_refuse_${suffix}_trg on shares`);
-      await run(`drop function if exists test_refuse_${suffix}_fn()`);
+      h.refuseLinkFor = null;
     }
+    expect(await audienceOf(ids.refused)).toBe('admin');
+    expect(await s.getActiveShareForNode(owner, ids.refused)).toBeNull();
   });
 
   it('a cascaded sub-page goes straight to the parent level, never through public', async () => {
     // The team sub-page has a team-only link of its own: the cascade re-modes it.
     await a.setItemLevel(owner, ids.teamSub, 'team');
     await a.setItemLevel(owner, ids.parent, 'client');
-    await run(`create table ${log} (node_id uuid, audience text, at serial)`);
-    await run(`
-      create function ${log}_fn() returns trigger language plpgsql as $$
-      begin
-        insert into ${log} (node_id, audience) values (new.id, new.audience);
-        return new;
-      end $$`);
-    await run(`
-      create trigger ${log}_trg after update of audience on nodes for each row
-        when (new.owner_id = '${owner}') execute function ${log}_fn()`);
+    h.audiences = [];
+    let written: string[];
     try {
       const res = await s.setShareCascade(owner, ids.parent, true);
       expect(res).toEqual({ ok: true, count: 2 });
-      const seen = (await run(`select node_id, audience from ${log} order by at`)) as unknown as {
-        node_id: string;
-        audience: string;
-      }[];
-      const levelsOf = (id: string) => seen.filter((r) => r.node_id === id).map((r) => r.audience);
-      expect(levelsOf(ids.sub)).toEqual(['client']);
-      expect(levelsOf(ids.teamSub)).toEqual(['client']);
-      expect(await audienceOf(ids.sub)).toBe('client');
-      expect(await audienceOf(ids.teamSub)).toBe('client');
     } finally {
-      await run(`drop trigger if exists ${log}_trg on nodes`);
-      await run(`drop function if exists ${log}_fn()`);
-      await run(`drop table if exists ${log}`);
+      written = h.audiences;
+      h.audiences = null;
     }
+    // One write per sub-page, straight to client: the new link on `sub`, the
+    // re-moded one on `teamSub`. An open link alone would have written public.
+    expect(written).toEqual(['client', 'client']);
+    expect(await audienceOf(ids.sub)).toBe('client');
+    expect(await audienceOf(ids.teamSub)).toBe('client');
   });
 });
