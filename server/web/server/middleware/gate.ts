@@ -48,6 +48,13 @@ function isAssetPath(path: string): boolean {
     // level, so the token opens only what the member's level can see.
     path.startsWith('/api/member/files/') ||
     /^\/api\/member\/draws\/[^/]+\/svg$/.test(path) ||
+    // A member's own private file, and a teammate's team-shared one (member
+    // logins Phase 2). The member shell mints the token for exactly these
+    // <img>/download srcs. Both routes call getMemberForAsset: the own-file
+    // read runs in the space of the member the token's `act` names, so the
+    // token opens only that member's items; another member's file is a 404.
+    /^\/api\/member\/space\/[^/]+\/bytes$/.test(path) ||
+    /^\/api\/member\/team-drafts\/[^/]+\/bytes$/.test(path) ||
     // An admin's own private file (member logins Phase 7). The route calls
     // getOwnerForAsset and reads the space of the login the token's `act`
     // names, so the token opens only that admin's own items.

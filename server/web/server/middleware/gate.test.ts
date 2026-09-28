@@ -31,6 +31,11 @@ function makeApp() {
   app.get('/api/admin/space/i1/bytes', (c) => c.json({ bytes: true }));
   app.get('/api/admin/space/i1', (c) => c.json({ item: true }));
   app.get('/api/admin/space/i1/save', (c) => c.json({ saved: true }));
+  app.get('/api/member/space/i1/bytes', (c) => c.json({ bytes: true }));
+  app.get('/api/member/space/i1', (c) => c.json({ item: true }));
+  app.get('/api/member/space/i1/draft', (c) => c.json({ draft: true }));
+  app.get('/api/member/team-drafts/i1/bytes', (c) => c.json({ bytes: true }));
+  app.get('/api/member/team-drafts/i1', (c) => c.json({ item: true }));
   app.get('/s/tok123/bundle', (c) => c.json({ broker: true }));
   app.get('/api/apps/a1/frame', (c) => c.text('<!doctype html>'));
   app.post('/api/apps/a1/frame', (c) => c.text('nope'));
@@ -109,10 +114,15 @@ describe('gate: session & bearer', () => {
     expect((await app.request(`/api/attachments/a1?at=${at}`)).status).toBe(200);
     expect((await app.request(`/api/export/e1?at=${at}&format=md`)).status).toBe(200);
     expect((await app.request(`/api/admin/space/i1/bytes?at=${at}`)).status).toBe(200);
+    expect((await app.request(`/api/member/space/i1/bytes?at=${at}`)).status).toBe(200);
+    expect((await app.request(`/api/member/team-drafts/i1/bytes?at=${at}`)).status).toBe(200);
     // Wrong path
     expect((await app.request(`/api/notes?at=${at}`)).status).toBe(401);
     expect((await app.request(`/api/admin/space/i1?at=${at}`)).status).toBe(401);
     expect((await app.request(`/api/admin/space/i1/save?at=${at}`)).status).toBe(401);
+    expect((await app.request(`/api/member/space/i1?at=${at}`)).status).toBe(401);
+    expect((await app.request(`/api/member/space/i1/draft?at=${at}`)).status).toBe(401);
+    expect((await app.request(`/api/member/team-drafts/i1?at=${at}`)).status).toBe(401);
     // Wrong kind
     const m = mint({ exp: future(), k: 'm' });
     expect((await app.request(`/api/files/files/f1?at=${m}`)).status).toBe(401);

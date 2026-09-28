@@ -188,9 +188,9 @@ can never set accepted.
 | `POST /api/member/space/:id/submit`             | Submit the saved version for review                 |
 | `POST /api/member/space/:id/recall`             | Take a submitted item back                          |
 | `POST /api/member/space-files`                  | Upload a file (multipart, one `file` part)          |
-| `GET /api/member/space/:id/bytes`               | An own file's bytes (`?thumb=1`: thumbnail)         |
+| `GET /api/member/space/:id/bytes`               | An own file's bytes (`?thumb=1`: thumbnail; `?at=`) |
 | `GET /api/member/team-drafts[/:id]`             | Teammates' shared items, saved version only         |
-| `GET /api/member/team-drafts/:id/bytes`         | A teammate's team-shared file                       |
+| `GET /api/member/team-drafts/:id/bytes`         | A teammate's team-shared file (`?at=` too)          |
 | `GET/POST /api/member/space/:id/comments`       | The thread on an own item (shared or submitted)     |
 | `DELETE …/space/:id/comments/:commentId`        | Remove an own comment                               |
 | `GET/POST /api/member/team-drafts/:id/comments` | The thread on a teammate's shared item              |
