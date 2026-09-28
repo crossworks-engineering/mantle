@@ -4,6 +4,23 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.295: the team-code portal is retired (Phase 6 stage 5)
+
+- /team, anything under it, and /hub redirect to /login; /api/team/* and
+  /api/team-portal are gone, with the raw team-code bearer and the signed
+  team-chat credential. Team-mode /s links and contact_team_tokens stay
+  until stage 6 (invites still accept an old code once).
+- The forum turn runner is gone: a forum turn still queued on a box runs
+  into a no-op stub under its old name and ends cleanly. The admin forum
+  routes, topics, thread-read and dashboard-tags go; members, requests and
+  settings keep their answer shape with the forum parts empty.
+- team_member_list, team_notify and the team-notify group are retired (the
+  boot reconcile disables them). The team-responder prompt is rewritten for
+  member chat; it replaces a live prompt only when that prompt is exactly a
+  shipped default (an edited prompt is kept; the old text stays as v1).
+- An admin's reply to a request a member login filed lands in that
+  member's own chat thread.
+
 ## 0.232.294: client v0.6.158
 
 - Paired with jackdaw v0.6.158: Team admin shows a member's earlier team
