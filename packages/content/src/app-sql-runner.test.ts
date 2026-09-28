@@ -8,7 +8,12 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { APP_SQL_MAX_ROWS, appSqlChildPids, runAppSql } from './app-sql-runner';
+import {
+  APP_SQL_MAX_CHILDREN,
+  APP_SQL_MAX_ROWS,
+  appSqlChildPids,
+  runAppSql,
+} from './app-sql-runner';
 
 describe('runAppSql', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'app-sql-runner-'));
@@ -245,6 +250,20 @@ describe('runAppSql child processes', () => {
     const now = appSqlChildPids();
     expect(now.length).toBeGreaterThan(0);
     expect(now.some((p) => killed.includes(p))).toBe(false);
+  });
+
+  it('never runs more children than the cap: extra statements wait their turn', async () => {
+    let most = 0;
+    const read = () =>
+      runAppSql(file, {
+        sql: 'WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c LIMIT 200000) SELECT count(*) AS n FROM c',
+        mode: 'all',
+        readOnly: true,
+      }).finally(() => (most = Math.max(most, appSqlChildPids().length)));
+    const all = await Promise.all(Array.from({ length: APP_SQL_MAX_CHILDREN * 3 }, read));
+    expect(all).toEqual(Array.from({ length: APP_SQL_MAX_CHILDREN * 3 }, () => [{ n: 200000 }]));
+    expect(most).toBeGreaterThan(1);
+    expect(most).toBeLessThanOrEqual(APP_SQL_MAX_CHILDREN);
   });
 
   it('answers with the SQL error and keeps the child for the next statement', async () => {
