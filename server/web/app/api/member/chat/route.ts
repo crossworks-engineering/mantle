@@ -26,7 +26,9 @@ import { firstIssue } from '@/lib/zod-issue';
  *
  *   GET  /api/member/chat[?before=ISO] -> { agent, messages }
  *   POST /api/member/chat { text }     -> 202 { turnId }; the reply lands in
- *                                         the thread (poll GET).
+ *                                         the thread (poll GET). A retry with
+ *                                         the same Idempotency-Key is the same
+ *                                         turn; the key with new text, a 409.
  *
  * The agent is team-responder, and only once an admin has set it below admin:
  * members chat only with team-level agents, and the turn engine refuses an
@@ -144,8 +146,8 @@ export async function POST(req: Request) {
   try {
     // The login is baked into the workflow id, so a client can never address
     // another member's turn; the idempotency key is only the nonce half.
-    const nonce = req.headers.get('idempotency-key')?.slice(0, 64) || randomUUID();
-    const turnId = `member-${member.loginId}.${nonce}`;
+    const key = req.headers.get('idempotency-key')?.slice(0, 64) || null;
+    const turnId = `member-${member.loginId}.${key ?? randomUUID()}`;
     const input: TeamTurnInput = {
       ownerId,
       text: parsed.data.text,
@@ -156,17 +158,33 @@ export async function POST(req: Request) {
         agentSlug: agent.slug,
       },
     };
+    const client = await getDbosClient();
+    await client.enqueue<(i: TeamTurnInput) => Promise<TeamTurnRunResult>>(
+      { workflowName: TEAM_TURN_WORKFLOW, queueName: RUNNER_QUEUE, workflowID: turnId },
+      input,
+    );
+    // A reused key lands on the turn that key started: DBOS keeps the first
+    // input and drops this one. The same text is a retry (202, same turn); new
+    // text would vanish without a word, so it is a 409. Read after the
+    // enqueue, so two racing sends with one key are judged by the winner.
+    if (key) {
+      const first = (await client.getWorkflow(turnId))?.input?.[0] as TeamTurnInput | undefined;
+      if (first && first.text !== input.text) {
+        return NextResponse.json(
+          {
+            error: 'that Idempotency-Key was already used for a different message',
+            reason: 'idempotency-key-reused',
+          },
+          { status: 409 },
+        );
+      }
+    }
     recordTeamAccess({
       ownerId,
       contactId: null,
       kind: 'turn',
       detail: { chars: parsed.data.text.length, login_id: loginId },
     });
-    const client = await getDbosClient();
-    await client.enqueue<(i: TeamTurnInput) => Promise<TeamTurnRunResult>>(
-      { workflowName: TEAM_TURN_WORKFLOW, queueName: RUNNER_QUEUE, workflowID: turnId },
-      input,
-    );
     return NextResponse.json({ turnId }, { status: 202 });
   } catch (err) {
     console.error('[member/chat]', errorMessage(err));

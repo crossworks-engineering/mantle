@@ -19,13 +19,14 @@ const h = vi.hoisted(() => ({
   isAuthor: false,
   authorChecks: [] as Array<{ anchor: string; login: string; id: string }>,
   reads: [] as string[],
+  byteReads: [] as string[],
   accepted: null as unknown,
   acceptedCalls: [] as unknown[][],
   drawSteps: [] as string[],
 }));
 
 const member = {
-  role: 'member',
+  role: 'member' as const,
   loginId: LOGIN,
   anchorId: ANCHOR,
   spaceId: SPACE,
@@ -61,11 +62,23 @@ vi.mock('@/lib/files', async () => {
     fileById: vi.fn(async () =>
       hit() ? { sha256: 'abc', mimeType: 'text/plain', filename: 'a.txt' } : null,
     ),
-    readFileById: vi.fn(async () =>
-      hit()
+    readFileById: vi.fn(async () => {
+      h.byteReads.push('buffered');
+      return hit()
         ? { bytes: Buffer.from('BYTES'), row: { mimeType: 'text/plain', filename: 'a.txt' } }
-        : null,
-    ),
+        : null;
+    }),
+    openFileById: vi.fn(async () => {
+      h.byteReads.push('streamed');
+      const { Readable } = await import('node:stream');
+      return hit()
+        ? {
+            stream: Readable.from([Buffer.from('BYT'), Buffer.from('ES')]),
+            size: 5,
+            row: { mimeType: 'text/plain', filename: 'a.txt' },
+          }
+        : null;
+    }),
   };
 });
 
@@ -109,6 +122,7 @@ beforeEach(() => {
   h.isAuthor = false;
   h.authorChecks = [];
   h.reads = [];
+  h.byteReads = [];
   h.accepted = null;
   h.acceptedCalls = [];
   h.drawSteps = [];
@@ -132,6 +146,45 @@ describe('GET /api/member/files/:id', () => {
     expect(await res.text()).toBe('BYTES');
     expect(h.authorChecks).toEqual([{ anchor: ANCHOR, login: LOGIN, id: FILE }]);
     expect(h.reads).toEqual(['team', 'admin']);
+  });
+
+  it('streams the bytes (never buffers the whole file) with the same headers', async () => {
+    h.teamHit = true;
+    const { GET } = await import('../files/[id]/route');
+    const res = await GET(new Request(`http://x/api/member/files/${FILE}`), ctx(FILE));
+    expect(res.status).toBe(200);
+    expect(h.byteReads).toEqual(['streamed']);
+    expect(res.headers.get('content-length')).toBe('5');
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    expect(res.headers.get('content-disposition')).toContain('a.txt');
+    expect(await res.text()).toBe('BYTES');
+  });
+
+  it('is rate limited per login, before any file is opened', async () => {
+    const { GET } = await import('../files/[id]/route');
+    const { MEMBER_BYTES_PER_MIN } = await import('@/lib/member-space');
+    const auth = await import('@/lib/auth');
+    // A login of its own, so the other tests' requests do not share the budget.
+    vi.mocked(auth.getMemberForAsset).mockImplementation(async () => ({
+      ...member,
+      loginId: '77777777-7777-4777-8777-777777777777',
+    }));
+    try {
+      h.teamHit = true;
+      let limited: Response | null = null;
+      let served = 0;
+      for (let i = 0; i <= MEMBER_BYTES_PER_MIN && !limited; i += 1) {
+        const res = await GET(new Request(`http://x/api/member/files/${FILE}`), ctx(FILE));
+        if (res.status === 429) limited = res;
+        else served += 1;
+      }
+      expect(served).toBe(MEMBER_BYTES_PER_MIN);
+      expect(limited?.headers.get('retry-after')).toMatch(/^\d+$/);
+      // The refused request opened nothing.
+      expect(h.byteReads).toHaveLength(served);
+    } finally {
+      vi.mocked(auth.getMemberForAsset).mockImplementation(async () => member);
+    }
   });
 
   it('is a 404 for anyone else: never reads on the admin pool', async () => {

@@ -16,16 +16,27 @@
   of its email before the @) is how the agent and the admin see it. Contacts
   are plain contacts; the old team switch and team codes on contacts belong
   to the team portal, which is being retired. `auth.users.contact_id` is an
-  optional link, no longer required.
+  optional link, no longer required. When set it must be a contact of this
+  brain, and a contact links to one login at most: a second login on it is
+  a 409.
 - **Users are contacts in user form.** Every active login's email counts in
   both email gates, inbound (`loadContactGate`) and outbound (the send
   tools), next to the contact list. A disabled login's address does not.
 - **Disabled.** `auth.users.disabled_at` set = the login cannot sign in,
   refresh a bearer or use a session it holds. Locking a login out (demote or
-  disable) also revokes its mobile bearers and its MCP connector (OAuth)
-  grants, and drops its unclaimed pairing codes. Deleting a login deletes all
-  of them (FK cascade). Push devices are keyed to the brain, not a login, and
-  are not touched.
+  disable) also:
+  - revokes its mobile bearers and its MCP connector (OAuth) grants;
+  - drops its unclaimed pairing codes, and a code claimed anyway mints
+    nothing: the claim re-reads the login and pairs only a live admin;
+  - removes the push devices it enrolled and tells the push relay
+    (`push_subscriptions.login_id`, migration 0173; devices enrolled before
+    0173 are attributed to the anchor);
+  - releases its personal assistant (the agent is kept as a shared agent,
+    never deleted).
+
+  Deleting a login removes its push devices the same way (the relay is
+  told), and its bearers, codes, grants and devices go by FK cascade.
+
 - **Connector grants belong to a login.** An OAuth grant carries the login
   that consented (`actor_id`, migration 0164). The MCP bearer check, the code
   exchange and every refresh re-read that login: a grant works only while it
@@ -33,7 +44,12 @@
   the anchor.
 - **Web only.** The mobile companion calls admin routes only, so its login
   (`/api/auth/mobile-login`) refuses a member (403 `member-login`) and mints
-  no token. A member signs in from a browser.
+  no token, and QR pairing is admin-only. A member signs in from a browser.
+- **No personal assistant.** A member chats only with team-level agents, so
+  `PUT /api/users/:id/agent` refuses a member login (400), and demoting a
+  login releases the assistant it had.
+- **No MCP connectors.** The OAuth consent step answers a member with a
+  plain refusal page (403); only an admin can connect a client.
 - **The flag.** With `MANTLE_MEMBERS` off, a member row resolves to no session
   at all, and no member login can be created.
 
@@ -52,18 +68,22 @@
   an admin is refused on every member route.
 - A member route is always member-specific. Never put a shared owner route on
   the list.
+- The sweep also proves the positive half: a member session gets past the
+  gate on member routes, and a member `?at=` asset token
+  (`getMemberForAsset`) is refused when it was minted under another anchor,
+  for a disabled member, or for an admin login.
 
 ## 3. What a member can do (Phase 1)
 
-| Route                           | What                                                                   |
-| ------------------------------- | ---------------------------------------------------------------------- |
-| `GET /api/member/shell`         | Who is signed in, the brain's brand, a member asset token              |
-| `GET /api/member/library`       | Team-level pages, notes, drawings, tables, files (see below)           |
-| `GET /api/member/library/:id`   | One item with its published body                                       |
-| `GET /api/member/files/:id`     | File bytes (`?thumb=1` for a thumbnail); `?at=` works for `<img>` srcs |
-| `GET /api/member/draws/:id/svg` | A drawing's committed SVG                                              |
-| `GET /api/member/chat`          | The member's own thread with the team-level agent                      |
-| `POST /api/member/chat`         | Send a message; the reply lands in the thread                          |
+| Route                           | What                                                                 |
+| ------------------------------- | -------------------------------------------------------------------- |
+| `GET /api/member/shell`         | Who is signed in, the brain's brand, a member asset token            |
+| `GET /api/member/library`       | Team-level pages, notes, drawings, tables, files (see below)         |
+| `GET /api/member/library/:id`   | One item with its published body                                     |
+| `GET /api/member/files/:id`     | File bytes, streamed, rate limited per login; `?thumb=1`, `?at=` too |
+| `GET /api/member/draws/:id/svg` | A drawing's committed SVG                                            |
+| `GET /api/member/chat`          | The member's own thread with the team-level agent                    |
+| `POST /api/member/chat`         | Send a message; the reply lands in the thread                        |
 
 The Library LISTS only items set to exactly Team. Row security lets the team
 role read client- and public-level items too, and those stay readable by id
@@ -81,7 +101,8 @@ not something an owner chose. To list an item to members, set it to Team.
   One thread per login (`team_messages.login_id`, migration 0163), never in
   the owner's assistant stream. A member's rows carry the login and no
   contact (migration 0167). Limits per login: 6 messages a minute and the
-  team daily cap. The admin reads member chats in `/team-admin` > Member
+  team daily cap. A retry with the same `Idempotency-Key` is the same turn;
+  the same key with different text is a 409. The admin reads member chats in `/team-admin` > Member
   chats (`GET /api/team-admin/member-chats`) and with the `team_chat_list` /
   `team_chat_read` tools (`loginId`).
 - **Not yet:** attachments in chat. Own items: section 5; review by an

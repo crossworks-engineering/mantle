@@ -7,13 +7,16 @@ import {
   eq,
   isNull,
   mobileTokens,
+  ne,
   nodes,
   oauthAccessTokens,
   oauthAuthCodes,
   pairingCodes,
 } from '@mantle/db';
 import { getOwnerOr401, membersEnabled } from '@/lib/auth';
+import { releaseAssignedAgent } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
+import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -67,7 +70,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       { status: 400 },
     );
   }
-  // Users are the team: a member login needs no contact (0167).
+  // Users are the team: a member login needs no contact (0167). The link is
+  // optional, but it must be a contact of this brain, and one contact names
+  // one login: a second login on it would make "who is this" ambiguous.
   if (body.contactId) {
     const [contact] = await db
       .select({ id: nodes.id })
@@ -77,6 +82,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       )
       .limit(1);
     if (!contact) return NextResponse.json({ error: 'Contact not found.' }, { status: 400 });
+    const [taken] = await db
+      .select({ id: authUsers.id })
+      .from(authUsers)
+      .where(and(eq(authUsers.contactId, body.contactId), ne(authUsers.id, targetId)))
+      .limit(1);
+    if (taken) {
+      return NextResponse.json(
+        { error: 'That contact is already linked to another user.' },
+        { status: 409 },
+      );
+    }
   }
 
   const changes: Partial<typeof authUsers.$inferInsert> = {};
@@ -85,13 +101,20 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (body.contactId !== undefined) changes.contactId = body.contactId;
   if (body.disabled !== undefined) changes.disabledAt = body.disabled ? new Date() : null;
 
+  let pushTokens: string[] = [];
+  let releasedAgentId: string | null = null;
   await db.transaction(async (tx) => {
     await tx.update(authUsers).set(changes).where(eq(authUsers.id, targetId));
     // Cookies re-read the row every request, so they stop at once. Bearers
     // and connector (OAuth) grants would too (both re-check the login), but
     // revoke them so the device and connector lists tell the truth. Unclaimed
     // pairing codes die too, so a QR shown before the lockout cannot pair.
+    // The login's push devices go (0173): nothing else would stop the brain
+    // pushing to its phone. Its personal assistant is released (kept, never
+    // deleted): a member chats only with team-level agents.
     if (lockingOut) {
+      pushTokens = await deleteLoginSubscriptions(targetId, tx);
+      releasedAgentId = (await releaseAssignedAgent(user.id, targetId, tx))?.id ?? null;
       const now = new Date();
       await tx
         .update(mobileTokens)
@@ -107,6 +130,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
         .where(and(eq(pairingCodes.userId, targetId), isNull(pairingCodes.claimedAt)));
     }
   });
+  // After the commit, as the single unpair route does: tell the relay.
+  await forgetRelayDevices(pushTokens);
 
   auditFireAndForget({
     actorId: user.actor.id,
@@ -114,7 +139,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     action: 'user.update',
     method: 'PATCH',
     path: `/api/users/${targetId}`,
-    detail: { targetId, targetEmail: target.email, changes: body },
+    detail: {
+      targetId,
+      targetEmail: target.email,
+      changes: body,
+      ...(lockingOut ? { releasedAgentId, pushDevicesRemoved: pushTokens.length } : {}),
+    },
     ...requestMetaFrom(req),
   });
 
@@ -152,10 +182,17 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
     );
   }
 
-  // mobile_tokens, pairing codes and the login's OAuth grants (actor_id,
-  // 0164) cascade (FKs); the stateless session cookie dies on its next
-  // request — getSessionUser re-checks auth.users per request.
-  await db.delete(authUsers).where(eq(authUsers.id, targetId));
+  // mobile_tokens, pairing codes, the login's OAuth grants (actor_id, 0164)
+  // and its push devices (login_id, 0173) cascade (FKs); the stateless
+  // session cookie dies on its next request, since getSessionUser re-checks
+  // auth.users per request. The push devices are deleted first, by hand, so
+  // the relay can be told: a cascade would drop them silently.
+  const pushTokens = await db.transaction(async (tx) => {
+    const tokens = await deleteLoginSubscriptions(targetId, tx);
+    await tx.delete(authUsers).where(eq(authUsers.id, targetId));
+    return tokens;
+  });
+  await forgetRelayDevices(pushTokens);
 
   auditFireAndForget({
     actorId: user.actor.id,

@@ -144,6 +144,7 @@ export {
   folderByPath,
   upsertFile,
   readFileById,
+  openFileById,
   countDerivedFromFile,
   deleteFileById,
   drawsReferencingFile,

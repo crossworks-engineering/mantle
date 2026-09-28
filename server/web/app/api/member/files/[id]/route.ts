@@ -1,11 +1,14 @@
 import { NextResponse } from '@/server/http-compat';
+import { Readable } from 'node:stream';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { z } from 'zod';
 import { withViewer } from '@mantle/db';
 import { thumbnailFor } from '@mantle/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import { isAuthorOfAcceptedFile } from '@mantle/content';
 import { getMemberForAsset } from '@/lib/auth';
-import { fileById, readFileById } from '@/lib/files';
+import { fileById, openFileById, readFileById } from '@/lib/files';
+import { memberBytesGate } from '@/lib/member-space';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -16,10 +19,14 @@ const IdParams = z.object({ id: z.string().uuid() });
  * team level, so a file above it is a 404, with one exception (Phase 4, plan
  * 6.2): a file this member wrote and an admin accepted is read from the brain
  * whatever its level, so it still renders in the author's other drafts.
+ * The bytes are streamed, and the route is rate limited per login (429) like
+ * the other member bytes routes.
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const member = await getMemberForAsset(req);
   if (member instanceof Response) return member;
+  const limited = memberBytesGate(req, member);
+  if (limited) return limited;
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const scope = { ownerId: member.anchorId, fileId: idParsed.data.id };
@@ -58,13 +65,14 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     });
   }
 
-  const res = await lookup(() => readFileById(scope));
-  if (!res) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  return new Response(new Uint8Array(res.bytes), {
+  const opened = await lookup(() => openFileById(scope));
+  if (!opened) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  const web = Readable.toWeb(opened.stream) as unknown as NodeReadableStream<Uint8Array>;
+  return new NextResponse(web as unknown as ReadableStream, {
     status: 200,
     headers: {
-      ...safeDownloadHeaders(res.row.mimeType, res.row.filename),
-      'content-length': String(res.bytes.byteLength),
+      ...safeDownloadHeaders(opened.row.mimeType, opened.row.filename),
+      'content-length': String(opened.size),
     },
   });
 }

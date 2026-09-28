@@ -18,6 +18,7 @@ export {
   folderByPath,
   upsertFile,
   readFileById,
+  openFileById,
   deleteFileById,
   renameFileById,
   bulkDeleteFiles,

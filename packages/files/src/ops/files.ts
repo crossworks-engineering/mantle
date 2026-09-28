@@ -4,7 +4,8 @@
  * Split out of ops.ts; bodies moved verbatim.
  */
 
-import { promises as fsp } from 'node:fs';
+import { createReadStream, promises as fsp } from 'node:fs';
+import { Readable } from 'node:stream';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   diskPathForFile,
@@ -295,6 +296,43 @@ export async function readFileById(args: {
   const stored = await storageBytesForNode(node.id);
   if (!stored) return null;
   return { row: fileRowFromNode(node), bytes: stored, path: null };
+}
+
+/**
+ * {@link readFileById}'s streaming twin, for serving a download: the same
+ * three sources in the same order, but a file on disk is opened as a stream
+ * with its size from `stat`, so a large file never sits in memory. Inline text
+ * and an object-storage attachment are already bounded (the inline cap, and
+ * an attachment is admin-only) and come back as a one-chunk stream.
+ */
+export async function openFileById(args: {
+  ownerId: string;
+  fileId: string;
+}): Promise<{ row: FileRow; stream: Readable; size: number } | null> {
+  const [node] = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.id, args.fileId), eq(nodes.ownerId, args.ownerId)))
+    .limit(1);
+  if (!node || node.type !== 'file') return null;
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  const row = fileRowFromNode(node);
+  const whole = (bytes: Buffer) => ({ row, stream: Readable.from([bytes]), size: bytes.length });
+
+  if (typeof data.content === 'string') return whole(Buffer.from(data.content, 'utf8'));
+
+  const filePath = diskPathForFile(node.path, String(data.filename ?? ''));
+  if (filePath) {
+    try {
+      const st = await fsp.stat(filePath);
+      if (st.isFile()) return { row, stream: createReadStream(filePath), size: st.size };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+  }
+
+  const stored = await storageBytesForNode(node.id);
+  return stored ? whole(stored) : null;
 }
 
 /**

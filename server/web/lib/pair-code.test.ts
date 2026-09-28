@@ -79,7 +79,7 @@ vi.mock('@mantle/db', () => {
     },
     pairingCodes: cols(['id', 'codeHash', 'userId', 'claimedAt', 'claimedDeviceId', 'expiresAt']),
     mobileTokens: cols(['id', 'userId', 'label', 'expiresAt']),
-    authUsers: cols(['id', 'email']),
+    authUsers: cols(['id', 'email', 'role', 'disabledAt']),
     and: (...a: unknown[]) => ({ __and: a }),
     eq: (...a: unknown[]) => ({ __eq: a }),
     gt: (...a: unknown[]) => ({ __gt: a }),
@@ -145,6 +145,8 @@ describe('issuePairCode', () => {
   });
 });
 
+const ADMIN_ROW = { email: 'owner@example.com', role: 'admin', disabledAt: null };
+
 describe('claimPairCode', () => {
   it('a losing conditional UPDATE (unknown, expired or used) is null and mints nothing', async () => {
     dbState.updateResults = [[]];
@@ -157,7 +159,7 @@ describe('claimPairCode', () => {
 
   it('a winning claim mints a kind-m bearer for the issuing login and links the device', async () => {
     dbState.updateResults = [[{ id: 'row-1', userId: 'user-1' }], []];
-    dbState.selectResults = [[{ email: 'owner@example.com' }]];
+    dbState.selectResults = [[ADMIN_ROW]];
     const claimed = await mod.claimPairCode(
       'the-code-the-code-1234',
       'Jackdaw (Android) · paired by QR',
@@ -182,9 +184,24 @@ describe('claimPairCode', () => {
     expect(dbState.updates[1]!.set).toEqual({ claimedDeviceId: claimed!.deviceId });
   });
 
+  // Lockout drops unclaimed codes, but the claim does not rely on it: a code
+  // that wins its UPDATE still mints nothing unless its login is a live admin.
+  it.each([
+    ['deleted', []],
+    ['disabled', [{ ...ADMIN_ROW, disabledAt: new Date('2026-09-20T00:00:00Z') }]],
+    ['demoted to member', [{ ...ADMIN_ROW, role: 'member' }]],
+  ])('a code whose login was %s is null and mints nothing', async (_what, row) => {
+    dbState.updateResults = [[{ id: 'row-1', userId: 'user-1' }], []];
+    dbState.selectResults = [row];
+    expect(await mod.claimPairCode('the-code-the-code-1234', 'Phone')).toBeNull();
+    expect(dbState.inserts).toHaveLength(0);
+    // Only the claim UPDATE ran: no device link.
+    expect(dbState.updates).toHaveLength(1);
+  });
+
   it('a missing device name gets the QR default label', async () => {
     dbState.updateResults = [[{ id: 'row-1', userId: 'user-1' }], []];
-    dbState.selectResults = [[{ email: 'owner@example.com' }]];
+    dbState.selectResults = [[ADMIN_ROW]];
     const claimed = await mod.claimPairCode('the-code-the-code-1234', '   ');
     expect(claimed!.label).toBe('Mobile device (paired by QR)');
   });
