@@ -58,7 +58,7 @@ async function orGet(
 
 function perM(v: unknown): number | null {
   const n = Number(v);
-  return Number.isFinite(n) && n >= 0 ? n * 1_000_000 : null;
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 1_000_000 * 10_000) / 10_000 : null;
 }
 
 function strList(v: unknown): string[] {

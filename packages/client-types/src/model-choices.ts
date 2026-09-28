@@ -118,7 +118,18 @@ const BASE_WORKER_CHOICES: readonly ModelChoice[] = [
 // template ships with the repo (model-pools-data.ts), so new installs offer
 // the full curated range with no network call.
 
-function templatePrice(
+/** One $/M price for a card, in the hand-written heads' style: cents with
+ *  whole dollars bare ("$2", "$1.60", "$0.13"), and two significant figures
+ *  under a cent so a tiny price never rounds to "$0.00". The snapshot holds
+ *  raw per-token × 1e6 floats (0.13199999999999998), so never print it bare. */
+export function formatUsdPerM(v: number | null): string {
+  if (v == null || !Number.isFinite(v)) return '?';
+  if (v > 0 && v < 0.01) return `$${Number(v.toPrecision(2))}`;
+  const s = v.toFixed(2);
+  return `$${s.endsWith('.00') ? s.slice(0, -3) : s}`;
+}
+
+export function templatePrice(
   p: {
     inputPerM: number | null;
     outputPerM: number | null;
@@ -126,8 +137,7 @@ function templatePrice(
 ): string {
   if (!p || (p.inputPerM == null && p.outputPerM == null)) return 'price varies';
   if (p.inputPerM === 0 && p.outputPerM === 0) return 'Free';
-  const f = (v: number | null) => (v == null ? '?' : `$${v}`);
-  return `${f(p.inputPerM)} · ${f(p.outputPerM)} /M`;
+  return `${formatUsdPerM(p.inputPerM)} · ${formatUsdPerM(p.outputPerM)} /M`;
 }
 
 function extendFromPool(pool: string, base: readonly ModelChoice[]): readonly ModelChoice[] {

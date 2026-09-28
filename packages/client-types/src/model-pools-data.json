@@ -11,7 +11,7 @@
       }
     ],
     "pricing": {
-      "inputPerM": 1.5999999999999999,
+      "inputPerM": 1.6,
       "outputPerM": 4.8,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
@@ -158,8 +158,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.13199999999999998,
-      "outputPerM": 0.5279999999999999,
+      "inputPerM": 0.132,
+      "outputPerM": 0.528,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -179,8 +179,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.6537999999999999,
-      "outputPerM": 2.0547999999999997,
+      "inputPerM": 0.6538,
+      "outputPerM": 2.0548,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -284,8 +284,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.09999999999999999,
-      "outputPerM": 0.19999999999999998,
+      "inputPerM": 0.1,
+      "outputPerM": 0.2,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -305,8 +305,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.13199999999999998,
-      "outputPerM": 0.5279999999999999,
+      "inputPerM": 0.132,
+      "outputPerM": 0.528,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -494,8 +494,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.09999999999999999,
-      "outputPerM": 0.19999999999999998,
+      "inputPerM": 0.1,
+      "outputPerM": 0.2,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -515,8 +515,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.13199999999999998,
-      "outputPerM": 0.5279999999999999,
+      "inputPerM": 0.132,
+      "outputPerM": 0.528,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -704,8 +704,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.09999999999999999,
-      "outputPerM": 0.19999999999999998,
+      "inputPerM": 0.1,
+      "outputPerM": 0.2,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -725,8 +725,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.13199999999999998,
-      "outputPerM": 0.5279999999999999,
+      "inputPerM": 0.132,
+      "outputPerM": 0.528,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -914,8 +914,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.09999999999999999,
-      "outputPerM": 0.19999999999999998,
+      "inputPerM": 0.1,
+      "outputPerM": 0.2,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -935,8 +935,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.13199999999999998,
-      "outputPerM": 0.5279999999999999,
+      "inputPerM": 0.132,
+      "outputPerM": 0.528,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -1040,8 +1040,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.09999999999999999,
-      "outputPerM": 0.19999999999999998,
+      "inputPerM": 0.1,
+      "outputPerM": 0.2,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -1103,7 +1103,7 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.19999999999999998,
+      "inputPerM": 0.2,
       "outputPerM": 1.2,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
@@ -1673,8 +1673,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.09999999999999999,
-      "outputPerM": 0.19999999999999998,
+      "inputPerM": 0.1,
+      "outputPerM": 0.2,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -1694,8 +1694,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.13199999999999998,
-      "outputPerM": 0.5279999999999999,
+      "inputPerM": 0.132,
+      "outputPerM": 0.528,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -1883,8 +1883,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.09999999999999999,
-      "outputPerM": 0.19999999999999998,
+      "inputPerM": 0.1,
+      "outputPerM": 0.2,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -1904,8 +1904,8 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.13199999999999998,
-      "outputPerM": 0.5279999999999999,
+      "inputPerM": 0.132,
+      "outputPerM": 0.528,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",
       "source": "openrouter"
@@ -2030,7 +2030,7 @@
       }
     ],
     "pricing": {
-      "inputPerM": 0.041999999999999996,
+      "inputPerM": 0.042,
       "outputPerM": 0,
       "currency": "USD",
       "capturedAt": "2026-09-22T14:41:05.911Z",

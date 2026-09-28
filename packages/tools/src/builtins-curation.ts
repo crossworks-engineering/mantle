@@ -166,7 +166,7 @@ async function loadCatalog(): Promise<
   const data = (res.json as { data?: unknown[] }).data ?? [];
   const perM = (v: unknown): number | null => {
     const n = Number(v);
-    return Number.isFinite(n) && n >= 0 ? n * 1_000_000 : null;
+    return Number.isFinite(n) && n >= 0 ? Math.round(n * 1_000_000 * 10_000) / 10_000 : null;
   };
   const models: CatalogModel[] = [];
   for (const raw of data) {
