@@ -1,7 +1,8 @@
 /**
- * Team Chat turn execution — one conversational turn for an EXTERNAL team
- * member (a contact holding a team token) against the permission-limited
- * `team-responder` agent.
+ * Member chat turn execution — one conversational turn for a MEMBER LOGIN
+ * against the permission-limited `team-responder` agent (member logins; the
+ * team-code portal contact path this once also served was retired in Phase 6).
+ * The member chat route (POST /api/member/chat) enqueues it.
  *
  * Deliberately a SIBLING of runAssistantTurn, not a flag on it: the owner path
  * carries a pile of owner-personal machinery (identity/journal injection,
@@ -14,10 +15,10 @@
  *      assistant_messages rows so its history is structurally empty; digests
  *      are off via the agent's memoryConfig (digest_limit 0); journal/identity
  *      injection is skipped entirely. History comes from the member's OWN
- *      team_messages thread and nothing else.
+ *      team_messages thread (by login) and nothing else.
  *   3. Persist inbound + pending outbound to team_messages (durable steps).
  *   4. Tool loop under a 'responder_turn' trace with subject_kind 'team_turn'
- *      and surface {kind:'team', contactId} — which is how team_request_create
+ *      and surface {kind:'team', loginId} — which is how team_request_create
  *      gets forgery-proof provenance and owner-side tools refuse.
  *   5. Finalize the outbound row with the reply + the trace id (the admin's
  *      deep link from a reply to what the brain actually did).
@@ -72,10 +73,6 @@ import { agentLevel, withAgentViewer } from '../agent/agent-viewer';
 export const TEAM_RESPONDER_SLUG = 'team-responder';
 
 export type RunTeamTurnOptions = {
-  /** The team portal contact this turn belongs to (from the authenticated
-   *  surface). Absent for a member LOGIN's turn: users are the team (0167),
-   *  so `loginId` identifies the member instead. One of the two is required. */
-  contactId?: string;
   /** Display name for the member-identity context line + request provenance. */
   contactName?: string;
   /** What the member typed (their bubble). Defaults to `text` — they differ
@@ -84,15 +81,16 @@ export type RunTeamTurnOptions = {
   /** Attachment provenance persisted on the inbound row (files are already
    *  saved as nodes by the route's upload step). */
   attachments?: ConversationAttachment[];
-  /** Transport: 'web' (the /team page), 'api' (bearer client), 'msteams'. */
+  /** Transport: 'web' (the member chat). */
   channel?: TeamChannel;
   /** Client-minted correlation id for live streaming (same contract as the
    *  owner surface — see docs/live-turn-streaming.md). */
   streamId?: string;
-  /** A MEMBER login's turn (member logins, plan section 5): the turn joins
-   *  that login's own thread, and the agent must be below admin (members
-   *  chat only with team-level agents). */
-  loginId?: string;
+  /** The MEMBER login this turn belongs to (member logins, plan section 5):
+   *  the turn joins that login's own thread, and the agent must be below
+   *  admin (members chat only with team-level agents). Required: the
+   *  team-code portal's contact turns are retired (Phase 6). */
+  loginId: string;
   /** The agent to answer (default team-responder). A member turn refuses an
    *  admin-level agent. */
   agentSlug?: string;
@@ -166,8 +164,11 @@ export async function runTeamTurn(
 ): Promise<TeamTurnResult> {
   const trimmed = text.trim();
   if (!trimmed) throw new Error('runTeamTurn: empty text');
-  const contactId = options.contactId ?? null;
-  if (!contactId && !options.loginId) throw new Error('runTeamTurn: contactId or loginId required');
+  // A turn input from before Phase 6 may still name only a portal contact
+  // (a workflow recovered on upgrade): refuse it, as the portal is gone.
+  if (!options.loginId) {
+    throw new Error('runTeamTurn: loginId required (the team-code portal chat is retired)');
+  }
   const displayText = options.displayText?.trim() || trimmed;
   const channel: TeamChannel = options.channel ?? 'web';
   const progress = { inboundWritten: false };
@@ -183,21 +184,21 @@ export async function runTeamTurn(
       await runDurableStep('record_team_failed_early', async () => {
         await appendTeamMessage({
           ownerId,
-          contactId,
+          contactId: null,
           direction: 'inbound',
           text: displayText,
           channel,
           attachments: options.attachments ?? [],
-          loginId: options.loginId ?? null,
+          loginId: options.loginId,
         });
         await appendTeamMessage({
           ownerId,
-          contactId,
+          contactId: null,
           direction: 'outbound',
           text: '',
           channel,
           error: errorMessage(err),
-          loginId: options.loginId ?? null,
+          loginId: options.loginId,
         });
       }).catch((e) => console.error('[team-turn] could not record the failed turn:', e));
       if (options.streamId) {
@@ -216,8 +217,6 @@ async function runTeamTurnSteps(
   options: RunTeamTurnOptions,
   progress: { inboundWritten: boolean },
 ): Promise<TeamTurnResult> {
-  const contactId = options.contactId ?? null;
-
   const { loginId } = options;
   const agent = await resolveTeamResponder(ownerId, options.agentSlug);
   if (!agent) {
@@ -260,7 +259,7 @@ async function runTeamTurnSteps(
     const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
     const teamHistoryRows = await recentTeamMessages(
       ownerId,
-      contactId ?? '', // a login's thread is read by login
+      '', // a login's thread is read by login
       memoryConfig.history_limit ?? 20,
       loginId,
     );
@@ -269,12 +268,12 @@ async function runTeamTurnSteps(
     const inbound = await runDurableStep('record_team_inbound', () =>
       appendTeamMessage({
         ownerId,
-        contactId,
+        contactId: null,
         direction: 'inbound',
         text: displayText,
         channel,
         attachments: options.attachments ?? [],
-        loginId: loginId ?? null,
+        loginId,
       }),
     );
     progress.inboundWritten = true;
@@ -286,14 +285,14 @@ async function runTeamTurnSteps(
     const outboundPending = await runDurableStep('record_team_outbound_pending', () =>
       appendTeamMessage({
         ownerId,
-        contactId,
+        contactId: null,
         direction: 'outbound',
         text: '',
         channel,
         agentId: agent.id,
         model: agent.model,
         status: 'pending',
-        loginId: loginId ?? null,
+        loginId,
       }),
     );
 
@@ -312,8 +311,7 @@ async function runTeamTurnSteps(
 
     // Member identity rides the VOLATILE block: per-contact text in the cached
     // prefix would bust the shared per-agent cache on every member switch.
-    const who = loginId ? `user ${loginId}` : `contact ${contactId}`;
-    const memberLine = `Team member: ${options.contactName ?? 'unknown name'} (${who}). You are serving this person — an external team member, not the brain's owner.`;
+    const memberLine = `Team member: ${options.contactName ?? 'unknown name'} (user ${loginId}). You are serving this person — a member of the team, not the brain's owner.`;
 
     // Shared responder-turn assembly (audit #5c), configured for the team
     // surface's HARD isolation: no identity/journal block, no heartbeats, no
@@ -374,8 +372,8 @@ async function runTeamTurnSteps(
           agentId: agent.id,
           data: {
             surface: 'team',
-            contact_id: contactId,
-            ...(loginId ? { login_id: loginId } : {}),
+            contact_id: null,
+            login_id: loginId,
             channel,
             model: agent.model,
             agent_slug: agent.slug,
@@ -402,15 +400,14 @@ async function runTeamTurnSteps(
             // from their own team thread, so the step's turnCount reflects
             // that thread, not the structurally-empty ctx history.
             loadContext: async () => ctx,
-            contextStepInput: { agentId: agent.id, contactId, loginId: loginId ?? null },
+            contextStepInput: { agentId: agent.id, contactId: null, loginId },
             contextStepExtra: { turnCount: history.length },
             buildMessages: () => messages,
             // The provenance channel: team_request_create reads WHO is asking
             // from here; owner-side tools see 'team' and refuse.
             surface: {
               kind: 'team',
-              ...(contactId ? { contactId } : {}),
-              ...(loginId ? { loginId } : {}),
+              loginId,
               contactName: options.contactName,
               privateReads,
               inboundMessageId: inbound.id,

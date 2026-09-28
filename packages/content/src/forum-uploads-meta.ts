@@ -1,44 +1,8 @@
 /**
- * Pure helpers for forum uploads — no DB imports, so the review/staging logic
- * around them stays unit-testable without a database (the forum-search.ts
- * pattern). The store (forum-uploads.ts) and the routes compose these.
+ * A pure helper the Forum archive export (forum/export.ts) still uses. The
+ * rest of this module (attachment kinds, review-folder slugs) went with the
+ * forum's upload routes in member logins Phase 6.
  */
-
-/** Attachment kind union — mirrors ConversationAttachment['kind'] in
- *  @mantle/db (assistant-messages.ts). Kept as a local literal so this module
- *  stays import-free; the store's use sites type-check the assignability. */
-export type ForumAttachmentKind = 'image' | 'audio' | 'voice' | 'document' | 'video';
-
-/** Infer the attachment kind for a stored mime type. `voice` is a transport
- *  concept (a Telegram voice note), never inferable from mime — audio bytes
- *  classify as `audio`. Anything unrecognized is a `document` (the neutral
- *  "here's a file" rendering). */
-export function attachmentKindForMime(mime: string | null | undefined): ForumAttachmentKind {
-  const base = (mime ?? '').split(';')[0]!.trim().toLowerCase();
-  if (base.startsWith('image/')) return 'image';
-  if (base.startsWith('audio/')) return 'audio';
-  if (base.startsWith('video/')) return 'video';
-  return 'document';
-}
-
-/** Folder slug for a topic's review folder (`files/review/<slug>/`). Mirrors
- *  @mantle/files slugifyFolder semantics (lowercase, NFKD, non-alnum runs →
- *  one dash, trimmed, capped) — createFolder re-slugifies anyway, this keeps
- *  what we display and what lands on disk identical. Never empty: an
- *  all-punctuation title falls back to 'topic'. */
-export function topicFolderSlug(title: string): string {
-  const s = title
-    .toLowerCase()
-    .normalize('NFKD')
-    // Drop combining marks so 'réview' → 'review', not 're-view' (the accent
-    // would otherwise fall into the non-alnum run and split the word).
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64)
-    .replace(/-+$/, '');
-  return s.length === 0 ? 'topic' : s;
-}
 
 /** Human-readable size for attachment chips + the agent's context line —
  *  '312 B', '2.1 MB'. One decimal above KB, none below. */

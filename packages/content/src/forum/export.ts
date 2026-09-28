@@ -26,14 +26,18 @@
  * written before this) is the per-topic done-marker, and every write adopts
  * what an interrupted earlier run left (the page by topic id, a filed upload
  * by upload id), so a second run creates nothing. A topic with an agent reply
- * still in flight is deferred to a later run. Two runs at once cannot happen:
+ * still in flight is deferred to a later run. The forum's turn runner is gone
+ * (Phase 6, stage 5), so nothing finishes a pending reply any more: one older
+ * than STALE_REPLY_MS is failed first (the stale-pending sweep the runner
+ * used to do), and the retired-workflow stub in server/api fails the reply of
+ * a turn it takes over. Two runs at once cannot happen:
  * the run holds a transaction-scoped advisory lock and a second caller gets
  * `busy` back.
  *
  * Callers: POST /api/team-admin/forum/export (admin) and the api server's
  * boot task, which runs only while unexported topics exist.
  */
-import { and, asc, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import {
   db,
   forumPosts,
@@ -99,6 +103,36 @@ export async function countUnexportedForumTopics(ownerId: string): Promise<numbe
   return row?.n ?? 0;
 }
 
+/** A pending agent reply older than this is abandoned: the old runner's
+ *  stale-pending sweep used the same 15 minutes. */
+export const STALE_REPLY_MS = 15 * 60_000;
+
+/**
+ * Fail pending agent replies: on one topic (the retired-workflow stub, for the
+ * turn it takes over), or on every topic when older than `olderThanMs`. A
+ * failed post is archived as "did not answer". Returns how many were failed.
+ */
+export async function failPendingForumReplies(
+  ownerId: string,
+  opts: { topicId?: string; olderThanMs?: number } = {},
+): Promise<number> {
+  const conds = [
+    eq(forumPosts.ownerId, ownerId),
+    eq(forumPosts.authorKind, 'agent'),
+    eq(forumPosts.status, 'pending'),
+  ];
+  if (opts.topicId) conds.push(eq(forumPosts.topicId, opts.topicId));
+  if (opts.olderThanMs !== undefined) {
+    conds.push(lt(forumPosts.createdAt, new Date(Date.now() - opts.olderThanMs)));
+  }
+  const rows = await db
+    .update(forumPosts)
+    .set({ status: 'failed', error: 'the forum closed before this reply finished' })
+    .where(and(...conds))
+    .returning({ id: forumPosts.id });
+  return rows.length;
+}
+
 /** Export the forum. Returns `busy` when another run holds the lock. */
 export async function exportForumArchive(
   ownerId: string,
@@ -122,6 +156,7 @@ export async function exportForumArchive(
 export type UploadOutcome = { nodeId: string | null; missing: boolean };
 
 async function runExport(ownerId: string, now: Date): Promise<ForumExportResult> {
+  await failPendingForumReplies(ownerId, { olderThanMs: STALE_REPLY_MS });
   const topics = await db
     .select()
     .from(forumTopics)

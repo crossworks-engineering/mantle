@@ -1,7 +1,8 @@
 /**
  * @mantle/content · team
  *
- * Team and forum — the shared surfaces: threads, uploads, the hub, membership, notifications and share links.
+ * Team: member chat threads, requests, membership, invites, levels, personal
+ * spaces and share links (the team-code portal and forum retired in Phase 6).
  *
  * Split out of the 962-line index.ts on 2026-09-02 (audit, tier 3). The
  * export lists are UNCHANGED — this package's public surface is exactly what
@@ -44,30 +45,7 @@ export {
   type ShareSummary,
 } from './shares';
 
-export {
-  listTeamHubSections,
-  listTeamApps,
-  teamHubContentCounts,
-  resolveTeamHubApp,
-  TEAM_HUB_STAT_TYPES,
-  TEAM_WORKSPACE_TYPES,
-  TEAM_SHARE_SORTS,
-  listTeamVisibleShares,
-  pageTeamVisibleShares,
-  listTeamShareTags,
-  countTeamVisibleShares,
-  curatedTeamSections,
-  TEAM_CURATED_SECTION_LIMIT,
-  type CuratedTeamSection,
-  type TeamHubSection,
-  type TeamAppCard,
-  type TeamHubStatType,
-  type TeamHubApp,
-  type TeamWorkspaceType,
-  type TeamShareSort,
-  type TeamVisibleShare,
-  type TeamVisibleSharePage,
-} from './team-hub';
+export { resolveTeamHubApp, type TeamHubApp } from './team-hub';
 
 export {
   appendTeamMessage,
@@ -79,30 +57,11 @@ export {
   recentTeamMessages,
   listTeamMemberActivity,
   listMemberChatActivity,
-  markTeamThreadRead,
   type AppendTeamMessageInput,
   type UpdateTeamMessageOutcomeInput,
   type TeamMemberActivity,
   type MemberChatActivity,
 } from './team-messages';
-
-export {
-  listNotifiableMembers,
-  notifyMembers,
-  replyToNotification,
-  listNotifications,
-  readThread,
-  markThreadRead,
-  countUnreadNotifications,
-  MAX_NOTIFY_RECIPIENTS,
-  MAX_NOTIFICATION_BODY,
-  TEAM_NOTIFICATION_CHANNEL,
-  TEAM_NOTIFICATION_TYPE,
-  type NotifiableMember,
-  type TeamNotificationRow,
-  type NotifyInput,
-  type NotifyResult,
-} from './team-notifications';
 
 export {
   listTeamRequests,
@@ -112,47 +71,13 @@ export {
   type NotifyTeamRequesterResult,
 } from './team-requests';
 
-export {
-  createForumTopic,
-  appendForumPost,
-  acquireForumAgentPending,
-  finalizeForumPost,
-  getForumPost,
-  listForumTopics,
-  countForumTopics,
-  FORUM_TOPIC_SORTS,
-  getForumTopic,
-  listForumPosts,
-  searchForumPosts,
-  recentForumPosts,
-  countForumMemberPostsSince,
-  listForumMemberActivity,
-  listForumPostsByContact,
-  countForumPostsByContact,
-  listForumTopicsByAuthor,
-  sweepStaleForumAgentPosts,
-  markForumTopicRead,
-  setForumTopicPinned,
-  setForumTopicStatus,
-  type ForumViewer,
-  type ForumAuthor,
-  type CreateForumTopicInput,
-  type AppendForumPostInput,
-  type FinalizeForumPostInput,
-  type ForumTopicListItem,
-  type ForumTopicSort,
-  type ForumPostMatch,
-  type ForumMemberActivity,
-  type ForumMemberPost,
-  type ForumAuthoredTopic,
-  forumTopicsWithAttachedNode,
-} from './forum';
-
-// The Forum archive (Phase 6). Straight from its module, not the pinned
-// ./forum barrel (forum-exports.test.ts).
+// The Forum archive (member logins Phase 6): what is left of the forum code.
+// The forum tables stay until they are dropped, so the export can still run.
 export {
   exportForumArchive,
   countUnexportedForumTopics,
+  failPendingForumReplies,
+  STALE_REPLY_MS,
   FORUM_ARCHIVE_TITLE,
   FORUM_ARCHIVE_TAG,
   FORUM_ARCHIVE_UPLOADS_PATH,
@@ -160,30 +85,7 @@ export {
   type ForumExportResult,
 } from './forum/export';
 
-export {
-  listStagedForumUploads,
-  bindForumUploadsTx,
-  getForumUpload,
-  listForumUploadStatesForTopic,
-  listPendingForumUploads,
-  countPendingForumUploads,
-  markForumUploadFiled,
-  markForumUploadDismissed,
-  stageForumUploadsWithinBudget,
-  deleteStaleStagedForumUploads,
-  deleteStagedForumUploadRow,
-  listForumUploadStatusesByIds,
-  type StageForumUploadInput,
-  type StageForumUploadFile,
-  type PendingForumUpload,
-} from './forum-uploads';
-
-export {
-  attachmentKindForMime,
-  topicFolderSlug,
-  formatAttachmentSize,
-  type ForumAttachmentKind,
-} from './forum-uploads-meta';
+export { formatAttachmentSize } from './forum-uploads-meta';
 export { dedupeFilename } from './dedupe-filename';
 
 export {

@@ -93,7 +93,8 @@ describe.skipIf(!URL)('a team turn under the team viewer role', () => {
   let m: Db;
   let sqlTag: typeof import('drizzle-orm').sql;
   let ownerId = '';
-  let contactId = '';
+  // The member login the turns run as (the team-code contact path is retired).
+  const memberLoginId = crypto.randomUUID();
   let teamIds = new Set<string>();
   let originalAudience = 'admin';
 
@@ -108,8 +109,9 @@ describe.skipIf(!URL)('a team turn under the team viewer role', () => {
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
     const [o] = await admin<{ id: string }[]>`select id from auth.users where is_owner`;
     ownerId = o!.id;
-    const [c] = await admin<{ id: string }[]>`select id from nodes where type = 'contact' limit 1`;
-    contactId = c!.id;
+    await admin`insert into auth.users (id, email, password_hash, role)
+      values (${memberLoginId}, ${`member-${memberLoginId.slice(0, 8)}@example.invalid`}, 'x',
+              'member')`;
     const [hidden] = await admin<{ id: string; title: string }[]>`
       select id, title from nodes where audience = 'admin' and type = 'journal'
         and length(title) > 12 limit 1`;
@@ -133,6 +135,9 @@ describe.skipIf(!URL)('a team turn under the team viewer role', () => {
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
       .$client;
     await admin`update agents set audience = ${originalAudience} where slug = 'team-responder'`;
+    await admin`delete from team_messages where login_id = ${memberLoginId}`;
+    await admin`delete from spaces where login_id = ${memberLoginId}`;
+    await admin`delete from auth.users where id = ${memberLoginId}`;
     await m?.closeDb();
   });
 
@@ -141,7 +146,7 @@ describe.skipIf(!URL)('a team turn under the team viewer role', () => {
     const started = new Date();
     // No outer wrap: the agent's level alone puts the turn on the team role.
     const result = await runTeamTurn(ownerId, 'what does the brain say about itself?', {
-      contactId,
+      loginId: memberLoginId,
     });
     expect(result.reply).toBe('ok, done');
 
@@ -190,7 +195,10 @@ describe.skipIf(!URL)('a team turn under the team viewer role', () => {
     }
   });
 
-  it('control: the same turn with the agent at admin DOES see admin-only items', async () => {
+  // The old control ran the same turn at admin for a portal contact and saw
+  // admin-only items. That path is retired (Phase 6): a member login is never
+  // served by an admin-level agent at all.
+  it('control: with the agent at admin, a member turn is refused outright', async () => {
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
       .$client;
     await admin`update agents set audience = 'admin' where slug = 'team-responder'`;
@@ -198,9 +206,10 @@ describe.skipIf(!URL)('a team turn under the team viewer role', () => {
     h.seenToolResults = [];
     try {
       const { runTeamTurn } = await import('./run-team-turn');
-      await runTeamTurn(ownerId, 'what does the brain say about itself?', { contactId });
-      const outside = returnedIds().filter((id) => !teamIds.has(id));
-      expect(outside.length, 'an admin-level turn reads beyond the team level').toBeGreaterThan(0);
+      await expect(
+        runTeamTurn(ownerId, 'what does the brain say about itself?', { loginId: memberLoginId }),
+      ).rejects.toThrow(/admin level/);
+      expect(h.seenToolResults).toEqual([]);
     } finally {
       await admin`update agents set audience = 'team' where slug = 'team-responder'`;
     }

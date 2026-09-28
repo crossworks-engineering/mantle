@@ -19,7 +19,6 @@ import { runTableStorageProbes } from '@mantle/tabledb';
 import { registerLogSink } from '@mantle/tracing';
 import { configureDBOS, RUNNER_QUEUE, runnerConcurrency, runsTurnConcurrency } from './config';
 import { assertEnvShape } from '@mantle/config';
-import { FORUM_QUEUE } from '@mantle/runtime/assistant';
 import { RUNS_TURN_QUEUE } from '@mantle/runs';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
 import { installTurnStreamObserver } from './turn-stream-observer';
@@ -52,7 +51,9 @@ registerRecallEmbedder(embedBatch);
 registerLogSink(DBOS.logger);
 import './workflows/assistant-turn';
 import './workflows/team-turn';
-import './workflows/forum-turn';
+// The retired forum turn: a no-op under the old name, so a forum turn still
+// queued or in flight on this box ends cleanly (see the module header).
+import './workflows/forum-turn-retired';
 import './workflows/runs-worker-turn';
 import './workflows/runs-resume-turn';
 import { enqueueTelegramTurn } from './workflows/telegram-turn';
@@ -121,11 +122,9 @@ async function main(): Promise<void> {
   // The shared runner queue — concurrency caps total in-flight runs across all
   // server/api processes (LLM-provider backpressure).
   await DBOS.registerQueue(RUNNER_QUEUE, { concurrency: runnerConcurrency() });
-  // Partitioned forum queue: concurrency 1 PER PARTITION (partition key =
-  // topicId) serializes turns within a topic while different topics run in
-  // parallel. Off the shared RUNNER_QUEUE so a queued topic never starves the
-  // owner's assistant. This replaces the old in-workflow pending spin-lock.
-  await DBOS.registerQueue(FORUM_QUEUE, { concurrency: 1, partitionQueue: true });
+  // The forum's queue ('mantle_forum') is no longer registered (member logins
+  // Phase 6). Its row persists in the DBOS system database on a box that had
+  // it, so any turn left on it still dispatches, into the retired stub.
   // Dedicated queue for background runs turns (worker + resume). Off the shared
   // RUNNER_QUEUE so a run that fans out worker turns can never queue ahead of
   // the owner's interactive assistant/telegram turns (the starvation isolation;
@@ -133,7 +132,6 @@ async function main(): Promise<void> {
   await DBOS.registerQueue(RUNS_TURN_QUEUE, { concurrency: runsTurnConcurrency() });
   DBOS.logger.info(
     `[api] runner service online — queue='${RUNNER_QUEUE}' concurrency=${runnerConcurrency()}; ` +
-      `forum queue='${FORUM_QUEUE}' (partitioned, concurrency=1/topic); ` +
       `runs-turn queue='${RUNS_TURN_QUEUE}' concurrency=${runsTurnConcurrency()}`,
   );
 
