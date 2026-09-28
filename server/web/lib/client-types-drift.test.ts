@@ -148,6 +148,9 @@ describe('client-types mirrors have not drifted from their source of truth', () 
     expectTypeOf<
       SameUnion<(typeof MEMBER_APP_LEVELS)[number], MemberAppLevel>
     >().toEqualTypeOf<true>();
+    expectTypeOf<
+      SameUnion<(typeof MEMBER_APP_LEVELS)[number], MemberAppCard['audience']>
+    >().toEqualTypeOf<true>();
     expectTypeOf<Awaited<ReturnType<typeof listMemberApps>>>().toEqualTypeOf<MemberAppCard[]>();
     expectTypeOf<
       Awaited<ReturnType<typeof resolveMemberHomeApp>>
