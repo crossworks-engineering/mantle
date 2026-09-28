@@ -171,7 +171,7 @@ with status 410 (forum-closed, deleted in stage 5).
 turn; a turn already
 queued before the freeze ran to completion.
 
-**The archive.** `exportForumArchive` (`packages/content/src/forum/export.ts`,
+**The archive.** `exportForumArchive` (the content package's forum export module,
 deleted with the tables; see "The tables are dropped" below) froze the forum
 into pages:
 
@@ -215,7 +215,7 @@ still pending was deferred to a later run. A transaction-scoped advisory lock
 kept two runs apart; the second one answered `busy`.
 
 **Who ran it** (both gone with the tables): an api server boot task
-(`server/api/src/forum-archive-boot.ts`, one count query at every start, the
+(the forum archive boot module in the api server, one count query at every start, the
 export only while a topic had no page) and the admin's
 `GET/POST /api/team-admin/forum/export` (`{ unexported }`, and the run's
 counts or 409 `busy`). Since 0177 that route is not routed: GET and POST
