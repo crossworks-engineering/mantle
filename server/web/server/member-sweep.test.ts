@@ -19,6 +19,8 @@ const ANCHOR_ID = '33333333-3333-4333-8333-333333333333';
 const DISABLED_ADMIN_ID = '44444444-4444-4444-8444-444444444444';
 const ADMIN_ID = '55555555-5555-4555-8555-555555555555';
 const SPACE_ID = '66666666-6666-4666-8666-666666666666';
+const DISABLED_MEMBER_ID = '77777777-7777-4777-8777-777777777777';
+const OTHER_ANCHOR_ID = '88888888-8888-4888-8888-888888888888';
 
 vi.mock('../lib/auth/login-row', () => ({
   loadLoginRow: async (id: string) =>
@@ -42,17 +44,27 @@ vi.mock('../lib/auth/login-row', () => ({
             contactId: null,
             disabledAt: null,
           }
-        : id === DISABLED_ADMIN_ID
+        : id === DISABLED_MEMBER_ID
           ? {
-              id: DISABLED_ADMIN_ID,
-              email: 'gone@example.invalid',
+              id: DISABLED_MEMBER_ID,
+              email: 'left@example.invalid',
               isOwner: false,
               displayName: null,
-              role: 'admin',
+              role: 'member',
               contactId: null,
               disabledAt: new Date('2026-09-01T00:00:00Z'),
             }
-          : null,
+          : id === DISABLED_ADMIN_ID
+            ? {
+                id: DISABLED_ADMIN_ID,
+                email: 'gone@example.invalid',
+                isOwner: false,
+                displayName: null,
+                role: 'admin',
+                contactId: null,
+                disabledAt: new Date('2026-09-01T00:00:00Z'),
+              }
+            : null,
   loadAnchorId: async () => ANCHOR_ID,
   loadPersonalSpaceId: async () => SPACE_ID,
 }));
@@ -171,6 +183,54 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
       const refused = (res.status === 403 && body?.reason === 'admin-login') || res.status === 401;
       expect(refused, `${route} → ${res.status}`).toBe(true);
     }
+  });
+
+  // The positive half: a member session gets PAST the gate on member routes.
+  // A malformed id is used so each handler answers its own 400 before any
+  // database read; the admin on the same path is stopped at the gate.
+  const PAST_THE_GATE = [
+    '/api/member/library/not-a-uuid',
+    '/api/member/space/not-a-uuid',
+    '/api/member/team-drafts/not-a-uuid',
+    '/api/member/files/not-a-uuid',
+    '/api/member/space/not-a-uuid/bytes',
+  ];
+
+  it('lets a member session through to member routes', async () => {
+    const { buildSessionCookie } = await import('../lib/auth/tokens');
+    const adminCookie = `${SESSION_COOKIE_NAME}=${buildSessionCookie(ADMIN_ID).value}`;
+    for (const path of PAST_THE_GATE) {
+      const res = await app.request(path, { headers: { cookie } });
+      const body = (await res.json().catch(() => null)) as { reason?: string } | null;
+      expect(res.status, path).toBe(400);
+      expect(body?.reason, path).not.toBe('member-login');
+      const asAdmin = await app.request(path, { headers: { cookie: adminCookie } });
+      expect([401, 403], `${path} as admin`).toContain(asAdmin.status);
+    }
+  });
+
+  describe('getMemberForAsset: a member ?at= token (no session)', () => {
+    const fileWith = async (anchor: string, login: string) => {
+      const { buildAssetToken } = await import('../lib/auth/tokens');
+      const at = encodeURIComponent(buildAssetToken(anchor, login));
+      return app.request(`/api/member/files/not-a-uuid?at=${at}`);
+    };
+
+    it("is accepted for a live member of this brain's anchor", async () => {
+      expect((await fileWith(ANCHOR_ID, MEMBER_ID)).status).toBe(400);
+    });
+
+    it('is refused when minted under another anchor', async () => {
+      expect((await fileWith(OTHER_ANCHOR_ID, MEMBER_ID)).status).toBe(401);
+    });
+
+    it('is refused for a disabled member login', async () => {
+      expect((await fileWith(ANCHOR_ID, DISABLED_MEMBER_ID)).status).toBe(401);
+    });
+
+    it('is refused for an admin login', async () => {
+      expect((await fileWith(ANCHOR_ID, ADMIN_ID)).status).toBe(401);
+    });
   });
 
   it('gives a disabled login no session at all', async () => {
