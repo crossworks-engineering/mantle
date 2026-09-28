@@ -190,11 +190,28 @@ export {
   teamStatusFor,
   isTeamMember,
   markTeamTokenUsed,
+  generateAlphabetCode,
   generateTeamToken,
   hashTeamToken,
   TEAM_TOKEN_LENGTH,
   type TeamStatus,
 } from './team-tokens';
+export {
+  MEMBER_INVITE_CODE_LENGTH,
+  MEMBER_INVITE_TTL_MS,
+  MemberInviteError,
+  createMemberInvite,
+  generateInviteCode,
+  inviteLinkPath,
+  listMemberInvites,
+  previewMemberInvite,
+  redeemMemberInvite,
+  revokeMemberInvite,
+  type CreateMemberInviteInput,
+  type MemberInviteErrorReason,
+  type RedeemMemberInviteInput,
+  type RedeemedMemberInvite,
+} from './member-invites';
 
 // Levels: admin > team > client > public (member logins Phase 0b).
 export {

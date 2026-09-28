@@ -18,11 +18,13 @@ import {
   isAuditSelfLogged,
   MANTLE_PATH_HEADER,
   MANTLE_METHOD_HEADER,
+  secureCookies,
 } from '../auth-constants';
 import { auditFireAndForget } from '../audit';
 import { bearerFromHeader } from './request';
 import {
   SESSION_COOKIE_NAME,
+  buildSessionCookie,
   decodeUnverifiedClaims,
   verifyAssetToken,
   verifyMobileToken,
@@ -90,17 +92,11 @@ export type MemberCaller = {
   contactId: string | null;
 };
 
-/** Member logins are dark unless the box opts in (`MANTLE_MEMBERS=1`). Off,
- *  a member row resolves to no session at all: it cannot sign in. */
-export function membersEnabled(): boolean {
-  return env('MANTLE_MEMBERS')?.trim() === '1';
-}
-
-/** Whether a login row may hold a session at all: not disabled, and a member
- *  only while member logins are on. */
-export function loginUsable(row: Pick<LoginRow, 'role' | 'disabledAt' | 'email'>): boolean {
-  if (!row.email || row.disabledAt) return false;
-  return row.role === 'admin' || membersEnabled();
+/** Whether a login row may hold a session at all: not disabled, and it has
+ *  an email. Admin and member alike (member logins are always on since
+ *  Phase 6; the MANTLE_MEMBERS flag is gone). */
+export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolean {
+  return !!row.email && !row.disabledAt;
 }
 
 /** Who is calling, resolved from the login row: an admin (today's
@@ -511,9 +507,28 @@ export async function loginWithPassword(email: string, password: string): Promis
   return ok && loginUsable(row) ? row.id : null;
 }
 
+/** The one password hash every login is stored with (bcrypt, cost 12). */
+export function hashLoginPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 12);
+}
+
+/** Set the password-login session cookie for `loginId` on `res`: what
+ *  POST /api/auth/login answers a good password with (the invite accept
+ *  signs the new member in the same way). */
+export function setSessionCookie(res: NextResponse, req: Request, loginId: string): void {
+  const { value, maxAgeSec } = buildSessionCookie(loginId);
+  res.cookies.set(SESSION_COOKIE_NAME, value, {
+    httpOnly: true,
+    secure: secureCookies(req),
+    sameSite: 'lax',
+    path: '/',
+    maxAge: maxAgeSec,
+  });
+}
+
 /** Update password hash. Caller is responsible for verifying the old password first. */
 export async function updatePassword(userId: string, newPassword: string): Promise<void> {
-  const hash = await bcrypt.hash(newPassword, 12);
+  const hash = await hashLoginPassword(newPassword);
   await db.update(authUsers).set({ passwordHash: hash }).where(eq(authUsers.id, userId));
 }
 

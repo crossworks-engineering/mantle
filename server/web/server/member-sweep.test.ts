@@ -97,7 +97,6 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     secret: process.env.SESSION_SECRET,
     cors: process.env.MANTLE_API_CORS_ORIGINS,
     detached: process.env.MANTLE_DETACHED_DEV,
-    members: process.env.MANTLE_MEMBERS,
   };
   let app: import('hono').Hono;
   let manifest: Array<{ pattern: string; methods: string[] }>;
@@ -105,7 +104,6 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
 
   beforeAll(async () => {
     process.env.SESSION_SECRET = 'member-sweep-secret-that-is-at-least-32-chars';
-    process.env.MANTLE_MEMBERS = '1';
     delete process.env.MANTLE_API_CORS_ORIGINS;
     delete process.env.MANTLE_DETACHED_DEV;
     const { buildSessionCookie } = await import('../lib/auth/tokens');
@@ -120,7 +118,6 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
       ['SESSION_SECRET', saved.secret],
       ['MANTLE_API_CORS_ORIGINS', saved.cors],
       ['MANTLE_DETACHED_DEV', saved.detached],
-      ['MANTLE_MEMBERS', saved.members],
     ] as const) {
       if (v === undefined) delete process.env[k];
       else process.env[k] = v;
@@ -240,13 +237,10 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     expect(res.status).toBe(401);
   });
 
-  it('gives a member no session while member logins are off', async () => {
-    delete process.env.MANTLE_MEMBERS;
-    try {
-      const res = await app.request('/api/shell', { headers: { cookie } });
-      expect(res.status).toBe(401);
-    } finally {
-      process.env.MANTLE_MEMBERS = '1';
-    }
+  it('gives a disabled member login no session at all', async () => {
+    const { buildSessionCookie } = await import('../lib/auth/tokens');
+    const left = `${SESSION_COOKIE_NAME}=${buildSessionCookie(DISABLED_MEMBER_ID).value}`;
+    const res = await app.request('/api/member/space/not-a-uuid', { headers: { cookie: left } });
+    expect(res.status).toBe(401);
   });
 });

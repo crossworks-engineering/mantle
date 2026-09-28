@@ -43,20 +43,18 @@ export async function POST(req: Request) {
       revokedAt: mobileTokens.revokedAt,
       expiresAt: mobileTokens.expiresAt,
       email: authUsers.email,
-      role: authUsers.role,
       disabledAt: authUsers.disabledAt,
     })
     .from(mobileTokens)
     .innerJoin(authUsers, eq(authUsers.id, mobileTokens.userId))
     .where(eq(mobileTokens.id, jti))
     .limit(1);
-  // A disabled login (or a member while member logins are off) cannot keep a
-  // session alive by refreshing it.
+  // A disabled login cannot keep a session alive by refreshing it.
   if (
     !row ||
     row.revokedAt ||
     row.expiresAt.getTime() <= Date.now() ||
-    !loginUsable({ email: row.email, role: row.role, disabledAt: row.disabledAt })
+    !loginUsable({ email: row.email, disabledAt: row.disabledAt })
   ) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }

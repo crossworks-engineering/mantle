@@ -1,8 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, authUsers, eq, sql } from '@mantle/db';
-import { buildSessionCookie, loginWithPassword, SESSION_COOKIE_NAME } from '@/lib/auth';
-import { secureCookies } from '@/lib/auth-constants';
+import { loginWithPassword, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
@@ -66,14 +65,7 @@ export async function POST(req: Request) {
     ...requestMetaFrom(req),
   });
 
-  const { value, maxAgeSec } = buildSessionCookie(userId);
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(SESSION_COOKIE_NAME, value, {
-    httpOnly: true,
-    secure: secureCookies(req),
-    sameSite: 'lax',
-    path: '/',
-    maxAge: maxAgeSec,
-  });
+  setSessionCookie(res, req, userId);
   return res;
 }

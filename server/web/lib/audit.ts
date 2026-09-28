@@ -27,6 +27,9 @@ export type AuditEntry = {
     | 'auth.token_refreshed'
     | 'auth.device_revoked'
     | 'auth.password_change'
+    // A member invite redeemed (member logins Phase 6), or a failed try.
+    | 'auth.invite_accepted'
+    | 'auth.invite_failed'
     | 'user.create'
     | 'user.update'
     | 'user.delete'

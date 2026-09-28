@@ -2,8 +2,9 @@
  * The box-level feature flags reach the containers. Compose passes the app
  * services an explicit list of names (the `x-app-env` anchor), so a flag an
  * operator sets in the host `.env` does nothing unless it is on that list.
- * MANTLE_MEMBERS shipped without its line (v0.232.259 to .261): setting it in
- * `.env` changed nothing and member logins stayed dark.
+ * A member-logins flag once shipped without its line (v0.232.259 to .261):
+ * setting it in `.env` changed nothing. That flag is gone (members are always
+ * on), but the rule holds for every flag still listed here.
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -18,7 +19,7 @@ const anchor = compose.slice(
 );
 
 /** Flags a box turns on in its `.env`; each must pass through the anchor. */
-const BOX_FLAGS = ['MANTLE_MEMBERS', 'MANTLE_RUNS', 'MANTLE_MCP_TERMINAL'];
+const BOX_FLAGS = ['MANTLE_RUNS', 'MANTLE_MCP_TERMINAL'];
 
 describe('compose passes the box flags to the app services', () => {
   for (const name of BOX_FLAGS) {

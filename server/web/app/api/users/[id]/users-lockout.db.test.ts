@@ -24,7 +24,6 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getOwnerOr401: vi.fn(async () => h.caller),
-  membersEnabled: () => true,
 }));
 
 vi.mock('@/lib/audit', () => ({

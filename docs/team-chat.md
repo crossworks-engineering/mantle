@@ -17,6 +17,13 @@
 > `team_chat_read` with a `contactId`. An admin revokes a team code from
 > `/team-admin` > Members; no screen mints new codes (new people get logins).
 >
+> **Team codes become logins (Phase 6).** An admin invites the person
+> ([member-logins.md](./member-logins.md) section 9). The person may redeem
+> the invite with the team code they already hold, once, while their contact
+> has an open invite: redeeming creates their member login and deletes the
+> team code (its `contact_team_tokens` row), so the portal access that code
+> gave ends there.
+>
 > **Originally BUILT** (v0.117.0, 2026-07-06; Phases 1+2 of the plan). Team members
 > (Contacts holding a team token) chat with the brain through a
 > permission-limited responder at `/team`. They can ask anything the brain
