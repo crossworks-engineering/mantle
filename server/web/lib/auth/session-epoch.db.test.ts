@@ -37,7 +37,9 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
   const logins = [member, admin, demoted];
   let createdAnchor: string | null = null;
   let anchor = '';
-  let password = 'first password 1';
+  const FIRST = 'first password 1';
+  /** The member's password now (it changes below); the others keep FIRST. */
+  let password = FIRST;
   const emailOf = (id: string) => `${tag}-${id.slice(0, 8)}@example.com`;
   let ip = 0;
 
@@ -90,7 +92,7 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
   const signIn = async (id: string) => {
     const res = await call('/api/auth/login', {
       method: 'POST',
-      body: { email: emailOf(id), password },
+      body: { email: emailOf(id), password: id === member ? password : FIRST },
     });
     expect(res.status).toBe(200);
     return cookieFrom(res)!;
