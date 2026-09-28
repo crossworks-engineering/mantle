@@ -1,8 +1,8 @@
 # Member logins
 
 > Phase 1 of the member logins plan (dev-brain plan v3.1). A member is a user
-> of the brain with the member role: users are the team. It is off by
-> default: set `MANTLE_MEMBERS=1`.
+> of the brain with the member role: users are the team. Member logins are
+> always on (Phase 6 removed the `MANTLE_MEMBERS` flag).
 > What a member may read is decided by Postgres row security at the team level
 > ([access-levels.md](./access-levels.md)), never by a check in each route.
 
@@ -50,8 +50,11 @@
   login releases the assistant it had.
 - **No MCP connectors.** The OAuth consent step answers a member with a
   plain refusal page (403); only an admin can connect a client.
-- **The flag.** With `MANTLE_MEMBERS` off, a member row resolves to no session
-  at all, and no member login can be created.
+- **No flag.** Member logins are always on (Phase 6). Until then a box had to
+  opt in with `MANTLE_MEMBERS=1`; the flag is gone, and a login row that is
+  not disabled and has an email holds a session whatever its role.
+  `GET /api/users` still answers `membersEnabled: true` for one contract
+  cycle, because older client builds read it.
 
 ## 2. Deny by default
 
@@ -113,11 +116,12 @@ not something an owner chose. To list an item to members, set it to Team.
 - **Not yet:** attachments in chat. Own items: section 5; review by an
   admin: section 6; running apps: section 7.
 
-## 4. Turning it on for a brain
+## 4. Setting a brain up for members
 
-1. Set `MANTLE_MEMBERS=1` in the box's `.env` and roll.
-2. Set item levels and lower `team-responder` to team (access-levels.md §5).
-3. Settings > Users: create a user with role member, and hand the person
+Member logins are always on; there is nothing to switch on.
+
+1. Set item levels and lower `team-responder` to team (access-levels.md §5).
+2. Settings > Users: create a user with role member, and hand the person
    their email and password.
 
 ## 5. Personal spaces (Phase 2)

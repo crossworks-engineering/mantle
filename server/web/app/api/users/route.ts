@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { db, authUsers, agents, and, asc, eq, nodes, sql } from '@mantle/db';
-import { getOwnerOr401, membersEnabled } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { errorMessage } from '@mantle/std';
@@ -14,7 +14,7 @@ import { errorMessage } from '@mantle/std';
  * here is just an identity for the audit trail.
  *
  * Two roles (member logins, Phase 1): an ADMIN login is a full co-owner; a
- * MEMBER login (only while MANTLE_MEMBERS=1) is refused by every admin route
+ * MEMBER login is refused by every admin route
  * and reads team-level items through the member routes. These routes emit
  * their own `user.*` audit
  * events (the choke point skips its generic row for /api/users — see
@@ -58,7 +58,10 @@ export async function GET() {
       agent: agentId ? { id: agentId, slug: agentSlug, name: agentName } : null,
     })),
     currentActorId: user.actor.id,
-    membersEnabled: membersEnabled(),
+    // Member logins are always on since Phase 6. Kept for one contract cycle:
+    // older jackdaw builds read this to show the member controls. Drop it once
+    // no paired client reads it.
+    membersEnabled: true,
   });
 }
 
@@ -77,7 +80,7 @@ const CreateBody = z.object({
   /** Omit to keep today's behaviour exactly: the login shares the brain's
    *  default agent, as every login did before 0143. Admins only. */
   agent: AgentAssignmentBody.optional(),
-  /** 'member' only while MANTLE_MEMBERS=1. Default admin. */
+  /** Default admin. */
   role: z.enum(['admin', 'member']).optional(),
   /** The team contact a member login belongs to. */
   contactId: z.string().uuid().optional(),
@@ -97,12 +100,6 @@ export async function POST(req: Request) {
 
   const role = parsed.data.role ?? 'admin';
   if (role === 'member') {
-    if (!membersEnabled()) {
-      return NextResponse.json(
-        { error: 'Member logins are off on this brain: set MANTLE_MEMBERS=1 to create one.' },
-        { status: 400 },
-      );
-    }
     if (parsed.data.agent) {
       return NextResponse.json(
         {

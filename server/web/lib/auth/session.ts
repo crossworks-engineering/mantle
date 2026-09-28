@@ -90,17 +90,11 @@ export type MemberCaller = {
   contactId: string | null;
 };
 
-/** Member logins are dark unless the box opts in (`MANTLE_MEMBERS=1`). Off,
- *  a member row resolves to no session at all: it cannot sign in. */
-export function membersEnabled(): boolean {
-  return env('MANTLE_MEMBERS')?.trim() === '1';
-}
-
-/** Whether a login row may hold a session at all: not disabled, and a member
- *  only while member logins are on. */
-export function loginUsable(row: Pick<LoginRow, 'role' | 'disabledAt' | 'email'>): boolean {
-  if (!row.email || row.disabledAt) return false;
-  return row.role === 'admin' || membersEnabled();
+/** Whether a login row may hold a session at all: not disabled, and it has
+ *  an email. Admin and member alike (member logins are always on since
+ *  Phase 6; the MANTLE_MEMBERS flag is gone). */
+export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolean {
+  return !!row.email && !row.disabledAt;
 }
 
 /** Who is calling, resolved from the login row: an admin (today's

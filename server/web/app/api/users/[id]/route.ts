@@ -13,7 +13,7 @@ import {
   oauthAuthCodes,
   pairingCodes,
 } from '@mantle/db';
-import { getOwnerOr401, membersEnabled } from '@/lib/auth';
+import { getOwnerOr401 } from '@/lib/auth';
 import { releaseAssignedAgent } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
@@ -23,7 +23,7 @@ const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z
   .object({
     displayName: z.string().trim().max(120).nullable().optional(),
-    /** 'member' only while MANTLE_MEMBERS=1. Never on the anchor or yourself. */
+    /** Never 'member' on the anchor or yourself. */
     role: z.enum(['admin', 'member']).optional(),
     /** true = the login cannot sign in or use a session it holds. */
     disabled: z.boolean().optional(),
@@ -62,12 +62,6 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     return NextResponse.json(
       { error: 'You cannot demote or disable the account you are signed in with.' },
       { status: 403 },
-    );
-  }
-  if (body.role === 'member' && !membersEnabled()) {
-    return NextResponse.json(
-      { error: 'Member logins are off on this brain: set MANTLE_MEMBERS=1 first.' },
-      { status: 400 },
     );
   }
   // Users are the team: a member login needs no contact (0167). The link is
