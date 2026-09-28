@@ -1,14 +1,14 @@
 /**
  * POST /api/auth/invite/accept { code, password, email? } (public, under
  * /api/auth): redeem an invite and become a MEMBER login (member logins,
- * Phase 6). The code is an invite code, or an old 8-char team code while its
- * contact has an open invite (once: the redeem deletes the team code). One
- * transaction creates the login, marks the invite redeemed, deletes the team
- * code and writes the team access log (redeemMemberInvite). Then the session
- * cookie is set exactly as POST /api/auth/login sets it.
+ * Phase 6). Only the 16-char invite code redeems: team codes are retired
+ * (migration 0178), so an old 8-char team code is just a wrong code. One
+ * transaction creates the login, marks the invite redeemed and writes the
+ * team access log (redeemMemberInvite). Then the session cookie is set
+ * exactly as POST /api/auth/login sets it.
  *
- * Every failure about the code (unknown, used, revoked, expired, a wrong
- * email) is the same 401, so the route is no oracle. A password under 8
+ * Every failure about the code (unknown, used, revoked, expired, an old team
+ * code, a wrong email) is the same 401, so the route is no oracle. A password under 8
  * characters is a 400 before any code is looked at. Rate limited per IP and
  * for the whole brain, before bcrypt.
  */

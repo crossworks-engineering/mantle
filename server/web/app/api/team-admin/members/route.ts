@@ -1,8 +1,13 @@
 /**
  * GET /api/team-admin/members?contact=<id>: the Members tab's data: the
- * team-code roster (contacts that held a code, newest first) plus the
- * selected contact's filed requests, old portal chat (the "Chat archive")
- * and access log.
+ * old portal chat roster (every contact with portal chat, newest activity
+ * first) plus the selected contact's filed requests, old portal chat (the
+ * "Chat archive") and access log.
+ *
+ * Team codes are retired (member logins Phase 6, migration 0178), so the
+ * roster is driven by the chat, not by who holds a code. Each member row
+ * keeps `tokenLastUsedAt` (always null) and `memberSince` (the first portal
+ * message) one contract cycle for client builds that still read them.
  *
  * The forum parts are gone with the forum (member logins Phase 6: its
  * content lives on as the admin-level Forum archive pages). `forum`, `posts`,
@@ -32,9 +37,7 @@ export async function GET(req: Request) {
     teamAdminBadges(user.id),
     listTeamMemberActivity(user.id),
   ]);
-  const members = roster
-    .map((m) => ({ ...m, forum: null }))
-    .sort((a, b) => b.memberSince.localeCompare(a.memberSince));
+  const members = roster.map((m) => ({ ...m, forum: null }));
 
   const selectedId =
     contact && members.some((m) => m.contactId === contact)
@@ -48,11 +51,7 @@ export async function GET(req: Request) {
 
   const [requests, thread, access] = await Promise.all([
     listTeamRequests(user.id, { status: 'all', limit: 50, contactId: selectedId }),
-    // Only touch the frozen chat store when this member actually has an
-    // archive.
-    selectedMember.messageCount > 0
-      ? listTeamThread(user.id, selectedId, { limit: ARCHIVE_SHOWN })
-      : Promise.resolve([]),
+    listTeamThread(user.id, selectedId, { limit: ARCHIVE_SHOWN }),
     listTeamAccess(user.id, { contactId: selectedId, limit: 50 }),
   ]);
 

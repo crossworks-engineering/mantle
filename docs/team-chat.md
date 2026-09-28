@@ -13,23 +13,27 @@
 > **What replaced it:** a member LOGIN. An admin invites the person
 > ([member-logins.md](./member-logins.md) section 9); they sign in and chat
 > with the team agent from the assistant dock (`/api/member/chat`, the same
-> `team-responder` and turn pipeline, keyed by login). A person may redeem an
-> invite with the team code they already hold, once.
+> `team-responder` and turn pipeline, keyed by login). Team codes are gone
+> (migration 0178): an old code no longer redeems an invite either, so a
+> person who held one needs an invite link like anyone else.
 >
-> Old portal transcripts stay readable as history: **Chat archive** on
-> `/team-admin` > Members, and `team_chat_read` with a `contactId`. Once the
+> Old portal transcripts stay readable as history, with no code: **Chat
+> archive** on `/team-admin` > Members (every contact with portal chat,
+> whether or not a login was made from it), and `team_chat_read` with a
+> `contactId`. Once the
 > person is a member login, the admin's Member chats view
 > (`selected.portalThread`) and `team_chat_read` with the `loginId`
 > (`portal_history`) show that transcript too, apart from the login's live
 > thread, which it never joins ([member-logins.md](./member-logins.md)
 > section 9, "History").
 >
-> **What stays:** team codes (`contact_team_tokens`), which now only redeem
-> an invite once (team-mode `/s` links, the other thing they opened, were
-> retired in stage 6: [member-logins.md](./member-logins.md) section 9);
-> `team_messages`, `team_access_log` and `team_read_cursors`, with their admin readers
+> **What stays:** `team_messages`, `team_access_log` and
+> `team_read_cursors`, with their admin readers
 > (`/team-admin` > Member chats and > Members "Chat archive",
 > `team_chat_list` / `team_chat_read` with a `contactId`, `team_access_list`).
+> Team codes (`contact_team_tokens`) went last: team-mode `/s` links in stage
+> 6, the invite redeem in place of the invite code with migration 0178, which
+> dropped the table ([member-logins.md](./member-logins.md) section 9).
 >
 > Everything below is history: how the portal worked while it ran.
 

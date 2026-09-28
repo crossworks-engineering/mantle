@@ -6,7 +6,7 @@
  * are gone, then puts them back from their own migrations (0123, 0124, 0126:
  * all IF NOT EXISTS), seeds forum rows next to the rows that must survive (a
  * Forum archive page, a file the export filed, an app with its node, a
- * sandbox, a team chat message, a team code) and runs 0177's statements
+ * sandbox, a team chat message) and runs 0177's statements
  * again. It proves: a topic with no archive page aborts the drop; an
  * unexpected dependency (a view) fails it instead of being dropped with the
  * table (no CASCADE); the tables go and every other row stays, with the same
@@ -48,7 +48,6 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
     appNode: randomUUID(),
     sandbox: randomUUID(),
     teamMessage: randomUUID(),
-    teamToken: randomUUID(),
     topic: randomUUID(),
     post: randomUUID(),
     upload: randomUUID(),
@@ -75,7 +74,6 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
              (select count(*) from apps)::int as apps,
              (select count(*) from sandboxes)::int as sandboxes,
              (select count(*) from team_messages)::int as team_messages,
-             (select count(*) from contact_team_tokens)::int as contact_team_tokens,
              (select count(*) from agents)::int as agents`;
     return r!;
   };
@@ -109,8 +107,6 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
               values (${id.sandbox}, ${owner}, ${tag}, 'alpine')`;
     await sql`insert into team_messages (id, owner_id, contact_id, direction, text)
               values (${id.teamMessage}, ${owner}, ${id.contact}, 'inbound', 'hello')`;
-    await sql`insert into contact_team_tokens (id, owner_id, contact_id, token_hash)
-              values (${id.teamToken}, ${owner}, ${id.contact}, ${`hash-${tag}`})`;
 
     // The forum, exported: its topic points at its archive page, the upload
     // at the file the export filed.
@@ -186,7 +182,6 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
     expect(await sql`select 1 from apps where node_id = ${id.appNode}`).toHaveLength(1);
     expect(await sql`select 1 from sandboxes where id = ${id.sandbox}`).toHaveLength(1);
     expect(await sql`select 1 from team_messages where id = ${id.teamMessage}`).toHaveLength(1);
-    expect(await sql`select 1 from contact_team_tokens where id = ${id.teamToken}`).toHaveLength(1);
   });
 
   it('a second run is a no-op', async () => {

@@ -5,20 +5,22 @@ toolGroups: [team-admin]
 
 ## Team
 
-Your window into the outside surface, the forum where people you've given a
-team token can ask your brain questions.
+Your window into the team: the people who sign in to your brain as members
+and chat with its team agent.
 
-Team membership is **a role a contact holds**, not a separate user account. You
-mint a token from a contact; that token is the only credential they ever get,
-and deleting it revokes their access mid-session. There is no user list to
-maintain in parallel with your contacts.
+Users are the team. You **invite** a person, from their contact or by email;
+they open the invite link, set a password and are a member login. Disabling,
+demoting or deleting the login revokes their access mid-session. The old team
+codes and the portal they opened are retired: an old code no longer works, so
+send an invite link instead.
 
-The tabs answer different questions. **Members** reads person-first: one
-person's posts, each paired with the answer it drew, plus the topics they
-started and the requests they filed. **Topics** reads thread-first, including
-the private ones. **Requests** is the review queue, the one thing a team member
-can cause to be written. **Shared links** and **Settings** cover what else is
-exposed and how.
+The tabs answer different questions. **Invites** makes and revokes invite
+links. **Member chats** reads each member's chat with the team agent. The
+**Chat archive** keeps the old portal chats, one per contact, as history.
+**Review** holds what members submitted for review. **Requests** is the
+review queue for change requests, the one thing a team member can cause to be
+written. **Shared links** and **Settings** cover what else is exposed and
+how.
 
 ## Assistant
 

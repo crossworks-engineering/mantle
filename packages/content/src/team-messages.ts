@@ -14,8 +14,6 @@ import {
   db,
   systemDb,
   teamMessages,
-  contactTeamTokens,
-  nodes,
   type ConversationAttachment,
   type TeamChannel,
   type TeamMessage,
@@ -223,77 +221,75 @@ export async function countMemberInboundSince(
 }
 
 /**
- * The team-CODE holder index: every contact with a live
- * contact_team_tokens row (the retired portal's membership), annotated with their thread's last
- * message + size + unread count. Ordered newest-activity-first in SQL, NULLS
- * LAST so a freshly enabled member with no thread still shows (at the bottom).
+ * The old portal chat index (the Members tab's "Chat archive" roster): every
+ * contact of this owner with portal chat rows (a contact, no login),
+ * annotated with its thread's first and last message, size and unread
+ * count. Driven by the chat itself since team codes were retired (0178);
+ * it listed code holders before, so a contact whose code was redeemed or
+ * never used to chat dropped off, and one that chats stays. Newest activity
+ * first. `memberSince` is the first portal message; `tokenLastUsedAt` is
+ * always null (kept one contract cycle for older clients).
  */
 export async function listTeamMemberActivity(ownerId: string): Promise<TeamMemberActivity[]> {
-  const rows = await db
-    .select({
-      contactId: contactTeamTokens.contactId,
-      contactName: nodes.title,
-      memberSince: contactTeamTokens.createdAt,
-      tokenLastUsedAt: contactTeamTokens.lastUsedAt,
-      lastMessageAt: dsql<string | null>`last_msg.created_at`,
-      lastMessageText: dsql<string | null>`last_msg.text`,
-      lastMessageDirection: dsql<string | null>`last_msg.direction`,
-      messageCount: dsql<number>`coalesce(msg_counts.n, 0)::int`,
-      // Inbound (member→brain) messages newer than the owner's read cursor —
-      // a self-contained correlated subquery (no cursor row ⇒ epoch ⇒ all
-      // inbound counts as unread).
-      unread: dsql<number>`(
-        select count(*)
-        from team_messages tmu
-        where tmu.owner_id = ${contactTeamTokens.ownerId}
-          and tmu.contact_id = ${contactTeamTokens.contactId}
-          and tmu.login_id is null
-          and tmu.direction = 'inbound'
-          and tmu.created_at > coalesce(
-            (select c.last_read_at from team_read_cursors c
-             where c.owner_id = ${contactTeamTokens.ownerId}
-               and c.contact_id = ${contactTeamTokens.contactId}),
-            'epoch'::timestamptz
-          )
-      )::int`,
-    })
-    .from(contactTeamTokens)
-    .innerJoin(nodes, eq(nodes.id, contactTeamTokens.contactId))
-    .leftJoin(
-      dsql`lateral (
-        select tm.created_at, tm.text, tm.direction
-        from team_messages tm
-        where tm.owner_id = ${contactTeamTokens.ownerId}
-          and tm.contact_id = ${contactTeamTokens.contactId}
-          and tm.login_id is null
-        order by tm.created_at desc
-        limit 1
-      ) last_msg`,
-      dsql`true`,
-    )
-    .leftJoin(
-      dsql`lateral (
-        select count(*) as n
-        from team_messages tm
-        where tm.owner_id = ${contactTeamTokens.ownerId}
-          and tm.contact_id = ${contactTeamTokens.contactId}
-          and tm.login_id is null
-      ) msg_counts`,
-      dsql`true`,
-    )
-    .where(eq(contactTeamTokens.ownerId, ownerId))
-    .orderBy(dsql`last_msg.created_at desc nulls last`);
-
+  const result = await db.execute(dsql`
+    select n.id as contact_id,
+           n.title as contact_name,
+           portal.first_at,
+           portal.n as message_count,
+           last_msg.created_at as last_at,
+           last_msg.text as last_text,
+           last_msg.direction as last_direction,
+           -- Inbound (member to brain) messages newer than the owner's read
+           -- cursor (no cursor row: epoch, so all inbound counts as unread).
+           (select count(*)
+              from team_messages tmu
+             where tmu.owner_id = n.owner_id
+               and tmu.contact_id = n.id
+               and tmu.login_id is null
+               and tmu.direction = 'inbound'
+               and tmu.created_at > coalesce(
+                 (select c.last_read_at from team_read_cursors c
+                   where c.owner_id = n.owner_id and c.contact_id = n.id),
+                 'epoch'::timestamptz))::int as unread
+      from (select tm.contact_id, min(tm.created_at) as first_at, count(*)::int as n
+              from team_messages tm
+             where tm.owner_id = ${ownerId}
+               and tm.contact_id is not null
+               and tm.login_id is null
+             group by tm.contact_id) portal
+      join nodes n on n.id = portal.contact_id and n.owner_id = ${ownerId}
+      cross join lateral (
+        select tl.created_at, tl.text, tl.direction
+          from team_messages tl
+         where tl.owner_id = n.owner_id
+           and tl.contact_id = n.id
+           and tl.login_id is null
+         order by tl.created_at desc
+         limit 1
+      ) last_msg
+     order by last_msg.created_at desc
+  `);
+  const rows = result as unknown as Array<{
+    contact_id: string;
+    contact_name: string | null;
+    first_at: string | Date;
+    message_count: number;
+    last_at: string | Date;
+    last_text: string;
+    last_direction: string;
+    unread: number;
+  }>;
+  const iso = (v: string | Date) => new Date(v).toISOString();
   return rows.map((r) => ({
-    contactId: r.contactId,
-    contactName: r.contactName ?? '(unnamed contact)',
-    memberSince: r.memberSince.toISOString(),
-    tokenLastUsedAt: r.tokenLastUsedAt ? r.tokenLastUsedAt.toISOString() : null,
-    lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt).toISOString() : null,
-    lastMessageText: r.lastMessageText,
-    lastMessageDirection: (r.lastMessageDirection ?? null) as 'inbound' | 'outbound' | null,
-    messageCount: r.messageCount,
-    unread: r.unread,
+    contactId: r.contact_id,
+    contactName: r.contact_name ?? '(unnamed contact)',
+    memberSince: iso(r.first_at),
+    tokenLastUsedAt: null,
+    lastMessageAt: iso(r.last_at),
+    lastMessageText: r.last_text,
+    lastMessageDirection: r.last_direction as 'inbound' | 'outbound',
+    messageCount: Number(r.message_count),
+    unread: Number(r.unread),
   }));
 }
 
@@ -308,7 +304,7 @@ export type MemberChatActivity = MemberChatRow;
  * plus any other login that still has a thread, annotated with its thread's
  * last message and size. Newest activity first, NULLS LAST so a new member
  * with no thread still shows. The retired team-code portal threads are not
- * here; `listTeamMemberActivity` still indexes those as history.
+ * here; `listTeamMemberActivity` indexes those as history.
  */
 export async function listMemberChatActivity(ownerId: string): Promise<MemberChatActivity[]> {
   const rows = await systemDb

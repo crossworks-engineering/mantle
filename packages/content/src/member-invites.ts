@@ -4,34 +4,25 @@
  * The table is `member_invites` (migration 0174), modelled on pairing_codes.
  *
  * Properties the routes rely on:
- *  - the code is {@link MEMBER_INVITE_CODE_LENGTH} characters from the team
- *    token alphabet (about 93 bits), stored only as its hash (the team token
- *    hash), shown to the admin once;
+ *  - the code is {@link MEMBER_INVITE_CODE_LENGTH} characters from a
+ *    look-alike-free alphabet (about 92 bits), stored only as its SHA-256
+ *    (`hashInviteCode`), shown to the admin once;
  *  - it lives {@link MEMBER_INVITE_TTL_MS} (72 hours) and is single use: the
  *    redeem locks the row and sets `redeemed_at` in the transaction that
  *    creates the login;
- *  - an old 8-char team code works in place of the invite code, but only
- *    while its contact has an open invite, and only once: the redeem deletes
- *    the contact's `contact_team_tokens` row (Jason, 2026-09-28);
+ *  - only an invite code redeems. An old 8-char team code worked in its
+ *    place once until team codes were retired (migration 0178); it is now
+ *    just another wrong code;
  *  - every failure to preview or redeem is the same `null`, so a caller
  *    cannot tell a wrong code from a used, revoked or expired one.
  *
  * Callers on the public routes MUST rate-limit before calling in.
  */
-import { randomUUID } from 'node:crypto';
-import { and, desc, eq, gt, isNull, or, sql, type SQL } from 'drizzle-orm';
-import {
-  authUsers,
-  contactTeamTokens,
-  db,
-  memberInvites,
-  nodeComments,
-  nodes,
-  teamAccessLog,
-} from '@mantle/db';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
+import { authUsers, db, memberInvites, nodeComments, nodes, teamAccessLog } from '@mantle/db';
 import type { MemberInviteRow, MemberInviteState } from '@mantle/client-types';
 import { getContact } from './contacts';
-import { generateAlphabetCode, hashTeamToken, verifyTeamToken } from './team-tokens';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Exec = Tx | typeof db;
@@ -57,8 +48,36 @@ export class MemberInviteError extends Error {
   }
 }
 
+/** Mixed-case alphanumerics minus the look-alikes (0/O/o, 1/l/I) so a code
+ *  read over the phone or retyped from paper survives the trip. 54 chars.
+ *  The retired team codes used the same alphabet. */
+export const INVITE_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+
+/** Bytes at or above this are rejected: the largest multiple of the alphabet
+ *  size below 256 (54 x 4 = 216). The team-code helper this came from used
+ *  224 (it counted 56 characters), which made the first 8 characters of the
+ *  alphabet a quarter likelier than the rest. */
+const ACCEPT_BELOW = 256 - (256 % INVITE_CODE_ALPHABET.length);
+
 export function generateInviteCode(): string {
-  return generateAlphabetCode(MEMBER_INVITE_CODE_LENGTH);
+  const out: string[] = [];
+  while (out.length < MEMBER_INVITE_CODE_LENGTH) {
+    // Rejection sampling: only accept bytes below the largest multiple of the
+    // alphabet size so every character is equally likely.
+    const bytes = randomBytes(MEMBER_INVITE_CODE_LENGTH * 2);
+    for (const b of bytes) {
+      if (b >= ACCEPT_BELOW) continue;
+      out.push(INVITE_CODE_ALPHABET[b % INVITE_CODE_ALPHABET.length]!);
+      if (out.length === MEMBER_INVITE_CODE_LENGTH) break;
+    }
+  }
+  return out.join('');
+}
+
+/** SHA-256 hex of a code: what `member_invites.code_hash` stores. The same
+ *  hash the team codes used, so invites made before 0178 still redeem. */
+export function hashInviteCode(code: string): string {
+  return createHash('sha256').update(code, 'utf8').digest('hex');
 }
 
 /** The client-app path the admin shares. The code is the only secret in it. */
@@ -182,7 +201,7 @@ export async function createMemberInvite(
         contactId: input.contactId ?? null,
         email,
         displayName,
-        codeHash: hashTeamToken(code),
+        codeHash: hashInviteCode(code),
         createdBy: input.createdBy,
         createdAt: now,
         expiresAt,
@@ -242,45 +261,34 @@ export async function revokeMemberInvite(
   return rows.length > 0;
 }
 
-type Redeemable = {
-  invite: typeof memberInvites.$inferSelect;
-  via: 'invite' | 'team-code';
-};
-
 /**
- * The open, unexpired invite a presented code names: an invite code by its
- * hash, else a team code (verifyTeamToken) whose contact has an open invite.
- * `lock` takes the invite row FOR UPDATE (the redeem).
+ * The open, unexpired invite a presented code names, by its hash. Only an
+ * invite code's length is looked up: a code of any other length (an old
+ * 8-char team code among them) is a miss before any query. `lock` takes the
+ * invite row FOR UPDATE (the redeem).
  */
 async function findRedeemable(
   exec: Exec,
   code: string,
   now: Date,
   lock: boolean,
-): Promise<Redeemable | null> {
+): Promise<typeof memberInvites.$inferSelect | null> {
   const trimmed = code.trim();
-  if (trimmed.length < 6 || trimmed.length > 64) return null;
-  const pick = async (match: SQL | undefined) => {
-    const where = and(
-      match,
-      isNull(memberInvites.redeemedAt),
-      isNull(memberInvites.revokedAt),
-      gt(memberInvites.expiresAt, now),
-    );
-    const q = exec.select().from(memberInvites).where(where).limit(1);
-    const [row] = lock ? await q.for('update') : await q;
-    return row ?? null;
-  };
-
-  const byCode = await pick(eq(memberInvites.codeHash, hashTeamToken(trimmed)));
-  if (byCode) return { invite: byCode, via: 'invite' };
-
-  const team = await verifyTeamToken(trimmed, exec);
-  if (!team) return null;
-  const byContact = await pick(
-    and(eq(memberInvites.ownerId, team.ownerId), eq(memberInvites.contactId, team.contactId)),
-  );
-  return byContact ? { invite: byContact, via: 'team-code' } : null;
+  if (trimmed.length !== MEMBER_INVITE_CODE_LENGTH) return null;
+  const q = exec
+    .select()
+    .from(memberInvites)
+    .where(
+      and(
+        eq(memberInvites.codeHash, hashInviteCode(trimmed)),
+        isNull(memberInvites.redeemedAt),
+        isNull(memberInvites.revokedAt),
+        gt(memberInvites.expiresAt, now),
+      ),
+    )
+    .limit(1);
+  const [row] = lock ? await q.for('update') : await q;
+  return row ?? null;
 }
 
 /** For the public invite page: who a redeemable code is for. `null` for any
@@ -291,7 +299,7 @@ export async function previewMemberInvite(
 ): Promise<{ ownerId: string; email: string; displayName: string | null } | null> {
   const found = await findRedeemable(db, code, now, false);
   if (!found) return null;
-  const { ownerId, email, displayName } = found.invite;
+  const { ownerId, email, displayName } = found;
   return { ownerId, email, displayName };
 }
 
@@ -310,7 +318,9 @@ export type RedeemedMemberInvite = {
   ownerId: string;
   contactId: string | null;
   inviteId: string;
-  via: 'invite' | 'team-code';
+  /** Always 'invite' since team codes were retired (0178); kept in the audit
+   *  detail and the access log so old and new rows read alike. */
+  via: 'invite';
 };
 
 /**
@@ -359,12 +369,12 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 /**
- * Trade a code for a MEMBER login, in ONE transaction: lock the invite,
- * delete the contact's team code, create the login (role member, the
- * invite's contact and name), mark the invite redeemed, and write the team
+ * Trade an invite code for a MEMBER login, in ONE transaction: lock the
+ * invite, create the login (role member, the invite's contact and name),
+ * link the contact's history, mark the invite redeemed, and write the team
  * access log. `null` for any failure (unknown, used, revoked or expired
- * code; a team code with no open invite; a wrong email; a login that took
- * the email or the contact meanwhile); nothing is written then.
+ * code; an old team code; a wrong email; a login that took the email or the
+ * contact meanwhile); nothing is written then.
  */
 export async function redeemMemberInvite(
   input: RedeemMemberInviteInput,
@@ -372,29 +382,13 @@ export async function redeemMemberInvite(
 ): Promise<RedeemedMemberInvite | null> {
   try {
     return await db.transaction(async (tx) => {
-      const found = await findRedeemable(tx, input.code, now, true);
-      if (!found) return null;
-      const { invite, via } = found;
+      const invite = await findRedeemable(tx, input.code, now, true);
+      if (!invite) return null;
+      const via = 'invite' as const;
       const wanted = input.email?.trim().toLowerCase();
       if (wanted && wanted !== invite.email) return null;
       if (await loginWithEmail(invite.email, tx)) return null;
       if (invite.contactId && (await loginOnContact(invite.contactId, tx))) return null;
-
-      // Redeeming deletes the contact's old team code: the person is a login
-      // now. On the team-code path the row must still be there, so a code
-      // revoked a moment ago does not redeem.
-      if (invite.contactId) {
-        const deleted = await tx
-          .delete(contactTeamTokens)
-          .where(
-            and(
-              eq(contactTeamTokens.ownerId, invite.ownerId),
-              eq(contactTeamTokens.contactId, invite.contactId),
-            ),
-          )
-          .returning({ id: contactTeamTokens.id });
-        if (via === 'team-code' && deleted.length === 0) throw new RedeemAbort();
-      }
 
       const loginId = randomUUID();
       await tx.insert(authUsers).values({

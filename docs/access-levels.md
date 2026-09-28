@@ -139,7 +139,9 @@ The level is the truth; an item's share link (docs/sharing.md) follows it.
 
 Team links are retired (member logins Phase 6 stage 6, migration 0176; see
 docs/member-logins.md section 9): a link is always open, and there is no
-share mode but `public`.
+share mode but `public`. The team codes those links took are gone too
+(migration 0178): members read by level with their own logins, and nothing
+outside a login reaches a team item.
 
 - **Level to link.** `setItemLevel` (`@mantle/content` access.ts) writes the
   level, then `applyLevelToShare` (shares.ts) revokes the link (admin, team)
