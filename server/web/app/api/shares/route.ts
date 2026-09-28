@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { countPageDescendants } from '@mantle/content';
+import { countPageDescendants, type LoweredItem } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 import { createShare, getActiveShareForNode } from '@/lib/shares';
 
@@ -39,9 +39,12 @@ export async function POST(req: Request) {
   if (!parsed.success)
     return NextResponse.json({ error: 'valid nodeId required' }, { status: 400 });
   try {
-    const share = await createShare(user.id, parsed.data.nodeId);
+    // The item's embeds go down with it (embedding means sharing).
+    const alsoLowered: LoweredItem[] = [];
+    const share = await createShare(user.id, parsed.data.nodeId, { alsoLowered });
     return NextResponse.json({
       share: { id: share.id, token: share.token, path: `/s/${share.token}`, mode: share.mode },
+      alsoLowered,
     });
   } catch (err) {
     return NextResponse.json(

@@ -110,6 +110,7 @@ import { childPagePath } from './page-path';
 import { draftAbsFor, removeTableFile } from './table-storage';
 import { dedupeFilename } from './dedupe-filename';
 import { setItemLevel } from './access';
+import { lowerEmbedClosure, type LoweredItem } from './embed-closure';
 import {
   detachFromGroups,
   giveBackTaken,
@@ -522,6 +523,9 @@ export type AcceptResult = {
   audience: ViewerLevel;
   moved: BundleItem[];
   linksStayingBehind: number;
+  /** Brain items it embeds that went down to its level with it (embedding
+   *  means sharing: a Library image a member placed, say). Empty at admin. */
+  alsoLowered: LoweredItem[];
   /** Set when the item's level was stored but its link could not be made;
    *  the admin can set the level again from the item. */
   levelWarning?: string;
@@ -1108,6 +1112,11 @@ async function moveIntoBrain(
         }
       }
 
+      // 4b. Embedding means sharing: at a level below admin, what the item
+      //     embeds that is already the brain's (a Library item) goes down
+      //     with it. The bundle itself took the level above.
+      const { lowered: alsoLowered } = await lowerEmbedClosure(brainId, id, audience, tx);
+
       // 5. The state rows, settled by the caller's rule; the recorded
       //    bundles of what moved are done with. Every item now accepted
       //    with an author record gets its author's snapshot (audit F07): the
@@ -1132,7 +1141,13 @@ async function moveIntoBrain(
           await notifySpaceItemChanged(a.id, 'state', { spaceId: home, team: false }, tx);
         }
       }
-      return { id, audience, moved: items, linksStayingBehind: bundle.linksStayingBehind };
+      return {
+        id,
+        audience,
+        moved: items,
+        linksStayingBehind: bundle.linksStayingBehind,
+        alsoLowered,
+      };
     });
   } catch (err) {
     for (const fn of onRollback) await fn().catch(() => {});
