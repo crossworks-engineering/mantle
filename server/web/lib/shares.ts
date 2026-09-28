@@ -5,8 +5,8 @@
  * calls requireOwner — the public surface trusts a resolved active token and
  * only ever reaches the one shared node (+ its referenced files).
  */
-import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, tables, type Share } from '@mantle/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { asViewerLevel, db, nodes, tables, type Share, type ViewerLevel } from '@mantle/db';
 import {
   getPage,
   getApp,
@@ -118,12 +118,98 @@ export type ShareView =
       coverageGaps: CoverageGap[];
       dimensionIssues: DimensionIssue[];
     }
-  | { kind: 'folder'; folderId: string; title: string; path: string }
+  | {
+      kind: 'folder';
+      folderId: string;
+      title: string;
+      path: string;
+      /** The item levels this link shows (linkLevels): never sent to the
+       *  visitor, it filters the listing and the asset route. */
+      levels: ViewerLevel[];
+    }
   // Only WHETHER a committed snapshot exists (false when the last commit
   // carried none; the presenter shows a placeholder rather than 404ing a link
   // that was legitimately minted). The bytes are served separately, as an
   // image, by /s/<token>/draw.
   | { kind: 'draw'; title: string; hasSvg: boolean; hasImage?: boolean };
+
+/**
+ * The item levels an open folder link shows (audit F19). A folder link opens
+ * at the folder's own level, and shows only what sits at or below it: a
+ * public link shows public items, a client link client and public ones. A
+ * file uploaded later into the folder lands at admin (no inheritance), so it
+ * stays out until someone lowers it. The level rule never leaves an open link
+ * on a folder at team or admin; if one survives, it fails closed to public.
+ * Single-item links (a file, a page) are not filtered: the item IS the link.
+ */
+export function linkLevels(folderAudience: string): ViewerLevel[] {
+  return asViewerLevel(folderAudience) === 'client' ? ['client', 'public'] : ['public'];
+}
+
+/** SQL list of `levels`, for an IN / NOT IN. */
+function levelList(levels: readonly ViewerLevel[]) {
+  return sql.join(
+    levels.map((l) => sql`${l}`),
+    sql`, `,
+  );
+}
+
+/**
+ * Is there a folder strictly between the shared folder `rootPath` and
+ * `path` (inclusive of `path` itself when it is a folder, and of a file's
+ * own folder, since a file's path IS its folder's) that sits above the
+ * link's levels? Such a folder is not listed, so nothing under it is
+ * reachable through the link either, even an item at a low enough level.
+ */
+export async function hiddenFolderBetween(
+  ownerId: string,
+  rootPath: string,
+  path: string,
+  levels: readonly ViewerLevel[],
+): Promise<boolean> {
+  const [hit] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'branch'),
+        sql`${nodes.path} @> ${path}::ltree`,
+        sql`${nodes.path} <@ ${rootPath}::ltree`,
+        sql`${nodes.path} <> ${rootPath}::ltree`,
+        sql`${nodes.audience} not in (${levelList(levels)})`,
+      ),
+    )
+    .limit(1);
+  return !!hit;
+}
+
+/** Per folder path, how many files directly in it sit at `levels`: the
+ *  count a folder link shows beside a subfolder, so hidden files are not
+ *  even counted. */
+export async function visibleFileCounts(
+  ownerId: string,
+  folderPaths: readonly string[],
+  levels: readonly ViewerLevel[],
+): Promise<Map<string, number>> {
+  if (folderPaths.length === 0) return new Map();
+  const rows = await db
+    .select({ path: sql<string>`${nodes.path}::text`, n: sql<number>`count(*)::int` })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'file'),
+        sql`${nodes.path}::text in (${sql.join(
+          folderPaths.map((p) => sql`${p}`),
+          sql`, `,
+        )})`,
+        inArray(nodes.audience, [...levels]),
+      ),
+    )
+    .groupBy(nodes.path);
+  return new Map(rows.map((r) => [r.path, r.n]));
+}
 
 async function loadNode(ownerId: string, nodeId: string) {
   const [row] = await db
@@ -306,7 +392,13 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
     case 'branch': {
       const folder = await folderById({ ownerId, folderId: nodeId });
       if (!folder) return null;
-      return { kind: 'folder', folderId: nodeId, title: folder.slug, path: folder.path };
+      return {
+        kind: 'folder',
+        folderId: nodeId,
+        title: folder.slug,
+        path: folder.path,
+        levels: linkLevels(folder.audience),
+      };
     }
     default:
       return null;
@@ -315,9 +407,11 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
 
 /** Is `fileId` allowed to be served under this share? A file share serves
  *  itself; a page share serves only the files its doc references; a folder
- *  share serves every file under the folder's subtree (recursive, evaluated
- *  per request — a file moved out is denied on its next fetch). Anything else
- *  is denied — this is the asset route's authorization. */
+ *  share serves the files under the folder's subtree (recursive, evaluated
+ *  per request — a file moved out is denied on its next fetch) that sit at
+ *  the link's levels, under no folder above them (linkLevels, audit F19): a
+ *  file uploaded into a public folder stays admin and is not served. Anything
+ *  else is denied — this is the asset route's authorization. */
 export async function isAssetAllowed(share: Share, fileId: string): Promise<boolean> {
   if (share.nodeType === 'file') return share.nodeId === fileId;
   if (share.nodeType === 'page') {
@@ -330,15 +424,16 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
     // the folder's path — folderById would also run two folderCounts queries
     // whose results this check never reads.
     const [folder] = await db
-      .select({ path: nodes.path })
+      .select({ path: nodes.path, audience: nodes.audience })
       .from(nodes)
       .where(
         and(eq(nodes.id, share.nodeId), eq(nodes.ownerId, share.ownerId), eq(nodes.type, 'branch')),
       )
       .limit(1);
     if (!folder?.path) return false;
+    const levels = linkLevels(folder.audience);
     const [hit] = await db
-      .select({ id: nodes.id })
+      .select({ path: nodes.path })
       .from(nodes)
       .where(
         and(
@@ -346,10 +441,12 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
           eq(nodes.ownerId, share.ownerId),
           eq(nodes.type, 'file'),
           sql`${nodes.path} <@ ${folder.path}::ltree`,
+          inArray(nodes.audience, levels),
         ),
       )
       .limit(1);
-    return !!hit;
+    if (!hit) return false;
+    return !(await hiddenFolderBetween(share.ownerId, folder.path, hit.path, levels));
   }
   return false;
 }

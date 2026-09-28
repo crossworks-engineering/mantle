@@ -203,7 +203,17 @@ outside a login reaches a team item.
   an arbitrary folder win; boxes that already ran it keep the levels it set
   (the runner never re-runs an applied migration, and there is no
   corrective one).
-- **Not yet:** `/s/` handlers run at admin; running them at the link's level
-  (after the share render path reads published columns only) is a later
-  release. Until then a link can show an embed above its level, which is
-  why the Access control offers the closure.
+- **Folder links show only their level** (audit F19). A folder link opens
+  at the folder's own level and lists and serves only the items at or below
+  it: a public link public items, a client link client and public ones
+  (`linkLevels` in server/web/lib/shares.ts; the listing in
+  components/share/folder-presenter.tsx and the asset check `isAssetAllowed`
+  apply the same rule). A file uploaded into a shared folder later lands at
+  admin, so it stays out of the link until someone lowers it; a subfolder
+  above the level hides everything under it, and its file count leaves
+  hidden files out. A single-item link (a file, a page) is not filtered: the
+  item is the link.
+- **Not yet:** `/s/` handlers still run at admin; running them at the link's
+  level (after the share render path reads published columns only) is a
+  later release. Until then a page link can show an embed above its level,
+  which is why the Access control offers the closure.
