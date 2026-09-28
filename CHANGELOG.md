@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.319: client v0.6.170
+
+- Pairs the client at jackdaw v0.6.170, the client half of 0.232.318: the
+  app shell knows three roles and fails closed (a neutral loading screen
+  until the role is known, never the admin chrome by default; a client
+  login sees a plain "client portal not available yet" card with Sign out).
+  The Access popover says Client is "Signed-in clients (and the team)" with
+  no link box (Public keeps its link). Shared links show each link's level
+  and mark old client links. Team admin > "What clients see" lists every
+  client-level item and records the acknowledgement.
+
 ## 0.232.318: client logins, phases C0 and C1 (the client level, dark)
 
 No client login can be made yet (the users API refuses role client until
