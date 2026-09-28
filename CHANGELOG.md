@@ -4,6 +4,21 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.291: members always on, member invites, app SQL in child processes
+
+- Phase 6 stage 1: the MANTLE_MEMBERS flag is gone; member logins work on
+  every brain (GET /api/users still answers membersEnabled: true for one
+  contract cycle).
+- Phase 6 stage 2: member invites (migration 0174, member_invites). An admin
+  invites a contact from Team admin and copies the link; the person sets a
+  password at /invite and lands as a member. An old 8-character team code
+  works once in place of the invite code while an invite is open for that
+  contact; redeeming deletes the old code. Routes: /api/team-admin/invites,
+  /api/auth/invite/:code, /api/auth/invite/accept. Contract: MemberInvite*.
+- App SQL runs in a small pool of child processes: a write stopped at the
+  time limit no longer leaves the app's database locked until a restart,
+  and statements are faster (no thread start per statement).
+
 ## 0.232.290: client v0.6.156
 
 - Paired with jackdaw v0.6.156: member chat stops polling a reply the brain
