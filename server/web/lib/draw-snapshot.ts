@@ -1,5 +1,5 @@
 import { EXCALIDRAW_ENGINE, getDrawSnapshot, setDrawSvg } from '@mantle/content';
-import { buildInternalRenderCookie } from '@/lib/auth';
+import { internalRenderCookie } from '@/lib/auth';
 import { renderDrawSvg, DrawRendererUnavailableError } from '@/lib/render-draw-svg';
 import { renderDrawPng, type DrawPng } from '@/lib/render-draw-png';
 
@@ -78,7 +78,7 @@ function renderOnce(
   const existing = inFlight.get(id);
   if (existing) return existing;
   const p = withSlot(async () => {
-    const { svg, partial } = await renderDrawSvg(id, buildInternalRenderCookie(ownerId));
+    const { svg, partial } = await renderDrawSvg(id, await internalRenderCookie(ownerId));
     // A partial render (some scene images missing/hung) beats NOTHING, so it
     // may fill an empty cache — but it must never overwrite a snapshot that
     // still shows the images. Cooldown either way: the missing file won't
@@ -158,7 +158,8 @@ export async function getDrawPngOrRender(ownerId: string, id: string): Promise<D
   const svg = await getDrawSvgOrRender(ownerId, id);
   if (!svg) return null;
   try {
-    return await withSlot(() => renderDrawPng(id, buildInternalRenderCookie(ownerId)));
+    const cookie = await internalRenderCookie(ownerId);
+    return await withSlot(() => renderDrawPng(id, cookie));
   } catch (err) {
     if (!(err instanceof DrawRendererUnavailableError)) {
       console.error(`[draw-snapshot] raster failed for ${id}:`, err);

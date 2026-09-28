@@ -79,6 +79,7 @@ export async function POST(req: Request) {
 
   const body: MemberInviteAccepted = { ok: true, email: redeemed.email };
   const res = NextResponse.json(body);
-  setSessionCookie(res, req, redeemed.loginId);
+  // A login made by this redeem: its session epoch is the column default, 0.
+  setSessionCookie(res, req, redeemed.loginId, 0);
   return res;
 }

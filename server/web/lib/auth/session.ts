@@ -9,7 +9,7 @@
 import { cookies, headers } from '../../server/http-compat/headers';
 import { NextResponse } from '../../server/http-compat';
 import { RedirectError } from '../../server/http-compat/redirect-error';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { db, authUsers, mobileTokens, countUsers } from '@mantle/db';
 import { loadAnchorId, loadLoginRow, loadPersonalSpaceId, type LoginRow } from './login-row';
@@ -24,6 +24,8 @@ import { auditFireAndForget } from '../audit';
 import { bearerFromHeader } from './request';
 import {
   SESSION_COOKIE_NAME,
+  buildAssetToken,
+  buildInternalRenderCookie,
   buildSessionCookie,
   decodeUnverifiedClaims,
   verifyAssetToken,
@@ -125,14 +127,13 @@ export async function getOwnerForAsset(req: Request): Promise<SessionUser | Next
     // for, so per-login asset routes (the profile photo) can address that
     // row; absent, the actor is the anchor itself — the pre-claim behavior.
     if (claims) {
-      // A token minted for another login (`act`): that login must still be a
-      // usable ADMIN. Members are never minted one; this closes a revoked or
-      // demoted login's 2-hour window too.
-      if (claims.act && claims.act !== claims.uid) {
-        const row = await loadLoginRow(claims.act);
-        if (!row || row.role !== 'admin' || !loginUsable(row)) {
-          return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-        }
+      // The login the token was minted for (`act`, else the anchor itself)
+      // must still be a usable ADMIN on the same session epoch. Members are
+      // never minted one; this closes a revoked, demoted or signed-out
+      // login's 2-hour window too.
+      const row = await loadLoginRow(claims.act ?? claims.uid);
+      if (!row || row.role !== 'admin' || !loginUsable(row) || row.sessionEpoch !== claims.ep) {
+        return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
       }
       return {
         id: claims.uid,
@@ -157,7 +158,7 @@ export async function getMemberForAsset(req: Request): Promise<MemberCaller | Ne
   const claims = at ? verifyAssetToken(at) : null;
   if (claims?.act) {
     const row = await loadLoginRow(claims.act);
-    if (row && row.role === 'member' && loginUsable(row)) {
+    if (row && row.role === 'member' && loginUsable(row) && row.sessionEpoch === claims.ep) {
       const resolved = await resolvedFor(row, 'web');
       if (resolved?.kind === 'member' && resolved.member.anchorId === claims.uid) {
         return resolved.member;
@@ -304,7 +305,9 @@ async function resolveLogin(): Promise<Resolved | null> {
     const data = verifySessionCookie(c.value);
     if (data) {
       const row = await loadLoginRow(data.uid);
-      if (row && loginUsable(row)) {
+      // The epoch check is what ends a cookie: a password change, a disable,
+      // a role change or "sign out everywhere" bumps the row (F06).
+      if (row && loginUsable(row) && row.sessionEpoch === data.ep) {
         const resolved = await resolvedFor(row, 'web');
         if (resolved) return resolved;
       }
@@ -470,22 +473,46 @@ export async function sessionCookieExpiryMs(): Promise<number | null> {
  *  login itself (change its password, sign out, who am I). Never for brain
  *  data. */
 export async function getLoginOr401(): Promise<
-  | { kind: 'admin'; loginId: string; email: string; user: SessionUser }
-  | { kind: 'member'; loginId: string; email: string; member: MemberCaller }
+  | { kind: 'admin'; loginId: string; email: string; source: AuthSource; user: SessionUser }
+  | { kind: 'member'; loginId: string; email: string; source: AuthSource; member: MemberCaller }
   | NextResponse
 > {
   const res = await resolveLogin();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   return res.kind === 'admin'
-    ? { kind: 'admin', loginId: res.user.actor.id, email: res.user.actor.email, user: res.user }
-    : { kind: 'member', loginId: res.member.loginId, email: res.member.email, member: res.member };
+    ? {
+        kind: 'admin',
+        loginId: res.user.actor.id,
+        email: res.user.actor.email,
+        source: res.source,
+        user: res.user,
+      }
+    : {
+        kind: 'member',
+        loginId: res.member.loginId,
+        email: res.member.email,
+        source: res.source,
+        member: res.member,
+      };
 }
 
 /**
- * Verify email+password against auth.users. Returns the user id on match,
- * null otherwise. Pure DB-driven — no external auth service.
+ * A bcrypt hash (cost 12, same as every login) of a throwaway string. An
+ * unknown email is compared against it, so a missing login costs the same
+ * bcrypt time as a real one: the answer's timing does not say whether the
+ * email has an account (F31).
  */
-export async function loginWithPassword(email: string, password: string): Promise<string | null> {
+const DUMMY_HASH = '$2b$12$9jl0x3pjTchfqR4xdz2.b.iR/Ncv3n26E/ZAv4NPdmSPdYW.8YW3m';
+
+/**
+ * Verify email+password against auth.users. Returns the login id and its
+ * session epoch (what a new cookie is signed with) on a match, null
+ * otherwise. Pure DB-driven: no external auth service.
+ */
+export async function authenticatePassword(
+  email: string,
+  password: string,
+): Promise<{ id: string; sessionEpoch: number } | null> {
   // Case-insensitive match — emails are case-insensitive in practice, and a
   // user who signed up "Jay@X.com" must be able to log in as "jay@x.com".
   // Handles any casing already stored (incl. legacy manually-inserted rows).
@@ -496,15 +523,24 @@ export async function loginWithPassword(email: string, password: string): Promis
       hash: authUsers.passwordHash,
       role: authUsers.role,
       disabledAt: authUsers.disabledAt,
+      sessionEpoch: authUsers.sessionEpoch,
     })
     .from(authUsers)
     .where(sql`lower(${authUsers.email}) = lower(${email})`)
     .limit(1);
-  if (!row || !row.hash) return null;
-  const ok = await bcrypt.compare(password, row.hash);
+  // Always one bcrypt compare: a missing login is checked against the dummy
+  // hash, so it answers no faster than a wrong password.
+  const ok = await bcrypt.compare(password, row?.hash || DUMMY_HASH);
+  if (!row?.hash) return null;
   // Check the password first, so a disabled login answers like a wrong one
   // (no account-state oracle), then refuse it.
-  return ok && loginUsable(row) ? row.id : null;
+  return ok && loginUsable(row) ? { id: row.id, sessionEpoch: row.sessionEpoch } : null;
+}
+
+/** authenticatePassword, the login id only (the bearer logins: a bearer is
+ *  a mobile_tokens row, so it carries no epoch). */
+export async function loginWithPassword(email: string, password: string): Promise<string | null> {
+  return (await authenticatePassword(email, password))?.id ?? null;
 }
 
 /** The one password hash every login is stored with (bcrypt, cost 12). */
@@ -514,9 +550,15 @@ export function hashLoginPassword(password: string): Promise<string> {
 
 /** Set the password-login session cookie for `loginId` on `res`: what
  *  POST /api/auth/login answers a good password with (the invite accept
- *  signs the new member in the same way). */
-export function setSessionCookie(res: NextResponse, req: Request, loginId: string): void {
-  const { value, maxAgeSec } = buildSessionCookie(loginId);
+ *  signs the new member in the same way). `epoch` is the login's
+ *  session_epoch now. */
+export function setSessionCookie(
+  res: NextResponse,
+  req: Request,
+  loginId: string,
+  epoch: number,
+): void {
+  const { value, maxAgeSec } = buildSessionCookie(loginId, { epoch });
   res.cookies.set(SESSION_COOKIE_NAME, value, {
     httpOnly: true,
     secure: secureCookies(req),
@@ -540,4 +582,61 @@ export async function verifyPassword(userId: string, password: string): Promise<
     .limit(1);
   if (!row || !row.hash) return false;
   return bcrypt.compare(password, row.hash);
+}
+
+// ── Ending a login's sessions (F06) ──────────────────────────────────────────
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * End every session the login holds: bump auth.users.session_epoch, which
+ * kills each cookie and `?at=` asset token signed with the old epoch on its
+ * next request, and revoke the login's bearers (mobile_tokens rows: the
+ * mobile app and the web client). `keepJti` spares one bearer: the device
+ * that asked (a password change made from the web client stays signed in).
+ * Returns the new epoch, for a caller that re-issues its own cookie. Run it
+ * inside the caller's transaction when there is one.
+ */
+export async function endLoginSessions(
+  loginId: string,
+  opts: { keepJti?: string | null; tx?: Tx } = {},
+): Promise<number | null> {
+  const run = async (tx: Tx | typeof db) => {
+    const [row] = await tx
+      .update(authUsers)
+      .set({ sessionEpoch: sql`${authUsers.sessionEpoch} + 1` })
+      .where(eq(authUsers.id, loginId))
+      .returning({ epoch: authUsers.sessionEpoch });
+    if (!row) return null;
+    await tx
+      .update(mobileTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(mobileTokens.userId, loginId),
+          isNull(mobileTokens.revokedAt),
+          ...(opts.keepJti ? [ne(mobileTokens.id, opts.keepJti)] : []),
+        ),
+      );
+    return row.epoch;
+  };
+  return opts.tx ? run(opts.tx) : db.transaction((tx) => run(tx));
+}
+
+/** The login's session epoch now (0 for an unknown login: whatever is minted
+ *  with it fails the row check anyway). */
+export async function loginSessionEpoch(loginId: string): Promise<number> {
+  return (await loadLoginRow(loginId))?.sessionEpoch ?? 0;
+}
+
+/** buildInternalRenderCookie for `loginId` at its current session epoch, so
+ *  a render after a password change still authenticates. */
+export async function internalRenderCookie(loginId: string): Promise<string> {
+  return buildInternalRenderCookie(loginId, await loginSessionEpoch(loginId));
+}
+
+/** An `?at=` asset token for the anchor's bytes, minted for the login
+ *  `loginId` and signed with that login's current session epoch. */
+export async function mintAssetToken(anchorId: string, loginId: string): Promise<string> {
+  return buildAssetToken(anchorId, loginId, await loginSessionEpoch(loginId));
 }

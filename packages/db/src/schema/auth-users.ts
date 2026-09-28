@@ -1,4 +1,4 @@
-import { boolean, pgSchema, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, integer, pgSchema, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 /**
  * `auth.users` lives outside the public schema. Historically owned by Supabase
@@ -27,10 +27,15 @@ export const authUsers = authSchema.table('users', {
   /** 'admin' | 'member' (0162). Read from this row on every request, never
    *  from a token. The anchor is always admin (CHECK). */
   role: text('role').$type<LoginRole>().notNull().default('admin'),
-  /** The team contact a member login belongs to (FK to nodes, SET NULL). */
+  /** The team contact a member login belongs to (FK to nodes, SET NULL).
+   *  At most one login per contact (partial unique index, 0181). */
   contactId: uuid('contact_id'),
   /** Set = the login cannot sign in, refresh, or use a session it holds. */
   disabledAt: timestamp('disabled_at', { withTimezone: true }),
+  /** Signed into every session cookie and asset token (0181) and compared on
+   *  each request: bumping it ends them all (password change, disable, role
+   *  change, sign out everywhere). A token without the claim counts as 0. */
+  sessionEpoch: integer('session_epoch').notNull().default(0),
 });
 
 export const LOGIN_ROLES = ['admin', 'member'] as const;

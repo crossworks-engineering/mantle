@@ -15,6 +15,9 @@ export type LoginRow = {
   role: LoginRole;
   contactId: string | null;
   disabledAt: Date | null;
+  /** auth.users.session_epoch (0181): every cookie and asset token signed
+   *  with an older one is dead. */
+  sessionEpoch: number;
 };
 
 export async function loadLoginRow(id: string): Promise<LoginRow | null> {
@@ -27,6 +30,7 @@ export async function loadLoginRow(id: string): Promise<LoginRow | null> {
       role: authUsers.role,
       contactId: authUsers.contactId,
       disabledAt: authUsers.disabledAt,
+      sessionEpoch: authUsers.sessionEpoch,
     })
     .from(authUsers)
     .where(eq(authUsers.id, id))

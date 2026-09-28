@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { buildInternalRenderCookie, getOwnerForAsset } from '@/lib/auth';
+import { getOwnerForAsset, internalRenderCookie } from '@/lib/auth';
 import { resolveExport, getPage, getDraw, referencedDrawIds } from '@mantle/content';
 import { getDrawSvgOrRender, getDrawPngOrRender } from '@/lib/draw-snapshot';
 import { readFileById } from '@/lib/files';
@@ -52,7 +52,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     // browser ever committed. Non-draws return null immediately.
     const drawSvg = await getDrawSvgOrRender(user.id, id);
     if (drawSvg !== null) {
-      const cookie = buildInternalRenderCookie(user.id);
+      const cookie = await internalRenderCookie(user.id);
       try {
         const bytes = await renderUrlToPdf(`${printOrigin()}/print/draws/${id}`, cookie);
         const title = (await getDraw(user.id, id))?.title ?? 'drawing';
@@ -98,7 +98,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     // callers would 307 at the print gate). We already hold the verified
     // owner here, so mint locally and the print route + its image
     // subresources authenticate regardless of the caller's transport.
-    const cookie = buildInternalRenderCookie(user.id);
+    const cookie = await internalRenderCookie(user.id);
     try {
       const bytes = await renderUrlToPdf(`${printOrigin()}/print/pages/${id}`, cookie);
       return download(

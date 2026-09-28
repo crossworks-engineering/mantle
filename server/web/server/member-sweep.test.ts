@@ -9,6 +9,7 @@
  * (lib/auth/login-row is mocked). A handler that touches the database BEFORE
  * its gate would fail here with a 500, which is also a finding: gate first.
  */
+import { createHmac } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +22,8 @@ const ADMIN_ID = '55555555-5555-4555-8555-555555555555';
 const SPACE_ID = '66666666-6666-4666-8666-666666666666';
 const DISABLED_MEMBER_ID = '77777777-7777-4777-8777-777777777777';
 const OTHER_ANCHOR_ID = '88888888-8888-4888-8888-888888888888';
+/** A member whose sessions were ended twice (session_epoch 2, 0181). */
+const BUMPED_MEMBER_ID = '99999999-9999-4999-8999-999999999999';
 
 vi.mock('../lib/auth/login-row', () => ({
   loadLoginRow: async (id: string) =>
@@ -33,6 +36,7 @@ vi.mock('../lib/auth/login-row', () => ({
           role: 'member',
           contactId: null,
           disabledAt: null,
+          sessionEpoch: 0,
         }
       : id === ADMIN_ID
         ? {
@@ -43,6 +47,7 @@ vi.mock('../lib/auth/login-row', () => ({
             role: 'admin',
             contactId: null,
             disabledAt: null,
+            sessionEpoch: 0,
           }
         : id === DISABLED_MEMBER_ID
           ? {
@@ -53,6 +58,7 @@ vi.mock('../lib/auth/login-row', () => ({
               role: 'member',
               contactId: null,
               disabledAt: new Date('2026-09-01T00:00:00Z'),
+              sessionEpoch: 0,
             }
           : id === DISABLED_ADMIN_ID
             ? {
@@ -63,8 +69,20 @@ vi.mock('../lib/auth/login-row', () => ({
                 role: 'admin',
                 contactId: null,
                 disabledAt: new Date('2026-09-01T00:00:00Z'),
+                sessionEpoch: 0,
               }
-            : null,
+            : id === BUMPED_MEMBER_ID
+              ? {
+                  id: BUMPED_MEMBER_ID,
+                  email: 'bumped@example.invalid',
+                  isOwner: false,
+                  displayName: null,
+                  role: 'member',
+                  contactId: null,
+                  disabledAt: null,
+                  sessionEpoch: 2,
+                }
+              : null,
   loadAnchorId: async () => ANCHOR_ID,
   loadPersonalSpaceId: async () => SPACE_ID,
 }));
@@ -242,5 +260,49 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     const left = `${SESSION_COOKIE_NAME}=${buildSessionCookie(DISABLED_MEMBER_ID).value}`;
     const res = await app.request('/api/member/space/not-a-uuid', { headers: { cookie: left } });
     expect(res.status).toBe(401);
+  });
+
+  // F06: a session ends when the login's epoch moves on. The cookie and the
+  // `?at=` token carry the epoch they were minted at; the row is re-read.
+  describe('session epoch', () => {
+    const PAST = '/api/member/space/not-a-uuid';
+
+    it('refuses a cookie minted before the last bump', async () => {
+      const { buildSessionCookie } = await import('../lib/auth/tokens');
+      for (const epoch of [0, 1, 3]) {
+        const stale = `${SESSION_COOKIE_NAME}=${buildSessionCookie(BUMPED_MEMBER_ID, { epoch }).value}`;
+        const res = await app.request(PAST, { headers: { cookie: stale } });
+        expect(res.status, `epoch ${epoch}`).toBe(401);
+      }
+      const now = `${SESSION_COOKIE_NAME}=${buildSessionCookie(BUMPED_MEMBER_ID, { epoch: 2 }).value}`;
+      expect((await app.request(PAST, { headers: { cookie: now } })).status).toBe(400);
+    });
+
+    it('reads a cookie without the claim (minted before 0181) as epoch 0', async () => {
+      const { buildSessionCookie } = await import('../lib/auth/tokens');
+      // buildSessionCookie always signs `ep` now: strip it to get an old one.
+      const old = (id: string) => {
+        const v = buildSessionCookie(id).value;
+        const claims = JSON.parse(Buffer.from(v.split('.')[0]!, 'base64url').toString('utf8'));
+        delete claims.ep;
+        const payload = Buffer.from(JSON.stringify(claims), 'utf8').toString('base64url');
+        const sig = createHmac('sha256', process.env.SESSION_SECRET!).update(payload).digest();
+        return `${SESSION_COOKIE_NAME}=${payload}.${sig.toString('base64url')}`;
+      };
+      expect((await app.request(PAST, { headers: { cookie: old(MEMBER_ID) } })).status).toBe(400);
+      expect((await app.request(PAST, { headers: { cookie: old(BUMPED_MEMBER_ID) } })).status).toBe(
+        401,
+      );
+    });
+
+    it('refuses a member ?at= token minted before the last bump', async () => {
+      const { buildAssetToken } = await import('../lib/auth/tokens');
+      const file = (epoch: number) =>
+        app.request(
+          `/api/member/files/not-a-uuid?at=${encodeURIComponent(buildAssetToken(ANCHOR_ID, BUMPED_MEMBER_ID, epoch))}`,
+        );
+      expect((await file(0)).status).toBe(401);
+      expect((await file(2)).status).toBe(400);
+    });
   });
 });

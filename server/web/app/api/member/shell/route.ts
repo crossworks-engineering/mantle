@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { loadPreferencesFor, logoVersion } from '@mantle/content';
 import type { MemberShell } from '@mantle/client-types';
-import { buildAssetToken, getMemberOr401 } from '@/lib/auth';
+import { getMemberOr401, mintAssetToken } from '@/lib/auth';
 
 /**
  * GET /api/member/shell: chrome data for a MEMBER login (member logins,
@@ -32,7 +32,7 @@ export async function GET() {
     avatarPhotoVersion: logoVersion(personal.avatarPhotoKey),
     // `act` = this member login: the member byte routes re-check it; the admin
     // byte routes refuse it.
-    assetToken: buildAssetToken(member.anchorId, member.loginId),
+    assetToken: await mintAssetToken(member.anchorId, member.loginId),
     siteName: brain.siteName ?? null,
     colorTheme: brain.colorTheme ?? null,
     fontLogo: brain.fontLogo ?? null,

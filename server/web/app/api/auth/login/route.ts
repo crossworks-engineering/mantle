@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, authUsers, eq, sql } from '@mantle/db';
-import { loginWithPassword, setSessionCookie } from '@/lib/auth';
+import { authenticatePassword, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
@@ -38,8 +38,8 @@ export async function POST(req: Request) {
   }
 
   const email = parsed.data.email.trim().toLowerCase();
-  const userId = await loginWithPassword(email, parsed.data.password);
-  if (!userId) {
+  const login = await authenticatePassword(email, parsed.data.password);
+  if (!login) {
     // No actor id — the attempted email may not even exist. The 10/min/IP rate
     // limit above caps how fast this can grow the trail.
     auditFireAndForget({
@@ -52,6 +52,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });
   }
 
+  const userId = login.id;
   await db
     .update(authUsers)
     .set({ lastLoginAt: sql`now()` })
@@ -66,6 +67,6 @@ export async function POST(req: Request) {
   });
 
   const res = NextResponse.json({ ok: true });
-  setSessionCookie(res, req, userId);
+  setSessionCookie(res, req, userId, login.sessionEpoch);
   return res;
 }
