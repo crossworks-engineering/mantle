@@ -58,6 +58,7 @@ beforeEach(() => {
   vi.mocked(supersedeNode).mockResolvedValue({
     id: OLD,
     title: 'Old spec',
+    audience: 'admin',
     supersededBy: NEW,
     supersededReason: 'migrated',
   } as never);
@@ -126,6 +127,24 @@ describe('content_supersede', () => {
     expect(err).toContain(NEW);
     expect(err).toMatch(/search_nodes/);
     expect(err).toMatch(/page_list/);
+  });
+
+  it('says nothing about levels when the old version is admin', async () => {
+    const out = outputOf(await supersede.handler({ node_id: OLD, superseded_by: NEW }, ctx));
+    expect(out.warning).toBeUndefined();
+  });
+
+  it('warns that an old version below admin is still visible, and how to raise it', async () => {
+    vi.mocked(supersedeNode).mockResolvedValue({
+      id: OLD,
+      title: 'Old spec',
+      audience: 'client',
+      supersededBy: NEW,
+      supersededReason: 'migrated',
+    } as never);
+    const out = outputOf(await supersede.handler({ node_id: OLD, superseded_by: NEW }, ctx));
+    expect(out.warning).toMatch(/still visible at client level/);
+    expect(out.warning).toContain(`access_set(node_id: '${OLD}', level: 'admin')`);
   });
 
   it('passes any other store failure through as-is', async () => {

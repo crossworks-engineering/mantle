@@ -138,17 +138,34 @@ The level is the truth; an item's share link (docs/sharing.md) follows it.
 
 - **Level to link.** `setItemLevel` (`@mantle/content` access.ts) writes the
   level, then `applyLevelToShare` (shares.ts) revokes, creates or re-modes
-  the link. `PATCH /api/access/nodes/:id` and `access_set` both use it.
+  the link, in ONE transaction: a link that cannot be made leaves the level
+  where it was. `PATCH /api/access/nodes/:id` and `access_set` both use it.
   Closure items get the level only, never a link of their own: they are
-  reached through the item that embeds them.
+  reached through the item that embeds them. A new link first retires an
+  expired one that was never revoked (it still holds the one-link slot).
 - **Link to level.** Every share mutation (`createShare`, `setShareMode`,
   `applyShareMode`, `setShareCascade`, `revokeShare`, `revokeShareTree`)
   re-derives the level of the nodes it touched (`levelForShareMode`): no link
   is admin, a team-only link is team, an open link keeps client or public and
   drops anything higher to public. Cascaded sub-pages take the parent's
-  level. So `node_share` / `page_share`, the hub app and the email link never
-  drift from the level. (Closure items are the exception: revoking or
-  raising an item does not raise what it embeds.)
+  level, passed into every step, so a sub-page goes straight to it and never
+  passes through public on the way. So `node_share` / `page_share`, the hub
+  app and the email link never drift from the level.
+- **Turning a link off is setting admin.** The share DELETE route
+  (`DELETE /api/shares/:id`), `node_unshare` and `page_unshare` go through
+  `unshareItem` (access.ts): revoke the link, then `setItemLevel(admin)`, so
+  the closure rule is the Access control's. What the item embeds keeps its
+  own level and is reported, never raised on its own: `stillBelow` in the
+  route's JSON, and `stillBelow` plus a `warning` naming
+  `access_set(..., level: 'admin', raise_closure: true)` in the tool result.
+- **An expired link leaves the item at its level** (Jason, 2026-09-28). The
+  level is the truth; a team or client link only governs outside access, so
+  its expiry changes nothing about who inside can read the item. To hide it,
+  raise the level by hand.
+- **Superseding changes no level.** `content_supersede` only down-weights
+  the old version in retrieval; when the old version is below admin the
+  tool result warns that it is still visible at that level and names
+  `access_set` to raise it.
 - **What an open link means for members.** Client and public items are
   readable by the team role, so a member can open one by id and the team
   agent can read it. The member Library does not LIST them: it lists team
@@ -156,7 +173,11 @@ The level is the truth; an item's share link (docs/sharing.md) follows it.
 - **Admin-only kinds** (tasks, events, …) stay admin whatever link they
   carry. Setting one to admin removes an old link.
 - Migration 0161 re-derived every level from the links once, for the window
-  between 0159 and this rule.
+  between 0159 and this rule. Inside nested shared folders an item takes
+  the level of the deepest folder above it. The first version of 0161 let
+  an arbitrary folder win; boxes that already ran it keep the levels it set
+  (the runner never re-runs an applied migration, and there is no
+  corrective one).
 - **Not yet:** `/s/` handlers run at admin; running them at the link's level
   (after the share render path reads published columns only) is a later
   release. Until then a link can show an embed above its level, which is

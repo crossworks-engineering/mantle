@@ -206,9 +206,11 @@ export {
   setItemAudience,
   setItemLevel,
   setToolGroupAudience,
+  unshareItem,
   type AccessItem,
   type SetItemAudienceResult,
   type SetItemLevelResult,
+  type UnshareItemResult,
 } from './access';
 export {
   accessShadowReport,

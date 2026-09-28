@@ -11,8 +11,9 @@ import {
   applyShareMode,
   createShare,
   getActiveShareForNode,
-  revokeShareTree,
   shareUrlForToken,
+  unshareItem,
+  type AccessItem,
 } from '@mantle/content';
 import type { BuiltinToolDef } from './types';
 import { str } from './coerce';
@@ -60,6 +61,26 @@ const node_share: BuiltinToolDef = {
   },
 };
 
+/**
+ * The unshare tools' output. The item goes to admin with its link; what it
+ * embeds (a page's files and drawings, a folder's contents) keeps its own
+ * level, so name what is still below and how to raise it, as access_set does.
+ */
+export function unshareOutput(
+  id: string,
+  revoked: boolean,
+  stillBelow: readonly AccessItem[],
+): Record<string, unknown> {
+  if (!revoked || stillBelow.length === 0) return { id, unshared: revoked };
+  const names = stillBelow.map((i) => `${i.title} (${i.type}, ${i.audience})`).join(', ');
+  return {
+    id,
+    unshared: revoked,
+    stillBelow,
+    warning: `The item is admin now, but what it embeds is still below admin: ${names}. People at those levels can still open them. To raise them too: access_set(node_id: '${id}', level: 'admin', raise_closure: true).`,
+  };
+}
+
 const node_unshare: BuiltinToolDef = {
   slug: 'node_unshare',
   name: 'Stop sharing an item',
@@ -78,9 +99,9 @@ const node_unshare: BuiltinToolDef = {
     try {
       const share = await getActiveShareForNode(ctx.ownerId, id);
       if (!share) return { ok: true, output: { id, unshared: false } };
-      const ok = await revokeShareTree(ctx.ownerId, share.id);
-      ctx.step?.setOutput({ id, unshared: ok });
-      return { ok: true, output: { id, unshared: ok } };
+      const { revoked, stillBelow } = await unshareItem(ctx.ownerId, share.id);
+      ctx.step?.setOutput({ id, unshared: revoked });
+      return { ok: true, output: unshareOutput(id, revoked, stillBelow) };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }

@@ -7,7 +7,7 @@
 import {
   getPage,
   createShare,
-  revokeShareTree,
+  unshareItem,
   applyShareMode,
   setShareCascade,
   getActiveShareForNode,
@@ -18,6 +18,7 @@ import { str } from '../coerce';
 import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { PAGE_NODE_ID_PRE } from './common';
+import { unshareOutput } from '../builtins-share';
 
 export const page_share: BuiltinToolDef = {
   slug: 'page_share',
@@ -101,9 +102,9 @@ export const page_unshare: BuiltinToolDef = {
     try {
       const share = await getActiveShareForNode(ctx.ownerId, id);
       if (!share) return { ok: true, output: { id, unshared: false } };
-      const ok = await revokeShareTree(ctx.ownerId, share.id);
-      ctx.step?.setOutput({ id, unshared: ok });
-      return { ok: true, output: { id, unshared: ok } };
+      const { revoked, stillBelow } = await unshareItem(ctx.ownerId, share.id);
+      ctx.step?.setOutput({ id, unshared: revoked });
+      return { ok: true, output: unshareOutput(id, revoked, stillBelow) };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }
