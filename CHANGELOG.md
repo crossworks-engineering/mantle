@@ -4,6 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.287: the member's own chrome (Phase 5); client v0.6.154
+
+- Paired with jackdaw v0.6.154: a member changes their own password from the
+  account menu, gets their own tour (once, on the member home; Take the tour
+  opens it again), and reads the contract banner as text with no admin link.
+  A `?tour=` link to an admin tour no longer traps a member on Home.
+- docs/member-logins.md section 8. No brain change: the password route
+  already served every login.
+
 ## 0.232.286: member uploads with a taken name; client v0.6.153
 
 - A member uploading a file whose name their space already holds got a 500;
