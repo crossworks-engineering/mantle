@@ -2,8 +2,8 @@
  * The Access control's wire shapes (`/api/access/nodes/:id`). One level
  * system: admin > team > client > public. A caller sees what is at or below
  * its level. The level is the truth and the item's share link follows it:
- * none at admin, a team-only link at team (the team workspace opens items
- * through it), an open link at client and public. See docs/access-levels.md.
+ * none at admin or team (members read team items with their own logins), an
+ * open link at client and public. See docs/access-levels.md.
  */
 import type { ShareMode } from './rows';
 

@@ -131,6 +131,29 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
     expect(signedIn.status).toBe(404);
   });
 
+  // Stage 6 retired team links: the token prompt's exchange route and the
+  // team-code switch on contacts are gone, not merely refused.
+  it('the retired team-link routes are not routed', async () => {
+    expect(
+      manifest.filter(
+        (e) => e.pattern === '/s/:token/auth' || /^\/api\/contacts\/[^/]+\/team$/.test(e.pattern),
+      ),
+    ).toEqual([]);
+    const prompt = await app.request('/s/some-token/auth', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: 'ABCD2345' }),
+    });
+    expect(prompt.status).toBe(404);
+    const { buildSessionCookie } = await import('../lib/auth');
+    const cookie = `mantle_session=${buildSessionCookie('11111111-1111-4111-8111-111111111111').value}`;
+    const team = await app.request('/api/contacts/11111111-1111-4111-8111-111111111111/team', {
+      method: 'POST',
+      headers: { cookie },
+    });
+    expect(team.status).toBe(404);
+  });
+
   it('lists which manifest routes are public, so a new public prefix is a visible diff', () => {
     const publicPatterns = manifest
       .filter((e) => isPublic(concretePath(e.pattern)))

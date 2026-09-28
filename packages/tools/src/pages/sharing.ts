@@ -8,7 +8,6 @@ import {
   getPage,
   createShare,
   unshareItem,
-  applyShareMode,
   setShareCascade,
   getActiveShareForNode,
   shareUrlForToken,
@@ -18,16 +17,16 @@ import { str } from '../coerce';
 import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { PAGE_NODE_ID_PRE } from './common';
-import { unshareOutput } from '../builtins-share';
+import { linkModeRefusal, unshareOutput } from '../builtins-share';
 
 export const page_share: BuiltinToolDef = {
   slug: 'page_share',
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Share a page',
   description:
-    "Create (or fetch) a read-only link to a page and return its URL. Idempotent — one active link per page. The link is **public** (anyone with it can view, no login) unless `mode: 'team'`, which requires a team credential and lists the page on the Team Hub. `children: true` also shares every sub-page beneath it at the same mode (a whole documentation section in one call); `children: false` revokes those sub-page links. Publishes brain content outward-facing. Use when the user asks to share or publish a page or a section; to turn a link off use `page_unshare`.",
-  // Publishes brain content outward-facing (public web, or the whole team) —
-  // gated. Team + children can share a large subtree at once, so confirm.
+    "Create (or fetch) a read-only link to a page and return its URL. Idempotent — one active link per page. The link is **public**: anyone with it can view, no login, and the page goes to public level (a client page stays client). There are no team links: members sign in with their own logins, so to show a page to members only, set its level with `access_set(level: 'team')` instead. `children: true` also shares every sub-page beneath it (a whole documentation section in one call); `children: false` revokes those sub-page links. Publishes brain content outward-facing. Use when the user asks to share or publish a page or a section; to turn a link off use `page_unshare`.",
+  // Publishes brain content to the public web, so gated. `children` can share a
+  // large subtree at once, so confirm.
   requiresConfirm: true,
   inputSchema: {
     type: 'object',
@@ -35,14 +34,14 @@ export const page_share: BuiltinToolDef = {
       id: { type: 'string', description: 'page node id (from page_list / page_create)' },
       mode: {
         type: 'string',
-        enum: ['public', 'team'],
+        enum: ['public'],
         description:
-          "Who may open the link: 'public' (anyone) or 'team' (team members only — also lists the page on the Team Hub). Omit to keep the link's current setting (public for a new link).",
+          "Always 'public' (the default). Team links are retired: use access_set(level: 'team') to show a page to members.",
       },
       children: {
         type: 'boolean',
         description:
-          'Also share every sub-page nested under this page, matched to the same mode. false revokes those sub-page links. Omit to leave sub-pages untouched.',
+          "Also share every sub-page nested under this page, at the page's level. false revokes those sub-page links. Omit to leave sub-pages untouched.",
       },
     },
     required: ['id'],
@@ -50,21 +49,19 @@ export const page_share: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
-    const mode = input.mode === 'team' ? 'team' : input.mode === 'public' ? 'public' : undefined;
+    const refused = linkModeRefusal(input.mode);
+    if (refused) return { ok: false, error: refused };
     const children = typeof input.children === 'boolean' ? input.children : undefined;
     try {
       const page = await getPage(ctx.ownerId, id);
       if (!page) return notFound('page', id, 'page_list / search_nodes');
       const share = await createShare(ctx.ownerId, id);
-      // Set mode before cascading so descendants inherit the intended mode.
-      if (mode) await applyShareMode(ctx.ownerId, share.id, mode);
       let subpages: number | undefined;
       if (children !== undefined) {
         subpages = (await setShareCascade(ctx.ownerId, id, children)).count;
       }
       const url = shareUrlForToken(share.token);
-      const finalMode = mode ?? share.mode;
-      ctx.step?.setOutput({ id, url, mode: finalMode });
+      ctx.step?.setOutput({ id, url, mode: share.mode });
       return {
         ok: true,
         output: {
@@ -72,7 +69,7 @@ export const page_share: BuiltinToolDef = {
           title: page.title,
           url,
           token: share.token,
-          mode: finalMode,
+          mode: share.mode,
           ...(children === true ? { subpagesShared: subpages } : {}),
           ...(children === false ? { subpagesRevoked: subpages } : {}),
         },
@@ -102,9 +99,9 @@ export const page_unshare: BuiltinToolDef = {
     try {
       const share = await getActiveShareForNode(ctx.ownerId, id);
       if (!share) return { ok: true, output: { id, unshared: false } };
-      const { revoked, stillBelow, keptTeam } = await unshareItem(ctx.ownerId, share.id);
+      const { revoked, stillBelow } = await unshareItem(ctx.ownerId, share.id);
       ctx.step?.setOutput({ id, unshared: revoked });
-      return { ok: true, output: unshareOutput(id, revoked, stillBelow, keptTeam) };
+      return { ok: true, output: unshareOutput(id, revoked, stillBelow) };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }

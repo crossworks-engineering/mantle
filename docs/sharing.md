@@ -131,20 +131,17 @@ them through without a session cookie.
 - `noindex` by default; rate-limit public + asset routes (reuse
   [`lib/rate-limit.ts`](../server/web/lib/rate-limit.ts)); secrets/emails/contacts
   excluded at the API.
-- **Team mode** (`settings.mode = 'team'`, toggle in `<ShareControl teamMode>`):
-  the link additionally requires a **live team credential**: the share-scoped
-  visitor cookie (`mantle_team`, minted at the link's own token prompt,
-  `POST /s/<token>/auth`). Enforced uniformly on the `/s/` surface: the page
-  render, the asset-bytes route, and the app brokers all resolve
-  `resolveShareVisitor` and re-check membership liveness per request
-  (revocation is instant). Until member logins Phase 6 the brain-level `/team`
-  hub cookie (and the same value as a bearer) was accepted too, and team-mode
-  shares doubled as the `/team` workspace, the `/hub` briefing sections, its
-  app launcher and its curated Dashboard sections (pref `teamHubTags`, served
-  by `GET /api/team/curated`). All of that was retired with the team-code
-  portal: members now list team-level items in their Library
-  ([member-logins.md](./member-logins.md)). Team-mode share admission itself
-  goes in stage 6.
+- **Team mode is retired** (member logins Phase 6 stage 6). A team link
+  (`settings.mode = 'team'`) used to require a team code holder's visitor
+  cookie, minted at the link's own token prompt. Members now sign in with
+  their own logins and list team-level items in their Library
+  ([member-logins.md](./member-logins.md) section 9): migration 0176 revoked
+  every team link (no item's level changed), nothing makes one (the share API
+  and tools answer `team-links-retired`), and the read path never serves a
+  team row. An old team link on `/s/<token>` shows a "Sign in as a member"
+  page (410) with a link to `/login`; any other dead token is the uniform 404. Every link is open now: the page, the asset bytes and the app brokers
+  need only the active token (the tool broker refuses every call, the db
+  broker takes queries only).
 
 ---
 
@@ -197,9 +194,9 @@ media presenters are net-new here.)_
 
 > **Levels drive links (2026-09-26).** The owner UI no longer sets a link's
 > mode directly. The Access control sets the item's **level**
-> (`PATCH /api/access/nodes/:id`) and the link follows it: none at admin, a
-> team-only link at team (members list the item in their Library), an open link
-> at client and public. Every share path below re-derives the level from the
+> (`PATCH /api/access/nodes/:id`) and the link follows it: none at admin and at
+> team (members list a team item in their Library), an open link at client and
+> public. Every share path below re-derives the level from the
 > link it leaves, so they stay in step. See
 > [access-levels.md §7](./access-levels.md). The share API stays for the
 > agent tools and older clients. The text below describes the share model the
@@ -247,14 +244,9 @@ the parent public↔team and the shared children follow.
 - **Helpers** (`packages/content/src/shares.ts`): `setShareCascade(ownerId,
 parentNodeId, on)`, and the cascade-aware drop-ins `applyShareMode` /
   `revokeShareTree` used by the PATCH / DELETE routes.
-- **Hub interaction:** team-mode pages are hub cards, so `listTeamHubSections`
-  returns the whole shared set but tags each section with the `parentToken` of
-  its nearest team-shared ancestor. The **built-in hub** cards on top-level
-  (`parentToken == null`) only, so a cascaded subtree doesn't flood it; a **hub
-  app** gets the full tree and can nest children under their parent (a client
-  Team Hub renders the Master Documentation Index as an expandable directory).
-  Every section stays an openable team-mode share, so children open from either
-  surface.
+- **Hub interaction:** retired with team links (member logins Phase 6). The
+  members' home app reads the newest team pages by level
+  (`GET /api/member/home`), not by share.
 
 ---
 

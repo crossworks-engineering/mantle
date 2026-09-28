@@ -24,10 +24,10 @@
 > thread, which it never joins ([member-logins.md](./member-logins.md)
 > section 9, "History").
 >
-> **What stays until stage 6:** team codes (`contact_team_tokens`) and the
-> team-mode `/s` share admission they give (the share-scoped `mantle_team`
-> visitor cookie from `/s/<token>/auth`); `team_messages`,
-> `team_access_log` and `team_read_cursors`, with their admin readers
+> **What stays:** team codes (`contact_team_tokens`), which now only redeem
+> an invite once (team-mode `/s` links, the other thing they opened, were
+> retired in stage 6: [member-logins.md](./member-logins.md) section 9);
+> `team_messages`, `team_access_log` and `team_read_cursors`, with their admin readers
 > (`/team-admin` > Member chats and > Members "Chat archive",
 > `team_chat_list` / `team_chat_read` with a `contactId`, `team_access_list`).
 >
@@ -172,8 +172,9 @@ opts in:
   hidden too. A surface with no flag fails closed.
 - Always hidden, switch on or off: `secret`, `telegram_message`, `location`,
   `mantle_peer`.
-- A team-mode shared app's tool calls (`/s/[token]/tool-broker`) run on the
-  same team surface, with the same rules.
+- A team-mode shared app's tool calls (`/s/[token]/tool-broker`) ran on the
+  same team surface, with the same rules, until team links were retired
+  (stage 6): a share link now gets no brain tools at all.
 - `app_db_list` / `app_db_query` on a team surface reach only apps at team
   level or lower (member logins Phase 4b; before, an active team-mode share).
 - The next layer down is the level system ([access-levels.md](./access-levels.md)):

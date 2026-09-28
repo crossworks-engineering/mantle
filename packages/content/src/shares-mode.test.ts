@@ -1,23 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { levelForShareMode, shareCascadeOf, shareModeForLevel, shareModeOf } from './shares';
-
-describe('shareModeOf', () => {
-  it('defaults every pre-existing share to public', () => {
-    expect(shareModeOf({ settings: {} })).toBe('public');
-    expect(shareModeOf({ settings: null as unknown as Record<string, unknown> })).toBe('public');
-  });
-
-  it('reads team mode from settings', () => {
-    expect(shareModeOf({ settings: { mode: 'team' } })).toBe('team');
-  });
-
-  it('treats junk modes as public (fail-open to the WEAKER capability set)', () => {
-    // 'public' is the more restricted tier on the brokers (read-only tools,
-    // query-only db), so unknown values degrade safely.
-    expect(shareModeOf({ settings: { mode: 'admin' } })).toBe('public');
-    expect(shareModeOf({ settings: { mode: 42 } })).toBe('public');
-  });
-});
+import {
+  levelForShareMode,
+  shareCascadeOf,
+  shareModeForLevel,
+  TeamLinkRetiredError,
+} from './shares';
 
 describe('shareCascadeOf', () => {
   it('defaults to false when unset (pre-existing shares never cascade)', () => {
@@ -35,25 +22,30 @@ describe('shareCascadeOf', () => {
 });
 
 describe('levels drive links', () => {
-  it('maps each level to the link it needs', () => {
+  // Team links are retired (member logins Phase 6 stage 6): team is a level
+  // members read by, with no link.
+  it('maps each level to the link it needs: none at admin and team', () => {
     expect(shareModeForLevel('admin')).toBeNull();
-    expect(shareModeForLevel('team')).toBe('team');
+    expect(shareModeForLevel('team')).toBeNull();
     expect(shareModeForLevel('client')).toBe('public');
     expect(shareModeForLevel('public')).toBe('public');
   });
 
-  it('derives admin from no link and team from a team-only link', () => {
+  it('derives admin from no link, except that a team item stays at team', () => {
     expect(levelForShareMode('public', null)).toBe('admin');
     expect(levelForShareMode('client', null)).toBe('admin');
-    expect(levelForShareMode('admin', 'team')).toBe('team');
-    expect(levelForShareMode('public', 'team')).toBe('team');
-  });
-
-  it('keeps a team item at team when its team link is removed (Phase 6 stage 3)', () => {
+    expect(levelForShareMode('admin', null)).toBe('admin');
     expect(levelForShareMode('team', null)).toBe('team');
     expect(levelForShareMode('team', null, 'team')).toBe('team');
     // A cascaded sub-page whose parent went to admin goes with it.
     expect(levelForShareMode('team', null, 'admin')).toBe('admin');
+  });
+
+  it("takes a cascaded sub-page to team when its parent's link goes because the parent went to team", () => {
+    expect(levelForShareMode('public', null, 'team')).toBe('team');
+    expect(levelForShareMode('client', null, 'team')).toBe('team');
+    // Never lowers an admin sub-page on its own.
+    expect(levelForShareMode('admin', null, 'team')).toBe('admin');
   });
 
   it('keeps client or public under an open link, drops anything higher to public', () => {
@@ -67,13 +59,20 @@ describe('levels drive links', () => {
     expect(levelForShareMode('public', 'public', 'client')).toBe('client');
     expect(levelForShareMode('admin', 'public', 'client')).toBe('client');
     expect(levelForShareMode('client', 'public', 'public')).toBe('public');
-    // A team parent's sub-pages carry team-only links: the mode decides.
-    expect(levelForShareMode('admin', 'team', 'team')).toBe('team');
   });
 
   it('round-trips every level through its link', () => {
     for (const level of ['admin', 'team', 'client', 'public'] as const) {
       expect(levelForShareMode(level, shareModeForLevel(level))).toBe(level);
     }
+  });
+});
+
+describe('TeamLinkRetiredError', () => {
+  it('names the reason and says members use their own logins', () => {
+    const err = new TeamLinkRetiredError();
+    expect(err.reason).toBe('team-links-retired');
+    expect(err.message).toMatch(/own logins/);
+    expect(err.message).toMatch(/level to team/);
   });
 });

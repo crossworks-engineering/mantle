@@ -1,20 +1,15 @@
 /**
- * Team membership for contacts. "Team member" is a ROLE a contact holds, not a
- * different kind of node — contacts stay the address book / email allowlist,
- * and a live `contact_team_tokens` row grants the role (single source of
- * truth; no flag on the node to drift).
+ * Team codes: the old team-code portal's per-contact credential, one
+ * `contact_team_tokens` row per contact (only the SHA-256 of the code is
+ * stored). The portal (Phase 6 stage 5) and team links on /s (stage 6) are
+ * retired, so a code opens nothing now and nothing mints a new one. What is
+ * left: an old code redeems a member invite once while its contact has an
+ * open invite (`verifyTeamToken`, member-invites.ts), and the contact rows
+ * show when a code was made and last used (`teamStatusFor`,
+ * `teamStatusByContact`). The alphabet and hash are shared with invite codes.
  *
- * Each team member holds ONE short token (e.g. `Xk3mP2vQ`) that identifies
- * them on external surfaces — first consumer is the `/s/` shared-app token
- * prompt (Phase B), which maps token → contact for access + audit. Only the
- * SHA-256 of the token is stored; the plaintext is returned exactly once by
- * `enableTeamMember` / `rotateTeamToken` and shown to the operator to hand
- * over out-of-band. Lost token ⇒ rotate.
- *
- * Security posture: ~46 bits of entropy (8 chars × 56-char alphabet) is
- * deliberate — the token is a SECOND factor behind an unguessable share URL,
- * not a bearer credential on a public route. Verification is one indexed
- * lookup by hash; consumers must rate-limit their prompt endpoints.
+ * Security posture: ~46 bits of entropy (8 chars × 56-char alphabet). The
+ * invite redeem that checks a code is rate limited per IP and per brain.
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
@@ -62,20 +57,17 @@ async function isOwnContact(ownerId: string, contactId: string): Promise<boolean
 }
 
 /**
- * Result of enabling the team-member role:
- *   { token }            — newly enrolled; the PLAINTEXT token, shown once.
- *   { alreadyMember }    — the contact was ALREADY a member; NOT re-minted
- *                          (rotating a live token is `rotateTeamToken`'s job,
- *                          never a silent side effect of "enable").
- *   null                 — the contact doesn't exist / isn't this owner's.
+ * Result of minting a contact's team code:
+ *   { token }            newly minted; the PLAINTEXT code, shown once.
+ *   { alreadyMember }    the contact already had one; NOT re-minted.
+ *   null                 the contact doesn't exist or isn't this owner's.
  */
 export type EnableTeamResult = { token: string } | { alreadyMember: true } | null;
 
 /**
- * Grant the team-member role, minting the contact's token. Idempotent and
- * non-destructive: enabling an already-enabled member does NOT rotate their
- * token (which would strand whatever they hold) — it returns `alreadyMember`.
- * Use `rotateTeamToken` for a deliberate re-mint.
+ * Mint a team code for a contact. Nothing in the product calls it since
+ * member logins Phase 6 stage 6 (POST /api/contacts/:id/team is gone); the
+ * invite tests use it to seed the old code an invite still accepts once.
  */
 export async function enableTeamMember(
   ownerId: string,
@@ -93,38 +85,9 @@ export async function enableTeamMember(
 }
 
 /**
- * Re-mint an EXISTING member's token (lost/compromised secret). Null when the
- * contact isn't currently a team member — rotation never silently enrolls.
- */
-export async function rotateTeamToken(
-  ownerId: string,
-  contactId: string,
-): Promise<{ token: string } | null> {
-  const token = generateTeamToken();
-  const updated = await db
-    .update(contactTeamTokens)
-    .set({ tokenHash: hashTeamToken(token), createdAt: new Date(), lastUsedAt: null })
-    .where(and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)))
-    .returning({ id: contactTeamTokens.id });
-  return updated.length > 0 ? { token } : null;
-}
-
-/** Revoke the role (and the token with it). False when there was no membership. */
-export async function disableTeamMember(ownerId: string, contactId: string): Promise<boolean> {
-  const deleted = await db
-    .delete(contactTeamTokens)
-    .where(and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)))
-    .returning({ id: contactTeamTokens.id });
-  return deleted.length > 0;
-}
-
-/**
- * Map a presented token to its team member. Does NOT bump `last_used_at` — the
- * caller does that via `markTeamTokenUsed` only AFTER confirming the token
- * belongs to the relevant share's owner, so presenting a valid token from
- * brain A to brain B's link never touches brain A's row. Callers on
- * unauthenticated surfaces MUST rate-limit before calling this. `exec` lets
- * a caller read inside its own transaction (the member invite redeem).
+ * Map a presented code to its contact. Callers on unauthenticated surfaces
+ * MUST rate-limit before calling this. `exec` lets a caller read inside its
+ * own transaction (the member invite redeem).
  */
 export async function verifyTeamToken(
   token: string,
@@ -141,27 +104,6 @@ export async function verifyTeamToken(
     .where(eq(contactTeamTokens.tokenHash, hashTeamToken(trimmed)))
     .limit(1);
   return row ? { ownerId: row.ownerId, contactId: row.contactId } : null;
-}
-
-/** Record that a team member just used their token (owner-scoped liveness
- *  signal for the operator's contact screen). Best-effort. */
-export async function markTeamTokenUsed(ownerId: string, contactId: string): Promise<void> {
-  await db
-    .update(contactTeamTokens)
-    .set({ lastUsedAt: new Date() })
-    .where(and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)));
-}
-
-/** Is this contact currently a team member? The live-row check the external
- *  surfaces run PER REQUEST, so revoking membership kills sessions mid-flight
- *  (the visitor cookie alone is never enough). */
-export async function isTeamMember(ownerId: string, contactId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ id: contactTeamTokens.id })
-    .from(contactTeamTokens)
-    .where(and(eq(contactTeamTokens.ownerId, ownerId), eq(contactTeamTokens.contactId, contactId)))
-    .limit(1);
-  return !!row;
 }
 
 export type TeamStatus = { since: string; lastUsedAt: string | null };

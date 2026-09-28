@@ -64,39 +64,56 @@ export function canShareNode(node: { type: string; path: string | null }): boole
 
 // ─── Levels drive links ──────────────────────────────────────────────────────
 // A workspace item's level (nodes.audience) is the truth; its link follows it
-// (docs/access-levels.md §7). The /team reader opens every item through a
-// share token, so setting an item to team still gives it a team-only link
-// (team-code holders read through it until they are all logins), and client
-// and public items keep an open one. Removing a team link leaves the item at
-// team: member logins read team items by level, not by link (member logins
-// Phase 6 stage 3). Every share mutation below re-derives the
-// level from the link it leaves, so the older share paths (the share API,
-// node_share / page_share, the hub app, the email link, sub-page cascade)
-// cannot drift from the level. Tasks, events and other non-workspace kinds
-// stay admin whatever link they carry.
+// (docs/access-levels.md §7). Client and public items carry an open link; admin
+// and team items carry none. Team links are retired (member logins Phase 6
+// stage 6): members read team items by level with their own logins, migration
+// 0176 revoked every team link, and nothing makes one (TeamLinkRetiredError).
+// Every share mutation below re-derives the level from the link it leaves, so
+// the older share paths (the share API, node_share / page_share, the email
+// link, sub-page cascade) cannot drift from the level. Tasks, events and
+// other non-workspace kinds stay admin whatever link they carry.
 
-/** The link a level needs: none at admin, team-only at team, open below. */
+/** The link a level needs: none at admin or team, open below. */
 export function shareModeForLevel(level: ViewerLevel): ShareMode | null {
-  if (level === 'admin') return null;
-  return level === 'team' ? 'team' : 'public';
+  return level === 'client' || level === 'public' ? 'public' : null;
+}
+
+/** Thrown when a caller asks for a team-mode link. Team links are retired
+ *  (member logins Phase 6 stage 6): members use their own logins. */
+export class TeamLinkRetiredError extends Error {
+  readonly reason = 'team-links-retired';
+  constructor() {
+    super(
+      'Team links are retired: members sign in with their own logins now. ' +
+        'To show an item to members, set its level to team (access_set, or the Access control).',
+    );
+    this.name = 'TeamLinkRetiredError';
+  }
+}
+
+/** Refuse any link mode but public (an untyped caller may still pass 'team'). */
+function assertLinkMode(mode: string | undefined): void {
+  if (mode !== undefined && mode !== 'public') throw new TeamLinkRetiredError();
 }
 
 /**
  * The level a node's link implies. `mode` null = no active link: admin,
- * except that a node at team stays at team (its team link was removed; team
- * is a level members read by, not a link), unless `preferred` is admin (the
- * cascading parent it followed went to admin). An open link keeps a node
- * already at client or public where it is, and drops anything higher to
- * public. `preferred` (a cascading parent's level) wins for an open link:
- * sub-pages match their parent.
+ * except that a node at team stays at team (team is a level members read by,
+ * not a link), unless `preferred` is admin (the cascading parent it followed
+ * went to admin); and a sub-page whose cascading parent is at team goes to
+ * team with it. An open link keeps a node already at client or public where
+ * it is, and drops anything higher to public. `preferred` (a cascading
+ * parent's level) wins for an open link: sub-pages match their parent.
  */
 export function levelForShareMode(
   current: ViewerLevel,
   mode: ShareMode | null,
   preferred?: ViewerLevel,
 ): ViewerLevel {
-  if (mode === null) return current === 'team' && preferred !== 'admin' ? 'team' : 'admin';
-  if (mode === 'team') return 'team';
+  if (mode === null) {
+    if (preferred === 'team' && current !== 'admin') return 'team';
+    return current === 'team' && preferred !== 'admin' ? 'team' : 'admin';
+  }
   if (preferred === 'client' || preferred === 'public') return preferred;
   if (current === 'client' || current === 'public') return current;
   return 'public';
@@ -118,16 +135,17 @@ async function syncLevelsFromShares(
       .from(nodes)
       .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, ids))),
     q
-      .select({ nodeId: shares.nodeId, settings: shares.settings })
+      .select({ nodeId: shares.nodeId })
       .from(shares)
       .where(and(eq(shares.ownerId, ownerId), inArray(shares.nodeId, ids), activePredicate())),
   ]);
-  const modeByNode = new Map(links.map((l) => [l.nodeId, shareModeOf(l)]));
+  // Every active link is open (team links are retired and never active).
+  const linked = new Set(links.map((l) => l.nodeId));
   const byTarget = new Map<ViewerLevel, string[]>();
   for (const r of rows) {
     if (!(WORKSPACE_NODE_TYPES as readonly string[]).includes(r.type)) continue;
     const current = r.audience as ViewerLevel;
-    const target = levelForShareMode(current, modeByNode.get(r.id) ?? null, preferred);
+    const target = levelForShareMode(current, linked.has(r.id) ? 'public' : null, preferred);
     if (target === current) continue;
     byTarget.set(target, [...(byTarget.get(target) ?? []), r.id]);
   }
@@ -150,8 +168,8 @@ async function levelOf(ownerId: string, nodeId: string, q: ShareDb = db): Promis
 }
 
 /**
- * Make a node's link match the level it was just set to: revoke it at admin,
- * create or re-mode it below. Returns the link left in place (null at admin,
+ * Make a node's link match the level it was just set to: revoke it at admin
+ * and team, create it at client and public. Returns the link left in place (null at admin,
  * or when the node cannot carry one, e.g. a folder outside `files`). The
  * owner's level path (`setItemLevel`) calls this after writing the level.
  */
@@ -174,21 +192,14 @@ export async function applyLevelToShare(
       .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
       .limit(1);
     if (!node || !canShareNode(node)) return null;
-    return createShare(ownerId, nodeId, { mode: want }, q);
+    return createShare(ownerId, nodeId, {}, q);
   }
-  if (current.mode === want) return current;
-  await applyShareMode(ownerId, current.id, want, q);
-  return { ...current, mode: want };
-}
-
-/** Read the mode off a raw share row (settings.mode, default public). */
-export function shareModeOf(s: Pick<Share, 'settings'>): ShareMode {
-  return (s.settings as Record<string, unknown>)?.mode === 'team' ? 'team' : 'public';
+  return current;
 }
 
 /** Whether a page share cascades to its subtree (settings.cascade, default
- *  false). When true, the page's descendant pages are shared to match this
- *  share's mode, and a mode change or un-share propagates to them. */
+ *  false). When true, the page's descendant pages are shared with it, and an
+ *  un-share propagates to them. */
 export function shareCascadeOf(s: Pick<Share, 'settings'>): boolean {
   return (s.settings as Record<string, unknown>)?.cascade === true;
 }
@@ -213,36 +224,12 @@ function toSummary(s: Share): ShareSummary {
     token: s.token,
     nodeId: s.nodeId,
     nodeType: s.nodeType,
-    mode: shareModeOf(s),
+    mode: 'public',
     cascade: shareCascadeOf(s),
     createdAt: s.createdAt.toISOString(),
     expiresAt: s.expiresAt ? s.expiresAt.toISOString() : null,
     viewCount: s.viewCount,
   };
-}
-
-/** Switch a share between public and team admission (owner-scoped). Merges
- *  into `settings` so other keys survive. Returns false when no such share.
- *  `preferred` = a cascading parent's level, for a sub-page's link. */
-export async function setShareMode(
-  ownerId: string,
-  shareId: string,
-  mode: ShareMode,
-  preferred?: ViewerLevel,
-  q: ShareDb = db,
-): Promise<boolean> {
-  const rows = await q
-    .update(shares)
-    .set({ settings: sql`${shares.settings} || ${JSON.stringify({ mode })}::jsonb` })
-    .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
-    .returning({ id: shares.id, nodeId: shares.nodeId });
-  await syncLevelsFromShares(
-    ownerId,
-    rows.map((r) => r.nodeId),
-    preferred,
-    q,
-  );
-  return rows.length > 0;
 }
 
 function genToken(): string {
@@ -306,11 +293,13 @@ export function nodeUrl(id: string): string {
 }
 
 /** SQL predicate: a share row that is currently active (not revoked, not past
- *  its expiry). */
+ *  its expiry, and not a team link: 0176 revoked them all, and one that
+ *  somehow stayed live is never served or counted). */
 function activePredicate() {
   return and(
     isNull(shares.revokedAt),
     or(isNull(shares.expiresAt), gt(shares.expiresAt, new Date())),
+    sql`coalesce(${shares.settings}->>'mode', 'public') <> 'team'`,
   );
 }
 
@@ -331,10 +320,10 @@ export async function getActiveShareForNode(
 /**
  * Create (or return the existing) active share for a node. Idempotent —
  * "one link per item": if an active link exists, it's returned unchanged.
- * Validates owner + shareable type. `mode` sets a NEW link's admission
- * (default public); an existing link keeps its own. `preferred` = the level
- * the node's link should leave it at (a cascading parent's level), so a
- * sub-page never passes through public on its way to client.
+ * Validates owner + shareable type. `mode` may only be public: a team link
+ * throws {@link TeamLinkRetiredError}. `preferred` = the level the node's link
+ * should leave it at (a cascading parent's level), so a sub-page never passes
+ * through public on its way to client.
  */
 export async function createShare(
   ownerId: string,
@@ -342,6 +331,7 @@ export async function createShare(
   opts: { mode?: ShareMode; preferred?: ViewerLevel } = {},
   q: ShareDb = db,
 ): Promise<ShareSummary> {
+  assertLinkMode(opts.mode);
   const [node] = await q
     .select({ id: nodes.id, type: nodes.type, path: nodes.path })
     .from(nodes)
@@ -356,9 +346,9 @@ export async function createShare(
   const existing = await getActiveShareForNode(ownerId, nodeId, q);
   if (existing) return existing;
 
-  // An expired link is not active but still holds the one-link slot
-  // (shares_node_active_uq is WHERE revoked_at IS NULL): retire it first, or
-  // the insert below violates the index.
+  // An expired link (or a team link, retired) is not active but still holds
+  // the one-link slot (shares_node_active_uq is WHERE revoked_at IS NULL):
+  // retire it first, or the insert below violates the index.
   await q
     .update(shares)
     .set({ revokedAt: new Date() })
@@ -367,19 +357,13 @@ export async function createShare(
         eq(shares.ownerId, ownerId),
         eq(shares.nodeId, nodeId),
         isNull(shares.revokedAt),
-        lte(shares.expiresAt, new Date()),
+        or(lte(shares.expiresAt, new Date()), sql`${shares.settings}->>'mode' = 'team'`),
       ),
     );
 
   const [row] = await q
     .insert(shares)
-    .values({
-      ownerId,
-      nodeId,
-      nodeType: node.type,
-      token: genToken(),
-      ...(opts.mode ? { settings: { mode: opts.mode } } : {}),
-    })
+    .values({ ownerId, nodeId, nodeType: node.type, token: genToken() })
     .returning();
   if (!row) throw new Error('failed to create share');
   await syncLevelsFromShares(ownerId, [nodeId], opts.preferred, q);
@@ -416,6 +400,19 @@ export async function resolveActiveShareByToken(token: string): Promise<Share | 
     .where(and(eq(shares.token, token), activePredicate()))
     .limit(1);
   return row ?? null;
+}
+
+/** Whether a token that no longer resolves was a team link (revoked by 0176,
+ *  or later). The /s page tells its visitor to sign in as a member instead of
+ *  the plain not-found; any other dead token keeps the uniform 404. */
+export async function isRetiredTeamLinkToken(token: string): Promise<boolean> {
+  if (!token) return false;
+  const [row] = await db
+    .select({ id: shares.id })
+    .from(shares)
+    .where(and(eq(shares.token, token), sql`${shares.settings}->>'mode' = 'team'`))
+    .limit(1);
+  return !!row;
 }
 
 /** Best-effort view counter bump for a token (fire-and-forget by callers). */
@@ -459,7 +456,7 @@ export async function listActiveShares(ownerId: string): Promise<ActiveShareList
 
 // ─── Subtree ("Share children") ──────────────────────────────────────────────
 // A page share can cascade to its descendant pages: sharing the parent shares
-// the whole subtree, and the children track the parent's admission mode. The
+// the whole subtree, and the children take the parent's level. The
 // intent lives in `settings.cascade` on the PARENT share; children are ordinary
 // shares. Semantics (see docs/sharing.md): a SNAPSHOT — toggling on shares the
 // pages that exist now (a page added later needs a re-toggle) — and cascade-off:
@@ -493,7 +490,7 @@ export async function listPageDescendantIds(
 /**
  * Turn subtree sharing on/off for a page (the "Share sub-pages" switch). Flips
  * `settings.cascade` on the parent's active share, then:
- *   on  — shares every descendant page (idempotent) at the parent's current mode.
+ *   on:  shares every descendant page (idempotent) at the parent's level.
  *   off — revokes every descendant page's active share.
  * No-op (ok:false) if the parent isn't currently shared. Returns how many
  * descendant shares were created/updated (on) or revoked (off).
@@ -519,10 +516,7 @@ export async function setShareCascade(
     // passed into every step so a sub-page never passes through a level below
     // it (an open link alone would put it at public first).
     const level = await levelOf(ownerId, parentNodeId);
-    for (const id of ids) {
-      const child = await createShare(ownerId, id, { mode: parent.mode, preferred: level }); // idempotent
-      if (child.mode !== parent.mode) await setShareMode(ownerId, child.id, parent.mode, level);
-    }
+    for (const id of ids) await createShare(ownerId, id, { preferred: level }); // idempotent
     await syncLevelsFromShares(ownerId, ids, level);
     return { ok: true, count: ids.length };
   }
@@ -536,34 +530,29 @@ export async function setShareCascade(
   return { ok: true, count: revoked.length };
 }
 
-/** Set a share's mode, propagating to the subtree when the share cascades.
- *  Drop-in for {@link setShareMode} on the owner PATCH path. Returns false when
- *  no such active share. */
+/** Set a share's mode (the owner PATCH path, `node_share` / `page_share`
+ *  with a mode). Public is the only mode: a live link already is, so this
+ *  confirms the link and re-derives its node's level (and its sub-pages',
+ *  when it cascades). Team throws {@link TeamLinkRetiredError} and changes
+ *  nothing. Returns false when no such active share. */
 export async function applyShareMode(
   ownerId: string,
   shareId: string,
   mode: ShareMode,
   q: ShareDb = db,
 ): Promise<boolean> {
+  assertLinkMode(mode);
   const [row] = await q
     .select()
     .from(shares)
-    .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
+    .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), activePredicate()))
     .limit(1);
   if (!row) return false;
 
-  const ok = await setShareMode(ownerId, shareId, mode, undefined, q);
-  if (!ok) return false;
-
+  await syncLevelsFromShares(ownerId, [row.nodeId], undefined, q);
   if (shareCascadeOf(row)) {
     const ids = await listPageDescendantIds(ownerId, row.nodeId, q);
     if (ids.length > 0) {
-      await q
-        .update(shares)
-        .set({ settings: sql`${shares.settings} || ${JSON.stringify({ mode })}::jsonb` })
-        .where(
-          and(eq(shares.ownerId, ownerId), inArray(shares.nodeId, ids), isNull(shares.revokedAt)),
-        );
       await syncLevelsFromShares(ownerId, ids, await levelOf(ownerId, row.nodeId, q), q);
     }
   }
@@ -606,8 +595,8 @@ export async function revokeShareTree(
   });
   await syncLevelsFromShares(ownerId, [row.nodeId], undefined, q);
   // Sub-pages follow the parent: a parent that went to admin takes its team
-  // sub-pages with it; a parent left at team (its team link removed) keeps
-  // them at team.
+  // sub-pages with it; a parent left at team (set to team, which removes its
+  // link) takes its sub-pages to team.
   if (ids.length > 0) {
     await syncLevelsFromShares(ownerId, ids, await levelOf(ownerId, row.nodeId, q), q);
   }

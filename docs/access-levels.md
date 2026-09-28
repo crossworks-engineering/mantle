@@ -130,52 +130,56 @@ them (the control). Tests: `packages/db/src/*.db.test.ts`,
 
 The level is the truth; an item's share link (docs/sharing.md) follows it.
 
-| Level  | The item's link                                                                                                  |
-| ------ | ---------------------------------------------------------------------------------------------------------------- |
-| admin  | none (revoked)                                                                                                   |
-| team   | team-only: member logins list and open it in their Library; a team-code holder opens it on `/s/` (until stage 6) |
-| client | open (anyone with the link), shown to the owner                                                                  |
-| public | open (anyone with the link), shown to the owner                                                                  |
+| Level  | The item's link                                                           |
+| ------ | ------------------------------------------------------------------------- |
+| admin  | none (revoked)                                                            |
+| team   | none (revoked): member logins list and open it in their Library, by level |
+| client | open (anyone with the link), shown to the owner                           |
+| public | open (anyone with the link), shown to the owner                           |
+
+Team links are retired (member logins Phase 6 stage 6, migration 0176; see
+docs/member-logins.md section 9): a link is always open, and there is no
+share mode but `public`.
 
 - **Level to link.** `setItemLevel` (`@mantle/content` access.ts) writes the
-  level, then `applyLevelToShare` (shares.ts) revokes, creates or re-modes
-  the link, in ONE transaction: a link that cannot be made leaves the level
+  level, then `applyLevelToShare` (shares.ts) revokes the link (admin, team)
+  or creates it (client, public), in ONE transaction: a link that cannot be made leaves the level
   where it was. `PATCH /api/access/nodes/:id` and `access_set` both use it.
   Closure items get the level only, never a link of their own: they are
   reached through the item that embeds them. A new link first retires an
   expired one that was never revoked (it still holds the one-link slot).
-- **Link to level.** Every share mutation (`createShare`, `setShareMode`,
-  `applyShareMode`, `setShareCascade`, `revokeShare`, `revokeShareTree`)
-  re-derives the level of the nodes it touched (`levelForShareMode`): no link
-  is admin, except that an item at team stays at team; a team-only link is
-  team, an open link keeps client or public and drops anything higher to
-  public. Cascaded sub-pages take the parent's level, passed into every
-  step, so a sub-page goes straight to it and never passes through public on
-  the way; when a cascading link is revoked, a parent that went to admin
-  takes its team sub-pages with it, and a parent left at team keeps them.
-  So `node_share` / `page_share`, the hub app and the email link never
-  drift from the level.
-- **Removing a team link keeps team** (member logins Phase 6 stage 3,
-  2026-09-28). Member logins read team items by level, not by link; only
-  team-code holders read through the link, and they are moving to logins.
-  So revoking a team link (any path: the share DELETE route, `node_unshare`,
-  `page_unshare`, `revokeShare`, turning a cascade off) leaves the item at
-  team with no link: code holders lose it, members keep it. Set admin to
-  hide it from members. Setting an item to team still creates a team link,
-  until the portal is gone (stage 6). The route answers `keptTeam: true`,
-  the tools a `note` saying so.
+- **Link to level.** Every share mutation (`createShare`, `applyShareMode`,
+  `setShareCascade`, `revokeShare`, `revokeShareTree`) re-derives the level
+  of the nodes it touched (`levelForShareMode`): no link is admin, except
+  that an item at team stays at team; an open link keeps client or public
+  and drops anything higher to public (so `node_share` on a team item puts
+  it at public: to show an item to members only, set team instead).
+  Cascaded sub-pages take the parent's level, passed into every step, so a
+  sub-page goes straight to it and never passes through public on the way;
+  when a cascading link is revoked, a parent that went to admin takes its
+  sub-pages with it, and a parent that went to team takes them to team. So
+  `node_share` / `page_share` and the email link never drift from the level.
+- **No team links** (member logins Phase 6 stage 6). Team is a level members
+  read by, never a link: setting an item to team revokes its open link, and
+  asking for a team link (`PATCH /api/shares/:id` `mode: 'team'`,
+  `node_share` / `page_share` `mode: 'team'`, `createShare` /
+  `applyShareMode` with team) is refused with `team-links-retired`.
+  Migration 0176 revoked the team links there were and left every level as
+  it was. (Stage 3 had already made removing a team link keep its item at
+  team.)
 - **Turning an open link off is setting admin.** The share DELETE route
   (`DELETE /api/shares/:id`), `node_unshare` and `page_unshare` go through
-  `unshareItem` (access.ts): revoke the link, then, unless the item stays
-  at team (above), `setItemLevel(admin)`, so the closure rule is the Access
+  `unshareItem` (access.ts): revoke the link, then `setItemLevel(admin)`,
+  so the closure rule is the Access
   control's. What the item embeds keeps its own level and is reported,
   never raised on its own: `stillBelow` in the route's JSON, and
   `stillBelow` plus a `warning` naming
   `access_set(..., level: 'admin', raise_closure: true)` in the tool result.
-- **An expired link leaves the item at its level** (Jason, 2026-09-28). The
-  level is the truth; a team or client link only governs outside access, so
-  its expiry changes nothing about who inside can read the item. To hide it,
-  raise the level by hand.
+- **An expired or revoked link leaves the item at its level** (Jason,
+  2026-09-28). The level is the truth; a team or client link only governed
+  outside access, so its expiry (or 0176 revoking a team one) changes
+  nothing about who inside can read the item. To hide it, raise the level by
+  hand.
 - **Superseding changes no level.** `content_supersede` only down-weights
   the old version in retrieval; when the old version is below admin the
   tool result warns that it is still visible at that level and names

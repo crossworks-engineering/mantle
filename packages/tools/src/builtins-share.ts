@@ -8,10 +8,10 @@
  * sub-page cascade).
  */
 import {
-  applyShareMode,
   createShare,
   getActiveShareForNode,
   shareUrlForToken,
+  TeamLinkRetiredError,
   unshareItem,
   type AccessItem,
 } from '@mantle/content';
@@ -23,7 +23,7 @@ const node_share: BuiltinToolDef = {
   slug: 'node_share',
   name: 'Share an item',
   description:
-    "Create (or fetch) a read-only link to any shareable item — a note, task, event, file, app, table, or folder under files — and return its URL. Idempotent — one active link per item. The link is **public** (anyone with it can view, no login) unless `mode: 'team'` (team members only). Publishes brain content outward-facing. For a PAGE prefer `page_share` (same behavior, plus the sub-page cascade); to turn a link off use `node_unshare`.",
+    "Create (or fetch) a read-only link to any shareable item — a note, task, event, file, app, table, or folder under files — and return its URL. Idempotent — one active link per item. The link is **public**: anyone with it can view, no login, and the item goes to public level (a client item stays client). There are no team links: members sign in with their own logins, so to show an item to members only, set its level with `access_set(level: 'team')` instead. Publishes brain content outward-facing. For a PAGE prefer `page_share` (same behavior, plus the sub-page cascade); to turn a link off use `node_unshare`.",
   // Publishes brain content outward-facing — gated, same as page_share.
   requiresConfirm: true,
   inputSchema: {
@@ -35,9 +35,9 @@ const node_share: BuiltinToolDef = {
       },
       mode: {
         type: 'string',
-        enum: ['public', 'team'],
+        enum: ['public'],
         description:
-          "Who may open the link: 'public' (anyone) or 'team' (team members only). Omit to keep the link's current setting (public for a new link).",
+          "Always 'public' (the default). Team links are retired: use access_set(level: 'team') to show an item to members.",
       },
     },
     required: ['id'],
@@ -45,16 +45,15 @@ const node_share: BuiltinToolDef = {
   handler: async (input, ctx) => {
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
-    const mode = input.mode === 'team' ? 'team' : input.mode === 'public' ? 'public' : undefined;
+    const refused = linkModeRefusal(input.mode);
+    if (refused) return { ok: false, error: refused };
     try {
       // createShare validates ownership + shareability and throws a plain
       // corrective ("type 'email' is not shareable") we surface verbatim.
       const share = await createShare(ctx.ownerId, id);
-      if (mode) await applyShareMode(ctx.ownerId, share.id, mode);
       const url = shareUrlForToken(share.token);
-      const finalMode = mode ?? share.mode;
-      ctx.step?.setOutput({ id, url, mode: finalMode });
-      return { ok: true, output: { id, url, mode: finalMode } };
+      ctx.step?.setOutput({ id, url, mode: share.mode });
+      return { ok: true, output: { id, url, mode: share.mode } };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }
@@ -62,25 +61,28 @@ const node_share: BuiltinToolDef = {
 };
 
 /**
+ * The share tools' answer to a link mode other than public. Team links are
+ * retired (member logins Phase 6 stage 6), so 'team' names what to do
+ * instead; anything else unknown is refused too, never read as public. Null
+ * when the mode is absent or public.
+ */
+export function linkModeRefusal(mode: unknown): string | null {
+  if (mode === undefined || mode === null || mode === 'public') return null;
+  if (mode === 'team') return new TeamLinkRetiredError().message;
+  return "mode must be 'public' (the only link mode)";
+}
+
+/**
  * The unshare tools' output. An open link's item goes to admin with its
  * link; what it embeds (a page's files and drawings, a folder's contents)
  * keeps its own level, so name what is still below and how to raise it, as
- * access_set does. A team link's item stays at team (`keptTeam`): say so.
+ * access_set does.
  */
 export function unshareOutput(
   id: string,
   revoked: boolean,
   stillBelow: readonly AccessItem[],
-  keptTeam?: boolean,
 ): Record<string, unknown> {
-  if (revoked && keptTeam) {
-    return {
-      id,
-      unshared: true,
-      level: 'team',
-      note: `The team link is gone, but the item stays at team: member logins still read it. To hide it from them: access_set(node_id: '${id}', level: 'admin').`,
-    };
-  }
   if (!revoked || stillBelow.length === 0) return { id, unshared: revoked };
   const names = stillBelow.map((i) => `${i.title} (${i.type}, ${i.audience})`).join(', ');
   return {
@@ -109,9 +111,9 @@ const node_unshare: BuiltinToolDef = {
     try {
       const share = await getActiveShareForNode(ctx.ownerId, id);
       if (!share) return { ok: true, output: { id, unshared: false } };
-      const { revoked, stillBelow, keptTeam } = await unshareItem(ctx.ownerId, share.id);
+      const { revoked, stillBelow } = await unshareItem(ctx.ownerId, share.id);
       ctx.step?.setOutput({ id, unshared: revoked });
-      return { ok: true, output: unshareOutput(id, revoked, stillBelow, keptTeam) };
+      return { ok: true, output: unshareOutput(id, revoked, stillBelow) };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }

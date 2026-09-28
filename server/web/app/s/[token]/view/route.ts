@@ -1,23 +1,18 @@
 import { NextResponse } from '@/server/http-compat';
-import { shareModeOf } from '@mantle/content';
 import { buildPageToc } from '@mantle/content-core/page-toc';
 import type { ShareViewPayload } from '@mantle/share-ui/view-payload';
 import { resolveActiveShareByToken, loadShareView, recordShareView } from '@/lib/shares';
-import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 import { renderPageDoc } from '@/lib/render-page-doc';
 import { loadFolderListing } from '@/components/share/folder-presenter';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 /**
- * The share view as JSON — the content door for the /team INLINE reader (the
- * client app renders the presenter itself; no /s iframe). Same data the /s
- * HTML page renders, same authorization (active token + live team session for
- * team mode), with one deliberate difference in the failure shape: a missing
- * session answers 401 (the caller is our own UI holding a credential, not a
- * human who needs a token prompt). Invalid/revoked tokens 404 uniformly.
+ * The share view as JSON, for a client that renders the presenter itself (no
+ * /s iframe). Same data the /s HTML page renders, same authorization (an
+ * active token). Invalid/revoked tokens 404 uniformly. `mode` is always
+ * 'public' (team links are retired); kept so the answer keeps its shape.
  *
- * Accepts the team bearer as well as the cookie (resolveShareVisitorFromRequest)
- * and is CORS-eligible via SHARE_BROKER_RE — same treatment as the app brokers.
+ * CORS-eligible via SHARE_BROKER_RE — same treatment as the app brokers.
  *
  * Pages ship pre-rendered sanitized HTML + toc: renderPageDoc's escaping stays
  * server-side and katex/lowlight stay out of the client bundle. Folders ship
@@ -52,14 +47,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
 
   const share = await resolveActiveShareByToken(token);
   if (!share) return notFound();
-
-  const visitor = await resolveShareVisitorFromRequest(req, share);
-  if (!visitor) {
-    return NextResponse.json(
-      { error: 'team session required' },
-      { status: 401, headers: { 'cache-control': 'no-store' } },
-    );
-  }
 
   const view = await loadShareView(share);
   if (!view) return notFound();
@@ -113,7 +100,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
   }
 
   return NextResponse.json(
-    { mode: shareModeOf(share), view: payload },
+    { mode: 'public', view: payload },
     { headers: { 'cache-control': 'no-store' } },
   );
 }

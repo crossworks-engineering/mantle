@@ -3,7 +3,6 @@ import { and, eq } from 'drizzle-orm';
 import { db, nodes, tables } from '@mantle/db';
 import { queryRowsWindow, resolveStoragePath } from '@mantle/tabledb';
 import { resolveActiveShareByToken } from '@/lib/shares';
-import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 /**
@@ -11,8 +10,7 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
  * /api/tables/[id]/rows, and deliberately narrower: PUBLISHED file only (a
  * draft is the owner's working copy and never crosses the share boundary), no
  * distinct-values endpoint, no draft switch, offset paging only. Authorization
- * = an active table share + (for team mode) a live team session; everything
- * else 404s uniformly so a URL never reveals that a token exists.
+ * = an active table share; everything else 404s uniformly so a URL never reveals that a token exists.
  */
 
 function notFound() {
@@ -41,9 +39,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
 
   const share = await resolveActiveShareByToken(token);
   if (!share || share.nodeType !== 'table') return notFound();
-  // Bearer OR cookie — the /team inline reader pages rows cross-fetch style
-  // (same trust as the app brokers: right brain + live membership).
-  if (!(await resolveShareVisitorFromRequest(req, share))) return notFound();
 
   const [row] = await db
     .select({ storagePath: tables.storagePath })

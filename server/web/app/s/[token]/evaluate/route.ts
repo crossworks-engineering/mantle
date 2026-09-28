@@ -3,7 +3,6 @@ import { evaluateSpec, parseFormulaSpec, type FormulaValue } from '@mantle/conte
 import { and, eq } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
 import { resolveActiveShareByToken } from '@/lib/shares';
-import { resolveShareVisitor } from '@/lib/team-gate';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 /**
@@ -21,9 +20,8 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
  * symbols may be supplied, and a ceiling on the size of each value (a
  * megabyte-long string would otherwise be concatenated and returned).
  *
- * Authorization matches the rows route exactly — an active formula share plus,
- * in team mode, a live team session. Everything else 404s uniformly so a URL
- * never reveals that a token exists.
+ * Authorization matches the rows route exactly: an active formula share.
+ * Everything else 404s uniformly so a URL never reveals that a token exists.
  */
 
 /** Enough for the largest real model; far below anything that costs time. */
@@ -60,7 +58,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
 
   const share = await resolveActiveShareByToken(token);
   if (!share || share.nodeType !== 'formula') return notFound();
-  if (!(await resolveShareVisitor(req.headers.get('cookie'), share))) return notFound();
 
   const declaredLength = Number(req.headers.get('content-length') ?? 0);
   if (declaredLength > MAX_BODY_BYTES) {

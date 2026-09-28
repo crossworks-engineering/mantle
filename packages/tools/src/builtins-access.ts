@@ -102,7 +102,7 @@ export const access_set: BuiltinToolDef = {
   preconditions: NODE_ID_PRE,
   name: 'Set an access level',
   description:
-    "Set the level of one brain item, agent or tool group: admin (default), team, client or public. A caller sees what is at or below its level. Only pages, notes, drawings, tables, files, folders, apps and formulas go below admin. Setting an item reports its closure (embeds, folder contents) still above or below it; `with_closure: true` lowers those above, `raise_closure: true` raises those below. The share link follows the level: none at admin, team-only at team, open at client and public. An agent's level decides what it reads. Takes effect at once. Read a level with `access_get`.",
+    "Set the level of one brain item, agent or tool group: admin (default), team, client or public. A caller sees what is at or below its level. Only pages, notes, drawings, tables, files, folders, apps and formulas go below admin. Setting an item reports its closure (embeds, folder contents) still above or below it; `with_closure: true` lowers those above, `raise_closure: true` raises those below. The share link follows the level: none at admin or team (members read team items with their own logins), open at client and public. An agent's level decides what it reads. Takes effect at once. Read a level with `access_get`.",
   inputSchema: {
     type: 'object',
     properties: {

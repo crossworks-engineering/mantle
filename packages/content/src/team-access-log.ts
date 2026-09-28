@@ -1,11 +1,12 @@
 /**
- * Audit writes for the external Team Chat surface (/team + /api/team/*). One
- * row per member action: token auth, chat turn, bearer API call, or a denied
- * attempt. The `app_access_log` pattern, brain-level instead of per-app.
+ * Audit writes for the team surfaces: a member login's chat turns and denials,
+ * the invite redeem, and (history) the retired team-code portal's token auth,
+ * chat turns and bearer calls. The `app_access_log` pattern, brain-level
+ * instead of per-app.
  *
  * Fire-and-forget by design: `recordTeamAccess` swallows failures so an audit
  * hiccup can never take the chat surface down for a member. Best-effort trail,
- * not a gate — the gate is the per-request `isTeamMember` liveness check.
+ * not a gate.
  */
 import { and, desc, eq } from 'drizzle-orm';
 import { db, systemDb, teamAccessLog, nodes } from '@mantle/db';

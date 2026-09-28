@@ -1,5 +1,4 @@
 import { resolveActiveShareByToken } from '@/lib/shares';
-import { resolveShareVisitor } from '@/lib/team-gate';
 import { getDrawSvg } from '@mantle/content';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
@@ -15,9 +14,8 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
  * second layer; neither one is load-bearing alone.
  *
  * Authorization mirrors /s/:token/a/:fileId exactly: the token must be active,
- * a team-mode share needs a live visitor session, and the node behind the token
- * must actually be a draw (getDrawSvg filters ownerId + type). Uniform 404 so a
- * URL never reveals that a token exists.
+ * and the node behind the token must actually be a draw (getDrawSvg filters
+ * ownerId + type). Uniform 404 so a URL never reveals that a token exists.
  */
 
 function notFound() {
@@ -40,7 +38,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
 
   const share = await resolveActiveShareByToken(token);
   if (!share) return notFound();
-  if (!(await resolveShareVisitor(req.headers.get('cookie'), share))) return notFound();
 
   const svg = await getDrawSvg(share.ownerId, share.nodeId);
   if (!svg) return notFound();

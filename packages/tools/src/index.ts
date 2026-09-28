@@ -130,7 +130,6 @@ export { EVAL_TOOLS } from './builtins-eval';
 export { ASK_HUMAN_FORM_LIMITS } from '@mantle/client-types';
 export { seedBuiltinTools, closeToolInputSchema } from './seed';
 export { resolveTool, resolveTools, dispatchTool } from './dispatch';
-export { isPublicToolAllowed } from './readonly-tools';
 export {
   memberAppToolVerdict,
   MEMBER_APP_REFUSED_SLUGS,

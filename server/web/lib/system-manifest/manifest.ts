@@ -619,7 +619,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'sharing',
     name: 'Item sharing',
     description:
-      'Mint/revoke a read-only public or team link for ANY shareable item (note, task, event, file, app, table, folder) — the type-agnostic counterpart of page-share. node_share is confirm-gated (publishes outward).',
+      'Mint/revoke a read-only public link for ANY shareable item (note, task, event, file, app, table, folder) — the type-agnostic counterpart of page-share. node_share is confirm-gated (publishes outward).',
     toolSlugs: ['node_share', 'node_unshare'],
   },
   {

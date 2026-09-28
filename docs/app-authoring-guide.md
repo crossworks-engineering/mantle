@@ -137,8 +137,8 @@ So to show your data in an app, you give it a tool that returns that data:
 
 - **Declare a built-in tool** that returns what you need (`note_list`,
   `table_rows_list`, `table_query`, `search_nodes`, …). This is the only kind
-  that works for **everyone**: members running a team app and team-mode share
-  visitors get built-in tools only.
+  that works for **members**: members running a team app get built-in tools
+  only (a share link gets no tools at all).
 - **Admin-only apps** may also use a purpose-built tool from the Toolsmith
   MCP tools: `recipe_tool_create` composes existing tools into one tool that
   returns exactly the shape the app needs; `api_tool_create` wraps an
@@ -293,8 +293,9 @@ export default function App() {
 ## Sharing an app
 
 A **published** app can be shared at an unguessable, revocable, full-screen URL
-via the **Share** control on the app header. There are two admission modes, and
-they grant very different capability, pick with the "Team members only" toggle:
+via the **Share** control on the app header. A link is always public: team
+links were retired (member logins Phase 6 stage 6). Your team runs the app
+from their own member logins instead (see "Team apps" below).
 
 ### Public (anyone with the link)
 
@@ -308,33 +309,21 @@ view over data it already holds (or data baked into its bundle).
 
 > This changed: earlier, a public link could invoke an app's declared tools.
 > It can't anymore; declaring a data tool does nothing for a public share.
-> If your app needs brain data for outside viewers, it needs **team** mode.
+> If your app needs brain data, it is for **members**: set the app to team
+> level and they run it from their own login.
 
-### Team (your team members, identified)
+### Team links (retired)
 
-Team mode requires the visitor to enter a **team token**. You mint one per
-person by marking a Contact a _team member_ (`/contacts` → the "Team member"
-toggle → the token is shown once; regenerate or remove to revoke). Entering a
-valid token identifies the visitor as that Contact, and from then on:
+A team link used to ask the visitor for a **team token** (a Contact's code),
+then let the app use its declared tools and write to its SQLite, audited to
+that Contact. Team links were retired in member logins Phase 6 stage 6: every
+one was revoked (migration 0176), an old one shows a "Sign in as a member"
+page, and a member login does all of it now, audited to the login.
 
-- the app may use its **declared tools** (they run under **your** scope, secrets
-  resolving server-side, the iframe never sees a key) and **write** to its
-  SQLite;
-- every action (token entry, each tool call, each DB write) is **audited to
-  that team member**, visible on the app's **Activity** tab.
-
-Removing or disabling a team member kills their access immediately (membership
-is re-checked on every request, not just at token entry).
-
-**One safety limit even in team mode:** a shared app can drive **built-in tools
-only**, `http`/`shell`/`recipe` tools are refused through a share, so an app
-can never hand a team member arbitrary server-side HTTP or command execution
-under your account. Declare built-in data tools; keep custom HTTP/shell tools
-out of an app you intend to share.
-
-**Rule of thumb:** public = "a read-only view of this app's own data, safe for
-anyone"; team = "identified, audited teammates who may use my tools and write
-data." Treat any share link as a secret; revoke by turning the share off.
+**Rule of thumb:** a link = "a read-only view of this app's own data, safe for
+anyone"; a member login = "identified, audited teammates who may use my tools
+and write data." Treat any share link as a secret; revoke by turning the share
+off.
 
 ## Team apps (members run them)
 

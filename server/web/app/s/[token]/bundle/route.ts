@@ -10,7 +10,6 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { resolveActiveShareByToken } from '@/lib/shares';
 import { getApp } from '@mantle/content';
 import { getContent } from '@mantle/storage';
-import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 export async function GET(req: Request, ctx: { params: Promise<{ token: string }> }) {
@@ -30,11 +29,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
 
   const share = await resolveActiveShareByToken(token);
   if (!share || share.nodeType !== 'app') return new NextResponse('not found', { status: 404 });
-
-  // Team-mode shares don't serve code to strangers either — the bundle can
-  // embed the operator's copy, layout, and data shapes.
-  const visitor = await resolveShareVisitorFromRequest(req, share);
-  if (!visitor) return new NextResponse('team session required', { status: 401 });
 
   const app = await getApp(share.ownerId, share.nodeId);
   const build = app?.publishedBuild?.ok ? app.publishedBuild : null;

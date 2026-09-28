@@ -4,11 +4,13 @@
  * that gap: these are the two tools that decide whether brain content is
  * reachable by someone with no login at all.
  *
- * The DB edges (createShare / applyShareMode / getActiveShareForNode /
- * unshareItem) are stubbed; the tools' own logic is real. What is worth
- * pinning is the branching, because each branch is a different answer to
- * "who can now read this":
+ * The DB edges (createShare / getActiveShareForNode / unshareItem) are
+ * stubbed; the tools' own logic is real. What is worth pinning is the
+ * branching, because each branch is a different answer to "who can now read
+ * this":
  *
+ *  - team links are retired (member logins Phase 6 stage 6): `mode: 'team'`
+ *    is refused with what to do instead, and nothing is created;
  *  - an unrecognised `mode` must NOT fall through to public;
  *  - unsharing something that was never shared must not call revoke at all;
  *  - a refused share (not owned / not a shareable type) must surface the
@@ -19,13 +21,17 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('@mantle/content', () => ({
   createShare: vi.fn(),
-  applyShareMode: vi.fn(),
   getActiveShareForNode: vi.fn(),
   unshareItem: vi.fn(),
   shareUrlForToken: (token: string) => `https://brain.test/s/${token}`,
+  TeamLinkRetiredError: class extends Error {
+    constructor() {
+      super('Team links are retired: members sign in with their own logins now.');
+    }
+  },
 }));
 
-import { createShare, applyShareMode, getActiveShareForNode, unshareItem } from '@mantle/content';
+import { createShare, getActiveShareForNode, unshareItem } from '@mantle/content';
 import { SHARE_TOOLS } from './builtins-share';
 import type { ToolHandlerContext } from './types';
 
@@ -70,38 +76,31 @@ describe('node_share', () => {
     expect(createShare).not.toHaveBeenCalled();
   });
 
-  it('creates the link and returns the store’s mode when none is asked for', async () => {
-    const res = await share.handler({ id: NODE_ID }, ctx);
-    expect(outputOf(res)).toEqual({
-      id: NODE_ID,
-      url: 'https://brain.test/s/tok',
-      mode: 'public',
-    });
-    // No mode requested means no mode WRITE — an existing team link keeps its
-    // setting instead of being quietly reset.
-    expect(applyShareMode).not.toHaveBeenCalled();
+  it('creates the link and returns the store’s mode', async () => {
+    for (const input of [{ id: NODE_ID }, { id: NODE_ID, mode: 'public' }]) {
+      const res = await share.handler(input, ctx);
+      expect(outputOf(res)).toEqual({
+        id: NODE_ID,
+        url: 'https://brain.test/s/tok',
+        mode: 'public',
+      });
+    }
+    expect(createShare).toHaveBeenCalledTimes(2);
   });
 
-  it('applies an explicit team mode and reports it', async () => {
+  it('refuses a team link, saying members use their own logins, and creates nothing', async () => {
     const res = await share.handler({ id: NODE_ID, mode: 'team' }, ctx);
-    expect(applyShareMode).toHaveBeenCalledWith('o1', 's-1', 'team');
-    expect(outputOf(res).mode).toBe('team');
+    expect(errorOf(res)).toMatch(/Team links are retired.*own logins/);
+    expect(createShare).not.toHaveBeenCalled();
+    expect(
+      (share.inputSchema as { properties: Record<string, unknown> }).properties.mode,
+    ).toMatchObject({ enum: ['public'] });
   });
 
-  it('treats an unrecognised mode as "unspecified", never as public', async () => {
-    // The guard is `input.mode === 'team' ? … : input.mode === 'public' ? … :
-    // undefined`. A typo like 'everyone' must fall to undefined — which leaves
-    // the link's current setting alone — and must NOT be coerced to public,
-    // which would silently widen access on an existing team link.
-    vi.mocked(createShare).mockResolvedValue({
-      id: 's-1',
-      token: 'tok',
-      mode: 'team',
-    } as unknown as Awaited<ReturnType<typeof createShare>>);
-
+  it('refuses an unrecognised mode, never reading it as public', async () => {
     const res = await share.handler({ id: NODE_ID, mode: 'everyone' }, ctx);
-    expect(applyShareMode).not.toHaveBeenCalled();
-    expect(outputOf(res).mode).toBe('team');
+    expect(errorOf(res)).toMatch(/mode must be 'public'/);
+    expect(createShare).not.toHaveBeenCalled();
   });
 
   it('surfaces the store’s own corrective when the item is not shareable', async () => {
@@ -167,18 +166,6 @@ describe('node_unshare', () => {
     expect(out.stillBelow).toEqual([file]);
     expect(out.warning).toMatch(/plan\.pdf \(file, client\)/);
     expect(out.warning).toMatch(/raise_closure: true/);
-  });
-
-  it('says a team item stays at team when its team link is removed (Phase 6 stage 3)', async () => {
-    vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-9' } as unknown as Awaited<
-      ReturnType<typeof getActiveShareForNode>
-    >);
-    vi.mocked(unshareItem).mockResolvedValue({ revoked: true, stillBelow: [], keptTeam: true });
-
-    const out = outputOf(await unshare.handler({ id: NODE_ID }, ctx));
-    expect(out).toMatchObject({ id: NODE_ID, unshared: true, level: 'team' });
-    expect(out.note).toMatch(/stays at team/);
-    expect(out.note).toMatch(/level: 'admin'/);
   });
 
   it('surfaces a revoke failure rather than reporting success', async () => {

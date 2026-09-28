@@ -24,13 +24,12 @@ export {
   createShare,
   revokeShare,
   resolveActiveShareByToken,
+  isRetiredTeamLinkToken,
   recordShareView,
   publicBaseUrl,
   shareUrlForToken,
   nodeUrl,
   appUrl,
-  shareModeOf,
-  setShareMode,
   shareCascadeOf,
   setShareCascade,
   applyShareMode,
@@ -40,12 +39,11 @@ export {
   shareModeForLevel,
   levelForShareMode,
   applyLevelToShare,
+  TeamLinkRetiredError,
   type ShareMode,
   type ShareableType,
   type ShareSummary,
 } from './shares';
-
-export { resolveTeamHubApp, type TeamHubApp } from './team-hub';
 
 export {
   appendTeamMessage,
@@ -97,14 +95,9 @@ export {
   type TeamAccessRow,
 } from './team-access-log';
 export {
-  enableTeamMember,
-  disableTeamMember,
-  rotateTeamToken,
   verifyTeamToken,
   teamStatusByContact,
   teamStatusFor,
-  isTeamMember,
-  markTeamTokenUsed,
   generateAlphabetCode,
   generateTeamToken,
   hashTeamToken,

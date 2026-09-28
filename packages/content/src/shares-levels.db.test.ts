@@ -1,9 +1,9 @@
 /**
  * Levels drive links, against a real, migrated Postgres: setting a level
  * fixes the item's link, and every older share path (create, mode, revoke,
- * sub-page cascade) re-derives the level from the link it leaves. Removing a
- * team link leaves the item at team (member logins Phase 6 stage 3). Seeds its
- * own owner and rows and removes them.
+ * sub-page cascade) re-derives the level from the link it leaves. Team links
+ * are retired (member logins Phase 6 stage 6): team takes no link, and no
+ * path makes one. Seeds its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/shares-levels.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -83,15 +83,21 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
     await m.closeDb();
   });
 
-  it('team gives a team-only link, client an open one, admin none', async () => {
+  it('team takes no link (and drops an open one), client an open one, admin none', async () => {
     const team = await a.setItemLevel(owner, ids.note, 'team');
-    expect(team.share?.mode).toBe('team');
+    expect(team.share).toBeNull();
+    expect(await s.getActiveShareForNode(owner, ids.note)).toBeNull();
     expect(await audienceOf(ids.note)).toBe('team');
 
     const client = await a.setItemLevel(owner, ids.note, 'client');
     expect(client.share?.mode).toBe('public');
-    expect(client.share?.token).toBe(team.share?.token); // one link per item
     expect(await audienceOf(ids.note)).toBe('client');
+
+    // Back to team: the open link goes, the item stays at team.
+    const back = await a.setItemLevel(owner, ids.note, 'team');
+    expect(back.share).toBeNull();
+    expect(await s.resolveActiveShareByToken(client.share!.token)).toBeNull();
+    expect(await audienceOf(ids.note)).toBe('team');
 
     const admin = await a.setItemLevel(owner, ids.note, 'admin');
     expect(admin.share).toBeNull();
@@ -109,63 +115,71 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
     expect(await audienceOf(ids.embed)).toBe('team');
   });
 
-  it('re-derives the level on the older share paths', async () => {
+  it('re-derives the level on the older share paths, and refuses a team link', async () => {
     const link = await s.createShare(owner, ids.note);
+    expect(link.mode).toBe('public');
     expect(await audienceOf(ids.note)).toBe('public');
-    await s.applyShareMode(owner, link.id, 'team');
-    expect(await audienceOf(ids.note)).toBe('team');
-    await s.applyShareMode(owner, link.id, 'public');
+    expect(await s.applyShareMode(owner, link.id, 'public')).toBe(true);
     expect(await audienceOf(ids.note)).toBe('public');
+
+    // An untyped caller asking for team: refused, nothing written.
+    const team = 'team' as never;
+    await expect(s.applyShareMode(owner, link.id, team)).rejects.toBeInstanceOf(
+      s.TeamLinkRetiredError,
+    );
+    await expect(s.createShare(owner, ids.page, { mode: team })).rejects.toBeInstanceOf(
+      s.TeamLinkRetiredError,
+    );
+    expect(await s.getActiveShareForNode(owner, ids.page)).toBeNull();
+    const [row] = (await m.db.execute(
+      sqlTag`select settings from shares where id = ${link.id}`,
+    )) as unknown as { settings: Record<string, unknown> }[];
+    expect(row!.settings.mode).toBeUndefined();
+    expect(await audienceOf(ids.note)).toBe('public');
+
     await s.revokeShareTree(owner, link.id);
     expect(await audienceOf(ids.note)).toBe('admin');
   });
 
-  it("puts cascaded sub-pages at the parent's level and back to admin with it", async () => {
+  it("puts cascaded sub-pages at the parent's level, to team and to admin with it", async () => {
     await a.setItemLevel(owner, ids.parent, 'client');
     await s.setShareCascade(owner, ids.parent, true);
     expect(await audienceOf(ids.sub)).toBe('client');
-    const parent = (await s.getActiveShareForNode(owner, ids.parent))!;
-    await s.applyShareMode(owner, parent.id, 'team');
+    expect(await s.getActiveShareForNode(owner, ids.sub)).not.toBeNull();
+
+    // Parent to team: its link and the sub-page links go, the sub-page follows.
+    await a.setItemLevel(owner, ids.parent, 'team');
+    expect(await s.getActiveShareForNode(owner, ids.parent)).toBeNull();
+    expect(await s.getActiveShareForNode(owner, ids.sub)).toBeNull();
     expect(await audienceOf(ids.sub)).toBe('team');
+
+    await a.setItemLevel(owner, ids.parent, 'client');
+    await s.setShareCascade(owner, ids.parent, true);
+    expect(await audienceOf(ids.sub)).toBe('client');
     await a.setItemLevel(owner, ids.parent, 'admin');
     expect(await audienceOf(ids.sub)).toBe('admin');
     expect(await s.getActiveShareForNode(owner, ids.sub)).toBeNull();
   });
 
-  it('removing a team link keeps the item at team; an open link still goes to admin', async () => {
-    const set = await a.setItemLevel(owner, ids.team, 'team');
-    expect(set.share?.mode).toBe('team');
-    const res = await a.unshareItem(owner, set.share!.id);
-    expect(res).toEqual({ revoked: true, stillBelow: [], keptTeam: true });
-    expect(await audienceOf(ids.team)).toBe('team');
+  it('removing an open link puts the item at admin; a team item has no link to remove', async () => {
+    await a.setItemLevel(owner, ids.team, 'team');
     expect(await s.getActiveShareForNode(owner, ids.team)).toBeNull();
-
-    // Setting Team again still makes a team link (code holders read by it).
-    const again = await a.setItemLevel(owner, ids.team, 'team');
-    expect(again.share?.mode).toBe('team');
-    // The older revoke path keeps it at team too.
-    await s.revokeShare(owner, again.share!.id);
-    expect(await audienceOf(ids.team)).toBe('team');
 
     const open = await a.setItemLevel(owner, ids.team, 'client');
     const gone = await a.unshareItem(owner, open.share!.id);
-    expect(gone.keptTeam).toBeUndefined();
+    expect(gone).toEqual({ revoked: true, stillBelow: [] });
     expect(await audienceOf(ids.team)).toBe('admin');
   });
 
-  it("keeps a cascading team parent's sub-pages at team when its link is removed", async () => {
+  it('a team parent has no link to cascade', async () => {
     await a.setItemLevel(owner, ids.teamParent, 'team');
-    await s.setShareCascade(owner, ids.teamParent, true);
-    expect(await audienceOf(ids.teamSub)).toBe('team');
-    const link = (await s.getActiveShareForNode(owner, ids.teamParent))!;
-    expect((await a.unshareItem(owner, link.id)).keptTeam).toBe(true);
-    expect(await audienceOf(ids.teamParent)).toBe('team');
-    expect(await audienceOf(ids.teamSub)).toBe('team');
+    expect(await s.setShareCascade(owner, ids.teamParent, true)).toEqual({ ok: false, count: 0 });
+    expect(await audienceOf(ids.teamSub)).toBe('admin');
     expect(await s.getActiveShareForNode(owner, ids.teamSub)).toBeNull();
   });
 
   it('keeps a task admin whatever its link, and admin removes an old link', async () => {
-    await s.createShare(owner, ids.task, { mode: 'team' });
+    await s.createShare(owner, ids.task);
     expect(await audienceOf(ids.task)).toBe('admin');
     const res = await a.setItemLevel(owner, ids.task, 'admin');
     expect(res.share).toBeNull();

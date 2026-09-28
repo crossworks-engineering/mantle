@@ -1,5 +1,4 @@
 import { resolveActiveShareByToken } from '@/lib/shares';
-import { resolveShareVisitor } from '@/lib/team-gate';
 import { getDrawSvg, getPage, referencedDrawIds } from '@mantle/content';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
@@ -9,9 +8,8 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
  * The sibling `/s/:token/draw` serves a drawing that is itself the shared
  * node; this one serves a drawing a shared *page* places with
  * `![alt](draw:<id>)`. Authorization mirrors `/s/:token/a/:fileId` exactly:
- * the token must be active, a team-mode share needs a live visitor session,
- * and the id must appear in the shared page's own doc — a share never becomes
- * a way to read arbitrary drawings by id.
+ * the token must be active, and the id must appear in the shared page's own
+ * doc, so a share never becomes a way to read arbitrary drawings by id.
  *
  * Cache-only, deliberately. Rendering a missing snapshot spawns a browser, and
  * anonymous share traffic does not get to do that (see
@@ -42,7 +40,6 @@ export async function GET(
 
   const share = await resolveActiveShareByToken(token);
   if (!share || share.nodeType !== 'page') return notFound();
-  if (!(await resolveShareVisitor(req.headers.get('cookie'), share))) return notFound();
 
   const page = await getPage(share.ownerId, share.nodeId);
   if (!page || !referencedDrawIds(page.doc).includes(drawId)) return notFound();
