@@ -1,5 +1,5 @@
 /**
- * Member chat turn execution — one conversational turn for a MEMBER LOGIN
+ * Member chat turn execution: one conversational turn for a MEMBER LOGIN
  * against the permission-limited `team-responder` agent (member logins; the
  * team-code portal contact path this once also served was retired in Phase 6).
  * The member chat route (POST /api/member/chat) enqueues it.
@@ -18,7 +18,7 @@
  *      team_messages thread (by login) and nothing else.
  *   3. Persist inbound + pending outbound to team_messages (durable steps).
  *   4. Tool loop under a 'responder_turn' trace with subject_kind 'team_turn'
- *      and surface {kind:'team', loginId} — which is how team_request_create
+ *      and surface {kind:'team', loginId}, which is how team_request_create
  *      gets forgery-proof provenance and owner-side tools refuse.
  *   5. Finalize the outbound row with the reply + the trace id (the admin's
  *      deep link from a reply to what the brain actually did).
@@ -311,7 +311,7 @@ async function runTeamTurnSteps(
 
     // Member identity rides the VOLATILE block: per-contact text in the cached
     // prefix would bust the shared per-agent cache on every member switch.
-    const memberLine = `Team member: ${options.contactName ?? 'unknown name'} (user ${loginId}). You are serving this person — a member of the team, not the brain's owner.`;
+    const memberLine = `Team member: ${options.contactName ?? 'unknown name'} (user ${loginId}). You are serving this person: a member of the team, not the brain's owner.`;
 
     // Shared responder-turn assembly (audit #5c), configured for the team
     // surface's HARD isolation: no identity/journal block, no heartbeats, no

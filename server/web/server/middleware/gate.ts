@@ -76,7 +76,7 @@ const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
 // Opt-in via MANTLE_API_CORS_ORIGINS (comma list, or '*' to reflect any).
 // Detached clients authenticate with a BEARER token, never cookies, so we
 // deliberately DO NOT emit Access-Control-Allow-Credentials. The '*' wildcard
-// is refused on the credential-minting surfaces (/api/auth*) — those need an
+// is refused on the credential-minting surfaces (/api/auth*): those need an
 // explicit allowlist entry.
 function corsOrigins(): string[] {
   return (env('MANTLE_API_CORS_ORIGINS') ?? '')

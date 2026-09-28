@@ -149,7 +149,7 @@ const team_chat_list: BuiltinToolDef = {
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx): Promise<ToolHandlerResult> => {
     if (ctx.surface?.kind === 'team') {
-      return { ok: false, error: 'owner-side tool — not available on the team surface' };
+      return { ok: false, error: 'owner-side tool: not available on the team surface' };
     }
     const [members, portal] = await Promise.all([
       listMemberChatActivity(ctx.ownerId),
@@ -209,7 +209,7 @@ const team_chat_read: BuiltinToolDef = {
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     if (ctx.surface?.kind === 'team') {
-      return { ok: false, error: 'owner-side tool — not available on the team surface' };
+      return { ok: false, error: 'owner-side tool: not available on the team surface' };
     }
     const loginId = strOpt(input.loginId);
     const contactId = strOpt(input.contactId);
@@ -268,7 +268,7 @@ const team_access_list: BuiltinToolDef = {
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     if (ctx.surface?.kind === 'team') {
-      return { ok: false, error: 'owner-side tool — not available on the team surface' };
+      return { ok: false, error: 'owner-side tool: not available on the team surface' };
     }
     const rows = await listTeamAccess(ctx.ownerId, {
       contactId: strOpt(input.contactId),

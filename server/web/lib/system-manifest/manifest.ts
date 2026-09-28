@@ -1077,7 +1077,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'team-admin',
     name: 'Team chat admin',
     description:
-      "Owner-side view over the member chats: list member logins + activity, read any member's thread (and old team-code portal threads, history), read the access log. Granted to the persona so the brain can answer 'what has <member> asked about?' — NEVER to the team responder itself.",
+      "Owner-side view over the member chats: list member logins + activity, read any member's thread (and old team-code portal threads, history), read the access log. Granted to the persona so the brain can answer 'what has <member> asked about?', NEVER to the team responder itself.",
     toolSlugs: ['team_chat_list', 'team_chat_read', 'team_access_list'],
   },
   {
@@ -1489,7 +1489,7 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     slug: 'team-responder',
     name: 'Team Responder',
     description:
-      "Permission-limited responder for the member chat (member logins chat with it in the assistant dock) — read-only plus filing change requests. Never appears in the owner's Conversations inbox and is never a delegate.",
+      "Permission-limited responder for the member chat (member logins chat with it in the assistant dock): read-only plus filing change requests. Never appears in the owner's Conversations inbox and is never a delegate.",
     role: 'custom',
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'TEAM_RESPONDER_MODEL',

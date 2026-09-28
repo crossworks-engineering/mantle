@@ -73,6 +73,8 @@ export async function accessShadowReport(
         eq(traces.ownerId, ownerId),
         eq(traces.kind, 'responder_turn'),
         gt(traces.startedAt, since),
+        // 'forum' stays: the forum is retired (member logins Phase 6), but its
+        // traces are member turns too until they leave the window.
         sql`${traces.data}->>'surface' in ('team', 'forum')`,
       ),
     );

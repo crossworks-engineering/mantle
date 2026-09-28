@@ -7,7 +7,7 @@ import { env } from '@mantle/config';
  * (ports of the app/login page stub). They keep canonical-domain bookmarks and
  * the gate's unauthenticated 307→/login chain working by forwarding to
  * MANTLE_CLIENT_ORIGIN; with no client origin configured they fall back to a
- * static pointer card — an explanation, never a loop.
+ * static pointer card: an explanation, never a loop.
  *
  * /team and /hub (the team-code portal) were retired in member logins
  * Phase 6: see mountRetiredTeamPages.

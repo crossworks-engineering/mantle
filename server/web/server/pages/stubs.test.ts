@@ -44,7 +44,7 @@ describe('mountStubs — /n/<id> node permalinks', () => {
   });
 });
 
-describe('mountStubs — /login with no client origin', () => {
+describe('mountStubs: /login with no client origin', () => {
   const original = process.env.MANTLE_CLIENT_ORIGIN;
   afterEach(() => {
     if (original === undefined) delete process.env.MANTLE_CLIENT_ORIGIN;

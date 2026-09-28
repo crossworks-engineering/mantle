@@ -1,5 +1,5 @@
 /**
- * GET /api/team-admin/members?contact=<id> — the Members tab's data: the
+ * GET /api/team-admin/members?contact=<id>: the Members tab's data: the
  * team-code roster (contacts that held a code, newest first) plus the
  * selected contact's filed requests, old portal chat (the "Chat archive")
  * and access log.
