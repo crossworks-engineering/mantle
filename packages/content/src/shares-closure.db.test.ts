@@ -146,17 +146,17 @@ describe.skipIf(!URL)('levels and links at the edges on Postgres', () => {
   });
 
   it('unsharing reports the embedded file still below admin, and raises nothing', async () => {
-    await a.setItemLevel(owner, ids.page, 'client', { withClosure: true });
-    expect(await audienceOf(ids.file)).toBe('client');
+    await a.setItemLevel(owner, ids.page, 'public', { withClosure: true });
+    expect(await audienceOf(ids.file)).toBe('public');
     const link = (await s.getActiveShareForNode(owner, ids.page))!;
 
     const res = await a.unshareItem(owner, link.id);
     expect(res.revoked).toBe(true);
-    expect(res.stillBelow.map((i) => [i.id, i.audience])).toEqual([[ids.file, 'client']]);
+    expect(res.stillBelow.map((i) => [i.id, i.audience])).toEqual([[ids.file, 'public']]);
     expect(await audienceOf(ids.page)).toBe('admin');
     expect(await s.getActiveShareForNode(owner, ids.page)).toBeNull();
     // Same rule as setting admin by hand: reported, never raised on its own.
-    expect(await audienceOf(ids.file)).toBe('client');
+    expect(await audienceOf(ids.file)).toBe('public');
 
     // A second unshare of the same link is a no-op, not an error.
     expect(await a.unshareItem(owner, link.id)).toEqual({ revoked: false, stillBelow: [] });
@@ -169,19 +169,19 @@ describe.skipIf(!URL)('levels and links at the edges on Postgres', () => {
     );
     expect(await s.getActiveShareForNode(owner, ids.note)).toBeNull();
 
-    const res = await a.setItemLevel(owner, ids.note, 'client');
+    const res = await a.setItemLevel(owner, ids.note, 'public');
     expect(res.share).not.toBeNull();
     expect(res.share!.id).not.toBe(old.id);
     const live = await liveLinks(ids.note);
     expect(live.map((l) => l.id)).toEqual([res.share!.id]);
     expect(live[0]!.expires_at).toBeNull();
-    expect(await audienceOf(ids.note)).toBe('client');
+    expect(await audienceOf(ids.note)).toBe('public');
   });
 
   it('a link that cannot be made leaves the level where it was (one transaction)', async () => {
     h.refuseLinkFor = ids.refused;
     try {
-      await expect(a.setItemLevel(owner, ids.refused, 'client')).rejects.toThrow(
+      await expect(a.setItemLevel(owner, ids.refused, 'public')).rejects.toThrow(
         /test: link refused/,
       );
     } finally {
@@ -194,7 +194,7 @@ describe.skipIf(!URL)('levels and links at the edges on Postgres', () => {
   it('a cascaded sub-page goes straight to the parent level, never through public', async () => {
     // The team sub-page has a team-only link of its own: the cascade re-modes it.
     await a.setItemLevel(owner, ids.teamSub, 'team');
-    await a.setItemLevel(owner, ids.parent, 'client');
+    await a.setItemLevel(owner, ids.parent, 'public');
     h.audiences = [];
     let written: string[];
     try {
@@ -204,10 +204,10 @@ describe.skipIf(!URL)('levels and links at the edges on Postgres', () => {
       written = h.audiences;
       h.audiences = null;
     }
-    // One write per sub-page, straight to client: the new link on `sub`, the
-    // re-moded one on `teamSub`. An open link alone would have written public.
-    expect(written).toEqual(['client', 'client']);
-    expect(await audienceOf(ids.sub)).toBe('client');
-    expect(await audienceOf(ids.teamSub)).toBe('client');
+    // One write per sub-page, straight to public: the new link on `sub`, the
+    // re-moded one on `teamSub`. (Before client logins C1 this was a client parent.)
+    expect(written).toEqual(['public', 'public']);
+    expect(await audienceOf(ids.sub)).toBe('public');
+    expect(await audienceOf(ids.teamSub)).toBe('public');
   });
 });

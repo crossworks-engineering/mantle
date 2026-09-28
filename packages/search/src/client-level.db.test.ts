@@ -64,8 +64,8 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
         values (${item[l]}, '{"type":"doc","content":[]}'::jsonb, ${`${tag} body`})`;
       await admin`insert into content_chunks (owner_id, node_id, ordinal, text, embedding)
         values (${anchor}, ${item[l]}, 0, ${`${tag} passage ${l}`}, ${vecLit}::vector)`;
-      await admin`insert into facts (owner_id, content, source_node_id, embedding)
-        values (${anchor}, ${`${tag} fact ${l}`}, ${item[l]}, ${vecLit}::vector)`;
+      await admin`insert into facts (owner_id, kind, content, source_node_id, embedding)
+        values (${anchor}, 'factual', ${`${tag} fact ${l}`}, ${item[l]}, ${vecLit}::vector)`;
       await admin`insert into tool_groups (owner_id, slug, name, tool_slugs, audience)
         values (${anchor}, ${groupSlug(l)}, ${tag}, ${[]}, ${l})`;
       await admin`insert into agents (owner_id, slug, name, model, provider, system_prompt,
@@ -74,8 +74,8 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
                 ${[groupSlug(l)]}, ${l})`;
     }
     // A fact with no source: the owner's own chats, admin only.
-    await admin`insert into facts (owner_id, content, embedding)
-      values (${anchor}, ${`${tag} fact sourceless`}, ${vecLit}::vector)`;
+    await admin`insert into facts (owner_id, kind, content, embedding)
+      values (${anchor}, 'factual', ${`${tag} fact sourceless`}, ${vecLit}::vector)`;
 
     // Items that are not the brain's, each at client level: a member's
     // personal item, a member's team draft, an admin's private item. The

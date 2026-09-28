@@ -186,8 +186,9 @@ describe.skipIf(!URL)('embeds follow their item down on Postgres', () => {
     expect(res.lowered.map((l) => [l.id, l.audience]).sort()).toEqual(
       res.alsoLowered.map((l) => [l.id, 'client']).sort(),
     );
-    // Embeds get the level, never a link of their own.
-    expect(res.share).not.toBeNull();
+    // Embeds get the level, never a link of their own; client takes no link
+    // at all (client logins C1).
+    expect(res.share).toBeNull();
     expect(await s.getActiveShareForNode(owner, id.img)).toBeNull();
   });
 
