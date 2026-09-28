@@ -335,6 +335,10 @@ for c in mantle_web mantle_client_web; do \
 **Always `scripts/db-dump.sh` before a deploy that includes a migration**: a
 backup is cheap insurance for a brain. Migrations are the one thing you never
 test in prod first; run them against dev (or a throwaway staging project) first.
+An updater roll (Settings > Updates, or `scripts/roll.sh`) takes a strict
+four-part backup into `backups/pre-roll/` itself and refuses to roll without
+one; a manual `compose pull && up` does not, so dump by hand there
+([update-prod.md](./update-prod.md)).
 
 ### Rollback
 
@@ -346,7 +350,9 @@ docker compose pull && docker compose up -d --wait
 Code rolls back instantly. **Schema does not**: a migration is forward-only, so
 if a deploy migrated the DB, rolling back the image may leave the schema ahead.
 This is why the pre-deploy dump matters: to truly roll back a bad migration,
-restore the dump into a fresh DB (§3b–c).
+restore the dump into a fresh DB (§3b–c). Some releases set a floor below which
+a pinned rollback breaks (for example never below v0.232.301 once migration
+0178 ran); update-prod.md "Rollback floors" lists them.
 
 ## 5b. The release-owned compose contract (drift guard)
 

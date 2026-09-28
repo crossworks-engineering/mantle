@@ -70,6 +70,87 @@ Code is forward-and-back; **migrations are forward-only**: always dump first.
 
 ---
 
+## The standard roll: the updater, driven by `scripts/roll.sh`
+
+Every box rolls through its own **updater** (the sidecar behind Settings >
+Updates). From the Mac, `scripts/roll.sh` drives it for one box with the
+fleet's guards built in, and stops loudly the moment one fails:
+
+```bash
+scripts/roll.sh --dry-run <box-label> vX.Y.Z   # preflight + counts, changes nothing
+scripts/roll.sh <box-label> vX.Y.Z             # the roll
+scripts/roll.sh --ssh <alias> [--stack <dir>] [--url <origin>] vX.Y.Z
+```
+
+The box comes from `.mantle-fleet.json` at the repo root (untracked, the same
+file `pnpm status` reads; see `.mantle-fleet.example.json`): `ssh` (the alias),
+`url` (for `/api/version`) and optionally `stack`. Without `stack` the script
+asks the box's updater container for `MANTLE_STACK_DIR`, so it never trusts a
+directory that merely looks right. Hostnames stay out of the repo.
+
+What it does, in order:
+
+1. Preflight: the updater is idle and no `request.json` is waiting.
+2. Counts apps and sandboxes (Postgres) and app-db files (`*.sqlite` under
+   `APP_DB_DIR` in `mantle_web`).
+3. Backup: `MANTLE_DUMP_STRICT=1 bash scripts/db-dump.sh` on the box, checked
+   by its own exit status (never through a pipe), and refused when any part
+   reports "NOT backed up" (a box whose `db-dump.sh` predates strict mode).
+   Skipped when the box's updater takes its own pre-roll backup (below);
+   `roll.sh` then checks `update.log` for it after the roll.
+4. Writes `request.json` holding only `{"target": "<tag>"}` into the updater's
+   signal dir through a throwaway alpine container (the dir is root-owned),
+   the same request the Update button writes.
+5. Waits for a NEW `started_at` with this target and a `finished_at` (a
+   same-tag re-roll shows the last run's `done` until the updater claims the
+   request), then requires `"ok":true`.
+6. Waits for `mantle_web` healthy.
+7. Counts again: **any drop in apps, sandboxes or app-db files stops with exit
+   3** and a banner. Roll nothing else; the pre-roll backup is the way back.
+8. Prints `/api/version`.
+
+Exit codes: 0 rolled and verified, 1 a step failed (nothing was requested
+when it failed before step 4), 2 usage, 3 counts dropped.
+
+### What the updater does around every server roll
+
+- **Backup first, or no roll.** Before it touches anything (the
+  `MANTLE_IMAGE_TAG` write, the compose, Caddyfile and script refreshes, the
+  pull, the up), the updater runs the box's `scripts/db-dump.sh` in strict
+  mode: all four parts (Postgres, app-dbs, table-dbs, spaces) into
+  `backups/pre-roll/` under the stack dir, owned by the stack dir's owner,
+  mode 0600. It first checks the free disk: 1.5 x the last pre-roll set (or,
+  the first time, the database size) plus `MANTLE_PRE_ROLL_MIN_FREE_MB`
+  (default 4096, room for the pull that follows). When the check or the dump
+  fails, the roll is **refused with nothing changed**: `status.json` says
+  `"ok":false` and `roll refused, nothing changed: <reason>`, the Updates page
+  shows it, and every file the failed dump wrote is removed. It keeps the
+  newest `MANTLE_PRE_ROLL_KEEP` sets (default 3) and never touches the rest
+  of `backups/` (your own dumps live there). An interface-only update
+  (client tag alone) runs no migration and takes no backup.
+  `MANTLE_PRE_ROLL_BACKUP=0` in `.env` switches it off, loudly in
+  `update.log`; take your own backup then. These are `.env` settings: a
+  request from the app cannot change them.
+- **Old images go after an OK roll.** Nothing pruned images before this, and
+  each release left a server and client pair (about 3.4 GB) behind. After an
+  OK roll the updater removes old images of exactly `<ns>/mantle-server` and
+  `<ns>/mantle-client`, keeping the images each container ran before the roll
+  (the rollback pair), the ones they run now, and the two newest of each
+  repository. It never touches another repository (sandbox, rustfs, caddy,
+  postgres), volumes or containers, never forces, and logs each removal to
+  `update.log`; an image docker refuses to remove (still in use) is logged
+  and kept. `MANTLE_IMAGE_PRUNE=0` in `.env` switches it off.
+- **The first roll to a release with these steps still runs the OLD
+  updater** (it refreshes itself at the end of an OK roll), so that one roll
+  takes no updater backup and prunes nothing: `roll.sh` takes the backup
+  itself on such a box.
+
+## Manual roll over ssh (no updater)
+
+The steps below are the fallback for a box without a working updater. They
+skip everything the updater does (the compose, Caddyfile and script
+refreshes, the pre-roll backup, the prune), so prefer the updater.
+
 ## Steps
 
 ```bash
@@ -81,7 +162,10 @@ git tag v0.91.0 && git push origin main v0.91.0
 gh run watch "$(gh run list -w release -L1 --json databaseId -q '.[0].databaseId')" --exit-status
 
 # ── 1. (VPS) BACK UP THE BRAIN — cheap insurance, mandatory before a migration ─
-ssh mantle-prod 'cd ~/mantle && bash scripts/db-dump.sh'      # → backups/mantle-<ts>.dump
+ssh mantle-prod 'cd ~/mantle && MANTLE_DUMP_STRICT=1 bash scripts/db-dump.sh'   # → backups/mantle-<ts>.dump
+#   MANTLE_DUMP_STRICT=1: exit 3 when any of the four parts was NOT backed up
+#   (without it a lost app-db, table-db or spaces part is loud but exits 0).
+#   Check the exit status itself; never pipe the dump into grep or tail.
 #   A full backup is FOUR files with one timestamp: mantle-<ts>.dump plus the
 #   app-dbs, table-dbs and spaces .tgz archives. No spaces archive = the box
 #   still runs a db-dump.sh from before 0.232.271 (a roll refreshes it); the
@@ -198,6 +282,7 @@ Then smoke-test the surface the release actually changed in the browser (and
   `MANTLE_CADDY_SHAPE` in `.env` (default same-origin, what every box runs);
   `Caddyfile.same-origin` no longer exists.
 - **migrations are forward-only**: the pre-roll `db-dump` is the only way back.
+  See the rollback floors below.
 
 ## Rollback
 
@@ -210,4 +295,17 @@ ssh mantle-prod 'cd ~/mantle && docker compose pull && docker compose up -d --wa
 CI publishes every release as `:vX.Y.Z` **and** `:latest`, so a rollback is just
 pinning the prior `vX.Y.Z`. **Code rolls back instantly; schema does not**: a
 migration is forward-only, so to undo one, restore the pre-update dump into a
-fresh DB (deploy.md §3b–c).
+fresh DB (deploy.md §3b–c). The updater's dumps are in `backups/pre-roll/`
+(newest three), restored with `scripts/db-restore.sh` like any other.
+
+**Rollback floors.** Pinning an older tag is safe only while that code still
+matches the schema. Never roll back below:
+
+- **v0.232.301 once migration 0178 ran** (it drops `contact_team_tokens`):
+  v0.232.300 still reads that table for invite redeem and the Team admin
+  Members tab, and both fail. The pre-roll backup is the only way back.
+- **v0.232.255 once personal items exist** (migration 0165; the extractor's
+  owner check, docs/member-logins.md).
+
+Below a floor, restore the pre-roll backup taken before the migration instead
+of pinning the tag.

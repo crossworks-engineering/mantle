@@ -18,7 +18,7 @@ import { describe, expect, it } from 'vitest';
 const ROOT = join(__dirname, '..', '..', '..');
 
 describe('deploy scripts harness', () => {
-  it('passes every check (installer baselines, env ownership, compose env gate, caddy ordering)', () => {
+  it('passes every check (installer baselines, env ownership, compose env gate, caddy ordering, pre-roll backup, image prune, roll.sh guards)', () => {
     let out: string;
     try {
       out = execFileSync('bash', [join(ROOT, 'scripts', 'test-deploy-scripts.sh')], {

@@ -1,6 +1,6 @@
 {
   "boxes": [
-    { "label": "dev", "url": "https://dev.example.internal", "ssh": "dev" },
+    { "label": "dev", "url": "https://dev.example.internal", "ssh": "dev", "stack": "/home/user/stack" },
     { "label": "prod", "url": "https://prod.example.internal" }
   ],
   "peers": [
