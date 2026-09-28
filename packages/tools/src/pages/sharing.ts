@@ -102,9 +102,9 @@ export const page_unshare: BuiltinToolDef = {
     try {
       const share = await getActiveShareForNode(ctx.ownerId, id);
       if (!share) return { ok: true, output: { id, unshared: false } };
-      const { revoked, stillBelow } = await unshareItem(ctx.ownerId, share.id);
+      const { revoked, stillBelow, keptTeam } = await unshareItem(ctx.ownerId, share.id);
       ctx.step?.setOutput({ id, unshared: revoked });
-      return { ok: true, output: unshareOutput(id, revoked, stillBelow) };
+      return { ok: true, output: unshareOutput(id, revoked, stillBelow, keptTeam) };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }

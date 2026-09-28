@@ -73,6 +73,7 @@ export {
   appendTeamMessage,
   updateTeamMessageOutcome,
   countMemberInboundSince,
+  listLoginPortalThread,
   listTeamThread,
   PRIVATE_REPLY_PLACEHOLDER,
   redactPrivateReply,

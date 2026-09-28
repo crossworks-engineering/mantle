@@ -65,8 +65,11 @@ export function canShareNode(node: { type: string; path: string | null }): boole
 // ─── Levels drive links ──────────────────────────────────────────────────────
 // A workspace item's level (nodes.audience) is the truth; its link follows it
 // (docs/access-levels.md §7). The /team reader opens every item through a
-// share token, so a team-level item keeps a team-only link, and client and
-// public items keep an open one. Every share mutation below re-derives the
+// share token, so setting an item to team still gives it a team-only link
+// (team-code holders read through it until they are all logins), and client
+// and public items keep an open one. Removing a team link leaves the item at
+// team: member logins read team items by level, not by link (member logins
+// Phase 6 stage 3). Every share mutation below re-derives the
 // level from the link it leaves, so the older share paths (the share API,
 // node_share / page_share, the hub app, the email link, sub-page cascade)
 // cannot drift from the level. Tasks, events and other non-workspace kinds
@@ -79,17 +82,20 @@ export function shareModeForLevel(level: ViewerLevel): ShareMode | null {
 }
 
 /**
- * The level a node's link implies. `mode` null = no active link = admin. An
- * open link keeps a node already at client or public where it is, and drops
- * anything higher to public. `preferred` (a cascading parent's level) wins
- * for an open link: sub-pages match their parent.
+ * The level a node's link implies. `mode` null = no active link: admin,
+ * except that a node at team stays at team (its team link was removed; team
+ * is a level members read by, not a link), unless `preferred` is admin (the
+ * cascading parent it followed went to admin). An open link keeps a node
+ * already at client or public where it is, and drops anything higher to
+ * public. `preferred` (a cascading parent's level) wins for an open link:
+ * sub-pages match their parent.
  */
 export function levelForShareMode(
   current: ViewerLevel,
   mode: ShareMode | null,
   preferred?: ViewerLevel,
 ): ViewerLevel {
-  if (mode === null) return 'admin';
+  if (mode === null) return current === 'team' && preferred !== 'admin' ? 'team' : 'admin';
   if (mode === 'team') return 'team';
   if (preferred === 'client' || preferred === 'public') return preferred;
   if (current === 'client' || current === 'public') return current;
@@ -598,6 +604,12 @@ export async function revokeShareTree(
       .returning({ id: shares.id });
     return rows.length > 0;
   });
-  await syncLevelsFromShares(ownerId, [row.nodeId, ...ids], undefined, q);
+  await syncLevelsFromShares(ownerId, [row.nodeId], undefined, q);
+  // Sub-pages follow the parent: a parent that went to admin takes its team
+  // sub-pages with it; a parent left at team (its team link removed) keeps
+  // them at team.
+  if (ids.length > 0) {
+    await syncLevelsFromShares(ownerId, ids, await levelOf(ownerId, row.nodeId, q), q);
+  }
   return revoked;
 }

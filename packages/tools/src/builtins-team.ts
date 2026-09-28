@@ -22,13 +22,15 @@
  * responder). They make team activity queryable by the brain: "what has Sam
  * asked about this week?". Users are the team: the chats they read are member
  * LOGIN threads; the retired team-code portal threads stay readable as
- * history by contact id.
+ * history by contact id, and a login invited from a contact gets its
+ * contact's portal thread with its own, labelled apart (never merged).
  */
 
 import {
   createTask,
   listNotifiableMembers,
   listTeamAccess,
+  listLoginPortalThread,
   listMemberChatActivity,
   listTeamMemberActivity,
   listTeamThread,
@@ -312,13 +314,32 @@ const team_chat_list: BuiltinToolDef = {
   },
 };
 
+/** One thread row as the owner-side tools return it. */
+function chatLine(m: {
+  id: string;
+  direction: string;
+  text: string;
+  channel: string;
+  traceId: string | null;
+  createdAt: Date;
+}) {
+  return {
+    id: m.id,
+    direction: m.direction,
+    text: m.text,
+    channel: m.channel,
+    traceId: m.traceId,
+    createdAt: m.createdAt.toISOString(),
+  };
+}
+
 const team_chat_read: BuiltinToolDef = {
   slug: 'team_chat_read',
   readOnly: true,
   preconditions: TEAM_CONTACT_ID_PRE,
   name: 'Read a team chat thread',
   description:
-    "Read a window of one team member's chat thread (ascending; newest window by default, `before` pages older). Pass `loginId` (from `team_chat_list`) for a member login's thread, or `contactId` for an old team-code portal thread (history). Use to answer 'what has <member> asked about'.",
+    "Read a window of one team member's chat thread (ascending; newest window by default, `before` pages older). Pass `loginId` (from `team_chat_list`) for a member login's thread, or `contactId` for an old team-code portal thread (history). With `loginId` and no `before`, a login invited from a team contact also returns `portal_history`: that contact's OLD portal chat, a separate thread from `messages` (page it with its `contactId` and `before`). Use to answer 'what has <member> asked about'.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -356,24 +377,37 @@ const team_chat_read: BuiltinToolDef = {
     if (loginId && !UUID_RE.test(loginId)) {
       return { ok: false, error: 'loginId must be a login id from `team_chat_list`' };
     }
+    const before = strOpt(input.before);
+    const limit = numOpt(input.limit) ?? 50;
     const messages = await listTeamThread(ctx.ownerId, contactId ?? '', {
-      before: strOpt(input.before),
-      limit: numOpt(input.limit) ?? 50,
+      before,
+      limit,
       ...(loginId ? { loginId } : {}),
     });
-    ctx.step?.setMeta({ ...(loginId ? { loginId } : { contactId }), count: messages.length });
+    // The login's old portal chat (its contact's, from before the invite):
+    // on the first window only, and apart from `messages`, never merged.
+    const portal =
+      loginId && !before ? await listLoginPortalThread(ctx.ownerId, loginId, { limit }) : null;
+    const portal_history =
+      portal && portal.messages.length > 0
+        ? {
+            note: "The member's OLD team-code portal chat, from before they had a login. History only: a separate thread, not part of their current chat.",
+            contactId: portal.contactId,
+            messages: portal.messages.map(chatLine),
+            count: portal.messages.length,
+          }
+        : null;
+    ctx.step?.setMeta({
+      ...(loginId ? { loginId } : { contactId }),
+      count: messages.length,
+      ...(portal_history ? { portal: portal_history.count } : {}),
+    });
     return {
       ok: true,
       output: {
-        messages: messages.map((m) => ({
-          id: m.id,
-          direction: m.direction,
-          text: m.text,
-          channel: m.channel,
-          traceId: m.traceId,
-          createdAt: m.createdAt.toISOString(),
-        })),
+        messages: messages.map(chatLine),
         count: messages.length,
+        ...(portal_history ? { portal_history } : {}),
       },
     };
   },
@@ -385,14 +419,18 @@ const team_access_list: BuiltinToolDef = {
   preconditions: TEAM_CONTACT_ID_PRE,
   name: 'List team access log',
   description:
-    'The Team Chat audit trail, newest first: token auths, turns, API calls, denied attempts — each with the contact and detail. Optional `contactId` narrows to one member.',
+    'The Team Chat audit trail, newest first: token auths, turns, API calls, denied attempts, each with the contact, the member login (`loginId`) and detail. Optional `loginId` narrows to one member login (its own events and the portal history of the contact it was invited from); optional `contactId` narrows to one team contact.',
   inputSchema: {
     type: 'object',
     properties: {
+      loginId: {
+        type: 'string',
+        description: 'Narrow the log to one member login, an id from `team_chat_list`.',
+      },
       contactId: {
         type: 'string',
         description:
-          'Narrow the log to one member — a contact id from `team_chat_list` or `contact_find`.',
+          'Narrow the log to one team contact, an id from `team_chat_list` (portal_archive) or `contact_find`.',
       },
       limit: {
         type: 'integer',
@@ -407,8 +445,13 @@ const team_access_list: BuiltinToolDef = {
     if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
       return { ok: false, error: 'owner-side tool — not available on the team surfaces' };
     }
+    const loginId = strOpt(input.loginId);
+    if (loginId && !UUID_RE.test(loginId)) {
+      return { ok: false, error: 'loginId must be a login id from `team_chat_list`' };
+    }
     const rows = await listTeamAccess(ctx.ownerId, {
       contactId: strOpt(input.contactId),
+      ...(loginId ? { loginId } : {}),
       limit: numOpt(input.limit) ?? 100,
     });
     ctx.step?.setMeta({ count: rows.length });

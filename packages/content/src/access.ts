@@ -36,6 +36,7 @@ import {
   applyLevelToShare,
   getActiveShareForNode,
   revokeShareTree,
+  shareModeOf,
   type ShareDb,
   type ShareSummary,
 } from './shares';
@@ -288,22 +289,36 @@ export type UnshareItemResult = {
    *  still open them. Raise them with the Access control or `access_set`
    *  (`raiseClosure`). */
   stillBelow: AccessItem[];
+  /** A team link was removed and the item stays at team (member logins read
+   *  team items by level; only team-code holders lose it). */
+  keptTeam?: true;
 };
 
 /**
  * Turn an item's link off (the share DELETE route, `node_unshare`,
- * `page_unshare`). No link is admin, so this is setting the item to admin by
+ * `page_unshare`). Removing an open link is setting the item to admin by
  * hand, with the same closure rule: what it embeds is reported, never raised
- * on its own. Revokes by share id first so an expired link is retired too.
+ * on its own. Removing a TEAM link leaves the item at team (member logins
+ * Phase 6 stage 3): team-code holders lose it, member logins still read it;
+ * set admin to hide it from them. Revokes by share id first so an expired
+ * link is retired too.
  */
 export async function unshareItem(ownerId: string, shareId: string): Promise<UnshareItemResult> {
   const [row] = await db
-    .select({ nodeId: shares.nodeId })
+    .select({ nodeId: shares.nodeId, settings: shares.settings })
     .from(shares)
     .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
     .limit(1);
   const revoked = await revokeShareTree(ownerId, shareId);
   if (!row) return { revoked, stillBelow: [] };
+  if (shareModeOf(row) === 'team') {
+    const [node] = await db
+      .select({ audience: nodes.audience })
+      .from(nodes)
+      .where(and(eq(nodes.id, row.nodeId), eq(nodes.ownerId, ownerId)))
+      .limit(1);
+    if (node?.audience === 'team') return { revoked, stillBelow: [], keptTeam: true };
+  }
   const res = await setItemLevel(ownerId, row.nodeId, 'admin');
   return { revoked, stillBelow: res.stillBelow };
 }

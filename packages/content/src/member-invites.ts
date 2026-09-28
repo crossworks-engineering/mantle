@@ -20,7 +20,15 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, gt, isNull, or, sql, type SQL } from 'drizzle-orm';
-import { authUsers, contactTeamTokens, db, memberInvites, nodes, teamAccessLog } from '@mantle/db';
+import {
+  authUsers,
+  contactTeamTokens,
+  db,
+  memberInvites,
+  nodeComments,
+  nodes,
+  teamAccessLog,
+} from '@mantle/db';
 import type { MemberInviteRow, MemberInviteState } from '@mantle/client-types';
 import { getContact } from './contacts';
 import { generateAlphabetCode, hashTeamToken, verifyTeamToken } from './team-tokens';
@@ -305,6 +313,39 @@ export type RedeemedMemberInvite = {
   via: 'invite' | 'team-code';
 };
 
+/**
+ * Link a contact's old team portal history to the member login it became:
+ * its `team_access_log` rows and its member `node_comments` that name no
+ * login yet. Migration 0175 ran the same backfill once for every contact
+ * with a member login; the redeem runs it for the contact it redeems.
+ * Portal chat rows (`team_messages`) are deliberately NOT linked: a member's
+ * live thread is read by login, and old portal turns must not enter it; the
+ * admin views read them through the login's contact.
+ */
+export async function linkContactHistoryToLogin(
+  exec: Exec,
+  contactId: string,
+  loginId: string,
+): Promise<{ accessRows: number; comments: number }> {
+  const access = await exec
+    .update(teamAccessLog)
+    .set({ loginId })
+    .where(and(eq(teamAccessLog.contactId, contactId), isNull(teamAccessLog.loginId)))
+    .returning({ id: teamAccessLog.id });
+  const comments = await exec
+    .update(nodeComments)
+    .set({ loginId })
+    .where(
+      and(
+        eq(nodeComments.contactId, contactId),
+        eq(nodeComments.authorKind, 'member'),
+        isNull(nodeComments.loginId),
+      ),
+    )
+    .returning({ id: nodeComments.id });
+  return { accessRows: access.length, comments: comments.length };
+}
+
 /** Thrown inside the redeem transaction to roll it back as a plain failure. */
 class RedeemAbort extends Error {}
 
@@ -373,9 +414,14 @@ export async function redeemMemberInvite(
         .returning({ id: memberInvites.id });
       if (marked.length === 0) throw new RedeemAbort();
 
+      // The contact's portal history now belongs to the login (0175 did the
+      // same for contacts redeemed before it).
+      if (invite.contactId) await linkContactHistoryToLogin(tx, invite.contactId, loginId);
+
       await tx.insert(teamAccessLog).values({
         ownerId: invite.ownerId,
         contactId: invite.contactId,
+        loginId,
         kind: 'auth',
         detail: { event: 'invite_redeemed', via, inviteId: invite.id, loginId },
       });

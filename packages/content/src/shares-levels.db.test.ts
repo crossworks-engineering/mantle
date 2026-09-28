@@ -1,7 +1,8 @@
 /**
  * Levels drive links, against a real, migrated Postgres: setting a level
  * fixes the item's link, and every older share path (create, mode, revoke,
- * sub-page cascade) re-derives the level from the link it leaves. Seeds its
+ * sub-page cascade) re-derives the level from the link it leaves. Removing a
+ * team link leaves the item at team (member logins Phase 6 stage 3). Seeds its
  * own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/shares-levels.db.test.ts
  */
@@ -26,6 +27,9 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
     sub: randomUUID(),
     task: randomUUID(),
     embed: randomUUID(),
+    team: randomUUID(),
+    teamParent: randomUUID(),
+    teamSub: randomUUID(),
   };
   const tag = `share-levels-${owner.slice(0, 8)}`;
 
@@ -58,12 +62,17 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
         (${ids.parent}, ${owner}, 'page', 'parent', 'pages', null),
         (${ids.sub}, ${owner}, 'page', 'sub', 'pages', ${ids.parent}),
         (${ids.task}, ${owner}, 'task', 't', 'tasks', null),
-        (${ids.embed}, ${owner}, 'file', 'img.png', 'files', null)`);
+        (${ids.embed}, ${owner}, 'file', 'img.png', 'files', null),
+        (${ids.team}, ${owner}, 'note', 'team note', 'notes', null),
+        (${ids.teamParent}, ${owner}, 'page', 'team parent', 'pages', null),
+        (${ids.teamSub}, ${owner}, 'page', 'team sub', 'pages', ${ids.teamParent})`);
     await m.db.execute(sqlTag`
       insert into pages (node_id, doc, doc_text) values
         (${ids.page}, ${JSON.stringify(doc)}::jsonb, ''),
         (${ids.parent}, '{"type":"doc","content":[]}'::jsonb, ''),
-        (${ids.sub}, '{"type":"doc","content":[]}'::jsonb, '')`);
+        (${ids.sub}, '{"type":"doc","content":[]}'::jsonb, ''),
+        (${ids.teamParent}, '{"type":"doc","content":[]}'::jsonb, ''),
+        (${ids.teamSub}, '{"type":"doc","content":[]}'::jsonb, '')`);
   });
 
   afterAll(async () => {
@@ -121,6 +130,38 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
     await a.setItemLevel(owner, ids.parent, 'admin');
     expect(await audienceOf(ids.sub)).toBe('admin');
     expect(await s.getActiveShareForNode(owner, ids.sub)).toBeNull();
+  });
+
+  it('removing a team link keeps the item at team; an open link still goes to admin', async () => {
+    const set = await a.setItemLevel(owner, ids.team, 'team');
+    expect(set.share?.mode).toBe('team');
+    const res = await a.unshareItem(owner, set.share!.id);
+    expect(res).toEqual({ revoked: true, stillBelow: [], keptTeam: true });
+    expect(await audienceOf(ids.team)).toBe('team');
+    expect(await s.getActiveShareForNode(owner, ids.team)).toBeNull();
+
+    // Setting Team again still makes a team link (code holders read by it).
+    const again = await a.setItemLevel(owner, ids.team, 'team');
+    expect(again.share?.mode).toBe('team');
+    // The older revoke path keeps it at team too.
+    await s.revokeShare(owner, again.share!.id);
+    expect(await audienceOf(ids.team)).toBe('team');
+
+    const open = await a.setItemLevel(owner, ids.team, 'client');
+    const gone = await a.unshareItem(owner, open.share!.id);
+    expect(gone.keptTeam).toBeUndefined();
+    expect(await audienceOf(ids.team)).toBe('admin');
+  });
+
+  it("keeps a cascading team parent's sub-pages at team when its link is removed", async () => {
+    await a.setItemLevel(owner, ids.teamParent, 'team');
+    await s.setShareCascade(owner, ids.teamParent, true);
+    expect(await audienceOf(ids.teamSub)).toBe('team');
+    const link = (await s.getActiveShareForNode(owner, ids.teamParent))!;
+    expect((await a.unshareItem(owner, link.id)).keptTeam).toBe(true);
+    expect(await audienceOf(ids.teamParent)).toBe('team');
+    expect(await audienceOf(ids.teamSub)).toBe('team');
+    expect(await s.getActiveShareForNode(owner, ids.teamSub)).toBeNull();
   });
 
   it('keeps a task admin whatever its link, and admin removes an old link', async () => {

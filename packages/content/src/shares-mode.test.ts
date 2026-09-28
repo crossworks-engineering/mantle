@@ -44,8 +44,16 @@ describe('levels drive links', () => {
 
   it('derives admin from no link and team from a team-only link', () => {
     expect(levelForShareMode('public', null)).toBe('admin');
+    expect(levelForShareMode('client', null)).toBe('admin');
     expect(levelForShareMode('admin', 'team')).toBe('team');
     expect(levelForShareMode('public', 'team')).toBe('team');
+  });
+
+  it('keeps a team item at team when its team link is removed (Phase 6 stage 3)', () => {
+    expect(levelForShareMode('team', null)).toBe('team');
+    expect(levelForShareMode('team', null, 'team')).toBe('team');
+    // A cascaded sub-page whose parent went to admin goes with it.
+    expect(levelForShareMode('team', null, 'admin')).toBe('admin');
   });
 
   it('keeps client or public under an open link, drops anything higher to public', () => {

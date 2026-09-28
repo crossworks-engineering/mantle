@@ -14,7 +14,11 @@
 > from `/api/team/turn/[turnId]/stream`), team-mode share links and app
 > admission, `/hub`, and the team workspace. Old portal transcripts stay
 > readable as history: **Chat archive** on `/team-admin` > Members, and
-> `team_chat_read` with a `contactId`. An admin revokes a team code from
+> `team_chat_read` with a `contactId`. Once the person is a member login,
+> the admin's Member chats view (`selected.portalThread`) and
+> `team_chat_read` with the `loginId` (`portal_history`) show that
+> transcript too, apart from the login's live thread, which it never joins
+> ([member-logins.md](./member-logins.md) section 9, "History"). An admin revokes a team code from
 > `/team-admin` > Members; no screen mints new codes (new people get logins).
 >
 > **Team codes become logins (Phase 6).** An admin invites the person
@@ -187,7 +191,10 @@ Migrations 0114 + 0115:
   FK **CASCADE**: deleting the contact deletes the conversation (deletion =
   revocation, per the multi-admin precedent).
 - **`team_access_log`**: auth / turn / api / denied events. Contact FK **SET
-  NULL**: the audit trail outlives the person.
+  NULL**: the audit trail outlives the person. `login_id` (0175, FK
+  `auth.users`, SET NULL) names the member login: its own events, and the
+  portal events of the contact it was invited from. `team_access_list`
+  filters by it (`loginId`).
 - **`team_read_cursors`**: the owner's per-thread unread markers (composite
   PK, CASCADE); unread counts fold into the member index via a correlated
   subquery.

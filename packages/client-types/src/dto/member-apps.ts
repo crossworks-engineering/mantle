@@ -75,9 +75,31 @@ export type MemberChatArchiveMessage = {
   createdAt: string;
 };
 
-/** GET /api/team-admin/member-chats?login=&before= : every member login, and
- *  a window of the selected login's thread (null when there is no login). */
+/** The selected login's OLD team portal chat (member logins Phase 6): the
+ *  thread its contact had with the team code before the invite made it a
+ *  login. History only, for the admin: never part of the member's live
+ *  thread, never shown to the member, never in the agent's context. Show it
+ *  apart from `thread`, labelled as the portal history. */
+export type MemberChatPortalThread = {
+  /** The contact the login was invited from. */
+  contactId: string;
+  /** A window, ascending; `portalBefore` pages older. */
+  thread: MemberChatArchiveMessage[];
+  windowSize: number;
+};
+
+/** GET /api/team-admin/member-chats?login=&before=&portalBefore= : every
+ *  member login, and a window of the selected login's thread (null when
+ *  there is no login). */
 export type MemberChatsResponse = {
   members: MemberChatRow[];
-  selected: { loginId: string; thread: MemberChatArchiveMessage[]; windowSize: number } | null;
+  selected: {
+    loginId: string;
+    thread: MemberChatArchiveMessage[];
+    windowSize: number;
+    /** The login's old portal chat, separate from `thread`. Null (or absent,
+     *  from an older brain) when the login has no contact or the contact
+     *  never chatted on the portal. */
+    portalThread?: MemberChatPortalThread | null;
+  } | null;
 };

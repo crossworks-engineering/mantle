@@ -65,6 +65,7 @@ export type {
   MemberAppLevel,
   MemberAppList,
   MemberChatArchiveMessage,
+  MemberChatPortalThread,
   MemberChatRow,
   MemberChatsResponse,
   MemberHomeApp,

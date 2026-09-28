@@ -129,12 +129,12 @@ them (the control). Tests: `packages/db/src/*.db.test.ts`,
 
 The level is the truth; an item's share link (docs/sharing.md) follows it.
 
-| Level  | The item's link                                                   |
-| ------ | ----------------------------------------------------------------- |
-| admin  | none (revoked)                                                    |
-| team   | team-only: the `/team` workspace lists and opens items through it |
-| client | open (anyone with the link), shown to the owner                   |
-| public | open (anyone with the link), shown to the owner                   |
+| Level  | The item's link                                                                                         |
+| ------ | ------------------------------------------------------------------------------------------------------- |
+| admin  | none (revoked)                                                                                          |
+| team   | team-only: the `/team` workspace lists and opens items through it (removing it leaves the item at team) |
+| client | open (anyone with the link), shown to the owner                                                         |
+| public | open (anyone with the link), shown to the owner                                                         |
 
 - **Level to link.** `setItemLevel` (`@mantle/content` access.ts) writes the
   level, then `applyLevelToShare` (shares.ts) revokes, creates or re-modes
@@ -146,17 +146,30 @@ The level is the truth; an item's share link (docs/sharing.md) follows it.
 - **Link to level.** Every share mutation (`createShare`, `setShareMode`,
   `applyShareMode`, `setShareCascade`, `revokeShare`, `revokeShareTree`)
   re-derives the level of the nodes it touched (`levelForShareMode`): no link
-  is admin, a team-only link is team, an open link keeps client or public and
-  drops anything higher to public. Cascaded sub-pages take the parent's
-  level, passed into every step, so a sub-page goes straight to it and never
-  passes through public on the way. So `node_share` / `page_share`, the hub
-  app and the email link never drift from the level.
-- **Turning a link off is setting admin.** The share DELETE route
+  is admin, except that an item at team stays at team; a team-only link is
+  team, an open link keeps client or public and drops anything higher to
+  public. Cascaded sub-pages take the parent's level, passed into every
+  step, so a sub-page goes straight to it and never passes through public on
+  the way; when a cascading link is revoked, a parent that went to admin
+  takes its team sub-pages with it, and a parent left at team keeps them.
+  So `node_share` / `page_share`, the hub app and the email link never
+  drift from the level.
+- **Removing a team link keeps team** (member logins Phase 6 stage 3,
+  2026-09-28). Member logins read team items by level, not by link; only
+  team-code holders read through the link, and they are moving to logins.
+  So revoking a team link (any path: the share DELETE route, `node_unshare`,
+  `page_unshare`, `revokeShare`, turning a cascade off) leaves the item at
+  team with no link: code holders lose it, members keep it. Set admin to
+  hide it from members. Setting an item to team still creates a team link,
+  until the portal is gone (stage 6). The route answers `keptTeam: true`,
+  the tools a `note` saying so.
+- **Turning an open link off is setting admin.** The share DELETE route
   (`DELETE /api/shares/:id`), `node_unshare` and `page_unshare` go through
-  `unshareItem` (access.ts): revoke the link, then `setItemLevel(admin)`, so
-  the closure rule is the Access control's. What the item embeds keeps its
-  own level and is reported, never raised on its own: `stillBelow` in the
-  route's JSON, and `stillBelow` plus a `warning` naming
+  `unshareItem` (access.ts): revoke the link, then, unless the item stays
+  at team (above), `setItemLevel(admin)`, so the closure rule is the Access
+  control's. What the item embeds keeps its own level and is reported,
+  never raised on its own: `stillBelow` in the route's JSON, and
+  `stillBelow` plus a `warning` naming
   `access_set(..., level: 'admin', raise_closure: true)` in the tool result.
 - **An expired link leaves the item at its level** (Jason, 2026-09-28). The
   level is the truth; a team or client link only governs outside access, so

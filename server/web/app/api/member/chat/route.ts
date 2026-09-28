@@ -129,6 +129,7 @@ export async function POST(req: Request) {
     recordTeamAccess({
       ownerId,
       contactId: null,
+      loginId,
       kind: 'denied',
       detail: { reason: 'daily_cap', cap: FORUM_DAILY_CAP, login_id: loginId },
     });
@@ -182,6 +183,7 @@ export async function POST(req: Request) {
     recordTeamAccess({
       ownerId,
       contactId: null,
+      loginId,
       kind: 'turn',
       detail: { chars: parsed.data.text.length, login_id: loginId },
     });

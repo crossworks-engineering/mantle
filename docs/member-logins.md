@@ -107,7 +107,9 @@ not something an owner chose. To list an item to members, set it to Team.
   team daily cap. A retry with the same `Idempotency-Key` is the same turn;
   the same key with different text is a 409. The admin reads member chats in `/team-admin` > Member
   chats (`GET /api/team-admin/member-chats`) and with the `team_chat_list` /
-  `team_chat_read` tools (`loginId`).
+  `team_chat_read` tools (`loginId`). A login invited from a team contact
+  also shows that contact's old portal chat there, apart (section 9,
+  "History"); it never enters the member's own thread.
 - **Drawing images.** A saved SVG carries its images' bytes inline, so the
   member copy keeps an image only when its file passes the files route's
   rule (team level or lower, or the member's own accepted file); any other
@@ -574,9 +576,36 @@ is a member login. Nobody hands a password around. The table is
 
 - **One transaction.** The redeem locks the invite, deletes the contact's
   team code, creates the login (role member, the invite's contact and
-  name), marks the invite redeemed and writes a `team_access_log` row
-  (`kind` auth, `event` invite_redeemed). Any failure rolls all of it back.
-  Two racing redeems of one code: one wins.
+  name), links the contact's history to the login (below), marks the invite
+  redeemed and writes a `team_access_log` row (`kind` auth, `event`
+  invite_redeemed, `login_id` the new login). Any failure rolls all of it
+  back. Two racing redeems of one code: one wins.
+- **History (stage 3, migration 0175).** A contact that became a member
+  login keeps its old portal history, linked to the login:
+  - `team_access_log.login_id` (new, FK `auth.users`, SET NULL, indexed
+    with the owner and time): the contact's log rows get the login, and a
+    member login's own events (its chat turns and daily-cap denials, which
+    named it in `detail.login_id`) get it too. New member events write it.
+  - `node_comments.login_id`: the contact's `member` comments from the
+    portal get the login, so the author check that knows the login
+    (`row.loginId === viewer.loginId`) covers them.
+  - Migration 0175 ran both backfills once for every contact with exactly
+    one member login (two is ambiguous: left alone); the redeem runs them
+    (`linkContactHistoryToLogin`, member-invites.ts) for the contact it
+    redeems. Both only fill NULLs.
+  - The portal CHAT (`team_messages` rows with the contact and no login) is
+    NOT linked (Jason, 2026-09-28): the member's live thread is read by
+    `login_id`, and old portal turns must not enter it or the model's
+    context. The admin reads them through the login's contact:
+    `GET /api/team-admin/member-chats` returns them in
+    `selected.portalThread` (`MemberChatPortalThread`: `contactId`, `thread`,
+    `windowSize`; `portalBefore` pages older; null when there is no contact
+    or no portal chat), and `team_chat_read` with a `loginId` returns them in
+    `portal_history` (first window only; page it by `contactId`). Both are
+    admin reads: a `used_private` reply shows the placeholder. The member's
+    own `GET /api/member/chat` never shows them.
+  - `team_access_list` takes a `loginId` filter and returns each row's
+    `loginId`.
 - **Old team codes.** An 8-char team code works in place of the invite code
   while its contact has an open invite, and only once: the redeem deletes
   the contact's `contact_team_tokens` row (Jason, 2026-09-28). With no open
@@ -586,7 +615,10 @@ is a member login. Nobody hands a password around. The table is
   `expired`), `MemberInviteList`, `MemberInviteCreated`,
   `MemberInvitePreview`, `MemberInviteAccepted` in `@mantle/client-types`
   (`dto/member-invites.ts`).
-- **Tests.** `packages/content/src/member-invites.db.test.ts` (Postgres),
+- **Tests.** `packages/content/src/member-invites.db.test.ts` and
+  `member-history-links.db.test.ts` (Postgres: 0175's backfill and the
+  redeem's), `packages/tools/src/builtins-team-portal.db.test.ts`,
+  `server/web/app/api/team-admin/member-chats/member-chats-portal.db.test.ts`,
   `server/web/app/api/auth/invite/invite-routes.test.ts` and
   `server/web/app/api/team-admin/invites/invites-admin-routes.test.ts`; the
   member and auth sweeps cover the new routes.

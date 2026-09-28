@@ -169,6 +169,18 @@ describe('node_unshare', () => {
     expect(out.warning).toMatch(/raise_closure: true/);
   });
 
+  it('says a team item stays at team when its team link is removed (Phase 6 stage 3)', async () => {
+    vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-9' } as unknown as Awaited<
+      ReturnType<typeof getActiveShareForNode>
+    >);
+    vi.mocked(unshareItem).mockResolvedValue({ revoked: true, stillBelow: [], keptTeam: true });
+
+    const out = outputOf(await unshare.handler({ id: NODE_ID }, ctx));
+    expect(out).toMatchObject({ id: NODE_ID, unshared: true, level: 'team' });
+    expect(out.note).toMatch(/stays at team/);
+    expect(out.note).toMatch(/level: 'admin'/);
+  });
+
   it('surfaces a revoke failure rather than reporting success', async () => {
     vi.mocked(getActiveShareForNode).mockRejectedValue(new Error('db down'));
     const res = await unshare.handler({ id: NODE_ID }, ctx);

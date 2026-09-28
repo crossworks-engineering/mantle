@@ -159,6 +159,33 @@ export async function listTeamThread(
   return opts.withPrivate ? rows : rows.map(redactPrivateReply);
 }
 
+/**
+ * A member login's OLD team portal chat, for the admin: a window of the
+ * thread its contact (`auth.users.contact_id`, the contact it was invited
+ * from) had on the team code. Rows with a login are never here, so this is
+ * never the member's live thread, and it is always redacted like any admin
+ * read. Null when the login has no contact. The member's own reads and the
+ * turn's context never call this (Jason, 2026-09-28: old portal transcripts
+ * are not merged into the live thread, which the model reads).
+ */
+export async function listLoginPortalThread(
+  ownerId: string,
+  loginId: string,
+  opts: { before?: string; limit?: number } = {},
+): Promise<{ contactId: string; messages: TeamMessage[] } | null> {
+  const [login] = await systemDb
+    .select({ contactId: authUsers.contactId })
+    .from(authUsers)
+    .where(eq(authUsers.id, loginId))
+    .limit(1);
+  if (!login?.contactId) return null;
+  const messages = await listTeamThread(ownerId, login.contactId, {
+    limit: opts.limit ?? 50,
+    ...(opts.before ? { before: opts.before } : {}),
+  });
+  return { contactId: login.contactId, messages };
+}
+
 /** Most recent N turns of a thread in ASCENDING order — the context-loader
  *  shape (mirror of recentAssistantMessages). The member's own turn: private
  *  replies included. */

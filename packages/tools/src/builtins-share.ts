@@ -62,15 +62,25 @@ const node_share: BuiltinToolDef = {
 };
 
 /**
- * The unshare tools' output. The item goes to admin with its link; what it
- * embeds (a page's files and drawings, a folder's contents) keeps its own
- * level, so name what is still below and how to raise it, as access_set does.
+ * The unshare tools' output. An open link's item goes to admin with its
+ * link; what it embeds (a page's files and drawings, a folder's contents)
+ * keeps its own level, so name what is still below and how to raise it, as
+ * access_set does. A team link's item stays at team (`keptTeam`): say so.
  */
 export function unshareOutput(
   id: string,
   revoked: boolean,
   stillBelow: readonly AccessItem[],
+  keptTeam?: boolean,
 ): Record<string, unknown> {
+  if (revoked && keptTeam) {
+    return {
+      id,
+      unshared: true,
+      level: 'team',
+      note: `The team link is gone, but the item stays at team: member logins still read it. To hide it from them: access_set(node_id: '${id}', level: 'admin').`,
+    };
+  }
   if (!revoked || stillBelow.length === 0) return { id, unshared: revoked };
   const names = stillBelow.map((i) => `${i.title} (${i.type}, ${i.audience})`).join(', ');
   return {
@@ -99,9 +109,9 @@ const node_unshare: BuiltinToolDef = {
     try {
       const share = await getActiveShareForNode(ctx.ownerId, id);
       if (!share) return { ok: true, output: { id, unshared: false } };
-      const { revoked, stillBelow } = await unshareItem(ctx.ownerId, share.id);
+      const { revoked, stillBelow, keptTeam } = await unshareItem(ctx.ownerId, share.id);
       ctx.step?.setOutput({ id, unshared: revoked });
-      return { ok: true, output: unshareOutput(id, revoked, stillBelow) };
+      return { ok: true, output: unshareOutput(id, revoked, stillBelow, keptTeam) };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }
