@@ -17,6 +17,7 @@ import {
   SaveBody,
   SpaceIdParams,
   spaceStateResponse,
+  withAdminGuard,
 } from '@/lib/member-space';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -37,6 +38,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (limited) return limited;
   const params = SpaceIdParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
+  const held = await withAdminGuard(member, params.data.id);
+  if (held) return held;
   const body = SaveBody.safeParse(await readJsonNoNul(req));
   if (!body.success) return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   const { spaceId } = member;

@@ -1282,6 +1282,13 @@
       "when": 1790017200000,
       "tag": "0182_member_turn_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1790017260000,
+      "tag": "0183_take_over_snapshots",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
-import { db, nodes, readsDrafts, tables } from '@mantle/db';
+import { acceptedSnapshots, db, nodes, readsDrafts, tables } from '@mantle/db';
 import {
   ENGINE_VERSION,
   MATERIALIZE_MAX,
@@ -377,6 +377,10 @@ export async function sweepLegacyTables(batch = 5): Promise<number> {
 
 // ── Backup (durability gate 2) ───────────────────────────────────────────────
 
+/** The owner segment, inside TABLE_DB_DIR, of the workbook copies member
+ *  authors read their accepted tables from (member-snapshots.ts). */
+export const SNAPSHOT_OWNER = 'accepted-snapshots';
+
 export type TableDbSnapshotReport = {
   snapshotted: { ownerId: string; nodeId: string; bytes: number; draft: boolean }[];
   /** Registry rows whose published file is absent — already-lost data, NOT
@@ -399,8 +403,20 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
     .innerJoin(nodes, eq(nodes.id, tables.nodeId))
     .where(and(isNotNull(tables.storagePath)));
 
+  // The workbook copies member authors read their accepted tables from
+  // (audit F07, member-snapshots.ts): kept under their own owner segment,
+  // so an untar into TABLE_DB_DIR puts them back where they were.
+  const snaps = await db
+    .select({ nodeId: acceptedSnapshots.nodeId, storagePath: acceptedSnapshots.tablePath })
+    .from(acceptedSnapshots)
+    .where(isNotNull(acceptedSnapshots.tablePath));
+  const all = [
+    ...rows.map((r) => ({ ...r, snapshot: false })),
+    ...snaps.map((r) => ({ ...r, ownerId: SNAPSHOT_OWNER, snapshot: true })),
+  ];
+
   const report: TableDbSnapshotReport = { snapshotted: [], missing: [], failed: [] };
-  for (const r of rows) {
+  for (const r of all) {
     const storagePath = r.storagePath!;
     let abs: string;
     try {
@@ -420,6 +436,7 @@ export async function snapshotAllTableDatabases(destDir: string): Promise<TableD
       [abs, false],
       [draftPathFor(abs), true],
     ] as const) {
+      if (draft && r.snapshot) continue;
       if (draft && !existsSync(file)) continue;
       try {
         const dest = path.join(destDir, r.ownerId, path.basename(file));

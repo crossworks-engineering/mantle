@@ -13,7 +13,13 @@ import { spaceThumbsDir, thumbnailFor } from '@mantle/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import type { OpenedSpaceFile } from '@mantle/content';
 import { withSpace } from '@mantle/db';
-import { SCENE_SVG_MAX_BYTES, SpaceItemStateError, sceneWithinLimits } from '@mantle/content';
+import {
+  SCENE_SVG_MAX_BYTES,
+  SpaceItemStateError,
+  isWithAdmin,
+  sceneWithinLimits,
+  withAdminError,
+} from '@mantle/content';
 import type { MemberCaller } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { TableOpsSchema } from '@/lib/table-ops-schema';
@@ -49,6 +55,16 @@ export function spaceStateResponse(err: unknown): Response {
 }
 
 export const notFound = () => NextResponse.json({ error: 'Not found.' }, { status: 404 });
+
+/**
+ * An item of this member's that an admin has taken over (audit F07) is not
+ * in their space any more: every member item route answers it 409
+ * `with-admin` (no content, no bytes) instead of a 404, so the client can
+ * say where it is. Null for anything else (the route goes on as before).
+ */
+export async function withAdminGuard(member: MemberCaller, id: string): Promise<Response | null> {
+  return (await isWithAdmin(member.loginId, id)) ? spaceStateResponse(withAdminError()) : null;
+}
 
 /** A stale draft etag, in the owner routes' shape. */
 export const conflict = (rev: number) =>

@@ -72,6 +72,7 @@ const ADMIN_SPACE_ROUTES = [
   'PUT /api/admin/space/:id/draft',
   'POST /api/admin/space/:id/save',
   'POST /api/admin/space/:id/accept',
+  'POST /api/admin/space/:id/give-back',
   'GET /api/admin/space/:id/bytes',
   'POST /api/admin/space-files',
 ];
@@ -170,6 +171,26 @@ describe.skipIf(!hasManifest)('admin private-space routes', () => {
       expect(res.status, path).toBe(400);
       expect(h.spaceLookups, path).toEqual([ADMIN_ID]);
     }
+  });
+
+  // Audit F07: Take over lands in the ACTING admin's own space.
+  it("take-over: admin only, into the acting login's own space", async () => {
+    const path = '/api/team-admin/submissions/not-a-uuid/take-over';
+    expect((await app.request(path, { method: 'POST' })).status).toBe(401);
+    const asMember = await app.request(path, {
+      method: 'POST',
+      headers: { cookie: cookieFor(MEMBER_ID) },
+    });
+    expect(asMember.status).toBe(403);
+    expect(((await asMember.json()) as { reason?: string }).reason).toBe('member-login');
+    h.spaceLookups.length = 0;
+    const asAdmin = await app.request(path, {
+      method: 'POST',
+      headers: { cookie: cookieFor(ADMIN_ID) },
+    });
+    // A malformed id is a 404 before any content read, after the space.
+    expect(asAdmin.status).toBe(404);
+    expect(h.spaceLookups).toEqual([ADMIN_ID]);
   });
 
   it('bytes: an owner ?at= token acts for the login named in `act`', async () => {

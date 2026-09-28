@@ -1,7 +1,13 @@
 import { NextResponse } from '@/server/http-compat';
 import { deleteMineComment } from '@mantle/content';
 import { getMemberOr401 } from '@/lib/auth';
-import { CommentParams, inMySpace, memberWriteGate, notFound } from '@/lib/member-space';
+import {
+  CommentParams,
+  inMySpace,
+  memberWriteGate,
+  notFound,
+  withAdminGuard,
+} from '@/lib/member-space';
 
 /** DELETE /api/member/space/:id/comments/:commentId : remove one of the
  *  member's own comments on one of their own items. */
@@ -15,6 +21,8 @@ export async function DELETE(
   if (limited) return limited;
   const params = CommentParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
+  const held = await withAdminGuard(member, params.data.id);
+  if (held) return held;
   const ok = await inMySpace(member, () =>
     deleteMineComment(member.spaceId, params.data.id, params.data.commentId),
   );

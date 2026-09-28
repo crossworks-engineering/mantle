@@ -23,7 +23,16 @@ export class SpaceItemStateError extends Error {
       | 'embed'
       | 'not-shared'
       | 'too-large'
-      | 'invalid',
+      | 'invalid'
+      // An admin took the item over (audit F07): the member cannot open or
+      // change it until it comes back.
+      | 'with-admin'
+      // Give back refused: the author cannot take it (deactivated, deleted,
+      // no longer a member). Accept or delete it instead.
+      | 'author-inactive'
+      // A taken item of an author who can take it back: give it back
+      // instead of deleting it.
+      | 'taken',
     message: string,
     /** For `embed`: the referenced ids the item may not use. */
     readonly ids: string[] = [],

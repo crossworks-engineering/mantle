@@ -32,6 +32,7 @@ import {
   draftAbsFor,
   registryFileColumns,
   removeTableFile,
+  SNAPSHOT_OWNER,
 } from '../table-storage';
 import {
   TABLES_ROOT_LABEL,
@@ -221,6 +222,9 @@ export async function deleteTable(ownerId: string, id: string): Promise<boolean>
     await afterCommit(() => {
       removeTableFile(resolveStoragePath(storagePath));
       removeTableFile(draftAbsFor(storagePath));
+      // A member author's copy of the accepted version (audit F07): its row
+      // went with the node.
+      removeTableFile(publishedPath(SNAPSHOT_OWNER, id));
     });
   }
   return true;

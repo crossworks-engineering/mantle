@@ -49,8 +49,9 @@ export const BUNDLE_MAX_ITEMS = 200;
 
 export const BUNDLE_TOO_LARGE = `This item brings more than ${BUNDLE_MAX_ITEMS} items with it.`;
 
-/** The references one item carries, read from its SAVED version. */
-async function refsOf(via: Via, item: BundleItem): Promise<EmbedRefs[]> {
+/** The references one item carries, read from its SAVED version. Also the
+ *  give-back embed check (member-takeover.ts). */
+export async function refsOf(via: Via, item: BundleItem): Promise<EmbedRefs[]> {
   switch (item.type) {
     case 'page': {
       const [p] = await via

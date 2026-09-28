@@ -85,7 +85,15 @@ export type MemberChatThread = {
 // ── Personal spaces (member logins Phase 2) ──────────────────────────────
 
 export type MemberSpaceSharing = 'private' | 'team';
-export type MemberReviewState = 'draft' | 'submitted' | 'returned' | 'accepted';
+/** A personal item's review state as the brain stores it. `taken` (brains
+ *  from the take-over release, migration 0183): an admin took the submitted
+ *  item into their own private space; only admin rows carry it. */
+export type MemberReviewState = 'draft' | 'submitted' | 'returned' | 'accepted' | 'taken';
+
+/** A row's state in a list: the stored state, or `with-admin` on the
+ *  MEMBER's own list for an item an admin took over (title and kind only:
+ *  opening it answers 409 `with-admin`). */
+export type MemberSpaceItemState = MemberReviewState | 'with-admin';
 
 /** One item of a personal space: GET /api/member/space[/team] rows. */
 export type MemberSpaceItemRow = {
@@ -94,7 +102,7 @@ export type MemberSpaceItemRow = {
   title: string;
   icon: string | null;
   sharing: MemberSpaceSharing;
-  reviewState: MemberReviewState;
+  reviewState: MemberSpaceItemState;
   submittedAt: string | null;
   returnedNote: string | null;
   /** The login that wrote it (team drafts show whose it is). */
@@ -102,12 +110,69 @@ export type MemberSpaceItemRow = {
   updatedAt: string;
 };
 
-/** GET /api/member/space?kind=&q=&page= (and /space/team) */
+/**
+ * GET /api/member/space?kind=&q=&review=&page= (and /space/team). On the
+ * member's own list, page 1 also carries the member's items an admin has
+ * taken over (reviewState `with-admin`, before the own rows; `total` counts
+ * them), unless `review=` names states without `with-admin`.
+ */
 export type MemberSpaceList = {
   items: MemberSpaceItemRow[];
   total: number;
   page: number;
   pageSize: number;
+};
+
+// ── An admin's private space and Take over (audit F07) ──────────────────
+
+/** Who wrote an item an admin took over from the Review queue. */
+export type AdminTakenFrom = {
+  /** The member login; null once that login is deleted. */
+  loginId: string | null;
+  /** Display name, else the email's local part; "Removed member" once the
+   *  login is deleted. */
+  name: string;
+  /** False when the member is deactivated, deleted or no longer a member:
+   *  give-back is refused (409 `author-inactive`), accept or delete it. */
+  canGiveBack: boolean;
+  takenAt: string | null;
+};
+
+/** One row of GET /api/admin/space: a member row, plus who wrote it when
+ *  the admin took it over (reviewState `taken`), else null. */
+export type AdminSpaceItemRow = MemberSpaceItemRow & { takenFrom: AdminTakenFrom | null };
+
+/** GET /api/admin/space?kind=&q=&review=&page= */
+export type AdminSpaceList = {
+  items: AdminSpaceItemRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+/** GET /api/admin/space/:id (and the PATCH answer). */
+export type AdminSpaceItem<TDoc = unknown, TTable = unknown> = {
+  row: AdminSpaceItemRow;
+  body: MemberSpaceItemBody<TDoc, TTable>;
+};
+
+/** An item that moved with a Take over or a Give back. */
+export type MovedSpaceItem = { id: string; type: MemberItemKind; title: string };
+
+/** POST /api/team-admin/submissions/:id/take-over -> 200 */
+export type TakeOverResult = {
+  /** The taken item: now in the acting admin's private space, same id. */
+  id: string;
+  /** It and its bundle, in bundle order. */
+  moved: MovedSpaceItem[];
+};
+
+/** POST /api/admin/space/:id/give-back { note } -> 200 */
+export type GiveBackResult = {
+  id: string;
+  /** Back in the member's space: the item `returned` with the note, the rest
+   *  of what was taken with it as drafts. */
+  returned: MovedSpaceItem[];
 };
 
 /** A space file's metadata; the bytes stream from the item's bytes route. */
@@ -161,17 +226,22 @@ export type MemberAcceptedPage = {
   pageSize: number;
 };
 
-/** GET /api/member/accepted/:id -> { item }: the SAVED version, whatever its
- *  level; a drawing shows from /api/member/draws/:id/svg, a file's bytes
- *  from /api/member/files/:id. */
+/** GET /api/member/accepted/:id -> { item }: the version ACCEPTED (the
+ *  snapshot taken at Accept, brains from the take-over release; never the
+ *  brain's current version), whatever its level. A drawing shows from
+ *  /api/member/draws/:id/svg, a file's bytes from /api/member/files/:id.
+ *  `changedByAdmin: true`: an admin changed the file (or a drawing with no
+ *  saved picture) since, so its bytes are not served any more; the metadata
+ *  is what was accepted. */
 export type MemberAcceptedItem =
   | (MemberAcceptedRow & { type: 'page'; doc: unknown })
   | (MemberAcceptedRow & { type: 'note'; content: string })
   | (MemberAcceptedRow & { type: 'table'; table: unknown })
-  | (MemberAcceptedRow & { type: 'draw' })
+  | (MemberAcceptedRow & { type: 'draw'; changedByAdmin?: boolean })
   | (MemberAcceptedRow & {
       type: 'file';
       filename: string;
       mimeType: string | null;
       sizeBytes: number | null;
+      changedByAdmin?: boolean;
     });

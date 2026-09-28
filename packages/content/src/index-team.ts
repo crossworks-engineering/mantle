@@ -150,6 +150,9 @@ export {
   deleteMineItem,
   getMineItem,
   getMineRow,
+  isWithAdmin,
+  listWithAdmin,
+  withAdminError,
   getTeamDraftDrawSvg,
   getTeamDraftItem,
   isSpaceItemKind,
@@ -213,6 +216,8 @@ export {
   previewAccept,
   returnReviewItem,
   reviewDrawSvg,
+  takeOverReviewItem,
+  type TakeOverResult,
   type AcceptOptions,
   type AcceptResult,
   type Bundle,
@@ -223,7 +228,9 @@ export {
 } from './member-review';
 export {
   acceptedAuthors,
+  acceptedDrawSnapshot,
   acceptedDrawSvg,
+  acceptedFileReadable,
   acceptedRow,
   getAcceptedItem,
   isAuthorOfAcceptedFile,
@@ -233,6 +240,14 @@ export {
   type AcceptedRow,
 } from './member-accepted';
 export { memberDrawSvg, memberVisibleDrawFileIds } from './member-draw-images';
+export { giveBackTakenItem, takenFromOf, type GiveBackResult } from './member-takeover';
+export {
+  SNAPSHOT_TABLE_OWNER,
+  acceptedFileUnchanged,
+  snapshotOf,
+  snapshotTableAbs,
+  type AcceptedSnapshot,
+} from './member-snapshots';
 export { settleSpaceOnPromotion } from './member-space-login';
 export {
   SPACE_PURGE_GRACE_DAYS,

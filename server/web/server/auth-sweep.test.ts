@@ -186,6 +186,7 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
       '/api/admin/space/:id/accept',
       '/api/admin/space/:id/bytes',
       '/api/admin/space/:id/draft',
+      '/api/admin/space/:id/give-back',
       '/api/admin/space/:id/save',
     ]);
     for (const entry of admin) {

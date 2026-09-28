@@ -257,6 +257,10 @@ The draft and save routes keep the owner routes' etag contract (`if_rev` in,
 `reason` (`frozen`, `not-draft`, `not-submitted`, `unsaved-draft`, `quota`,
 `embed`, `not-shared`, `too-large`: a bundle of more than 200 items); an
 empty comment is a 400 (`invalid`); another member's item is a plain 404.
+An own item an admin has TAKEN OVER (section 11) is no longer in the space:
+`GET /api/member/space` lists it on page 1 as a `with-admin` row (title and
+kind only), and every `/api/member/space/:id…` route answers it 409
+`with-admin`, with no content and no bytes.
 
 A table's draft takes a whole `table` document or an `ops` batch (the owner
 op schema); Save version publishes the draft workbook. `GET …/:id?tab=` picks
@@ -432,6 +436,7 @@ redacted for admins (section 5).
 | `DELETE …/submissions/:id/comments/:commentId`      | Take back an own review comment                  |
 | `POST /api/team-admin/submissions/:id/accept`       | `{ audience?, parentPageId?, folderPath? }`      |
 | `POST /api/team-admin/submissions/:id/return`       | `{ note }`: back to the author                   |
+| `POST /api/team-admin/submissions/:id/take-over`    | Into the acting admin's own space (section 11)   |
 | `POST /api/team-admin/submissions/:id/discard`      | Delete a left-behind item (inactive author only) |
 
 **The thread.** The reviewer writes review talk (`thread_scope` 'review',
@@ -442,6 +447,13 @@ submitted.
 
 **Return** puts a submitted item back to `returned` with the note (the
 member sees it as a banner, edits, and submits again).
+
+**Take over** (audit F07, section 11) moves a submitted item and its
+bundle into the acting admin's own private space to work on it; it leaves
+the queue. A taken item whose admin is deactivated or deleted comes back to
+the queue (reviewState `taken`, reason `submitted`, or `left-behind` when
+its author is gone too): Accept, Return, Take over and Discard then work on
+it and on what was taken with it.
 
 **Accept** (plan 6.2) is one transaction per bundle. The bundle
 (`member-bundle.ts`) is the item plus everything that renders inside it,
@@ -461,7 +473,8 @@ another Accept moved first (a shared embed) is dropped, never moved twice.
 Every moved item keeps its node id (links stay valid),
 goes to the brain at the level the admin picks (admin by default), loses any
 leftover draft, and its `space_items` row goes to `accepted` with the
-reviewer (the row stays: it records the author). A page lands at the top of
+reviewer (the row stays: it records the author), and its author's
+accepted snapshot is recorded (section 11). A page lands at the top of
 Pages or under a chosen brain page; files land in a chosen Files folder
 (`files` by default) under a safe, unique name. Bytes move beside the rows:
 a file is copied into the folder under a dot name the files watcher ignores,
@@ -490,7 +503,9 @@ admin may still accept loses a piece; once that item is accepted or
 discarded, the rest goes the next night. The purge and Discard delete only
 rows still in the space: an Accept that re-owns a row to the brain at the
 same moment wins, and the delete matches nothing (audit F03). Discard locks
-the item's state row as Accept does.
+the item's state row as Accept does. The purge never deletes a TAKEN item
+(section 11): it is a member's work in an admin's space, and when that
+admin's space is purged the taken items stay and are offered in the queue.
 
 Tests: `packages/content/src/member-bundle.viewer.db.test.ts` (Postgres: the
 bundle refused with unsaved edits, recorded, frozen, forgotten on Recall,
@@ -511,16 +526,19 @@ item out of Mine, but its `space_items` row stays and names the author, so:
 | Route                          | What                                             |
 | ------------------------------ | ------------------------------------------------ |
 | `GET /api/member/accepted`     | The author's accepted items, newest accept first |
-| `GET /api/member/accepted/:id` | One of them, the SAVED version, at any level     |
+| `GET /api/member/accepted/:id` | One of them, as ACCEPTED, at any level           |
 
-- **Read access, at any level.** The author reads what they wrote even when
-  the admin accepted it at admin: the saved version only (a page's committed
-  doc, a table's saved workbook, never an admin's working draft, since a
-  table's draft file is skipped too). `/api/member/files/:id` and
-  `/api/member/draws/:id/svg` fall back to the same rule after the team-level
-  lookup misses, so an accepted image still renders in the author's other
-  drafts. Nobody else gets anything new: another member, a returned or
-  recalled item and an item of another brain are all a plain 404.
+- **Read access, at any level, to the version accepted.** The author reads
+  what they wrote even when the admin accepted it at admin, and reads it as
+  it was ACCEPTED: the accepted snapshot (section 11), never the brain's
+  current version, so an admin's later edits (saved or draft) stay the
+  brain's. `/api/member/files/:id` and `/api/member/draws/:id/svg` fall back
+  to the same rule after the team-level lookup misses, so an accepted image
+  still renders in the author's other drafts, but only while the brain file
+  holds exactly the bytes accepted; after an admin changed it, the file
+  route is a 404 and the item says `changedByAdmin: true`. Nobody else gets
+  anything new: another member, a returned or recalled item and an item of
+  another brain are all a plain 404.
 - **The rule lives in the query.** An item above the member's level is not
   visible to the team role and the limited roles hold no grant on
   `space_items`, so `packages/content/src/member-accepted.ts` runs on the
@@ -936,6 +954,7 @@ path:
 | `PUT /api/admin/space/:id/draft`        | `getOwnerOr401`, then the own space    |
 | `POST /api/admin/space/:id/save`        | `getOwnerOr401`, then the own space    |
 | `POST /api/admin/space/:id/accept`      | `getOwnerOr401`, then the own space    |
+| `POST /api/admin/space/:id/give-back`   | `getOwnerOr401`, then the own space    |
 | `GET /api/admin/space/:id/bytes`        | `getOwnerForAsset` (`?at=`), own space |
 | `POST /api/admin/space-files`           | `getOwnerOr401`, then the own space    |
 
@@ -965,12 +984,16 @@ dedupe, drafts discarded, one transaction, the extractor told once per
 moved item, on commit). Its own guard: the item is in the caller's own
 personal space, the caller is a usable admin, it is not accepted, and it
 has no unsaved edits (409 `unsaved-draft`: save a version first).
-Anything else is a 404. Unsaved edits on any item the bundle holds refuse
+Anything else is a 404. The same route accepts an item the admin TOOK OVER
+from the Review queue (section 11); that item keeps its author record. Unsaved edits on any item the bundle holds refuse
 too (409 `unsaved-draft` with the `ids`: Accept would move the saved
 version and drop the draft); the bundle's rows are locked first, so the
-admin's own autosave cannot slip in. The bundle's `space_items` rows are
-DROPPED: an admin's own item keeps no author record, so it never shows the
-member-authored badge and never lists as a member's accepted item.
+admin's own autosave cannot slip in. The `space_items` rows of the admin's
+OWN items are DROPPED: an admin's own item keeps no author record, so it
+never shows the member-authored badge and never lists as a member's
+accepted item. A taken member item's row is kept and goes to `accepted`
+with this admin as the reviewer, and its author gets the accepted
+snapshot.
 
 **Never seen by anyone else.**
 
@@ -999,7 +1022,9 @@ member-authored badge and never lists as a member's accepted item.
 
 **Deactivation.** A deactivated (or deleted) admin's private items are
 purged after 30 days by the nightly `space-purge`, like a member's (section
-6); an admin's item never goes to the Review queue as "left behind".
+6); an admin's item never goes to the Review queue as "left behind". Items
+the admin TOOK OVER are a member's work: never purged, and offered in the
+Review queue again for another admin (section 11).
 
 **Tests.** `packages/content/src/admin-space.viewer.db.test.ts` (Postgres:
 the embed rule both ways, another admin by id and through the brain, the
@@ -1010,3 +1035,182 @@ anonymous 401, member 403, the own space, the `?at=` token),
 `server/web/app/api/admin/space/admin-space-routes.test.ts` (the writer and
 the accept wiring), `server/web/server/middleware/gate.test.ts` (the asset
 path) and the auth and member sweeps.
+
+## 11. Take over and the accepted snapshot (audit F07)
+
+Jason, 2026-09-28. Two changes to what happens between Submit and Accept,
+and after it. Migration 0183.
+
+**Take over.** An admin can take a SUBMITTED member item out of the Review
+queue into their OWN private space (section 10: the acting login's, never
+the anchor's for another admin), work on it there, and then accept it into
+the brain or give it back to the member.
+
+- One transaction, with Accept's locks (the state row, then the bundle's
+  rows). The item and the bundle recorded at Submit move with the same node
+  ids (`moveBetweenSpaces`, `packages/content/src/member-takeover.ts`):
+  `owner_id` re-owned, a table's workbook copied into
+  `TABLE_DB_DIR/<admin space>/`, a file's bytes copied into
+  `MANTLE_SPACES_ROOT/<admin space>/files/`, the old copies removed after
+  the commit and the new ones on a rollback, page paths rebuilt (a page
+  whose parent does not move goes to the top), file names made unique,
+  leftover drafts dropped. An item of the bundle that is itself submitted
+  or accepted stays where it is. The owner-copy registry check (section 6)
+  holds for the member's space.
+- Every moved item's `space_items` row stays and still names the member
+  (`author_login_id`): `review_state` `taken`, `taken_by` (the admin),
+  `taken_at`, `taken_root` (NULL on the item itself, the item's id on the
+  rest of its bundle), sharing private. The recorded bundle is cleared.
+- Nothing is indexed, embedded or extracted: it stays a personal item. Take
+  over, the admin's edits and Give back start no LLM work; only Accept tells
+  the extractor, once per moved item, after the commit and the bytes.
+- Nobody else reads it: the queue no longer lists it, another admin gets a
+  404 (by id and in the queue), teammates never see it (team drafts come
+  from member spaces only), and the member sees only a `with-admin` row.
+- A taken item is not frozen: the admin edits it through the ordinary
+  admin space routes (section 10), under the admin embed rule.
+
+**Give back** moves a taken item and everything taken with it back to the
+member's space: the item (and the group's root) `returned` with the note,
+the rest `draft`, sharing private, the taken columns cleared. The member
+sees the Return banner, edits and submits again. It is refused while:
+
+- the member cannot take it (deactivated, deleted, or no longer a member):
+  409 `author-inactive`; accept it, or delete it (DELETE on the admin space
+  item is allowed then, and refused with 409 `taken` while the member can
+  still take it back);
+- any item of the group has unsaved edits: 409 `unsaved-draft` with `ids`;
+- its saved versions use something the MEMBER may not (section 5's embed
+  rule: only the group itself, the member's own items and Library items):
+  409 `embed` with `ids`. An admin may have added an admin-level brain item
+  or one of their own private items while it was theirs; giving that back
+  would show the member an id, a mention chip's title or a link. Remove
+  them, save, give it back.
+
+**Accept after Take over** is `POST /api/admin/space/:id/accept` (section
+10), with the same body and answer. The taken item's row goes to
+`accepted` with the admin as `reviewed_by`, keeping the author, so the
+member lists it under Accepted and the member-authored badge names them.
+Items taken with it that the admin removed from it stay in the admin's
+space as taken, each its own root (give them back or accept them).
+
+**What the member sees.** While taken, `GET /api/member/space` lists the
+item on page 1 as a `with-admin` row (id, kind, title; no icon, content,
+note or bytes), before the own rows; `total` counts them; `?review=` names
+`with-admin` to select them and leaves them out otherwise. Every
+`/api/member/space/:id…` route (the item, draft, save, share, submit,
+recall, bytes, comments) answers 409 `{ error, reason: 'with-admin' }`, so
+Recall is refused. `my_items_list` (the team agent's tool) does not list
+them. Realtime: Take over, Give back and Accept each raise
+`space_item_changed` (kind `state`) with the MEMBER's space, so the
+member's `/api/member/realtime` stream gets `{ type: 'space_item', id,
+kind: 'state', own: true }` for every moved item, and teammates who were
+showing a shared one get theirs.
+
+**Deactivation.** If the admin who took an item is deactivated, deleted or
+no longer an admin, the taken item goes back to the Review queue in place
+(the queue's `reviewable` rule reads `taken_by`; only the group's root is
+listed), with `reviewState: 'taken'` and reason `submitted` (or
+`left-behind` when its author is gone too), and it counts in the badge.
+Another admin can then Accept it (what was taken with it moves), Return it
+(a give-back from the gone admin's space; that admin's unsaved edits are
+dropped, the other refusals hold), Take it over (into their own space) or,
+when the author is gone too, Discard it (with what was taken with it).
+Review comments are not open on it (409 `not-submitted`). The nightly purge
+never deletes a taken item (`member-space-purge.ts` skips the state): a
+gone admin's own private items go after 30 days, the members' work stays.
+Nothing moves on its own when a login is deactivated: no trigger, no cron.
+
+**The accepted snapshot (F07 option A).** At EVERY Accept of a member's
+item (a reviewed Accept, a left-behind Accept, an Accept after Take over,
+an Accept of a released item) the version accepted is recorded for its
+author in `accepted_snapshots`, in the Accept's own transaction
+(`packages/content/src/member-snapshots.ts`):
+
+| Kind    | Snapshot                                                                            |
+| ------- | ----------------------------------------------------------------------------------- |
+| page    | the committed document                                                              |
+| note    | its text                                                                            |
+| drawing | the committed scene, its saved SVG and its image refs                               |
+| table   | a VACUUM INTO copy of the workbook at `TABLE_DB_DIR/accepted-snapshots/<id>.sqlite` |
+| file    | sha256, name, type and size only (the bytes stay the brain's)                       |
+
+Plus the title, icon and version number. `GET /api/member/accepted` and
+`GET /api/member/accepted/:id` serve the SNAPSHOT (title, icon, content;
+the level shown is the item's current one), never the brain's current
+version, at any level. A file's bytes are served (by
+`/api/member/files/:id`, which also lets an accepted image render in the
+author's other drafts) only while the brain file's recorded sha256 AND its
+bytes on disk (hashed, cached by path, size and mtime) equal the
+snapshot's; otherwise the file route is a 404 and the item answers its
+accepted metadata with `changedByAdmin: true`. A drawing's picture
+(`/api/member/draws/:id/svg`, the author fallback) is the snapshot's SVG,
+filtered by the snapshot's own image refs (an image the member wrote stays:
+its bytes inside that SVG are the accepted ones); a drawing accepted with
+no saved SVG shows the brain's SVG only while it is still at the accepted
+version, else `changedByAdmin: true`. The table backup
+(`snapshotAllTableDatabases`, the scheduled backup and `db-dump.sh`) copies
+the snapshot workbooks under the same `accepted-snapshots/` folder, so an
+untar into `TABLE_DB_DIR` restores them. Deleting the brain table removes
+its copy; deleting the brain item removes the snapshot row with it.
+
+**Items accepted before 0183.** The migration takes their snapshot from
+the brain's CURRENT saved version (page, note, drawing, a table with no
+workbook, a file's recorded sha256): an admin's edit made before the roll
+is in it, since no older copy exists. A file-backed table, and a file with
+no recorded sha256, cannot be copied in SQL: their rows are `pending` and
+are completed on the author's first read, from the brain's version at that
+moment (so an admin edit made between the roll and that first read is in
+it too). An accepted item with no snapshot at all (accepted by older code)
+is completed the same way. One completion at a time per item (an advisory
+lock).
+
+**API** (the DTOs are in `@mantle/client-types`, `dto/member.ts`).
+
+| Route                                            | Body       | Answer                                                                  |
+| ------------------------------------------------ | ---------- | ----------------------------------------------------------------------- |
+| `POST /api/team-admin/submissions/:id/take-over` | none       | `TakeOverResult` `{ id, moved: MovedSpaceItem[] }`                      |
+| `POST /api/admin/space/:id/give-back`            | `{ note }` | `GiveBackResult` `{ id, returned: MovedSpaceItem[] }`                   |
+| `POST /api/admin/space/:id/accept`               | as today   | as today (`{ id, audience, moved, linksStayingBehind }`)                |
+| `GET /api/admin/space[?review=taken]`            |            | `AdminSpaceList`: rows are `AdminSpaceItemRow`                          |
+| `GET/PATCH /api/admin/space/:id`                 |            | `AdminSpaceItem`: `{ row: AdminSpaceItemRow, body }`                    |
+| `GET /api/member/space[?review=with-admin]`      |            | `MemberSpaceList`, with `with-admin` rows on page 1                     |
+| `GET /api/member/accepted/:id`                   |            | `{ item: MemberAcceptedItem }`, `changedByAdmin?` on files and drawings |
+
+- `MovedSpaceItem` = `{ id, type, title }`.
+- `AdminSpaceItemRow` = `MemberSpaceItemRow & { takenFrom: AdminTakenFrom |
+null }`; `AdminTakenFrom` = `{ loginId: string | null, name, canGiveBack:
+boolean, takenAt: string | null }` (`name`: display name, else the email's
+  local part, "Removed member" once deleted; `canGiveBack` false when give
+  back would answer `author-inactive`).
+- States: `MemberReviewState` gains `taken` (admin rows and the Review
+  queue); `MemberSpaceItemState` = `MemberReviewState | 'with-admin'` is the
+  type of `MemberSpaceItemRow.reviewState` (`with-admin` on the member's
+  own list only).
+- Errors: take-over 404 (not waiting: recalled, handled, taken), 409
+  `not-submitted` (a left-behind item never submitted), 409 `too-large`;
+  give-back 404 (not a taken item in the caller's space), 400 `invalid` (no
+  note), 409 `author-inactive`, 409 `unsaved-draft` + `ids`, 409 `embed` +
+  `ids`; admin space DELETE 409 `taken`; every member item route 409
+  `with-admin`; Return on a released item can answer the give-back's 409s.
+
+**Rollback.** Code before 0183 does not know `taken`: give back or accept
+every taken item before rolling back
+(`select node_id from space_items where review_state = 'taken'`). The
+snapshot table is only read by the new code.
+
+**Tests.** `packages/content/src/member-takeover.viewer.db.test.ts`
+(Postgres: the move and the owner-copy registry, nothing announced or
+chunked, another admin, teammates and the member, the `with-admin` rows
+and Recall, `takenFrom`, give-back's refusals and the move back, Accept
+keeping the author and announcing once, the table's workbook, an admin's
+own item unsnapshotted, delete and `author-inactive`, the purge skipping a
+taken item, a deactivated taker releasing it to the queue and another
+admin taking it over, Return of a released item, a missing snapshot
+completed on first read), `member-accepted.viewer.db.test.ts` (an admin's
+later saved edits stay the brain's for page, table, drawing and note; a
+changed file answers `changedByAdmin`),
+`member-draw-images.viewer.db.test.ts` (a changed accepted image leaves a
+member's drawing, and stays in their own accepted snapshot),
+`server/web/server/admin-space-sweep.test.ts` and `auth-sweep.test.ts`
+(the routes and their gates).

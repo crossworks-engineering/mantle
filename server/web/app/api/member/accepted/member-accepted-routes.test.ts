@@ -85,15 +85,15 @@ vi.mock('@/lib/files', async () => {
 
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  isAuthorOfAcceptedFile: vi.fn(async (anchor: string, login: string, id: string) => {
+  acceptedFileReadable: vi.fn(async (anchor: string, login: string, id: string) => {
     h.authorChecks.push({ anchor, login, id });
     return h.isAuthor;
   }),
   getDrawSvg: vi.fn(async () => (h.drawSteps.push('team'), null)),
   getTeamDraftDrawSvg: vi.fn(async () => (h.drawSteps.push('team-drafts'), null)),
-  acceptedDrawSvg: vi.fn(async (anchor: string, login: string) => {
+  acceptedDrawSnapshot: vi.fn(async (anchor: string, login: string) => {
     h.drawSteps.push(`accepted:${anchor}:${login}`);
-    return '<svg>ok</svg>';
+    return { svg: '<svg>ok</svg>', fileRefs: { img1: 'snap' } };
   }),
   memberDrawSvg: vi.fn(async (...args: unknown[]) => {
     h.svgFilters.push(args);
@@ -214,7 +214,8 @@ describe('GET /api/member/draws/:id/svg', () => {
     const { GET } = await import('../draws/[id]/svg/route');
     const res = await GET(new Request(`http://x/api/member/draws/${FILE}/svg`), ctx(FILE));
     expect(await res.text()).toBe('<svg>images the member may see</svg>');
-    expect(h.svgFilters).toEqual([[ANCHOR, LOGIN, FILE, '<svg>ok</svg>']]);
+    // Filtered with the snapshot's own image refs (audit F07).
+    expect(h.svgFilters).toEqual([[ANCHOR, LOGIN, FILE, '<svg>ok</svg>', { img1: 'snap' }]]);
   });
 });
 

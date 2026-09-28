@@ -6,8 +6,8 @@
  * the member-authored badge.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-accepted.viewer.db.test.ts
  */
-import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -216,6 +216,73 @@ describe.skipIf(!URL)('member accepted items', () => {
 
     const file = await ma.getAcceptedItem(anchor, loginA, fileId);
     expect(file).toMatchObject({ type: 'file', filename: 'figure.png', audience: 'admin' });
+    expect(await ma.isAuthorOfAcceptedFile(anchor, loginA, fileId)).toBe(true);
+  });
+
+  // Audit F07, option A: the author reads the snapshot taken at Accept.
+  it('the author reads the version ACCEPTED: an admin’s later SAVED edits stay the brain’s', async () => {
+    const say = (text: string) => ({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+    });
+    expect((await pd.commitPage(anchor, pageId, say('admin saved words'))).ok).toBe(true);
+    await td.commitTable(anchor, tableId); // the admin's draft cell, now saved
+    const dr = await import('./draws');
+    await dr.commitDraw(
+      anchor,
+      drawId,
+      { elements: [{ id: 'e2', type: 'ellipse' }] },
+      { svg: '<svg xmlns="http://www.w3.org/2000/svg"><!-- ADMINSVG --></svg>' },
+    );
+    const notes = await import('./notes');
+    await notes.updateNote(anchor, noteTeamId, {
+      title: 'Renamed by admin',
+      content: 'admin note words',
+    });
+    // The brain has the admin's version...
+    const brainPage = await (await import('./pages/read')).getPage(anchor, pageId);
+    expect(JSON.stringify(brainPage?.doc)).toContain('admin saved words');
+
+    // ...and the author still reads what was accepted.
+    const page = await ma.getAcceptedItem(anchor, loginA, pageId);
+    expect(JSON.stringify(page)).toContain('author words');
+    expect(JSON.stringify(page)).not.toContain('admin saved words');
+    const table = await ma.getAcceptedItem(anchor, loginA, tableId);
+    expect(JSON.stringify(table)).toContain('author cell');
+    expect(JSON.stringify(table)).not.toContain('admin draft cell');
+    const svg = await ma.acceptedDrawSvg(anchor, loginA, drawId);
+    expect(svg).toContain('AUTHORSVG');
+    expect(svg).not.toContain('ADMINSVG');
+    const note = await ma.getAcceptedItem(anchor, loginA, noteTeamId);
+    expect(note?.type === 'note' && note.content).not.toContain('admin note words');
+    expect(note?.title).toBe(`${tag} team note`);
+    const listed = (await ma.listAccepted(anchor, loginA)).items.find((i) => i.id === noteTeamId);
+    expect(listed?.title).toBe(`${tag} team note`);
+    // The workbook copy the table is read from sits in the snapshots folder.
+    const snaps = await import('./member-snapshots');
+    expect(existsSync(snaps.snapshotTableAbs(tableId))).toBe(true);
+  });
+
+  it('a file an admin changed: the accepted metadata, changedByAdmin, and no bytes', async () => {
+    const before = await ma.getAcceptedItem(anchor, loginA, fileId);
+    expect(before?.type === 'file' && before.changedByAdmin).toBeFalsy();
+    expect(await ma.acceptedFileReadable(anchor, loginA, fileId)).toBe(true);
+
+    // An admin replaces the brain file's bytes (and the node records it).
+    const [n] = (await m.systemDb.execute(
+      sqlTag`select path::text as path, data from nodes where id = ${fileId}`,
+    )) as unknown as { path: string; data: Record<string, unknown> }[];
+    const disk = fp.diskPathForFile(n!.path, String(n!.data.filename))!;
+    writeFileSync(disk, 'ADMIN REPLACED BYTES');
+    const sha = createHash('sha256').update('ADMIN REPLACED BYTES').digest('hex');
+    await m.systemDb.execute(
+      sqlTag`update nodes set data = data || jsonb_build_object('sha256', ${sha}::text)
+              where id = ${fileId}`,
+    );
+    const after = await ma.getAcceptedItem(anchor, loginA, fileId);
+    expect(after).toMatchObject({ type: 'file', filename: 'figure.png', changedByAdmin: true });
+    expect(await ma.acceptedFileReadable(anchor, loginA, fileId)).toBe(false);
+    // Still the author's accepted file (their own drawing's snapshot keeps it).
     expect(await ma.isAuthorOfAcceptedFile(anchor, loginA, fileId)).toBe(true);
   });
 

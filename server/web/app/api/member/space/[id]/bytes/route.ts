@@ -1,7 +1,13 @@
 import { NextResponse } from '@/server/http-compat';
 import { openMineFile } from '@mantle/content';
 import { getMemberForAsset } from '@/lib/auth';
-import { SpaceIdParams, inMySpace, memberBytesGate, spaceFileResponse } from '@/lib/member-space';
+import {
+  inMySpace,
+  memberBytesGate,
+  spaceFileResponse,
+  SpaceIdParams,
+  withAdminGuard,
+} from '@/lib/member-space';
 
 /**
  * GET /api/member/space/:id/bytes[?thumb=1] : one of the member's own files,
@@ -16,6 +22,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (limited) return limited;
   const params = SpaceIdParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
+  const held = await withAdminGuard(member, params.data.id);
+  if (held) return held;
   const opened = await inMySpace(member, () => openMineFile(member.spaceId, params.data.id));
   return spaceFileResponse(req, opened);
 }

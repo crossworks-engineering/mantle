@@ -5,7 +5,11 @@
  * serving the snapshot as-is would hand a member a file the member files
  * route refuses. The member SVG keeps an image only when its file passes that
  * route's rule: a file at team level or lower in this brain, or a file this
- * member wrote and an admin accepted. Every other image is taken out.
+ * member wrote and an admin accepted, while the brain file still holds the
+ * bytes accepted (audit F07). Every other image is taken out. The SVG of the
+ * member's OWN accepted drawing as accepted (its snapshot) keeps the images
+ * the member wrote whatever happened to them since: the bytes inside it are
+ * the ones accepted, and the snapshot's own image refs name them.
  *
  * The rule is written in the query (the admin pool proves it): the author
  * half needs the admin pool anyway (member-accepted.ts), and the answer is
@@ -21,7 +25,7 @@ import {
   nodes,
 } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
-import { isAuthorOfAcceptedFile } from './member-accepted';
+import { acceptedFileReadable, isAuthorOfAcceptedFile } from './member-accepted';
 import { keepSvgImages, svgHasImages } from './scene-svg';
 
 /** The scene file ids (Excalidraw BinaryFile ids) of this drawing's images a
@@ -30,18 +34,24 @@ export async function memberVisibleDrawFileIds(
   anchorId: string,
   loginId: string,
   drawId: string,
+  /** The accepted snapshot's image refs, for the SVG as accepted. */
+  snapshotRefs?: Record<string, unknown>,
 ): Promise<Set<string>> {
   if (currentViewerLevel() !== 'admin' || currentSpaceScope()) {
     throw new Error(
       'memberVisibleDrawFileIds reads on the admin pool: call it outside a viewer scope',
     );
   }
-  const [row] = await db
-    .select({ fileRefs: draws.fileRefs })
-    .from(draws)
-    .where(eq(draws.nodeId, drawId))
-    .limit(1);
-  const refs = (row?.fileRefs ?? {}) as Record<string, unknown>;
+  let refs = snapshotRefs;
+  if (!refs) {
+    const [row] = await db
+      .select({ fileRefs: draws.fileRefs })
+      .from(draws)
+      .where(eq(draws.nodeId, drawId))
+      .limit(1);
+    refs = (row?.fileRefs ?? {}) as Record<string, unknown>;
+  }
+  const authored = snapshotRefs ? isAuthorOfAcceptedFile : acceptedFileReadable;
   // file node id -> the scene file ids that draw it.
   const byNode = new Map<string, string[]>();
   for (const [fileId, nodeId] of Object.entries(refs)) {
@@ -64,7 +74,7 @@ export async function memberVisibleDrawFileIds(
     );
   const ok = new Set(teamLevel.map((r) => r.id.toLowerCase()));
   for (const nodeId of byNode.keys()) {
-    if (!ok.has(nodeId) && (await isAuthorOfAcceptedFile(anchorId, loginId, nodeId))) {
+    if (!ok.has(nodeId) && (await authored(anchorId, loginId, nodeId))) {
       ok.add(nodeId);
     }
   }
@@ -79,7 +89,12 @@ export async function memberDrawSvg(
   loginId: string,
   drawId: string,
   svg: string,
+  /** The accepted snapshot's image refs, for the SVG as accepted. */
+  snapshotRefs?: Record<string, unknown>,
 ): Promise<string> {
   if (!svgHasImages(svg)) return svg;
-  return keepSvgImages(svg, await memberVisibleDrawFileIds(anchorId, loginId, drawId));
+  return keepSvgImages(
+    svg,
+    await memberVisibleDrawFileIds(anchorId, loginId, drawId, snapshotRefs),
+  );
 }

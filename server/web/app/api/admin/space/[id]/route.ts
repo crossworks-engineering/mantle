@@ -1,7 +1,12 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { deleteMineItem, getMineItem, updateMineItem } from '@mantle/content';
-import { adminWriter, getAdminSpaceOr401, inAdminSpace } from '@/lib/admin-space';
+import {
+  adminWriter,
+  getAdminSpaceOr401,
+  inAdminSpace,
+  itemWithTakenFrom,
+} from '@/lib/admin-space';
 import { readJsonNoNul } from '@/lib/strip-nul';
 import { SpaceIdParams, notFound, spaceStateResponse } from '@/lib/member-space';
 import { firstIssue } from '@/lib/zod-issue';
@@ -24,7 +29,9 @@ const Query = z.object({ tab: z.string().min(1).max(200).optional() });
  * answers its metadata (the bytes are at /api/admin/space/:id/bytes).
  * PATCH { title?, icon?, content? } : rename, re-icon, or a note's text.
  * DELETE : remove it. Another login's item (another admin's included) is a
- * plain 404.
+ * plain 404. The row carries `takenFrom` (AdminSpaceItemRow). DELETE of an
+ * item taken over from a member who can still take it back is a 409
+ * `taken` (give it back, or accept it).
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const caller = await getAdminSpaceOr401();
@@ -37,7 +44,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const got = await inAdminSpace(caller, () =>
     getMineItem(caller.spaceId, params.data.id, tabId ? { tabId } : {}),
   );
-  return got ? NextResponse.json(got) : notFound();
+  return got ? NextResponse.json(await itemWithTakenFrom(caller, got)) : notFound();
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -51,7 +58,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     const got = await inAdminSpace(caller, () =>
       updateMineItem(caller.spaceId, params.data.id, body.data, adminWriter(caller)),
     );
-    return got ? NextResponse.json(got) : notFound();
+    return got ? NextResponse.json(await itemWithTakenFrom(caller, got)) : notFound();
   } catch (err) {
     return spaceStateResponse(err);
   }

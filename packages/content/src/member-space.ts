@@ -148,15 +148,22 @@ export type ListSpaceOpts = {
   q?: string;
   /** Only items in these review states (audit U10: the member home's
    *  "Returned" and "Waiting for review" lists read the whole space, not
-   *  the first page). An item with no state row counts as a draft. */
-  reviewStates?: readonly ReviewState[];
+   *  the first page). An item with no state row counts as a draft.
+   *  `with-admin` selects the items an admin has taken over (`withAdmin`). */
+  reviewStates?: readonly (ReviewState | 'with-admin')[];
+  /** The MEMBER's own list (audit F07): page 1 also carries the caller's
+   *  items an admin has taken over, as `with-admin` rows (title and kind
+   *  only), before the own rows; `total` counts them. */
+  withAdmin?: boolean;
   limit?: number;
   offset?: number;
 };
 
-function reviewFilter(states?: readonly ReviewState[]) {
-  if (!states?.length) return undefined;
-  const listed = inArray(spaceItems.reviewState, [...states]);
+function reviewFilter(all?: readonly (ReviewState | 'with-admin')[]) {
+  if (!all?.length) return undefined;
+  const states = all.filter((s): s is ReviewState => s !== 'with-admin');
+  if (!states.length) return sql`false`;
+  const listed = inArray(spaceItems.reviewState, states);
   return states.includes('draft') ? or(isNull(spaceItems.reviewState), listed) : listed;
 }
 
@@ -195,7 +202,93 @@ export async function listMine(
     .from(nodes)
     .leftJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
     .where(where);
-  return { items: rows.map(rowOf), total: count?.n ?? 0 };
+  const own = { items: rows.map(rowOf), total: count?.n ?? 0 };
+  if (!opts.withAdmin) return own;
+  if (opts.reviewStates?.length && !opts.reviewStates.includes('with-admin')) return own;
+  const held = await listWithAdmin(requireSpace(spaceId).loginId, opts);
+  // Page 1 carries them; later pages keep the own rows' offsets, so paging
+  // never skips or repeats a row.
+  return {
+    items: offset === 0 ? [...held, ...own.items] : own.items,
+    total: own.total + held.length,
+  };
+}
+
+/**
+ * A member's items an admin has taken over (audit F07): title and kind
+ * only, no content and no bytes, as `with-admin` rows. The item sits in the
+ * admin's space, which the member's space role never reads, so this is read
+ * on the admin pool with the rule in the query: written by this login, and
+ * taken.
+ */
+export async function listWithAdmin(
+  loginId: string,
+  opts: { kind?: SpaceItemKind; q?: string } = {},
+): Promise<SpaceItemRow[]> {
+  const rows = await asSystem(() =>
+    db
+      .select({
+        id: nodes.id,
+        type: nodes.type,
+        title: nodes.title,
+        takenAt: spaceItems.takenAt,
+        submittedAt: spaceItems.submittedAt,
+      })
+      .from(spaceItems)
+      .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+      .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+      .where(
+        and(
+          eq(spaceItems.authorLoginId, loginId),
+          eq(spaceItems.reviewState, 'taken'),
+          eq(spaces.kind, 'personal'),
+          opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...SPACE_ITEM_KINDS]),
+          titleFilter(opts.q),
+        ),
+      )
+      .orderBy(desc(spaceItems.takenAt))
+      .limit(200),
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    type: r.type as SpaceItemKind,
+    title: r.title,
+    icon: null,
+    sharing: 'private',
+    reviewState: 'with-admin',
+    submittedAt: r.submittedAt?.toISOString() ?? null,
+    returnedNote: null,
+    authorLoginId: loginId,
+    updatedAt: (r.takenAt ?? new Date(0)).toISOString(),
+  }));
+}
+
+/** True when `id` is this login's item and an admin holds it now (audit
+ *  F07): the member routes answer 409 `with-admin` instead of a 404. Admin
+ *  pool, the rule in the query. */
+export async function isWithAdmin(loginId: string, id: string): Promise<boolean> {
+  const [r] = await asSystem(() =>
+    db
+      .select({ id: spaceItems.nodeId })
+      .from(spaceItems)
+      .where(
+        and(
+          eq(spaceItems.nodeId, id),
+          eq(spaceItems.authorLoginId, loginId),
+          eq(spaceItems.reviewState, 'taken'),
+        ),
+      )
+      .limit(1),
+  );
+  return !!r;
+}
+
+/** The 409 a member gets for an item an admin holds. */
+export function withAdminError(): SpaceItemStateError {
+  return new SpaceItemStateError(
+    'with-admin',
+    'An admin is working on this item. It comes back to you if they give it back; if they accept it, it shows under Accepted.',
+  );
 }
 
 /** One own item's row (state included), or null. */
@@ -543,9 +636,17 @@ export async function recallItem(spaceId: string, id: string): Promise<SpaceItem
   return (await getMineRow(spaceId, id))!;
 }
 
-/** Delete an own item. Refused while submitted (frozen). */
+/** Delete an own item. Refused while submitted (frozen), and for an item an
+ *  admin took over while its author can still take it back (audit F07:
+ *  give it back instead; a deactivated or removed author's item may go). */
 export async function deleteMineItem(spaceId: string, id: string): Promise<boolean> {
   const row = await assertEditable(spaceId, id);
+  if (row.reviewState === 'taken' && (await authorCanTakeBack(id))) {
+    throw new SpaceItemStateError(
+      'taken',
+      'A member wrote this and can still take it back. Give it back, or accept it, instead of deleting it.',
+    );
+  }
   let gone: boolean;
   switch (row.type) {
     case 'page':
@@ -568,6 +669,22 @@ export async function deleteMineItem(spaceId: string, id: string): Promise<boole
     await notifySpaceItemChanged(id, 'deleted', { spaceId, team: row.sharing === 'team' });
   }
   return gone;
+}
+
+/** The author of a taken item is a member who can sign in: give-back would
+ *  work. Admin pool (the space role reads no login row). */
+async function authorCanTakeBack(id: string): Promise<boolean> {
+  const [r] = await asSystem(() =>
+    db
+      .select({ id: authUsers.id })
+      .from(spaceItems)
+      .innerJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
+      .where(
+        and(eq(spaceItems.nodeId, id), eq(authUsers.role, 'member'), isNull(authUsers.disabledAt)),
+      )
+      .limit(1),
+  );
+  return !!r;
 }
 
 /** "Save version" for an own table: publish its draft workbook (or a whole
