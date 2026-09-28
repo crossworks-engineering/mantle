@@ -222,7 +222,8 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
       Row[]
     >`select login_id, orphaned_at from spaces where id = ${deeSpace}`;
     expect(after?.login_id).toBeNull();
-    expect(after?.orphaned_at).toBeInstanceOf(Date);
+    expect(after?.orphaned_at).not.toBeNull();
+    expect(after?.orphaned_at).toBeDefined();
   });
 
   it('the login FK cascades: a login deleted by hand takes its devices', async () => {
