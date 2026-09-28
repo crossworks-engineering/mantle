@@ -352,6 +352,24 @@ describe.skipIf(!URL)('admin private items', () => {
     ).rejects.toMatchObject({ reason: 'unsaved-draft' });
     await as(adminA, () => draft.discardDraft(A, pageId));
 
+    // Unsaved edits on an item the page shows refuse too (audit F04): Accept
+    // would move its saved version and drop the draft.
+    const { saveDrawDraft } = await import('./draws');
+    const d = (await as(adminA, () => sp.createMineItem(A, { type: 'draw', title: `${tag} d` })))
+      .id;
+    const p = (await as(adminA, () => sp.createMineItem(A, { type: 'page', title: `${tag} p2` })))
+      .id;
+    const shows = { type: 'doc', content: [{ type: 'drawing', attrs: { drawId: d } }] };
+    expect((await as(adminA, () => sp.saveMinePage(A, p, shows))).ok).toBe(true);
+    await as(adminA, () => saveDrawDraft(A, d, { type: 'excalidraw', elements: [], appState: {} }));
+    await expect(
+      rv.acceptOwnItem(anchor, { spaceId: A, loginId: adminA }, p),
+    ).rejects.toMatchObject({ reason: 'unsaved-draft', ids: [d] });
+    expect(await ownerOf(p)).toBe(A);
+    expect(await ownerOf(d)).toBe(A);
+    await as(adminA, () => sp.deleteMineItem(A, p));
+    await as(adminA, () => sp.deleteMineItem(A, d));
+
     const M = spaceOf[member]!;
     await expect(
       rv.acceptOwnItem(anchor, { spaceId: M, loginId: member }, mNoteId),

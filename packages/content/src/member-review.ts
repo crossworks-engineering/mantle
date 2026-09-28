@@ -15,12 +15,13 @@
  * condition lives in the query and not in a policy.
  *
  * Accept is one transaction per bundle (plan 6.2): the item plus everything
- * that renders inside it (embed-refs.ts `embeds`, repeated until nothing new
- * joins) moves into the brain with the same node ids, so every link to it
- * stays valid. Only the author's own items join; links and mentions stay
- * where they are, and the admin is told how many point at items that stay in
- * a personal space. Bytes move beside the rows: staged before the commit,
- * put in place after it, removed again on a rollback.
+ * that renders inside it (member-bundle.ts) moves into the brain with the
+ * same node ids, so every link to it stays valid. A submitted item moves the
+ * bundle recorded at Submit (frozen since); a left-behind item only what is
+ * itself shared or submitted. Only the author's own items join; links and
+ * mentions stay where they are, and the admin is told how many point at
+ * items that stay in a personal space. Bytes move beside the rows: staged
+ * before the commit, put in place after it, removed again on a rollback.
  *
  * Only a MEMBER's item is ever reviewable (Phase 7): an admin's own private
  * items are never in the queue, the count, a Return or a review comment, not
@@ -28,11 +29,11 @@
  * own items themselves (`acceptOwnItem`), through the same move.
  *
  * Cost-safety: Accept is the ONE place a personal item is announced to the
- * extractor, once per moved item, inside the transaction (delivered on
- * commit, never for a rollback). Nothing else here starts LLM work.
+ * extractor, once per moved item, after the commit and after its bytes are
+ * in place (never for a rollback). Nothing else here starts LLM work.
  */
 import { copyFile, mkdir, rename, rm } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { and, asc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import {
@@ -65,12 +66,10 @@ import {
 } from '@mantle/files';
 import {
   publishedPath,
-  refLikeCells,
   relativeStoragePath,
   resolveStoragePath,
   snapshotFile,
 } from '@mantle/tabledb';
-import { cellRefs, noteRefs, pageRefs, sceneRefs, type EmbedRefs } from './embed-refs';
 import { COMMENT_BODY_MAX } from './node-comments';
 import { notifySpaceItemChanged } from './member-space-events';
 import {
@@ -82,6 +81,16 @@ import {
 } from './member-space';
 import { SpaceItemStateError, spaceNotFound } from './member-space-core';
 import { spaceFileOf, type OpenedSpaceFile } from './member-space-files';
+import {
+  BUNDLE_MAX_ITEMS,
+  clearBundles,
+  computeBundle,
+  lockBundleRows,
+  recordedBundle,
+  withLinksStayingBehind,
+  type Bundle,
+  type BundleItem,
+} from './member-bundle';
 import { DRAWS_ROOT_LABEL, getDrawSvg } from './draws';
 import { NOTES_ROOT_LABEL } from './notes';
 import { PAGES_ROOT_LABEL } from './pages/shared';
@@ -375,141 +384,44 @@ export async function deleteReviewComment(
   });
 }
 
-// ── The bundle (plan 6.2) ───────────────────────────────────────────────────
+// ── The bundle (plan 6.2, member-bundle.ts) ────────────────────────────────
 
-export type BundleItem = { id: string; type: SpaceItemKind; title: string };
+export { BUNDLE_MAX_ITEMS, type Bundle, type BundleItem } from './member-bundle';
 
-export type Bundle = {
-  /** The item first, then what it brings along. */
-  items: BundleItem[];
-  /** Links and mentions that point at items that stay in a personal space:
-   *  they will not open for anyone who reads the accepted item. */
-  linksStayingBehind: number;
-};
-
-/** A bundle bigger than this is refused: nobody reviews that much at once. */
-export const BUNDLE_MAX_ITEMS = 200;
-
-/** The references one item carries, read from its SAVED version. */
-async function refsOf(via: Pick<Tx, 'select'>, item: BundleItem): Promise<EmbedRefs[]> {
-  switch (item.type) {
-    case 'page': {
-      const [p] = await via
-        .select({ doc: pages.doc })
-        .from(pages)
-        .where(eq(pages.nodeId, item.id))
-        .limit(1);
-      return p ? [pageRefs(p.doc)] : [];
-    }
-    case 'note': {
-      const [n] = await via
-        .select({ data: nodes.data })
-        .from(nodes)
-        .where(eq(nodes.id, item.id))
-        .limit(1);
-      const content = (n?.data as Record<string, unknown> | null)?.content;
-      return typeof content === 'string' ? [noteRefs(content)] : [];
-    }
-    case 'draw': {
-      const [d] = await via
-        .select({ scene: draws.scene, fileRefs: draws.fileRefs })
-        .from(draws)
-        .where(eq(draws.nodeId, item.id))
-        .limit(1);
-      if (!d) return [];
-      // A drawing's own images are its file refs: they render inside it.
-      const files = Object.values((d.fileRefs ?? {}) as Record<string, string>).filter(
-        (v) => typeof v === 'string',
-      );
-      return [sceneRefs(d.scene), { ids: files, refused: [], embeds: files }];
-    }
-    case 'table': {
-      const [t] = await via
-        .select({ storagePath: tables.storagePath })
-        .from(tables)
-        .where(eq(tables.nodeId, item.id))
-        .limit(1);
-      if (!t?.storagePath) return [];
-      const file = resolveStoragePath(t.storagePath);
-      return existsSync(file) ? [cellRefs(refLikeCells(file))] : [];
-    }
-    case 'file':
-      return [];
-  }
-}
+const tooLarge = () =>
+  new ReviewError(
+    'too-large',
+    `This item brings more than ${BUNDLE_MAX_ITEMS} items with it. Return it and ask for a smaller one.`,
+  );
 
 /**
- * The item plus everything that renders inside it, repeated until nothing new
- * joins. Only items of the SAME space join (the author's own); a child page
- * joins with its parent. Read from saved versions on the given connection
- * (the accept transaction, so it sees what it locks).
+ * The bundle an admin reviews and Accept moves, read on `via`:
+ *  - a submitted item: the bundle recorded at Submit (frozen since, so what
+ *    was reviewed is what moves); worked out now for an item submitted
+ *    before the record existed (migration 0180);
+ *  - a left-behind item (never submitted): only items that are themselves
+ *    shared or submitted join (audit F18). Its author's private embeds stay
+ *    behind, and no admin reads them.
  */
-async function computeBundle(
+async function reviewBundle(
   via: Pick<Tx, 'select'>,
   spaceId: string,
-  root: BundleItem,
+  row: ReviewItemRow,
 ): Promise<Bundle> {
-  const items: BundleItem[] = [root];
-  const inBundle = new Set([root.id]);
-  const links = new Set<string>();
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i]!;
-    const embeds = new Set<string>();
-    for (const r of await refsOf(via, item)) {
-      for (const id of r.embeds) embeds.add(id);
-      for (const id of r.ids) if (!r.embeds.includes(id)) links.add(id);
-    }
-    if (item.type === 'page') {
-      const kids = await via
-        .select({ id: nodes.id })
-        .from(nodes)
-        .where(
-          and(eq(nodes.parentId, item.id), eq(nodes.ownerId, spaceId), eq(nodes.type, 'page')),
-        );
-      for (const k of kids) embeds.add(k.id);
-    }
-    const fresh = [...embeds].filter((id) => !inBundle.has(id));
-    if (!fresh.length) continue;
-    const joined = await via
-      .select({ id: nodes.id, type: nodes.type, title: nodes.title })
-      .from(nodes)
-      .where(
-        and(
-          inArray(nodes.id, fresh),
-          eq(nodes.ownerId, spaceId),
-          inArray(nodes.type, [...SPACE_ITEM_KINDS]),
-        ),
-      );
-    for (const j of joined) {
-      inBundle.add(j.id);
-      items.push({ id: j.id, type: j.type as SpaceItemKind, title: j.title });
-    }
-    if (items.length > BUNDLE_MAX_ITEMS) {
-      throw new ReviewError(
-        'too-large',
-        `This item brings more than ${BUNDLE_MAX_ITEMS} items with it. Return it and ask for a smaller one.`,
-      );
-    }
+  const root: BundleItem = { id: row.id, type: row.type, title: row.title };
+  if (row.reason === 'left-behind') {
+    return computeBundle(via, spaceId, root, { sharedOnly: true, tooLarge });
   }
-  const rest = [...links].filter((id) => !inBundle.has(id));
-  let linksStayingBehind = 0;
-  if (rest.length) {
-    const [r] = await via
-      .select({ n: sql<number>`count(*)::int` })
-      .from(nodes)
-      .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
-      .where(and(inArray(nodes.id, rest), eq(spaces.kind, 'personal')));
-    linksStayingBehind = r?.n ?? 0;
-  }
-  return { items, linksStayingBehind };
+  const recorded = await recordedBundle(via, spaceId, row.id);
+  if (!recorded) return computeBundle(via, spaceId, root, { tooLarge });
+  return withLinksStayingBehind(via, recorded);
 }
 
 /** What Accept would move, for the accept dialog. Null when not reviewable. */
 export async function previewAccept(id: string): Promise<Bundle | null> {
   const found = await reviewRow(id);
   if (!found) return null;
-  const { row } = found;
-  return computeBundle(db, found.spaceId, { id: row.id, type: row.type, title: row.title });
+  return reviewBundle(db, found.spaceId, found.row);
 }
 
 /**
@@ -521,12 +433,7 @@ export async function openReviewFile(id: string, fileId: string): Promise<Opened
   const found = await reviewRow(id);
   if (!found) return null;
   if (fileId !== id) {
-    const { row } = found;
-    const bundle = await computeBundle(db, found.spaceId, {
-      id: row.id,
-      type: row.type,
-      title: row.title,
-    });
+    const bundle = await reviewBundle(db, found.spaceId, found.row);
     if (!bundle.items.some((b) => b.id === fileId && b.type === 'file')) return null;
   }
   const file = await spaceFileOf(found.spaceId, fileId);
@@ -541,12 +448,7 @@ export async function reviewDrawSvg(id: string, drawId: string): Promise<string 
   const found = await reviewRow(id);
   if (!found) return null;
   if (drawId !== id) {
-    const { row } = found;
-    const bundle = await computeBundle(db, found.spaceId, {
-      id: row.id,
-      type: row.type,
-      title: row.title,
-    });
+    const bundle = await reviewBundle(db, found.spaceId, found.row);
     if (!bundle.items.some((b) => b.id === drawId && b.type === 'draw')) return null;
   }
   return getDrawSvg(found.spaceId, drawId);
@@ -613,12 +515,12 @@ async function freeFileName(tx: Tx, brainId: string, folder: string, wanted: str
 
 /**
  * Accept a reviewable item into the brain (plan 6.2). One transaction: lock
- * the item's state row (a Recall that lands first wins: not found), compute
- * the bundle, re-own every item in it (same ids), stage its bytes, mark every
- * space_items row accepted (the row stays: it records the author), discard
- * leftover drafts, set the level, and announce each moved item to the
- * extractor once. Then, after the commit, the bytes are put in
- * place and the item's link follows its level.
+ * the item's state row (a Recall that lands first wins: not found), take its
+ * bundle (the one recorded at Submit), re-own every item in it (same ids),
+ * stage its bytes, mark every space_items row accepted (the row stays: it
+ * records the author), discard leftover drafts and set the level. Then,
+ * after the commit, the bytes are put in place, each moved item is announced
+ * to the extractor once, and the item's link follows its level.
  */
 export async function acceptReviewItem(
   brainId: string,
@@ -643,6 +545,7 @@ export async function acceptReviewItem(
       return {
         spaceId: found.spaceId,
         root: { id, type: found.row.type, title: found.row.title },
+        bundle: () => reviewBundle(tx, found.spaceId, found.row),
       };
     },
     // The state rows: accepted, by whom. They stay: they record the author.
@@ -720,14 +623,39 @@ export async function acceptOwnItem(
         )
         .limit(1);
       if (!login) throw spaceNotFound();
-      const type = locked.type as SpaceItemKind;
-      if ((await savedState(type, id, tx)).unsaved) {
-        throw new SpaceItemStateError(
-          'unsaved-draft',
-          'This item has unsaved changes. Save a version first, then accept it.',
-        );
-      }
-      return { spaceId: own.spaceId, root: { id, type, title: locked.title } };
+      const root: BundleItem = { id, type: locked.type as SpaceItemKind, title: locked.title };
+      return {
+        spaceId: own.spaceId,
+        root,
+        // The brain gets the SAVED version of every item that moves (audit
+        // F04): unsaved edits on the item, or on anything shown in it,
+        // refuse, since Accept would drop them. The rows are locked first,
+        // so the admin's own autosave cannot land between check and move.
+        bundle: async () => {
+          const bundle = await computeBundle(tx, own.spaceId, root, { tooLarge });
+          await lockBundleRows(tx, bundle.items);
+          const unsaved: BundleItem[] = [];
+          for (const b of bundle.items) {
+            if ((await savedState(b.type, b.id, tx)).unsaved) unsaved.push(b);
+          }
+          if (unsaved.some((b) => b.id === id)) {
+            throw new SpaceItemStateError(
+              'unsaved-draft',
+              'This item has unsaved changes. Save a version first, then accept it.',
+              [id],
+            );
+          }
+          if (unsaved.length) {
+            const names = unsaved.map((b) => `"${b.title}"`).join(', ');
+            throw new SpaceItemStateError(
+              'unsaved-draft',
+              `Items shown in this one have unsaved changes: ${names}. Save a version of each, then accept.`,
+              unsaved.map((b) => b.id),
+            );
+          }
+          return bundle;
+        },
+      };
     },
     // No author record for an admin's own item (see above).
     settle: async (tx, ids) => {
@@ -740,18 +668,20 @@ export async function acceptOwnItem(
  *  admin's own: how the item is found and locked, and what happens to the
  *  bundle's state rows. Everything between is `moveIntoBrain`. */
 type AcceptSteps = {
-  /** Lock the item and prove the caller may accept it (throws otherwise). */
-  locate: (tx: Tx) => Promise<{ spaceId: string; root: BundleItem }>;
+  /** Lock the item and prove the caller may accept it (throws otherwise);
+   *  `bundle` then names what moves with it, read in the same transaction. */
+  locate: (tx: Tx) => Promise<{ spaceId: string; root: BundleItem; bundle: () => Promise<Bundle> }>;
   /** Settle the bundle's `space_items` rows once everything has moved. */
   settle: (tx: Tx, ids: string[], now: Date) => Promise<void>;
 };
 
 /**
  * The move itself, shared by both Accepts: in one transaction, locate and
- * lock the item, compute the bundle, re-own every item in it (same ids),
- * stage its bytes, settle the state rows, discard leftover drafts, and
- * announce each moved item to the extractor once. After the commit the bytes
- * are put in place and the item's link follows its level.
+ * lock the item, take its bundle, lock what is still in the space, re-own
+ * every item (same ids), stage its bytes, settle the state rows and discard
+ * leftover drafts. After the commit the bytes are put in place, each moved
+ * item is announced to the extractor once, and the item's link follows its
+ * level.
  */
 async function moveIntoBrain(
   brainId: string,
@@ -775,7 +705,7 @@ async function moveIntoBrain(
   try {
     result = await db.transaction(async (tx) => {
       // 1. The item, located and locked by the caller's own rule.
-      const { spaceId, root } = await steps.locate(tx);
+      const { spaceId, root, bundle: bundleOf } = await steps.locate(tx);
 
       // 2. Destinations, checked before anything moves.
       let parent: { id: string; path: string } | null = null;
@@ -798,26 +728,43 @@ async function moveIntoBrain(
         parent = { id: p.id, path: String(p.path) };
       }
 
-      // 3. The bundle, and every row in it locked.
-      const bundle = await computeBundle(tx, spaceId, root);
-      const ids = bundle.items.map((b) => b.id);
-      await tx.select({ id: nodes.id }).from(nodes).where(inArray(nodes.id, ids)).for('update');
+      // 3. The bundle, and every row in it locked, still in this space. An
+      //    item another Accept moved first (a shared embed) is the brain's
+      //    now: it is dropped here, never moved twice (audit F31).
+      const bundle = await bundleOf();
+      const still = await tx
+        .select({ id: nodes.id })
+        .from(nodes)
+        .where(
+          and(
+            inArray(
+              nodes.id,
+              bundle.items.map((b) => b.id),
+            ),
+            eq(nodes.ownerId, spaceId),
+          ),
+        )
+        .for('update');
+      const inSpace = new Set(still.map((r) => r.id));
+      if (!inSpace.has(root.id)) throw notFound();
+      const items = bundle.items.filter((b) => inSpace.has(b.id));
+      const ids = items.map((b) => b.id);
       const sharing = await tx
         .select({ id: spaceItems.nodeId, sharing: spaceItems.sharing })
         .from(spaceItems)
         .where(inArray(spaceItems.nodeId, ids));
       const wasTeam = new Set(sharing.filter((s) => s.sharing === 'team').map((s) => s.id));
 
-      if (bundle.items.some((b) => b.type === 'page')) {
+      if (items.some((b) => b.type === 'page')) {
         await ensureBrainRoot(tx, brainId, PAGES_ROOT_LABEL, 'Pages');
       }
-      if (bundle.items.some((b) => b.type === 'note')) {
+      if (items.some((b) => b.type === 'note')) {
         await ensureBrainRoot(tx, brainId, NOTES_ROOT_LABEL, 'Notes');
       }
-      if (bundle.items.some((b) => b.type === 'draw')) {
+      if (items.some((b) => b.type === 'draw')) {
         await ensureBrainRoot(tx, brainId, DRAWS_ROOT_LABEL, 'Draw');
       }
-      if (bundle.items.some((b) => b.type === 'file')) {
+      if (items.some((b) => b.type === 'file')) {
         const [f] = await tx
           .select({ id: nodes.id })
           .from(nodes)
@@ -836,7 +783,7 @@ async function moveIntoBrain(
       //    path extends its parent's, which is set by then.
       const newPagePath = new Map<string, string>();
       const now = new Date();
-      for (const b of bundle.items) {
+      for (const b of items) {
         const [n] = await tx.select().from(nodes).where(eq(nodes.id, b.id)).limit(1);
         if (!n) continue;
         const common = { ownerId: brainId, audience, updatedAt: now };
@@ -944,16 +891,16 @@ async function moveIntoBrain(
         }
       }
 
-      // 5. The state rows, settled by the caller's rule.
+      // 5. The state rows, settled by the caller's rule; the recorded
+      //    bundles of what moved are done with.
       await steps.settle(tx, ids, now);
+      await clearBundles(tx, ids);
 
-      // 6. Announced once per moved item, in this transaction: the extractor
-      //    hears of it on commit, when the item is the brain's.
-      for (const b of bundle.items) {
-        await tx.execute(sql`select pg_notify('node_ingested', ${b.id}::text)`);
+      // 6. The change events commit with the move.
+      for (const b of items) {
         await notifySpaceItemChanged(b.id, 'state', { spaceId, team: wasTeam.has(b.id) }, tx);
       }
-      return { id, audience, moved: bundle.items, linksStayingBehind: bundle.linksStayingBehind };
+      return { id, audience, moved: items, linksStayingBehind: bundle.linksStayingBehind };
     });
   } catch (err) {
     for (const fn of onRollback) await fn().catch(() => {});
@@ -964,6 +911,16 @@ async function moveIntoBrain(
     await fn().catch((err: unknown) =>
       console.error('[member-review] accept: moving bytes after commit failed:', err),
     );
+  }
+  // 7. Announced once per moved item, after the commit AND after the bytes
+  //    are in place (audit F31): the extractor never opens a file that is
+  //    still being renamed. Never for a rollback.
+  for (const b of result.moved) {
+    await db
+      .execute(sql`select pg_notify('node_ingested', ${b.id}::text)`)
+      .catch((err: unknown) =>
+        console.error('[member-review] accept: announcing a moved item failed:', err),
+      );
   }
   // The item's link follows its level (levels drive links). The level itself
   // is already stored for the whole bundle.
@@ -1011,6 +968,8 @@ export async function returnReviewItem(
       )
       .returning({ sharing: spaceItems.sharing });
     if (!updated.length) throw notFound();
+    // Back with the author: its bundle unfreezes.
+    await clearBundles(tx, [id]);
     await notifySpaceItemChanged(id, 'state', undefined, tx);
   });
 }
@@ -1025,6 +984,15 @@ export async function returnReviewItem(
 export async function discardLeftBehind(id: string): Promise<void> {
   const onCommit: (() => unknown)[] = [];
   await db.transaction(async (tx) => {
+    // The state row, locked as Accept locks it: a Recall, Return or Accept
+    // of this item waits, or wins.
+    const [locked] = await tx
+      .select({ id: spaceItems.nodeId })
+      .from(spaceItems)
+      .where(eq(spaceItems.nodeId, id))
+      .for('update')
+      .limit(1);
+    if (!locked) throw notFound();
     const found = await reviewRow(id, tx);
     if (!found) throw notFound();
     if (!found.row.author.inactive) {
@@ -1034,20 +1002,30 @@ export async function discardLeftBehind(id: string): Promise<void> {
       );
     }
     const { spaceId } = found;
+    // Deleted only while it is still in the space (audit F03): an Accept of
+    // another item that moves this one along (a shared embed) re-owns it to
+    // the brain, and the delete, re-checked on the new row, then matches
+    // nothing. Never a brain row.
+    const [t] =
+      found.row.type === 'table'
+        ? await tx
+            .select({ storagePath: tables.storagePath })
+            .from(tables)
+            .where(eq(tables.nodeId, id))
+            .limit(1)
+        : [];
+    const gone = await tx
+      .delete(nodes)
+      .where(and(eq(nodes.id, id), eq(nodes.ownerId, spaceId)))
+      .returning({ id: nodes.id });
+    if (!gone.length) throw notFound();
     if (found.row.type === 'file') onCommit.push(() => removeSpaceFile(spaceId, id));
-    if (found.row.type === 'table') {
-      const [t] = await tx
-        .select({ storagePath: tables.storagePath })
-        .from(tables)
-        .where(eq(tables.nodeId, id))
-        .limit(1);
-      const sp = t?.storagePath;
-      if (sp) {
-        onCommit.push(() => {
-          removeTableFile(draftAbsFor(sp));
-          removeTableFile(resolveStoragePath(sp));
-        });
-      }
+    const sp = t?.storagePath;
+    if (sp) {
+      onCommit.push(() => {
+        removeTableFile(draftAbsFor(sp));
+        removeTableFile(resolveStoragePath(sp));
+      });
     }
     await notifySpaceItemChanged(
       id,
@@ -1055,7 +1033,6 @@ export async function discardLeftBehind(id: string): Promise<void> {
       { spaceId, team: found.row.sharing === 'team' },
       tx,
     );
-    await tx.delete(nodes).where(eq(nodes.id, id));
   });
   for (const fn of onCommit) {
     try {

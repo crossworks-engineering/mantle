@@ -222,6 +222,7 @@ export {
   type AcceptedRow,
 } from './member-accepted';
 export { memberDrawSvg, memberVisibleDrawFileIds } from './member-draw-images';
+export { settleSpaceOnPromotion } from './member-space-login';
 export {
   SPACE_PURGE_GRACE_DAYS,
   findSpacePurge,

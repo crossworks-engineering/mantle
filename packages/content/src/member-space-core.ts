@@ -22,6 +22,7 @@ export class SpaceItemStateError extends Error {
       | 'quota'
       | 'embed'
       | 'not-shared'
+      | 'too-large'
       | 'invalid',
     message: string,
     /** For `embed`: the referenced ids the item may not use. */
