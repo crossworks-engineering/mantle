@@ -124,8 +124,11 @@ describe.skipIf(!URL)('needs you: the live event and the counts', () => {
         (${adminA}, ${`${tag}-a@example.invalid`}, 'x', 'admin', null),
         (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member', 'Mia Member'),
         (${member2}, ${`${tag}-n@example.invalid`}, 'x', 'member', 'Noah')`);
+    // An owner login gets its brain space from the auth.users trigger; make
+    // sure it is there.
     await m.systemDb.execute(sqlTag`
-      insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`);
+      insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})
+      on conflict (id) do nothing`);
     const rows = await exec<{ id: string; login_id: string }>(sqlTag`
       select id, login_id from spaces where kind = 'personal'
         and login_id in (${adminA}, ${member}, ${member2})`);
