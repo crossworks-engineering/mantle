@@ -6,7 +6,7 @@
  */
 
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested } from '@mantle/db';
+import { db, isViewerLevel, nodes, notifyNodeIngested } from '@mantle/db';
 import { resolveSupersededTargets } from '@mantle/search';
 import { corpusCapacity, nodeUrl, supersedeNode, unsupersedeNode } from '@mantle/content';
 import { type BuiltinToolDef } from './types';
@@ -185,6 +185,10 @@ export const content_supersede: BuiltinToolDef = {
         reason,
       });
       ctx.step?.setOutput({ id: row.id, superseded_by: successorId, reason });
+      // Superseding re-weights; it never changes a level. An old version below
+      // admin stays readable at that level, so say so (and how to hide it).
+      const stillVisible =
+        isViewerLevel(row.audience) && row.audience !== 'admin' ? row.audience : null;
       return {
         ok: true,
         output: {
@@ -193,6 +197,11 @@ export const content_supersede: BuiltinToolDef = {
           superseded_by: row.supersededBy,
           reason: row.supersededReason,
           note: 'Down-weighted in retrieval (reversible with clear: true) — not deleted.',
+          ...(stillVisible
+            ? {
+                warning: `The old version is still visible at ${stillVisible} level: superseding does not change who can open it. To hide it, raise it: access_set(node_id: '${row.id}', level: 'admin').`,
+              }
+            : {}),
         },
       };
     } catch (err) {
