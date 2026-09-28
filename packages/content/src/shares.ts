@@ -576,7 +576,7 @@ export async function revokeShareTree(
     .from(shares)
     .where(and(eq(shares.id, shareId), eq(shares.ownerId, ownerId), isNull(shares.revokedAt)))
     .limit(1);
-  if (!row) return revokeShare(ownerId, shareId, q); // already gone / not found — idempotent
+  if (!row) return revokeShare(ownerId, shareId, q); // already gone or not found: idempotent
 
   // Descendants and the parent revoke in ONE transaction: a failure between
   // the two used to leave the subtree revoked while the parent stayed live.
