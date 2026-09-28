@@ -662,7 +662,7 @@ is a member login. Nobody hands a password around. The table is
   `server/web/app/api/team-admin/invites/invites-admin-routes.test.ts`; the
   member and auth sweeps cover the new routes. The retirement:
   `server/web/server/auth-sweep.test.ts` (the redirects, `/api/team` gone),
-  `server/pages/stubs.test.ts`, `lib/team-gate.test.ts`,
+  `server/web/server/pages/stubs.test.ts`, `lib/team-gate.test.ts`,
   `lib/auth-tokens.test.ts` (kind `c` refused everywhere),
   `server/api/src/workflows/forum-turn-retired{,.db}.test.ts`,
   `lib/system-manifest/prompt-upgrade.db.test.ts` and the manifest drift

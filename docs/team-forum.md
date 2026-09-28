@@ -47,16 +47,16 @@ read-anything / write-nothing except `team_request_create`.
 
 ## 2. Surfaces
 
-| Surface                   | Who     | What                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/team/forum`             | members | Topic list (pinned first, unread dots, kind badges) + "New topic" dialog.                                                                                                                                                                                                                                                                                                                                                                     |
-| `/team/forum/[id]`        | members | Linear multi-author transcript + composer; live turn streaming.                                                                                                                                                                                                                                                                                                                                                                               |
-| `/team-admin?view=topics` | owner   | All topics (incl. private), master-detail transcript with trace links, pin/unpin, owner reply (optionally marking the topic answered).                                                                                                                                                                                                                                                                                                        |
-| `/team-admin` (Members)   | owner   | The same content read PERSON-first: one member's posts each paired with the answer it drew, the topics they started, the requests they filed. Backed by `listForumMemberActivity` / `listForumPostsByContact` / `listForumTopicsByAuthor` (`packages/content/src/forum/members.ts`), owner-scoped queries with **no visibility filter**, since the owner sees private topics too. Do not reuse them member-facing without `visibleTopicCond`. |
+| Surface                   | Who     | What                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/team/forum`             | members | Topic list (pinned first, unread dots, kind badges) + "New topic" dialog.                                                                                                                                                                                                                                                                                                                                                                          |
+| `/team/forum/[id]`        | members | Linear multi-author transcript + composer; live turn streaming.                                                                                                                                                                                                                                                                                                                                                                                    |
+| `/team-admin?view=topics` | owner   | All topics (incl. private), master-detail transcript with trace links, pin/unpin, owner reply (optionally marking the topic answered).                                                                                                                                                                                                                                                                                                             |
+| `/team-admin` (Members)   | owner   | The same content read PERSON-first: one member's posts each paired with the answer it drew, the topics they started, the requests they filed. Backed by `listForumMemberActivity` / `listForumPostsByContact` / `listForumTopicsByAuthor` (the forum members module, deleted in stage 5), owner-scoped queries with **no visibility filter**, since the owner sees private topics too. Do not reuse them member-facing without `visibleTopicCond`. |
 
 ## 3. Turn pipeline
 
-`runForumTurn` (`packages/runtime/src/assistant/run-forum-turn.ts`) is a
+`runForumTurn` (run-forum-turn, deleted in stage 5) is a
 sibling of `runTeamTurn` sharing the unified `assemble-turn`/`responder-loop`
 core, with three deliberate differences:
 
@@ -112,7 +112,7 @@ both team surfaces.
   files root, outside the ltree, so nothing ingests until filed). The
   post's `attachments` jsonb references blobs by `fileId`; this row is the
   mutable review state. `contact_id` SET NULL, `topic_id`/`post_id` CASCADE.
-  A reconcile pass (`server/web/lib/forum-quarantine.ts`, fired opportunistically
+  A reconcile pass (forum-quarantine, deleted in stage 5; it fired opportunistically
   from the upload route and the owner review load) sweeps stale staged rows
   and reclaims orphaned bytes.
 
@@ -162,7 +162,7 @@ resolves (an anonymous caller still gets its 401):
 }
 ```
 
-with status 410 (`server/web/lib/forum-closed.ts`, deleted in stage 5).
+with status 410 (forum-closed, deleted in stage 5).
 `enqueueForumTurn` threw `ForumClosedError`, so no path started a new forum
 turn; a turn already
 queued before the freeze ran to completion.
