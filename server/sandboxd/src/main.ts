@@ -963,6 +963,10 @@ await mkdir(SANDBOXES_DIR, { recursive: true }).catch((e) =>
   console.warn('[sandboxd] could not create SANDBOXES_DIR:', (e as Error).message),
 );
 
+// Negotiate the docker API version up front so the choice is in the boot log;
+// every call also negotiates lazily, so a daemon that is not up yet is fine.
+void docker.apiVersion();
+
 startEgressProxy(EGRESS_PROXY_PORT);
 console.log(`[sandboxd] balanced-tier egress proxy on :${EGRESS_PROXY_PORT}`);
 

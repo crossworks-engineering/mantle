@@ -342,6 +342,13 @@ command -v openssl >/dev/null 2>&1 || die "openssl isn't installed — it's need
 command -v curl >/dev/null 2>&1 || die "curl isn't installed — it's needed to detect this server's address and to health-check the install."
 [[ -f "$STACK_DIR/docker-compose.yml" ]] || die "No docker-compose.yml in $STACK_DIR — run this from the stack directory (or pass --stack-dir)."
 ok "Docker + Compose ready ${DIM}($(docker compose version --short 2>/dev/null || echo v2))${RS}"
+# Docker 29.0/29.1 raised the daemon's minimum API to 1.44. sandboxd now
+# negotiates, but an older pinned --image-tag still carries a sandboxd that
+# speaks 1.43 only and fails its healthcheck ("Installation incomplete").
+min_api="$(docker version --format '{{.Server.MinAPIVersion}}' 2>/dev/null || true)"
+if [[ "$min_api" =~ ^1\.([0-9]+)$ ]] && (( BASH_REMATCH[1] > 43 )); then
+  inf "Docker's minimum API is ${B}$min_api${RS}. Older image tags (sandboxd pinned to 1.43) fail here; latest is fine, or use Docker 29.5.2+."
+fi
 
 # Resources. Checked BEFORE the ~2 GB pull, because running out of disk
 # halfway through leaves a half-populated image store and a confusing error;
