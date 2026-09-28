@@ -15,7 +15,9 @@ export type { TeamRequest };
 export const TEAM_REQUEST_TAG = 'team-request';
 
 type TeamRequestData = {
-  contactId?: string;
+  contactId?: string | null;
+  /** The member login that filed it (team_request_create stamps both). */
+  loginId?: string | null;
   contactName?: string | null;
   notifiedAt?: string | null;
 };
@@ -70,14 +72,19 @@ export async function listTeamRequests(
 }
 
 export type NotifyTeamRequesterResult =
-  { ok: true; contactId: string } | { ok: false; error: string };
+  { ok: true; contactId: string | null; loginId: string | null } | { ok: false; error: string };
 
 /**
  * Close the loop on a team request: post the owner's reply into the requesting
- * member's thread (an outbound message with no agent — a human admin note),
+ * member's thread (an outbound message with no agent, a human admin note),
  * stamp `data.teamRequest.notifiedAt`, and optionally mark the task done. The
  * message + the task stamp are the durable record; the member sees the reply
- * next time they open Team Chat.
+ * the next time they open their chat.
+ *
+ * A request a member LOGIN filed goes into that login's own thread (the one
+ * the dock shows). Only a request from the retired team-code portal, with a
+ * contact and no login, still lands in the contact's old thread, where
+ * admins read it as history (Phase 6).
  */
 export async function notifyTeamRequester(
   ownerId: string,
@@ -96,13 +103,18 @@ export async function notifyTeamRequester(
 
   const d = (task.data ?? {}) as Record<string, unknown>;
   const tr = (d.teamRequest ?? {}) as TeamRequestData;
-  if (!tr.contactId) return { ok: false, error: 'not a team request (no requester on file)' };
+  const loginId = typeof tr.loginId === 'string' && tr.loginId ? tr.loginId : null;
+  const contactId = typeof tr.contactId === 'string' && tr.contactId ? tr.contactId : null;
+  if (!loginId && !contactId) {
+    return { ok: false, error: 'not a team request (no requester on file)' };
+  }
 
-  // The reply lands in the member's thread as an outbound message. No agentId —
-  // it's the brain admin speaking, not the responder.
+  // The reply lands in the requester's thread as an outbound message. No
+  // agentId: it is the brain admin speaking, not the responder.
   await appendTeamMessage({
     ownerId,
-    contactId: tr.contactId,
+    contactId: loginId ? null : contactId,
+    loginId,
     direction: 'outbound',
     text,
     channel: 'web',
@@ -122,5 +134,5 @@ export async function notifyTeamRequester(
     })
     .where(and(eq(nodes.id, taskId), eq(nodes.ownerId, ownerId)));
 
-  return { ok: true, contactId: tr.contactId };
+  return { ok: true, contactId, loginId };
 }
