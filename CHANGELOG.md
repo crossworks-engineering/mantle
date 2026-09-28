@@ -4,6 +4,12 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.300: client v0.6.161
+
+- Paired with jackdaw v0.6.161: Team admin no longer shows the forum Export
+  banner (the brain dropped the forum tables in 0.232.299; the Forum archive
+  pages stay in Pages).
+
 ## 0.232.299: the forum tables are dropped (Phase 6, migration 0177)
 
 - Migration 0177 drops forum_topics, forum_posts, forum_uploads and
