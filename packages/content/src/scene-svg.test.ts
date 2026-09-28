@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { acceptSceneSvg, SCENE_SVG_MAX_BYTES } from './scene-svg';
+import { acceptSceneSvg, keepSvgImages, SCENE_SVG_MAX_BYTES, svgHasImages } from './scene-svg';
 
 const OK = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect/></svg>';
 
@@ -82,5 +82,60 @@ describe('acceptSceneSvg', () => {
         '<image href="data:image/png;base64,AAAA"/></svg>';
       expect(acceptSceneSvg(real)).toBe(real);
     });
+  });
+});
+
+/**
+ * keepSvgImages (member logins, audit LOW): exportToSvg inlines each scene
+ * image's bytes in a `<symbol id="image-<fileId>">`, so a member's copy of a
+ * team drawing must lose the images whose file the member may not read.
+ */
+describe('keepSvgImages', () => {
+  const img = (bytes: string) =>
+    `<image href="data:image/png;base64,${bytes}" preserveAspectRatio="none" width="100%" height="100%"></image>`;
+  const sym = (id: string, bytes: string) => `<symbol id="${id}">${img(bytes)}</symbol>`;
+  const wrap = (defs: string, rest = '') =>
+    `<svg xmlns="http://www.w3.org/2000/svg"><defs>${defs}</defs>${rest}<use href="#x"/></svg>`;
+
+  it('keeps an allowed file’s image and empties every other symbol', () => {
+    const svg = wrap(sym('image-okfile', 'T0s=') + sym('image-adminfile', 'U0VDUkVU'));
+    const out = keepSvgImages(svg, new Set(['okfile']));
+    expect(out).toBe(wrap(sym('image-okfile', 'T0s=') + '<symbol id="image-adminfile"></symbol>'));
+  });
+
+  it('reads the cropped form, file ids with dashes and digits included', () => {
+    const svg = wrap(
+      sym('image-crop-ok-12-3456789', 'T0s=') + sym('image-crop-admin-1-42', 'U0VDUkVU'),
+    );
+    const out = keepSvgImages(svg, new Set(['ok-12']));
+    expect(out).toContain('T0s=');
+    expect(out).not.toContain('U0VDUkVU');
+  });
+
+  it('removes images outside a symbol, feImage, and self-closed images', () => {
+    const svg = wrap(
+      `<symbol id='image-okfile'><image href="data:image/png;base64,T0s="/></symbol>`,
+      `<image href="data:image/png;base64,T1VU"/><filter><feImage href="data:image/png;base64,RkU="/></filter>${img('TE9PU0U=')}`,
+    );
+    const out = keepSvgImages(svg, new Set(['okfile']));
+    expect(out).toContain('T0s=');
+    for (const gone of ['T1VU', 'RkU=', 'TE9PU0U=']) expect(out).not.toContain(gone);
+  });
+
+  it('is not fooled by a > inside an attribute value, and fails closed', () => {
+    const tricky = `<symbol id="image-adminfile" data-x="a>b"><image title="x>y" href="data:image/png;base64,U0VDUkVU"></image></symbol>`;
+    expect(keepSvgImages(wrap(tricky), new Set(['okfile']))).not.toContain('U0VDUkVU');
+    // An allowed symbol closes; an image after it is not inside it any more.
+    const after = wrap(sym('image-okfile', 'T0s='), img('U0VDUkVU'));
+    expect(keepSvgImages(after, new Set(['okfile']))).not.toContain('U0VDUkVU');
+    // Nothing allowed: nothing kept.
+    expect(keepSvgImages(wrap(sym('image-okfile', 'T0s=')), new Set())).not.toContain('T0s=');
+  });
+
+  it('leaves a drawing with no images byte for byte', () => {
+    expect(keepSvgImages(OK, new Set())).toBe(OK);
+    expect(svgHasImages(OK)).toBe(false);
+    expect(svgHasImages(wrap(sym('image-a', 'T0s=')))).toBe(true);
+    expect(svgHasImages('<svg><feImage href="x"/></svg>')).toBe(true);
   });
 });
