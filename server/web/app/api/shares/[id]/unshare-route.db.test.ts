@@ -1,7 +1,7 @@
 /**
  * DELETE /api/shares/:id against a real, migrated Postgres (MED 7): turning
  * a page's link off takes it to admin with the same closure rule as the
- * Access control, so the response lists the embedded file still at client in
+ * Access control, so the response lists the embedded file still at public in
  * `stillBelow` and leaves it there. Only the owner check is stubbed.
  * Seeds its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run unshare-route.db.test
@@ -64,8 +64,8 @@ describe.skipIf(!URL)('DELETE /api/shares/:id reports the closure on Postgres', 
     await m.closeDb();
   });
 
-  it('lists the embedded file still at client and leaves it there', async () => {
-    await c.setItemLevel(owner, ids.page, 'client', { withClosure: true });
+  it('lists the embedded file still at public and leaves it there', async () => {
+    await c.setItemLevel(owner, ids.page, 'public', { withClosure: true });
     const link = (await c.getActiveShareForNode(owner, ids.page))!;
 
     const res = await route.DELETE(
@@ -79,8 +79,8 @@ describe.skipIf(!URL)('DELETE /api/shares/:id reports the closure on Postgres', 
       stillBelow: { id: string; audience: string }[];
     };
     expect(body.ok).toBe(true);
-    expect(body.stillBelow.map((i) => [i.id, i.audience])).toEqual([[ids.file, 'client']]);
+    expect(body.stillBelow.map((i) => [i.id, i.audience])).toEqual([[ids.file, 'public']]);
     expect(await audienceOf(ids.page)).toBe('admin');
-    expect(await audienceOf(ids.file)).toBe('client');
+    expect(await audienceOf(ids.file)).toBe('public');
   });
 });

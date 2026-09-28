@@ -1,7 +1,7 @@
 /**
  * node_unshare and page_unshare against a real, migrated Postgres (MED 7):
  * unsharing a page takes it to admin with the same closure rule as setting
- * admin by hand, so its embedded file still at client is reported
+ * admin by hand, so its embedded file still at public is reported
  * (`stillBelow` plus a warning naming access_set), never raised on its own.
  * Seeds its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/unshare-closure.db.test.ts
@@ -67,9 +67,9 @@ describe.skipIf(!URL)('the unshare tools report the closure on Postgres', () => 
   });
 
   for (const which of ['node_unshare', 'page_unshare'] as const) {
-    it(`${which} reports the embedded file still at client`, async () => {
-      await c.setItemLevel(owner, ids.page, 'client', { withClosure: true });
-      expect(await audienceOf(ids.file)).toBe('client');
+    it(`${which} reports the embedded file still at public`, async () => {
+      await c.setItemLevel(owner, ids.page, 'public', { withClosure: true });
+      expect(await audienceOf(ids.file)).toBe('public');
 
       const tool = which === 'node_unshare' ? nodeUnshare : pageUnshare;
       const res = await tool.handler({ id: ids.page }, ctx);
@@ -80,12 +80,12 @@ describe.skipIf(!URL)('the unshare tools report the closure on Postgres', () => 
         warning?: string;
       };
       expect(out.unshared).toBe(true);
-      expect(out.stillBelow?.map((i) => [i.id, i.audience])).toEqual([[ids.file, 'client']]);
+      expect(out.stillBelow?.map((i) => [i.id, i.audience])).toEqual([[ids.file, 'public']]);
       expect(out.warning).toMatch(/img\.png \(file, client\)/);
       expect(await audienceOf(ids.page)).toBe('admin');
       expect(await c.getActiveShareForNode(owner, ids.page)).toBeNull();
       // Reported, not raised: raising is the explicit access_set step.
-      expect(await audienceOf(ids.file)).toBe('client');
+      expect(await audienceOf(ids.file)).toBe('public');
     });
   }
 });

@@ -39,6 +39,9 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
   const client = randomUUID();
   const member = randomUUID();
   const adminA = randomUUID();
+  // Accept moves items into a brain of this test's own (it creates the
+  // brain's root folders, which the shared anchor must never gain from a test).
+  const acceptBrain = randomUUID();
   const logins = [client, member, adminA];
   const spaceOf: Record<string, string> = {};
   const brainItems = { team: randomUUID(), client: randomUUID(), pub: randomUUID() };
@@ -95,7 +98,10 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${client}, ${`${tag}-c@example.invalid`}, 'x', 'client', 'Cleo Client'),
         (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member', null),
-        (${adminA}, ${`${tag}-a@example.invalid`}, 'x', 'admin', null)`);
+        (${adminA}, ${`${tag}-a@example.invalid`}, 'x', 'admin', null),
+        (${acceptBrain}, ${`${tag}-b@example.invalid`}, 'x', 'admin', null)`);
+    await m.systemDb.execute(sqlTag`
+      insert into spaces (id, kind, login_id) values (${acceptBrain}, 'brain', ${acceptBrain})`);
     const rows = await exec<{ id: string; login_id: string }>(sqlTag`
       select id, login_id from spaces where kind = 'personal'
         and login_id in (${client}, ${member}, ${adminA})`);
@@ -108,6 +114,11 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
   });
 
   afterAll(async () => {
+    await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${acceptBrain}`);
+    await m.systemDb.execute(
+      sqlTag`delete from spaces where id = ${acceptBrain} or login_id = ${acceptBrain}`,
+    );
+    await m.systemDb.execute(sqlTag`delete from auth.users where id = ${acceptBrain}`);
     for (const id of [...created, ...Object.values(brainItems)]) {
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);
     }
@@ -172,18 +183,18 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
   it('Accept of a client’s item defaults to team; client needs a confirmation', async () => {
     const reviewer = { loginId: adminA };
     const first = await submitted(client, `${tag} request 1`, [brainItems.client]);
-    const res = await rv.acceptReviewItem(brain, first, reviewer);
+    const res = await rv.acceptReviewItem(acceptBrain, first, reviewer);
     expect(res.audience).toBe('team');
     expect(await audienceOf(first)).toBe('team');
 
     const second = await submitted(client, `${tag} request 2`);
     for (const audience of ['client', 'public'] as const) {
       await expect(
-        rv.acceptReviewItem(brain, second, reviewer, { audience }),
+        rv.acceptReviewItem(acceptBrain, second, reviewer, { audience }),
       ).rejects.toMatchObject({ reason: 'confirm-level' });
     }
     expect(await audienceOf(second)).toBe('admin'); // still the client's, untouched
-    const confirmed = await rv.acceptReviewItem(brain, second, reviewer, {
+    const confirmed = await rv.acceptReviewItem(acceptBrain, second, reviewer, {
       audience: 'client',
       lowerConfirmed: true,
     });
@@ -192,7 +203,7 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
 
     // A member's item (control): admin by default, as before.
     const third = await submitted(member, `${tag} member request`);
-    expect((await rv.acceptReviewItem(brain, third, reviewer)).audience).toBe('admin');
+    expect((await rv.acceptReviewItem(acceptBrain, third, reviewer)).audience).toBe('admin');
   });
 
   it('acceptAudience: the rule by role, with no database', () => {

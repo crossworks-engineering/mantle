@@ -25,7 +25,7 @@ export const page_share: BuiltinToolDef = {
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Share a page',
   description:
-    "Create (or fetch) a read-only link to a page and return its URL. Idempotent — one active link per page. The link is **public**: anyone with it can view, no login, and the page goes to public level, its embeds too (`alsoLowered`). A page at client level gets NO link (client items are for signed-in clients): set it to public first if an open link is really wanted. There are no team links: members sign in with their own logins, so to show a page to members only, set its level with `access_set(level: 'team')` instead. `children: true` also shares every sub-page beneath it (a whole documentation section in one call); `children: false` revokes those sub-page links. Publishes brain content outward-facing. Use when the user asks to share or publish a page or section; to turn a link off use `page_unshare`.",
+    'Create (or fetch) a read-only link to a page and return its URL. Idempotent — one active link per page. The link is **public**: anyone with it can view, no login, and the page goes to public level, its embeds too (`alsoLowered`). No team or client links: members and clients sign in, so for them set the level with `access_set` instead (a client page is refused a link). `children: true` also shares every sub-page beneath it (a whole documentation section in one call); `children: false` revokes those sub-page links. Publishes brain content outward-facing. Use when the user asks to share or publish a page or section; to turn a link off use `page_unshare`.',
   // Publishes brain content to the public web, so gated. `children` can share a
   // large subtree at once, so confirm.
   requiresConfirm: true,
