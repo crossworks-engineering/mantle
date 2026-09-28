@@ -118,11 +118,16 @@ not something an owner chose. To list an item to members, set it to Team.
 
 ## 4. Setting a brain up for members
 
-Member logins are always on; there is nothing to switch on.
+Member logins are always on; there is nothing to switch on (Phase 6 removed
+the `MANTLE_MEMBERS` flag).
 
 1. Set item levels and lower `team-responder` to team (access-levels.md §5).
-2. Settings > Users: create a user with role member, and hand the person
-   their email and password.
+2. Invite the person (section 9): pick their contact, or type an email, and
+   hand them the invite link. They set their own password and are signed in.
+   A person who still holds an old team code can use it instead of the
+   invite code, once.
+3. Or, as before: Settings > Users, create a user with role member, and hand
+   the person their email and password.
 
 ## 5. Personal spaces (Phase 2)
 
@@ -517,3 +522,66 @@ new brain route: each piece uses one that already served members.
 - **Contract banner.** When the brain and the client speak different wire
   contracts, a member reads "Needs an update: tell an admin", with no link
   (the updates screen is admin only).
+
+## 9. Invites (Phase 6)
+
+An admin invites a person; the person opens the link, sets a password, and
+is a member login. Nobody hands a password around. The table is
+`member_invites` (migration 0174, modelled on `pairing_codes`); the logic is
+`packages/content/src/member-invites.ts`.
+
+- **The code.** 16 characters from the team-token alphabet (no look-alikes),
+  about 93 bits. Only its hash is stored (the team-token hash); the plaintext
+  is in the create answer once. It lives 72 hours and redeems once.
+- **One open invite per contact** (a partial unique index). A new invite for
+  the same contact, or the same email, revokes the old one: re-inviting
+  replaces the link.
+- **Admin routes** (admin only; a member gets 403 `member-login`):
+
+  | Route                                | What                                                                                                                                                                                                                     |
+  | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  | `POST /api/team-admin/invites`       | `{ contactId?, email?, displayName? }`: the contact must be a contact of this brain with no login; the email and name default to the contact's. 409 when a login has the email or the contact. 201 `MemberInviteCreated` |
+  | `GET /api/team-admin/invites`        | `MemberInviteList`: open, expired and redeemed invites, newest first, never a code. Revoked ones are left out                                                                                                            |
+  | `DELETE /api/team-admin/invites/:id` | Revoke an invite not yet redeemed; 404 otherwise                                                                                                                                                                         |
+
+  `MemberInviteCreated` is `{ invite, code, linkPath }`; `linkPath` is the
+  client-app path `/invite?code=…`, which the client prefixes with its own
+  origin. The brain does not email it: copying the link is the way (an
+  invite email would need the client's origin and a connected mail account,
+  and the brain has neither for certain).
+
+- **Public routes** (under `/api/auth`, a public path; no session):
+
+  | Route                          | What                                                                                                                              |
+  | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+  | `GET /api/auth/invite/:code`   | `MemberInvitePreview` `{ email, displayName, siteName }` for a code that would redeem; one 404 for any other                      |
+  | `POST /api/auth/invite/accept` | `{ code, password, email? }`: redeem. `MemberInviteAccepted` `{ ok, email }` and the session cookie, as `/api/auth/login` sets it |
+
+  Accept: a password under 8 characters is a 400 before any code is looked
+  at. Every other failure (unknown, used, revoked or expired code; a team
+  code with no open invite; an `email` that is not the invite's; a login
+  that took the email meanwhile) is the same 401 with the same message, so
+  the route is no oracle. `email` is a check, never a choice: the login is
+  always made with the invite's email (login emails pass the email gates,
+  section 1). Both routes are rate limited per IP (preview 30, accept 10 a
+  minute) and for the whole brain (300 and 60), and accept limits before
+  bcrypt. Audit: `auth.invite_accepted` or `auth.invite_failed`.
+
+- **One transaction.** The redeem locks the invite, deletes the contact's
+  team code, creates the login (role member, the invite's contact and
+  name), marks the invite redeemed and writes a `team_access_log` row
+  (`kind` auth, `event` invite_redeemed). Any failure rolls all of it back.
+  Two racing redeems of one code: one wins.
+- **Old team codes.** An 8-char team code works in place of the invite code
+  while its contact has an open invite, and only once: the redeem deletes
+  the contact's `contact_team_tokens` row (Jason, 2026-09-28). With no open
+  invite a team code redeems nothing and stays as it was; a code revoked
+  while a redeem runs does not redeem.
+- **Contract.** `MemberInviteRow`, `MemberInviteState` (`open`, `redeemed`,
+  `expired`), `MemberInviteList`, `MemberInviteCreated`,
+  `MemberInvitePreview`, `MemberInviteAccepted` in `@mantle/client-types`
+  (`dto/member-invites.ts`).
+- **Tests.** `packages/content/src/member-invites.db.test.ts` (Postgres),
+  `server/web/app/api/auth/invite/invite-routes.test.ts` and
+  `server/web/app/api/team-admin/invites/invites-admin-routes.test.ts`; the
+  member and auth sweeps cover the new routes.
