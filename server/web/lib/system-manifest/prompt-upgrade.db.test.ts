@@ -85,7 +85,7 @@ describe.skipIf(!URL)('reconcile: unedited prompts and retired items', () => {
     await admin`insert into tools (owner_id, slug, name, description, handler)
                 values (${brains.edited}, 'team_notify', 'My notifier', 'x',
                         ${JSON.stringify({ kind: 'http', url: 'https://example.invalid' })}::jsonb)`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;
