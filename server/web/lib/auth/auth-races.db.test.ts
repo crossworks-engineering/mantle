@@ -104,7 +104,7 @@ describe.skipIf(!URL)('credential races', () => {
     const jti = randomUUID();
     const minted = buildMobileToken(admin, jti, WEB_TOKEN_TTL_SECONDS);
     await sql`insert into mobile_tokens (id, user_id, label, expires_at)
-              values (${jti}, ${admin}, ${tag}, ${minted.expiresAt})`;
+              values (${jti}, ${admin}, ${tag}, ${minted.expiresAt.toISOString()})`;
     let n = 0;
     const refresh = () =>
       POST(

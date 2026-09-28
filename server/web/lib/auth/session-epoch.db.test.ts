@@ -81,7 +81,7 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
     const jti = randomUUID();
     const t = tokens.buildMobileToken(login, jti, 3600);
     await sql`insert into mobile_tokens (id, user_id, label, expires_at)
-              values (${jti}, ${login}, ${tag}, ${t.expiresAt})`;
+              values (${jti}, ${login}, ${tag}, ${t.expiresAt.toISOString()})`;
     return { jti, token: t.value };
   };
   const revoked = async (jti: string) =>
