@@ -160,8 +160,50 @@ export async function renameFolder(fromLtree: string, toLtree: string): Promise<
   return { path: to };
 }
 
-/** Recursively remove a folder. Caller must check it's empty in the DB
- *  beforehand — this is the unconditional "delete from disk" half. */
+/** Editor + OS chaff the files tree never tracks: dotfiles (macOS `._x`
+ *  AppleDouble twins, `.DS_Store`), `~` backups, vim/editor temps, emacs
+ *  autosaves. The watcher ignores these; folder delete may sweep them. */
+export function isDiskChaff(basename: string): boolean {
+  return (
+    basename.startsWith('.') ||
+    basename.endsWith('~') ||
+    basename.endsWith('.swp') ||
+    basename.endsWith('.swx') ||
+    basename.endsWith('.tmp') ||
+    (basename.startsWith('#') && basename.endsWith('#'))
+  );
+}
+
+/** Real (non-chaff) files on disk under a folder, as paths relative to it,
+ *  up to `limit`. A folder that is empty in the DB can still hold these: a
+ *  file dropped in that the watcher refused (e.g. a slug clash), or one of a
+ *  type it does not watch. They are user data the brain has no row for. */
+export async function untrackedFilesOnDisk(ltreePath: string, limit = 5): Promise<string[]> {
+  const dir = isFilesPath(ltreePath) ? diskPathForLtree(ltreePath) : null;
+  if (!dir) return [];
+  const found: string[] = [];
+  const walk = async (d: string): Promise<void> => {
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = await fs.readdir(d, { withFileTypes: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw err;
+    }
+    for (const e of entries) {
+      if (found.length >= limit) return;
+      const abs = path.join(d, e.name);
+      if (e.isDirectory()) await walk(abs);
+      else if (!isDiskChaff(e.name)) found.push(path.relative(dir, abs));
+    }
+  };
+  await walk(dir);
+  return found;
+}
+
+/** Recursively remove a folder. Caller must check it's empty in the DB AND
+ *  on disk (`untrackedFilesOnDisk`) beforehand — this is the unconditional
+ *  "delete from disk" half, and it takes any chaff with it. */
 export async function removeFolder(ltreePath: string): Promise<void> {
   if (!isFilesPath(ltreePath)) return;
   const dir = diskPathForLtree(ltreePath);

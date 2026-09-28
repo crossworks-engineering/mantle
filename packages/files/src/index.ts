@@ -61,6 +61,8 @@ export {
   renameFile,
   renameFolder,
   removeFolder,
+  isDiskChaff,
+  untrackedFilesOnDisk,
   spoolUpload,
   discardSpooled,
   adoptSpooled,

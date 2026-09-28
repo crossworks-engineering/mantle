@@ -13,6 +13,7 @@ import {
   removeFolder as removeFolderOnDisk,
   renameFolder as renameFolderOnDisk,
   slugifyFolder,
+  untrackedFilesOnDisk,
 } from '../index';
 import { db, nodes } from '@mantle/db';
 import { folderCounts, folderRowFromNode, type FolderRow } from './shared';
@@ -330,6 +331,16 @@ export async function deleteFolder(args: {
   const counts = await folderCounts(args.ownerId, folder.path);
   if (counts.childFolderCount > 0 || counts.fileCount > 0) {
     return { ok: false, reason: 'folder is not empty — delete its contents first' };
+  }
+  // Empty in the DB is not empty on disk: a file the watcher refused (a slug
+  // clash) or never watches has no row, and the recursive rm below would
+  // destroy it unseen. Refuse; OS chaff (._x, .DS_Store, ~, .swp) still goes.
+  const untracked = await untrackedFilesOnDisk(folder.path);
+  if (untracked.length > 0) {
+    return {
+      ok: false,
+      reason: `folder still holds file(s) on disk that the brain does not track (${untracked.join(', ')}) — move or delete them first`,
+    };
   }
   await db.delete(nodes).where(eq(nodes.id, args.folderId));
   await removeFolderOnDisk(folder.path);

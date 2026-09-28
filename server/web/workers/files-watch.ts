@@ -35,6 +35,7 @@ import {
   ensureRoot,
   extOf,
   filesRoot,
+  isDiskChaff,
   ltreeForDiskPath,
   syncFileFromDisk,
 } from '@mantle/files';
@@ -71,12 +72,7 @@ const WATCHED_EXTS = new Set<string>([
 
 function shouldSync(absPath: string): boolean {
   const base = path.basename(absPath);
-  // Editor + OS chaff.
-  if (base.startsWith('.')) return false;
-  if (base.endsWith('~')) return false;
-  if (base.endsWith('.swp') || base.endsWith('.swx')) return false;
-  if (base.endsWith('.tmp')) return false;
-  if (base.startsWith('#') && base.endsWith('#')) return false; // emacs
+  if (isDiskChaff(base)) return false; // editor + OS chaff
   const ext = extOf(base);
   if (!ext) return false;
   return WATCHED_EXTS.has(ext);
@@ -152,16 +148,7 @@ runWorker('files-watch', async () => {
       stabilityThreshold: 400,
       pollInterval: 100,
     },
-    ignored: (p) => {
-      const base = path.basename(p);
-      return (
-        base.startsWith('.') ||
-        base.endsWith('~') ||
-        base.endsWith('.swp') ||
-        base.endsWith('.swx') ||
-        base.endsWith('.tmp')
-      );
-    },
+    ignored: (p) => isDiskChaff(path.basename(p)),
   });
 
   watcher.on('add', handleUpsert);
