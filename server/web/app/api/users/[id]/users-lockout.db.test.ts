@@ -27,6 +27,7 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   getOwnerOr401: vi.fn(async () => h.caller),
+  getOwnerOr401WithSource: vi.fn(async () => ({ user: h.caller, source: 'web' })),
 }));
 
 vi.mock('@/lib/audit', () => ({
@@ -62,7 +63,8 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
   const dee = randomUUID(); // admin, deleted below
   const eve = randomUUID(); // admin, links contacts
   const raw = randomUUID(); // deleted with raw SQL (the FK)
-  const logins = [anchor, otherBrain, bea, cal, dee, eve, raw];
+  const cli = randomUUID(); // a client login (client logins C0)
+  const logins = [anchor, otherBrain, bea, cal, dee, eve, raw, cli];
   const ids = {
     contact: randomUUID(),
     otherContact: randomUUID(),
@@ -118,7 +120,8 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     for (const id of logins) {
       await admin`insert into auth.users (id, email, password_hash, role)
-                  values (${id}, ${`${tag}-${id.slice(0, 8)}@example.invalid`}, 'x', 'admin')`;
+                  values (${id}, ${`${tag}-${id.slice(0, 8)}@example.invalid`}, 'x',
+                          ${id === cli ? 'client' : 'admin'})`;
     }
     // Items belong to a space (0165): each test brain is a brain row.
     await admin`insert into spaces (id, kind, login_id) values
@@ -309,6 +312,60 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
       expect((await PATCH(json('PATCH', { contactId: ids.otherContact }), ctx(eve))).status).toBe(
         200,
       );
+    });
+  });
+
+  // Client logins C0: routes about a login name the roles they serve, so a
+  // client is never treated as an admin or a member here.
+  describe('a client login (C0)', () => {
+    const roleOf = async (id: string) =>
+      (await admin<Row[]>`select role, password_hash from auth.users where id = ${id}`)[0];
+
+    it('cannot change role, to member or to admin', async () => {
+      h.caller = as(anchor);
+      const { PATCH } = await import('./route');
+      for (const role of ['member', 'admin']) {
+        const res = await PATCH(json('PATCH', { role }), ctx(cli));
+        expect(res.status, role).toBe(400);
+      }
+      expect(await roleOf(cli)).toMatchObject({ role: 'client' });
+      // Disabling it is fine (and is how a client login ends).
+      expect((await PATCH(json('PATCH', { disabled: true }), ctx(cli))).status).toBe(200);
+      expect((await PATCH(json('PATCH', { disabled: false }), ctx(cli))).status).toBe(200);
+    });
+
+    it('cannot be given a personal assistant', async () => {
+      h.caller = as(anchor);
+      const { PUT } = await import('./agent/route');
+      const res = await PUT(
+        json('PUT', { name: `${tag} client helper`, sourceAgentId: ids.source }),
+        ctx(cli),
+      );
+      expect(res.status).toBe(400);
+      const [none] = await admin<Row[]>`
+        select count(*)::int as n from agents where assigned_user_id = ${cli}`;
+      expect(none).toEqual({ n: 0 });
+    });
+
+    it('never signs in with a password, even the right one', async () => {
+      const auth = await import('@/lib/auth');
+      const hash = await auth.hashLoginPassword('client-password-1');
+      await admin`update auth.users set password_hash = ${hash} where id in (${cli}, ${eve})`;
+      const email = (id: string) => `${tag}-${id.slice(0, 8)}@example.invalid`;
+      expect(await auth.authenticatePassword(email(cli), 'client-password-1')).toBeNull();
+      // The same hash on an admin signs in: the refusal was the role.
+      expect(await auth.authenticatePassword(email(eve), 'client-password-1')).toMatchObject({
+        id: eve,
+      });
+      await admin`update auth.users set password_hash = 'x' where id in (${cli}, ${eve})`;
+    });
+
+    it('gets no password from an admin', async () => {
+      h.caller = as(anchor);
+      const { POST } = await import('./password/route');
+      const res = await POST(json('POST', { newPassword: 'long-enough-pw' }), ctx(cli));
+      expect(res.status).toBe(400);
+      expect(await roleOf(cli)).toMatchObject({ password_hash: 'x' });
     });
   });
 });
