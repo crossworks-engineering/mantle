@@ -73,8 +73,8 @@ describe.skipIf(!URL)('member invites', () => {
       (${ids.ray}, ${anchor}, 'contact', 'Ray', 'contacts', ${data([email('ray')])}::jsonb),
       (${ids.foreign}, ${otherBrain}, 'contact', 'Far', 'contacts', ${data([email('far')])}::jsonb),
       (${ids.note}, ${anchor}, 'note', 'a note', 'notes', '{}'::jsonb)`;
-    await admin`insert into auth.users (email, password_hash, role, contact_id)
-                values (${email('lee-login')}, 'x', 'member', ${ids.lee})`;
+    await admin`insert into auth.users (id, email, password_hash, role, contact_id)
+                values (${randomUUID()}, ${email('lee-login')}, 'x', 'member', ${ids.lee})`;
   });
 
   afterAll(async () => {
@@ -85,6 +85,7 @@ describe.skipIf(!URL)('member invites', () => {
     await admin`delete from team_access_log where owner_id in (${anchor}, ${otherBrain})`;
     await admin`delete from contact_team_tokens where owner_id in (${anchor}, ${otherBrain})`;
     await admin`delete from nodes where owner_id in (${anchor}, ${otherBrain})`;
+    if (loginIds.length === 0) return m.closeDb();
     await admin`delete from spaces where login_id in ${admin(loginIds as never)}`;
     await admin`delete from spaces where id in (${anchor}, ${otherBrain})`;
     await admin`delete from auth.users where id in ${admin(loginIds as never)}`;
@@ -293,8 +294,8 @@ describe.skipIf(!URL)('member invites', () => {
         email: email('late'),
         createdBy: adminLogin,
       });
-      await admin`insert into auth.users (email, password_hash, role)
-                  values (${email('LATE')}, 'x', 'admin')`;
+      await admin`insert into auth.users (id, email, password_hash, role)
+                  values (${randomUUID()}, ${email('LATE')}, 'x', 'admin')`;
       expect(await inv.redeemMemberInvite({ code, passwordHash: HASH })).toBeNull();
       expect((await inviteRow(invite.id)).redeemed_at).toBeNull();
     });
