@@ -4,6 +4,16 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.303: Phase 6 compatibility fields removed
+
+- The fields Phase 6 kept for one client cycle are gone (every box runs
+  client v0.6.162 or newer): `TeamMemberActivity.tokenLastUsedAt`, the
+  hub-app `modeChanged` (the answer is `{ appId, levelChanged }`),
+  `membersEnabled` on `GET /api/users`, and the forum parts of the Team
+  admin answers (upload badges and lists, `dashboardTags`, member `forum`
+  and forum post paging). The unused frozen `Forum*` types leave
+  `@mantle/client-types`.
+
 ## 0.232.302: client v0.6.162
 
 - Paired with jackdaw v0.6.162. Team codes: the first Team admin tab is the
