@@ -754,7 +754,11 @@ case "$1" in
           esac
           printf '{"phase":"%s","target":"%s","started_at":"NEW","finished_at":"F","ok":%s,"error":"%s"}\n' \
             "${FAKE_PHASE:-done}" "$t" "${FAKE_OK:-true}" "${FAKE_ERR:-}" > "$RS/sig/status.json"
-          echo "[updater] pre-roll backup ok: mantle-x.dump" > "$RS/sig/update.log"
+          if [ -n "${FAKE_NO_BACKUP_LINE:-}" ]; then
+            echo "[updater] update requested" > "$RS/sig/update.log"
+          else
+            echo "[updater] pre-roll backup ok: mantle-x.dump" > "$RS/sig/update.log"
+          fi
         fi
         cat "$RS/sig/status.json" ;;
       *update.log*)
@@ -836,7 +840,12 @@ roll_box updaterdumps
 printf 'pre_roll_backup() {\n  :\n}\n' > "$RS/stack/infra/updater/updater.sh"
 roll_sh --ssh fakebox v8
 check "updater takes its own backup: roll.sh does not dump twice" sh -c "test '$rc' = 0 && ! grep -q '^db-dump' '$RS/calls'"
-check "updater takes its own backup: its log line is checked" grep -q 'grep pre-roll backup ok' "$RS/calls"
+check "updater takes its own backup: its log line is checked (one quoted phrase)" grep -q "grep -q 'pre-roll backup ok' /signal/update.log" "$RS/calls"
+
+roll_box updaterdumpsmissing
+printf 'pre_roll_backup() {\n  :\n}\n' > "$RS/stack/infra/updater/updater.sh"
+FAKE_NO_BACKUP_LINE=1 roll_sh --ssh fakebox v8
+check "updater's log has no backup line: roll.sh stops" sh -c "test '$rc' = 1 && grep -q 'shows no pre-roll backup' '$RS/out'"
 roll_box updateroptout
 printf 'pre_roll_backup() {\n  :\n}\n' > "$RS/stack/infra/updater/updater.sh"
 printf 'MANTLE_PRE_ROLL_BACKUP=0\n' > "$RS/stack/.env"
