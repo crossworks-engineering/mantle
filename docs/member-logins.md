@@ -449,3 +449,28 @@ app's level in its Access control; nothing else lists it to members.
   is the page id), Library counts and the other apps members may run. The
   `/team` portal hub keeps its own rules (a team-mode share) until it is
   retired.
+
+## 8. The member's own chrome (Phase 5)
+
+What the client shows a member around the workspace (jackdaw v0.6.154+). No
+new brain route: each piece uses one that already served members.
+
+- **Password.** The account menu has Change password, over
+  `POST /api/auth/change-password`, which changes the signed-in LOGIN's own
+  password for an admin or a member (it sits under `/api/auth`, a public
+  path, and checks the session itself). Other sessions stay signed in. A
+  wrong current password answers 401 `Current password is incorrect.`, so
+  the client reads that answer itself rather than treating the 401 as a
+  dead session. Five attempts an hour per login. A member's name and photo
+  stay set by an admin (Settings > Users); the Profile screen and its
+  `/api/profile*` routes stay admin only.
+- **Appearance.** Light or dark and the random theme, in the browser only.
+  The brain-wide theme and fonts are written only from Settings >
+  Appearance, which a member never reaches.
+- **Tour.** A member gets the member tour once per browser on the member
+  home (`?tour=member`, or Take the tour in the account menu, opens it
+  again). A member never gets a deployment's `MANTLE_TOUR`: its stops are
+  admin screens.
+- **Contract banner.** When the brain and the client speak different wire
+  contracts, a member reads "Needs an update: tell an admin", with no link
+  (the updates screen is admin only).
