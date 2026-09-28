@@ -111,7 +111,9 @@ describe.skipIf(!URL)('member invites', () => {
       expect(row.code_hash).toBe(teamTokens.hashTeamToken(code));
       expect(JSON.stringify(row)).not.toContain(code);
       const hours =
-        ((row.expires_at as Date).getTime() - (row.created_at as Date).getTime()) / 36e5;
+        (new Date(row.expires_at as string).getTime() -
+          new Date(row.created_at as string).getTime()) /
+        36e5;
       expect(hours).toBe(72);
     });
 
@@ -267,7 +269,8 @@ describe.skipIf(!URL)('member invites', () => {
       ];
       for (const a of attempts) {
         expect(await inv.redeemMemberInvite({ ...a, passwordHash: HASH }), a.code).toBeNull();
-        expect(await inv.previewMemberInvite(a.code)).toBeNull();
+        // The preview names the invite's email, so it has no email to check.
+        if (!a.email) expect(await inv.previewMemberInvite(a.code)).toBeNull();
       }
       for (const who of ['old', 'rev', 'open', 'someone-else']) {
         expect(await loginByEmail(email(who))).toBeNull();
