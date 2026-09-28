@@ -1,5 +1,5 @@
 import { EXCALIDRAW_ENGINE, getDrawSnapshot, setDrawSvg } from '@mantle/content';
-import { buildInternalRenderCookie } from '@/lib/auth';
+import { buildRenderToken } from '@/lib/auth/tokens';
 import { renderDrawSvg, DrawRendererUnavailableError } from '@/lib/render-draw-svg';
 import { renderDrawPng, type DrawPng } from '@/lib/render-draw-png';
 
@@ -69,16 +69,27 @@ function inCooldown(id: string): boolean {
   return true;
 }
 
+/**
+ * The render cookie for one drawing. `actorId` is the admin whose request
+ * started the render; a cache fill nobody asked for (the re-render sweep)
+ * renders as the anchor. Either way the cookie opens this drawing's render
+ * surface and the image routes it loads, nothing else (lib/render-sandbox.ts).
+ */
+function renderTokenFor(ownerId: string, id: string, actorId?: string): string {
+  return buildRenderToken({ ownerId, actorId: actorId ?? ownerId, nodeId: id });
+}
+
 function renderOnce(
   ownerId: string,
   id: string,
   expectedVersion: number,
   hasCachedSvg: boolean,
+  actorId?: string,
 ): Promise<string | null> {
   const existing = inFlight.get(id);
   if (existing) return existing;
   const p = withSlot(async () => {
-    const { svg, partial } = await renderDrawSvg(id, buildInternalRenderCookie(ownerId));
+    const { svg, partial } = await renderDrawSvg(id, renderTokenFor(ownerId, id, actorId));
     // A partial render (some scene images missing/hung) beats NOTHING, so it
     // may fill an empty cache — but it must never overwrite a snapshot that
     // still shows the images. Cooldown either way: the missing file won't
@@ -117,7 +128,7 @@ function renderOnce(
 export async function getDrawSvgOrRender(
   ownerId: string,
   id: string,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; actorId?: string } = {},
 ): Promise<string | null> {
   const snap = await getDrawSnapshot(ownerId, id);
   if (!snap) return null; // not a draw, or not this owner's
@@ -129,7 +140,9 @@ export async function getDrawSvgOrRender(
   if (!opts.force && inCooldown(id)) return snap.svg;
 
   try {
-    return (await renderOnce(ownerId, id, snap.version, snap.svg != null)) ?? snap.svg;
+    return (
+      (await renderOnce(ownerId, id, snap.version, snap.svg != null, opts.actorId)) ?? snap.svg
+    );
   } catch (err) {
     if (!(err instanceof DrawRendererUnavailableError)) {
       console.error(`[draw-snapshot] render failed for ${id}:`, err);
@@ -154,11 +167,15 @@ export async function getDrawSvgOrRender(
  * rare, so a repeatedly-failing drawing costs a session per export rather than
  * per request — no cooldown needed here.
  */
-export async function getDrawPngOrRender(ownerId: string, id: string): Promise<DrawPng | null> {
-  const svg = await getDrawSvgOrRender(ownerId, id);
+export async function getDrawPngOrRender(
+  ownerId: string,
+  id: string,
+  actorId?: string,
+): Promise<DrawPng | null> {
+  const svg = await getDrawSvgOrRender(ownerId, id, { actorId });
   if (!svg) return null;
   try {
-    return await withSlot(() => renderDrawPng(id, buildInternalRenderCookie(ownerId)));
+    return await withSlot(() => renderDrawPng(id, renderTokenFor(ownerId, id, actorId)));
   } catch (err) {
     if (!(err instanceof DrawRendererUnavailableError)) {
       console.error(`[draw-snapshot] raster failed for ${id}:`, err);

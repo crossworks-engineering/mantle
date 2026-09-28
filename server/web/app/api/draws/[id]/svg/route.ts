@@ -37,7 +37,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const svg =
     url.searchParams.get('nofill') === '1'
       ? await getDrawSvg(user.id, id)
-      : await getDrawSvgOrRender(user.id, id);
+      : await getDrawSvgOrRender(user.id, id, { actorId: user.actor.id });
 
   if (url.searchParams.get('raw') !== '1') {
     return NextResponse.json({ svg });

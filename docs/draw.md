@@ -75,10 +75,15 @@ by us.
 The editor captures the SVG client-side at commit (`exportToSvg`) and that
 stays the fast path. When the snapshot is missing or was produced by a
 different Excalidraw version (`svg_engine`), the **browser sidecar** re-renders
-it: `getDrawSvgOrRender` drives Chromium to our own owner-authed
+it: `getDrawSvgOrRender` drives Chromium to our own admin-only
 `/render/draws/:id` page, where a small island (no editor UI, no React) runs
-`restore()` + `exportToSvg` and hands the SVG back. Same mechanism the mermaid
-bundle uses for `/print`.
+`restore()` + `exportToSvg` and hands the SVG back. The sidecar carries a
+render cookie for that one drawing and reaches this origin only
+([`render-sandbox.ts`](../server/web/lib/render-sandbox.ts); see
+[security.md](./security.md) section 2), and the page's CSP allows nothing
+else. So the fonts the snapshot inlines come from `/excalidraw-assets/`,
+served by the static layer: before audit F01 that path was never mounted and
+every render quietly took them from the Excalidraw CDN.
 
 Three rules, each of which has already prevented (or caused, when broken) a
 real bug:

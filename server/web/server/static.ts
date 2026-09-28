@@ -41,7 +41,12 @@ export function mountStatic(app: Hono, publicDir: string = join(webRoot, 'public
   app.use('/app-runtime/*', serveStatic({ root }));
   // Explicit prefixes only — a catch-all serveStatic would stat the filesystem
   // on every API request. share-runtime/ is the /s island bundle (H2).
-  for (const prefix of ['/share-runtime/*', '/fonts/*', '/Inter/*']) {
+  // excalidraw-assets/ is the drawing fonts the draw render surface
+  // (/render/draws) inlines into a snapshot; `generate` copies them in. Never
+  // mounted before, so every render fell back to the Excalidraw CDN, which the
+  // render surface's CSP and the sidecar's request interception now refuse
+  // (audit F01): without this a snapshot's text lost its font.
+  for (const prefix of ['/share-runtime/*', '/fonts/*', '/Inter/*', '/excalidraw-assets/*']) {
     app.use(prefix, serveStatic({ root }));
   }
   for (const file of ['/favicon.ico', '/apple-icon.png', '/icon.svg']) {

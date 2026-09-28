@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { buildInternalRenderCookie, getOwnerForAsset } from '@/lib/auth';
+import { buildRenderToken, getOwnerForAsset } from '@/lib/auth';
 import { resolveExport, getPage, getDraw, referencedDrawIds } from '@mantle/content';
 import { getDrawSvgOrRender, getDrawPngOrRender } from '@/lib/draw-snapshot';
 import { readFileById } from '@/lib/files';
@@ -43,18 +43,19 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     return NextResponse.json({ error: 'invalid format' }, { status: 400 });
   }
 
-  // PDF: rendered in-process by headless Chromium against the live, owner-authed
-  // /print surface — highest fidelity to the on-screen page. Pages and draws.
+  // PDF: rendered by headless Chromium (the browser sidecar) against the live,
+  // admin-only /print surface — highest fidelity to the on-screen page. Pages and draws.
   if (fmt.data === 'pdf') {
     // Draws print their committed SVG snapshot via /print/draws — same
     // sidecar, no Excalidraw involvement there (the snapshot is already
     // pixels-ready). Filling first means an export works even for a drawing no
     // browser ever committed. Non-draws return null immediately.
-    const drawSvg = await getDrawSvgOrRender(user.id, id);
+    const actorId = user.actor.id;
+    const drawSvg = await getDrawSvgOrRender(user.id, id, { actorId });
     if (drawSvg !== null) {
-      const cookie = buildInternalRenderCookie(user.id);
+      const token = buildRenderToken({ ownerId: user.id, actorId, nodeId: id });
       try {
-        const bytes = await renderUrlToPdf(`${printOrigin()}/print/draws/${id}`, cookie);
+        const bytes = await renderUrlToPdf(`${printOrigin()}/print/draws/${id}`, token);
         const title = (await getDraw(user.id, id))?.title ?? 'drawing';
         return download(
           bytes,
@@ -86,21 +87,21 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     // exports (CONCURRENT=2) until the session timeout.
     const embedded = referencedDrawIds(page.doc);
     for (const drawId of embedded) {
-      await getDrawSvgOrRender(user.id, drawId);
+      await getDrawSvgOrRender(user.id, drawId, { actorId });
     }
 
     // The browser SIDECAR (not this process) fetches the print route, so the
     // URL must be reachable from that container: http://web:3000 in prod
     // (compose DNS), host.docker.internal in dev — never the public origin,
     // which would round-trip out through Caddy/Tailscale + TLS. Auth: a
-    // server-MINTED short-lived session cookie (not the caller's raw Cookie
-    // header, which is EMPTY for bearer-authed owners — web-client and mobile
-    // callers would 307 at the print gate). We already hold the verified
-    // owner here, so mint locally and the print route + its image
-    // subresources authenticate regardless of the caller's transport.
-    const cookie = buildInternalRenderCookie(user.id);
+    // server-MINTED render cookie (not the caller's raw Cookie header, which
+    // is EMPTY for bearer-authed callers). It names the ACTING admin, not the
+    // anchor, and this page; it opens the print route and the image routes it
+    // loads and is never a session, and the sidecar sends it to the print
+    // origin only (lib/render-sandbox.ts, audit F01).
+    const token = buildRenderToken({ ownerId: user.id, actorId, nodeId: id });
     try {
-      const bytes = await renderUrlToPdf(`${printOrigin()}/print/pages/${id}`, cookie);
+      const bytes = await renderUrlToPdf(`${printOrigin()}/print/pages/${id}`, token);
       return download(
         bytes,
         'application/pdf',
@@ -118,7 +119,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   // A draw's SVG comes straight out of the snapshot cache, so fill it first
   // for the same reason as the PDF path above. resolveExport lives in the
   // browser-free content package and can only read what is already stored.
-  if (fmt.data === 'svg') await getDrawSvgOrRender(user.id, id);
+  if (fmt.data === 'svg') await getDrawSvgOrRender(user.id, id, { actorId: user.actor.id });
 
   // md / docx / csv / xlsx go through the shared, browser-free resolver, which
   // picks what each node kind supports (pdf already handled above).
@@ -132,7 +133,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     // Word takes no SVG, so an embedded drawing goes in as a raster of its
     // committed snapshot (browser sidecar). Only the docx path asks for this,
     // and only for the drawings a document actually embeds.
-    loadDraw: async (drawId) => await getDrawPngOrRender(user.id, drawId),
+    loadDraw: async (drawId) => await getDrawPngOrRender(user.id, drawId, user.actor.id),
   });
   if (!result) {
     return NextResponse.json({ error: 'not found or not exportable' }, { status: 404 });

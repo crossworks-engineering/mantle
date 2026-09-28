@@ -60,3 +60,21 @@ describe('mountStatic /app-runtime', () => {
     expect(res.headers.get('access-control-allow-origin')).toBeNull();
   });
 });
+
+describe('mountStatic /excalidraw-assets', () => {
+  // The draw render surface points Excalidraw here for the fonts it inlines
+  // into a snapshot. Unserved, the renderer fell back to its CDN, which the
+  // render sandbox now refuses (audit F01), so the text lost its font.
+  const dir = mkdtempSync(join(tmpdir(), 'mantle-static-'));
+  mkdirSync(join(dir, 'excalidraw-assets', 'fonts', 'Excalifont'), { recursive: true });
+  writeFileSync(join(dir, 'excalidraw-assets', 'fonts', 'Excalifont', 'Excalifont-Regular.woff2'), 'wOF2');
+  const app = new Hono();
+  mountStatic(app, dir);
+  app.notFound((c) => c.text('nope', 404));
+
+  it('serves the drawing fonts before the gate', async () => {
+    const res = await app.request('/excalidraw-assets/fonts/Excalifont/Excalifont-Regular.woff2');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('wOF2');
+  });
+});

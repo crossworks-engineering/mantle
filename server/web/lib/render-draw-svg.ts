@@ -1,5 +1,5 @@
 import puppeteer from 'puppeteer-core';
-import { printOrigin } from './render-pdf';
+import { openRenderPage, printOrigin } from './render-sandbox';
 import { env } from '@mantle/config';
 
 /**
@@ -13,7 +13,8 @@ import { env } from '@mantle/config';
  * callers may fire this (public share traffic may NOT).
  *
  * The mechanism: a real
- * Chromium loads our own owner-authed route, the browser-only renderer runs
+ * Chromium loads our own admin-only route (with a render cookie, through
+ * lib/render-sandbox.ts), the browser-only renderer runs
  * there, and we read the result out of the page. There is no Node path that
  * produces a correct drawing — text layout needs real font metrics.
  */
@@ -44,8 +45,12 @@ export type DrawRenderResult = {
  * `svg` is null when the scene is empty or the island reported a failure —
  * both are "no snapshot", which is a legitimate state, not an error.
  * Throws DrawRendererUnavailableError when the sidecar itself is unusable.
+ * `renderToken` is a render cookie for this drawing (buildRenderToken).
  */
-export async function renderDrawSvg(nodeId: string, cookie: string): Promise<DrawRenderResult> {
+export async function renderDrawSvg(
+  nodeId: string,
+  renderToken: string,
+): Promise<DrawRenderResult> {
   const endpoint = env('BROWSER_WS_ENDPOINT');
   if (!endpoint) throw new DrawRendererUnavailableError('BROWSER_WS_ENDPOINT is not set');
 
@@ -59,8 +64,7 @@ export async function renderDrawSvg(nodeId: string, cookie: string): Promise<Dra
   }
 
   try {
-    const page = await browser.newPage();
-    if (cookie) await page.setExtraHTTPHeaders({ cookie });
+    const page = await openRenderPage(browser, renderToken);
     await page.goto(`${printOrigin()}/render/draws/${encodeURIComponent(nodeId)}`, {
       waitUntil: 'domcontentloaded',
       timeout: 30_000,

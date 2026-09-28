@@ -16,13 +16,13 @@
  * invalidates every outstanding credential at once.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { SESSION_COOKIE_NAME } from '../auth-constants';
+import { RENDER_COOKIE_NAME, SESSION_COOKIE_NAME } from '../auth-constants';
 import { env } from '@mantle/config';
 
-/** The `k` claim: mobile bearer, asset token, app frame. 'c' (the retired
- *  team-chat credential) and 't' (the retired team-visitor cookie) are
- *  reserved: no verifier takes them. */
-type TokenKind = 'm' | 'a' | 'f';
+/** The `k` claim: mobile bearer, asset token, app frame, render cookie. 'c'
+ *  (the retired team-chat credential) and 't' (the retired team-visitor
+ *  cookie) are reserved: no verifier takes them. */
+type TokenKind = 'm' | 'a' | 'f' | 'r';
 
 /**
  * Claims whose signature, kind and expiry have already been checked. Every
@@ -107,7 +107,7 @@ function verifySigned(value: string, kind: TokenKind | null): SignedClaims | nul
 
 // ── Session cookies (kindless) ───────────────────────────────────────────────
 
-export { SESSION_COOKIE_NAME };
+export { RENDER_COOKIE_NAME, SESSION_COOKIE_NAME };
 
 export function buildSessionCookie(
   userId: string,
@@ -131,15 +131,57 @@ export function verifySessionCookie(value: string): { uid: string; exp: number }
   return { uid: claims.uid, exp: claims.exp };
 }
 
-/**
- * Short-lived session-cookie VALUE for server-internal renders — the PDF path
- * (lib/render-pdf.ts) hands it to the browserless sidecar so /print/pages/[id]
- * and its image subresources authenticate as the owner REGARDLESS of how the
- * caller authenticated (cookie, mobile bearer, web bearer). Never sent to a
- * client; ~5 minutes bounds a leaked render URL.
- */
-export function buildInternalRenderCookie(userId: string, ttlSeconds = 300): string {
-  return `${SESSION_COOKIE_NAME}=${buildSessionCookie(userId, ttlSeconds).value}`;
+// ── Render cookies (`k:'r'`) ────────────────────────────────────────────────
+// What the browser sidecar carries when it loads a render surface for an
+// export (lib/render-sandbox.ts). It used to be a full kindless session cookie
+// for the anchor, sent as an extra header on EVERY request the page made, so an
+// external image in a printed page handed the anchor's session to that host
+// (audit F01). Now it is its own kind, minted for the ACTING login, set as a
+// cookie on the print origin only, and the gate accepts it for the render
+// surfaces and the byte routes they load, GET only (isRenderPath in
+// lib/auth-constants.ts). The session, asset and bearer verifiers all reject
+// kind 'r', so it is never a session. `n` binds the page it opens: a render
+// cookie for one drawing cannot print another page.
+
+const RENDER_TOKEN_TTL_SECONDS = 300; // one render; bounds a leaked value.
+
+export type RenderClaims = {
+  /** The anchor: whose brain the render reads. */
+  uid: string;
+  /** The login the render is for: the admin who asked for the export, or the
+   *  anchor for a cache fill nobody asked for. Re-checked on every request. */
+  act: string;
+  /** The node the render surface may open (/print/pages/:n, /print/draws/:n,
+   *  /render/draws/:n). Byte routes the page loads are not bound to it. */
+  n: string;
+};
+
+/** Mint a render cookie VALUE (see block comment). Never sent to a client. */
+export function buildRenderToken(opts: {
+  ownerId: string;
+  actorId: string;
+  nodeId: string;
+  ttlSeconds?: number;
+}): string {
+  return signClaims(
+    { uid: opts.ownerId, act: opts.actorId, n: opts.nodeId, k: 'r' },
+    opts.ttlSeconds ?? RENDER_TOKEN_TTL_SECONDS,
+  ).value;
+}
+
+/** Verify a render cookie's signature, expiry and kind (`k:'r'`). No DB: the
+ *  caller must still confirm `act` is a usable admin of the `uid` brain. */
+export function verifyRenderToken(value: string): RenderClaims | null {
+  const claims = verifySigned(value, 'r');
+  if (
+    !claims ||
+    typeof claims.uid !== 'string' ||
+    typeof claims.act !== 'string' ||
+    typeof claims.n !== 'string'
+  ) {
+    return null;
+  }
+  return { uid: claims.uid, act: claims.act, n: claims.n };
 }
 
 // ── Mobile companion bearer tokens (`k:'m'`) ─────────────────────────────────

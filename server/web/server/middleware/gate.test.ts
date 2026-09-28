@@ -43,6 +43,11 @@ function makeApp() {
   app.get('/api/member/apps/a1/frame', (c) => c.text('<!doctype html>'));
   app.post('/api/member/apps/a1/tool-broker', (c) => c.json({ ok: true }));
   app.get('/settings', (c) => c.text('page'));
+  app.get('/print/pages/p1', (c) => c.text('print page'));
+  app.get('/print/draws/d1', (c) => c.text('print draw'));
+  app.get('/render/draws/d1', (c) => c.text('render draw'));
+  app.get('/api/draws/d1/svg', (c) => c.text('svg'));
+  app.post('/api/files/files/f1', (c) => c.json({ written: true }));
   return app;
 }
 
@@ -158,6 +163,47 @@ describe('gate: session & bearer', () => {
     expect((await app.request(`/api/member/apps/a1/frame?t=${t}`, post)).status).toBe(401);
     const asset = mint({ exp: future(), k: 'a' });
     expect((await app.request(`/api/member/apps/a1/frame?t=${asset}`)).status).toBe(401);
+  });
+
+  it("accepts a render cookie only on the render surfaces and their byte routes, GET only, kind 'r' only", async () => {
+    const app = makeApp();
+    const render = `mantle_render=${mint({ uid: 'u1', act: 'u2', n: 'p1', k: 'r', exp: future() })}`;
+    const get = (path: string, cookie = render) => app.request(path, { headers: { cookie } });
+    // The render surfaces and the bytes they load.
+    for (const path of [
+      '/print/pages/p1',
+      '/print/draws/d1',
+      '/render/draws/d1',
+      '/api/files/files/f1',
+      '/api/draws/d1/svg',
+    ]) {
+      expect((await get(path)).status, path).toBe(200);
+    }
+    // Never a session: not on another API, not on a page, not on the admin
+    // private-space bytes (an asset path for ?at=, but no render route).
+    expect((await get('/api/notes')).status).toBe(401);
+    expect((await get('/api/admin/space/i1/bytes')).status).toBe(401);
+    expect((await get('/api/export/e1')).status).toBe(401);
+    expect((await get('/settings')).status).toBe(307);
+    // GET only.
+    const post = await app.request('/api/files/files/f1', {
+      method: 'POST',
+      headers: { cookie: render },
+    });
+    expect(post.status).toBe(401);
+    // The same value under the session cookie's name is refused (kinded).
+    expect((await get('/api/notes', render.replace('mantle_render', 'mantle_session'))).status).toBe(
+      401,
+    );
+    // Wrong kind, expired, or forged under the render cookie's name.
+    const asset = `mantle_render=${mint({ uid: 'u1', k: 'a', exp: future() })}`;
+    const session = `mantle_render=${mint({ uid: 'u1', exp: future() })}`;
+    const expired = `mantle_render=${mint({ uid: 'u1', act: 'u2', n: 'p1', k: 'r', exp: past() })}`;
+    const forged = `mantle_render=${mint({ uid: 'u1', act: 'u2', n: 'p1', k: 'r', exp: future() }, 'x'.repeat(48))}`;
+    for (const cookie of [asset, session, expired, forged]) {
+      expect((await get('/print/pages/p1', cookie)).status, cookie).toBe(307);
+      expect((await get('/api/files/files/f1', cookie)).status, cookie).toBe(401);
+    }
   });
 
   it('redirects an uncredentialed page nav to /login?next= via proxy headers', async () => {
