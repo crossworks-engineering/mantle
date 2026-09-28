@@ -69,22 +69,25 @@ describe('needs_you_changed on the realtime bridge', () => {
         .split('\n\n')
         .filter((b) => b.startsWith('data: '))
         .map((b) => JSON.parse(b.slice(6)) as unknown);
-    const reading = (async () => {
-      while (data().length < 1) {
-        const { value, done } = await reader.read();
-        if (done) break;
+    const pump = (async () => {
+      for (;;) {
+        const { value, done } = await reader.read().catch(() => ({ value: undefined, done: true }));
+        if (done) return;
         text += decoder.decode(value);
       }
     })();
+    // The route subscribes when the stream starts.
+    await vi.waitFor(() => expect(globalThis.__mantleRealtime!.subs.size).toBe(1));
     const fire = h.handlers.get('needs_you_changed')!;
-    await vi.waitFor(() => {
-      fire(OTHER);
-      fire(OWNER);
-      expect(data().length).toBeGreaterThan(0);
-    });
-    await reading;
+    // Another owner's change first, then ours: frames carry no owner, so
+    // exactly one frame proves the other one was dropped.
+    fire(OTHER);
+    fire(OWNER);
+    await vi.waitFor(() => expect(data().length).toBeGreaterThan(0));
+    await new Promise((r) => setTimeout(r, 100));
     ac.abort();
     await reader.cancel().catch(() => undefined);
+    await pump;
     expect(data()).toEqual([{ type: 'needs_you', id: '' }]);
   });
 });
