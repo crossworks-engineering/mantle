@@ -76,6 +76,9 @@ export const my_items_list: BuiltinToolDef = {
       },
     },
   },
+  // The search words name the member's private items: never in the trace
+  // input admins can read (final audit F31).
+  redactInputFields: ['q'],
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const who = await onBehalfOf(ctx);
     if (!who) return { ok: false, error: NO_MEMBER };
@@ -127,6 +130,10 @@ export const my_item_open: BuiltinToolDef = {
     },
     required: ['id'],
   },
+  // A personal item's id is the member's own: other admins read traces, and
+  // an id is what a same-origin request would need (final audit F31). The
+  // errors below leave it out for the same reason (a tool error is traced).
+  redactInputFields: ['id', 'tab'],
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const who = await onBehalfOf(ctx);
     if (!who) return { ok: false, error: NO_MEMBER };
@@ -134,7 +141,7 @@ export const my_item_open: BuiltinToolDef = {
     if (!/^[0-9a-f-]{36}$/i.test(id)) {
       return {
         ok: false,
-        error: `id must be a full item id (got '${id}'); copy it from \`my_items_list\`.`,
+        error: 'id must be a full item id; copy it from `my_items_list`.',
       };
     }
     const tab = strOpt(input.tab);
@@ -142,7 +149,8 @@ export const my_item_open: BuiltinToolDef = {
     if (!got) {
       return {
         ok: false,
-        error: `no item ${id} in this member's space; list their items with \`my_items_list\` and use an id from it.`,
+        error:
+          "no such item in this member's space; list their items with `my_items_list` and use an id from it.",
       };
     }
     const { row, body } = got;

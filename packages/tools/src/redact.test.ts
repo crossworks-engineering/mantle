@@ -24,6 +24,18 @@ describe('getBuiltinRedactFields', () => {
     expect(fields).toContain('value');
   });
 
+  it("keeps a member's personal item ids and search words out of traces", () => {
+    // Other admins read trace_steps.input; a personal item's id is the
+    // member's alone (final audit F31).
+    expect(getBuiltinRedactFields('my_item_open')).toEqual(expect.arrayContaining(['id', 'tab']));
+    expect(getBuiltinRedactFields('my_items_list')).toContain('q');
+    const logged = redactArgsForLogging(
+      { id: '11111111-1111-4111-8111-111111111111', tab: 't1' },
+      getBuiltinRedactFields('my_item_open'),
+    );
+    expect(JSON.stringify(logged)).not.toContain('11111111');
+  });
+
   it('returns an empty array for non-sensitive builtins', () => {
     expect(getBuiltinRedactFields('search_nodes')).toEqual([]);
     expect(getBuiltinRedactFields('node_read')).toEqual([]);
