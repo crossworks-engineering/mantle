@@ -4,6 +4,24 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.289: member logins, the audit's small items (session 9)
+
+- Lockout also unpairs the login's push devices (migration 0173,
+  push_subscriptions.login_id), refuses its unclaimed pairing codes and
+  releases its assigned assistant. A member cannot be given an assistant.
+- /api/member/files/:id streams and is rate limited per login. A drawing's
+  SVG keeps only the images the member may read.
+- Member chat: a reused Idempotency-Key with new text is a 409. OAuth
+  authorize tells a member plainly they cannot connect.
+- Unsharing (the shares route, node_unshare, page_unshare) applies the admin
+  closure rule and reports what stays below admin. Level and link change in
+  one transaction; an expired link no longer blocks a new one; a sub-page
+  cascade never passes through public. content_supersede warns when the old
+  version is still visible. 0161: the deepest shared folder wins (new
+  installs; boxes keep their levels).
+- An app's schema DDL runs in the SQL runner (worker, authorizer, limit).
+- Contract: member app, home and member-chats DTOs in client-types.
+
 ## 0.232.287: the member's own chrome (Phase 5); client v0.6.154
 
 - Paired with jackdaw v0.6.154: a member changes their own password from the
