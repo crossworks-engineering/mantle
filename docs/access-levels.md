@@ -21,15 +21,55 @@ item when the caller's level is at or above the item's level.
   migration 0159, mirrored by `WORKSPACE_NODE_TYPES`). Journal, email,
   contacts, secrets, tasks, events and every other kind are admin forever. A
   CHECK and the row policy both enforce it.
-- **No inheritance.** Lowering a folder does not lower its contents. The
-  Access control offers the item's **closure** (a page's embedded files and
-  drawings, a folder's contents, a drawing's images) as one explicit extra
-  step ("Lower them too", `withClosure`). Raising an item offers the mirror
-  step: closure items still below it (a folder taken back to admin whose
-  files stay at team, or a link revoked elsewhere) are listed, and "Raise
-  them too" (`raiseClosure`) raises them. The two are separate: lowering
+- **Embedding means sharing** (Jason, 2026-09-28, audit F19 follow-up).
+  Lowering an item is an admin's decision for the item AND what it embeds:
+  one decision covers the page and its embeds, so levels still go down only
+  by an admin, by hand. When a page, drawing or note goes below admin, its
+  **embed closure** goes down to the same level in the same transaction: a
+  page's images, file embeds, embedded drawings and child page cards, a
+  drawing's images (`draws.file_refs`), a note's images, file embeds and
+  drawings, followed transitively (a child page's images too;
+  `packages/content/src/embed-closure.ts`). So the level label tells the
+  truth, and the item's link serves what it shows. Nothing is ever raised,
+  an embed already at or below the level is left alone, and an embed that
+  can never go below admin (the type ceiling) stays admin and is reported
+  (`stillAbove`). Links are not embeds: a link mark or a mention chip names
+  an item without showing it, and the item keeps its own level. Every setter
+  does it and lists what went down in `alsoLowered: [{id, type, title,
+  from, to}]`: the Access control and `PATCH /api/access/nodes/:id`,
+  `access_set`, the share paths (`node_share`, `page_share` and its
+  sub-page cascade, `POST /api/shares`, the email link) and Accept at a
+  level (member-logins.md section 6; the Library items a member embedded go
+  down with it). The older `lowered` field carries the same items at their
+  new level.
+- **Later embeds follow on save.** A page, drawing or note below admin that
+  gains an embed takes it to its own level, in the save's transaction: a
+  page or draft commit (`commitPage`, which the editor, `page_commit` and
+  the block tools' commit use), a programmatic page write (`updatePage`), a
+  drawing commit (`commitDraw`), a note's text (`updateNote`). Only what was
+  ADDED: an embed the item already had keeps its level, so an admin who
+  raised one on purpose is not overruled by the next edit. No LLM work: a
+  level change announces nothing to the extractor.
+- **Folders do not pass levels on.** Lowering a folder does not lower its
+  contents (folder links show only their level, section 7), and a file
+  uploaded into it later lands at admin. The Access control offers the
+  folder's contents as one explicit extra step ("Lower them too",
+  `withClosure`, folders only). Raising an item offers the mirror step:
+  closure items still below it (a folder taken back to admin whose files
+  stay at team, a page's images left public, or a link revoked elsewhere)
+  are listed, and "Raise them too" (`raiseClosure`) raises them. Lowering
   never raises and raising never lowers. A raised item that carries its own
   link has the link follow its new level.
+- **The gaps from before close once.** A boot reconcile
+  (`reconcileEmbedClosuresOnce`, server/web/lib/access/embed-reconcile.ts)
+  applies the same admin decision to the pages, drawings and notes lowered
+  before embeds followed: every item below admin takes its embed closure
+  down to its level, each change logged (`[embeds] ...`). It runs once per
+  brain (a marker in the owner's preferences, `embedClosureReconciled`),
+  not on every boot: after it an admin may raise one embed on purpose, and
+  a later boot must not lower it again. Run again, it finds nothing left.
+  Production only, like the manifest reconcile; `MANTLE_DISABLE_BOOT_RECONCILE=1`
+  skips both.
 - **An agent's level is the switch.** A team-level agent runs every query of
   its turn on the team role, so it reads only team-, client- and public-level
   items. There is no other flag. `team-responder` ships at admin; an admin
@@ -126,10 +166,11 @@ removing any one wrap fails a test.
 1. Run the shadow report. It lists what recent member turns used (the last
    30 days; traces of the retired forum still count until they age out) that
    is still admin, shared tasks and events (admin forever: members lose
-   them), shares whose embeds sit above them, and how many facts stay
-   usable.
-2. Set the levels of what the team should keep reading (with closure where
-   an item is shared).
+   them), items below admin whose embeds sit above them (`closureGaps`:
+   empty once the boot reconcile ran, unless an admin raised an embed on
+   purpose), and how many facts stay usable.
+2. Set the levels of what the team should keep reading (a page's embeds go
+   with it; a folder's contents with "Lower them too").
 3. `access_set(agent_slug: 'team-responder', level: 'team')`. From the next
    turn it reads only team-level items. Undo: set it back to admin.
 
@@ -148,9 +189,9 @@ removing any one wrap fails a test.
   security: the owner's paths are unaffected. The `demo` branch's
   `demo_reader` role is NOT a superuser: before this migration reaches the
   demo box it needs `ALTER ROLE demo_reader BYPASSRLS` (on the demo branch).
-- **Still to come:** share links (`/s/`) running at the link's level ships in
-  a later release, after the closure gaps the shadow report lists are fixed
-  (section 7, "Not yet"). Member logins and personal spaces, which build on
+- **Still to come:** share link handlers (`/s/`) running on the link's level
+  role ships in a later release (section 7, "Not yet"). What they serve is
+  already filtered by level. Member logins and personal spaces, which build on
   this, have shipped (docs/member-logins.md).
 
 ## 7. Levels drive links
@@ -174,15 +215,17 @@ outside a login reaches a team item.
   level, then `applyLevelToShare` (shares.ts) revokes the link (admin, team)
   or creates it (client, public), in ONE transaction: a link that cannot be made leaves the level
   where it was. `PATCH /api/access/nodes/:id` and `access_set` both use it.
-  Closure items get the level only, never a link of their own: they are
-  reached through the item that embeds them. A new link first retires an
+  What goes down with the item (its embeds, a folder's contents when asked)
+  gets the level only, never a link of their own: it is reached through the
+  item that embeds it. The embeds go down in the same transaction. A new link first retires an
   expired one that was never revoked (it still holds the one-link slot).
 - **Link to level.** Every share mutation (`createShare`, `applyShareMode`,
   `setShareCascade`, `revokeShare`, `revokeShareTree`) re-derives the level
   of the nodes it touched (`levelForShareMode`): no link is admin, except
   that an item at team stays at team; an open link keeps client or public
   and drops anything higher to public (so `node_share` on a team item puts
-  it at public: to show an item to members only, set team instead).
+  it at public: to show an item to members only, set team instead). A
+  node a link lowers takes its embeds down with it (section 1).
   Cascaded sub-pages take the parent's level, passed into every step, so a
   sub-page goes straight to it and never passes through public on the way;
   when a cascading link is revoked, a parent that went to admin takes its
@@ -225,17 +268,25 @@ outside a login reaches a team item.
   an arbitrary folder win; boxes that already ran it keep the levels it set
   (the runner never re-runs an applied migration, and there is no
   corrective one).
-- **Folder links show only their level** (audit F19). A folder link opens
-  at the folder's own level and lists and serves only the items at or below
-  it: a public link public items, a client link client and public ones
-  (`linkLevels` in server/web/lib/shares.ts; the listing in
-  components/share/folder-presenter.tsx and the asset check `isAssetAllowed`
-  apply the same rule). A file uploaded into a shared folder later lands at
-  admin, so it stays out of the link until someone lowers it; a subfolder
-  above the level hides everything under it, and its file count leaves
-  hidden files out. A single-item link (a file, a page) is not filtered: the
-  item is the link.
-- **Not yet:** `/s/` handlers still run at admin; running them at the link's
-  level (after the share render path reads published columns only) is a
-  later release. Until then a page link can show an embed above its level,
-  which is why the Access control offers the closure.
+- **Links show only their level** (audit F19). A link opens at its item's
+  own level and lists and serves only what sits at or below it beyond the
+  item itself: a public link public items, a client link client and public
+  ones (`linkLevels` in server/web/lib/shares.ts).
+  - A **folder** link: the listing (components/share/folder-presenter.tsx)
+    and the asset check `isAssetAllowed`. A file uploaded into a shared
+    folder later lands at admin, so it stays out of the link until someone
+    lowers it; a subfolder above the level hides everything under it, and
+    its file count leaves hidden files out.
+  - A **page** link serves an embedded file (`isAssetAllowed`) or drawing
+    (`/s/<token>/draw/<drawId>`, `isDrawServable`) only at the link's
+    levels. Its embeds followed it down, so this changes nothing in normal
+    use; an embed an admin later RAISES on purpose stops being served.
+  - A **drawing**'s snapshot carries the images it places, so a drawing
+    (shared, or embedded in a shared page) with one image above the link's
+    levels is not served at all: there is no serving it without that image.
+  - The shared item itself is not filtered: a file link serves the file, a
+    page link the page.
+- **Not yet:** `/s/` handlers still run at admin; running them on the
+  link's level role (after the share render path reads published columns
+  only) is a later release. What they serve beyond the item is already
+  filtered by level (above).

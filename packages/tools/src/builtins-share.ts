@@ -24,7 +24,7 @@ const node_share: BuiltinToolDef = {
   slug: 'node_share',
   name: 'Share an item',
   description:
-    "Create (or fetch) a read-only link to any shareable item — a note, task, event, file, app, table, or folder under files — and return its URL. Idempotent — one active link per item. The link is **public**: anyone with it can view, no login, and the item goes to public level (a client item stays client), taking what it embeds (a drawing's or note's images) down with it, listed in `alsoLowered`. There are no team links: members sign in with their own logins, so to show an item to members only, set its level with `access_set(level: 'team')` instead. Publishes brain content outward-facing. For a PAGE prefer `page_share` (same behavior, plus the sub-page cascade); to turn a link off use `node_unshare`.",
+    "Create (or fetch) a read-only link to any shareable item — a note, task, event, file, app, table, or folder under files — and return its URL. Idempotent — one active link per item. The link is **public**: anyone with it can view, no login, and the item goes to public level (a client item stays client), its embeds with it (`alsoLowered`). There are no team links: members sign in with their own logins, so to show an item to members only, set its level with `access_set(level: 'team')` instead. Publishes brain content outward-facing. For a PAGE prefer `page_share` (same behavior, plus the sub-page cascade); to turn a link off use `node_unshare`.",
   // Publishes brain content outward-facing — gated, same as page_share.
   requiresConfirm: true,
   inputSchema: {

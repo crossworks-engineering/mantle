@@ -43,7 +43,8 @@ Two of these carry extra semantics:
   link client and public ones (`linkLevels`, lib/shares.ts). A file added
   later lands at admin like every new item (levels are never inherited), so
   it is neither listed nor served until someone lowers it (the Access
-  control's closure step does that for a folder's contents); a subfolder
+  control's "Lower them too" does that for a folder's contents: a folder's
+  contents never follow it on their own); a subfolder
   above the level is hidden with everything under it, and a subfolder's file
   count leaves hidden files out. A file moved out is denied on its next
   fetch. Only folders strictly
@@ -112,13 +113,21 @@ them through without a session cookie.
 - **`GET /s/[token]/a/[fileId]`**: public **asset** bytes (P2). The
   security-critical route: serves a file only if `fileId` is in the share's
   **allowed set**: for a `file` share, the file itself; for a `page` share, the
-  file ids referenced in its doc (walk `image`/`fileEmbed` nodeIds); for a
+  file ids referenced in its doc (walk `image`/`fileEmbed` nodeIds) that sit
+  at the link's levels; for a
   `branch` (folder) share, any file whose ltree path is under the folder
   (`path <@ folder.path`, re-derived per request) that sits at the link's
   levels with no folder above those levels between it and the shared folder
-  (the same rule as the listing). A `file` or `page` share is not filtered
-  by level: the item is the link, and a page's embeds follow the Access
-  control's closure. Streams via
+  (the same rule as the listing). The shared item itself is not filtered by
+  level: a `file` share serves the file. A page's embeds follow the page
+  down when an admin lowers it or links it (embedding means sharing,
+  access-levels.md section 1), so a page link serves them all in normal use;
+  an embed an admin later raises above the page on purpose stops being
+  served. `GET /s/[token]/draw/[drawId]` (a drawing embedded in a shared
+  page) and `GET /s/[token]/draw` (a shared drawing) apply the same rule to
+  the drawing and to every image its snapshot places: one image above the
+  link's levels keeps the snapshot off the link, as the snapshot carries it.
+  Streams via
   `readFileById` with content-type + range support (video/audio seeking) +
   cache headers. Anything outside the set → 404.
 - `jackdaw/app/s/layout.tsx`, minimal public chrome: clean default theme,

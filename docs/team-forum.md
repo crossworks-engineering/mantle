@@ -229,9 +229,11 @@ admin opens it in Pages and sets its level in the Access control (or
 `PATCH /api/access/nodes/<page id>` with `{ "audience": "team" }`, or
 `access_set` from the assistant; see [access-levels.md](./access-levels.md)
 section 4). Check the page first: a private topic's page carries "Private
-topic" in its first line. Lowering a page does not lower the files it links
-(no inheritance, and a mention chip is not part of the page's closure): set
-each file's level the same way if the team should open it. The page stays out
+topic" in its first line. Lowering a page takes what it embeds (its images,
+files, drawings and child pages) down with it: embedding means sharing
+(access-levels.md section 1). What it only links (a link, a mention chip)
+keeps its own level: set each such file's level the same way if the team
+should open it. The page stays out
 of the brain either way: its level decides who may open it, not whether it
 is indexed.
 
