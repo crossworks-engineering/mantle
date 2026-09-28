@@ -55,8 +55,9 @@
 - **No flag.** Member logins are always on (Phase 6). Until then a box had to
   opt in with `MANTLE_MEMBERS=1`; the flag is gone, and a login row that is
   not disabled and has an email holds a session whatever its role.
-  `GET /api/users` still answers `membersEnabled: true` for one contract
-  cycle, because older client builds read it.
+  `GET /api/users` answers `{ users, currentActorId }`; the
+  `membersEnabled: true` it kept one contract cycle after the flag went is
+  gone (no paired client reads it since jackdaw v0.6.162).
 
 ## 2. Deny by default
 
@@ -495,9 +496,9 @@ app's level in its Access control; nothing else lists it to members.
 - **Home app.** The brain's pinned hub app (Team admin > Settings, the
   `teamHubAppId` pref) is the members' home app while they may run it: no
   share is needed, the level is the access. Pinning an admin-level app sets
-  it to team level (`PUT /api/team-admin/hub-app` answers `levelChanged`, and
-  `modeChanged` with the same value for one contract cycle); it makes no
-  share link. Otherwise the member home shows its
+  it to team level (`PUT /api/team-admin/hub-app` answers exactly
+  `{ appId, levelChanged }`; the retired `modeChanged` alias is gone); it
+  makes no share link. Otherwise the member home shows its
   built-in view, and `/api/member/home` answers `{ homeApp: null, hub: null }`.
   With a home app, `host.hub.get()` answers from that route: the site name,
   the member's name, the newest team pages as sections (a section's `token`
@@ -636,9 +637,14 @@ is a member login. Nobody hands a password around. The table is
     `c`, cookie or bearer): nothing mints or accepts it.
   - The admin forum routes, `/api/team-admin/topics`,
     `/api/team-admin/members/:id/thread-read` and `dashboard-tags` are gone.
-    `/api/team-admin/members`, `requests` and `settings` keep their answer
-    shape with the forum, upload and curated-tag parts empty, one contract
-    cycle for older clients.
+    `/api/team-admin/members`, `requests` and `settings` carried the forum,
+    upload and curated-tag parts empty for one contract cycle; they are gone
+    now. Every tab's `badges` is `{ openRequestCount }` (no `openRequests`,
+    no `pendingUploadCount`), requests answers `{ badges, requests }` (no
+    `uploads`, `moreUploads`), settings has no `dashboardTags`, and members
+    has no `forum` per row and no `posts`, `postTotal`, `authored`,
+    `activityPage` or `activityPageSize` in `selected`. The `Forum*` DTOs
+    and `PendingForumUpload` left `@mantle/client-types` with them.
   - The forum turn runner is gone; a forum turn left queued or in flight on
     a box that upgrades runs into a no-op stub under the old workflow name
     and ends cleanly (team-forum.md section 8).
@@ -715,9 +721,10 @@ is a member login. Nobody hands a password around. The table is
     activity first, with or without a login made from it; it listed code
     holders before, so a contact whose code was redeemed dropped off and
     now shows again. A code holder who never chatted is not listed; their
-    access log stays readable with `team_access_list`. Each row keeps
-    `tokenLastUsedAt` (always null) and `memberSince` (now the first portal
-    message) one contract cycle. `team_chat_list` (`portal_archive`),
+    access log stays readable with `team_access_list`. A row's
+    `memberSince` is its first portal message; `tokenLastUsedAt` (always
+    null once codes went) left `TeamMemberActivity` after one contract
+    cycle. `team_chat_list` (`portal_archive`),
     `team_chat_read` with a `contactId`, Member chats' `portalThread` and
     `team_chat_read`'s `portal_history` read the chat by contact or login
     as before.
@@ -745,7 +752,10 @@ is a member login. Nobody hands a password around. The table is
   refusals), `server/web/server/pages/share-retired-team.test.ts` (the sign-in
   page), `server/web/app/s/share-link-brokers.test.ts`,
   `server/web/app/api/shares/[id]/share-mode-route.test.ts`,
-  `server/web/app/api/team-admin/hub-app/hub-app-route.test.ts`, the share
+  `server/web/app/api/team-admin/hub-app/hub-app-route.test.ts`,
+  `server/web/app/api/team-admin/team-admin-answers.test.ts` and
+  `server/web/app/api/users/users-list-route.test.ts` (the exact answer
+  shapes, with the one-cycle fields gone), the share
   tool tests and the auth sweep (the deleted routes are not routed).
 
 ## 10. Admin private items (Phase 7)

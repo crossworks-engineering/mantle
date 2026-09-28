@@ -2,8 +2,8 @@
  * PUT /api/team-admin/hub-app without a database (member logins Phase 6
  * stage 6): designating the members' home app makes no share link (team links
  * are retired). An app still at admin goes to team, so members can run it;
- * an app already at a member level keeps it. The answer keeps `modeChanged`
- * (= `levelChanged`) for one contract cycle.
+ * an app already at a member level keeps it. The answer is exactly
+ * `{ appId, levelChanged }`: the retired `modeChanged` alias is gone.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -64,7 +64,7 @@ describe('PUT /api/team-admin/hub-app', () => {
   it('puts an admin app at team and makes no link', async () => {
     const res = await put();
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ appId: APP, levelChanged: true, modeChanged: true });
+    expect(await res.json()).toStrictEqual({ appId: APP, levelChanged: true });
     expect(h.levels).toEqual([[APP, 'team']]);
     expect(h.prefs).toEqual([{ teamHubAppId: APP }]);
     expect(h.shares).toBe(0);
@@ -74,7 +74,7 @@ describe('PUT /api/team-admin/hub-app', () => {
     for (const audience of ['team', 'client', 'public']) {
       h.audience = audience;
       const res = await put();
-      expect(await res.json()).toEqual({ appId: APP, levelChanged: false, modeChanged: false });
+      expect(await res.json()).toStrictEqual({ appId: APP, levelChanged: false });
     }
     expect(h.levels).toEqual([]);
     expect(h.shares).toBe(0);

@@ -5,9 +5,10 @@
  * old portal chat, newest activity first, with or without a login made from
  * it; a contact with no portal chat, a login's live thread (even a row
  * that also names the contact, as member rows did before 0167) and another
- * brain's contact are not there. Each row keeps `tokenLastUsedAt` (always
- * null) and `memberSince` (the first portal message) for older clients. The
- * selected contact's archive, requests and access log still come back.
+ * brain's contact are not there. A row's `memberSince` is its first portal
+ * message, and a row is exactly the `TeamMemberActivity` shape: no
+ * `tokenLastUsedAt` and no `forum`. The selected contact's archive, requests
+ * and access log still come back.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/app/api/team-admin/members/members-archive.db.test.ts
  */
@@ -25,7 +26,7 @@ vi.mock('@/lib/auth', async (importOriginal) => ({
 }));
 
 type MembersBody = {
-  members: Array<TeamMemberActivity & { forum: null }>;
+  members: TeamMemberActivity[];
   selected: null | {
     contactId: string;
     thread: Array<{ text: string }>;
@@ -117,21 +118,41 @@ describe.skipIf(!URL)('team-admin members: the Chat archive needs no team code',
       contactId: c.ana,
       // The first portal message: there is no code whose creation it was.
       memberSince: anaFirst,
-      tokenLastUsedAt: null,
       lastMessageText: 'ana again',
       lastMessageDirection: 'inbound',
       messageCount: 3,
       unread: 2,
-      forum: null,
     });
     expect(bo).toMatchObject({
       contactId: c.bo,
       memberSince: boFirst,
-      tokenLastUsedAt: null,
       lastMessageText: 'bo answered',
       messageCount: 2,
       unread: 0,
     });
+  });
+
+  it('answers exactly the current shape: no team code or forum fields', async () => {
+    const body = await get();
+    expect(Object.keys(body).sort()).toEqual(['badges', 'members', 'selected']);
+    for (const row of body.members) {
+      expect(Object.keys(row).sort()).toEqual([
+        'contactId',
+        'contactName',
+        'lastMessageAt',
+        'lastMessageDirection',
+        'lastMessageText',
+        'memberSince',
+        'messageCount',
+        'unread',
+      ]);
+    }
+    expect(Object.keys(body.selected!).sort()).toEqual([
+      'access',
+      'contactId',
+      'requests',
+      'thread',
+    ]);
   });
 
   it('returns the selected contact archive and access log, the first by default', async () => {

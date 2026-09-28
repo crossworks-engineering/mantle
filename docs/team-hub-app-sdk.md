@@ -54,8 +54,9 @@ prefs.teamHubAppId  →  app exists under this owner
 ```
 
 Designation (the Team-admin picker, or `PUT /api/team-admin/hub-app`) puts an
-app still at admin at team level, then sets the pref; it makes no share link
-(team links were retired in member logins Phase 6 stage 6). Undesignating
+app still at admin at team level, then sets the pref, and answers
+`{ appId, levelChanged }`; it makes no share link (team links were retired in
+member logins Phase 6 stage 6). Undesignating
 clears the pref only. Members are always served the **published** build,
 drafts never leave the owner editor.
 

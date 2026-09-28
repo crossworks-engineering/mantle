@@ -5,14 +5,12 @@
  * "Chat archive") and access log.
  *
  * Team codes are retired (member logins Phase 6, migration 0178), so the
- * roster is driven by the chat, not by who holds a code. Each member row
- * keeps `tokenLastUsedAt` (always null) and `memberSince` (the first portal
- * message) one contract cycle for client builds that still read them.
+ * roster is driven by the chat, not by who holds a code. A row's
+ * `memberSince` is its first portal message.
  *
- * The forum parts are gone with the forum (member logins Phase 6: its
- * content lives on as the admin-level Forum archive pages). `forum`, `posts`,
- * `postTotal` and `authored` stay in the answer, always empty, one contract
- * cycle for client builds that still read them.
+ * The forum parts went with the forum (member logins Phase 6: its content
+ * lives on as the admin-level Forum archive pages): a row has no `forum`,
+ * and `selected` has no posts, authored topics or activity paging.
  */
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
@@ -24,7 +22,6 @@ import {
 } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
-const ACTIVITY_PAGE_SIZE = 25;
 const ARCHIVE_SHOWN = 50;
 
 export async function GET(req: Request) {
@@ -33,11 +30,10 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const contact = url.searchParams.get('contact') ?? undefined;
 
-  const [badges, roster] = await Promise.all([
+  const [badges, members] = await Promise.all([
     teamAdminBadges(user.id),
     listTeamMemberActivity(user.id),
   ]);
-  const members = roster.map((m) => ({ ...m, forum: null }));
 
   const selectedId =
     contact && members.some((m) => m.contactId === contact)
@@ -62,11 +58,6 @@ export async function GET(req: Request) {
     members,
     selected: {
       contactId: selectedId,
-      activityPage: 1,
-      activityPageSize: ACTIVITY_PAGE_SIZE,
-      posts: [],
-      postTotal: 0,
-      authored: [],
       requests,
       thread,
       access,

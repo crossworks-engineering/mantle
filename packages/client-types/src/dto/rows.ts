@@ -531,9 +531,6 @@ export type TeamMemberActivity = {
   /** The first portal message (it was when the contact's team code was
    *  made, before 0178). */
   memberSince: string;
-  /** @deprecated Always null: team codes are retired (0178). Kept one
-   *  contract cycle for client builds that still read it. */
-  tokenLastUsedAt: string | null;
   lastMessageAt: string | null;
   lastMessageText: string | null;
   lastMessageDirection: 'inbound' | 'outbound' | null;
@@ -556,87 +553,6 @@ export type TeamRequest = {
   contactName: string | null;
   /** When the owner last posted a resolution to the member for this request. */
   notifiedAt: string | null;
-};
-
-export type ForumTopicListItem = {
-  id: string;
-  title: string;
-  kind: ForumTopicKind;
-  visibility: ForumTopicVisibility;
-  pinned: boolean;
-  status: ForumTopicStatus;
-  authorName: string;
-  createdByContactId: string | null;
-  postCount: number;
-  lastPostAt: string;
-  createdAt: string;
-  lastPostAuthor: string | null;
-  lastPostPreview: string | null;
-  /** Posts by OTHERS since this viewer last read the topic (all of them when
-   *  never read). Drives the unread dot. */
-  unread: number;
-};
-
-export type ForumMemberActivity = {
-  contactId: string;
-  postCount: number;
-  topicsStarted: number;
-  lastPostAt: string | null;
-  lastPostBody: string | null;
-  lastPostTopicTitle: string | null;
-  /** This member's posts newer than the OWNER's read cursor on the containing
-   *  topic. Deliberately only cleared by opening the TOPIC — reading someone's
-   *  activity feed is not reading the thread the whole room saw. */
-  unread: number;
-};
-
-export type ForumMemberPost = {
-  id: string;
-  body: string;
-  createdAt: string;
-  /** Set when this post filed a review/feature/bug request. */
-  kind: ForumPostRequestKind | null;
-  attachments: ConversationAttachment[];
-  topicId: string;
-  topicTitle: string;
-  topicVisibility: ForumTopicVisibility;
-  topicStatus: ForumTopicStatus;
-  /** The agent's answer to THIS post, or null when the turn was waved off
-   *  ("no answer needed") or is still owed. */
-  reply: {
-    id: string;
-    body: string;
-    authorName: string;
-    traceId: string | null;
-    status: 'pending' | 'complete' | 'failed';
-    error: string | null;
-    createdAt: string;
-  } | null;
-};
-
-export type ForumAuthoredTopic = {
-  id: string;
-  title: string;
-  kind: ForumTopicKind;
-  visibility: ForumTopicVisibility;
-  status: ForumTopicStatus;
-  pinned: boolean;
-  postCount: number;
-  lastPostAt: string | null;
-  createdAt: string;
-};
-
-export type PendingForumUpload = {
-  id: string;
-  topicId: string | null;
-  postId: string | null;
-  topicTitle: string | null;
-  contactId: string | null;
-  contactName: string | null;
-  filename: string;
-  mime: string;
-  sizeBytes: number;
-  createdAt: string;
 };
 
 export type AccountFoldersResult =
@@ -900,16 +816,6 @@ export type TeamVisibleShare = {
  *  consts, which are `satisfies`-checked against these unions. */
 export type TaskStatus = 'open' | 'in_progress' | 'blocked' | 'done';
 export type TaskPriority = 'low' | 'normal' | 'high';
-
-/** The retired team forum's vocabulary, frozen: its tables were dropped
- *  (migration 0177), so nothing on the brain mirrors these now. The Forum*
- *  DTOs above stay only while older clients still name them (the forum parts
- *  of the team-admin answers are empty); remove them with the client. */
-export type ForumTopicKind = 'question' | 'review' | 'feature' | 'bug' | 'discussion';
-export type ForumTopicVisibility = 'team' | 'private';
-export type ForumTopicStatus = 'open' | 'answered' | 'closed';
-/** The topic kinds that filed an owner review task. */
-export type ForumPostRequestKind = 'review' | 'feature' | 'bug';
 
 /** Mirrors @mantle/db `ConversationAttachment` (jsonb on conversation rows). */
 export type ConversationAttachment = {

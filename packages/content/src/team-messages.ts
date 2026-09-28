@@ -227,8 +227,7 @@ export async function countMemberInboundSince(
  * count. Driven by the chat itself since team codes were retired (0178);
  * it listed code holders before, so a contact whose code was redeemed or
  * never used to chat dropped off, and one that chats stays. Newest activity
- * first. `memberSince` is the first portal message; `tokenLastUsedAt` is
- * always null (kept one contract cycle for older clients).
+ * first. `memberSince` is the first portal message.
  */
 export async function listTeamMemberActivity(ownerId: string): Promise<TeamMemberActivity[]> {
   const result = await db.execute(dsql`
@@ -284,7 +283,6 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
     contactId: r.contact_id,
     contactName: r.contact_name ?? '(unnamed contact)',
     memberSince: iso(r.first_at),
-    tokenLastUsedAt: null,
     lastMessageAt: iso(r.last_at),
     lastMessageText: r.last_text,
     lastMessageDirection: r.last_direction as 'inbound' | 'outbound',

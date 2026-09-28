@@ -4,10 +4,6 @@
  * candidates); PATCH flips the `teamPrivateReads` switch (whether the team
  * responder may read the owner's email + journal on a member's behalf).
  * Session/bearer-gated: `/api/team-admin` is not in PUBLIC_PATHS.
- *
- * `dashboardTags` fed the retired /hub's curated sections (member logins
- * Phase 6). It stays in the answer, with nothing available, one contract
- * cycle for client builds that still read it.
  */
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
@@ -43,7 +39,6 @@ export async function GET() {
     privateReads: isTeamPrivateReadsEnabled(prefs),
     hubAppId,
     hubCandidates,
-    dashboardTags: { selected: prefs.teamHubTags ?? [], available: [] },
   });
 }
 

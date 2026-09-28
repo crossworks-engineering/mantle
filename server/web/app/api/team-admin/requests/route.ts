@@ -1,11 +1,7 @@
 /**
  * GET /api/team-admin/requests — the Requests tab: every change request (open
- * + done).
- *
- * `uploads` and `moreUploads` are always empty: the forum upload review queue
- * went with the forum (member logins Phase 6), and the archive export filed
- * every upload nobody reviewed. They stay in the answer one contract cycle for
- * client builds that still read them.
+ * + done). The forum upload review queue went with the forum (member logins
+ * Phase 6), so the answer is `{ badges, requests }` only.
  */
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
@@ -21,5 +17,5 @@ export async function GET() {
     listTeamRequests(user.id, { status: 'all', limit: 200 }),
   ]);
 
-  return NextResponse.json({ badges, requests, uploads: [], moreUploads: 0 });
+  return NextResponse.json({ badges, requests });
 }

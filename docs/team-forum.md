@@ -267,10 +267,11 @@ export route, the Drizzle schema, the quarantine helpers of `@mantle/files`
 - **Kept.** The archive pages, the files the export filed, the dump, the task
   links (`data.teamRequest.archivePageId`) and the extraction exemption for
   the pages (`data.source = 'forum-archive'`, which needs no forum table).
-  The `Forum*` DTOs in `@mantle/client-types` stay one more contract cycle,
-  frozen, for clients that still name them; the team-admin answers carry the
-  forum parts empty. The quarantine directory (`forum-uploads/`, a sibling of
-  the files root) is left on disk; nothing reads it now.
+  The `Forum*` DTOs and `PendingForumUpload` left `@mantle/client-types`
+  after one more contract cycle, and the team-admin answers no longer carry
+  the forum parts (no client reads them since jackdaw v0.6.162). The
+  quarantine directory (`forum-uploads/`, a sibling of the files root) is
+  left on disk; nothing reads it now.
 
 **Tests.** `packages/db/src/drop-forum-tables.db.test.ts` (Postgres: the
 tables gone after migrate; put back and seeded, 0177 refuses an unexported

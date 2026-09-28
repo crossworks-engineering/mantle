@@ -57,10 +57,6 @@ export async function GET() {
       agent: agentId ? { id: agentId, slug: agentSlug, name: agentName } : null,
     })),
     currentActorId: user.actor.id,
-    // Member logins are always on since Phase 6. Kept for one contract cycle:
-    // older jackdaw builds read this to show the member controls. Drop it once
-    // no paired client reads it.
-    membersEnabled: true,
   });
 }
 

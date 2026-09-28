@@ -9,9 +9,7 @@
  * still at admin at team (members run apps by level, not by link), then
  * points the `teamHubAppId` pref at it. An app at team, client or public
  * keeps its level. No share link is made (team links are retired, member
- * logins Phase 6 stage 6). Answers `{ appId, levelChanged, modeChanged }`;
- * `modeChanged` repeats `levelChanged` for one contract cycle (it meant "the
- * link went team-only").
+ * logins Phase 6 stage 6). Answers `{ appId, levelChanged }`.
  *
  * DELETE — undesignate: clears the pref only. The app keeps its level.
  *
@@ -59,7 +57,7 @@ export async function PUT(req: Request) {
   if (levelChanged) await setItemLevel(user.id, appId, 'team');
 
   await updateProfilePreferences(user.id, { teamHubAppId: appId });
-  return NextResponse.json({ appId, levelChanged, modeChanged: levelChanged });
+  return NextResponse.json({ appId, levelChanged });
 }
 
 export async function DELETE() {
