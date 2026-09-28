@@ -671,8 +671,9 @@ export async function deleteMineItem(spaceId: string, id: string): Promise<boole
   return gone;
 }
 
-/** The author of a taken item is a member who can sign in: give-back would
- *  work. Admin pool (the space role reads no login row). */
+/** The author of a taken item is a member or a client who can sign in:
+ *  give-back would work (client logins C1: named roles, never "not admin").
+ *  Admin pool (the space role reads no login row). */
 async function authorCanTakeBack(id: string): Promise<boolean> {
   const [r] = await asSystem(() =>
     db
@@ -680,7 +681,11 @@ async function authorCanTakeBack(id: string): Promise<boolean> {
       .from(spaceItems)
       .innerJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
       .where(
-        and(eq(spaceItems.nodeId, id), eq(authUsers.role, 'member'), isNull(authUsers.disabledAt)),
+        and(
+          eq(spaceItems.nodeId, id),
+          inArray(authUsers.role, ['member', 'client']),
+          isNull(authUsers.disabledAt),
+        ),
       )
       .limit(1),
   );

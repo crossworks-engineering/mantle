@@ -20,6 +20,8 @@
 --     read rule calls it once per query, as an init plan.
 --  5. client_report_acks: the admin's acknowledgement of the "What clients
 --     see" report (Add client stays disabled until one exists, Phase C2).
+--  6. The team-drafts read rule, same meaning, without a brain-id call per
+--     hidden row (found by the C1 spike; the team role only).
 --
 -- Rollback: forward only for the policies (the pre-roll dump is the way
 -- back). The previous code runs on these rules unchanged: it never makes a
@@ -61,6 +63,24 @@ CREATE POLICY "nodes_viewer_read" ON "public"."nodes" FOR SELECT
   USING ("owner_id" = (SELECT "public"."mantle_brain_id"())
          AND "audience" = ANY ("public"."mantle_viewer_audiences"())
          AND "public"."mantle_workspace_kind"("type"));
+--> statement-breakpoint
+
+-- The team-drafts rule (0179), same meaning, cheaper: on a connection that
+-- never set mantle.human, `current_setting(...) = 'on'` is NULL, not false,
+-- so the rule did not stop early and called mantle_brain_id() once for every
+-- workspace row the team role may not read (the C1 spike measured 318 calls
+-- per scan on a copy of the dev brain). coalesce makes it false at once, and
+-- the scalar subquery calls the brain id once per query.
+DROP POLICY IF EXISTS "nodes_team_drafts_read" ON "public"."nodes";
+--> statement-breakpoint
+CREATE POLICY "nodes_team_drafts_read" ON "public"."nodes" FOR SELECT
+  TO mantle_view_team
+  USING (coalesce(current_setting('mantle.human', true), '') = 'on'
+         AND "owner_id" IS DISTINCT FROM (SELECT "public"."mantle_brain_id"())
+         AND "public"."mantle_workspace_kind"("type")
+         AND "public"."mantle_member_space"("owner_id")
+         AND EXISTS (SELECT 1 FROM "public"."space_items" si
+                      WHERE si.node_id = "nodes"."id" AND si.sharing = 'team'));
 --> statement-breakpoint
 
 -- ── 3. Agents and tool groups by level, for the client role only ────────────

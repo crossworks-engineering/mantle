@@ -17,7 +17,7 @@
  * multi-DB setup — and is validated as a UUID so a typo fails loud instead of
  * silently scoping every query to nothing.
  */
-import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { db } from './client';
 import { authUsers } from './schema/auth-users';
 import { env } from '@mantle/config';
@@ -49,12 +49,13 @@ export async function resolveSingleOwnerId(): Promise<string | null> {
     }
     return configured;
   }
-  const [anchor] = await db
-    .select({ id: authUsers.id })
-    .from(authUsers)
-    .where(eq(authUsers.isOwner, true))
-    .limit(1);
-  if (anchor) return anchor.id;
+  // Through mantle_brain_id() (SECURITY DEFINER since 0187), not a read of
+  // auth.users: the answer is the same, and it works under every viewer
+  // scope, the client level included, whose role holds no grant on logins.
+  const [anchor] = (await db.execute(
+    sql`select mantle_brain_id() as id`,
+  )) as unknown as { id: string | null }[];
+  if (anchor?.id) return anchor.id;
   // No anchor marked — fresh install (0 rows: wait) or a pre-0111 DB mid-upgrade
   // (1 row: it's the owner). Multiple rows without an anchor is corrupt.
   const rows = await db.select({ id: authUsers.id }).from(authUsers).limit(2);

@@ -305,24 +305,39 @@ export async function detachFromGroups(tx: Pick<Tx, 'update'>, ids: string[]): P
 
 // ── The author ─────────────────────────────────────────────────────────────
 
-/** The member login an item can go back to: it exists, is a member and is
- *  not deactivated. Its personal space, or null. */
-async function memberSpaceOf(via: Via, loginId: string | null): Promise<string | null> {
+/** The roles an item can go back to, and the level each is held to (client
+ *  logins C1): a member reads the brain at team, a client at client. Admins
+ *  never author a reviewable item; any other role is no author. */
+export const AUTHOR_LEVELS = { member: 'team', client: 'client' } as const;
+export type AuthorRole = keyof typeof AUTHOR_LEVELS;
+
+export function isAuthorRole(role: string | null | undefined): role is AuthorRole {
+  return role === 'member' || role === 'client';
+}
+
+/** The author login an item can go back to: it exists, is a member or a
+ *  client, and is not deactivated. Its personal space and the level its
+ *  embed rule reads at, or null. */
+async function authorSpaceOf(
+  via: Via,
+  loginId: string | null,
+): Promise<{ spaceId: string; level: 'team' | 'client' } | null> {
   if (!loginId) return null;
   const [r] = await via
-    .select({ spaceId: spaces.id })
+    .select({ spaceId: spaces.id, role: authUsers.role })
     .from(spaces)
     .innerJoin(authUsers, eq(authUsers.id, spaces.loginId))
     .where(
       and(
         eq(spaces.kind, 'personal'),
         eq(spaces.loginId, loginId),
-        eq(authUsers.role, 'member'),
+        inArray(authUsers.role, ['member', 'client']),
         isNull(authUsers.disabledAt),
       ),
     )
     .limit(1);
-  return r?.spaceId ?? null;
+  if (!r || !isAuthorRole(r.role)) return null;
+  return { spaceId: r.spaceId, level: AUTHOR_LEVELS[r.role] };
 }
 
 /** A login's personal space, whatever the login is now (the realtime event
@@ -342,20 +357,22 @@ export async function personalSpaceOf(via: Via, loginId: string | null): Promise
 export type GiveBackResult = { id: string; returned: BundleItem[] };
 
 /**
- * The embed rule the MEMBER is held to (member-space.ts `disallowedRefs`),
+ * The embed rule the AUTHOR is held to (member-space.ts `disallowedRefs`),
  * checked before their item comes back: its saved versions may use only
- * what was taken with it, the member's own items and Library items (the
- * brain at team level). An admin may have added a brain item at any level,
+ * what was taken with it, the author's own items and the brain items they
+ * can read, at THEIR level (team for a member, client for a client: client
+ * logins C1, plan N3). An admin may have added a brain item at any level,
  * or one of their own private items, while it was theirs: giving that back
- * would show the member an id, a title in a mention chip, or a link to
+ * would show the author an id, a title in a mention chip, or a link to
  * something they may not read. Returns the ids that are not allowed.
  */
-async function refsTheMemberMayNotUse(
+async function refsTheAuthorMayNotUse(
   tx: Via,
   brainId: string,
-  memberSpaceId: string,
+  author: { spaceId: string; level: 'team' | 'client' },
   group: BundleItem[],
 ): Promise<string[]> {
+  const memberSpaceId = author.spaceId;
   const inGroup = new Set(group.map((g) => g.id));
   const ids = new Set<string>();
   const refused = new Set<string>();
@@ -374,8 +391,8 @@ async function refsTheMemberMayNotUse(
   const ok = new Set(own.map((r) => r.id));
   const others = rest.filter((id) => !ok.has(id));
   if (others.length) {
-    // The Library, read as the team level reads it (row security decides).
-    const lib = await withViewer('team', () =>
+    // The brain, read as the author's level reads it (row security decides).
+    const lib = await withViewer(author.level, () =>
       db
         .select({ id: nodes.id })
         .from(nodes)
@@ -454,13 +471,14 @@ export async function giveBackTaken(
       .limit(1);
     if (!row) throw spaceNotFound();
     if (opts.locate && !(await opts.locate(tx))) throw spaceNotFound();
-    const memberSpace = await memberSpaceOf(tx, row.author);
-    if (!memberSpace) {
+    const author = await authorSpaceOf(tx, row.author);
+    if (!author) {
       throw new SpaceItemStateError(
         'author-inactive',
-        'The member who wrote this cannot take it back (deactivated, removed, or no longer a member). Accept it into the brain or delete it.',
+        'The person who wrote this cannot take it back (deactivated, removed, or no longer a member or client). Accept it into the brain or delete it.',
       );
     }
+    const memberSpace = author.spaceId;
     const group = await takenGroup(tx, own.spaceId, id);
     if (!group.length) throw spaceNotFound();
     await lockBundleRows(tx, group);
@@ -476,11 +494,11 @@ export async function giveBackTaken(
         unsaved.map((b) => b.id),
       );
     }
-    const bad = await refsTheMemberMayNotUse(tx, brainId, memberSpace, group);
+    const bad = await refsTheAuthorMayNotUse(tx, brainId, author, group);
     if (bad.length) {
       throw new SpaceItemStateError(
         'embed',
-        'This item now uses things the member may not see (brain items above team level, or your own private items). Remove them, save, then give it back.',
+        `This item now uses things its author may not see (brain items above ${author.level} level, or your own private items). Remove them, save, then give it back.`,
         bad,
       );
     }
@@ -552,7 +570,7 @@ export async function takenFromOf(
       name: r.loginId
         ? r.displayName?.trim() || r.email?.split('@')[0] || 'A member'
         : 'Removed member',
-      canGiveBack: !!r.loginId && r.role === 'member' && r.disabledAt === null,
+      canGiveBack: !!r.loginId && isAuthorRole(r.role) && r.disabledAt === null,
       takenAt: r.takenAt?.toISOString() ?? null,
     });
   }

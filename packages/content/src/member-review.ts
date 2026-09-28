@@ -128,7 +128,14 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  *  `invalid`, 409 for the rest. */
 export class ReviewError extends Error {
   constructor(
-    readonly reason: 'not-found' | 'not-submitted' | 'not-left-behind' | 'invalid' | 'too-large',
+    readonly reason:
+      | 'not-found'
+      | 'not-submitted'
+      | 'not-left-behind'
+      | 'invalid'
+      | 'too-large'
+      // A client's item to client or public level, not confirmed (C1).
+      | 'confirm-level',
     message: string,
   ) {
     super(message);
@@ -175,10 +182,13 @@ export type ReviewItemRow = {
 /** A login that cannot use the brain any more: deactivated, or deleted. */
 const authorInactive = or(isNull(authUsers.id), isNotNull(authUsers.disabledAt))!;
 
-/** Written by a MEMBER login (or one since deleted, which only a member's
- *  left-behind item can be): never an admin's own private item (Phase 7).
- *  Needs `authUsers` left-joined on the item's author. */
-const authorIsMember = or(isNull(authUsers.id), eq(authUsers.role, 'member'))!;
+/** Written by a MEMBER or a CLIENT login (or one since deleted, which only a
+ *  member's or client's left-behind item can be): never an admin's own
+ *  private item (Phase 7). The roles are named (client logins C1): a role
+ *  this code does not know is not an author. No client can submit before
+ *  client logins C5; Accept of a client's item defaults to team
+ *  (acceptAudience). Needs `authUsers` left-joined on the item's author. */
+const authorIsMember = or(isNull(authUsers.id), inArray(authUsers.role, ['member', 'client']))!;
 
 /** The admin holding a taken item (audit F07), left-joined on `taken_by`. */
 const taker = alias(authUsers, 'taker');
@@ -558,8 +568,13 @@ export async function reviewDrawSvg(id: string, drawId: string): Promise<string 
 
 export type AcceptOptions = {
   /** The level the accepted item (and everything that moves with it) gets.
-   *  Admin by default (decided 2026-09-25). */
+   *  Admin by default (decided 2026-09-25); team by default for an item a
+   *  CLIENT wrote (client logins C1, see `acceptAudience`). */
   audience?: ViewerLevel;
+  /** For an item a client wrote: the admin confirmed that it, and what it
+   *  takes with it, goes down to client or public, where every client
+   *  login reads it. Refused without it (`confirm-level`). */
+  lowerConfirmed?: boolean;
   /** A brain page to nest the accepted page under (pages only). */
   parentPageId?: string | null;
   /** The brain Files folder the bundle's files land in (default `files`). */
@@ -611,6 +626,37 @@ async function freeFileName(tx: Tx, brainId: string, folder: string, wanted: str
 }
 
 /**
+ * The level an Accept gives (client logins C1, plan section 3.4, N4). An
+ * item a member wrote: the chosen level, admin by default. An item a CLIENT
+ * wrote: team by default, because the author reads their accepted item from
+ * the snapshot whatever its level, so publishing one client's request to
+ * every client login must be an explicit choice. Client or public for it
+ * needs `lowerConfirmed` (the admin ticked the list of what goes down).
+ */
+export function acceptAudience(authorRole: string | null, opts: AcceptOptions): ViewerLevel {
+  if (authorRole !== 'client') return opts.audience ?? 'admin';
+  const level = opts.audience ?? 'team';
+  if ((level === 'client' || level === 'public') && opts.lowerConfirmed !== true) {
+    throw new ReviewError(
+      'confirm-level',
+      `A client wrote this. At ${level} level every client login reads it, and what it embeds goes down with it. Confirm that, or accept it at team.`,
+    );
+  }
+  return level;
+}
+
+/** The role of the login that wrote a reviewable item (null: none, or gone). */
+async function authorRoleOf(id: string): Promise<string | null> {
+  const [r] = await db
+    .select({ role: authUsers.role })
+    .from(spaceItems)
+    .innerJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
+    .where(eq(spaceItems.nodeId, id))
+    .limit(1);
+  return r?.role ?? null;
+}
+
+/**
  * Accept a reviewable item into the brain (plan 6.2). One transaction: lock
  * the item's state row (a Recall that lands first wins: not found), take its
  * bundle (the one recorded at Submit), re-own every item in it (same ids),
@@ -625,7 +671,10 @@ export async function acceptReviewItem(
   reviewer: { loginId: string },
   opts: AcceptOptions = {},
 ): Promise<AcceptResult> {
-  return moveIntoBrain(brainId, id, opts, {
+  // The level by the author's role (client logins C1): read before the move,
+  // refused before anything moves.
+  const audience = acceptAudience(await authorRoleOf(id), opts);
+  return moveIntoBrain(brainId, id, { ...opts, audience }, {
     locate: async (tx) => {
       // The state row, locked. A Recall, Return or second Accept waits.
       const [locked] = await tx
@@ -1271,9 +1320,11 @@ export async function returnReviewItem(
           eq(spaceItems.reviewState, 'submitted'),
           sql`exists (select 1 from nodes n join spaces s on s.id = n.owner_id
                        where n.id = ${id} and s.kind = 'personal')`,
-          // A member's item only: never an admin's own (Phase 7).
+          // A member's or a client's item only: never an admin's own (Phase 7),
+          // never a role this code does not know (client logins C1).
           sql`not exists (select 1 from auth.users u
-                           where u.id = ${spaceItems.authorLoginId} and u.role <> 'member')`,
+                           where u.id = ${spaceItems.authorLoginId}
+                             and u.role not in ('member', 'client'))`,
         ),
       )
       .returning({ sharing: spaceItems.sharing });

@@ -2,8 +2,9 @@
  * The Access control's wire shapes (`/api/access/nodes/:id`). One level
  * system: admin > team > client > public. A caller sees what is at or below
  * its level. The level is the truth and the item's share link follows it:
- * none at admin or team (members read team items with their own logins), an
- * open link at client and public. See docs/access-levels.md.
+ * none at admin or team (members read team items with their own logins) or
+ * client (signed-in clients, client logins C1), an open link at public. See
+ * docs/access-levels.md.
  */
 import type { ShareMode } from './rows';
 
@@ -91,4 +92,88 @@ export type AccessNodeUpdate = {
    *  Absent from brains before 0.232.264. */
   stillBelow?: AccessItemView[];
   share: AccessLinkView | null;
+};
+
+// ── "What clients see" (client logins C1) ────────────────────────────────────
+
+/** A brain item a client-level item names but a client may not read: a
+ *  mention chip, a link or an embed pointing at a team or admin item (or at
+ *  something that is not the brain's). Its title reaches the client page as
+ *  a label unless the client view hides it. */
+export type ClientReportRef = {
+  id: string;
+  /** Null when the id names nothing the brain holds any more. */
+  type: string | null;
+  title: string | null;
+  /** The item's level; null when it is not a brain item (a personal item,
+   *  or gone). */
+  audience: AccessLevel | null;
+};
+
+/** One item at client level, as the report lists it. */
+export type ClientReportItem = {
+  id: string;
+  type: string;
+  title: string;
+  updatedAt: string;
+  /** Its live open link, made when client meant "anyone with the link":
+   *  still live until the old client links are retired. Null: none. */
+  link: {
+    id: string;
+    createdAt: string;
+    viewCount: number;
+    lastViewedAt: string | null;
+    expiresAt: string | null;
+  } | null;
+  /** Addresses a page was emailed to with the page tool (invite hints). */
+  emailedTo: string[];
+  /** What it names that a client may not read (see ClientReportRef). */
+  refsAbove: ClientReportRef[];
+};
+
+/** The newest acknowledgement of the report. */
+export type ClientReportAck = {
+  ackedAt: string;
+  /** The admin who acknowledged it (null: that login is gone). */
+  ackedBy: { id: string; name: string } | null;
+  /** How many client-level items the admin saw. */
+  itemCount: number;
+};
+
+/** GET /api/access/client-report: every item at client level, what each
+ *  carries, and whether an admin has acknowledged the list. Adding a client
+ *  login stays disabled until `acknowledged` (client logins C2). */
+export type ClientReport = {
+  items: ClientReportItem[];
+  /** All client-level items (the list stops at 2000). */
+  total: number;
+  acknowledgement: ClientReportAck | null;
+  /** An admin acknowledged the report and nothing has gone to client since. */
+  acknowledged: boolean;
+  /** Client-level items the newest acknowledgement did not include. */
+  newSinceAck: string[];
+};
+
+/** POST /api/access/client-report/ack { itemIds } -> the acknowledgement.
+ *  `itemIds`: the client-level items the admin saw on the report. */
+export type ClientReportAckResponse = { acknowledgement: ClientReportAck; acknowledged: boolean };
+
+/** GET /api/shares/all -> { shares: SharedLinkRow[] }: every live link,
+ *  newest first. */
+export type SharedLinkRow = {
+  id: string;
+  /** Server-relative: `/s/<token>`. */
+  path: string;
+  nodeId: string;
+  nodeType: string;
+  title: string;
+  icon: string | null;
+  mode: ShareMode;
+  cascade: boolean;
+  createdAt: string;
+  viewCount: number;
+  lastViewedAt: string | null;
+  /** The item's level (client logins C1): `client` marks an old link, from
+   *  when client meant an open link. Absent from brains before C1. */
+  level?: AccessLevel;
 };

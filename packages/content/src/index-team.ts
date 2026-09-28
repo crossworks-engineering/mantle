@@ -227,6 +227,7 @@ export {
 export {
   BUNDLE_MAX_ITEMS,
   ReviewError,
+  acceptAudience,
   acceptOwnItem,
   acceptReviewItem,
   addReviewComment,
@@ -288,3 +289,9 @@ export {
   type SpaceItemChange,
   type SpaceItemChangeKind,
 } from './member-space-events';
+export {
+  CLIENT_REPORT_MAX,
+  acknowledgeClientReport,
+  clientReport,
+  clientReportAcknowledged,
+} from './client-report';

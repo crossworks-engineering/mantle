@@ -229,6 +229,16 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
     expect(rows).toHaveLength(1);
   });
 
+  it('the brain owner resolves under the client viewer (no login grant needed)', async () => {
+    const saved = process.env.ALLOWED_USER_ID;
+    delete process.env.ALLOWED_USER_ID;
+    try {
+      expect(await m.withViewer('client', () => m.resolveSingleOwnerId())).toBe(anchor);
+    } finally {
+      if (saved !== undefined) process.env.ALLOWED_USER_ID = saved;
+    }
+  });
+
   it('a client login is never a member: its space is no member space (Team drafts)', async () => {
     const [r] = await admin<{ member: boolean; client: boolean }[]>`
       select mantle_member_space((select id from spaces where kind = 'personal' and login_id = ${member})) as member,

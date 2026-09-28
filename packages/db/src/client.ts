@@ -88,11 +88,37 @@ function getDb(): PostgresJsDatabase<typeof schema> {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
+ * The level a login's personal space runs at (client logins C1): team for an
+ * admin or a member, client for a client. A role this code does not know has
+ * no space level: withSpace refuses it (fail closed). Read on the admin pool
+ * on every call, never cached: the role on the row is the truth.
+ */
+export async function spaceLevelForLogin(loginId: string): Promise<'team' | 'client'> {
+  const rows = (await getAdminDb().execute(
+    sqlTag`select role from auth.users where id = ${loginId}`,
+  )) as unknown as { role: string }[];
+  const role = rows[0]?.role;
+  switch (role) {
+    case 'admin':
+    case 'member':
+      return 'team';
+    case 'client':
+      return 'client';
+    default:
+      throw new Error('withSpace: this login has no personal space level');
+  }
+}
+
+/**
  * Run `fn` for ONE personal space (member logins Phase 2, plan section 2b).
  * Opens a short transaction on the personal-space role (`mantle_view_space`)
  * that sets `mantle.space_id` and `mantle.login_id`; every `db` query inside
  * runs in it, so row level security shows and accepts only that space's rows.
  * Keep it short: never hold one across an LLM call.
+ *
+ * The scope's level comes from the login's role (client logins C1): team for
+ * an admin or a member, client for a client. The level only goes down, so a
+ * `withViewer('team', …)` inside a client's space reads at client.
  *
  * Nesting: the same space reuses the open transaction; another space throws.
  * `withViewer('team', …)` inside leaves the space for the brain's Library;
@@ -112,6 +138,7 @@ export async function withSpace<T>(
     }
     return fn();
   }
+  const level = await spaceLevelForLogin(scope.loginId);
   // Disk work tied to this transaction (afterCommit / afterRollback) runs
   // once it has ended, never inside it.
   const hooks = newTxHooks();
@@ -122,7 +149,7 @@ export async function withSpace<T>(
         sqlTag`select set_config('mantle.space_id', ${scope.spaceId}, true),
                       set_config('mantle.login_id', ${scope.loginId}, true)`,
       );
-      return runInTxScope({ level: 'team', space: { ...scope }, tx, hooks }, fn);
+      return runInTxScope({ level, space: { ...scope }, tx, hooks }, fn);
     });
   } catch (err) {
     await runTxHooks(hooks.rollback, 'rollback');

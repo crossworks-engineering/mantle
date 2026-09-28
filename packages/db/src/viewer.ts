@@ -106,8 +106,9 @@ export function afterRollback(fn: () => unknown): void {
 const store = new AsyncLocalStorage<Scope>();
 
 /** The level the current code runs at: 'admin' outside any viewer scope. A
- *  personal-space scope runs at 'team' (a member's level), so everything that
- *  refuses a limited caller (enqueue, admin agents) refuses it too. */
+ *  personal-space scope runs at its login's level ('team' for an admin or a
+ *  member, 'client' for a client), so everything that refuses a limited
+ *  caller (enqueue, admin agents) refuses it too. */
 export function currentViewerLevel(): ViewerLevel {
   return store.getStore()?.level ?? 'admin';
 }

@@ -40,7 +40,13 @@ export type {
   AccessLoweredView,
   AccessNodeUpdate,
   AccessNodeView,
+  ClientReport,
+  ClientReportAck,
+  ClientReportAckResponse,
+  ClientReportItem,
+  ClientReportRef,
   MemberItemAuthor,
+  SharedLinkRow,
 } from './dto/access';
 export type {
   AdminSpaceItem,

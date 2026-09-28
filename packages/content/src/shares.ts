@@ -471,6 +471,9 @@ export async function recordShareView(shareId: string): Promise<void> {
 export type ActiveShareListing = ShareSummary & {
   /** Display fields joined off the shared node. */
   title: string;
+  /** The shared item's level (client logins C1: a live link on a client
+   *  item is an old one, from when client meant an open link). */
+  level: ViewerLevel;
   nodeIcon: string | null;
   nodePath: string | null;
   lastViewedAt: string | null;
@@ -482,7 +485,13 @@ export type ActiveShareListing = ShareSummary & {
  *  node. */
 export async function listActiveShares(ownerId: string): Promise<ActiveShareListing[]> {
   const rows = await db
-    .select({ share: shares, title: nodes.title, data: nodes.data, path: nodes.path })
+    .select({
+      share: shares,
+      title: nodes.title,
+      data: nodes.data,
+      path: nodes.path,
+      audience: nodes.audience,
+    })
     .from(shares)
     .innerJoin(nodes, eq(nodes.id, shares.nodeId))
     .where(and(eq(shares.ownerId, ownerId), activePredicate()))
@@ -492,6 +501,7 @@ export async function listActiveShares(ownerId: string): Promise<ActiveShareList
     return {
       ...toSummary(r.share),
       title: r.title,
+      level: r.audience as ViewerLevel,
       nodeIcon: typeof d.icon === 'string' ? d.icon : null,
       nodePath: r.path ?? null,
       lastViewedAt: r.share.lastViewedAt ? r.share.lastViewedAt.toISOString() : null,

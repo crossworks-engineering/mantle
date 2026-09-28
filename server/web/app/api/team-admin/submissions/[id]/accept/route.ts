@@ -1,8 +1,11 @@
 /**
  * POST /api/team-admin/submissions/:id/accept
- *   { audience?: 'admin'|'team'|'client'|'public', parentPageId?, folderPath? }
+ *   { audience?: 'admin'|'team'|'client'|'public', parentPageId?, folderPath?,
+ *     lowerConfirmed? }
  * Accept into the brain (plan 6.2): the item and its bundle move into the
- * brain with the same ids, at the chosen level (admin by default). 404 when
+ * brain with the same ids, at the chosen level (admin by default; team for
+ * an item a client wrote, and client or public for one only with
+ * `lowerConfirmed`, else 409 `confirm-level`: client logins C1). 404 when
  * it is not waiting any more (the author recalled it first). The only member-logins
  * path that announces anything to the extractor.
  */
@@ -22,6 +25,7 @@ const Body = z.object({
   audience: z.enum(VIEWER_LEVELS).optional(),
   parentPageId: z.string().uuid().nullable().optional(),
   folderPath: z.string().max(500).nullable().optional(),
+  lowerConfirmed: z.boolean().optional(),
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
