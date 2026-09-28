@@ -1,5 +1,16 @@
 # Team Hub apps: the builder's guide
 
+> **The `/hub` host is retired (member logins Phase 6, 2026-09-28).** The
+> team-code `/hub` (and `/team`, and `/api/team/hub`) went with the team
+> portal; `/hub` now redirects to `/login`. The one host left is the **member
+> home**: a member login's home page runs the pinned app, and `hub.get`
+> answers from `GET /api/member/home` in the same `HubData` shape (section 3,
+> "The member home is a second host", now the only one;
+> [member-logins.md](member-logins.md) section 7). Designation is unchanged
+> (`PUT /api/team-admin/hub-app`, pref `teamHubAppId`). Where this guide says
+> `/hub`, the team token gate, the Forum link or the signed team bearer, read
+> it as history.
+
 How to build, structure, and maintain a **team hub app**: the mini-app a brain
 designates to render as its Team Hub (served at `/hub` since the Team Workspace took over `/team`) for external team members. This is the
 canonical reference for hub-app authors (human or agent). It builds on the
@@ -18,7 +29,8 @@ An ordinary `/apps` mini-app plus one namespace. When designated (Team admin →
 members. The shell keeps everything that must stay core:
 
 - the **member token gate** and cookie minting/revocation,
-- the **Forum** link (the 1:1 Team Chat was removed 2026-09-26),
+- the **Forum** link (the 1:1 Team Chat was removed 2026-09-26; the forum
+  itself in Phase 6),
 - the **in-hub briefing reader** (team-shared pages),
 - per-member **access logging** and membership liveness checks.
 
@@ -50,12 +62,11 @@ Brokered traffic (bundle, tool calls, SQLite) goes through the app's team-mode
 share routes, so the member's identity is re-derived server-side on every call
 and every access is logged per member.
 
-Since the v0.200 member carve, `/hub` renders on the **client origin** and the
-broker calls cross to the server origin: the sandbox host page attaches the
-member's signed team bearer (`AppSandbox`'s `apiBase` + `fetcher` props), the
-`/s/<token>/{bundle,tool-broker,db-broker}` routes accept it
-(`resolveShareVisitorFromRequest`), and the middleware gives exactly those
-three sub-paths the `/api/**` CORS treatment. Nothing changes for the app
+Since the v0.200 member carve, `/hub` rendered on the **client origin** and the
+broker calls crossed to the server origin with the member's signed team
+bearer. That bearer is retired (Phase 6): the `/s/<token>` brokers accept
+only the share-scoped visitor cookie now, and the member home runs the app
+through the member app routes instead. Nothing changes for the app
 author, broker calls still happen in the parent page, never the sandboxed
 iframe.
 
@@ -98,9 +109,10 @@ Rules that bind the SDK (and any future addition to it):
 - **`openBriefing` only opens real sections.** The shell validates the token
   against the current `sections`; anything else is ignored. Deep-link by
   _finding_ a section (e.g. by title match), never by hardcoding a token.
-- **`hub.get` is answered locally by the shell** from the `/api/team/hub`
-  payload, extending `HubData` means extending that route, where it is gated
-  and audited.
+- **`hub.get` is answered locally by the shell** from the host's payload
+  (`/api/member/home` now; the retired `/api/team/hub` before Phase 6):
+  extending `HubData` means extending that route, where it is gated and
+  audited.
 - **The member home is a second host** (member logins Phase 4b,
   [member-logins.md](member-logins.md) section 7). The same app, pinned as
   the hub and set to team level, is the members' home page. There `hub.get`
@@ -285,7 +297,7 @@ that must survive a reload goes in SQLite (Tier 3).
 - **Members see "Loading…" then the built-in hub**: the bundle booted badly
   (module-level throw) or an import failed; the shell's ready-watchdog fired.
   Reproduce in the `/apps` editor, fix, republish.
-- **`hub.get` rejects**: you're off the `/team` surface (editor, ordinary
+- **`hub.get` rejects**: you're off the member home (editor, ordinary
   share, pre-rollout runtime). That's the R2 preview path, not an error.
 - **A tool call returns 403**: the slug isn't declared via `app_tools_set`,
   or it's a non-builtin handler (team surfaces refuse those by design).

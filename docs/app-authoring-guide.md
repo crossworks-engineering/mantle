@@ -361,17 +361,17 @@ PUBLISHED build only and never edit it.
   published build. `host.hub.get()` answers there too: sections are the
   newest team pages, and a section's `token` is the page id.
 
-## Team Hub apps (a designated app as the /hub surface)
+## Team Hub apps (a designated app as the members' home)
 
-A brain can designate one published app as its **Team Hub**: team members
-visiting `/hub` get that app full-screen, while the platform keeps the token
-gate, the Forum link, and the briefing reader core. (`/team` itself is the
-read-only member **workspace**: see [`team-chat.md`](team-chat.md) §2; the
-same team cookie opens both surfaces.) Hub apps get one extra
-namespace, `host.hub.get()` (site name, member name, briefing sections, live
-stats), `host.hub.openChat()` (opens the team Forum; the 1:1 chat is gone),
-`host.hub.openBriefing(token)`, and the
-built-in hub renders automatically if the app ever breaks.
+A brain can designate one published app as its **home app**: member logins
+get it full-screen on their home page (`GET /api/member/home`, member-logins.md
+section 7) while it is at team level or lower with a green published build.
+Until member logins Phase 6 the same app was the team-code **Team Hub** at
+`/hub`, beside the `/team` workspace and the Forum; those are retired and
+redirect to `/login`. Home apps get one extra namespace, `host.hub.get()`
+(site name, member name, briefing sections, Library counts),
+`host.hub.openChat()`, `host.hub.openBriefing(token)`, and the built-in member
+home renders automatically if the app ever breaks.
 
 Everything else about building one is this guide, plus the hub-specific
 contract, project structure, and content-update patterns (including the
