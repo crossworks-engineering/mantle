@@ -333,7 +333,14 @@ describe.skipIf(!URL)('forum archive export', () => {
     expect(drain.filter((d) => d.type === 'page')).toEqual([]);
     expect(drain.map((d) => d.id)).toEqual(expect.arrayContaining([filedPendingId, dumpId]));
     // No summarizer woken, no extractor run, no vector written.
-    expect(summarizeDue).toEqual([]);
+    // summarize_due carries an agent id; other test files share the database.
+    const woken = summarizeDue.length
+      ? await admin<Row[]>`select id from agents where owner_id = ${anchor}
+                            and id::text in ${admin(summarizeDue as never)}`
+      : [];
+    expect(woken).toEqual([]);
+    const msgs = await admin<Row[]>`select id from assistant_messages where owner_id = ${anchor}`;
+    expect(msgs).toEqual([]);
     const traces = await admin<Row[]>`select id from traces where owner_id = ${anchor}`;
     expect(traces).toEqual([]);
     const vecs = await admin<
@@ -364,7 +371,13 @@ describe.skipIf(!URL)('forum archive export', () => {
     });
     await settle();
     expect(await nodeCount()).toBe(before);
-    expect(ingested.length).toBe(seen);
+    // Other test files share the database: count only this brain's nodes.
+    const fresh = ingested.slice(seen);
+    const ours = fresh.length
+      ? await admin<Row[]>`select id from nodes where owner_id = ${anchor}
+                            and id in ${admin(fresh as never)}`
+      : [];
+    expect(ours).toEqual([]);
     expect(await archivePages()).toHaveLength(3);
   });
 
