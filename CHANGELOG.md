@@ -4,6 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.302: client v0.6.162
+
+- Paired with jackdaw v0.6.162. Team codes: the first Team admin tab is the
+  Chat archive (contacts with old portal chat; Invite as member stays), the
+  invite page takes invite codes only. Phase 7: a Keep private switch in New
+  page, table, note, drawing and a Private upload; a Brain | Private switch
+  on each list; private items open with Save version, Delete and Accept into
+  brain. The client pins the contract at 0.232.301.
+
 ## 0.232.301: team codes retired (0178) and admin private items (Phase 7, 0179)
 
 - Migration 0178 drops `contact_team_tokens` (its one FK to nodes dropped by
