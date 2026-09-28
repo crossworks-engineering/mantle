@@ -1,13 +1,14 @@
 /**
  * Member invites (member logins, Phase 6) on a real, migrated Postgres:
  * create, list, revoke and redeem. Single use, expiry, revoke, a wrong code
- * is the same null as any other failure, an old team code redeems once and
- * only with an open invite, the redeem deletes the team code and creates a
- * member login linked to the contact, and a failed redeem writes nothing.
+ * is the same null as any other failure, an old 8-char team code redeems
+ * nothing (team codes are retired, migration 0178), an invite stored before
+ * 0178 still redeems, the redeem creates a member login linked to the
+ * contact, and a failed redeem writes nothing.
  * Seeds its own brain row, logins and contacts, removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-invites.db.test.ts
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -17,7 +18,6 @@ type Row = Record<string, unknown>;
 describe.skipIf(!URL)('member invites', () => {
   type Mod = typeof import('./member-invites');
   let inv: Mod;
-  let teamTokens: typeof import('./team-tokens');
   let m: typeof import('@mantle/db');
   let admin: Parameters<typeof m.ensureViewerRoles>[0];
   const tag = `inv-${randomUUID().slice(0, 8)}`;
@@ -26,11 +26,11 @@ describe.skipIf(!URL)('member invites', () => {
   const adminLogin = randomUUID();
   const ids = {
     pat: randomUUID(), // plain contact with an email
-    sam: randomUUID(), // holds a team code
+    sam: randomUUID(), // held an old team code
     lee: randomUUID(), // linked to a login already
     kim: randomUUID(), // domain wildcard only, no address
     ray: randomUUID(), // for the race
-    tia: randomUUID(), // team code revoked mid-redeem
+    tia: randomUUID(), // invited before 0178
     foreign: randomUUID(), // another brain's contact
     note: randomUUID(), // not a contact
   };
@@ -41,13 +41,7 @@ describe.skipIf(!URL)('member invites', () => {
     (await admin<Row[]>`select * from member_invites where id = ${id}`)[0]!;
   const loginByEmail = async (e: string) =>
     (await admin<Row[]>`select * from auth.users where lower(email) = ${e}`)[0] ?? null;
-  const tokenCount = async (contactId: string) =>
-    Number(
-      (
-        await admin<Row[]>`select count(*)::int as n from contact_team_tokens
-                            where contact_id = ${contactId}`
-      )[0]!.n,
-    );
+  const sha256 = (v: string) => createHash('sha256').update(v, 'utf8').digest('hex');
   const accessRows = async () =>
     admin<Row[]>`select contact_id, kind, detail from team_access_log where owner_id = ${anchor}
                   order by created_at`;
@@ -58,7 +52,6 @@ describe.skipIf(!URL)('member invites', () => {
     m = await import('@mantle/db');
     admin = (m.systemDb as unknown as { $client: typeof admin }).$client;
     inv = await import('./member-invites');
-    teamTokens = await import('./team-tokens');
     await admin`insert into auth.users (id, email, password_hash, role) values
       (${anchor}, ${email('anchor')}, 'x', 'admin'),
       (${otherBrain}, ${email('other')}, 'x', 'admin'),
@@ -85,7 +78,6 @@ describe.skipIf(!URL)('member invites', () => {
     const loginIds = logins.map((r) => r.id as string);
     await admin`delete from member_invites where owner_id in (${anchor}, ${otherBrain})`;
     await admin`delete from team_access_log where owner_id in (${anchor}, ${otherBrain})`;
-    await admin`delete from contact_team_tokens where owner_id in (${anchor}, ${otherBrain})`;
     await admin`delete from nodes where owner_id in (${anchor}, ${otherBrain})`;
     if (loginIds.length === 0) return m.closeDb();
     await admin`delete from spaces where login_id in ${admin(loginIds as never)}`;
@@ -110,7 +102,7 @@ describe.skipIf(!URL)('member invites', () => {
         createdBy: adminLogin,
       });
       const row = await inviteRow(invite.id);
-      expect(row.code_hash).toBe(teamTokens.hashTeamToken(code));
+      expect(row.code_hash).toBe(sha256(code));
       expect(JSON.stringify(row)).not.toContain(code);
       const hours =
         (new Date(row.expires_at as string).getTime() -
@@ -163,7 +155,6 @@ describe.skipIf(!URL)('member invites', () => {
 
   describe('redeem', () => {
     it('creates a member login linked to the contact, once, and logs it', async () => {
-      await teamTokens.enableTeamMember(anchor, ids.pat);
       const { invite, code } = await inv.createMemberInvite(anchor, {
         contactId: ids.pat,
         createdBy: adminLogin,
@@ -189,8 +180,6 @@ describe.skipIf(!URL)('member invites', () => {
       const row = await inviteRow(invite.id);
       expect(row.redeemed_at).not.toBeNull();
       expect(row.redeemed_login_id).toBe(out!.loginId);
-      // The contact's team code is gone: the person is a login now.
-      expect(await tokenCount(ids.pat)).toBe(0);
       const logged = (await accessRows()).filter((r) => r.contact_id === ids.pat);
       expect(logged).toEqual([
         {
@@ -216,33 +205,40 @@ describe.skipIf(!URL)('member invites', () => {
       );
     });
 
-    it('accepts an old team code once, only while the contact has an open invite', async () => {
-      const { token } = (await teamTokens.enableTeamMember(anchor, ids.sam)) as { token: string };
-      // No invite yet: the team code redeems nothing, and stays.
-      expect(await inv.previewMemberInvite(token)).toBeNull();
-      expect(await inv.redeemMemberInvite({ code: token, passwordHash: HASH })).toBeNull();
-      expect(await tokenCount(ids.sam)).toBe(1);
-
-      // A revoked invite does not open it either.
-      const revoked = await inv.createMemberInvite(anchor, {
+    it('redeems nothing with an old 8-char team code, even while the contact has an open invite', async () => {
+      const before = (await accessRows()).length;
+      const { invite, code } = await inv.createMemberInvite(anchor, {
         contactId: ids.sam,
         createdBy: adminLogin,
       });
-      expect(await inv.revokeMemberInvite(anchor, revoked.invite.id)).toBe(true);
-      expect(await inv.redeemMemberInvite({ code: token, passwordHash: HASH })).toBeNull();
+      // What a team code looked like: 8 characters of the same alphabet. The
+      // invite code's own first 8 and a code one character too long are
+      // misses too: only the whole 16-char invite code redeems.
+      for (const wrong of ['Akk34DMx', code.slice(0, 8), `${code}x`]) {
+        expect(await inv.previewMemberInvite(wrong), wrong).toBeNull();
+        expect(await inv.redeemMemberInvite({ code: wrong, passwordHash: HASH }), wrong).toBeNull();
+      }
+      expect(await loginByEmail(email('sam'))).toBeNull();
+      expect((await inviteRow(invite.id)).redeemed_at).toBeNull();
+      expect((await accessRows()).length).toBe(before);
 
-      const { invite } = await inv.createMemberInvite(anchor, {
-        contactId: ids.sam,
-        createdBy: adminLogin,
-      });
-      expect(await inv.previewMemberInvite(token)).toMatchObject({ email: email('sam') });
-      const out = await inv.redeemMemberInvite({ code: token, passwordHash: HASH });
-      expect(out).toMatchObject({ via: 'team-code', inviteId: invite.id, contactId: ids.sam });
+      // The invite code itself (spaces around it trimmed) still redeems.
+      const out = await inv.redeemMemberInvite({ code: ` ${code} `, passwordHash: HASH });
+      expect(out).toMatchObject({ via: 'invite', inviteId: invite.id, contactId: ids.sam });
       expect((await loginByEmail(email('sam')))?.role).toBe('member');
-      expect(await tokenCount(ids.sam)).toBe(0);
-      // Once: the team code is gone with its row.
-      expect(await inv.redeemMemberInvite({ code: token, passwordHash: HASH })).toBeNull();
-      expect(await teamTokens.verifyTeamToken(token)).toBeNull();
+    });
+
+    it('redeems an invite made before 0178 (its code stored as the plain SHA-256)', async () => {
+      const code = 'Pq7RsTuVwXyZ2345';
+      const id = randomUUID();
+      await admin`insert into member_invites
+                    (id, owner_id, contact_id, email, display_name, code_hash, created_by, expires_at)
+                  values (${id}, ${anchor}, ${ids.tia}, ${email('tia')}, 'Tia', ${sha256(code)},
+                          ${adminLogin}, now() + interval '1 hour')`;
+      expect(await inv.previewMemberInvite(code)).toMatchObject({ email: email('tia') });
+      const out = await inv.redeemMemberInvite({ code, passwordHash: HASH });
+      expect(out).toMatchObject({ via: 'invite', inviteId: id, contactId: ids.tia });
+      expect((await inviteRow(id)).redeemed_login_id).toBe(out!.loginId);
     });
 
     it('fails the same way, writing nothing, for a wrong, expired, revoked code or a wrong email', async () => {
@@ -292,29 +288,6 @@ describe.skipIf(!URL)('member invites', () => {
       });
       expect(ok?.email).toBe(email('open'));
       expect(ok?.contactId).toBeNull();
-    });
-
-    it('does not redeem a team code revoked while the redeem runs', async () => {
-      const { token } = (await teamTokens.enableTeamMember(anchor, ids.tia)) as { token: string };
-      const { invite } = await inv.createMemberInvite(anchor, {
-        contactId: ids.tia,
-        createdBy: adminLogin,
-      });
-      // The admin's revoke holds the token row, uncommitted; the redeem reads
-      // the code as valid, then waits on that row, and finds it gone.
-      let revoking!: () => void;
-      const started = new Promise<void>((r) => (revoking = r));
-      const revoke = admin.begin(async (t) => {
-        await t`delete from contact_team_tokens where contact_id = ${ids.tia}`;
-        revoking();
-        await new Promise((r) => setTimeout(r, 500));
-      });
-      await started;
-      const redeem = inv.redeemMemberInvite({ code: token, passwordHash: HASH });
-      await revoke;
-      expect(await redeem).toBeNull();
-      expect(await loginByEmail(email('tia'))).toBeNull();
-      expect((await inviteRow(invite.id)).redeemed_at).toBeNull();
     });
 
     it('refuses when a login took the email after the invite was made', async () => {

@@ -36,7 +36,6 @@ import {
   type CreateContactInput,
   type UpdateContactInput,
 } from '@mantle/content-core/contacts-format';
-import { teamStatusByContact, teamStatusFor, type TeamStatus } from './team-tokens';
 
 export const CONTACTS_ROOT_LABEL = 'contacts';
 
@@ -86,7 +85,7 @@ function projectLastAt(raw: unknown): ContactLastAt {
   return out;
 }
 
-function rowOf(n: Node, team: TeamStatus | null = null): ContactRow {
+function rowOf(n: Node): ContactRow {
   const d = (n.data ?? {}) as Record<string, unknown>;
   const firstName = typeof d.first_name === 'string' ? d.first_name : '';
   const lastName = typeof d.last_name === 'string' ? d.last_name : '';
@@ -119,7 +118,6 @@ function rowOf(n: Node, team: TeamStatus | null = null): ContactRow {
     summary: typeof d.summary === 'string' ? d.summary : null,
     contactCounts: projectCounts(d.contact_counts),
     lastContactedAt: projectLastAt(d.last_contacted_at),
-    team,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -171,17 +169,14 @@ export async function listContacts(
   ownerId: string,
   opts: ListContactsOpts & { limit?: number; offset?: number } = {},
 ): Promise<ContactRow[]> {
-  const [rows, teamMap] = await Promise.all([
-    db
-      .select()
-      .from(nodes)
-      .where(and(...contactConds(ownerId, opts)))
-      .orderBy(desc(nodes.updatedAt))
-      .limit(opts.limit ?? 500)
-      .offset(opts.offset ?? 0),
-    teamStatusByContact(ownerId),
-  ]);
-  return rows.map((r) => rowOf(r, teamMap.get(r.id) ?? null));
+  const rows = await db
+    .select()
+    .from(nodes)
+    .where(and(...contactConds(ownerId, opts)))
+    .orderBy(desc(nodes.updatedAt))
+    .limit(opts.limit ?? 500)
+    .offset(opts.offset ?? 0);
+  return rows.map((r) => rowOf(r));
 }
 
 export async function countContacts(ownerId: string, opts: ListContactsOpts = {}): Promise<number> {
@@ -193,15 +188,12 @@ export async function countContacts(ownerId: string, opts: ListContactsOpts = {}
 }
 
 export async function getContact(ownerId: string, id: string): Promise<ContactRow | null> {
-  const [[row], team] = await Promise.all([
-    db
-      .select()
-      .from(nodes)
-      .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'contact')))
-      .limit(1),
-    teamStatusFor(ownerId, id),
-  ]);
-  return row ? rowOf(row, team) : null;
+  const [row] = await db
+    .select()
+    .from(nodes)
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'contact')))
+    .limit(1);
+  return row ? rowOf(row) : null;
 }
 
 /**
@@ -529,14 +521,13 @@ export async function updateContact(
     .where(eq(nodes.id, id))
     .returning();
   if (!updated) throw new Error('updateContact: update returned no row');
-  const team = await teamStatusFor(ownerId, id);
   if (visibleChanged) {
     // Re-fire the extractor so summary/embedding/facts catch up. The INSERT
     // trigger only fires on INSERT, so this is the explicit refresh.
     const { notifyNodeIngested } = await import('@mantle/db');
     await notifyNodeIngested(id);
   }
-  return { contact: rowOf(updated, team), addedEmails };
+  return { contact: rowOf(updated), addedEmails };
 }
 
 export async function deleteContact(ownerId: string, id: string): Promise<boolean> {

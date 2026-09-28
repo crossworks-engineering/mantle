@@ -235,7 +235,6 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.mobile_tokens'),
   none('public.pairing_codes'),
   none('public.member_invites'),
-  none('public.contact_team_tokens'),
   none('public.mantle_peers'),
   none('public.peer_shares'),
   none('public.peer_share_scopes'),

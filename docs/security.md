@@ -36,12 +36,12 @@
 
 ## 2. Identity & credentials
 
-| Credential                                                  | Who holds it                       | Scope                                                                                                                                            | Revocation                                                |
-| ----------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
-| Owner/admin login + session cookie                          | you and named admins               | the whole app                                                                                                                                    | change password; delete the admin user                    |
-| **Member login** + session cookie                           | a person you invited (role member) | the member routes only (`MEMBER_ROUTES`): the Library, their chat with the team agent, their personal space, member apps; read at the team level | disable, demote or delete the login, instant, mid-session |
-| **Team token** (8 chars, SHA-256 at rest; no longer minted) | a Contact that held a team code    | one invite redeem in place of the invite code, while the contact has an open invite; nothing else (team links retired, member logins stage 6)    | revoke the invite; delete the contact                     |
-| Share token (~128-bit CSPRNG in the URL)                    | anyone with the link               | exactly one shared item (or one public app)                                                                                                      | turn the share off                                        |
+| Credential                                            | Who holds it                       | Scope                                                                                                                                            | Revocation                                                |
+| ----------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| Owner/admin login + session cookie                    | you and named admins               | the whole app                                                                                                                                    | change password; delete the admin user                    |
+| **Member login** + session cookie                     | a person you invited (role member) | the member routes only (`MEMBER_ROUTES`): the Library, their chat with the team agent, their personal space, member apps; read at the team level | disable, demote or delete the login, instant, mid-session |
+| **Invite code** (16 chars, SHA-256 at rest, 72 hours) | the person an admin invited        | one redeem: set a password and become that member login                                                                                          | revoke the invite; it expires                             |
+| Share token (~128-bit CSPRNG in the URL)              | anyone with the link               | exactly one shared item (or one public app)                                                                                                      | turn the share off                                        |
 
 Notes that matter to a reviewer:
 
@@ -53,8 +53,10 @@ Notes that matter to a reviewer:
   API is gone, and the brain-level team-chat credential (cookie or bearer)
   opens nothing. Team members sign in with member logins
   ([member-logins.md](./member-logins.md)).
-- Team tokens are **hashed at rest**; the plaintext is shown once at mint.
-  Token-entry endpoints return a **uniform 401** for wrong-vs-unknown tokens
+- Team codes, the portal's credential, are gone (migration 0178 dropped
+  them; an old code opens and redeems nothing). Invite codes are **hashed
+  at rest**; the plaintext is shown once at mint. Code-entry endpoints
+  return a **uniform 401** for wrong-vs-unknown codes
   (no oracle) and are **rate-limited** per-IP (hardened client-IP derivation
   honouring `MANTLE_TRUSTED_PROXIES`, so the bucket can't be reset by spoofed
   headers) and per-brain.

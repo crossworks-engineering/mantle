@@ -6,7 +6,7 @@
  * are gone, then puts them back from their own migrations (0123, 0124, 0126:
  * all IF NOT EXISTS), seeds forum rows next to the rows that must survive (a
  * Forum archive page, a file the export filed, an app with its node, a
- * sandbox, a team chat message, a team code) and runs 0177's statements
+ * sandbox, a team chat message) and runs 0177's statements
  * again. It proves: a topic with no archive page aborts the drop; an
  * unexpected dependency (a view) fails it instead of being dropped with the
  * table (no CASCADE); the tables go and every other row stays, with the same
@@ -48,7 +48,6 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
     appNode: randomUUID(),
     sandbox: randomUUID(),
     teamMessage: randomUUID(),
-    teamToken: randomUUID(),
     topic: randomUUID(),
     post: randomUUID(),
     upload: randomUUID(),
@@ -64,24 +63,30 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
         select relname as t from pg_class c join pg_namespace n on n.oid = c.relnamespace
          where n.nspname = 'public' and c.relname = any(${FORUM_TABLES}) order by 1`
     ).map((r) => r.t);
-  /** Every count the drop must leave alone, brain-wide and for the seeded owner. */
+  /** Every count the drop must leave alone, for the seeded owner only: other
+   *  DB test files run in parallel on this database and add or delete rows
+   *  brain-wide (agents, nodes), so a global count is not stable. */
   const counts = async () => {
     const [r] = await sql<Row[]>`
-      select (select count(*) from nodes)::int as nodes,
-             (select count(*) from nodes where owner_id = ${owner})::int as owner_nodes,
-             (select count(*) from nodes where type = 'app')::int as app_nodes,
-             (select count(*) from nodes where data->>'source' = 'forum-archive')::int as archive_pages,
+      select (select count(*) from nodes where owner_id = ${owner})::int as owner_nodes,
+             (select count(*) from nodes where owner_id = ${owner} and type = 'app')::int as app_nodes,
+             (select count(*) from nodes where owner_id = ${owner}
+                and data->>'source' = 'forum-archive')::int as archive_pages,
              (select count(*) from nodes where type = 'file' and owner_id = ${owner})::int as files,
-             (select count(*) from apps)::int as apps,
-             (select count(*) from sandboxes)::int as sandboxes,
-             (select count(*) from team_messages)::int as team_messages,
-             (select count(*) from contact_team_tokens)::int as contact_team_tokens,
-             (select count(*) from agents)::int as agents`;
+             (select count(*) from apps a join nodes n on n.id = a.node_id
+               where n.owner_id = ${owner})::int as apps,
+             (select count(*) from sandboxes where owner_id = ${owner})::int as sandboxes,
+             (select count(*) from team_messages where owner_id = ${owner})::int as team_messages`;
     return r!;
   };
 
   beforeAll(async () => {
     sql = postgres(URL!, { max: 1, onnotice: () => {} });
+    // The migration drop tests rebuild tables that reference nodes (ALTER
+    // TABLE ... ADD FOREIGN KEY locks nodes); two of them at once deadlock.
+    // One session lock, shared by every such test, runs them one at a time;
+    // sql.end() releases it.
+    await sql`select pg_advisory_lock(hashtext('mantle-migration-drop-tests'))`;
     goneAfterMigrate = await forumTablesPresent();
     // The tables as the forum had them.
     for (const file of [
@@ -109,8 +114,6 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
               values (${id.sandbox}, ${owner}, ${tag}, 'alpine')`;
     await sql`insert into team_messages (id, owner_id, contact_id, direction, text)
               values (${id.teamMessage}, ${owner}, ${id.contact}, 'inbound', 'hello')`;
-    await sql`insert into contact_team_tokens (id, owner_id, contact_id, token_hash)
-              values (${id.teamToken}, ${owner}, ${id.contact}, ${`hash-${tag}`})`;
 
     // The forum, exported: its topic points at its archive page, the upload
     // at the file the export filed.
@@ -123,7 +126,7 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
                       'text/plain', 10, 'filed', ${id.filedFile})`;
     await sql`insert into forum_read_cursors (owner_id, reader_id, topic_id)
               values (${owner}, ${id.contact}, ${id.topic})`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     // Leave no forum table behind if a test failed midway.
@@ -186,7 +189,6 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
     expect(await sql`select 1 from apps where node_id = ${id.appNode}`).toHaveLength(1);
     expect(await sql`select 1 from sandboxes where id = ${id.sandbox}`).toHaveLength(1);
     expect(await sql`select 1 from team_messages where id = ${id.teamMessage}`).toHaveLength(1);
-    expect(await sql`select 1 from contact_team_tokens where id = ${id.teamToken}`).toHaveLength(1);
   });
 
   it('a second run is a no-op', async () => {

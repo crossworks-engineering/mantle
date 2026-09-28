@@ -118,7 +118,6 @@ describe.skipIf(!URL)('member history links (0175 and the invite redeem)', () =>
     await admin`delete from member_invites where owner_id = ${anchor}`;
     await admin`delete from team_access_log where owner_id = ${anchor}`;
     await admin`delete from node_comments where owner_id = ${anchor}`;
-    await admin`delete from contact_team_tokens where owner_id = ${anchor}`;
     await admin`delete from nodes where owner_id = ${anchor}`;
     if (ids.length) {
       await admin`delete from spaces where login_id in ${admin(ids as never)}`;

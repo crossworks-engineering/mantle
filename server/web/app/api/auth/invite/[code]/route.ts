@@ -1,9 +1,9 @@
 /**
  * GET /api/auth/invite/:code (public, under /api/auth): who an invite is for,
  * so the invite page can greet the person before they set a password
- * (MemberInvitePreview). The code is an invite code or an old team code
- * whose contact has an open invite. Any code that cannot be redeemed is the
- * same 404. Rate limited per IP and for the whole brain.
+ * (MemberInvitePreview). Only an invite code previews (team codes are
+ * retired, migration 0178). Any code that cannot be redeemed is the same
+ * 404. Rate limited per IP and for the whole brain.
  */
 import { NextResponse } from '@/server/http-compat';
 import { loadPreferencesFor, previewMemberInvite } from '@mantle/content';

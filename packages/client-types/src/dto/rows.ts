@@ -519,12 +519,20 @@ export type CuratedTeamSection = {
   items: TeamVisibleShare[];
 };
 
+/** One contact's OLD team portal chat (the Members tab's "Chat archive"
+ *  roster, GET /api/team-admin/members). Since team codes were retired
+ *  (member logins Phase 6, migration 0178) the roster is every contact with
+ *  portal chat, not every code holder. */
 export type TeamMemberActivity = {
   contactId: string;
-  /** Contact node title; '(deleted contact)' can't occur here — membership
+  /** Contact node title; '(deleted contact)' can't occur here: portal chat
    *  rows cascade with the contact. */
   contactName: string;
+  /** The first portal message (it was when the contact's team code was
+   *  made, before 0178). */
   memberSince: string;
+  /** @deprecated Always null: team codes are retired (0178). Kept one
+   *  contract cycle for client builds that still read it. */
   tokenLastUsedAt: string | null;
   lastMessageAt: string | null;
   lastMessageText: string | null;

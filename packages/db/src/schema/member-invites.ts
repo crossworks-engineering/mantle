@@ -11,8 +11,7 @@ import { nodes } from './nodes';
  * Modelled on pairing_codes: only the SHA-256 of the code is stored (the
  * plaintext is shown to the admin once); single use (`redeemed_at` is set
  * once, under a row lock, in the transaction that creates the login);
- * `expires_at` is 72 hours out. `owner_id` is the brain anchor, like
- * contact_team_tokens.
+ * `expires_at` is 72 hours out. `owner_id` is the brain anchor.
  *
  * One open invite per contact (partial unique index): creating a new invite
  * for a contact revokes the old one first.
@@ -31,7 +30,7 @@ export const memberInvites = pgTable(
     /** Lower-cased; the email the member login is created with. */
     email: text('email').notNull(),
     displayName: text('display_name'),
-    /** SHA-256 hex of the plaintext code (the team-token hash). */
+    /** SHA-256 hex of the plaintext code (`hashInviteCode`). */
     codeHash: text('code_hash').notNull().unique(),
     /** The admin login that minted it. */
     createdBy: uuid('created_by'),

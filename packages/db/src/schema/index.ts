@@ -3,7 +3,6 @@ export * from './auth-users';
 export * from './audit-log';
 export * from './mobile-tokens';
 export * from './pairing-codes';
-export * from './contact-team-tokens';
 export * from './member-invites';
 export * from './app-access-log';
 export * from './team-messages';

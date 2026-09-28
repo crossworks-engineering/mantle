@@ -124,26 +124,21 @@ unlocks emailing them + ingesting their mail; deleting one revokes both.
 
 ---
 
-## 2a. Team membership: a role a contact can hold
+## 2a. Team membership (retired)
 
-Since v0.114.0 a contact can additionally be a **team member**: a live row in
-`contact_team_tokens` holding the SHA-256 of a short shown-once token (8
-chars, look-alike-free alphabet). The `/contacts` UI mints it via a header
-"Team member" switch (shown-once dialog with copy; regenerate + remove
-confirms; a list badge marks members).
+From v0.114.0 until member logins Phase 6 a contact could be a **team
+member**: a row in `contact_team_tokens` holding the SHA-256 of a short
+shown-once team code, minted from a "Team member" switch on `/contacts`. The
+code opened the team portal (`/team`, `/hub`, the forum) and team links on
+`/s`; all of those were retired in Phase 6 ([team-chat.md](./team-chat.md)),
+and for one release a code could still redeem a member invite once.
 
-The token opens nothing now: its only use is to redeem a member invite once
-in place of the invite code, while its contact has an open invite
-([member-logins.md](./member-logins.md) section 9). The Team Workspace
-(`/team`), its Assistant and forum, and the Team Hub (`/hub`) were retired in
-member logins Phase 6 ([team-chat.md](./team-chat.md)), and team links on
-`/s` with them (stage 6): team contacts become member logins through
-invites. Nothing mints, rotates or revokes a code any more
-(`POST /api/contacts/[id]/team` is gone); an unwanted invite is revoked
-instead, and deleting the contact deletes its row.
-
-Helpers live in `packages/content/src/team-tokens.ts` (`verifyTeamToken` +
-a status map); `ContactRow` carries `team: { since, lastUsedAt } | null`.
+Team codes are gone now (migration 0178 dropped the table, and
+`ContactRow` no longer carries `team`). Users are the team: an admin
+invites a person, from their contact or by email, and they sign in as a
+member login ([member-logins.md](./member-logins.md) section 9). A
+contact's old portal chat stays readable as its Chat archive on
+`/team-admin`.
 
 ---
 

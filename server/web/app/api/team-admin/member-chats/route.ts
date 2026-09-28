@@ -13,7 +13,7 @@
  *
  * Read-only. Both windows are admin reads: a reply marked used_private shows
  * the placeholder. The Members tab (GET /api/team-admin/members) still shows
- * the portal threads of team-code holders as history.
+ * every contact's portal thread as history (the Chat archive).
  */
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
