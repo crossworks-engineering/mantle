@@ -49,7 +49,8 @@ describe.skipIf(!URL)('team-admin members: the Chat archive needs no team code',
   };
   const anaLogin = randomUUID();
   const email = (who: string) => `${who}-${tag}@example.invalid`;
-  const ago = (min: number) => new Date(Date.now() - min * 60_000);
+  // ISO strings, not Dates: the raw admin client takes text parameters.
+  const ago = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
   const anaFirst = ago(30);
   const boFirst = ago(60);
 
@@ -113,7 +114,7 @@ describe.skipIf(!URL)('team-admin members: the Chat archive needs no team code',
     expect(ana).toMatchObject({
       contactId: c.ana,
       // The first portal message: there is no code whose creation it was.
-      memberSince: anaFirst.toISOString(),
+      memberSince: anaFirst,
       tokenLastUsedAt: null,
       lastMessageText: 'ana again',
       lastMessageDirection: 'inbound',
@@ -123,7 +124,7 @@ describe.skipIf(!URL)('team-admin members: the Chat archive needs no team code',
     });
     expect(bo).toMatchObject({
       contactId: c.bo,
-      memberSince: boFirst.toISOString(),
+      memberSince: boFirst,
       tokenLastUsedAt: null,
       lastMessageText: 'bo answered',
       messageCount: 2,

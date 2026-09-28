@@ -59,19 +59,20 @@ describe.skipIf(!URL)('migration 0178: drop contact_team_tokens', () => {
       select to_regclass('public.contact_team_tokens')::text as t`;
     return r!.t !== null;
   };
-  /** Every count the drop must leave alone, brain-wide and for the seeded owner. */
+  /** Every count the drop must leave alone, for the seeded brain (other test
+   *  files write rows brain-wide while this one runs). */
   const counts = async () => {
     const [r] = await sql<Row[]>`
-      select (select count(*) from nodes)::int as nodes,
-             (select count(*) from nodes where type = 'contact')::int as contacts,
-             (select count(*) from nodes where owner_id = ${owner})::int as owner_nodes,
-             (select count(*) from nodes where type = 'app')::int as app_nodes,
-             (select count(*) from apps)::int as apps,
-             (select count(*) from sandboxes)::int as sandboxes,
-             (select count(*) from team_messages)::int as team_messages,
-             (select count(*) from team_access_log)::int as team_access_log,
-             (select count(*) from member_invites)::int as member_invites,
-             (select count(*) from auth.users)::int as users`;
+      select (select count(*) from nodes where owner_id = ${owner})::int as nodes,
+             (select count(*) from nodes where owner_id = ${owner} and type = 'contact')::int as contacts,
+             (select count(*) from nodes where owner_id = ${owner} and type = 'app')::int as app_nodes,
+             (select count(*) from apps a join nodes n on n.id = a.node_id
+               where n.owner_id = ${owner})::int as apps,
+             (select count(*) from sandboxes where owner_id = ${owner})::int as sandboxes,
+             (select count(*) from team_messages where owner_id = ${owner})::int as team_messages,
+             (select count(*) from team_access_log where owner_id = ${owner})::int as team_access_log,
+             (select count(*) from member_invites where owner_id = ${owner})::int as member_invites,
+             (select count(*) from auth.users where id in (${owner}, ${id.member}))::int as users`;
     return r!;
   };
 
@@ -158,9 +159,17 @@ describe.skipIf(!URL)('migration 0178: drop contact_team_tokens', () => {
 
   it('drops the table and leaves every other row, with the same counts', async () => {
     const before = await counts();
-    expect(before.owner_nodes).toBe(2);
-    expect(before.apps).toBeGreaterThanOrEqual(1);
-    expect(before.sandboxes).toBeGreaterThanOrEqual(1);
+    expect(before).toEqual({
+      nodes: 2,
+      contacts: 1,
+      app_nodes: 1,
+      apps: 1,
+      sandboxes: 1,
+      team_messages: 1,
+      team_access_log: 1,
+      member_invites: 1,
+      users: 2,
+    });
     await runDrop();
 
     expect(await tablePresent()).toBe(false);
