@@ -409,7 +409,7 @@ item out of Mine, but its `space_items` row stays and names the author, so:
   Access panel (`GET /api/access/nodes/:id`) carry `author: { name,
 acceptedAt }` on an accepted item: the login's display name, "A member"
   without one (never the email), "Removed member" once the login is deleted.
-  An admin's own item has no author.
+  An admin's own item has no author (section 10).
 
 ## 7. Apps for members (Phase 4b)
 
@@ -714,3 +714,94 @@ is a member login. Nobody hands a password around. The table is
   `server/web/app/api/shares/[id]/share-mode-route.test.ts`,
   `server/web/app/api/team-admin/hub-app/hub-app-route.test.ts`, the share
   tool tests and the auth sweep (the deleted routes are not routed).
+
+## 10. Admin private items (Phase 7)
+
+Jason, 2026-09-28. An admin (any login that passes the admin gate, the
+anchor included) has a private space of their own: they create items there
+("Keep private"), edit and save them, and accept them into the brain
+themselves, with no review. There is no share, submit, recall or comment
+for an admin's items, and nobody else ever reads them: not another admin,
+not a member.
+
+**Where they live.** Every login already has a personal space (section 5,
+migration 0165); an admin's is the same kind of row, keyed to the acting
+login (`actor.id`, never the anchor's for another admin). The routes run the
+same content functions inside `withSpace` for that space, so the space
+role's row rules hold every read and write, exactly as for a member. A
+private item is never indexed, embedded or extracted (the brain filters on
+the brain id), and no create, draft or Save version starts LLM work.
+
+**Routes** (`lib/admin-space.ts`). The same methods, bodies, query params
+and answers as the member routes of section 5, so a client swaps the base
+path:
+
+| Route                                   | Guard                                  |
+| --------------------------------------- | -------------------------------------- |
+| `GET/POST /api/admin/space`             | `getOwnerOr401`, then the own space    |
+| `GET/PATCH/DELETE /api/admin/space/:id` | `getOwnerOr401`, then the own space    |
+| `PUT /api/admin/space/:id/draft`        | `getOwnerOr401`, then the own space    |
+| `POST /api/admin/space/:id/save`        | `getOwnerOr401`, then the own space    |
+| `POST /api/admin/space/:id/accept`      | `getOwnerOr401`, then the own space    |
+| `GET /api/admin/space/:id/bytes`        | `getOwnerForAsset` (`?at=`), own space |
+| `POST /api/admin/space-files`           | `getOwnerOr401`, then the own space    |
+
+A member gets 403 `member-login`, as on every admin route; members keep
+their own routes (`MEMBER_ROUTES` is unchanged). Another login's item,
+another admin's included, is a plain 404. The bytes route is an asset path
+in the gate: the owner `?at=` token's `act` claim names the login whose
+space is read (the anchor's token, with no `act`, reads the anchor's).
+
+**The embed rule** (Save version, a new item's first version, a note's
+text). An admin may use their own items and the brain's items at ANY level,
+admin included: they can read them all. Never another login's personal
+item. The routes pass the brain (`adminOfBrain`); `disallowedRefs`
+re-reads the space's login and widens only for an admin that is not
+disabled and a real brain row, and reads the brain on the admin pool
+(`asSystem`) with the rule in the query. Members keep the rule of section
+5, whatever they pass. What `embed-refs.ts` refuses outright (a non-uuid
+id, an entity mention, an external image or frame) is refused for an admin
+too.
+
+**Accept into brain** (`POST /api/admin/space/:id/accept`, body
+`{ audience?, parentPageId?, folderPath? }`, answer
+`{ id, audience, moved, linksStayingBehind, levelWarning? }`: the same as
+the team-admin accept). `acceptOwnItem` shares the move with the reviewed
+Accept of section 6 (bundle, same ids, re-own, bytes, slug and path
+dedupe, drafts discarded, one transaction, the extractor told once per
+moved item, on commit). Its own guard: the item is in the caller's own
+personal space, the caller is a usable admin, it is not accepted, and it
+has no unsaved edits (409 `unsaved-draft`: save a version first).
+Anything else is a 404. The bundle's `space_items` rows are DROPPED: an
+admin's own item keeps no author record, so it never shows the
+member-authored badge and never lists as a member's accepted item.
+
+**Never seen by anyone else.**
+
+- The review side (section 6) reads only a MEMBER's items (the author's
+  login is a member, or deleted): the queue, the badge count, a Return, a
+  review comment and a discard never touch an admin's item, not even one
+  submitted before the login was promoted.
+- Team drafts come from member spaces only (migration 0179:
+  `mantle_member_space`, in the team-drafts rules on `nodes` and
+  `space_items`). A member who shared items and was then promoted keeps a
+  'team' row, and those items leave team drafts at once; a teammate's
+  comment is refused the same way. A deleted member's shared items stay
+  readable, as before.
+- Admin lists and the brain filter on the brain id, so admin B finds
+  nothing of admin A's by id (`/api/admin/space/:id` is a 404) or through
+  any brain route.
+
+**Deactivation.** A deactivated admin's private items are purged after 30
+days by the nightly `space-purge`, like a member's (section 6); an admin's
+item never goes to the Review queue as "left behind".
+
+**Tests.** `packages/content/src/admin-space.viewer.db.test.ts` (Postgres:
+the embed rule both ways, another admin by id and through the brain, the
+review side and team drafts with a forced 'team' row, self-accept and its
+refusals, no author row, the extractor told once per moved item),
+`server/web/server/admin-space-sweep.test.ts` (the exact route list,
+anonymous 401, member 403, the own space, the `?at=` token),
+`server/web/app/api/admin/space/admin-space-routes.test.ts` (the writer and
+the accept wiring), `server/web/server/middleware/gate.test.ts` (the asset
+path) and the auth and member sweeps.

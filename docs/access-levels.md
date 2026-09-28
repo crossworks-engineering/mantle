@@ -56,7 +56,9 @@ item when the caller's level is at or above the item's level.
   `agentLevel`.
 - **Row rules** (migration 0159): nodes by brain owner + level + workspace
   kind (0165 adds the personal-space rules and, for the team role with
-  `mantle.human` on only, other members' team-shared items); chunks, pages, draws, tables, apps and app databases follow their
+  `mantle.human` on only, other members' team-shared items; 0179 limits
+  those to MEMBER spaces, so an admin's private item is never one,
+  member-logins.md section 10); chunks, pages, draws, tables, apps and app databases follow their
   node; facts follow their source node (a fact with no source came from the
   owner's own chats and stays admin).
 - **Grants** come from one checked-in list, `ACCESS_MATRIX`
@@ -71,7 +73,10 @@ item when the caller's level is at or above the item's level.
   cache, the member's own thread, API key reads. The lint rule
   `mantle-db/system-db-allowlist` lets only those modules import it.
 - **`asSystem(fn)`** is the one audited escape for a write a limited turn
-  needs: `team_request_create` files its admin-level task through it.
+  needs: `team_request_create` files its admin-level task through it. The
+  personal-space code uses it for a teammate's comment and, for an admin in
+  their own private space, the embed rule's read of the brain at every
+  level (member-logins.md section 10); each writes its rule in the query.
 - **Queues.** A job runs later in a worker that does not inherit the scope,
   so every enqueue helper calls `assertNoViewer`: a limited turn cannot queue
   work.
