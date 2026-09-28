@@ -3,7 +3,8 @@
  * real migrated Postgres, through the real route (only the session is stood
  * in): GET /api/team-admin/members lists every contact of this brain with
  * old portal chat, newest activity first, with or without a login made from
- * it; a contact with no portal chat, a login's live thread and another
+ * it; a contact with no portal chat, a login's live thread (even a row
+ * that also names the contact, as member rows did before 0167) and another
  * brain's contact are not there. Each row keeps `tokenLastUsedAt` (always
  * null) and `memberSince` (the first portal message) for older clients. The
  * selected contact's archive, requests and access log still come back.
@@ -85,7 +86,8 @@ describe.skipIf(!URL)('team-admin members: the Chat archive needs no team code',
       (${anchor}, ${c.ana}, null, 'inbound', 'ana first', ${anaFirst}),
       (${anchor}, ${c.ana}, null, 'outbound', 'ana answered', ${ago(29)}),
       (${anchor}, ${c.ana}, null, 'inbound', 'ana again', ${ago(20)}),
-      (${anchor}, null, ${anaLogin}, 'inbound', 'ana live', ${ago(1)}),
+      (${anchor}, null, ${anaLogin}, 'inbound', 'ana live', ${ago(2)}),
+      (${anchor}, ${c.ana}, ${anaLogin}, 'outbound', 'ana live, contact kept', ${ago(1)}),
       (${otherBrain}, ${c.far}, null, 'inbound', 'far asks', ${ago(5)})`;
     await admin`insert into team_read_cursors (owner_id, contact_id, last_read_at)
                 values (${anchor}, ${c.bo}, ${ago(58)})`;
