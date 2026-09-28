@@ -72,11 +72,13 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
     expect(await claim(pat, 'pat.f')).toEqual({ ok: true, fresh: true });
   });
 
-  it('lets only one of two concurrent claims take the last slot', async () => {
+  it('lets only one of several concurrent claims take the last slot', async () => {
     const who = randomUUID();
     await admin`insert into auth.users (id, email, password_hash, role) values
       (${who}, ${`race-${tag}@example.invalid`}, 'x', 'member')`;
-    const results = await Promise.all([claim(who, 'race.a', 1), claim(who, 'race.b', 1)]);
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, i) => claim(who, `race.${i}`, 1)),
+    );
     expect(results.filter((r) => r.ok).length).toBe(1);
     await admin`delete from auth.users where id = ${who}`;
   });
