@@ -168,6 +168,7 @@ export {
   type SpaceItemBody,
   type SpaceItemKind,
   type SpaceItemRow,
+  type SpaceWriter,
   type UpdateSpaceItemInput,
 } from './member-space';
 export {
@@ -196,6 +197,7 @@ export {
 export {
   BUNDLE_MAX_ITEMS,
   ReviewError,
+  acceptOwnItem,
   acceptReviewItem,
   addReviewComment,
   countSubmitted,

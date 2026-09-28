@@ -21,9 +21,12 @@
  */
 import { and, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import {
+  asSystem,
+  authUsers,
   currentSpaceScope,
   currentViewerLevel,
   db,
+  spaces,
   withViewer,
   draws,
   nodes,
@@ -86,6 +89,16 @@ export {
   isMemberItemKind as isSpaceItemKind,
   type MemberItemKind as SpaceItemKind,
 } from '@mantle/client-types/member-kinds';
+
+/**
+ * Who writes a personal item. A member by default. An ADMIN working in their
+ * own private space (member logins Phase 7) names the brain they administer:
+ * the embed rule then allows that brain's items at any level, since the
+ * admin can read them all. The rule re-reads the space's login and widens
+ * only for a usable admin login of that brain; anything else keeps the
+ * member rule.
+ */
+export type SpaceWriter = { adminOfBrain?: string };
 
 /** The row is the published contract's own type (audit M3), so the wire
  *  shape the client reads cannot drift from what the brain sends. */
@@ -270,16 +283,18 @@ export type CreateSpaceItemInput =
 export async function createMineItem(
   spaceId: string,
   input: CreateSpaceItemInput,
+  writer: SpaceWriter = {},
 ): Promise<SpaceItemRow> {
   const { loginId } = requireSpace(spaceId);
   await assertItemRoom(spaceId);
   // A new item starts published (page, drawing) or has no draft (note): the
   // embed rule holds from its first version.
-  if (input.type === 'page' && input.doc) await assertEmbeds(spaceId, pageRefs(input.doc), 'page');
+  if (input.type === 'page' && input.doc)
+    await assertEmbeds(spaceId, pageRefs(input.doc), 'page', writer);
   if (input.type === 'note' && input.content)
-    await assertEmbeds(spaceId, noteRefs(input.content), 'note');
+    await assertEmbeds(spaceId, noteRefs(input.content), 'note', writer);
   if (input.type === 'draw' && input.scene)
-    await assertEmbeds(spaceId, sceneRefs(input.scene), 'drawing');
+    await assertEmbeds(spaceId, sceneRefs(input.scene), 'drawing', writer);
   let id: string;
   switch (input.type) {
     case 'page':
@@ -350,13 +365,18 @@ async function ensureItemRow(spaceId: string, id: string): Promise<void> {
     .onConflictDoNothing({ target: spaceItems.nodeId });
 }
 
-/** The saved version number of an item and whether it has unsaved edits. */
-async function savedState(
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** The saved version number of an item and whether it has unsaved edits.
+ *  `via` reads on another connection (an admin's self-accept checks inside
+ *  its own transaction, member-review.ts). */
+export async function savedState(
   type: SpaceItemKind,
   id: string,
+  via: Pick<Tx, 'select'> = db,
 ): Promise<{ version: number | null; unsaved: boolean }> {
   if (type === 'page') {
-    const [p] = await db
+    const [p] = await via
       .select({ version: pages.version, hasDraft: sql<boolean>`${pages.draftDoc} IS NOT NULL` })
       .from(pages)
       .where(eq(pages.nodeId, id))
@@ -364,7 +384,7 @@ async function savedState(
     return { version: p?.version ?? null, unsaved: p?.hasDraft ?? false };
   }
   if (type === 'draw') {
-    const [d] = await db
+    const [d] = await via
       .select({ version: draws.version, hasDraft: sql<boolean>`${draws.draftScene} IS NOT NULL` })
       .from(draws)
       .where(eq(draws.nodeId, id))
@@ -372,7 +392,7 @@ async function savedState(
     return { version: d?.version ?? null, unsaved: d?.hasDraft ?? false };
   }
   if (type === 'table') {
-    const [t] = await db
+    const [t] = await via
       .select({
         version: tables.version,
         storagePath: tables.storagePath,
@@ -470,11 +490,12 @@ export async function saveMineTable(
   spaceId: string,
   id: string,
   doc?: TableDoc | WorkbookDoc,
+  writer: SpaceWriter = {},
 ): Promise<{ row: SpaceItemRow; body: SpaceItemBody } | null> {
   const row = await assertEditable(spaceId, id);
   if (row.type !== 'table') return null;
   if (doc !== undefined || (await savedState('table', id)).unsaved) {
-    await assertEmbeds(spaceId, await tableRefs(id, doc), 'table');
+    await assertEmbeds(spaceId, await tableRefs(id, doc), 'table', writer);
     const t = await commitTable(spaceId, id, doc);
     // No row under the registry lock: submitted since the check above (the
     // frozen rule hides it) or gone. Re-check so a frozen item says so.
@@ -497,9 +518,17 @@ export async function saveMineTable(
  * external image). Accept (Phase 4) moves an item's embed closure into the
  * brain, so a foreign id here would drag someone else's work, or an admin
  * secret's existence, along.
+ *
+ * An admin in their own private space (Phase 7, Jason 2026-09-28) may also
+ * use the brain's items at ANY level, admin included: they can read them
+ * all. Never another login's personal item, admin or member.
  */
-export async function disallowedRefs(spaceId: string, refs: EmbedRefs): Promise<string[]> {
-  requireSpace(spaceId);
+export async function disallowedRefs(
+  spaceId: string,
+  refs: EmbedRefs,
+  writer: SpaceWriter = {},
+): Promise<string[]> {
+  const { loginId } = requireSpace(spaceId);
   const { ids, refused } = refs;
   if (ids.length === 0) return refused;
   const own = await db
@@ -508,7 +537,19 @@ export async function disallowedRefs(spaceId: string, refs: EmbedRefs): Promise<
     .where(and(eq(nodes.ownerId, spaceId), inArray(nodes.id, ids)));
   const ok = new Set(own.map((r) => r.id));
   const rest = ids.filter((id) => !ok.has(id));
-  if (rest.length) {
+  const adminBrain = writer.adminOfBrain ? await adminBrainOf(loginId, writer.adminOfBrain) : null;
+  if (rest.length && adminBrain) {
+    // The whole brain, at every level. The admin pool (asSystem): the
+    // space role reads no brain row, and the rule is in the query (this
+    // brain's own rows, never a personal space's).
+    const brain = await asSystem(() =>
+      db
+        .select({ id: nodes.id })
+        .from(nodes)
+        .where(and(eq(nodes.ownerId, adminBrain), inArray(nodes.id, rest))),
+    );
+    for (const r of brain) ok.add(r.id);
+  } else if (rest.length) {
     // The Library, read as the team level reads it (row security decides).
     const lib = await withViewer('team', () =>
       db
@@ -521,14 +562,44 @@ export async function disallowedRefs(spaceId: string, refs: EmbedRefs): Promise<
   return [...refused, ...ids.filter((id) => !ok.has(id))];
 }
 
+/**
+ * The brain `brainId` when `loginId` may use it at every level: the login is
+ * an admin that is not disabled, and `brainId` is a brain row. Null
+ * otherwise (the member rule applies). Read on the admin pool: the space role
+ * holds no grant on logins or spaces.
+ */
+async function adminBrainOf(loginId: string, brainId: string): Promise<string | null> {
+  const [row] = await asSystem(() =>
+    db
+      .select({ id: spaces.id })
+      .from(spaces)
+      .innerJoin(authUsers, eq(authUsers.id, loginId))
+      .where(
+        and(
+          eq(spaces.id, brainId),
+          eq(spaces.kind, 'brain'),
+          eq(authUsers.role, 'admin'),
+          isNull(authUsers.disabledAt),
+        ),
+      )
+      .limit(1),
+  );
+  return row?.id ?? null;
+}
+
 /** The embed rule for a page document (kept for its callers). */
 export function disallowedPageRefs(spaceId: string, doc: unknown): Promise<string[]> {
   return disallowedRefs(spaceId, pageRefs(doc));
 }
 
 /** Refuse a save that breaks the embed rule (409 `embed` with the ids). */
-async function assertEmbeds(spaceId: string, refs: EmbedRefs, what: string): Promise<void> {
-  const bad = await disallowedRefs(spaceId, refs);
+async function assertEmbeds(
+  spaceId: string,
+  refs: EmbedRefs,
+  what: string,
+  writer: SpaceWriter = {},
+): Promise<void> {
+  const bad = await disallowedRefs(spaceId, refs, writer);
   if (bad.length) {
     throw new SpaceItemStateError(
       'embed',
@@ -563,10 +634,11 @@ export async function saveMinePage(
   spaceId: string,
   id: string,
   doc: Record<string, unknown>,
-  opts: { baseRev?: number } = {},
+  opts: { baseRev?: number } & SpaceWriter = {},
 ): Promise<CommitPageResult> {
-  await assertEmbeds(spaceId, pageRefs(doc), 'page');
-  const res = await commitPage(spaceId, id, doc, opts);
+  const { adminOfBrain, ...commit } = opts;
+  await assertEmbeds(spaceId, pageRefs(doc), 'page', { adminOfBrain });
+  const res = await commitPage(spaceId, id, doc, commit);
   if (res.ok) await notifySpaceItemChanged(id, 'saved');
   return res;
 }
@@ -576,11 +648,12 @@ export async function saveMineDraw(
   spaceId: string,
   id: string,
   scene: Record<string, unknown>,
-  opts: { baseRev?: number; svg?: string } = {},
+  opts: { baseRev?: number; svg?: string } & SpaceWriter = {},
 ): Promise<CommitDrawResult> {
   requireSpace(spaceId);
-  await assertEmbeds(spaceId, sceneRefs(scene), 'drawing');
-  const res = await commitDraw(spaceId, id, scene, opts);
+  const { adminOfBrain, ...commit } = opts;
+  await assertEmbeds(spaceId, sceneRefs(scene), 'drawing', { adminOfBrain });
+  const res = await commitDraw(spaceId, id, scene, commit);
   if (res.ok) await notifySpaceItemChanged(id, 'saved');
   return res;
 }
@@ -593,6 +666,7 @@ export async function updateMineItem(
   spaceId: string,
   id: string,
   input: UpdateSpaceItemInput,
+  writer: SpaceWriter = {},
 ): Promise<{ row: SpaceItemRow; body: SpaceItemBody } | null> {
   const row = await assertEditable(spaceId, id);
   const { title, icon, content } = input;
@@ -603,7 +677,7 @@ export async function updateMineItem(
     case 'note':
       // A note has no draft: its text is what teammates and a reviewer read,
       // so the embed rule holds on every change.
-      if (content !== undefined) await assertEmbeds(spaceId, noteRefs(content), 'note');
+      if (content !== undefined) await assertEmbeds(spaceId, noteRefs(content), 'note', writer);
       await updateNote(spaceId, id, { title, content });
       break;
     case 'draw':
