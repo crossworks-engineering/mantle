@@ -4,6 +4,29 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.314: embedding means sharing
+
+- **An item's embeds follow it down.** Lowering a page, drawing or note below
+  admin (the Access control, `access_set`, `node_share`, `page_share`, a share
+  link, the accept level) is one admin decision for the item and what it
+  embeds: images, files, drawings and child pages go down with it, in the
+  same transaction. Nothing is ever raised, an embed already lower is left
+  alone, and a kind that can never leave admin is reported (`stillAbove`).
+  Answers carry `alsoLowered`. Folders keep their own rule: a folder's
+  contents do not follow it.
+- **Later embeds follow on save.** A new embed saved into a page, drawing or
+  note below admin takes that level. One an admin raised on purpose stays
+  raised.
+- **Pages lowered before this release** get the same decision applied once
+  per brain on first boot (a marker keeps it from running again).
+- **Share links serve by level.** A page or drawing link serves an embed only
+  at the link's level, so an embed an admin raised back to admin leaves the
+  link.
+- The Access popover says how many embedded items will be shared too before
+  you confirm (client release after this one).
+- `scripts/roll.sh` checks the updater's pre-roll backup line as one quoted
+  phrase (it failed every check on a box whose updater takes the backup).
+
 ## 0.232.309: the client with the audit fixes and Take over
 
 - Pairs the client at jackdaw v0.6.164: Take over and Give back in Team

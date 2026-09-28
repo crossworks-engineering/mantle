@@ -39,7 +39,7 @@ export type AccessNodeView = {
   item: AccessItemView;
   /** What the item's link or embeds need, each at its own level. For a page,
    *  drawing or note: what it embeds (images, files, drawings, child pages,
-   *  transitively), which goes down with it when it is lowered (0.232.311
+   *  transitively), which goes down with it when it is lowered (0.232.314
    *  on; before that it only did on "Lower them too"). For a folder: its
    *  contents, which keep their own levels. */
   closure: AccessItemView[];
@@ -53,7 +53,7 @@ export type AccessNodeView = {
   /** True for a page, drawing or note: lowering it lowers its embeds with it
    *  (embedding means sharing), so the control says what will be shared
    *  instead of offering "Lower them too". False for a folder, whose
-   *  contents keep their levels. Absent from brains before 0.232.311, which
+   *  contents keep their levels. Absent from brains before 0.232.314, which
    *  lower embeds only on request. */
   embedsFollow?: boolean;
   /** Set when a member wrote it and an admin accepted it into the brain (the
@@ -79,7 +79,7 @@ export type AccessNodeUpdate = {
    *  it and, with `withClosure`, a folder's contents. */
   lowered: AccessItemView[];
   /** The embeds that followed it down, with the level each left and took.
-   *  Absent from brains before 0.232.311. */
+   *  Absent from brains before 0.232.314. */
   alsoLowered?: AccessLoweredView[];
   /** Closure items still above the new level: an embed that can never go
    *  below admin, or a folder's contents when not `withClosure`. */
