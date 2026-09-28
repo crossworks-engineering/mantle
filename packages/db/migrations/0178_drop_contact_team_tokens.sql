@@ -1,0 +1,22 @@
+-- Member logins, Phase 6: team codes are retired. The team-code portal
+-- (stage 5) and team links on /s (stage 6) went earlier, so a code opened
+-- nothing; the last thing it did was redeem a member invite once in place of
+-- the invite code. That path is gone with this release: only the 16-char
+-- invite code redeems. With no reader left, the codes' table goes.
+--
+-- The foreign keys, as the live catalog has them (migration 0112; no later
+-- migration touched the table):
+--   contact_team_tokens.contact_id -> nodes  ON DELETE CASCADE
+--     (contact_team_tokens_contact_id_fkey)
+-- `owner_id` carries no FK, and no table references contact_team_tokens.
+-- The FK is dropped by name first, then the table WITHOUT CASCADE: a
+-- dependency this file does not know about (a view, an FK added by hand)
+-- fails the migration instead of being dropped silently. Dropping a table
+-- deletes no row anywhere else: an FK action fires on a row delete, never on
+-- a drop, so every contact, login, invite, app and sandbox stays, and so does
+-- the old portal history (team_messages, team_access_log, team_read_cursors).
+--
+-- Idempotent: IF EXISTS everywhere, so a second run does nothing.
+ALTER TABLE IF EXISTS "contact_team_tokens" DROP CONSTRAINT IF EXISTS "contact_team_tokens_contact_id_fkey";
+--> statement-breakpoint
+DROP TABLE IF EXISTS "contact_team_tokens";
