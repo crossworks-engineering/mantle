@@ -2,8 +2,8 @@
 // @mantle/crypto (AES-256-GCM under the master key); subscriptions hold the
 // relay's routing token + the device's public key.
 
-import { and, eq } from 'drizzle-orm';
-import { db, pushInstance, pushPrefs, pushSubscriptions } from '@mantle/db';
+import { and, eq, isNull } from 'drizzle-orm';
+import { authUsers, db, pushInstance, pushPrefs, pushSubscriptions } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { relayDeleteDevice } from './relay-client';
 
@@ -77,6 +77,32 @@ export async function listSubscriptions(ownerId: string): Promise<DeviceRow[]> {
     })
     .from(pushSubscriptions)
     .where(eq(pushSubscriptions.ownerId, ownerId));
+  return rows as DeviceRow[];
+}
+
+/**
+ * The devices of ACTIVE ADMIN logins only (the "needs you" push: what waits
+ * for an admin is never a member's business). Fails closed: a device with no
+ * login on record, or whose login is a member or deactivated, is left out.
+ */
+export async function listAdminSubscriptions(ownerId: string): Promise<DeviceRow[]> {
+  const rows = await db
+    .select({
+      id: pushSubscriptions.id,
+      routingToken: pushSubscriptions.routingToken,
+      publicKey: pushSubscriptions.publicKey,
+      platform: pushSubscriptions.platform,
+      label: pushSubscriptions.label,
+    })
+    .from(pushSubscriptions)
+    .innerJoin(authUsers, eq(authUsers.id, pushSubscriptions.loginId))
+    .where(
+      and(
+        eq(pushSubscriptions.ownerId, ownerId),
+        eq(authUsers.role, 'admin'),
+        isNull(authUsers.disabledAt),
+      ),
+    );
   return rows as DeviceRow[];
 }
 

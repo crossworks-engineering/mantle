@@ -46,7 +46,7 @@
 import { copyFile, mkdir, rename, rm } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { and, asc, eq, inArray, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   authUsers,
@@ -266,11 +266,11 @@ function rowOf({ node, item, author }: Joined): ReviewItemRow {
 
 /** Everything waiting for an admin: submitted items (oldest first), then
  *  what deactivated logins left shared with the team. */
-export async function listReviewQueue(): Promise<{
+export async function listReviewQueue(via: Pick<Tx, 'select'> = db): Promise<{
   items: ReviewItemRow[];
   counts: { submitted: number; leftBehind: number };
 }> {
-  const rows = await reviewQuery()
+  const rows = await reviewQuery(via)
     .where(reviewable)
     .orderBy(asc(spaceItems.submittedAt), asc(nodes.updatedAt))
     .limit(500);
@@ -302,6 +302,54 @@ export async function countSubmitted(via: Pick<Tx, 'select'> = db): Promise<numb
       ),
     );
   return r?.n ?? 0;
+}
+
+/**
+ * The Review queue in numbers, for the "needs you" count: ONE count query
+ * over the exact condition the queue lists (`reviewable`), split the way
+ * `rowOf` splits it, so the count never disagrees with the tab and never
+ * stops at the list's cap. `via` reads on another connection (a test's one
+ * snapshot).
+ */
+export async function countReviewQueue(
+  via: Pick<Tx, 'select'> = db,
+): Promise<{ submitted: number; leftBehind: number }> {
+  // rowOf: 'submitted' when submitted, or taken by a gone admin while the
+  // author is still active; everything else the queue lists is left behind.
+  const waiting = sql`(${spaceItems.reviewState} = 'submitted' or (${spaceItems.reviewState} = 'taken'
+    and ${authUsers.id} is not null and ${authUsers.disabledAt} is null))`;
+  const [r] = await via
+    .select({
+      submitted: sql<number>`count(*) filter (where ${waiting})::int`,
+      all: sql<number>`count(*)::int`,
+    })
+    .from(nodes)
+    .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
+    .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+    .leftJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
+    .leftJoin(taker, eq(taker.id, spaceItems.takenBy))
+    .where(reviewable);
+  const submitted = r?.submitted ?? 0;
+  return { submitted, leftBehind: (r?.all ?? 0) - submitted };
+}
+
+/** The item submitted most recently (a "needs you" notification names its
+ *  title and author, never its content); null when nothing is submitted. */
+export async function newestSubmitted(
+  via: Pick<Tx, 'select'> = db,
+): Promise<{ id: string; title: string; from: string; at: string } | null> {
+  const [j] = await reviewQuery(via)
+    .where(and(reviewable, eq(spaceItems.reviewState, 'submitted')))
+    .orderBy(desc(spaceItems.submittedAt))
+    .limit(1);
+  if (!j) return null;
+  const row = rowOf(j);
+  return {
+    id: row.id,
+    title: row.title,
+    from: row.author.name,
+    at: row.submittedAt ?? row.updatedAt,
+  };
 }
 
 async function reviewRow(

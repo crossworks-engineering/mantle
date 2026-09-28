@@ -98,6 +98,24 @@ type TeamRequestData = {
 /** Every team-request task for this owner, newest first. `contactId` narrows
  *  to one requester — the Members tab's per-person view (filtered in SQL, not
  *  by loading the whole queue and discarding most of it). */
+/** Unresolved team requests, counted (the Requests badge and the "needs you"
+ *  count): the same condition as `listTeamRequests` with status 'open', with
+ *  no cap. */
+export async function countOpenTeamRequests(ownerId: string): Promise<number> {
+  const [r] = await db
+    .select({ n: count() })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'task'),
+        sql`${TEAM_REQUEST_TAG} = ANY(${nodes.tags})`,
+        sql`coalesce(${nodes.data}->>'status', 'open') <> 'done'`,
+      ),
+    );
+  return Number(r?.n ?? 0);
+}
+
 export async function listTeamRequests(
   ownerId: string,
   opts: { status?: 'open' | 'done' | 'all'; limit?: number; contactId?: string } = {},

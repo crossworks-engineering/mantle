@@ -8,13 +8,15 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { db, agents, assistantMessages } from '@mantle/db';
 import { countPending, listPendingCalls } from '@mantle/tools';
-import { loadProfilePreferences } from '@mantle/content';
+import { loadNeedsYou, loadProfilePreferences } from '@mantle/content';
+import { needsYouArrivals, needsYouMessage, rememberArrivals } from './needs-you';
 import { sealToDevice } from './seal';
 import { relayNotify } from './relay-client';
 import {
   deleteSubscriptionByRoutingToken,
   getPushInstance,
   getPushPrefs,
+  listAdminSubscriptions,
   listSubscriptions,
   markPushed,
   type DeviceRow,
@@ -208,5 +210,45 @@ export async function pushApproval(ownerId: string): Promise<PushResult> {
     ts: Date.now(),
   };
   const { delivered, dropped } = await sendToDevices(instance, devices, payload, 'approvals');
+  return { attempted: devices.length, delivered, dropped };
+}
+
+/**
+ * Push a "needs you" notice (a member submitted an item for review, or filed
+ * a team request) to the devices of ACTIVE ADMIN logins only, never a
+ * member's. Only an arrival pushes (see needsYouArrivals): the same NOTIFY
+ * fires when something leaves a queue. `seen` is the caller's per-process
+ * memory of what was pushed; the caller runs one call at a time. Title and
+ * author only, never content (and sealed to the device like every push).
+ * Gated by the approvals toggle ("things waiting for you"); unlike an
+ * approval it does not follow reminderChannel: there is no Telegram card for
+ * it to double. Collapses on "needs-you" so a newer notice replaces an older.
+ */
+export async function pushNeedsYou(
+  ownerId: string,
+  seen: Set<string>,
+  now = Date.now(),
+): Promise<PushResult> {
+  const instance = await getPushInstance();
+  if (!instance) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'not_connected' };
+
+  const prefs = await getPushPrefs();
+  if (!prefs.approvals) return { attempted: 0, delivered: 0, dropped: 0, skipped: 'disabled' };
+
+  const n = await loadNeedsYou(ownerId);
+  const arrivals = needsYouArrivals(n, seen, now);
+  if (arrivals.length === 0) {
+    return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_message' };
+  }
+  // Remembered before sending: a failed send is not retried by the next event.
+  rememberArrivals(seen, arrivals);
+
+  const devices = await listAdminSubscriptions(ownerId);
+  if (devices.length === 0)
+    return { attempted: 0, delivered: 0, dropped: 0, skipped: 'no_devices' };
+
+  const m = needsYouMessage(arrivals[0]!, n.total);
+  const payload: PushPayload = { v: 1, t: m.title, b: m.body, deepLink: m.deepLink, ts: now };
+  const { delivered, dropped } = await sendToDevices(instance, devices, payload, 'needs-you');
   return { attempted: devices.length, delivered, dropped };
 }

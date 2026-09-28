@@ -559,6 +559,42 @@ export type TeamRequest = {
   notifiedAt: string | null;
 };
 
+/** The newest thing waiting in one "needs you" queue: its title and who it
+ *  is from, never its content (a notification shows exactly this). */
+export type NeedsYouItem = {
+  id: string;
+  title: string;
+  /** The member's display name (or the email's local part). */
+  from: string;
+  /** When it started waiting (submitted, or the request was filed). */
+  at: string;
+};
+
+/**
+ * GET /api/team-admin/needs-you: what waits for an admin, as counts from
+ * count queries (never a capped list), so every window and device shows the
+ * same number. The owner live stream (/api/realtime) sends a change typed
+ * `needs_you` whenever one of these counts may have moved; the client
+ * refetches this. Admins only: a member login gets 403.
+ */
+export type NeedsYou = {
+  review: {
+    /** Items members submitted (incl. taken items whose admin is gone). */
+    submitted: number;
+    /** Team-shared items deactivated logins left behind. */
+    leftBehind: number;
+    /** The newest submitted item, or null. */
+    newest: NeedsYouItem | null;
+  };
+  requests: {
+    /** Open (not done) team requests. */
+    open: number;
+    newest: NeedsYouItem | null;
+  };
+  /** review.submitted + review.leftBehind + requests.open. */
+  total: number;
+};
+
 export type AccountFoldersResult =
   | {
       ok: true;

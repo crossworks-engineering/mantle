@@ -4,6 +4,8 @@ import { db, nodes } from '@mantle/db';
 import {
   APP_NAV_CHANGED_CHANNEL,
   COMMENTS_CHANGED_CHANNEL,
+  NEEDS_YOU_CHANGED_CHANNEL,
+  NEEDS_YOU_REALTIME_TYPE,
   SPACE_ITEM_CHANGED_CHANNEL,
   TASKS_CHANGED_CHANNEL,
   parseSpaceItemChange,
@@ -108,6 +110,14 @@ async function ensureListening(): Promise<void> {
     const subPending = await sql.listen(PENDING_CHANGED_CHANNEL, (ownerId) => {
       broadcast({ ownerId, type: 'pending_tool_call', id: '' });
     });
+    // "Needs you" (migration 0186 triggers): a Review item or a team request
+    // started or stopped waiting for an admin. Owner-id payload, like
+    // pending_changed. It reaches admin sessions only: /api/realtime is the
+    // owner stream (members are refused there), and the member stream reads
+    // spaceSubs, never this. The client refetches /api/team-admin/needs-you.
+    const subNeedsYou = await sql.listen(NEEDS_YOU_CHANGED_CHANNEL, (ownerId) => {
+      if (ownerId) broadcast({ ownerId, type: NEEDS_YOU_REALTIME_TYPE, id: '' });
+    });
     // Runner-queue changes (a run created / an item changing state / a run
     // finishing). Same owner-id-as-payload shape as `pending_changed`; raised
     // by the migration-0135 triggers rather than by application code, so no
@@ -181,6 +191,7 @@ async function ensureListening(): Promise<void> {
         await subIngested.unlisten();
         await subIndexed.unlisten();
         await subPending.unlisten();
+        await subNeedsYou.unlisten();
         await subRuns.unlisten();
         await subTasks.unlisten();
         await subAppNav.unlisten();

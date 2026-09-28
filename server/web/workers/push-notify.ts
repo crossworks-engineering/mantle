@@ -1,6 +1,8 @@
 /**
  * Push-notify worker. LISTENs on `conversation_changed` (the trigger from
- * migration 0091, also driving the SSE live stream) and, for every **outbound**
+ * migration 0091, also driving the SSE live stream), `pending_changed`
+ * (approvals) and `needs_you_changed` (migration 0186: a member submitted for
+ * review or filed a request; admin devices only) and, for every **outbound**
  * turn, seals a teaser to the owner's enrolled devices and hands it to Mantle
  * Push (push-notifications.md §8/§10). Its own dedicated LISTEN connection — a
  * separate process from the web app, so it doesn't share the web's in-process
@@ -20,7 +22,8 @@
  */
 import postgres from 'postgres';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
-import { pushApproval, pushOutbound, wantsOutboundPush } from '../lib/push/notify';
+import { NEEDS_YOU_CHANGED_CHANNEL } from '@mantle/content';
+import { pushApproval, pushNeedsYou, pushOutbound, wantsOutboundPush } from '../lib/push/notify';
 import { runWorker } from './_runner';
 import { env } from '@mantle/config';
 
@@ -67,6 +70,25 @@ async function handlePending(ownerId: string): Promise<void> {
   }
 }
 
+// "Needs you" (migration 0186): what was pushed, per process, and one
+// handler at a time, so a burst of events can never push one arrival twice.
+const needsYouSeen = new Set<string>();
+let needsYouChain: Promise<void> = Promise.resolve();
+
+function handleNeedsYou(ownerId: string): void {
+  if (!ownerId) return;
+  needsYouChain = needsYouChain.then(async () => {
+    try {
+      const r = await pushNeedsYou(ownerId, needsYouSeen);
+      if (!r.skipped) {
+        console.log(`[push-notify] needs-you: delivered ${r.delivered}/${r.attempted}`);
+      }
+    } catch (err) {
+      console.error('[push-notify] needs-you send failed:', (err as Error).message);
+    }
+  });
+}
+
 // This worker is a pure LISTEN loop with no business tick, so the runner's
 // heartbeat measures event-loop liveness — exactly the health signal we want.
 runWorker('push-notify', async () => {
@@ -74,7 +96,9 @@ runWorker('push-notify', async () => {
   // Needed to decrypt the instance token at rest (@mantle/crypto).
   if (!env('MANTLE_MASTER_KEY')) throw new Error('MANTLE_MASTER_KEY must be set');
 
-  console.log('[push-notify] listening on conversation_changed + pending_changed');
+  console.log(
+    '[push-notify] listening on conversation_changed + pending_changed + needs_you_changed',
+  );
   const sql = postgres(url, { max: 1, prepare: false });
   const subConversation = await sql.listen('conversation_changed', (payload) => {
     void handleConversation(payload);
@@ -83,10 +107,13 @@ runWorker('push-notify', async () => {
     void handlePending(ownerId);
   });
 
+  const subNeedsYou = await sql.listen(NEEDS_YOU_CHANGED_CHANNEL, handleNeedsYou);
+
   return async () => {
     try {
       await subConversation.unlisten();
       await subPending.unlisten();
+      await subNeedsYou.unlisten();
       await sql.end({ timeout: 5 });
     } catch {
       /* ignore */

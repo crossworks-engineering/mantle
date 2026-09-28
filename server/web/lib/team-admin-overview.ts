@@ -4,7 +4,7 @@
  * tab loaded first — one helper, one definition of "what's awaiting the
  * specialist".
  */
-import { listTeamRequests } from '@mantle/content';
+import { countOpenTeamRequests } from '@mantle/content';
 
 export type TeamAdminBadges = {
   /** The Requests-tab badge: open change requests, everything awaiting the
@@ -13,6 +13,7 @@ export type TeamAdminBadges = {
 };
 
 export async function teamAdminBadges(userId: string): Promise<TeamAdminBadges> {
-  const openRequestCount = await listTeamRequests(userId, { status: 'open' }).then((r) => r.length);
-  return { openRequestCount };
+  // A count query, not the list (which stops at 100): the badge must agree
+  // with the "needs you" count on every device.
+  return { openRequestCount: await countOpenTeamRequests(userId) };
 }

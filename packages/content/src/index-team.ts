@@ -71,6 +71,7 @@ export {
 
 export {
   listTeamRequests,
+  countOpenTeamRequests,
   notifyTeamRequester,
   countTeamRequestsFiled,
   markTeamRequestReviewed,
@@ -80,6 +81,13 @@ export {
   type TeamRequest,
   type NotifyTeamRequesterResult,
 } from './team-requests';
+
+export {
+  NEEDS_YOU_CHANGED_CHANNEL,
+  NEEDS_YOU_REALTIME_TYPE,
+  loadNeedsYou,
+  type NeedsYou,
+} from './needs-you';
 
 export { dedupeFilename } from './dedupe-filename';
 
@@ -221,12 +229,14 @@ export {
   acceptOwnItem,
   acceptReviewItem,
   addReviewComment,
+  countReviewQueue,
   countSubmitted,
   deleteReviewComment,
   discardLeftBehind,
   getReviewItem,
   listReviewComments,
   listReviewQueue,
+  newestSubmitted,
   openReviewFile,
   previewAccept,
   returnReviewItem,
