@@ -27,6 +27,17 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - `scripts/roll.sh` checks the updater's pre-roll backup line as one quoted
   phrase (it failed every check on a box whose updater takes the backup).
 
+## 0.232.310 to 0.232.313: files, agents and onboarding
+
+Tagged together with 0.232.314 (these releases were not tagged on their own).
+
+- Deleting a folder no longer removes files on disk that the brain does not
+  track.
+- A file name is unique per folder, not per brain.
+- Deleting an agent can keep or delete its conversation.
+- Onboarding refuses an over-long purpose instead of trimming it.
+- Model pool prices round, so onboarding cards stop showing float noise.
+
 ## 0.232.309: the client with the audit fixes and Take over
 
 - Pairs the client at jackdaw v0.6.164: Take over and Give back in Team
