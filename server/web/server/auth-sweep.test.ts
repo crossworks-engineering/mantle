@@ -154,6 +154,21 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
     expect(team.status).toBe(404);
   });
 
+  // Migration 0177 dropped the forum tables; the archive export went with
+  // them, so an older client's export banner finds no route.
+  it('the retired forum export route is not routed', async () => {
+    expect(manifest.filter((e) => e.pattern.startsWith('/api/team-admin/forum'))).toEqual([]);
+    const { buildSessionCookie } = await import('../lib/auth');
+    const cookie = `mantle_session=${buildSessionCookie('11111111-1111-4111-8111-111111111111').value}`;
+    for (const method of ['GET', 'POST']) {
+      const res = await app.request('/api/team-admin/forum/export', {
+        method,
+        headers: { cookie },
+      });
+      expect(res.status, method).toBe(404);
+    }
+  });
+
   it('lists which manifest routes are public, so a new public prefix is a visible diff', () => {
     const publicPatterns = manifest
       .filter((e) => isPublic(concretePath(e.pattern)))

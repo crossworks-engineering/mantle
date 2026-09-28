@@ -651,8 +651,8 @@ is a member login. Nobody hands a password around. The table is
     away.
   - Kept: `contact_team_tokens` and the code check invites need
     (`verifyTeamToken`), `team_messages` / `team_access_log` /
-    `team_read_cursors` with their admin readers, the forum tables and the
-    archive export (their drop is a later stage).
+    `team_read_cursors` with their admin readers. The forum tables and the
+    archive export were kept until migration 0177 dropped them (below).
 - **Team links are retired** (Phase 6 stage 6, migration 0176). Members read
   team items by level with their own logins, so a team item has no link:
   - 0176 revoked every team-mode link that was not revoked yet, an expired
@@ -686,6 +686,14 @@ is a member login. Nobody hands a password around. The table is
   - Contract: `ShareMode` is `'public'` (it was `'public' | 'team'`), so
     `AccessLinkView.mode` and `AppRow.shareMode` are `'public'` (or null).
     `DELETE /api/shares/:id` no longer answers `keptTeam`.
+- **The forum tables are dropped** (Phase 6, migration 0177). With every
+  topic in the Forum archive, `forum_topics`, `forum_posts`,
+  `forum_uploads` and `forum_read_cursors` went, and with them the export,
+  its boot task and `GET/POST /api/team-admin/forum/export` (now 404). The
+  archive pages and the files the export filed stay, and stay un-indexed.
+  A topic with no archive page aborts the migration. Details, with every
+  foreign key and how it was dropped: [team-forum.md](./team-forum.md)
+  section 8. Test: `packages/db/src/drop-forum-tables.db.test.ts`.
 - **Tests.** `packages/content/src/member-invites.db.test.ts` and
   `member-history-links.db.test.ts` (Postgres: 0175's backfill and the
   redeem's), `packages/tools/src/builtins-team-portal.db.test.ts`,

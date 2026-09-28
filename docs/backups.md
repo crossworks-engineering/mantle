@@ -11,13 +11,13 @@ work by pointing at a directory.
 
 Configure at **Settings → Backups**:
 
-| Setting | Meaning | Default |
-|---|---|---|
-| Enabled | master switch | off |
-| Frequency | daily, or weekly (Sundays) | daily |
-| At hour | hour of day **in your profile timezone** | 02:00 |
-| Keep | newest N dumps retained (rotation) | 7 |
-| Folder | destination directory | `MANTLE_BACKUP_DIR` → `/data/backups` in Docker (host: `${MANTLE_DATA_DIR}/backups`) |
+| Setting   | Meaning                                  | Default                                                                              |
+| --------- | ---------------------------------------- | ------------------------------------------------------------------------------------ |
+| Enabled   | master switch                            | off                                                                                  |
+| Frequency | daily, or weekly (Sundays)               | daily                                                                                |
+| At hour   | hour of day **in your profile timezone** | 02:00                                                                                |
+| Keep      | newest N dumps retained (rotation)       | 7                                                                                    |
+| Folder    | destination directory                    | `MANTLE_BACKUP_DIR` → `/data/backups` in Docker (host: `${MANTLE_DATA_DIR}/backups`) |
 
 The page also offers **Run backup now**, shows the last-run status (success or
 the error), and lists the dumps currently on disk.
@@ -59,14 +59,14 @@ Engine: [`packages/content/src/backup.ts`](../packages/content/src/backup.ts).
 Your offsite sync should include, from `${MANTLE_DATA_DIR}` (default
 `./data` next to the compose file):
 
-| Path | What it is |
-|---|---|
-| `backups/` | the rotated DB dumps (this feature's output) |
-| `files/` | your host-mirrored files (`/files` surface) |
-| `rustfs/` | attachment object bytes: the RustFS object store's data dir, not plain files (a restore needs the same RustFS version; see below) |
-| `minio/` | only on boxes that ran MinIO before 2026-09: the pre-switch copy kept for rollback, removable once `objectstore:verify` has been green for a couple of weeks ([deploy.md §5c](./deploy.md#5c-object-store-rustfs)) |
-| `forum-uploads/` | quarantined member forum uploads awaiting review, the ONLY copy of a pending upload until you file it |
-| `spaces/` | members' personal-space file bytes (also archived by every backup as `mantle-spaces-<ts>.tgz`) |
+| Path             | What it is                                                                                                                                                                                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `backups/`       | the rotated DB dumps (this feature's output)                                                                                                                                                                                                                     |
+| `files/`         | your host-mirrored files (`/files` surface)                                                                                                                                                                                                                      |
+| `rustfs/`        | attachment object bytes: the RustFS object store's data dir, not plain files (a restore needs the same RustFS version; see below)                                                                                                                                |
+| `minio/`         | only on boxes that ran MinIO before 2026-09: the pre-switch copy kept for rollback, removable once `objectstore:verify` has been green for a couple of weeks ([deploy.md §5c](./deploy.md#5c-object-store-rustfs))                                               |
+| `forum-uploads/` | only on boxes that ran the retired team forum: its old upload quarantine. Nothing reads it since the forum tables were dropped (migration 0177); the Forum archive export filed every upload whose bytes were there ([team-forum.md](./team-forum.md) section 8) |
+| `spaces/`        | members' personal-space file bytes (also archived by every backup as `mantle-spaces-<ts>.tgz`)                                                                                                                                                                   |
 
 One `rsync -a` of the `data/` directory (minus `postgres/`, the live cluster
 files are useless mid-write; the dumps are the DB backup) covers everything.
@@ -92,8 +92,8 @@ docker compose up -d --wait
 `mantle-spaces-<ts>.tgz` beside the dump (into `${MANTLE_DATA_DIR}/spaces`,
 only while that folder is empty).
 
-Files, the object store, and pending forum uploads restore by putting the
-`files/`, `rustfs/`, and `forum-uploads/` directories back under
+Files and the object store restore by putting the
+`files/` and `rustfs/` directories back under
 `${MANTLE_DATA_DIR}` while the stack is stopped. `rustfs/` is RustFS's own
 on-disk format, so restore it under the same RustFS version that wrote it
 (`RUSTFS_IMAGE_TAG`, default in `docker-compose.yml`). Then prove the object

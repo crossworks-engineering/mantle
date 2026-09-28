@@ -14,11 +14,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL_ = process.env.MANTLE_TEST_DATABASE_URL;
 
-// The brain side of the stub (failing a pending reply, the archive export) is
-// covered on Postgres by packages/content/src/forum/export.db.test.ts; here it
-// is stubbed so the test is only about DBOS.
-vi.mock('@mantle/content', () => ({ failPendingForumReplies: vi.fn(async () => 1) }));
-vi.mock('../forum-archive-boot', () => ({ runForumArchiveBootTask: vi.fn(async () => {}) }));
 vi.mock('@mantle/runtime/assistant', async () => ({
   RETIRED_FORUM_TURN_WORKFLOW: (await import('../../../../packages/runtime/src/assistant/contract'))
     .RETIRED_FORUM_TURN_WORKFLOW,
@@ -84,7 +79,7 @@ describe.skipIf(!URL_)('a leftover forum turn on a real DBOS', () => {
         setTimeout(() => reject(new Error('the forum turn never finished')), 30_000),
       ),
     ]);
-    expect(result).toEqual({ retired: true, failedReplies: 1 });
+    expect(result).toEqual({ retired: true });
     expect((await client.getWorkflow(workflowID))?.status).toBe('SUCCESS');
   }, 45_000);
 });

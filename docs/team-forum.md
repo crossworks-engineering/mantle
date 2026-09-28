@@ -10,8 +10,8 @@
 > `/api/team-admin/topics`), the turn runner (`runForumTurn`, the
 > `forumTurnWorkflow` workflow, the `mantle_forum` queue) and the forum
 > modules of `@mantle/content`. Its content lives on as the admin-level
-> **Forum archive** pages (section 8); the forum tables and the export stay
-> until the tables are dropped. The rest of this document describes the forum
+> **Forum archive** pages (section 8). Migration 0177 dropped the forum tables
+> and the export went with them. The rest of this document describes the forum
 > as it ran.
 
 The Forum is the team's shared conversation surface at `/team/forum`, the
@@ -91,6 +91,10 @@ both team surfaces.
 
 ## 5. Data model (migration 0123)
 
+> Dropped by migration 0177 (member logins Phase 6), after every topic was
+> exported into the Forum archive (section 8). What follows is how the tables
+> were.
+
 - **`forum_topics`**: kind / visibility / pinned / status, author snapshot,
   denormalized `post_count` + `last_post_at`, and `node_id` reserved for the
   Phase 3 shadow ingestion node.
@@ -167,8 +171,9 @@ with status 410 (forum-closed, deleted in stage 5).
 turn; a turn already
 queued before the freeze ran to completion.
 
-**The archive.** `exportForumArchive`
-(`packages/content/src/forum/export.ts`) freezes the forum into pages:
+**The archive.** `exportForumArchive` (`packages/content/src/forum/export.ts`,
+deleted with the tables; see "The tables are dropped" below) froze the forum
+into pages:
 
 - One **"Forum archive"** page, and under it one page per topic, private
   topics included. The page is admin level (the default for a new item), so
@@ -203,19 +208,18 @@ no model and no embedder. So search and the agents never read the archive
 pages; an admin reads them in Pages.
 
 **Idempotent.** `forum_topics.node_id` (reserved since migration 0123, unused
-until now) is the per-topic done-marker. A run adopts what an interrupted run
-left (a topic page by its topic id, a filed upload by its upload id), so
-running it again creates nothing. A topic with an agent reply still pending is
-deferred to a later run. A transaction-scoped advisory lock keeps two runs
-apart; the second one answers `busy`.
+until the export) was the per-topic done-marker. A run adopted what an
+interrupted run left (a topic page by its topic id, a filed upload by its
+upload id), so running it again created nothing. A topic with an agent reply
+still pending was deferred to a later run. A transaction-scoped advisory lock
+kept two runs apart; the second one answered `busy`.
 
-**Who runs it.** Both call the same function:
-
-| Trigger                             | What                                                                                                                                                                                                             |
-| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| api server boot                     | `server/api/src/forum-archive-boot.ts`: at every start, one count query; the export runs only while a topic has no page. Never blocks boot, never throws                                                         |
-| `GET /api/team-admin/forum/export`  | Admin only. `{ unexported }`: topics with no page yet                                                                                                                                                            |
-| `POST /api/team-admin/forum/export` | Admin only. 200 with `{ status: 'done', exported, deferred, alreadyExported, archivePageId, dumpFileId, uploadsFiled, uploadsMissing, tasksLinked }`; 409 `{ error, reason: 'busy' }` while a run holds the lock |
+**Who ran it** (both gone with the tables): an api server boot task
+(`server/api/src/forum-archive-boot.ts`, one count query at every start, the
+export only while a topic had no page) and the admin's
+`GET/POST /api/team-admin/forum/export` (`{ unexported }`, and the run's
+counts or 409 `busy`). Since 0177 that route is not routed: GET and POST
+answer 404, so a client's "export the forum" banner finds nothing to count.
 
 **Showing a page to the team, by hand.** The archive stays admin level on
 purpose: private topics sit next to team ones. To share one topic page, an
@@ -229,32 +233,49 @@ each file's level the same way if the team should open it. The page stays out
 of the brain either way: its level decides who may open it, not whether it
 is indexed.
 
-**Tests.** `packages/content/src/forum/export.db.test.ts` (Postgres: two runs,
-no duplicates, the cost checks, the lock, deferral, adoption and the
-stale-reply sweep),
-`server/web/app/api/team-admin/forum/export/export-route.test.ts`,
-`server/api/src/forum-archive-boot.test.ts`,
-`server/api/src/workflows/forum-turn-retired.test.ts` and
-`forum-turn-retired.db.test.ts` (the stub), and the `extract_exempt` case in
-`server/api/src/agent/extract/gates.test.ts`.
-
 **Deleted (stage 5).** The routes, the turn pipeline and the content code
-went; the export (`export.ts`), its boot task and `GET/POST
-/api/team-admin/forum/export` stay while the tables do. Two things keep an
-upgrade clean:
+went. A forum turn still queued or in flight when a box upgrades has no
+runner, so `server/api/src/workflows/forum-turn-retired.ts` registers a no-op
+under the old name (`forumTurnWorkflow`) that ends it in SUCCESS. Without it
+DBOS finds no function for the name and the turn stays PENDING, retried on
+every boot. The `mantle_forum` queue is no longer registered; its row in the
+DBOS system database persists on a box that had it, so the queue runner still
+dispatches a leftover turn into the stub (`forum-turn-retired.db.test.ts`
+proves it on a real DBOS). Until 0177 the stub also failed the topic's
+pending agent reply and ran the export; since then it reads and writes
+nothing.
 
-- **A forum turn still queued or in flight** when a box upgrades has no
-  runner. `server/api/src/workflows/forum-turn-retired.ts` registers a no-op
-  under the old name (`forumTurnWorkflow`): it fails that topic's pending
-  agent reply, runs the archive boot task, and ends in SUCCESS. Without it
-  DBOS finds no function for the name and the turn stays PENDING, retried on
-  every boot. The `mantle_forum` queue is no longer registered; its row in the
-  DBOS system database persists on a box that had it, so the queue runner
-  still dispatches a leftover turn into the stub
-  (`forum-turn-retired.db.test.ts` proves it on a real DBOS).
-- **A pending reply nothing will finish.** The export fails an agent reply
-  pending for more than 15 minutes (`STALE_REPLY_MS`, the old runner's
-  stale-pending sweep) before it looks for topics to defer, so such a topic is
-  archived with "This reply failed" instead of being deferred for good.
+**The tables are dropped (migration 0177).** Every box had exported all its
+topics, so `forum_topics`, `forum_posts`, `forum_uploads` and
+`forum_read_cursors` went, and with them the export, its boot task, the
+export route, the Drizzle schema, the quarantine helpers of `@mantle/files`
+(`quarantine.ts`, `quarantineRoot`) and the file delete's clearing of
+`forum_uploads.node_id`.
 
-The archive pages, filed files, dump and task links stay.
+- **The foreign keys.** `forum_posts.topic_id`, `forum_uploads.topic_id` and
+  `forum_uploads.post_id` were ON DELETE CASCADE inside the forum;
+  `forum_topics.created_by_contact_id`, `forum_posts.contact_id`,
+  `forum_uploads.contact_id` (to `nodes`) and `forum_posts.agent_id` (to
+  `agents`) were SET NULL. No other table references a forum table
+  (`team_notifications` holds topic ids with no FK). 0177 drops each FK by
+  name, then each table WITHOUT CASCADE, so an unexpected dependency (a view,
+  a hand-added FK) fails the migration instead of being dropped with it. A
+  drop deletes no row anywhere else.
+- **A guard.** A topic with no archive page (`node_id` null) aborts 0177: its
+  content exists nowhere else. On such a box, run the export on the previous
+  release, then upgrade again.
+- **Kept.** The archive pages, the files the export filed, the dump, the task
+  links (`data.teamRequest.archivePageId`) and the extraction exemption for
+  the pages (`data.source = 'forum-archive'`, which needs no forum table).
+  The `Forum*` DTOs in `@mantle/client-types` stay one more contract cycle,
+  frozen, for clients that still name them; the team-admin answers carry the
+  forum parts empty. The quarantine directory (`forum-uploads/`, a sibling of
+  the files root) is left on disk; nothing reads it now.
+
+**Tests.** `packages/db/src/drop-forum-tables.db.test.ts` (Postgres: the
+tables gone after migrate; put back and seeded, 0177 refuses an unexported
+topic, fails on an unknown view, drops the four tables and leaves the archive
+pages, filed files, apps and their nodes, sandboxes, team messages and team
+codes with the same counts; a second run is a no-op),
+`server/api/src/workflows/forum-turn-retired{,.db}.test.ts` (the stub), and
+the `extract_exempt` case in `server/api/src/agent/extract/gates.test.ts`.

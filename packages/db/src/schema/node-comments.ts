@@ -11,8 +11,8 @@ export type NodeCommentAuthorKind = 'owner' | 'member' | 'agent';
  * pages/notes can adopt it without a migration. Flat, chronological,
  * multi-author; the discussion thread on a task's detail pane.
  *
- * `author_kind` distinguishes the three voices (same vocabulary as
- * `forum_posts`): `owner` is any admin login (`login_id` — logins share one
+ * `author_kind` distinguishes the three voices (the vocabulary the retired
+ * forum's posts used): `owner` is any admin login (`login_id` — logins share one
  * brain, so the name snapshot is what tells them apart), `member` is a
  * contact holding a team token (`contact_id`), `agent` is an assistant
  * (`agent_id`). All three author FKs go SET NULL on deletion with

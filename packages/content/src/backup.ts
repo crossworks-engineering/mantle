@@ -23,9 +23,8 @@
  *     `backup` / `backupStatus` keys, jsonb-merged) so the settings UI and
  *     the worker share one source of truth.
  *
- * Object bytes (data/rustfs), host files (data/files), and quarantined member
- * forum uploads awaiting review (data/forum-uploads) are already plain files
- * on disk next to this directory in the default layout — the offsite copy
+ * Object bytes (data/rustfs) and host files (data/files) are already plain
+ * files on disk next to this directory in the default layout — the offsite copy
  * should include them; the settings page says so. Members' personal-space
  * file bytes (MANTLE_SPACES_ROOT) are archived here too, as
  * `mantle-spaces-<ts>.tgz`: they are the only copy of a member's upload.

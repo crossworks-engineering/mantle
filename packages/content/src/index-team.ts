@@ -70,21 +70,6 @@ export {
   type NotifyTeamRequesterResult,
 } from './team-requests';
 
-// The Forum archive (member logins Phase 6): what is left of the forum code.
-// The forum tables stay until they are dropped, so the export can still run.
-export {
-  exportForumArchive,
-  countUnexportedForumTopics,
-  failPendingForumReplies,
-  STALE_REPLY_MS,
-  FORUM_ARCHIVE_TITLE,
-  FORUM_ARCHIVE_TAG,
-  FORUM_ARCHIVE_UPLOADS_PATH,
-  FORUM_ARCHIVE_DUMP_PATH,
-  type ForumExportResult,
-} from './forum/export';
-
-export { formatAttachmentSize } from './forum-uploads-meta';
 export { dedupeFilename } from './dedupe-filename';
 
 export {
