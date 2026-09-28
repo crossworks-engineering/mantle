@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureTestAnchor, notifyBarrier, pollUntil } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -37,6 +38,9 @@ describe.skipIf(!URL)('member personal space: tables and files', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-spaces-'));
 
   const asA = <T>(fn: () => Promise<T>) => m.withSpace({ spaceId: spaceA, loginId: loginA }, fn);
+  /** The admin pool's own postgres-js client. */
+  const adminSql = () =>
+    (m.systemDb as unknown as { $client: Parameters<typeof ensureTestAnchor>[0] }).$client;
   const asB = <T>(fn: () => Promise<T>) => m.withSpace({ spaceId: spaceB, loginId: loginB }, fn);
 
   const spool = (text: string) =>
@@ -315,26 +319,15 @@ describe.skipIf(!URL)('member personal space: tables and files', () => {
   });
 
   it('nothing in the space was ever announced to the extractor', async () => {
-    await new Promise((r) => setTimeout(r, 300));
+    await notifyBarrier(adminSql(), 'node_ingested', { seen: (s) => announced.includes(s) });
     expect(announced.filter((id) => [tableId, fileId].includes(id))).toEqual([]);
   });
 
   // ── The save-time embed rule ──────────────────────────────────────────────
 
   it('a saved page embeds only own items and Library items', async () => {
-    let anchor = (
-      (await m.systemDb.execute(sqlTag`select mantle_brain_id() as id`)) as unknown as {
-        id: string | null;
-      }[]
-    )[0]?.id;
-    let madeAnchor = false;
-    if (!anchor) {
-      anchor = randomUUID();
-      madeAnchor = true;
-      await m.systemDb.execute(sqlTag`
-        insert into auth.users (id, email, password_hash, is_owner)
-        values (${anchor}, ${`${tag}-owner@example.invalid`}, 'x', true)`);
-    }
+    // The shared test anchor (never deleted by a test).
+    const anchor = await ensureTestAnchor(adminSql());
     const libPage = randomUUID();
     const adminPage = randomUUID();
     await m.systemDb.execute(sqlTag`
@@ -433,10 +426,6 @@ describe.skipIf(!URL)('member personal space: tables and files', () => {
       });
     } finally {
       await m.systemDb.execute(sqlTag`delete from nodes where id in (${libPage}, ${adminPage})`);
-      if (madeAnchor) {
-        await m.systemDb.execute(sqlTag`delete from spaces where id = ${anchor}`);
-        await m.systemDb.execute(sqlTag`delete from auth.users where id = ${anchor}`);
-      }
     }
   });
   // ── Quotas (audit D3) ─────────────────────────────────────────────────────
@@ -495,22 +484,43 @@ describe.skipIf(!URL)('member personal space: tables and files', () => {
 
   it('quota checks in one space wait for each other (advisory lock)', async () => {
     const order: string[] = [];
+    let releaseFirst!: () => void;
+    const firstHolds = new Promise<void>((r) => (releaseFirst = r));
+    let firstChecked!: () => void;
+    const checked = new Promise<void>((r) => (firstChecked = r));
     const first = asA(async () => {
       await sf.assertSpaceStorage(spaceA);
       order.push('first checked');
-      await new Promise((r) => setTimeout(r, 400));
+      firstChecked();
+      await firstHolds; // the transaction, and so the lock, stays open
       order.push('first done');
     });
-    await new Promise((r) => setTimeout(r, 100));
+    await checked;
     const second = asA(async () => {
       await sf.assertSpaceStorage(spaceA);
       order.push('second checked');
+    });
+    // The second check is WAITING on this space's quota lock, not just slow.
+    await pollUntil(
+      async () => {
+        const [r] = await adminSql()<{ n: number }[]>`
+          select count(*)::int as n from pg_locks
+           where locktype = 'advisory' and not granted
+             and ((classid::bigint << 32) | objid::bigint)
+                 = hashtextextended(${`space-quota:${spaceA}`}, 0)`;
+        return (r?.n ?? 0) > 0;
+      },
+      { timeoutMs: 5_000, what: 'the second quota check to wait on the lock' },
+    ).catch((err) => {
+      releaseFirst();
+      throw err;
     });
     // Another space is not held up.
     await asB(async () => {
       await sf.assertSpaceStorage(spaceB);
       order.push('other space checked');
     });
+    releaseFirst();
     await Promise.all([first, second]);
     expect(order).toEqual(['first checked', 'other space checked', 'first done', 'second checked']);
   });

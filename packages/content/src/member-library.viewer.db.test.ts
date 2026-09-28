@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -19,7 +20,6 @@ describe.skipIf(!URL)('member Library at the team level', () => {
   let lib: Lib;
   let sqlTag: typeof import('drizzle-orm').sql;
   let anchor: string;
-  let createdAnchor = false;
   const tag = `member-lib-${randomUUID().slice(0, 8)}`;
   const ids = {
     teamPage: randomUUID(),
@@ -44,19 +44,9 @@ describe.skipIf(!URL)('member Library at the team level', () => {
     lib = await import('./member-library');
     sqlTag = (await import('drizzle-orm')).sql;
 
-    // The row policy keys nodes to the brain's anchor (is_owner).
-    const rows = (await m.systemDb.execute(
-      sqlTag`select id from auth.users where is_owner limit 1`,
-    )) as unknown as { id: string }[];
-    if (rows[0]) {
-      anchor = rows[0].id;
-    } else {
-      anchor = randomUUID();
-      createdAnchor = true;
-      await m.systemDb.execute(sqlTag`
-        insert into auth.users (id, email, password_hash, is_owner)
-        values (${anchor}, ${`${tag}@example.invalid`}, 'x', true)`);
-    }
+    // The row policy keys nodes to the brain's anchor (is_owner): the one
+    // shared test anchor, which no test deletes.
+    anchor = await ensureTestAnchor(admin);
     const draft = JSON.stringify({ type: 'doc', content: [{ type: 'paragraph' }] });
     await m.systemDb.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path, audience) values
@@ -77,8 +67,6 @@ describe.skipIf(!URL)('member Library at the team level', () => {
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`delete from nodes where title like ${`${tag}%`}`);
-    if (createdAnchor)
-      await m.systemDb.execute(sqlTag`delete from auth.users where id = ${anchor}`);
     await m.closeDb();
     rmSync(tableRoot, { recursive: true, force: true });
   });

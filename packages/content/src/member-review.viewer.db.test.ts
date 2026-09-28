@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { notifyBarrier } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -30,6 +31,13 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
   let sqlTag: typeof import('drizzle-orm').sql;
   let unlisten: () => Promise<void>;
   const announced: string[] = [];
+  /** Every node_ingested notification committed so far has arrived. */
+  const announcedSoFar = () =>
+    notifyBarrier(
+      (m.systemDb as unknown as { $client: Parameters<typeof notifyBarrier>[0] }).$client,
+      'node_ingested',
+      { seen: (s) => announced.includes(s) },
+    );
   const tag = `mreview-${randomUUID().slice(0, 8)}`;
   const loginA = randomUUID();
   const loginB = randomUUID();
@@ -237,7 +245,7 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
   });
 
   it('nothing was announced to the extractor before Accept', async () => {
-    await new Promise((r) => setTimeout(r, 300));
+    await announcedSoFar();
     expect(announced.filter((id) => [pageId, imageId, noteId].includes(id))).toEqual([]);
   });
 
@@ -286,7 +294,7 @@ describe.skipIf(!URL)('member review, accept and purge', () => {
   });
 
   it('Accept announced each moved item to the extractor once, and nothing else', async () => {
-    await new Promise((r) => setTimeout(r, 300));
+    await announcedSoFar();
     const seen = announced.filter((id) => [pageId, imageId, noteId, strayId].includes(id));
     expect(seen.sort()).toEqual([pageId, imageId].sort());
   });
