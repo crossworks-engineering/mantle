@@ -31,7 +31,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
     setShareCascade: vi.fn(),
     deletePage: vi.fn(),
     getActiveShareForNode: vi.fn(),
-    revokeShareTree: vi.fn(),
+    unshareItem: vi.fn(),
     shareUrlForToken: (token: string) => `https://brain.test/s/${token}`,
   };
 });
@@ -46,7 +46,7 @@ import {
   setShareCascade,
   deletePage,
   getActiveShareForNode,
-  revokeShareTree,
+  unshareItem,
 } from '@mantle/content';
 import { PAGE_TOOLS } from './builtins-pages';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -106,7 +106,7 @@ beforeEach(() => {
   vi.mocked(setShareCascade).mockResolvedValue({ count: 3 } as never);
   vi.mocked(deletePage).mockResolvedValue(true as never);
   vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-1', token: 'tok' } as never);
-  vi.mocked(revokeShareTree).mockResolvedValue(true as never);
+  vi.mocked(unshareItem).mockResolvedValue({ revoked: true, stillBelow: [] });
 });
 
 describe('page_block_delete', () => {
@@ -253,7 +253,7 @@ describe('page_delete', () => {
 describe('page_unshare', () => {
   it('refuses an empty id and revokes nothing', async () => {
     expect(errorOf(await unshare.handler({ id: '' }, ctx))).toMatch(/id is required/);
-    expect(revokeShareTree).not.toHaveBeenCalled();
+    expect(unshareItem).not.toHaveBeenCalled();
   });
 
   it('succeeds as a no-op when the page was never shared', async () => {
@@ -262,19 +262,28 @@ describe('page_unshare', () => {
     // "Make it private" on an already-private page is not an error — and it
     // must not reach the revoke path with an undefined share id.
     expect(outputOf(res)).toEqual({ id: PAGE_ID, unshared: false });
-    expect(revokeShareTree).not.toHaveBeenCalled();
+    expect(unshareItem).not.toHaveBeenCalled();
   });
 
   it('revokes the whole share TREE, not just the one link', async () => {
     const res = await unshare.handler({ id: PAGE_ID }, ctx);
     // A share made with children:true cascaded to sub-pages; unsharing the
-    // parent alone would leave every sub-page link live.
-    expect(revokeShareTree).toHaveBeenCalledWith('o1', 's-1');
+    // parent alone would leave every sub-page link live. unshareItem revokes
+    // by share id through revokeShareTree.
+    expect(unshareItem).toHaveBeenCalledWith('o1', 's-1');
     expect(outputOf(res)).toEqual({ id: PAGE_ID, unshared: true });
   });
 
+  it('reports the embedded files still below admin (MED 7)', async () => {
+    const file = { id: 'f-1', type: 'file', title: 'img.png', audience: 'client' as const };
+    vi.mocked(unshareItem).mockResolvedValue({ revoked: true, stillBelow: [file] });
+    const out = outputOf(await unshare.handler({ id: PAGE_ID }, ctx));
+    expect(out.stillBelow).toEqual([file]);
+    expect(out.warning).toMatch(/img\.png \(file, client\)/);
+  });
+
   it('surfaces a store failure as a tool error, not a throw', async () => {
-    vi.mocked(revokeShareTree).mockRejectedValue(new Error('db down'));
+    vi.mocked(unshareItem).mockRejectedValue(new Error('db down'));
     expect(errorOf(await unshare.handler({ id: PAGE_ID }, ctx))).toMatch(/db down/);
   });
 });
