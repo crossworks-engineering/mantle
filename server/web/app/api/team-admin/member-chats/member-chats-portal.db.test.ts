@@ -76,7 +76,7 @@ describe.skipIf(!URL)('member chats: the portal history is the admin view only',
       (${anchor}, ${contact}, null, 'outbound', 'portal private answer', true, now() - interval '8 minutes'),
       (${anchor}, null, ${cat}, 'inbound', 'live ask', false, now() - interval '2 minutes'),
       (${anchor}, null, ${cat}, 'outbound', 'live answer', false, now() - interval '1 minute')`;
-  });
+  }, 60_000); // imports the route modules: slow while the whole suite runs in parallel
 
   afterAll(async () => {
     if (!admin) return;
