@@ -9,7 +9,8 @@ import { firstIssue } from '@/lib/zod-issue';
 const Query = z.object({
   kind: z.enum(SPACE_ITEM_KINDS).optional(),
   q: z.string().max(200).optional(),
-  // A comma list of review states: `?review=submitted,returned` (U10).
+  // A comma list of review states: `?review=submitted,returned` (U10), and
+  // `with-admin` for the items an admin has taken over (audit F07).
   review: z
     .string()
     .max(100)
@@ -19,7 +20,7 @@ const Query = z.object({
         .map((x) => x.trim())
         .filter(Boolean),
     )
-    .refine((v) => v.every((x) => (REVIEW_STATES as readonly string[]).includes(x)), {
+    .refine((v) => v.every((x) => x === 'with-admin' || (REVIEW_STATES as readonly string[]).includes(x)), {
       message: 'unknown review state',
     })
     .optional(),
@@ -38,7 +39,10 @@ const Create = z.discriminatedUnion('type', [
 /**
  * GET /api/member/space?kind=&q=&review=&page= : the member's own items
  * ("Mine"), newest first, with sharing and review state; `review` is a comma
- * list of review states (unknown = 400).
+ * list of review states (unknown = 400). Page 1 also lists the member's items
+ * an admin has taken over (audit F07) as `with-admin` rows, title and kind
+ * only, before the own rows (`total` counts them); `review=` without
+ * `with-admin` leaves them out.
  * POST /api/member/space { type, title, … } : a new private draft item.
  *
  * Member logins Phase 2. Pages, notes, drawings and tables; files arrive by
@@ -54,7 +58,8 @@ export async function GET(req: Request) {
     listMine(member.spaceId, {
       kind,
       q,
-      ...(review?.length ? { reviewStates: review as ReviewState[] } : {}),
+      ...(review?.length ? { reviewStates: review as (ReviewState | 'with-admin')[] } : {}),
+      withAdmin: true,
       limit: PAGE_SIZE,
       offset: (page - 1) * PAGE_SIZE,
     }),

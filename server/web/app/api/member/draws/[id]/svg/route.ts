@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { withSpace, withTeamDrafts, withViewer } from '@mantle/db';
-import { acceptedDrawSvg, getDrawSvg, getTeamDraftDrawSvg, memberDrawSvg } from '@mantle/content';
+import {
+  acceptedDrawSnapshot,
+  getDrawSvg,
+  getTeamDraftDrawSvg,
+  memberDrawSvg,
+} from '@mantle/content';
 import { getMemberForAsset } from '@/lib/auth';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -12,7 +17,9 @@ const IdParams = z.object({ id: z.string().uuid() });
  * rules: the Library (team level), the member's own space (Phase 2), then
  * teammates' team-shared drawings, and last a drawing this member wrote and
  * an admin accepted, whatever its level (Phase 4, plan 6.2: the author rule
- * is in the query). Anything else is a 404. No render
+ * is in the query), as accepted: its snapshot's SVG (audit F07), or the
+ * brain's while the drawing is still at the accepted version. Anything else
+ * is a 404. No render
  * fallback: a drawing with no snapshot yet shows as missing until it is saved.
  *
  * The snapshot inlines its images' bytes, so it is sent with only the images
@@ -26,17 +33,23 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return new Response('Invalid id', { status: 400 });
   const id = idParsed.data.id;
-  const svg =
+  const readable =
     (await withViewer('team', () => getDrawSvg(member.anchorId, id))) ??
     (await withSpace({ spaceId: member.spaceId, loginId: member.loginId }, () =>
       getDrawSvg(member.spaceId, id),
     )) ??
-    (await withTeamDrafts(() => getTeamDraftDrawSvg(id))) ??
-    (await acceptedDrawSvg(member.anchorId, member.loginId, id));
+    (await withTeamDrafts(() => getTeamDraftDrawSvg(id)));
+  // The author's own accepted drawing, as ACCEPTED (audit F07): the SVG of
+  // its snapshot, with the image refs it was drawn with.
+  const accepted = readable
+    ? null
+    : await acceptedDrawSnapshot(member.anchorId, member.loginId, id);
+  const svg = readable ?? accepted?.svg;
   if (!svg) {
     return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
   }
-  return new Response(await memberDrawSvg(member.anchorId, member.loginId, id, svg), {
+  const out = await memberDrawSvg(member.anchorId, member.loginId, id, svg, accepted?.fileRefs);
+  return new Response(out, {
     status: 200,
     headers: {
       'content-type': 'image/svg+xml; charset=utf-8',

@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { REVIEW_STATES, type ReviewState } from '@mantle/db';
 import { SPACE_ITEM_KINDS, createMineItem, listMine } from '@mantle/content';
-import { adminWriter, getAdminSpaceOr401, inAdminSpace } from '@/lib/admin-space';
+import { adminWriter, getAdminSpaceOr401, inAdminSpace, withTakenFrom } from '@/lib/admin-space';
 import { spaceStateResponse } from '@/lib/member-space';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -38,7 +38,9 @@ const Create = z.discriminatedUnion('type', [
 /**
  * GET /api/admin/space?kind=&q=&review=&page= : the calling admin's own
  * private items, newest first; the same query and answer as
- * GET /api/member/space.
+ * GET /api/member/space, each row with `takenFrom` (AdminSpaceItemRow): who
+ * wrote an item the admin took over from the Review queue (reviewState
+ * `taken`), else null.
  * POST /api/admin/space { type, title, … } : a new private item ("Keep
  * private"), as POST /api/member/space.
  *
@@ -61,7 +63,9 @@ export async function GET(req: Request) {
       offset: (page - 1) * PAGE_SIZE,
     }),
   );
-  return NextResponse.json({ ...res, page, pageSize: PAGE_SIZE });
+  // Items taken over from a member say whose they are (audit F07).
+  const items = await withTakenFrom(caller, res.items);
+  return NextResponse.json({ ...res, items, page, pageSize: PAGE_SIZE });
 }
 
 export async function POST(req: Request) {

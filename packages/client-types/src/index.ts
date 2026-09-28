@@ -42,6 +42,13 @@ export type {
   MemberItemAuthor,
 } from './dto/access';
 export type {
+  AdminSpaceItem,
+  AdminSpaceItemRow,
+  AdminSpaceList,
+  AdminTakenFrom,
+  GiveBackResult,
+  MovedSpaceItem,
+  TakeOverResult,
   MemberAcceptedItem,
   MemberAcceptedPage,
   MemberAcceptedRow,
@@ -57,6 +64,7 @@ export type {
   MemberSpaceItem,
   MemberSpaceItemBody,
   MemberSpaceItemRow,
+  MemberSpaceItemState,
   MemberSpaceList,
   MemberSpaceSharing,
 } from './dto/member';

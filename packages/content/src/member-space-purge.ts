@@ -68,7 +68,9 @@ async function dueSpaces(cutoff: Date): Promise<string[]> {
 }
 
 /** The private items of one space: no state row (an old item), or private
- *  and neither submitted nor accepted. */
+ *  and neither submitted, accepted nor TAKEN. A taken item is a member's work
+ *  in an admin's space (audit F07): the purge of that admin's space never
+ *  deletes it; the Review queue offers it again once its admin is gone. */
 function privateItems(spaceId: string) {
   return and(
     eq(nodes.ownerId, spaceId),
@@ -77,7 +79,7 @@ function privateItems(spaceId: string) {
       isNull(spaceItems.nodeId),
       and(
         eq(spaceItems.sharing, 'private'),
-        notInArray(spaceItems.reviewState, ['submitted', 'accepted']),
+        notInArray(spaceItems.reviewState, ['submitted', 'accepted', 'taken']),
       ),
     ),
   );

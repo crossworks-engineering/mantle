@@ -28,6 +28,17 @@
  * even when submitted before the login was promoted. An admin accepts their
  * own items themselves (`acceptOwnItem`), through the same move.
  *
+ * Take over (audit F07): an admin takes a submitted item and its bundle into
+ * their own private space (`takeOverReviewItem`, member-takeover.ts moves
+ * it); it leaves the queue, and the admin accepts it from there or gives it
+ * back. If that admin is deactivated or deleted, the taken item is offered
+ * in the queue again (a THIRD reviewable case below), in place: Accept,
+ * Return (a give-back), Take over and Discard work on it as on a submitted
+ * item, over what was taken with it.
+ *
+ * Every Accept of a member's item records the accepted snapshot for its
+ * author (member-snapshots.ts), in the Accept's own transaction.
+ *
  * Cost-safety: Accept is the ONE place a personal item is announced to the
  * extractor, once per moved item, after the commit and after its bytes are
  * in place (never for a rollback). Nothing else here starts LLM work.
@@ -35,7 +46,8 @@
 import { copyFile, mkdir, rename, rm } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { and, asc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import {
   authUsers,
   db,
@@ -98,6 +110,15 @@ import { childPagePath } from './page-path';
 import { draftAbsFor, removeTableFile } from './table-storage';
 import { dedupeFilename } from './dedupe-filename';
 import { setItemLevel } from './access';
+import {
+  detachFromGroups,
+  giveBackTaken,
+  moveBetweenSpaces,
+  personalSpaceOf,
+  takenGroup,
+  withMoveHooks,
+} from './member-takeover';
+import { writeAcceptedSnapshots } from './member-snapshots';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -124,7 +145,9 @@ const notFound = () =>
   );
 
 /** Why an admin sees the item: submitted for review, or left behind by a
- *  deactivated (or deleted) login while shared with the team. */
+ *  deactivated (or deleted) login while shared with the team. An item taken
+ *  over by an admin who is gone since (reviewState `taken`) is `submitted`,
+ *  or `left-behind` when its author is gone too. */
 export type ReviewReason = 'submitted' | 'left-behind';
 
 export type ReviewAuthor = {
@@ -156,10 +179,26 @@ const authorInactive = or(isNull(authUsers.id), isNotNull(authUsers.disabledAt))
  *  Needs `authUsers` left-joined on the item's author. */
 const authorIsMember = or(isNull(authUsers.id), eq(authUsers.role, 'member'))!;
 
+/** The admin holding a taken item (audit F07), left-joined on `taken_by`. */
+const taker = alias(authUsers, 'taker');
+
+/**
+ * A taken item whose admin cannot act on it any more (deactivated, deleted,
+ * or no longer an admin): the queue offers it again, in place. Only the
+ * group's root (`taken_root` NULL) is listed; the rest is its bundle. Needs
+ * `taker` left-joined on the item's `taken_by`.
+ */
+const released: SQL = and(
+  eq(spaceItems.reviewState, 'taken'),
+  isNull(spaceItems.takenRoot),
+  or(isNull(taker.id), isNotNull(taker.disabledAt), ne(taker.role, 'admin')),
+)!;
+
 /**
  * The one condition under which an admin reads a personal item (see the
  * module comment). `spaces.kind = 'personal'` keeps brain items out, and
- * `authorIsMember` every admin's own space.
+ * `authorIsMember` every admin's own space. A taken item is the taking
+ * admin's alone while they can act on it (never left behind, never listed).
  */
 const reviewable: SQL = and(
   eq(spaces.kind, 'personal'),
@@ -169,9 +208,10 @@ const reviewable: SQL = and(
     eq(spaceItems.reviewState, 'submitted'),
     and(
       eq(spaceItems.sharing, 'team'),
-      sql`${spaceItems.reviewState} <> 'accepted'`,
+      sql`${spaceItems.reviewState} not in ('accepted', 'taken')`,
       authorInactive,
     ),
+    released,
   ),
 )!;
 
@@ -190,7 +230,8 @@ function reviewQuery(via: Pick<Tx, 'select'> = db) {
     .from(nodes)
     .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
     .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
-    .leftJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId));
+    .leftJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
+    .leftJoin(taker, eq(taker.id, spaceItems.takenBy));
 }
 
 type Joined = Awaited<ReturnType<typeof reviewQuery>>[number];
@@ -207,7 +248,10 @@ function rowOf({ node, item, author }: Joined): ReviewItemRow {
     reviewState: item.reviewState,
     submittedAt: item.submittedAt?.toISOString() ?? null,
     updatedAt: node.updatedAt.toISOString(),
-    reason: item.reviewState === 'submitted' ? 'submitted' : 'left-behind',
+    reason:
+      item.reviewState === 'submitted' || (item.reviewState === 'taken' && !inactive)
+        ? 'submitted'
+        : 'left-behind',
     author: {
       loginId: author?.id ?? null,
       name: author?.displayName?.trim() || author?.email?.split('@')[0] || 'Removed login',
@@ -247,10 +291,11 @@ export async function countSubmitted(via: Pick<Tx, 'select'> = db): Promise<numb
     .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
     .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
     .leftJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
+    .leftJoin(taker, eq(taker.id, spaceItems.takenBy))
     .where(
       and(
         eq(spaces.kind, 'personal'),
-        eq(spaceItems.reviewState, 'submitted'),
+        or(eq(spaceItems.reviewState, 'submitted'), released),
         inArray(nodes.type, [...SPACE_ITEM_KINDS]),
         authorIsMember,
       ),
@@ -401,7 +446,9 @@ const tooLarge = () =>
  *    before the record existed (migration 0180);
  *  - a left-behind item (never submitted): only items that are themselves
  *    shared or submitted join (audit F18). Its author's private embeds stay
- *    behind, and no admin reads them.
+ *    behind, and no admin reads them;
+ *  - a released taken item (its admin is gone): what was taken with it,
+ *    never an item of that admin's own.
  */
 async function reviewBundle(
   via: Pick<Tx, 'select'>,
@@ -409,6 +456,10 @@ async function reviewBundle(
   row: ReviewItemRow,
 ): Promise<Bundle> {
   const root: BundleItem = { id: row.id, type: row.type, title: row.title };
+  if (row.reviewState === 'taken') {
+    // Released by a gone admin: what was taken with it, nothing of theirs.
+    return withLinksStayingBehind(via, await takenGroup(via, spaceId, row.id));
+  }
   if (row.reason === 'left-behind') {
     return computeBundle(via, spaceId, root, { sharedOnly: true, tooLarge });
   }
@@ -558,8 +609,12 @@ export async function acceptReviewItem(
           reviewedAt: now,
           acceptedAt: now,
           updatedAt: now,
+          takenBy: null,
+          takenAt: null,
+          takenRoot: null,
         })
         .where(inArray(spaceItems.nodeId, ids));
+      await detachFromGroups(tx, ids);
     },
   });
 }
@@ -575,10 +630,13 @@ export async function acceptReviewItem(
  * `not-found` (another login's item looks like a missing one) or
  * `unsaved-draft`.
  *
- * The bundle's `space_items` rows are DROPPED, not marked accepted: an
- * admin's own item has no author record, so it never carries the
- * "member-authored" badge (member-accepted.ts) and never lists as a member's
- * accepted item.
+ * The bundle's `space_items` rows of the admin's OWN items are DROPPED, not
+ * marked accepted: an admin's own item has no author record, so it never
+ * carries the "member-authored" badge (member-accepted.ts) and never lists
+ * as a member's accepted item. A member's item the admin TOOK OVER (audit
+ * F07, state `taken`) keeps its row: it goes to `accepted` with this admin
+ * as the reviewer, and its author gets the accepted snapshot, exactly as
+ * after a reviewed Accept.
  */
 export async function acceptOwnItem(
   brainId: string,
@@ -657,10 +715,169 @@ export async function acceptOwnItem(
         },
       };
     },
-    // No author record for an admin's own item (see above).
-    settle: async (tx, ids) => {
-      await tx.delete(spaceItems).where(inArray(spaceItems.nodeId, ids));
+    // No author record for an admin's own item; a taken member item keeps
+    // its row, accepted by this admin (see above).
+    settle: async (tx, ids, now) => {
+      await tx
+        .update(spaceItems)
+        .set({
+          reviewState: 'accepted',
+          reviewedBy: own.loginId,
+          reviewedAt: now,
+          acceptedAt: now,
+          updatedAt: now,
+          takenBy: null,
+          takenAt: null,
+          takenRoot: null,
+        })
+        .where(and(inArray(spaceItems.nodeId, ids), eq(spaceItems.reviewState, 'taken')));
+      await tx
+        .delete(spaceItems)
+        .where(and(inArray(spaceItems.nodeId, ids), ne(spaceItems.reviewState, 'accepted')));
+      await detachFromGroups(tx, ids);
     },
+  });
+}
+
+// ── Take over (audit F07) ───────────────────────────────────────────────────
+
+export type TakeOverResult = { id: string; moved: BundleItem[] };
+
+/**
+ * Take a SUBMITTED member item out of the queue into the acting admin's OWN
+ * private space (`actor`: the login and its personal space, never the
+ * anchor's for another admin), to work on it there (Jason 2026-09-28, audit
+ * F07). One transaction, with Accept's locks: the state row first (a Recall,
+ * Return, Accept or second Take over waits, and then finds it gone), then
+ * every row of the bundle. The item and the bundle recorded at Submit move
+ * with the same node ids (member-takeover.ts `moveBetweenSpaces`: re-owned,
+ * bytes and workbooks moved, file names made unique, leftover drafts
+ * dropped). An item of the bundle that is itself submitted or accepted stays
+ * where it is. Every moved item's `space_items` row stays (it names the
+ * author) and goes to `taken`, with `taken_by`, `taken_at` and `taken_root`
+ * (NULL on the item itself); sharing goes private. The recorded bundle is
+ * cleared. The queue no longer lists it; nobody but this admin reads it.
+ *
+ * A taken item whose admin is gone (see `released`) is taken over the same
+ * way, from that admin's space, with what was taken with it.
+ *
+ * Nothing is indexed, embedded or extracted: it stays a personal item.
+ * Refused: `not-found` (not reviewable: a private, recalled, handled or
+ * taken item), `not-submitted` (a left-behind item that was never submitted:
+ * accept or discard it), `too-large`.
+ */
+export async function takeOverReviewItem(
+  id: string,
+  actor: { loginId: string; spaceId: string },
+): Promise<TakeOverResult> {
+  return withMoveHooks(async (tx, hooks) => {
+    // The state row, locked, as Accept locks it.
+    const [locked] = await tx
+      .select({ kind: spaces.kind })
+      .from(spaceItems)
+      .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+      .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+      .where(eq(spaceItems.nodeId, id))
+      .for('update', { of: spaceItems })
+      .limit(1);
+    if (!locked || locked.kind !== 'personal') throw notFound();
+    const found = await reviewRow(id, tx);
+    if (!found) throw notFound();
+    if (found.row.reviewState !== 'submitted' && found.row.reviewState !== 'taken') {
+      throw new ReviewError(
+        'not-submitted',
+        'Only a submitted item can be taken over. Accept or discard what a deactivated login left behind.',
+      );
+    }
+    // The acting admin's own personal space, and an admin who can act.
+    const [mine] = await tx
+      .select({ id: spaces.id })
+      .from(spaces)
+      .innerJoin(authUsers, eq(authUsers.id, spaces.loginId))
+      .where(
+        and(
+          eq(spaces.id, actor.spaceId),
+          eq(spaces.kind, 'personal'),
+          eq(spaces.loginId, actor.loginId),
+          eq(authUsers.role, 'admin'),
+          isNull(authUsers.disabledAt),
+        ),
+      )
+      .limit(1);
+    if (!mine || found.spaceId === actor.spaceId) throw notFound();
+
+    const bundle = await reviewBundle(tx, found.spaceId, found.row);
+    const still = await tx
+      .select({ id: nodes.id, state: spaceItems.reviewState })
+      .from(nodes)
+      .leftJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
+      .where(
+        and(
+          inArray(
+            nodes.id,
+            bundle.items.map((b) => b.id),
+          ),
+          eq(nodes.ownerId, found.spaceId),
+        ),
+      )
+      .for('update', { of: nodes });
+    const stateOf = new Map(still.map((r) => [r.id, r.state]));
+    if (!stateOf.has(id)) throw notFound();
+    // Another submitted item (or an accepted one) is not this item's to take.
+    const items = bundle.items.filter(
+      (b) =>
+        stateOf.has(b.id) &&
+        (b.id === id || (stateOf.get(b.id) !== 'submitted' && stateOf.get(b.id) !== 'accepted')),
+    );
+    await lockBundleRows(tx, items);
+    const ids = items.map((b) => b.id);
+    const sharing = await tx
+      .select({ id: spaceItems.nodeId, sharing: spaceItems.sharing })
+      .from(spaceItems)
+      .where(inArray(spaceItems.nodeId, ids));
+    const wasTeam = new Set(sharing.filter((r) => r.sharing === 'team').map((r) => r.id));
+
+    await moveBetweenSpaces(tx, found.spaceId, actor.spaceId, items, hooks);
+
+    // Items made before state rows existed get one, so every moved item
+    // names its author and goes back with the rest.
+    const author = found.row.author.loginId;
+    await tx
+      .insert(spaceItems)
+      .values(ids.map((nodeId) => ({ nodeId, authorLoginId: author })))
+      .onConflictDoNothing({ target: spaceItems.nodeId });
+    const now = new Date();
+    await tx
+      .update(spaceItems)
+      .set({
+        reviewState: 'taken',
+        sharing: 'private',
+        takenBy: actor.loginId,
+        takenAt: now,
+        takenRoot: id,
+        updatedAt: now,
+      })
+      .where(and(inArray(spaceItems.nodeId, ids), ne(spaceItems.nodeId, id)));
+    await tx
+      .update(spaceItems)
+      .set({
+        reviewState: 'taken',
+        sharing: 'private',
+        takenBy: actor.loginId,
+        takenAt: now,
+        takenRoot: null,
+        updatedAt: now,
+      })
+      .where(eq(spaceItems.nodeId, id));
+    await clearBundles(tx, [id]);
+
+    // The author's lists follow (their own space), and so do the teammates
+    // who were showing a shared one.
+    const home = (await personalSpaceOf(tx, author)) ?? found.spaceId;
+    for (const b of items) {
+      await notifySpaceItemChanged(b.id, 'state', { spaceId: home, team: wasTeam.has(b.id) }, tx);
+    }
+    return { id, moved: items };
   });
 }
 
@@ -892,13 +1109,28 @@ async function moveIntoBrain(
       }
 
       // 5. The state rows, settled by the caller's rule; the recorded
-      //    bundles of what moved are done with.
+      //    bundles of what moved are done with. Every item now accepted
+      //    with an author record gets its author's snapshot (audit F07): the
+      //    version accepted, which is all the author reads from now on.
       await steps.settle(tx, ids, now);
       await clearBundles(tx, ids);
+      await writeAcceptedSnapshots(tx, brainId, ids, { onRollback });
 
-      // 6. The change events commit with the move.
+      // 6. The change events commit with the move: to the space it left,
+      //    and to its author's own space when that is another one (an item
+      //    an admin took over), so the author's lists follow.
       for (const b of items) {
         await notifySpaceItemChanged(b.id, 'state', { spaceId, team: wasTeam.has(b.id) }, tx);
+      }
+      const authors = await tx
+        .select({ id: spaceItems.nodeId, author: spaceItems.authorLoginId })
+        .from(spaceItems)
+        .where(inArray(spaceItems.nodeId, ids));
+      for (const a of authors) {
+        const home = await personalSpaceOf(tx, a.author);
+        if (home && home !== spaceId) {
+          await notifySpaceItemChanged(a.id, 'state', { spaceId: home, team: false }, tx);
+        }
       }
       return { id, audience, moved: items, linksStayingBehind: bundle.linksStayingBehind };
     });
@@ -942,9 +1174,30 @@ export async function returnReviewItem(
   id: string,
   reviewer: { loginId: string },
   note: string,
+  /** The brain: needed to return a released taken item (its give-back
+   *  checks the member's embed rule against the Library). */
+  brainId?: string,
 ): Promise<void> {
   const text = note.trim().slice(0, 4000);
   if (!text) throw new ReviewError('invalid', 'Say what needs to change.');
+  // A taken item whose admin is gone comes back to its author the way a
+  // give-back does: out of that admin's space, bytes and all.
+  const found = await reviewRow(id);
+  if (found?.row.reviewState === 'taken') {
+    if (!brainId) throw new Error('returnReviewItem: a taken item needs the brain id');
+    await giveBackTaken(
+      brainId,
+      { spaceId: found.spaceId, reviewerId: reviewer.loginId },
+      id,
+      text,
+      {
+        // Still released under the lock (its admin did not come back).
+        locate: async (tx) => (await reviewRow(id, tx))?.row.reviewState === 'taken',
+        dropDrafts: true,
+      },
+    );
+    return;
+  }
   await db.transaction(async (tx) => {
     const updated = await tx
       .update(spaceItems)
@@ -978,8 +1231,10 @@ export async function returnReviewItem(
 
 /**
  * Discard an item a deactivated (or deleted) login left behind: shared with
- * the team, or submitted. An active author's item is never discarded here
- * (Return it instead). The bytes go once the delete has committed.
+ * the team, or submitted, or taken over by an admin who is gone too (then
+ * with everything taken with it). An active author's item is never
+ * discarded here (Return it instead). The bytes go once the delete has
+ * committed.
  */
 export async function discardLeftBehind(id: string): Promise<void> {
   const onCommit: (() => unknown)[] = [];
@@ -1002,26 +1257,35 @@ export async function discardLeftBehind(id: string): Promise<void> {
       );
     }
     const { spaceId } = found;
+    // A released taken item goes with what was taken with it (all of it is
+    // the gone author's, in the gone admin's space; nothing of the admin's).
+    const doomed =
+      found.row.reviewState === 'taken'
+        ? await takenGroup(tx, spaceId, id)
+        : [{ id, type: found.row.type, title: found.row.title }];
+    const doomedIds = doomed.map((d) => d.id);
     // Deleted only while it is still in the space (audit F03): an Accept of
     // another item that moves this one along (a shared embed) re-owns it to
     // the brain, and the delete, re-checked on the new row, then matches
     // nothing. Never a brain row.
-    const [t] =
-      found.row.type === 'table'
-        ? await tx
-            .select({ storagePath: tables.storagePath })
-            .from(tables)
-            .where(eq(tables.nodeId, id))
-            .limit(1)
-        : [];
+    const workbooks = await tx
+      .select({ id: tables.nodeId, storagePath: tables.storagePath })
+      .from(tables)
+      .where(inArray(tables.nodeId, doomedIds));
     const gone = await tx
       .delete(nodes)
-      .where(and(eq(nodes.id, id), eq(nodes.ownerId, spaceId)))
+      .where(and(inArray(nodes.id, doomedIds), eq(nodes.ownerId, spaceId)))
       .returning({ id: nodes.id });
-    if (!gone.length) throw notFound();
-    if (found.row.type === 'file') onCommit.push(() => removeSpaceFile(spaceId, id));
-    const sp = t?.storagePath;
-    if (sp) {
+    const goneIds = new Set(gone.map((g) => g.id));
+    if (!goneIds.has(id)) throw notFound();
+    for (const d of doomed) {
+      if (d.type === 'file' && goneIds.has(d.id)) {
+        onCommit.push(() => removeSpaceFile(spaceId, d.id));
+      }
+    }
+    for (const w of workbooks) {
+      const sp = w.storagePath;
+      if (!sp || !goneIds.has(w.id)) continue;
       onCommit.push(() => {
         removeTableFile(draftAbsFor(sp));
         removeTableFile(resolveStoragePath(sp));

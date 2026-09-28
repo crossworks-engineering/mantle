@@ -7,7 +7,7 @@
  */
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { existsSync } from 'node:fs';
-import { fileStats } from '@mantle/tabledb';
+import { fileStats, resolveStoragePath } from '@mantle/tabledb';
 import { draftAbsFor } from '../table-storage';
 import { db, nodes, tables } from '@mantle/db';
 import type { TableRow, TableDetail, TableSort } from '@mantle/content-core/table-model';
@@ -142,6 +142,40 @@ export async function getTable(
     totalRows,
     docClipped,
     draftRev: row.draftRev ?? 0,
+    ...(tabs ? { tabs } : {}),
+    ...(tabs && tabId ? { tabId } : {}),
+  });
+}
+
+/**
+ * A table as its author's accepted snapshot holds it (member logins, audit
+ * F07): the workbook copy at `storagePath` (relative to TABLE_DB_DIR), or
+ * the document of a table with no workbook. Never a draft. `node` supplies
+ * the id and the other row fields; the caller passes the snapshot's title.
+ */
+export function tableFromSnapshot(
+  node: typeof nodes.$inferSelect,
+  snap: { storagePath: string | null; doc: unknown },
+  opts: { tabId?: string } = {},
+): TableDetail {
+  let tabs: ReturnType<typeof tabsFromStats> | undefined;
+  if (snap.storagePath) {
+    try {
+      tabs = tabsFromStats(fileStats(resolveStoragePath(snap.storagePath)));
+    } catch {
+      tabs = undefined;
+    }
+  }
+  const known = tabs?.some((t) => t.id === opts.tabId);
+  const tabId = (known ? opts.tabId : undefined) ?? tabs?.[0]?.id;
+  const { data, totalRows, docClipped } = docsOf(
+    { storagePath: snap.storagePath, data: snap.doc, draft: null },
+    tabId,
+    { publishedOnly: true },
+  );
+  return detailOf(node, data, null, {
+    totalRows,
+    docClipped,
     ...(tabs ? { tabs } : {}),
     ...(tabs && tabId ? { tabId } : {}),
   });

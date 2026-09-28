@@ -5,9 +5,13 @@
  * author. From that row the author gets:
  *
  *  - their own list of accepted items, at whatever level the admin chose;
- *  - READ access to each one, the SAVED version only, even at admin: they
- *    can open what they wrote, and an image they wrote, accepted at admin,
- *    still renders in their other drafts;
+ *  - READ access to each one, even at admin: the version ACCEPTED, from the
+ *    snapshot taken at Accept (member-snapshots.ts, audit F07), never the
+ *    brain's current version, so an admin's later edits stay the brain's;
+ *  - an image they wrote, accepted at admin, still renders in their other
+ *    drafts, but only while the brain file still has the bytes accepted
+ *    (`acceptedFileReadable`); once an admin changed it the item answers
+ *    its accepted metadata with `changedByAdmin: true` and no bytes;
  *
  * and readers get the authorship: the author's name on an accepted item
  * (the "member-authored" badge).
@@ -20,6 +24,7 @@
  */
 import { and, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
 import {
+  acceptedSnapshots,
   asViewerLevel,
   authUsers,
   currentSpaceScope,
@@ -32,9 +37,13 @@ import {
 import type { MemberAcceptedItem, MemberAcceptedRow, MemberItemAuthor } from '@mantle/client-types';
 import { MEMBER_ITEM_KINDS, type MemberItemKind } from '@mantle/client-types/member-kinds';
 import { getDrawSvg } from './draws';
-import { getNote } from './notes';
-import { getPage } from './pages/read';
-import { getTable } from './tables/read';
+import { tableFromSnapshot, type getTable } from './tables/read';
+import {
+  acceptedDrawUnchanged,
+  acceptedFileUnchanged,
+  snapshotOf,
+  type AcceptedSnapshot,
+} from './member-snapshots';
 
 export type AcceptedRow = {
   id: string;
@@ -51,12 +60,14 @@ export type AcceptedItem =
   | (AcceptedRow & { type: 'page'; doc: unknown })
   | (AcceptedRow & { type: 'note'; content: string })
   | (AcceptedRow & { type: 'table'; table: NonNullable<Awaited<ReturnType<typeof getTable>>> })
-  | (AcceptedRow & { type: 'draw' })
+  | (AcceptedRow & { type: 'draw'; changedByAdmin?: boolean })
   | (AcceptedRow & {
       type: 'file';
       filename: string;
       mimeType: string | null;
       sizeBytes: number | null;
+      /** An admin changed the brain file since: its bytes are not served. */
+      changedByAdmin?: boolean;
     });
 
 /** These queries must see items above the member's level and write their
@@ -79,20 +90,35 @@ function authoredWhere(anchorId: string, loginId: string) {
   );
 }
 
-type Joined = { node: typeof nodes.$inferSelect; acceptedAt: Date | null };
+type Joined = {
+  node: typeof nodes.$inferSelect;
+  acceptedAt: Date | null;
+  snapTitle?: string | null;
+  snapIcon?: string | null;
+  snapAt?: Date | null;
+};
 
-function rowOf({ node, acceptedAt }: Joined): AcceptedRow {
+/** The row as accepted: the snapshot's title, icon and time when there is
+ *  one (an admin's later rename is the brain's), the level as it is now. */
+function rowOf({ node, acceptedAt, snapTitle, snapIcon, snapAt }: Joined): AcceptedRow {
   const d = (node.data ?? {}) as Record<string, unknown>;
+  const icon = snapTitle != null ? snapIcon : d.icon;
   return {
     id: node.id,
     type: node.type as MemberItemKind,
-    title: node.title,
-    icon: typeof d.icon === 'string' && d.icon.trim() ? d.icon : null,
+    title: snapTitle ?? node.title,
+    icon: typeof icon === 'string' && icon.trim() ? icon : null,
     audience: asViewerLevel(node.audience),
     acceptedAt: acceptedAt?.toISOString() ?? null,
-    updatedAt: node.updatedAt.toISOString(),
+    updatedAt: (snapAt ?? node.updatedAt).toISOString(),
   };
 }
+
+const snapCols = {
+  snapTitle: acceptedSnapshots.title,
+  snapIcon: acceptedSnapshots.icon,
+  snapAt: acceptedSnapshots.acceptedAt,
+};
 
 /** The author's accepted items, newest accept first. `q` matches the title. */
 export async function listAccepted(
@@ -111,9 +137,10 @@ export async function listAccepted(
   );
   const [rows, [count]] = await Promise.all([
     db
-      .select({ node: nodes, acceptedAt: spaceItems.acceptedAt })
+      .select({ node: nodes, acceptedAt: spaceItems.acceptedAt, ...snapCols })
       .from(spaceItems)
       .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+      .leftJoin(acceptedSnapshots, eq(acceptedSnapshots.nodeId, nodes.id))
       .where(where)
       .orderBy(desc(spaceItems.acceptedAt), desc(nodes.updatedAt))
       .limit(limit)
@@ -136,76 +163,111 @@ export async function acceptedRow(
 ): Promise<AcceptedRow | null> {
   assertAdminPool();
   const [row] = await db
-    .select({ node: nodes, acceptedAt: spaceItems.acceptedAt })
+    .select({ node: nodes, acceptedAt: spaceItems.acceptedAt, ...snapCols })
     .from(spaceItems)
     .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+    .leftJoin(acceptedSnapshots, eq(acceptedSnapshots.nodeId, nodes.id))
     .where(and(eq(spaceItems.nodeId, id), authoredWhere(anchorId, loginId)))
     .limit(1);
   return row ? rowOf(row) : null;
 }
 
-/** One accepted item with its SAVED body, for its author only. `tabId` picks
- *  a table's tab. A drawing's picture is its saved SVG (acceptedDrawSvg); a
- *  file's bytes come from the member files route. */
+/** The author rule, then the item's snapshot (completed first when it is
+ *  pending or missing). Null when the rule does not hold. */
+async function authoredSnapshot(
+  anchorId: string,
+  loginId: string,
+  id: string,
+): Promise<{ row: AcceptedRow; snap: AcceptedSnapshot } | null> {
+  const row = await acceptedRow(anchorId, loginId, id);
+  if (!row) return null;
+  const snap = await snapshotOf(anchorId, id);
+  if (!snap) return null;
+  // The row as accepted (a snapshot completed just now had no title yet).
+  return { row: { ...row, title: snap.title, icon: snap.icon ?? null }, snap };
+}
+
+/** One accepted item as ACCEPTED (its snapshot, never the brain's current
+ *  version), for its author only. `tabId` picks a table's tab. A drawing's
+ *  picture is its accepted SVG (acceptedDrawSvg); a file's bytes come from
+ *  the member files route while they are unchanged, and `changedByAdmin`
+ *  says when they are not. */
 export async function getAcceptedItem(
   anchorId: string,
   loginId: string,
   id: string,
   opts: { tabId?: string } = {},
 ): Promise<AcceptedItem | null> {
-  const base = await acceptedRow(anchorId, loginId, id);
-  if (!base) return null;
+  const found = await authoredSnapshot(anchorId, loginId, id);
+  if (!found) return null;
+  const { row: base, snap } = found;
   switch (base.type) {
-    case 'page': {
-      const page = await getPage(anchorId, id);
-      // `doc` is the saved version; an admin's working draft stays theirs.
-      return page ? { ...base, type: 'page', doc: page.doc } : null;
-    }
-    case 'note': {
-      const note = await getNote(anchorId, id);
-      return note ? { ...base, type: 'note', content: note.content } : null;
-    }
+    case 'page':
+      return { ...base, type: 'page', doc: snap.doc };
+    case 'note':
+      return { ...base, type: 'note', content: snap.content ?? '' };
     case 'table': {
-      const table = await getTable(anchorId, id, {
-        tabId: opts.tabId,
-        unknownTabIsFirst: true,
-        publishedOnly: true,
-      });
-      return table ? { ...base, type: 'table', table } : null;
-    }
-    case 'draw':
-      return { ...base, type: 'draw' };
-    case 'file': {
-      const [n] = await db
-        .select({ data: nodes.data })
+      const [node] = await db
+        .select()
         .from(nodes)
         .where(and(eq(nodes.id, id), eq(nodes.ownerId, anchorId)))
         .limit(1);
-      const d = (n?.data ?? {}) as Record<string, unknown>;
+      if (!node) return null;
+      const table = tableFromSnapshot(
+        { ...node, title: snap.title },
+        { storagePath: snap.tablePath, doc: snap.tableDoc },
+        { tabId: opts.tabId },
+      );
+      return { ...base, type: 'table', table };
+    }
+    case 'draw': {
+      const changed = !snap.sceneSvg && !(await acceptedDrawUnchanged(anchorId, id, snap));
+      return { ...base, type: 'draw', ...(changed ? { changedByAdmin: true } : {}) };
+    }
+    case 'file': {
+      const changed = !(await acceptedFileUnchanged(anchorId, id, snap));
       return {
         ...base,
         type: 'file',
-        filename: typeof d.filename === 'string' ? d.filename : base.title,
-        mimeType: typeof d.mime_type === 'string' ? d.mime_type : null,
-        sizeBytes: Number(d.size_bytes ?? 0) || null,
+        filename: snap.fileName ?? base.title,
+        mimeType: snap.fileMime,
+        sizeBytes: snap.fileSize,
+        ...(changed ? { changedByAdmin: true } : {}),
       };
     }
   }
 }
 
-/** An accepted drawing's saved SVG, for its author only. */
+/** An accepted drawing's picture as accepted, for its author only: the SVG
+ *  saved with the snapshot, and the image refs it was drawn with. A drawing
+ *  accepted with no saved SVG shows the brain's SVG only while the drawing
+ *  is still at the accepted version. */
+export async function acceptedDrawSnapshot(
+  anchorId: string,
+  loginId: string,
+  id: string,
+): Promise<{ svg: string; fileRefs: Record<string, unknown> } | null> {
+  const found = await authoredSnapshot(anchorId, loginId, id);
+  if (found?.row.type !== 'draw') return null;
+  const { snap } = found;
+  const refs = (snap.fileRefs ?? {}) as Record<string, unknown>;
+  if (snap.sceneSvg) return { svg: snap.sceneSvg, fileRefs: refs };
+  if (!(await acceptedDrawUnchanged(anchorId, id, snap))) return null;
+  const svg = await getDrawSvg(anchorId, id);
+  return svg ? { svg, fileRefs: refs } : null;
+}
+
+/** An accepted drawing's accepted SVG, for its author only. */
 export async function acceptedDrawSvg(
   anchorId: string,
   loginId: string,
   id: string,
 ): Promise<string | null> {
-  const row = await acceptedRow(anchorId, loginId, id);
-  if (row?.type !== 'draw') return null;
-  return getDrawSvg(anchorId, id);
+  return (await acceptedDrawSnapshot(anchorId, loginId, id))?.svg ?? null;
 }
 
-/** True when this login wrote this accepted FILE: the member files route
- *  then serves its bytes from the brain. */
+/** True when this login wrote this accepted FILE (whatever an admin did to
+ *  it since): an image of theirs inside their own accepted drawing's SVG. */
 export async function isAuthorOfAcceptedFile(
   anchorId: string,
   loginId: string,
@@ -213,6 +275,19 @@ export async function isAuthorOfAcceptedFile(
 ): Promise<boolean> {
   const row = await acceptedRow(anchorId, loginId, id);
   return row?.type === 'file';
+}
+
+/** True when this login wrote this accepted FILE and the brain file still
+ *  holds exactly the bytes accepted (audit F07): the member files route may
+ *  then serve them from the brain. Once an admin changed it, false. */
+export async function acceptedFileReadable(
+  anchorId: string,
+  loginId: string,
+  id: string,
+): Promise<boolean> {
+  const found = await authoredSnapshot(anchorId, loginId, id);
+  if (found?.row.type !== 'file') return false;
+  return acceptedFileUnchanged(anchorId, id, found.snap);
 }
 
 export type AcceptedAuthor = MemberItemAuthor;

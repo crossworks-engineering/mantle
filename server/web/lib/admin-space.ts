@@ -15,7 +15,8 @@
  * read and write to that one space, exactly as for a member.
  */
 import { withSpace } from '@mantle/db';
-import type { SpaceWriter } from '@mantle/content';
+import { takenFromOf, type SpaceItemRow, type SpaceWriter } from '@mantle/content';
+import type { AdminSpaceItemRow } from '@mantle/client-types';
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerForAsset, getOwnerOr401, type SessionUser } from '@/lib/auth';
 import { loadPersonalSpaceId } from '@/lib/auth/login-row';
@@ -63,4 +64,24 @@ export function inAdminSpace<T>(caller: AdminSpaceCaller, fn: () => Promise<T>):
  *  at every level may be used; member-space.ts re-checks the login). */
 export function adminWriter(caller: AdminSpaceCaller): SpaceWriter {
   return { adminOfBrain: caller.brainId };
+}
+
+/** The admin space's rows with whom each taken one was taken from (audit
+ *  F07: `takenFrom`, null for the admin's own items). */
+export async function withTakenFrom(
+  caller: AdminSpaceCaller,
+  rows: SpaceItemRow[],
+): Promise<AdminSpaceItemRow[]> {
+  const taken = rows.filter((r) => r.reviewState === 'taken').map((r) => r.id);
+  const from = await takenFromOf(caller.spaceId, taken);
+  return rows.map((r) => ({ ...r, takenFrom: from.get(r.id) ?? null }));
+}
+
+/** One item's answer (`{ row, body }`) with `takenFrom` on its row. */
+export async function itemWithTakenFrom<T extends { row: SpaceItemRow }>(
+  caller: AdminSpaceCaller,
+  got: T,
+): Promise<T & { row: AdminSpaceItemRow }> {
+  const [row] = await withTakenFrom(caller, [got.row]);
+  return { ...got, row: row! };
 }

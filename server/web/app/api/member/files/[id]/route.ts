@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { withViewer } from '@mantle/db';
 import { thumbnailFor } from '@mantle/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
-import { isAuthorOfAcceptedFile } from '@mantle/content';
+import { acceptedFileReadable } from '@mantle/content';
 import { getMemberForAsset } from '@/lib/auth';
 import { fileById, openFileById, readFileById } from '@/lib/files';
 import { memberBytesGate } from '@/lib/member-space';
@@ -18,7 +18,10 @@ const IdParams = z.object({ id: z.string().uuid() });
  * `?at=` token (an <img> src cannot carry a bearer). The lookup runs at the
  * team level, so a file above it is a 404, with one exception (Phase 4, plan
  * 6.2): a file this member wrote and an admin accepted is read from the brain
- * whatever its level, so it still renders in the author's other drafts.
+ * whatever its level, so it still renders in the author's other drafts, but
+ * only while the brain file holds exactly the bytes accepted (audit F07: the
+ * accepted snapshot's sha256). Once an admin changed it, it is a 404 here
+ * and /api/member/accepted/:id says `changedByAdmin`.
  * The bytes are streamed, and the route is rate limited per login (429) like
  * the other member bytes routes.
  */
@@ -34,7 +37,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   // admin pool, only after member-accepted.ts proved the author rule.
   const lookup = async <T>(fn: () => Promise<T | null>): Promise<T | null> =>
     (await withViewer('team', fn)) ??
-    ((await isAuthorOfAcceptedFile(member.anchorId, member.loginId, scope.fileId))
+    ((await acceptedFileReadable(member.anchorId, member.loginId, scope.fileId))
       ? await fn()
       : null);
 

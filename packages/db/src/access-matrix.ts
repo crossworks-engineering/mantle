@@ -177,6 +177,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   },
   // Read only through mantle_is_brain_space() (security definer).
   none('public.spaces'),
+  // The accepted snapshot a member author reads (0183): the admin pool
+  // serves it with the author rule in the query (member-accepted.ts).
+  none('public.accepted_snapshots'),
   // The upload ledger (0169): the space role inserts and reads its own
   // space's rows; the level roles never see it.
   { table: 'public.space_uploads', read: 'none', rule: 'none', writer: 'content', space: 'write' },
