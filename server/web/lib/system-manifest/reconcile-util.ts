@@ -42,9 +42,9 @@ const LEVEL_RANK: Record<string, number> = { public: 0, client: 1, team: 2, admi
  * Of the groups reconcile would add, keep only those at or below the agent's
  * level (member logins Phase 0b: an agent holds only groups at or below its
  * level). Without this, every image update re-added `team-read-admin` to a
- * team-responder an admin had lowered to team (seen on NATREF and dev,
- * v0.232.265): harmless at run time (the level cap drops it) but it broke the
- * rule and showed up in the shadow report. A group whose level is unknown
+ * team-responder an admin had lowered to team (seen on two boxes of the
+ * fleet, v0.232.265): harmless at run time (the level cap drops it) but it
+ * broke the rule and showed up in the shadow report. A group whose level is unknown
  * counts as admin, so only an admin agent gets it.
  */
 export function groupsWithinLevel(
