@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
-## 0.232.NEXT: client logins, phases C0 and C1 (the client level, dark)
+## 0.232.318: client logins, phases C0 and C1 (the client level, dark)
 
 No client login can be made yet (the users API refuses role client until
 phase C2). What changes for an admin today: **client no longer means "anyone
