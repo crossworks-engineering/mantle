@@ -185,10 +185,14 @@ describe.skipIf(!URL)('admin private items', () => {
     expect(saved.ok).toBe(true);
     // A note's text is checked on every change, by the same rule.
     const note = await as(adminA, () =>
-      sp.createMineItem(A, { type: 'note', title: `${tag} an`, content: `/n/${secretId}` }, writer),
+      sp.createMineItem(
+        A,
+        { type: 'note', title: `${tag} an`, content: `[s](/n/${secretId})` },
+        writer,
+      ),
     );
     await expect(
-      as(adminA, () => sp.updateMineItem(A, note.id, { content: `/n/${bNoteId}` }, writer)),
+      as(adminA, () => sp.updateMineItem(A, note.id, { content: `[b](/n/${bNoteId})` }, writer)),
     ).rejects.toMatchObject({ reason: 'embed', ids: [bNoteId] });
     await as(adminA, () => sp.deleteMineItem(A, note.id));
   });
