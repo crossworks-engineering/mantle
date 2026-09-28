@@ -22,7 +22,15 @@ const disk = () => import('./disk');
 describe('isDiskChaff', () => {
   it('matches OS and editor chaff only', async () => {
     const { isDiskChaff } = await disk();
-    for (const n of ['._sermon.md', '.DS_Store', 'notes.md~', '.notes.md.swp', 'x.swx', 'a.tmp', '#a.md#']) {
+    for (const n of [
+      '._sermon.md',
+      '.DS_Store',
+      'notes.md~',
+      '.notes.md.swp',
+      'x.swx',
+      'a.tmp',
+      '#a.md#',
+    ]) {
       expect(isDiskChaff(n), n).toBe(true);
     }
     for (const n of ['sermon.md', 'bible.epub', 'report.docx', 'archive.zip']) {
