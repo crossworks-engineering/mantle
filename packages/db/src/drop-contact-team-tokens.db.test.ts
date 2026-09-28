@@ -130,10 +130,15 @@ describe.skipIf(!URL)('migration 0178: drop contact_team_tokens', () => {
         on_delete: 'c',
       },
     ]);
-    expect(drop.join('\n')).toContain(
-      'DROP CONSTRAINT IF EXISTS "contact_team_tokens_contact_id_fkey"',
-    );
-    expect(drop.join('\n')).not.toMatch(/cascade/i);
+    // The SQL itself, comments aside: the FK by name, and no CASCADE.
+    const code = drop
+      .join('\n')
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('--'))
+      .join('\n');
+    expect(code).toContain('DROP CONSTRAINT IF EXISTS "contact_team_tokens_contact_id_fkey"');
+    expect(code).toContain('DROP TABLE IF EXISTS "contact_team_tokens"');
+    expect(code).not.toMatch(/cascade/i);
   });
 
   it('fails on a dependency it does not know about instead of dropping it (no CASCADE)', async () => {
