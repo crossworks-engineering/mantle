@@ -18,7 +18,12 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 const getOwnerOr401 = vi.fn();
 vi.mock('./auth', async () => {
   const actual = await vi.importActual<typeof import('./auth')>('./auth');
-  return { ...actual, getOwnerOr401: () => getOwnerOr401() };
+  return {
+    ...actual,
+    getOwnerOr401: () => getOwnerOr401(),
+    // The login's session epoch (0181), read from its row.
+    loginSessionEpoch: async () => 3,
+  };
 });
 
 beforeAll(() => {
@@ -85,6 +90,9 @@ describe('POST /api/auth/sso', () => {
     const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     expect(claims.uid).toBe(ADDED_LOGIN);
     expect(claims.uid).not.toBe(ANCHOR);
+    // Signed at the login's current session epoch, or the next request
+    // would refuse the cookie it was just given.
+    expect(claims.ep).toBe(3);
   });
 
   it('mints a SHORT cookie, not the password login’s year', async () => {
@@ -93,7 +101,7 @@ describe('POST /api/auth/sso', () => {
     const res = await post();
 
     // The bearer this upgrades is 30-day and revocable per device; the session
-    // cookie is revocable by nothing. A year here would convert a revocable
+    // cookie only for the whole login (its session epoch). A year here would convert a revocable
     // credential into an irrevocable one that outlives it — the short TTL is
     // safe only because the shell re-mints on every page load.
     const maxAge = /max-age=(\d+)/i.exec(res.headers.get('set-cookie') ?? '')?.[1];

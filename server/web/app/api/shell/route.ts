@@ -2,7 +2,7 @@ import { maxStreamedUploadBytes } from '@mantle/files';
 import { NextResponse } from '@/server/http-compat';
 import { countPending } from '@mantle/tools';
 import { loadPreferencesFor, logoVersion } from '@mantle/content';
-import { buildAssetToken, getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, mintAssetToken } from '@/lib/auth';
 import { isOnboarded } from '@/lib/onboarding';
 
 /**
@@ -53,7 +53,7 @@ export async function GET() {
   // srcs (which can't carry a bearer) can load `?raw=1` files + attachments. The
   // client appends it via `assetUrl()`; same-origin ignores it (cookie auth). See
   // lib/asset-url.ts + getOwnerForAsset.
-  const assetToken = buildAssetToken(user.id, user.actor.id);
+  const assetToken = await mintAssetToken(user.id, user.actor.id);
   return NextResponse.json({
     onboarded,
     avatar,

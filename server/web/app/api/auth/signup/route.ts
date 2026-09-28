@@ -92,7 +92,8 @@ export async function POST(req: Request) {
   });
 
   // Sign them straight in — onboarding picks up from /onboarding.
-  const { value, maxAgeSec } = buildSessionCookie(id);
+  // A brand-new login: its session epoch is the column default, 0.
+  const { value, maxAgeSec } = buildSessionCookie(id, { epoch: 0 });
   const res = NextResponse.json({ ok: true });
   res.cookies.set(SESSION_COOKIE_NAME, value, {
     httpOnly: true,

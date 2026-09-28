@@ -9,8 +9,8 @@
  *
  * Every failure about the code (unknown, used, revoked, expired, an old team
  * code, a wrong email) is the same 401, so the route is no oracle. A password under 8
- * characters is a 400 before any code is looked at. Rate limited per IP and
- * for the whole brain, before bcrypt.
+ * characters is a 400 before any code is looked at. Rate limited per IP and,
+ * on failed codes, for the whole brain, before bcrypt (lib/member-invites.ts).
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
@@ -19,7 +19,7 @@ import { redeemMemberInvite } from '@mantle/content';
 import type { MemberInviteAccepted } from '@mantle/client-types';
 import { hashLoginPassword, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { inviteRateLimited } from '@/lib/member-invites';
+import { inviteFailed, inviteRateLimited } from '@/lib/member-invites';
 
 const AcceptBody = z.object({
   code: z.string().min(1).max(64),
@@ -35,6 +35,7 @@ export async function POST(req: Request) {
 
   const parsed = AcceptBody.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
+    inviteFailed('accept');
     return NextResponse.json({ error: INVITE_FAILED_MESSAGE }, { status: 401 });
   }
   if (parsed.data.password.length < 8) {
@@ -51,6 +52,7 @@ export async function POST(req: Request) {
     email: parsed.data.email || undefined,
   });
   if (!redeemed) {
+    inviteFailed('accept');
     auditFireAndForget({
       actorEmail: parsed.data.email?.toLowerCase() || '(invite)',
       action: 'auth.invite_failed',
@@ -77,6 +79,7 @@ export async function POST(req: Request) {
 
   const body: MemberInviteAccepted = { ok: true, email: redeemed.email };
   const res = NextResponse.json(body);
-  setSessionCookie(res, req, redeemed.loginId);
+  // A login made by this redeem: its session epoch is the column default, 0.
+  setSessionCookie(res, req, redeemed.loginId, 0);
   return res;
 }

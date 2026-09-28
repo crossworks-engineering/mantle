@@ -27,7 +27,7 @@
  * Authorization header rather than a form body.
  */
 import { NextResponse } from '../server/http-compat';
-import { buildSessionCookie, getOwnerOr401, SESSION_COOKIE_NAME } from './auth';
+import { buildSessionCookie, getOwnerOr401, loginSessionEpoch, SESSION_COOKIE_NAME } from './auth';
 import { isTrustedOrigin, rateLimited } from './auth/preflight';
 import { secureCookies } from './auth-constants';
 import { rateLimit, clientIp } from './rate-limit';
@@ -56,13 +56,17 @@ export async function handleOwnerSso(req: Request): Promise<NextResponse> {
   // row an added login writes to the anchor instead.
   //
   // SHORT TTL, deliberately — not the password login's year. The bearer this
-  // upgrades is 30-day and revocable per device; the session cookie has no
-  // revocation at all, so a long mint here would convert a revocable
-  // credential into an irrevocable one that outlives it. Seven days is
+  // upgrades is 30-day and revocable per device; the session cookie is
+  // revocable only for the whole login (its session epoch, 0181), not per
+  // device, so a long mint here would let one device's cookie outlive that
+  // device's revoked token. Seven days is
   // enough because the shell re-fires upgradeOwnerCookie on EVERY page load:
   // the cookie renews continuously while the bearer stays valid, and dies
   // within a week of the device's token being revoked.
-  const { value, maxAgeSec } = buildSessionCookie(user.actor.id, OWNER_SSO_COOKIE_TTL_SECONDS);
+  const { value, maxAgeSec } = buildSessionCookie(user.actor.id, {
+    epoch: await loginSessionEpoch(user.actor.id),
+    ttlSeconds: OWNER_SSO_COOKIE_TTL_SECONDS,
+  });
   const res = new NextResponse(null, { status: 204 });
   res.cookies.set(SESSION_COOKIE_NAME, value, {
     httpOnly: true,

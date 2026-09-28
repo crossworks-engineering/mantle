@@ -38,6 +38,7 @@ vi.mock('../lib/auth/login-row', () => ({
           role: 'member',
           contactId: null,
           disabledAt: null,
+          sessionEpoch: 0,
         }
       : null,
   loadAnchorId: async () => '33333333-3333-4333-8333-333333333333',

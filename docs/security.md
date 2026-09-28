@@ -41,12 +41,12 @@
 
 ## 2. Identity & credentials
 
-| Credential                                            | Who holds it                       | Scope                                                                                                                                            | Revocation                                                |
-| ----------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
-| Owner/admin login + session cookie                    | you and named admins               | the whole app                                                                                                                                    | change password; delete the admin user                    |
-| **Member login** + session cookie                     | a person you invited (role member) | the member routes only (`MEMBER_ROUTES`): the Library, their chat with the team agent, their personal space, member apps; read at the team level | disable, demote or delete the login, instant, mid-session |
-| **Invite code** (16 chars, SHA-256 at rest, 72 hours) | the person an admin invited        | one redeem: set a password and become that member login                                                                                          | revoke the invite; it expires                             |
-| Share token (~128-bit CSPRNG in the URL)              | anyone with the link               | exactly one shared item (or one public app)                                                                                                      | turn the share off                                        |
+| Credential                                            | Who holds it                       | Scope                                                                                                                                            | Revocation                                                                                                 |
+| ----------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| Owner/admin login + session cookie                    | you and named admins               | the whole app                                                                                                                                    | change password or sign out everywhere (ends every session of the login); disable or delete the admin user |
+| **Member login** + session cookie                     | a person you invited (role member) | the member routes only (`MEMBER_ROUTES`): the Library, their chat with the team agent, their personal space, member apps; read at the team level | disable, demote or delete the login, instant, mid-session                                                  |
+| **Invite code** (16 chars, SHA-256 at rest, 72 hours) | the person an admin invited        | one redeem: set a password and become that member login                                                                                          | revoke the invite; it expires                                                                              |
+| Share token (~128-bit CSPRNG in the URL)              | anyone with the link               | exactly one shared item (or one public app)                                                                                                      | turn the share off                                                                                         |
 
 Notes that matter to a reviewer:
 
@@ -64,7 +64,33 @@ Notes that matter to a reviewer:
   return a **uniform 401** for wrong-vs-unknown codes
   (no oracle) and are **rate-limited** per-IP (hardened client-IP derivation
   honouring `MANTLE_TRUSTED_PROXIES`, so the bucket can't be reset by spoofed
-  headers) and per-brain.
+  headers) and per-brain on failed codes only, so a few addresses cannot
+  lock real invitees out.
+- **Sessions can be ended (migration 0181).** The session cookie is
+  stateless (one year), so it carries the login's `session_epoch`, signed,
+  and every request compares it with the row; so does the 2-hour `?at=`
+  asset token. A password change, an admin password reset, disable (and
+  enable again), a role change, and sign out everywhere
+  (`POST /api/auth/logout` `{ "everywhere": true }`, or an admin's
+  `PATCH /api/users/:id` `{ "signOut": true }`) bump it and revoke the
+  login's bearers: every copied cookie and token dies on its next request.
+  The device that changed its own password stays signed in. Details:
+  [member-logins.md](./member-logins.md) section 1.
+- **Credential races are single-use by construction.** An OAuth
+  authorization code is claimed with one `DELETE ... RETURNING`, and a web
+  bearer refresh claims the old row with one conditional `UPDATE`, so two
+  requests at once cannot both win. `/api/oauth/authorize` answers a
+  non-uuid `client_id` as an unknown client, not a 500.
+- **No account oracle on the password login:** an unknown email is checked
+  against a dummy bcrypt hash of the same cost, so the answer takes as long
+  as a wrong password.
+- **Personal item ids stay with their owner:** the audit log keeps
+  `/api/admin/space/:id/...` and `/api/member/space/:id/...` paths with the
+  id replaced by `:id`, and the `my_items_list` / `my_item_open` tools'
+  arguments are redacted in trace inputs (every admin reads both).
+- **Embeds read schemes like a browser:** the member embed rule strips
+  controls and whitespace before testing a scheme, so `java<TAB>script:`
+  is refused like `javascript:` (as are `vbscript:` and non-image `data:`).
 - **Liveness on every request:** external surfaces re-check membership per
   request, not per session, revocation takes effect immediately.
 - Cookies are signed; `secureCookies(req)` keeps auth working correctly on

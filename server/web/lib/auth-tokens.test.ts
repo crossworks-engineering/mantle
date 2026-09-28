@@ -262,3 +262,36 @@ describe('app-frame tickets carry no contact', () => {
     expect(claims.cid).toBeUndefined();
   });
 });
+
+/**
+ * The session epoch (0181, final audit F06): cookies and asset tokens carry
+ * the login's epoch when minted, so the session layer can end them all by
+ * bumping it. A value from before 0181 has no claim and reads as 0; a claim
+ * that is not a non-negative integer makes the value invalid.
+ */
+describe('session epoch claim', () => {
+  it('round-trips on the session cookie and the asset token', async () => {
+    const { buildSessionCookie, verifySessionCookie, buildAssetToken, verifyAssetToken } =
+      await authLib();
+    expect(verifySessionCookie(buildSessionCookie('u1', { epoch: 4 }).value)?.ep).toBe(4);
+    expect(verifySessionCookie(buildSessionCookie('u1').value)?.ep).toBe(0);
+    expect(verifyAssetToken(buildAssetToken('u1', 'l1', 7))?.ep).toBe(7);
+    expect(verifyAssetToken(buildAssetToken('u1'))?.ep).toBe(0);
+  });
+
+  it('reads a value without the claim as epoch 0', async () => {
+    const { verifySessionCookie, verifyAssetToken } = await authLib();
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    expect(verifySessionCookie(signRaw({ uid: 'u1', exp }))).toEqual({ uid: 'u1', exp, ep: 0 });
+    expect(verifyAssetToken(signRaw({ uid: 'u1', exp, k: 'a' }))?.ep).toBe(0);
+  });
+
+  it('refuses a value whose claim is not a non-negative integer', async () => {
+    const { verifySessionCookie, verifyAssetToken } = await authLib();
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    for (const ep of [-1, 1.5, '2', null, true]) {
+      expect(verifySessionCookie(signRaw({ uid: 'u1', exp, ep })), String(ep)).toBeNull();
+      expect(verifyAssetToken(signRaw({ uid: 'u1', exp, ep, k: 'a' })), String(ep)).toBeNull();
+    }
+  });
+});

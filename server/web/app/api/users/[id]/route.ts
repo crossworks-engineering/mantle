@@ -14,12 +14,21 @@ import {
   pairingCodes,
 } from '@mantle/db';
 import { settleSpaceOnPromotion } from '@mantle/content';
-import { getOwnerOr401 } from '@/lib/auth';
+import { endLoginSessions, getOwnerOr401 } from '@/lib/auth';
 import { releaseAssignedAgent } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { deleteLoginSubscriptions, forgetRelayDevices } from '@/lib/push/store';
 
 const IdParams = z.object({ id: z.string().uuid() });
+
+function isUniqueViolation(err: unknown): boolean {
+  let e: unknown = err;
+  for (let i = 0; i < 3 && e && typeof e === 'object'; i += 1) {
+    if ((e as { code?: unknown }).code === '23505') return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
+}
 
 const PatchBody = z
   .object({
@@ -29,6 +38,9 @@ const PatchBody = z
     /** true = the login cannot sign in or use a session it holds. */
     disabled: z.boolean().optional(),
     contactId: z.string().uuid().nullable().optional(),
+    /** true = end every session the login holds (cookies, asset tokens,
+     *  bearers) without changing anything else: "sign out everywhere". */
+    signOut: z.literal(true).optional(),
   })
   .refine((b) => Object.values(b).some((v) => v !== undefined), 'Nothing to update.');
 
@@ -46,7 +58,12 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   const body = parsed.data;
 
   const [target] = await db
-    .select({ id: authUsers.id, email: authUsers.email, isOwner: authUsers.isOwner })
+    .select({
+      id: authUsers.id,
+      email: authUsers.email,
+      isOwner: authUsers.isOwner,
+      role: authUsers.role,
+    })
     .from(authUsers)
     .where(eq(authUsers.id, targetId))
     .limit(1);
@@ -96,39 +113,63 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (body.contactId !== undefined) changes.contactId = body.contactId;
   if (body.disabled !== undefined) changes.disabledAt = body.disabled ? new Date() : null;
 
+  // Every session the login holds ends (F06) when it is disabled or enabled,
+  // when its role changes, or when asked: the session epoch is bumped and
+  // its bearers revoked. Re-enabling bumps too, so a cookie from before a
+  // disable made by an older release cannot come back to life.
+  const endSessions =
+    body.signOut === true ||
+    body.disabled !== undefined ||
+    (body.role !== undefined && body.role !== target.role);
+
   let pushTokens: string[] = [];
   let releasedAgentId: string | null = null;
-  await db.transaction(async (tx) => {
-    await tx.update(authUsers).set(changes).where(eq(authUsers.id, targetId));
-    // A member made admin: what they shared or submitted as a member goes
-    // back to private drafts (audit F21). An admin's items are never team
-    // drafts or reviewed, and a later demotion must not bring them back.
-    if (body.role === 'admin') await settleSpaceOnPromotion(tx, targetId);
-    // Cookies re-read the row every request, so they stop at once. Bearers
-    // and connector (OAuth) grants would too (both re-check the login), but
-    // revoke them so the device and connector lists tell the truth. Unclaimed
-    // pairing codes die too, so a QR shown before the lockout cannot pair.
-    // The login's push devices go (0173): nothing else would stop the brain
-    // pushing to its phone. Its personal assistant is released (kept, never
-    // deleted): a member chats only with team-level agents.
-    if (lockingOut) {
-      pushTokens = await deleteLoginSubscriptions(targetId, tx);
-      releasedAgentId = (await releaseAssignedAgent(user.id, targetId, tx))?.id ?? null;
-      const now = new Date();
-      await tx
-        .update(mobileTokens)
-        .set({ revokedAt: now })
-        .where(and(eq(mobileTokens.userId, targetId), isNull(mobileTokens.revokedAt)));
-      await tx
-        .update(oauthAccessTokens)
-        .set({ revokedAt: now })
-        .where(and(eq(oauthAccessTokens.actorId, targetId), isNull(oauthAccessTokens.revokedAt)));
-      await tx.delete(oauthAuthCodes).where(eq(oauthAuthCodes.actorId, targetId));
-      await tx
-        .delete(pairingCodes)
-        .where(and(eq(pairingCodes.userId, targetId), isNull(pairingCodes.claimedAt)));
+  try {
+    await db.transaction(async (tx) => {
+      if (Object.keys(changes).length > 0) {
+        await tx.update(authUsers).set(changes).where(eq(authUsers.id, targetId));
+      }
+      if (endSessions) await endLoginSessions(targetId, { tx });
+      // A member made admin: what they shared or submitted as a member goes
+      // back to private drafts (audit F21). An admin's items are never team
+      // drafts or reviewed, and a later demotion must not bring them back.
+      if (body.role === 'admin') await settleSpaceOnPromotion(tx, targetId);
+      // Cookies re-read the row every request, so they stop at once. Bearers
+      // and connector (OAuth) grants would too (both re-check the login), but
+      // revoke them so the device and connector lists tell the truth. Unclaimed
+      // pairing codes die too, so a QR shown before the lockout cannot pair.
+      // The login's push devices go (0173): nothing else would stop the brain
+      // pushing to its phone. Its personal assistant is released (kept, never
+      // deleted): a member chats only with team-level agents.
+      if (lockingOut) {
+        pushTokens = await deleteLoginSubscriptions(targetId, tx);
+        releasedAgentId = (await releaseAssignedAgent(user.id, targetId, tx))?.id ?? null;
+        const now = new Date();
+        await tx
+          .update(mobileTokens)
+          .set({ revokedAt: now })
+          .where(and(eq(mobileTokens.userId, targetId), isNull(mobileTokens.revokedAt)));
+        await tx
+          .update(oauthAccessTokens)
+          .set({ revokedAt: now })
+          .where(and(eq(oauthAccessTokens.actorId, targetId), isNull(oauthAccessTokens.revokedAt)));
+        await tx.delete(oauthAuthCodes).where(eq(oauthAuthCodes.actorId, targetId));
+        await tx
+          .delete(pairingCodes)
+          .where(and(eq(pairingCodes.userId, targetId), isNull(pairingCodes.claimedAt)));
+      }
+    });
+  } catch (err) {
+    // Two links to one contact at once: the check above passed for both, the
+    // unique index (0181) stops the second.
+    if (isUniqueViolation(err)) {
+      return NextResponse.json(
+        { error: 'That contact is already linked to another user.' },
+        { status: 409 },
+      );
     }
-  });
+    throw err;
+  }
   // After the commit, as the single unpair route does: tell the relay.
   await forgetRelayDevices(pushTokens);
 
@@ -142,6 +183,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       targetId,
       targetEmail: target.email,
       changes: body,
+      ...(endSessions ? { sessionsEnded: true } : {}),
       ...(lockingOut ? { releasedAgentId, pushDevicesRemoved: pushTokens.length } : {}),
     },
     ...requestMetaFrom(req),

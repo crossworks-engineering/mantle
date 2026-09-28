@@ -48,6 +48,22 @@ export type AuditEntry = {
   detail?: Record<string, unknown> | null;
 };
 
+/** A personal-space route with an item id in it: the admin's own
+ *  (/api/admin/space/<id>/…) or a member's (/api/member/space/<id>/…). */
+const PERSONAL_ITEM_PATH = /^(\/api\/(?:admin|member)\/space)\/[^/?#]+/;
+
+/**
+ * The path as the trail keeps it. Every admin reads the audit log, and a
+ * personal item's id belongs to its owner alone (final audit F31): it is
+ * what a same-origin request for the item would need. So the id in a
+ * personal-space path is kept as `:id`; the route and the actor still say
+ * who did what.
+ */
+export function redactAuditPath(path: string | null | undefined): string | null {
+  if (!path) return null;
+  return path.replace(PERSONAL_ITEM_PATH, '$1/:id');
+}
+
 export async function logAudit(entry: AuditEntry): Promise<void> {
   // Detached dev has no local Postgres — the insert would throw on every call.
   if (isDetachedDev()) return;
@@ -56,7 +72,7 @@ export async function logAudit(entry: AuditEntry): Promise<void> {
     actorEmail: entry.actorEmail,
     action: entry.action,
     method: entry.method ?? null,
-    path: entry.path ?? null,
+    path: redactAuditPath(entry.path),
     ip: entry.ip ?? null,
     userAgent: entry.userAgent ?? null,
     detail: entry.detail ?? null,

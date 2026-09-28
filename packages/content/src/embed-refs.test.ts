@@ -68,6 +68,39 @@ describe('pageRefs', () => {
     );
   });
 
+  it('reads a scheme as the browser does: controls and whitespace do not hide it', () => {
+    const sneaky = [
+      'java\tscript:alert(1)',
+      'java\nscript:alert(1)',
+      '\u0001javascript:alert(1)',
+      'jav\u0000ascript:alert(1)',
+      'VBScript:msgbox(1)',
+      'vb\tscript:msgbox(1)',
+      'data:text/html,<script>alert(1)</script>',
+      'da\tta:text/html,x',
+    ];
+    const doc = {
+      type: 'doc',
+      content: [
+        para(...sneaky.map((href) => text('x', href))),
+        // An image src: a non-image data: URL and a hidden script are refused;
+        // data:image/ stays allowed, as before.
+        { type: 'image', attrs: { src: 'java\tscript:alert(1)' } },
+        { type: 'image', attrs: { src: 'data:text/html,x' } },
+        { type: 'image', attrs: { src: 'data:image/png;base64,AAAA' } },
+      ],
+    };
+    const r = pageRefs(doc);
+    expect(r.ids).toEqual([]);
+    expect(r.refused.sort()).toEqual([...sneaky, 'data:text/html,x'].sort());
+    // A hidden-scheme value never reads as a relative path of ids either.
+    expect(pageRefs({ type: 'doc', content: [para(text('x', `java\tscript:/n/${A}`))] })).toEqual({
+      ids: [],
+      refused: [`java\tscript:/n/${A}`],
+      embeds: [],
+    });
+  });
+
   it('leaves plain links, anchors and inline images alone', () => {
     const doc = {
       type: 'doc',

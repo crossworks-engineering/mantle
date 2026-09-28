@@ -13,7 +13,12 @@
  * client behind it, import this module directly.
  *
  * Stateless by design: there is no session table. Rotating SESSION_SECRET
- * invalidates every outstanding credential at once.
+ * invalidates every outstanding credential at once. One login's cookies and
+ * asset tokens end together through their `ep` claim: the login's
+ * auth.users.session_epoch when they were minted (0181). The session layer
+ * compares it with the row on every request, so bumping the column (password
+ * change, disable, role change, sign out everywhere) ends them all. A value
+ * without `ep` is epoch 0: what every login starts at.
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { RENDER_COOKIE_NAME, SESSION_COOKIE_NAME } from '../auth-constants';
@@ -105,19 +110,36 @@ function verifySigned(value: string, kind: TokenKind | null): SignedClaims | nul
   }
 }
 
+/** The `ep` claim: absent is epoch 0 (a value minted before 0181); anything
+ *  but a non-negative integer makes the value invalid (null). */
+function epochClaim(claims: SignedClaims): number | null {
+  const ep = claims.ep;
+  if (ep === undefined) return 0;
+  return typeof ep === 'number' && Number.isInteger(ep) && ep >= 0 ? ep : null;
+}
+
 // ── Session cookies (kindless) ───────────────────────────────────────────────
 
 export { RENDER_COOKIE_NAME, SESSION_COOKIE_NAME };
 
+/** Mint a session cookie for the login `userId`. `epoch` is the login's
+ *  session_epoch now (a stale one fails on the next request, so a caller
+ *  that passes the wrong value signs the user out, never in). */
 export function buildSessionCookie(
   userId: string,
-  ttlSeconds: number = ONE_YEAR_SECONDS,
+  opts: { epoch?: number; ttlSeconds?: number } = {},
 ): { value: string; maxAgeSec: number } {
-  return { value: signClaims({ uid: userId }, ttlSeconds).value, maxAgeSec: ttlSeconds };
+  const ttlSeconds = opts.ttlSeconds ?? ONE_YEAR_SECONDS;
+  return {
+    value: signClaims({ uid: userId, ep: opts.epoch ?? 0 }, ttlSeconds).value,
+    maxAgeSec: ttlSeconds,
+  };
 }
 
 /**
  * Verify a session cookie value: signature, expiry, and that it is KINDLESS.
+ * `ep` is the login's session epoch when it was minted; the caller compares
+ * it with the row (see resolveLogin).
  *
  * The kind check is the load-bearing part. Mobile (`k:'m'`) and asset (`k:'a'`)
  * tokens share the `{uid, exp}` payload, so without it a signed mobile token
@@ -125,10 +147,14 @@ export function buildSessionCookie(
  * never consults mobile_tokens.revoked_at, dodging a mobile logout — and an
  * asset token would grant full session access instead of just byte-serving.
  */
-export function verifySessionCookie(value: string): { uid: string; exp: number } | null {
+export function verifySessionCookie(
+  value: string,
+): { uid: string; exp: number; ep: number } | null {
   const claims = verifySigned(value, null);
   if (!claims || typeof claims.uid !== 'string') return null;
-  return { uid: claims.uid, exp: claims.exp };
+  const ep = epochClaim(claims);
+  if (ep === null) return null;
+  return { uid: claims.uid, exp: claims.exp, ep };
 }
 
 // ── Render cookies (`k:'r'`) ────────────────────────────────────────────────
@@ -230,8 +256,9 @@ export function mobileTokenJti(token: string): string | null {
 // Authorization header, so a
 // detached/Electron client (cross-origin, no cookie) can't otherwise load them.
 // Delivered in the URL (`?at=`), so the TTL is deliberately short to bound a
-// leaked URL; no revocation row (unlike mobile tokens) — TTL + secret rotation
-// is the kill switch. Scope is byte-serving only: the gate accepts it for asset
+// leaked URL; no revocation row (unlike mobile tokens): the TTL, the login's
+// session epoch (`ep`, compared with the row on use) and secret rotation are
+// the kill switches. Scope is byte-serving only: the gate accepts it for asset
 // paths exclusively, and the session verifier rejects any kinded token.
 
 const ASSET_TOKEN_TTL_SECONDS = 2 * 60 * 60; // 2h — one working session.
@@ -240,21 +267,32 @@ const ASSET_TOKEN_TTL_SECONDS = 2 * 60 * 60; // 2h — one working session.
  *  `actorId` names the LOGIN the token was minted for, when it differs from
  *  the anchor: per-login asset routes (the profile photo) read it so a
  *  detached second admin sees their own face, while owner-scoped byte routes
- *  keep using `uid` (everything is owned by the anchor). */
-export function buildAssetToken(userId: string, actorId?: string): string {
+ *  keep using `uid` (everything is owned by the anchor). `epoch` is the
+ *  session_epoch of that login (`actorId`, else `userId`): a bump ends the
+ *  token within its 2 hours, like the login's cookies. */
+export function buildAssetToken(userId: string, actorId?: string, epoch = 0): string {
   return signClaims(
-    { uid: userId, ...(actorId && actorId !== userId ? { act: actorId } : {}), k: 'a' },
+    {
+      uid: userId,
+      ...(actorId && actorId !== userId ? { act: actorId } : {}),
+      ep: epoch,
+      k: 'a',
+    },
     ASSET_TOKEN_TTL_SECONDS,
   ).value;
 }
 
-/** Verify an asset token's signature, expiry and kind (`k:'a'`). No DB. */
-export function verifyAssetToken(token: string): { uid: string; act?: string } | null {
+/** Verify an asset token's signature, expiry and kind (`k:'a'`). No DB: the
+ *  caller compares `ep` with the login row. */
+export function verifyAssetToken(token: string): { uid: string; act?: string; ep: number } | null {
   const claims = verifySigned(token, 'a');
   if (!claims || typeof claims.uid !== 'string') return null;
+  const ep = epochClaim(claims);
+  if (ep === null) return null;
   return {
     uid: claims.uid,
     ...(typeof claims.act === 'string' ? { act: claims.act } : {}),
+    ep,
   };
 }
 

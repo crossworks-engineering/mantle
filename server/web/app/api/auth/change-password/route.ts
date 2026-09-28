@@ -1,6 +1,14 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { getLoginOr401, updatePassword, verifyPassword } from '@/lib/auth';
+import {
+  bearerFromHeader,
+  endLoginSessions,
+  getLoginOr401,
+  mobileTokenJti,
+  setSessionCookie,
+  updatePassword,
+  verifyPassword,
+} from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
 import { firstIssue } from '@/lib/zod-issue';
@@ -55,6 +63,16 @@ export async function POST(req: Request) {
   }
 
   await updatePassword(actorId, parsed.data.newPassword);
+  // A new password ends every other session the login holds (F06): the epoch
+  // bump kills each cookie and asset token signed before it, and the login's
+  // bearers are revoked. The device that asked stays signed in: a cookie
+  // caller gets a fresh cookie at the new epoch, a bearer caller keeps its
+  // own bearer (only the others are revoked).
+  const keepJti =
+    login.source === 'mobile'
+      ? mobileTokenJti(bearerFromHeader(req.headers.get('authorization')) ?? '')
+      : null;
+  const epoch = await endLoginSessions(actorId, { keepJti });
   auditFireAndForget({
     actorId,
     actorEmail: login.email,
@@ -63,5 +81,7 @@ export async function POST(req: Request) {
     path: '/api/auth/change-password',
     ...requestMetaFrom(req),
   });
-  return NextResponse.json({ ok: true });
+  const res = NextResponse.json({ ok: true });
+  if (login.source === 'web' && epoch !== null) setSessionCookie(res, req, actorId, epoch);
+  return res;
 }

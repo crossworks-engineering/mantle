@@ -32,6 +32,7 @@ vi.mock('../lib/auth/login-row', () => {
     role,
     contactId: null,
     disabledAt: disabled ? new Date('2026-09-01T00:00:00Z') : null,
+    sessionEpoch: 0,
   });
   return {
     loadLoginRow: async (id: string) =>
@@ -183,5 +184,20 @@ describe.skipIf(!hasManifest)('admin private-space routes', () => {
     expect((await at(ANCHOR_ID, MEMBER_ID)).status).toBe(401);
     expect((await at(ANCHOR_ID, DISABLED_ADMIN_ID)).status).toBe(401);
     expect(h.spaceLookups).toEqual([]);
+  });
+
+  it('bytes: an admin ?at= token dies with a session epoch bump (F06)', async () => {
+    const { buildAssetToken } = await import('../lib/auth/tokens');
+    const at = (uid: string, act: string | undefined, epoch: number) =>
+      app.request(
+        `/api/admin/space/not-a-uuid/bytes?at=${encodeURIComponent(buildAssetToken(uid, act, epoch))}`,
+      );
+    // The stand-in rows are at epoch 0: a token from another epoch is stale,
+    // for the anchor's own token (no `act`) and for another admin's.
+    expect((await at(ANCHOR_ID, ADMIN_ID, 1)).status).toBe(401);
+    expect((await at(ANCHOR_ID, undefined, 1)).status).toBe(401);
+    expect(h.spaceLookups).toEqual([]);
+    expect((await at(ANCHOR_ID, ADMIN_ID, 0)).status).toBe(400);
+    expect((await at(ANCHOR_ID, undefined, 0)).status).toBe(400);
   });
 });

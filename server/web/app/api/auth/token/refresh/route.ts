@@ -1,13 +1,16 @@
 import { NextResponse } from '@/server/http-compat';
 import { randomUUID } from 'node:crypto';
-import { db, authUsers, mobileTokens, eq } from '@mantle/db';
+import { db, authUsers, mobileTokens, and, eq, isNull } from '@mantle/db';
 import { buildMobileToken, loginUsable, mobileTokenJti, WEB_TOKEN_TTL_SECONDS } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 
 /**
  * Rotate the calling web-client bearer: mint a new jti + token, revoke the old
- * row — atomically, so a crash can't leave zero valid tokens. Self-
+ * row, atomically, so a crash can't leave zero valid tokens. The old row is
+ * CLAIMED first (revoked only if still live, in the same statement), so two
+ * refreshes of one token at once give one new token, not two (F31): the
+ * loser gets the same 401 as a revoked token. Self-
  * authenticates from the Authorization header (like mobile-logout), so it
  * lives under the public /api/auth prefix.
  *
@@ -61,7 +64,13 @@ export async function POST(req: Request) {
 
   const newJti = randomUUID();
   const minted = buildMobileToken(row.userId, newJti, WEB_TOKEN_TTL_SECONDS);
-  await db.transaction(async (tx) => {
+  const rotated = await db.transaction(async (tx) => {
+    const claimed = await tx
+      .update(mobileTokens)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(mobileTokens.id, jti), isNull(mobileTokens.revokedAt)))
+      .returning({ id: mobileTokens.id });
+    if (claimed.length === 0) return false;
     await tx.insert(mobileTokens).values({
       id: newJti,
       userId: row.userId,
@@ -69,8 +78,9 @@ export async function POST(req: Request) {
       expiresAt: minted.expiresAt,
       lastUsedAt: new Date(),
     });
-    await tx.update(mobileTokens).set({ revokedAt: new Date() }).where(eq(mobileTokens.id, jti));
+    return true;
   });
+  if (!rotated) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   auditFireAndForget({
     actorId: row.userId,

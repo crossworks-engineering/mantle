@@ -1,7 +1,14 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, authUsers, eq } from '@mantle/db';
-import { getOwnerOr401, updatePassword } from '@/lib/auth';
+import {
+  bearerFromHeader,
+  endLoginSessions,
+  getOwnerOr401WithSource,
+  mobileTokenJti,
+  setSessionCookie,
+  updatePassword,
+} from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
 
@@ -12,11 +19,14 @@ const Body = z.object({ newPassword: z.string().min(8).max(1024) });
  * Admin password reset — no old password required (that's what
  * /api/auth/change-password is for). No permission tiers by design: any login
  * may reset any account, their own included. The audit event is the
- * accountability mechanism.
+ * accountability mechanism. A reset ends every session the target holds
+ * (F06); resetting your own keeps the device you did it from signed in, as
+ * /api/auth/change-password does.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
-  const user = await getOwnerOr401();
-  if (user instanceof NextResponse) return user;
+  const auth = await getOwnerOr401WithSource();
+  if (auth instanceof NextResponse) return auth;
+  const { user, source } = auth;
 
   // Throttle per acting login — bcrypt is deliberately slow.
   const limit = rateLimit(`users:password-reset:${user.actor.id}`, {
@@ -46,6 +56,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
 
   await updatePassword(targetId, parsed.data.newPassword);
+  const self = targetId === user.actor.id;
+  const keepJti =
+    self && source === 'mobile'
+      ? mobileTokenJti(bearerFromHeader(req.headers.get('authorization')) ?? '')
+      : null;
+  const epoch = await endLoginSessions(targetId, { keepJti });
 
   auditFireAndForget({
     actorId: user.actor.id,
@@ -57,5 +73,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     ...requestMetaFrom(req),
   });
 
-  return NextResponse.json({ ok: true });
+  const res = NextResponse.json({ ok: true });
+  if (self && source === 'web' && epoch !== null) setSessionCookie(res, req, targetId, epoch);
+  return res;
 }
