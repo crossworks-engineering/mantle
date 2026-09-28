@@ -4,6 +4,13 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.294: client v0.6.158
+
+- Paired with jackdaw v0.6.158: Team admin shows a member's earlier team
+  chat apart from their thread; the forum is read-only with a closed notice
+  and an Export to Pages action; the team portal points code holders to
+  /invite.
+
 ## 0.232.293: the team forum closes and becomes an archive (Phase 6 stage 4)
 
 - The forum takes no new topics, replies, uploads or admin posts (410
