@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
 import { POOL_ROLES } from './viewer-roles';
+import { applyViewerGrants } from './access-matrix';
 import { viewerRoleName } from './viewer';
 
 type Sql = postgres.Sql;
@@ -124,7 +125,8 @@ async function createDatabase(adminUrl: string, name: string): Promise<void> {
 /**
  * A new database on the same server as `adminUrl`, prepared the way CI's
  * throwaway database is (infra/postgres/init, then every migration, each in
- * its own transaction, as migrate.ts runs them). Returns its URL and a
+ * its own transaction, then the access matrix's grants, as migrate.ts runs
+ * them). Returns its URL and a
  * `drop()` that removes it, open connections included.
  *
  * The viewer roles are cluster-wide and already exist wherever the shared
@@ -173,6 +175,9 @@ export async function createMigratedScratchDatabase(
         for (const stmt of migration.sql) await tx.unsafe(stmt);
       });
     }
+    // Grants are per database: migrate applies the access matrix after the
+    // migrations, so a limited role (a member's space) can work here too.
+    await applyViewerGrants(sql);
   } catch (err) {
     await sql.end();
     await drop();
