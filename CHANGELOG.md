@@ -4,6 +4,61 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.308: final audit fixes for member logins, and Take over
+
+Fixes every finding of the final member-logins audit (F01 to F31). Migrations
+0180 to 0183. Roll web and api together, refresh compose (new env names), and
+take the first roll with `scripts/roll.sh` (the box still runs the old
+updater, which takes no backup). Never roll back below this release once
+0183 ran without giving back or accepting taken items first.
+
+- **PDF and drawing renders no longer carry a session (F01).** The render
+  sidecar gets its own short `render` cookie for the acting admin and one
+  node, set on the print origin only; every request to another origin is
+  aborted, and `/print` sends a strict CSP. An outside image in an exported
+  page used to receive the anchor's live session.
+- **Take over (F07).** An admin can take a submitted member item (and its
+  bundle) into their own private space, correct it out of the member's
+  sight, then accept it into the brain (the extractor runs once, on the
+  corrected version) or give it back with a note. The member sees "With
+  admin" meanwhile. Every Accept now stores a snapshot for the author: a
+  member reads what was accepted, never later admin edits.
+- **The submitted bundle is frozen (F04).** Submit records the bundle and
+  refuses unsaved bundle drafts; its items stay frozen until a decision, and
+  Accept moves exactly that bundle.
+- **Safe deletes (F03, F18, F21).** Purge and Discard delete only rows still
+  in the space and lock like Accept; the purge keeps anything a shared or
+  submitted item embeds; a deleted login's space is purged after 30 days
+  and no longer counts as a member's; promotion to admin turns shared and
+  submitted rows back into private drafts.
+- **Sessions can be ended (F06).** A signed session epoch (0181) ends every
+  session and bearer on password change, disable, role change, and the new
+  "Sign out everywhere" (`POST /api/auth/logout {everywhere:true}`,
+  `PATCH /api/users/:id {signOut:true}`). OAuth codes and web-token
+  refreshes are claimed atomically; a login for an unknown email takes the
+  same time; one login per contact is a unique index.
+- **Member chat cost (F08, F09, F17).** A turn ledger at enqueue (0182) holds
+  the daily cap, plus a daily token budget per login
+  (`MANTLE_MEMBER_DAILY_TOKENS`), on a member queue of its own
+  (`MANTLE_MEMBER_TURN_CONCURRENCY`). Member change requests are capped and
+  reach no model until an admin acts. Member apps never call a built-in that
+  spends. Member writes are rate limited and NUL-stripped.
+- **Rolls (F02, F15, F16).** The updater takes a strict four-part backup
+  before every roll and refuses the roll when it fails, then prunes old
+  server and client images (never sandbox images). New `scripts/roll.sh`
+  with the apps, sandboxes and app-db count guard.
+- **Links and levels (F19).** A shared folder lists and serves only items at
+  or below the link's level.
+- **Smaller items.** `TeamRequest.loginId` (admins can reply to member
+  requests), `used_private` backfilled, re-embed skips archive pages, a
+  recovered team turn no longer sees its message twice, audit paths and
+  my-space traces drop personal item ids, SECURITY DEFINER functions are
+  not PUBLIC, `linked` removed from the member chat answer.
+- **Tests and docs.** The team-agent level rule, the member realtime filter
+  and the RLS owner check have tests that run in CI; drop-table tests use
+  their own database; security.md, access-levels.md, member-logins.md and
+  update-prod.md match the code.
+
 ## 0.232.307: the installer survives a dropped image download
 
 - `scripts/install.sh` retries a failed `docker compose pull` three times
