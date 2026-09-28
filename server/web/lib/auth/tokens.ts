@@ -243,9 +243,7 @@ export function buildAssetToken(userId: string, actorId?: string, epoch = 0): st
 
 /** Verify an asset token's signature, expiry and kind (`k:'a'`). No DB: the
  *  caller compares `ep` with the login row. */
-export function verifyAssetToken(
-  token: string,
-): { uid: string; act?: string; ep: number } | null {
+export function verifyAssetToken(token: string): { uid: string; act?: string; ep: number } | null {
   const claims = verifySigned(token, 'a');
   if (!claims || typeof claims.uid !== 'string') return null;
   const ep = epochClaim(claims);
