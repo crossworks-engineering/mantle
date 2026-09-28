@@ -21,6 +21,12 @@
 #   caddy:   shapes are installed before the Caddyfile; a shape change forces
 #            the caddy recreate even when the Caddyfile itself is modified
 #   scripts: .pre-adopt backups are pruned to the newest three per script
+#   dump:    db-dump.sh strict mode exits non-zero when any of the four parts
+#            failed, and writes into MANTLE_DUMP_DIR
+#   backup:  the updater's pre-roll backup (strict, retention, disk check,
+#            opt-out) and a whole roll refused with nothing changed when it fails
+#   prune:   after an OK roll only old mantle-server / mantle-client images go;
+#            the rollback pair, the running pair and other repositories stay
 
 set -euo pipefail
 
@@ -297,6 +303,257 @@ check "the two oldest are gone" sh -c "test ! -e '$T/stack/scripts/install.sh.pr
 check "the newest pre-existing ones survive" sh -c "test -e '$T/stack/scripts/install.sh.pre-adopt.20260103-000000' && test -e '$T/stack/scripts/install.sh.pre-adopt.20260104-000000'"
 check "the fresh backup holds the previous copy" sh -c "grep -l 'echo old install' '$T/stack/scripts'/install.sh.pre-adopt.* >/dev/null"
 check "other scripts got no backup (they were absent)" sh -c "! ls '$T/stack/scripts'/sanity.sh.pre-adopt.* >/dev/null 2>&1"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "db-dump.sh: strict mode and the dump dir"
+# An executable docker stub on PATH (db-dump.sh runs as its own process).
+# FAKE_RUNNING lists the running containers; FAKE_FAIL names a step to fail:
+# pg (pg_dump), appdb (the app-db snapshot).
+mkdir -p "$WORK/dumpbin"
+cat > "$WORK/dumpbin/docker" <<'STUB'
+#!/bin/sh
+case "$1" in
+  ps) for c in $FAKE_RUNNING; do echo "$c"; done; exit 0 ;;
+  exec)
+    shift; shift   # exec <container>
+    case "$*" in
+      *pg_isready*) exit 0 ;;
+      *pg_dump*) [ "${FAKE_FAIL:-}" = pg ] && { echo "pg_dump: boom" >&2; exit 1; }; echo PGDUMP; exit 0 ;;
+      *backup-app-dbs*) [ "${FAKE_FAIL:-}" = appdb ] && { echo "tsx: boom" >&2; exit 1; }; echo APPDB; exit 0 ;;
+      *backup-table-dbs*) echo TABLEDB; exit 0 ;;
+      *'tar -C "$MANTLE_SPACES_ROOT"'*) echo SPACES; exit 0 ;;
+      *) exit 0 ;;
+    esac ;;
+esac
+exit 0
+STUB
+chmod +x "$WORK/dumpbin/docker"
+dump_run() { # <name> <env...>: run db-dump.sh from a copy of scripts/, into $WORK/dump-<name>
+  local name="$1"; shift
+  mkdir -p "$WORK/dumptree-$name/scripts"
+  cp "$ROOT/scripts/db-dump.sh" "$WORK/dumptree-$name/scripts/"
+  env PATH="$WORK/dumpbin:$PATH" MANTLE_DUMP_DIR="$WORK/dump-$name" \
+    FAKE_RUNNING="mantle_pg mantle_web" "$@" \
+    bash "$WORK/dumptree-$name/scripts/db-dump.sh" > "$WORK/dump-$name.log" 2>&1
+}
+count_in() { ls -1 "$1" 2>/dev/null | grep -c "$2" || true; }
+
+dump_run ok MANTLE_DUMP_STRICT=1 && rc=0 || rc=$?
+check "all four parts ok: strict exits 0" test "$rc" = 0
+check "all four parts ok: the set is in MANTLE_DUMP_DIR" test "$(ls -1 "$WORK/dump-ok" | wc -l | tr -d ' ')" = 4
+check "all four parts ok: nothing written to ./backups" test ! -e "$WORK/dumptree-ok/backups"
+
+dump_run lax FAKE_FAIL=appdb && rc=0 || rc=$?
+check "app-db part fails, not strict: still exits 0 (default unchanged)" test "$rc" = 0
+check "app-db part fails, not strict: the report names the part" grep -q 'INCOMPLETE backup set.*app-dbs' "$WORK/dump-lax.log"
+
+dump_run strict FAKE_FAIL=appdb MANTLE_DUMP_STRICT=1 && rc=0 || rc=$?
+check "app-db part fails, strict: exits 3" test "$rc" = 3
+check "app-db part fails, strict: the Postgres dump is kept" test "$(count_in "$WORK/dump-strict" '^mantle-[0-9-]*\.dump$')" = 1
+check "app-db part fails, strict: no app-db archive left" test "$(count_in "$WORK/dump-strict" app-dbs)" = 0
+
+dump_run nopg FAKE_FAIL=pg MANTLE_DUMP_STRICT=1 && rc=0 || rc=$?
+check "pg_dump fails: exits non-zero" test "$rc" != 0
+check "pg_dump fails: no .dump file left behind" test "$(count_in "$WORK/dump-nopg" '\.dump$')" = 0
+
+dump_run noweb FAKE_RUNNING=mantle_pg MANTLE_DUMP_STRICT=1 && rc=0 || rc=$?
+check "app container down, strict: exits 3" test "$rc" = 3
+check "app container down, strict: all three file parts named" grep -q 'NOT backed up: app-dbs table-dbs spaces' "$WORK/dump-noweb.log"
+
+if command -v dash >/dev/null 2>&1; then
+  check "db-dump.sh parses as POSIX sh (the updater runs it under busybox sh)" dash -n "$ROOT/scripts/db-dump.sh"
+fi
+
+# ═════════════════════════════════════════════════════════════════════════════
+# The roll stub: a richer docker for the backup, prune and whole-roll tests.
+# Every call is logged to $CALLS. Container images live in $FAKE_STATE/<name>
+# and `compose ... up` moves them to $FAKE_STATE/<name>.next, the way a roll
+# swaps what a container runs. `image ls` prints $FAKE_STATE/images for ANY
+# filter (the worst case: the updater must pick its repository itself), and
+# `rmi` refuses whatever $FAKE_STATE/in-use lists.
+ROLL_STUB='
+docker() {
+  echo "docker $*" >> "$CALLS"
+  case "$1" in
+    create) echo fakecid; return 0 ;;
+    rm|pull) return 0 ;;
+    cp)
+      src=${2#*:}; src=${src#/app/release/}
+      if [ -d "$FAKE_IMG/$src" ]; then cp -R "$FAKE_IMG/$src" "$3"
+      elif [ -f "$FAKE_IMG/$src" ]; then cp "$FAKE_IMG/$src" "$3"
+      else return 1; fi
+      return 0 ;;
+    inspect) cat "$FAKE_STATE/$4" 2>/dev/null || return 1; return 0 ;;
+    exec) echo 1000; return 0 ;;
+    image) cat "$FAKE_STATE/images"; return 0 ;;
+    rmi) grep -qxF "$2" "$FAKE_STATE/in-use" 2>/dev/null && return 1; echo "$2" >> "$FAKE_STATE/removed"; return 0 ;;
+    compose)
+      case "$*" in
+        *"config --services"*) printf "web\nupdater\n"; return 0 ;;
+        *" up "*)
+          for c in mantle_web mantle_client_web; do
+            [ -f "$FAKE_STATE/$c.next" ] && cp "$FAKE_STATE/$c.next" "$FAKE_STATE/$c"
+          done
+          return 0 ;;
+      esac
+      return 0 ;;
+  esac
+  return 0
+}
+'
+roll_lib() { # <root> <body>: source the updater in library mode under the roll stub
+  MANTLE_STACK_DIR="$1/stack" MANTLE_SIGNAL_DIR="$1/sig" FAKE_IMG="$1/img" FAKE_STATE="$1/state" \
+    CALLS="$1/calls" MANTLE_UPDATER_LIB=1 "$SH" -c "$ROLL_STUB
+. '$ROOT/infra/updater/updater.sh'
+$2"
+}
+# fake_dump <root>: a scripts/db-dump.sh that writes a set stamped $FAKE_TS
+# into MANTLE_DUMP_DIR (FAKE_DUMP=ok), writes half a set and exits 3
+# (FAKE_DUMP=fail), or ignores MANTLE_DUMP_DIR like a pre-fix script
+# (FAKE_DUMP=stale). It records that it ran, and the strict flag it saw.
+fake_dump() {
+  mkdir -p "$1/state"
+  cat > "$1/stack/scripts/db-dump.sh" <<'DUMP'
+#!/bin/sh
+echo "strict=${MANTLE_DUMP_STRICT:-} pg=${MANTLE_PG_CONTAINER:-} app=${MANTLE_APP_CONTAINER:-}" > "$FAKE_STATE/dump-ran"
+[ -z "${CALLS:-}" ] || echo "db-dump.sh" >> "$CALLS"
+d=${MANTLE_DUMP_DIR:-backups}
+case "${FAKE_DUMP:-ok}" in
+  ok) for f in "mantle-$FAKE_TS.dump" "mantle-app-dbs-$FAKE_TS.tgz" "mantle-table-dbs-$FAKE_TS.tgz" "mantle-spaces-$FAKE_TS.tgz"; do
+        echo data > "$d/$f"; done; exit 0 ;;
+  fail) echo data > "$d/mantle-$FAKE_TS.dump"; echo "app-db snapshot FAILED" >&2; exit 3 ;;
+  stale) mkdir -p "$(dirname "$0")/../backups"; echo data > "$(dirname "$0")/../backups/mantle-$FAKE_TS.dump"; exit 0 ;;
+esac
+DUMP
+}
+old_set() { # <dir> <stamp>: a complete earlier pre-roll set
+  mkdir -p "$1"
+  for f in "mantle-$2.dump" "mantle-app-dbs-$2.tgz" "mantle-table-dbs-$2.tgz" "mantle-spaces-$2.tgz"; do echo old > "$1/$f"; done
+}
+prb_probe='free_kb() { echo "${FAKE_FREE_KB:-99999999}"; }
+if pre_roll_backup >/dev/null; then echo "rc=0"; else echo "rc=1 err=$PRB_ERR"; fi'
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "updater.sh: pre-roll backup"
+T="$WORK/prb-ok"; fake_stack "$T"; fake_dump "$T"
+P="$T/stack/backups/pre-roll"
+for s in 20260101-000000 20260102-000000 20260103-000000 20260104-000000; do old_set "$P" "$s"; done
+echo mine > "$T/stack/backups/operator-own.dump"
+out=$(FAKE_TS=20260105-000000 roll_lib "$T" "$prb_probe")
+check "ok: returns 0" test "$out" = "rc=0"
+check "ok: db-dump ran strict, with the container names" grep -qx 'strict=1 pg=mantle_pg app=mantle_web' "$T/state/dump-ran"
+check "ok: the new set is complete" test "$(ls "$P" | grep -c 20260105-000000)" = 4
+check "ok: keeps the newest three sets (default)" test "$(ls "$P" | grep -c '\.dump$')" = 3
+check "ok: the two oldest sets are gone, whole" sh -c "! ls '$P' | grep -q '2026010[12]'"
+check "ok: the operator's own backups/ file is untouched" test -f "$T/stack/backups/operator-own.dump"
+check "ok: the log lists the set" grep -q 'pre-roll backup ok: .*mantle-20260105-000000.dump' "$T/sig/update.log"
+
+T="$WORK/prb-keep"; fake_stack "$T"; fake_dump "$T"; P="$T/stack/backups/pre-roll"
+for s in 20260101-000000 20260102-000000; do old_set "$P" "$s"; done
+printf 'MANTLE_PRE_ROLL_KEEP=1\n' >> "$T/stack/.env"
+out=$(FAKE_TS=20260105-000000 roll_lib "$T" "$prb_probe")
+check "MANTLE_PRE_ROLL_KEEP=1 keeps only the new set" test "$(ls "$P" | tr '\n' ' ')" = "mantle-20260105-000000.dump mantle-app-dbs-20260105-000000.tgz mantle-spaces-20260105-000000.tgz mantle-table-dbs-20260105-000000.tgz "
+
+T="$WORK/prb-fail"; fake_stack "$T"; fake_dump "$T"; P="$T/stack/backups/pre-roll"
+old_set "$P" 20260101-000000
+out=$(FAKE_TS=20260105-000000 FAKE_DUMP=fail roll_lib "$T" "$prb_probe")
+check "dump fails: refused, with the exit code" test "$out" = "rc=1 err=db-dump.sh failed (exit 3), see update.log"
+check "dump fails: its half set is removed" sh -c "! ls '$P' | grep -q 20260105"
+check "dump fails: earlier sets are untouched" test "$(ls "$P" | grep -c 20260101-000000)" = 4
+
+T="$WORK/prb-stale"; fake_stack "$T"; fake_dump "$T"
+out=$(FAKE_TS=20260105-000000 FAKE_DUMP=stale roll_lib "$T" "$prb_probe")
+check "a db-dump.sh that ignores MANTLE_DUMP_DIR: refused" sh -c "printf '%s' '$out' | grep -q 'wrote no Postgres dump into backups/pre-roll'"
+
+T="$WORK/prb-disk"; fake_stack "$T"; fake_dump "$T"
+out=$(FAKE_TS=20260105-000000 FAKE_FREE_KB=4000000 roll_lib "$T" "$prb_probe")
+check "too little disk: refused with the numbers" sh -c "printf '%s' '$out' | grep -q 'not enough disk for the pre-roll backup: 3906 MB free, need 4097 MB'"
+check "too little disk: db-dump never ran" test ! -e "$T/state/dump-ran"
+old_set "$T/stack/backups/pre-roll" 20260101-000000
+dd if=/dev/zero of="$T/stack/backups/pre-roll/mantle-20260101-000000.dump" bs=1024 count=2048 2>/dev/null
+out=$(FAKE_TS=20260105-000000 FAKE_FREE_KB=5000000 roll_lib "$T" "$prb_probe")
+check "the estimate follows the last set (2 MB x 1.5 + 4096 MB fits in 4882 MB)" test "$out" = "rc=0"
+
+T="$WORK/prb-off"; fake_stack "$T"; fake_dump "$T"
+printf 'MANTLE_PRE_ROLL_BACKUP=0\n' >> "$T/stack/.env"
+out=$(FAKE_TS=20260105-000000 roll_lib "$T" "$prb_probe")
+check "MANTLE_PRE_ROLL_BACKUP=0: goes ahead" test "$out" = "rc=0"
+check "MANTLE_PRE_ROLL_BACKUP=0: says so loudly" grep -q 'PRE-ROLL BACKUP SKIPPED' "$T/sig/update.log"
+check "MANTLE_PRE_ROLL_BACKUP=0: no dump ran" test ! -e "$T/state/dump-ran"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# roll_loop <root>: run the REAL poll loop once. `sleep` is stubbed to exit,
+# so one request is handled and the shell ends at the loop's first idle tick.
+roll_loop() {
+  MANTLE_STACK_DIR="$1/stack" MANTLE_SIGNAL_DIR="$1/sig" FAKE_IMG="$1/img" FAKE_STATE="$1/state" \
+    CALLS="$1/calls" "$SH" -c "$ROLL_STUB
+sleep() { exit 0; }
+. '$ROOT/infra/updater/updater.sh'" > "$1/loop.out" 2>&1
+}
+roll_case() { # <name>: a stack with a request for v8, images and containers
+  T="$WORK/roll-$1"; fake_stack "$T"; fake_dump "$T"
+  printf 'services: {client_web: {image: c}}\n' > "$T/stack/docker-compose.client.yml"
+  printf 'MANTLE_PRE_ROLL_MIN_FREE_MB=0\n' >> "$T/stack/.env"
+  printf '{"target":"v8"}\n' > "$T/sig/request.json"
+  echo sha256:S7 > "$T/state/mantle_web"; echo sha256:S8 > "$T/state/mantle_web.next"
+  echo sha256:C2 > "$T/state/mantle_client_web"; echo sha256:C3 > "$T/state/mantle_client_web.next"
+  # newest first, as `docker image ls` lists them
+  cat > "$T/state/images" <<'IMGS'
+sha256:S9 test/mantle-server:v9
+sha256:S8 test/mantle-server:v8
+sha256:S7 test/mantle-server:v7
+sha256:C3 test/mantle-client:c3
+sha256:C2 test/mantle-client:c2
+sha256:S6 test/mantle-server:v6
+sha256:S5 test/mantle-server:<none>
+sha256:S4 test/mantle-server:v4
+sha256:C1 test/mantle-client:c1
+sha256:X1 test/mantle-sandbox:24.04-v2
+sha256:X2 test/mantle-rustfs:1.0.0
+sha256:X3 caddy:2-alpine
+IMGS
+  echo test/mantle-server:v4 > "$T/state/in-use"
+}
+
+echo "updater.sh: a failed pre-roll backup refuses the roll with nothing changed"
+roll_case refused
+cp "$T/stack/.env" "$T/env.before"; cp "$T/stack/docker-compose.yml" "$T/compose.before"
+FAKE_TS=20260105-000000 FAKE_DUMP=fail roll_loop "$T"
+check "status: error, ok false" grep -q '"phase":"error","target":"v8".*"ok":false' "$T/sig/status.json"
+check "status: says the roll was refused and why" grep -q 'roll refused, nothing changed: db-dump.sh failed (exit 3)' "$T/sig/status.json"
+check ".env unchanged (no MANTLE_IMAGE_TAG write)" same "$T/stack/.env" "$T/env.before"
+check "compose unchanged" same "$T/stack/docker-compose.yml" "$T/compose.before"
+check "no pull of any kind" sh -c "! grep -q 'pull' '$T/calls'"
+check "no compose up" sh -c "! grep -q ' up ' '$T/calls'"
+check "no image removed" test ! -e "$T/state/removed"
+check "the request was consumed (not retried in a loop)" test ! -e "$T/sig/request.json"
+
+echo "updater.sh: an OK roll prunes this product's old images only"
+roll_case ok
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "status: done, ok true" grep -q '"phase":"done","target":"v8".*"ok":true' "$T/sig/status.json"
+check "backup ran before the first pull, .env write or image read" \
+  test "$(grep -E '^db-dump.sh|pull|create' "$T/calls" | head -1)" = "db-dump.sh"
+check "removed exactly the old server tag, the dangling one and the old client" \
+  test "$(sort "$T/state/removed" | tr '\n' ' ')" = "sha256:S5 test/mantle-client:c1 test/mantle-server:v6 "
+check "kept the rollback pair (v7, c2) and the running pair (v8, c3)" \
+  sh -c "! grep -qE 'v7|v8|c2|c3' '$T/state/removed'"
+check "kept the newest pre-pulled image (v9)" sh -c "! grep -q v9 '$T/state/removed'"
+check "never tried another repository (sandbox, rustfs, caddy)" sh -c "! grep -qE 'rmi .*(sandbox|rustfs|caddy|X[123])' '$T/calls'"
+check "never forced a removal" sh -c "! grep -qE 'rmi .*(-f|--force)' '$T/calls'"
+check "an image docker refuses (in use) is kept and logged" grep -q 'image prune: kept test/mantle-server:v4' "$T/sig/update.log"
+check "each removal is logged" grep -q 'image prune: removed test/mantle-server:v6' "$T/sig/update.log"
+
+roll_case noprune
+printf 'MANTLE_IMAGE_PRUNE=0\n' >> "$T/stack/.env"
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "MANTLE_IMAGE_PRUNE=0: roll ok, nothing removed" sh -c "grep -q '\"ok\":true' '$T/sig/status.json' && test ! -e '$T/state/removed'"
+
+roll_case noprev
+rm "$T/state/mantle_web"
+FAKE_TS=20260105-000000 roll_loop "$T"
+check "no running server before the roll: server images left alone" sh -c "! grep -q mantle-server '$T/state/removed' 2>/dev/null"
+check "no running server before the roll: says so" grep -q 'image prune: test/mantle-server skipped' "$T/sig/update.log"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo

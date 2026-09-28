@@ -9,6 +9,11 @@
 #
 #   docker compose pull && docker compose up -d <every service EXCEPT updater>
 #
+# framed by two fixed steps: a strict four-part pre-roll backup BEFORE it (the
+# roll is refused, nothing changed, when that fails; see pre_roll_backup) and,
+# after an OK roll, removal of this product's old server and client images
+# (see prune_images).
+#
 # The updater excludes ITSELF from the `up`: recreating its own container
 # mid-command would SIGKILL this script before the rollout finishes, leaving
 # the rest of the stack stuck in "Created" (site down). Its image is pinned and
@@ -659,6 +664,216 @@ refresh_updater() {
   fi
 }
 
+# ── pre-roll backup: no roll without a way back ──────────────────────────────
+# Any admin can request a roll from /settings/updates, and a roll runs
+# forward-only migrations (0177 and 0178 drop tables). Before this step the
+# standard path took no backup at all: a dump happened only when the operator
+# remembered one. So every server roll now starts with the box's own
+# scripts/db-dump.sh, all four parts (Postgres, app-dbs, table-dbs, spaces),
+# in strict mode, into backups/pre-roll/ under the stack dir. It runs BEFORE
+# anything else in the roll: before the MANTLE_IMAGE_TAG write, the compose,
+# Caddyfile and script refreshes, the pull and the up. When it fails, or the
+# disk is too full for it, the roll is refused with nothing changed and the
+# reason in status.json. The interface-only path (client_target alone) runs no
+# migration and touches no data, so it takes no backup.
+#
+# .env knobs (the operator's, never the request's):
+#   MANTLE_PRE_ROLL_BACKUP=0        skip it (loudly). For a box whose disk
+#                                   cannot hold one; take your own first.
+#   MANTLE_PRE_ROLL_KEEP=3          complete sets kept in backups/pre-roll
+#   MANTLE_PRE_ROLL_MIN_FREE_MB=4096 headroom on top of the backup estimate
+#                                   (the pull that follows needs room too)
+#
+# The sidecar has busybox sh and no bash; db-dump.sh is kept POSIX for this.
+# Container names are passed explicitly: compose pins them, and db-dump's own
+# guess refuses to pick when a dev stack runs beside the box's.
+PRE_ROLL_REL=backups/pre-roll
+PRB_ERR=""
+
+# env_val <name>: the value of <name> in $STACK/.env ("" when unset).
+env_val() { sed -n "s/^$1=//p" "$STACK/.env" 2>/dev/null | head -1 | tr -d '\r'; }
+
+# num_or <value> <default>: <value> when it is a whole number, else <default>.
+num_or() { case "$1" in '' | *[!0-9]*) printf '%s' "$2" ;; *) printf '%s' "$1" ;; esac; }
+
+# free_kb <dir>: free KB on the filesystem holding <dir>.
+free_kb() { df -Pk "$1" 2>/dev/null | awk 'NR == 2 { print $4 }'; }
+
+# db_size_kb: the live database size in KB, the estimate for a first backup
+# (a -Fc dump is smaller: indexes are not dumped and the data is compressed).
+db_size_kb() {
+  dsk=$(docker exec mantle_pg psql -U postgres -d postgres -Atc \
+    "select pg_database_size('postgres') / 1024" 2>/dev/null | tr -d ' \r')
+  num_or "$dsk" ""
+}
+
+# set_files <dir> <stamp>: the files of one backup set that exist.
+set_files() {
+  for sf in "$1/mantle-$2.dump" "$1/mantle-app-dbs-$2.tgz" \
+    "$1/mantle-table-dbs-$2.tgz" "$1/mantle-spaces-$2.tgz"; do
+    [ -f "$sf" ] && printf '%s\n' "$sf"
+  done
+}
+
+# newest_set_kb <dir>: size in KB of the newest backup set ("" when none).
+newest_set_kb() {
+  nsk_dump=$(ls -1 "$1"/mantle-*.dump 2>/dev/null | sort -r | head -1)
+  [ -n "$nsk_dump" ] || return 0
+  nsk_ts=${nsk_dump##*/mantle-}; nsk_ts=${nsk_ts%.dump}
+  set_files "$1" "$nsk_ts" | while IFS= read -r nsk_f; do du -k "$nsk_f" | cut -f1; done \
+    | awk '{ s += $1 } END { print s + 0 }'
+}
+
+# prune_pre_roll <dir> <keep>: delete all but the newest <keep> backup sets.
+# A set is the .dump plus the three archives with the same stamp; the stamp is
+# %Y%m%d-%H%M%S, so lexical order is time order. Only this directory is ever
+# pruned: backups/ itself holds the operator's own dumps and is never touched.
+prune_pre_roll() {
+  ls -1 "$1"/mantle-*.dump 2>/dev/null | sort -r | tail -n +"$(($2 + 1))" | while IFS= read -r ppr_dump; do
+    ppr_ts=${ppr_dump##*/mantle-}; ppr_ts=${ppr_ts%.dump}
+    set_files "$1" "$ppr_ts" | while IFS= read -r ppr_f; do rm -f "$ppr_f"; done
+    echo "[updater] pre-roll backup $ppr_ts removed (keeping the newest $2)"
+  done
+}
+
+# pre_roll_backup: 0 when a complete backup set was written (or the box opted
+# out), non-zero with PRB_ERR set otherwise. On failure every file this run
+# wrote is removed again, so a half set never passes for a backup.
+pre_roll_backup() {
+  PRB_ERR=""
+  if [ "$(env_val MANTLE_PRE_ROLL_BACKUP)" = 0 ]; then
+    echo "[updater] ⚠ PRE-ROLL BACKUP SKIPPED: MANTLE_PRE_ROLL_BACKUP=0 in .env." \
+      "This roll's only way back is a backup you took yourself." | tee -a "$SIG/update.log"
+    return 0
+  fi
+  prb_dir="$STACK/$PRE_ROLL_REL"
+  prb_script="$STACK/scripts/db-dump.sh"
+  if [ ! -f "$prb_script" ]; then
+    PRB_ERR="scripts/db-dump.sh is missing from the stack dir"; return 1
+  fi
+  if ! mkdir -p "$prb_dir"; then
+    PRB_ERR="cannot create $PRE_ROLL_REL in the stack dir"; return 1
+  fi
+
+  # Room for it? The estimate is the last pre-roll set (the best predictor of
+  # the next one) or, the first time, the live database size. Half again on
+  # top for growth, plus the headroom the image pull needs after it.
+  prb_est=$(newest_set_kb "$prb_dir"); prb_basis="the last pre-roll backup"
+  if [ -z "$prb_est" ] || [ "$prb_est" = 0 ]; then
+    prb_est=$(db_size_kb); prb_basis="the database size"
+  fi
+  prb_est=$(num_or "$prb_est" 0)
+  prb_floor=$(num_or "$(env_val MANTLE_PRE_ROLL_MIN_FREE_MB)" 4096)
+  prb_need=$((prb_est + prb_est / 2 + prb_floor * 1024))
+  prb_free=$(num_or "$(free_kb "$prb_dir")" "")
+  if [ -z "$prb_free" ]; then
+    PRB_ERR="cannot read the free disk space under $PRE_ROLL_REL"; return 1
+  fi
+  if [ "$prb_free" -lt "$prb_need" ]; then
+    PRB_ERR="not enough disk for the pre-roll backup: $((prb_free / 1024)) MB free, need $((prb_need / 1024)) MB (1.5 x $prb_basis + ${prb_floor} MB headroom). Free space (old images, old backups) and request again"
+    return 1
+  fi
+
+  echo "[updater] pre-roll backup → $PRE_ROLL_REL (postgres, app-dbs, table-dbs, spaces;" \
+    "$((prb_free / 1024)) MB free, estimate $((prb_est / 1024)) MB)" | tee -a "$SIG/update.log"
+  prb_before="$SIG/.pre-roll-before.tmp"
+  ls -1 "$prb_dir" > "$prb_before" 2>/dev/null
+  # umask 077: a whole-brain dump is not for every user on the host.
+  ( umask 077; MANTLE_DUMP_DIR="$prb_dir" MANTLE_DUMP_STRICT=1 \
+      MANTLE_PG_CONTAINER=mantle_pg MANTLE_APP_CONTAINER=mantle_web \
+      sh "$prb_script" ) >> "$SIG/update.log" 2>&1
+  prb_rc=$?
+  # An empty pattern file is not portable across greps: no earlier files
+  # means every file is new.
+  if [ -s "$prb_before" ]; then
+    prb_new=$(ls -1 "$prb_dir" 2>/dev/null | grep -vxF -f "$prb_before")
+  else
+    prb_new=$(ls -1 "$prb_dir" 2>/dev/null)
+  fi
+  rm -f "$prb_before"
+  if [ "$prb_rc" -ne 0 ]; then
+    PRB_ERR="db-dump.sh failed (exit $prb_rc), see update.log"
+  elif ! printf '%s\n' "$prb_new" | grep -q '^mantle-.*\.dump$'; then
+    # Exit 0 with no dump here: a db-dump.sh too old (or hand-edited) to know
+    # MANTLE_DUMP_DIR wrote its set somewhere else, and not strictly.
+    PRB_ERR="db-dump.sh wrote no Postgres dump into $PRE_ROLL_REL (a stale or edited scripts/db-dump.sh?)"
+  fi
+  if [ -n "$PRB_ERR" ]; then
+    printf '%s\n' "$prb_new" | while IFS= read -r prb_f; do
+      [ -n "$prb_f" ] && rm -f "$prb_dir/$prb_f"
+    done
+    return 1
+  fi
+
+  # Hand the set to the stack dir's owner (this sidecar is root): the operator
+  # restores and deletes these, and must be able to without sudo.
+  prb_own=$(file_owner "$STACK")
+  [ -z "$prb_own" ] || chown -R "$prb_own" "$prb_dir" 2>/dev/null
+  # shellcheck disable=SC2086  # one line listing the set is the point
+  echo "[updater] pre-roll backup ok:" $prb_new | tee -a "$SIG/update.log"
+  prune_pre_roll "$prb_dir" "$(num_or "$(env_val MANTLE_PRE_ROLL_KEEP)" 3)" | tee -a "$SIG/update.log"
+  return 0
+}
+
+# ── image prune: this product's images only ──────────────────────────────────
+# Nothing pruned images before this: each roll left a server + client pair
+# (about 3.4 GB) behind, and boxes filled at eight releases a day (dev hit 100%
+# on 2026-09-01). After an OK roll the updater removes old images of exactly
+# two repositories, <ns>/mantle-server and <ns>/mantle-client, and keeps:
+#   - the image each container ran BEFORE the roll (the rollback pair),
+#   - the image each runs NOW,
+#   - the two newest images of the repository (a pre-pulled next release, or
+#     the previous pair when this roll re-rolled the same tag).
+# It never touches any other repository (mantle-sandbox, mantle-rustfs, caddy,
+# postgres, app or sandbox images), never volumes or containers, never runs a
+# `system prune`, and never forces: `docker rmi` refuses an image a container
+# still uses, and that refusal is logged and left alone. Off with
+# MANTLE_IMAGE_PRUNE=0 in .env.
+
+# container_image <name>: the full image id a container runs ("" when absent).
+container_image() { docker inspect -f '{{.Image}}' "$1" 2>/dev/null; }
+
+# prune_repo <repo> <prev-id> <cur-id>
+prune_repo() {
+  pr_repo=$1; pr_prev=$2; pr_cur=$3
+  if [ -z "$pr_prev" ] || [ -z "$pr_cur" ]; then
+    echo "[updater] image prune: $pr_repo skipped (the running image before or after the roll is unknown)"
+    return 0
+  fi
+  pr_list=$(docker image ls --no-trunc --format '{{.ID}} {{.Repository}}:{{.Tag}}' "$pr_repo" 2>/dev/null) || return 0
+  pr_newest=$(printf '%s\n' "$pr_list" | awk 'NF { print $1 }' | awk '!seen[$0]++' | head -2)
+  pr_n=0
+  printf '%s\n' "$pr_list" | while read -r pr_id pr_ref; do
+    [ -n "$pr_id" ] && [ -n "$pr_ref" ] || continue
+    # Exact repository only: the reference filter is exact already, this
+    # makes it independent of how a docker version reads that filter.
+    [ "${pr_ref%:*}" = "$pr_repo" ] || continue
+    [ "$pr_id" = "$pr_prev" ] && continue
+    [ "$pr_id" = "$pr_cur" ] && continue
+    printf '%s\n' "$pr_newest" | grep -qxF "$pr_id" && continue
+    case "$pr_ref" in
+      *':<none>') pr_target=$pr_id ;;
+      *) pr_target=$pr_ref ;;
+    esac
+    if docker rmi "$pr_target" > /dev/null 2>&1; then
+      echo "[updater] image prune: removed $pr_ref"
+    else
+      echo "[updater] image prune: kept $pr_ref (docker refused to remove it; still in use?)"
+    fi
+  done
+}
+
+# prune_images <prev-server-id> <prev-client-id>: after an OK roll.
+prune_images() {
+  if [ "$(env_val MANTLE_IMAGE_PRUNE)" = 0 ]; then
+    echo "[updater] image prune: off (MANTLE_IMAGE_PRUNE=0)" | tee -a "$SIG/update.log"
+    return 0
+  fi
+  pi_ns=$(env_val MANTLE_IMAGE_NAMESPACE)
+  prune_repo "${pi_ns:-titanwest}/mantle-server" "$1" "$(container_image mantle_web)" | tee -a "$SIG/update.log"
+  prune_repo "${pi_ns:-titanwest}/mantle-client" "$2" "$(container_image mantle_client_web)" | tee -a "$SIG/update.log"
+}
+
 # Library mode for scripts/test-deploy-scripts.sh: with MANTLE_UPDATER_LIB=1
 # the file defines its functions and stops here, so the refresh logic runs
 # against a fake stack with a stubbed docker instead of the poll loop.
@@ -734,11 +949,16 @@ while true; do
       # :latest. Recorded as auto-managed — it arrived through the managed path.
       persist_env MANTLE_CLIENT_IMAGE_TAG "$CLIENT_TARGET"
       printf '%s\n' "$CLIENT_TARGET" > "$SIG/client-tag.auto"
+      PREV_CLIENT_IMG=$(container_image mantle_client_web)
       if docker compose -f "$STACK/docker-compose.client.yml" --project-directory "$STACK" pull >> "$SIG/update.log" 2>&1; then
         write_status rolling "$CLIENT_TARGET" "$STARTED" "" null ""
         if docker compose -f "$STACK/docker-compose.client.yml" --project-directory "$STACK" up -d --remove-orphans >> "$SIG/update.log" 2>&1; then
           write_status done "$CLIENT_TARGET" "$STARTED" "$(now)" true ""
           echo "[updater] done → interface $CLIENT_TARGET" | tee -a "$SIG/update.log"
+          if [ "$(env_val MANTLE_IMAGE_PRUNE)" != 0 ]; then
+            pi_ns=$(env_val MANTLE_IMAGE_NAMESPACE)
+            prune_repo "${pi_ns:-titanwest}/mantle-client" "$PREV_CLIENT_IMG" "$(container_image mantle_client_web)" | tee -a "$SIG/update.log"
+          fi
         else
           write_status error "$CLIENT_TARGET" "$STARTED" "$(now)" false "client compose up failed — see update.log"
         fi
@@ -761,6 +981,19 @@ while true; do
     # via started_at, since the window can never be closed to zero.
     write_status pulling "$TARGET" "$STARTED" "" null ""
     echo "[updater] update requested → $TARGET" | tee -a "$SIG/update.log"
+
+    # The pre-roll backup comes FIRST, before any file on the box changes (see
+    # pre_roll_backup). A refusal leaves .env, compose, Caddyfile, scripts and
+    # every container exactly as they were.
+    if ! pre_roll_backup; then
+      write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, nothing changed: $PRB_ERR"
+      echo "[updater] ROLL REFUSED before any change: $PRB_ERR" | tee -a "$SIG/update.log"
+      write_stack_info
+      continue
+    fi
+    # The images running now are the rollback pair the prune below keeps.
+    PREV_SERVER_IMG=$(container_image mantle_web)
+    PREV_CLIENT_IMG=$(container_image mantle_client_web)
 
     # Persist the tag so a later manual `docker compose up` doesn't roll back.
     # persist_env: temp-file rewrite that keeps .env's owner and mode (a bare
@@ -852,6 +1085,9 @@ while true; do
         fi
         write_status done "$TARGET" "$STARTED" "$(now)" true ""
         echo "[updater] done → $TARGET" | tee -a "$SIG/update.log"
+        # Old images of this product only, after the status is terminal: a
+        # prune problem must never turn an OK roll into a failed one.
+        prune_images "$PREV_SERVER_IMG" "$PREV_CLIENT_IMG"
         # Self-refresh LAST, on the success path only: a failed roll should
         # change as little as possible, and the status the UI polls is already
         # terminal. Sets UPDATER_REFRESH for the write_stack_info below.
