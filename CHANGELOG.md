@@ -4,6 +4,13 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.296: client v0.6.159
+
+- Paired with jackdaw v0.6.159: the team-code portal screens (/team, /hub,
+  the team workspace, the forum pages and the Team admin Topics tab) are
+  gone, matching the brain's stage 5 in 0.232.295. The forum Export button
+  shows only while topics are left to export.
+
 ## 0.232.295: the team-code portal is retired (Phase 6 stage 5)
 
 - /team, anything under it, and /hub redirect to /login; /api/team/* and
