@@ -119,9 +119,10 @@ them through without a session cookie.
   (`path <@ folder.path`, re-derived per request) that sits at the link's
   levels with no folder above those levels between it and the shared folder
   (the same rule as the listing). The shared item itself is not filtered by
-  level: a `file` share serves the file. A page's embeds follow the page
-  down when an admin lowers it or links it (embedding means sharing,
-  access-levels.md section 1), so a page link serves them all in normal use;
+  level: a `file` share serves the file. Lowering an item is an admin's
+  decision for the item AND what it embeds, so a page's embeds go down with
+  the page when an admin lowers it or links it (embedding means sharing,
+  access-levels.md section 1), and a page link serves them all in normal use;
   an embed an admin later raises above the page on purpose stops being
   served. `GET /s/[token]/draw/[drawId]` (a drawing embedded in a shared
   page) and `GET /s/[token]/draw` (a shared drawing) apply the same rule to
