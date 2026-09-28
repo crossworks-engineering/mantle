@@ -67,21 +67,27 @@ describe.skipIf(!URL)('migration 0161: nested folders, deepest wins', () => {
       insert into auth.users (id, email, password_hash) values (${owner}, ${`${tag}@example.invalid`}, 'x')`);
     await m.db.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
-    // Inner items first, outer folder last: an arbitrary pick then has every
-    // chance to land on a shallower folder.
+    // Folders shallowest first, in separate statements: the old statement's
+    // arbitrary pick then lands on the outer folder, not the nearest one.
+    await m.db.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, audience)
+      values (${ids.outer}, ${owner}, 'branch', 'outer', ${outer}::ltree, 'team')`);
+    await m.db.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, audience)
+      values (${ids.middle}, ${owner}, 'branch', 'mid', ${middle}::ltree, 'client')`);
+    await m.db.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, audience)
+      values (${ids.inner}, ${owner}, 'branch', 'inner', ${inner}::ltree, 'public')`);
     for (const id of ids.inInner) {
       await m.db.execute(sqlTag`
         insert into nodes (id, owner_id, type, title, path)
         values (${id}, ${owner}, 'file', 'deep.pdf', ${inner}::ltree)`);
     }
     await m.db.execute(sqlTag`
-      insert into nodes (id, owner_id, type, title, path, audience) values
-        (${ids.inner}, ${owner}, 'branch', 'inner', ${inner}::ltree, 'public'),
-        (${ids.inMiddle}, ${owner}, 'file', 'mid.pdf', ${middle}::ltree, 'admin'),
-        (${ids.middle}, ${owner}, 'branch', 'mid', ${middle}::ltree, 'client'),
-        (${ids.inOuter}, ${owner}, 'note', 'top', ${outer}::ltree, 'admin'),
-        (${ids.task}, ${owner}, 'task', 't', ${inner}::ltree, 'admin'),
-        (${ids.outer}, ${owner}, 'branch', 'outer', ${outer}::ltree, 'team')`);
+      insert into nodes (id, owner_id, type, title, path) values
+        (${ids.inMiddle}, ${owner}, 'file', 'mid.pdf', ${middle}::ltree),
+        (${ids.inOuter}, ${owner}, 'note', 'top', ${outer}::ltree),
+        (${ids.task}, ${owner}, 'task', 't', ${inner}::ltree)`);
   });
 
   afterAll(async () => {
