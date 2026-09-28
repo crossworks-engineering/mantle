@@ -27,6 +27,7 @@ describe.skipIf(!URL)('nodes read rule: only the brain owner’s items reach a l
   const ids = {
     brainTeam: randomUUID(),
     brainPublic: randomUUID(),
+    brainClient: randomUUID(),
     personalTeam: randomUUID(),
     personalPublic: randomUUID(),
     otherBrainTeam: randomUUID(),
@@ -64,6 +65,7 @@ describe.skipIf(!URL)('nodes read rule: only the brain owner’s items reach a l
     await admin`insert into nodes (id, owner_id, type, title, path, audience) values
       (${ids.brainTeam}, ${anchor}, 'page', ${`${tag} brain team`}, 'pages', 'team'),
       (${ids.brainPublic}, ${anchor}, 'note', ${`${tag} brain public`}, 'notes', 'public'),
+      (${ids.brainClient}, ${anchor}, 'note', ${`${tag} brain client`}, 'notes', 'client'),
       (${ids.personalTeam}, ${personal}, 'page', ${`${tag} personal team`}, 'pages', 'team'),
       (${ids.personalPublic}, ${personal}, 'note', ${`${tag} personal public`}, 'notes', 'public'),
       (${ids.otherBrainTeam}, ${otherBrain}, 'page', ${`${tag} other brain`}, 'pages', 'team')`;
@@ -82,15 +84,18 @@ describe.skipIf(!URL)('nodes read rule: only the brain owner’s items reach a l
     const rows = (await m.systemDb.execute(
       sqlTag`select id from nodes where title like ${`${tag}%`}`,
     )) as unknown as { id: string }[];
-    expect(rows).toHaveLength(5);
+    expect(rows).toHaveLength(6);
   });
 
   it('the team role sees the brain’s items only, never another owner’s at the same level', async () => {
-    expect(await visibleAt('team')).toEqual([ids.brainTeam, ids.brainPublic].sort());
+    expect(await visibleAt('team')).toEqual(
+      [ids.brainTeam, ids.brainPublic, ids.brainClient].sort(),
+    );
   });
 
-  it('the client and public roles likewise', async () => {
-    expect(await visibleAt('client')).toEqual([ids.brainPublic]);
+  it('the client and public roles likewise, each at its own level only', async () => {
+    // Client logins C1 (0187): the client role reads client items, not public.
+    expect(await visibleAt('client')).toEqual([ids.brainClient]);
     expect(await visibleAt('public')).toEqual([ids.brainPublic]);
   });
 
