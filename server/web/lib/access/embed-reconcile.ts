@@ -32,6 +32,9 @@ export async function reconcileEmbedClosuresOnBoot(): Promise<void> {
   } catch (err) {
     // Best-effort: a reconcile failure must never take the server down, and
     // with no marker written it runs again on the next boot.
-    console.error('[embeds] boot reconcile skipped (non-fatal):', err instanceof Error ? err.message : err);
+    console.error(
+      '[embeds] boot reconcile skipped (non-fatal):',
+      err instanceof Error ? err.message : err,
+    );
   }
 }

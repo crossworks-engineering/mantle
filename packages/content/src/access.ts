@@ -205,12 +205,7 @@ async function applyItemAudience(
     let alsoLowered: LoweredItem[] = [];
     let ceiling: EmbedItem[] = [];
     if (embeds && audience !== 'admin') {
-      ({ lowered: alsoLowered, ceiling } = await lowerEmbedClosure(
-        ownerId,
-        item.id,
-        audience,
-        tx,
-      ));
+      ({ lowered: alsoLowered, ceiling } = await lowerEmbedClosure(ownerId, item.id, audience, tx));
     }
     let lowered: AccessItem[] = alsoLowered.map(({ id, type, title, to }) => ({
       id,

@@ -83,9 +83,9 @@ describe.skipIf(!URL)('embeds follow their item down on Postgres', () => {
 
   const audienceOf = async (nodeId: string) =>
     (
-      (await m.db.execute(
-        sqlTag`select audience from nodes where id = ${nodeId}`,
-      )) as unknown as { audience: string }[]
+      (await m.db.execute(sqlTag`select audience from nodes where id = ${nodeId}`)) as unknown as {
+        audience: string;
+      }[]
     )[0]!.audience;
   /** The admin pool's own postgres-js client (LISTEN needs it). */
   const adminSql = () =>
