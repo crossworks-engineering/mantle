@@ -15,24 +15,30 @@ import { fileURLToPath } from 'node:url';
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-export function mountStatic(app: Hono): void {
+export function mountStatic(app: Hono, publicDir: string = join(webRoot, 'public')): void {
   // serveStatic resolves `root` relative to the process CWD (which differs
   // between `pnpm -C server/web dev` and a repo-root launch) — pin it.
-  const root = relative(process.cwd(), join(webRoot, 'public')) || '.';
+  const root = relative(process.cwd(), publicDir) || '.';
 
-  app.use(
-    '/app-runtime/*',
-    serveStatic({
-      root,
-      onFound: (path, c) => {
-        c.header('Access-Control-Allow-Origin', '*');
-        c.header(
-          'Cache-Control',
-          path.endsWith('manifest.json') ? 'no-cache' : 'public, max-age=31536000, immutable',
-        );
-      },
-    }),
-  );
+  // The headers go on AFTER serveStatic answers, not in its onFound hook.
+  // onFound runs once the response is already built, so a c.header() there
+  // only reached the wire while @hono/node-server's own Response class (which
+  // kept the headers by reference) was the global. serve() stopped swapping
+  // it in v0.232.263 (overrideGlobalObjects: false, a security fix), and from
+  // then the runtime shipped with no ACAO:* and no Cache-Control, so a
+  // sandboxed app frame (Origin: null) could not import it. Only a file that
+  // was found gets them: a miss falls through to the 404, which must not be
+  // marked immutable.
+  app.use('/app-runtime/*', async (c, next) => {
+    await next();
+    if (!c.res.ok) return;
+    c.header('Access-Control-Allow-Origin', '*');
+    c.header(
+      'Cache-Control',
+      c.req.path.endsWith('manifest.json') ? 'no-cache' : 'public, max-age=31536000, immutable',
+    );
+  });
+  app.use('/app-runtime/*', serveStatic({ root }));
   // Explicit prefixes only — a catch-all serveStatic would stat the filesystem
   // on every API request. share-runtime/ is the /s island bundle (H2).
   for (const prefix of ['/share-runtime/*', '/fonts/*', '/Inter/*']) {
