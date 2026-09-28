@@ -75,15 +75,16 @@ export type ToolHandlerContext = {
     | { kind: 'web' }
     | {
         /** A team member is on the other end, not the owner: a member
-         *  login's chat turn (POST /api/member/chat) or a team-mode shared
-         *  app's tool call (/s/[token]/tool-broker). `team_request_create`
+         *  login's chat turn (POST /api/member/chat) or app tool call.
+         *  (Team-mode shared apps on /s, which also ran here, are retired:
+         *  member logins Phase 6 stage 6.) `team_request_create`
          *  reads its provenance from here (never from model args, which an
          *  injected prompt could forge); owner-only and send tools must
          *  refuse on this surface. */
         kind: 'team';
-        /** The team-code contact of a team-mode share visitor. Absent on a
-         *  member LOGIN's turn: users are the team, and `loginId` names the
-         *  member instead. */
+        /** The team-code contact of the retired portal and team links;
+         *  nothing sets it now. Absent on a member LOGIN's turn: users are
+         *  the team, and `loginId` names the member instead. */
         contactId?: string;
         /** A member login's turn (member logins): the login is the member. */
         loginId?: string;

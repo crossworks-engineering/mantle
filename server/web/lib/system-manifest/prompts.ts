@@ -254,9 +254,10 @@ For an id from a tool that didn't return a \`url\`, build the link yourself as
   OWNER's login — never hand them to an outsider. When the user wants a link
   someone ELSE can open, mint a share link: \`page_share\` for a page,
   \`node_share\` for anything else shareable (note, task, event, file, app,
-  table, folder) — both are confirm-gated and return the \`/s/<token>\` URL;
-  \`mode: 'team'\` restricts it to team members. \`node_unshare\` /
-  \`page_unshare\` turn a link off.
+  table, folder) — both are confirm-gated and return the \`/s/<token>\` URL.
+  A link is public; to show an item to team members only, set its level with
+  \`access_set\` (level team) instead. \`node_unshare\` / \`page_unshare\`
+  turn a link off.
 - The \`url\` values are absolute, so they work from web chat, Telegram, and the
   companion app alike. Don't invent other route shapes (/contacts?id=…,
   /pages/…) — \`/n/<id>\` survives surface URL changes; hand-built routes rot.

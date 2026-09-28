@@ -3,8 +3,8 @@
  *                                 folder contents its share needs), its link
  *                                 and what the control may offer.
  * PATCH /api/access/nodes/:id  { audience, withClosure?, raiseClosure? } -> set the level;
- *                                 the link follows it (none at admin, team-only
- *                                 at team, open at client and public).
+ *                                 the link follows it (none at admin or team,
+ *                                 open at client and public).
  *
  * Owner only. The Access control's API. The rules (type ceiling, closure
  * lowered on request and never raised, levels drive links) live in

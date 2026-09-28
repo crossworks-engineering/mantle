@@ -167,8 +167,8 @@ export type AppRow = {
   /** Whether an uncommitted draft exists. */
   hasDraft: boolean;
   /**
-   * The app's exposure: mode of its active share ('public' | 'team'), or null
-   * when it has never been shared / the share is revoked (owner-only).
+   * The app's exposure: mode of its active share ('public'), or null when it
+   * has never been shared / the share is revoked (owner-only).
    */
   shareMode: ShareMode | null;
   /** Whether this app is the designated Team Hub (prefs.teamHubAppId). */
@@ -445,12 +445,11 @@ export type ProfilePreferences = {
    *  group grant, so the switch can't be bypassed by a manifest change. Flip it
    *  from the Team admin surface. */
   teamPrivateReads?: boolean;
-  /** Node id of the mini-app designated as this brain's TEAM HUB. When set (and
-   *  the app has a green published build + an active team-mode share), the /team
-   *  shell renders that app full-bleed in place of the built-in hub body; the
-   *  built-in hub remains the fallback for every other state. Resolve via
-   *  `resolveTeamHubApp` (team-hub.ts), never raw — designation is only honoured
-   *  when the whole chain (pref → app → build → share) is intact. Read via
+  /** Node id of the mini-app designated as the members' HOME APP (the name
+   *  is from the retired /team hub). A member login's home renders it
+   *  full-bleed while it has a green published build and is at a level
+   *  members may run (`resolveMemberHomeApp`, member-apps.ts); the built-in
+   *  member home is the fallback. No share link is involved. Read via
    *  projectTeamHubAppId, never raw. */
   teamHubAppId?: string;
   /** Tags the owner curates as Dashboard sections on the /team overview: each
@@ -842,13 +841,15 @@ export interface OnboardingModelChoices {
  * every pre-existing share keeps its behavior).
  *
  *   public — anyone with the link (the original model).
- *   team   — the visitor must additionally present a live team credential
- *            (see @mantle/content/team-tokens). Enforced for every kind on
- *            the /s/ surface (page render, asset bytes, app brokers).
- *            Team-mode PAGE shares double as the /team hub's briefing
- *            sections (see ./team-hub).
+ *
+ * 'team' is retired (member logins Phase 6 stage 6): members read team items
+ * by level with their own logins. Migration 0176 revoked every team link, no
+ * link is created or switched to team (PATCH /api/shares answers 400
+ * `team-links-retired`), and an old team `/s` link shows a "sign in as a
+ * member" page. Kept as a named type so the fields that carry it
+ * (`AccessLinkView.mode`, `AppRow.shareMode`) keep their shape.
  */
-export type ShareMode = 'public' | 'team';
+export type ShareMode = 'public';
 
 export type TeamVisibleShare = {
   /** Share token — the workspace opens /s/<token>. */

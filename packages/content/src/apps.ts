@@ -30,7 +30,6 @@ import {
   type AppManifest,
   type BuildRef,
 } from '@mantle/db';
-import { shareModeOf } from './shares';
 import { loadProfilePreferences } from './profile-preferences';
 import { notifyAppNavChanged } from './app-nav';
 import type { AppRow, AppDetail, AppTint } from '@mantle/client-types';
@@ -116,7 +115,8 @@ function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
     toolCount: manifest.toolSlugs?.length ?? 0,
     hasBuild: !!s.publishedBuild?.ok,
     hasDraft: s.draftSource != null,
-    shareMode: s.shareSettings ? shareModeOf({ settings: s.shareSettings }) : null,
+    // Every live link is open: team links are retired (migration 0176).
+    shareMode: s.shareSettings ? 'public' : null,
     isHub: s.hubAppId != null && s.hubAppId === n.id,
     audience: asViewerLevel(n.audience),
     createdAt: n.createdAt.toISOString(),

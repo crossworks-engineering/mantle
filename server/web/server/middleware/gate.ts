@@ -51,12 +51,12 @@ function isAssetPath(path: string): boolean {
   );
 }
 
-/** The /s sub-paths a client-origin page calls cross-origin (bearer-authed by
- *  resolveShareVisitorFromRequest): the app brokers the hub uses, plus the
- *  view/rows pair the /team inline reader fetches. They get the same CORS
+/** The /s sub-paths a client-origin page may call cross-origin (the share
+ *  token is the only credential; team links, and the bearer they took, are
+ *  retired): the app brokers, plus the view/rows pair. They get the same CORS
  *  treatment as /api/** — and ONLY they: the /s/<token> HTML page and the
- *  remaining sub-paths (auth, a/, evaluate) stay same-origin cookie surfaces
- *  with no CORS headers at all. */
+ *  remaining sub-paths (a/, evaluate, draw) stay same-origin surfaces with no
+ *  CORS headers at all. */
 const SHARE_BROKER_RE =
   /^\/s\/[^/]+\/(bundle(\/css)?|frame-ticket|tool-broker|db-broker|view|rows)$/;
 

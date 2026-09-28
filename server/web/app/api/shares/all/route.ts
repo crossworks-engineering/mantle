@@ -3,7 +3,7 @@ import { listActiveShares } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 
 /** GET /api/shares/all → every ACTIVE share the owner has, newest first — the
- *  "what is exposed right now" registry (public and team links alike). */
+ *  "what is exposed right now" registry (every live link is public). */
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;

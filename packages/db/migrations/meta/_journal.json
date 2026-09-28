@@ -1233,6 +1233,13 @@
       "when": 1790016780000,
       "tag": "0175_member_history_links",
       "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1790016840000,
+      "tag": "0176_retire_team_links",
+      "breakpoints": true
     }
   ]
 }

@@ -4,7 +4,6 @@ import { db, nodes, tables } from '@mantle/db';
 import { aggregateWindow, resolveStoragePath } from '@mantle/tabledb';
 import { AGGREGATE_KINDS, type AggregateKind } from '@mantle/content';
 import { resolveActiveShareByToken } from '@/lib/shares';
-import { resolveShareVisitorFromRequest } from '@/lib/team-gate';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
 /**
@@ -24,9 +23,8 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
  * Legacy JSONB tables never reach here: their whole doc ships in the share
  * view, so the reader computes locally with `computeAggregate`.
  *
- * Authorization is the rows route's, verbatim — an active table share plus (in
- * team mode) a live team session, and a uniform 404 for everything else so a
- * URL never reveals that a token exists.
+ * Authorization is the rows route's, verbatim — an active table share, and a
+ * uniform 404 for everything else so a URL never reveals that a token exists.
  */
 
 function notFound() {
@@ -55,7 +53,6 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
 
   const share = await resolveActiveShareByToken(token);
   if (!share || share.nodeType !== 'table') return notFound();
-  if (!(await resolveShareVisitorFromRequest(req, share))) return notFound();
 
   const url = new URL(req.url);
   const columnId = url.searchParams.get('col');

@@ -27,7 +27,6 @@ vi.mock('@mantle/content', async (importOriginal) => {
     getPage: vi.fn(),
     saveDraft: vi.fn(),
     createShare: vi.fn(),
-    applyShareMode: vi.fn(),
     setShareCascade: vi.fn(),
     deletePage: vi.fn(),
     getActiveShareForNode: vi.fn(),
@@ -42,7 +41,6 @@ import {
   getPage,
   saveDraft,
   createShare,
-  applyShareMode,
   setShareCascade,
   deletePage,
   getActiveShareForNode,
@@ -203,20 +201,19 @@ describe('page_share', () => {
     expect(outputOf(res).subpagesRevoked).toBe(3);
   });
 
-  it('sets the mode BEFORE cascading, so descendants inherit it', async () => {
-    await share.handler({ id: PAGE_ID, mode: 'team', children: true }, ctx);
-    const modeAt = vi.mocked(applyShareMode).mock.invocationCallOrder[0]!;
-    const cascadeAt = vi.mocked(setShareCascade).mock.invocationCallOrder[0]!;
-    // Reversed, the children are cascaded at the OLD mode and a "share this
-    // section with the team" call leaves the sub-pages public.
-    expect(modeAt).toBeLessThan(cascadeAt);
+  it('refuses a team link before touching the page, its link or its sub-pages', async () => {
+    // Team links are retired (member logins Phase 6 stage 6): a "share this
+    // section with the team" call must not publish it instead.
+    const res = await share.handler({ id: PAGE_ID, mode: 'team', children: true }, ctx);
+    expect(errorOf(res)).toMatch(/Team links are retired.*own logins/);
+    expect(createShare).not.toHaveBeenCalled();
+    expect(setShareCascade).not.toHaveBeenCalled();
   });
 
-  it('treats an unrecognised mode as unspecified, never as public', async () => {
-    vi.mocked(createShare).mockResolvedValue({ id: 's-1', token: 'tok', mode: 'team' } as never);
+  it('refuses an unrecognised mode, never reading it as public', async () => {
     const res = await share.handler({ id: PAGE_ID, mode: 'everyone' }, ctx);
-    expect(applyShareMode).not.toHaveBeenCalled();
-    expect(outputOf(res).mode).toBe('team');
+    expect(errorOf(res)).toMatch(/mode must be 'public'/);
+    expect(createShare).not.toHaveBeenCalled();
   });
 });
 

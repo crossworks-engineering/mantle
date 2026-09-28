@@ -10,7 +10,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
  *
  * Written against the public `./auth` facade rather than the internals, so the
  * same file proves behaviour is unchanged across the tokens/session split.
- * The retired team-chat kind ('c') is pinned as refused everywhere below.
+ * The retired team-chat ('c') and team-visitor ('t') kinds are pinned as
+ * refused everywhere below.
  */
 
 const SECRET = 'test-secret-test-secret-test-secret-48chars!!';
@@ -39,51 +40,51 @@ function forgePayload(signed: string, claims: Record<string, unknown>): string {
 
 describe('signed-value spine — shape handling', () => {
   it('rejects values with no signature separator, and empty input', async () => {
-    const { verifyTeamVisitorValue } = await authLib();
+    const { verifyAppFrameTicket } = await authLib();
     for (const bad of ['', 'nodot', 'not-a-token']) {
-      expect(verifyTeamVisitorValue(bad)).toBeNull();
+      expect(verifyAppFrameTicket(bad)).toBeNull();
     }
   });
 
   it('rejects a truncated signature (length mismatch, not a timing leak)', async () => {
-    const { buildTeamVisitorCookie, verifyTeamVisitorValue } = await authLib();
-    const { value } = buildTeamVisitorCookie('share-1', 'contact-9');
+    const { buildAppFrameTicket, verifyAppFrameTicket } = await authLib();
+    const value = buildAppFrameTicket({ ownerId: 'owner-1', appId: 'app-1', shareId: 'share-1' });
     const dot = value.lastIndexOf('.');
     const payload = value.slice(0, dot);
     const sig = value.slice(dot + 1);
-    expect(verifyTeamVisitorValue(`${payload}.${sig.slice(0, 10)}`)).toBeNull();
-    expect(verifyTeamVisitorValue(`${payload}.`)).toBeNull();
+    expect(verifyAppFrameTicket(`${payload}.${sig.slice(0, 10)}`)).toBeNull();
+    expect(verifyAppFrameTicket(`${payload}.`)).toBeNull();
   });
 
   it('rejects a valid-length but wrong signature', async () => {
-    const { buildTeamVisitorCookie, buildAssetToken, verifyTeamVisitorValue } = await authLib();
-    const chat = buildTeamVisitorCookie('share-1', 'contact-9');
-    const other = { value: buildAssetToken('user-123456789012') };
+    const { buildAppFrameTicket, buildAssetToken, verifyAppFrameTicket } = await authLib();
+    const ticket = buildAppFrameTicket({ ownerId: 'owner-1', appId: 'app-1' });
+    const other = buildAssetToken('user-123456789012');
     // Graft a well-formed signature of the same length from a different payload.
-    const payload = chat.value.slice(0, chat.value.lastIndexOf('.'));
-    const foreignSig = other.value.slice(other.value.lastIndexOf('.') + 1);
-    expect(verifyTeamVisitorValue(`${payload}.${foreignSig}`)).toBeNull();
+    const payload = ticket.slice(0, ticket.lastIndexOf('.'));
+    const foreignSig = other.slice(other.lastIndexOf('.') + 1);
+    expect(verifyAppFrameTicket(`${payload}.${foreignSig}`)).toBeNull();
   });
 
   it('rejects a payload that is not JSON, and JSON that is not an object', async () => {
-    const { buildTeamVisitorCookie, verifyTeamVisitorValue } = await authLib();
-    const { value } = buildTeamVisitorCookie('share-1', 'contact-9');
+    const { buildAppFrameTicket, verifyAppFrameTicket } = await authLib();
+    const value = buildAppFrameTicket({ ownerId: 'owner-1', appId: 'app-1' });
     const sig = value.slice(value.lastIndexOf('.'));
     const notJson = `${Buffer.from('definitely-not-json').toString('base64url')}${sig}`;
-    expect(verifyTeamVisitorValue(notJson)).toBeNull();
-    expect(verifyTeamVisitorValue(forgePayload(value, [] as never))).toBeNull();
+    expect(verifyAppFrameTicket(notJson)).toBeNull();
+    expect(verifyAppFrameTicket(forgePayload(value, [] as never))).toBeNull();
   });
 
   it('rejects a tampered payload even when the claims are well formed', async () => {
-    const { buildTeamVisitorCookie, verifyTeamVisitorValue } = await authLib();
-    const { value } = buildTeamVisitorCookie('share-1', 'contact-9');
+    const { buildAppFrameTicket, verifyAppFrameTicket } = await authLib();
+    const value = buildAppFrameTicket({ ownerId: 'owner-1', appId: 'app-1' });
     const forged = forgePayload(value, {
-      sh: 'share-1',
-      cid: 'contact-EVIL',
+      uid: 'owner-EVIL',
+      app: 'app-1',
       exp: 9_999_999_999,
-      k: 't',
+      k: 'f',
     });
-    expect(verifyTeamVisitorValue(forged)).toBeNull();
+    expect(verifyAppFrameTicket(forged)).toBeNull();
   });
 });
 
@@ -95,10 +96,10 @@ describe('signed-value spine — expiry', () => {
   });
 
   it('rejects a token whose exp is present but not a number', async () => {
-    const { buildTeamVisitorCookie, verifyTeamVisitorValue } = await authLib();
-    const { value } = buildTeamVisitorCookie('share-1', 'contact-9');
+    const { buildAppFrameTicket, verifyAppFrameTicket } = await authLib();
+    const value = buildAppFrameTicket({ ownerId: 'owner-1', appId: 'app-1' });
     expect(
-      verifyTeamVisitorValue(forgePayload(value, { sh: 's', cid: 'c', exp: '9999999999', k: 't' })),
+      verifyAppFrameTicket(forgePayload(value, { uid: 'u', app: 'a', exp: '9999999999', k: 'f' })),
     ).toBeNull();
   });
 });
@@ -108,7 +109,7 @@ describe('signed-value spine — expiry', () => {
  * verifier; exactly one cell per row may succeed. A signed value is only ever
  * valid for the surface it was minted for — this is what stops a mobile bearer
  * being pasted into a session cookie (which would dodge mobile_tokens
- * revocation) or a share-visitor cookie opening the brain-level team chat.
+ * revocation) or an asset token opening an app frame.
  */
 describe('kind isolation — no credential is valid on another surface', () => {
   it('each verifier accepts only its own kind', async () => {
@@ -116,21 +117,23 @@ describe('kind isolation — no credential is valid on another surface', () => {
       buildSessionCookie,
       buildMobileToken,
       buildAssetToken,
-      buildTeamVisitorCookie,
+      buildAppFrameTicket,
       mobileTokenJti,
-      verifyTeamVisitorValue,
+      verifyAssetToken,
+      verifyAppFrameTicket,
     } = await authLib();
 
     const minted = {
       session: buildSessionCookie('u1').value,
       mobile: buildMobileToken('u1', 'jti-1', 3600).value,
       asset: buildAssetToken('u1'),
-      visitor: buildTeamVisitorCookie('share-1', 'contact-9').value,
+      frame: buildAppFrameTicket({ ownerId: 'u1', appId: 'app-1' }),
     };
 
     const verifiers = {
       mobile: (v: string) => mobileTokenJti(v),
-      visitor: (v: string) => verifyTeamVisitorValue(v),
+      asset: (v: string) => verifyAssetToken(v),
+      frame: (v: string) => verifyAppFrameTicket(v),
     };
 
     for (const [mintKind, value] of Object.entries(minted)) {
@@ -147,43 +150,74 @@ describe('kind isolation — no credential is valid on another surface', () => {
 
 /**
  * The team-chat credential (kind 'c') was retired with /team, /hub and
- * /api/team/* (member logins Phase 6). A correctly signed, unexpired value of
- * that kind, as an old browser or the client's localStorage may still hold,
- * must open nothing: not a session, a bearer, an asset, a share visitor or a
- * frame ticket.
+ * /api/team/* (member logins Phase 6), and the team-visitor cookie (kind 't',
+ * `mantle_team`) with team links (stage 6). A correctly signed, unexpired
+ * value of either kind, as an old browser may still hold, must open nothing:
+ * not a session, a bearer, an asset or a frame ticket.
  */
-describe('retired team-chat kind', () => {
-  it('every verifier refuses a validly signed kind-c value', async () => {
+describe('retired team kinds', () => {
+  it('every verifier refuses a validly signed kind-c or kind-t value', async () => {
     const auth = await authLib();
     const exp = Math.floor(Date.now() / 1000) + 3600;
-    const chat = signRaw({
-      own: 'owner-1',
-      cid: 'contact-9',
-      sh: 'share-1',
-      uid: 'u1',
-      exp,
-      k: 'c',
+    for (const k of ['c', 't']) {
+      const value = signRaw({
+        own: 'owner-1',
+        cid: 'contact-9',
+        sh: 'share-1',
+        uid: 'u1',
+        app: 'app-1',
+        exp,
+        k,
+      });
+      expect(auth.verifySessionCookie(value), k).toBeNull();
+      expect(auth.mobileTokenJti(value), k).toBeNull();
+      expect(auth.verifyAssetToken(value), k).toBeNull();
+      expect(auth.verifyAppFrameTicket(value), k).toBeNull();
+    }
+    // The helper signs like lib/auth: the same claims as kind 'f' DO verify.
+    expect(auth.verifyAppFrameTicket(signRaw({ uid: 'u1', app: 'app-1', exp, k: 'f' }))).toEqual({
+      ownerId: 'u1',
+      appId: 'app-1',
     });
-    expect(auth.verifySessionCookie(chat)).toBeNull();
-    expect(auth.mobileTokenJti(chat)).toBeNull();
-    expect(auth.verifyAssetToken(chat)).toBeNull();
-    expect(auth.verifyTeamVisitorValue(chat)).toBeNull();
-    expect(auth.verifyAppFrameTicket(chat)).toBeNull();
-    // The helper signs like lib/auth: the same claims as kind 't' DO verify.
-    expect(
-      auth.verifyTeamVisitorValue(signRaw({ sh: 'share-1', cid: 'contact-9', exp, k: 't' })),
-    ).toEqual({ shareId: 'share-1', contactId: 'contact-9' });
   });
 
-  it('the team-chat mint and verify helpers are gone', async () => {
+  it('the team-chat and team-visitor mint and verify helpers are gone', async () => {
     const auth = (await authLib()) as Record<string, unknown>;
     for (const name of [
       'TEAM_CHAT_COOKIE',
       'buildTeamChatToken',
       'buildTeamChatCookie',
       'verifyTeamChatValue',
+      'TEAM_VISITOR_COOKIE',
+      'buildTeamVisitorCookie',
+      'verifyTeamVisitorValue',
     ]) {
       expect(auth[name], name).toBeUndefined();
     }
+  });
+});
+
+/** A frame ticket carries no team visitor's contact any more (stage 6): the
+ *  mint takes none, and one still signed with `cid` does not surface it. */
+describe('app-frame tickets carry no contact', () => {
+  it('drops a cid claim on verify and mints only the claims it knows', async () => {
+    const auth = await authLib();
+    const exp = Math.floor(Date.now() / 1000) + 60;
+    const old = signRaw({ uid: 'u1', app: 'app-1', sh: 'share-1', cid: 'contact-9', exp, k: 'f' });
+    expect(auth.verifyAppFrameTicket(old)).toEqual({
+      ownerId: 'u1',
+      appId: 'app-1',
+      shareId: 'share-1',
+    });
+    const minted = auth.buildAppFrameTicket({
+      ownerId: 'u1',
+      appId: 'app-1',
+      shareId: 'share-1',
+      contactId: 'contact-9',
+    } as never);
+    const claims = JSON.parse(
+      Buffer.from(minted.slice(0, minted.lastIndexOf('.')), 'base64url').toString('utf8'),
+    ) as Record<string, unknown>;
+    expect(claims.cid).toBeUndefined();
   });
 });

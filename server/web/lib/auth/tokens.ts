@@ -19,9 +19,10 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { SESSION_COOKIE_NAME } from '../auth-constants';
 import { env } from '@mantle/config';
 
-/** The `k` claim: mobile bearer, asset token, team visitor, app frame. 'c'
- *  (the retired team-chat credential) is reserved: no verifier takes it. */
-type TokenKind = 'm' | 'a' | 't' | 'f';
+/** The `k` claim: mobile bearer, asset token, app frame. 'c' (the retired
+ *  team-chat credential) and 't' (the retired team-visitor cookie) are
+ *  reserved: no verifier takes them. */
+type TokenKind = 'm' | 'a' | 'f';
 
 /**
  * Claims whose signature, kind and expiry have already been checked. Every
@@ -215,37 +216,11 @@ export function verifyAssetToken(token: string): { uid: string; act?: string } |
   };
 }
 
-// ── Team-visitor cookies (`k:'t'`) ───────────────────────────────────────────
-// Set after a team member enters their contact team token on a TEAM-mode app
-// share (/s/<token>). Payload binds the visitor to ONE share (`sh` = shares.id)
-// and carries WHO they are (`cid` = contact node id) for the audit trail. The
-// cookie is path-scoped to that share's /s/<token> — it authenticates nothing
-// else, and the session verifier rejects any kinded token, so it can never
-// escalate. Stateless signature + expiry here; LIVENESS (is this contact still
-// a team member?) is re-checked against contact_team_tokens on every broker
-// request, so revoking membership kills the session immediately.
-
-export const TEAM_VISITOR_COOKIE = 'mantle_team';
-const TEAM_VISITOR_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days, then re-enter the token.
-
-/** Mint the team-visitor cookie value for a share + contact pair. */
-export function buildTeamVisitorCookie(
-  shareId: string,
-  contactId: string,
-): { value: string; maxAgeSec: number } {
-  const { value } = signClaims({ sh: shareId, cid: contactId, k: 't' }, TEAM_VISITOR_TTL_SECONDS);
-  return { value, maxAgeSec: TEAM_VISITOR_TTL_SECONDS };
-}
-
-/** Verify a team-visitor cookie value: signature, expiry, kind (`k:'t'`). No DB
- *  — callers must still confirm the share matches and membership is live. */
-export function verifyTeamVisitorValue(
-  value: string,
-): { shareId: string; contactId: string } | null {
-  const claims = verifySigned(value, 't');
-  if (!claims || typeof claims.sh !== 'string' || typeof claims.cid !== 'string') return null;
-  return { shareId: claims.sh, contactId: claims.cid };
-}
+// ── Team-visitor cookies (`k:'t'`): retired ──────────────────────────────────
+// The share-scoped visitor cookie (`mantle_team`) a team-code holder got at a
+// team link's token prompt went with team links in member logins Phase 6
+// stage 6. Nothing mints or accepts kind 't' any more; the kind stays
+// reserved so an old value can never be read as something else.
 
 // ── Team-chat cookies (`k:'c'`): retired ─────────────────────────────────────
 // The brain-level team-chat credential (the `mantle_team_chat` cookie, and the
@@ -258,8 +233,8 @@ export function verifyTeamVisitorValue(
 // /s/[token]/frame) instead of an inlined srcdoc. That navigation can carry NO
 // credential: the iframe is sandboxed without allow-same-origin (opaque origin
 // ⇒ no cookies), and an iframe src can't attach a bearer header. So the parent
-// — which CAN authenticate (session cookie, share visitor cookie, or the split
-// client's bearer) — mints this ticket first and puts it in the frame URL
+// — which CAN authenticate (session cookie, an active share token, or the
+// split client's bearer) — mints this ticket first and puts it in the frame URL
 // (`?t=`). Delivered in a URL, so the TTL is seconds, not hours: it outlives
 // one navigation and nothing else. Claims bind the ticket to ONE app (and, on
 // the share surface, ONE share), so a leaked ticket can serve exactly one
@@ -271,33 +246,30 @@ const APP_FRAME_TICKET_TTL_SECONDS = 120;
 /** Mint an app-frame ticket. `shareId` set ⇒ share surface (published build
  *  only); `loginId` set ⇒ member surface (a member login, published build
  *  only, /api/member/apps/:id/frame); neither ⇒ owner surface (`uid` = the
- *  owner, draft build allowed). `contactId` records WHO a team-mode share
- *  visitor is, so the frame route can re-check membership LIVENESS — a
- *  removed member must lose access immediately, not at ticket expiry (the
- *  team-gate doctrine); `loginId` does the same for a member login. */
+ *  owner, draft build allowed). `loginId` lets the member frame route
+ *  re-check the login's liveness: a removed member loses access at once,
+ *  not at ticket expiry. */
 export function buildAppFrameTicket(opts: {
   ownerId: string;
   appId: string;
   shareId?: string;
-  contactId?: string | null;
   loginId?: string;
 }): string {
   const claims: Record<string, unknown> = { uid: opts.ownerId, app: opts.appId, k: 'f' };
   if (opts.shareId) claims.sh = opts.shareId;
-  if (opts.contactId) claims.cid = opts.contactId;
   if (opts.loginId) claims.mem = opts.loginId;
   return signClaims(claims, APP_FRAME_TICKET_TTL_SECONDS).value;
 }
 
 /** Verify an app-frame ticket: signature, expiry, kind (`k:'f'`). No DB —
  *  callers must still confirm the app (and share, when `shareId` is set)
- *  matches the route being served, and re-check team liveness via
- *  `contactId` on team-mode shares. */
+ *  matches the route being served, and re-check a member login's liveness
+ *  via `loginId`. A `cid` claim (a team visitor's contact, retired with team
+ *  links) is ignored. */
 export type AppFrameTicket = {
   ownerId: string;
   appId: string;
   shareId?: string;
-  contactId?: string;
   /** A member login's ticket: only the member frame route may accept it. */
   loginId?: string;
 };
@@ -307,7 +279,6 @@ export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
   if (!claims || typeof claims.uid !== 'string' || typeof claims.app !== 'string') return null;
   const out: AppFrameTicket = { ownerId: claims.uid, appId: claims.app };
   if (typeof claims.sh === 'string') out.shareId = claims.sh;
-  if (typeof claims.cid === 'string') out.contactId = claims.cid;
   if (typeof claims.mem === 'string') out.loginId = claims.mem;
   return out;
 }

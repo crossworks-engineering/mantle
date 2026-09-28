@@ -1,9 +1,8 @@
 import type { Context, Hono } from 'hono';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { shareModeOf } from '@mantle/content';
+import { isRetiredTeamLinkToken } from '@mantle/content';
 import { loadShareAppearance } from './appearance';
 import { resolveActiveShareByToken, recordShareView, loadShareView } from '@/lib/shares';
-import { resolveShareVisitor } from '@/lib/team-gate';
 import { PagePresenter } from '@/components/share/page-presenter';
 import { NotePresenter } from '@mantle/share-ui/note-presenter';
 import { FilePresenter } from '@mantle/share-ui/file-presenter';
@@ -12,17 +11,40 @@ import { EventPresenter } from '@mantle/share-ui/event-presenter';
 import { FolderPresenter, loadFolderListing } from '@/components/share/folder-presenter';
 import { FormulaPresenter } from '@mantle/share-ui/formula-presenter';
 import { DrawPresenter } from '@mantle/share-ui/draw-presenter';
-import { htmlPage, islandDiv, shareShell } from './template';
+import { escapeHtml, htmlPage, islandDiv, shareShell } from './template';
 import { env } from '@mantle/config';
 
 /**
  * The public /s/[token] share surface — the port of app/s/[token]/page.tsx.
  * Static presenters (page/note/file/task/event/folder) render to HTML via
- * react-dom/server; the interactive three (app, table, token prompt — 'use
- * client' under Next too) mount as client islands from
+ * react-dom/server; the interactive ones (app, table, the formula calculator,
+ * 'use client' under Next too) mount as client islands from
  * /share-runtime/islands.js. Always resolved per request against the live DB —
  * a revoked link must 404 immediately.
+ *
+ * Every link here is open: team links were retired in member logins Phase 6
+ * stage 6 (migration 0176 revoked them). An old team link answers a plain
+ * "sign in as a member" page instead of the not-found, pointing at /login.
  */
+
+/** The page an old team link shows (410): members sign in with their own
+ *  logins now, and the item, if it is still at team, is in their Library. */
+function retiredTeamLinkPage(): string {
+  const heading = 'Sign in as a member';
+  const body =
+    'Team links are retired. Members of this brain sign in with their own login ' +
+    'and find shared items in their Library. No login yet? Ask the brain admin for an invite.';
+  return htmlPage(
+    { title: heading, noindex: true },
+    `<div class="flex h-dvh items-center justify-center bg-background p-6 text-foreground">
+<div class="w-full max-w-sm rounded-lg border border-border bg-card p-6 text-card-foreground shadow-sm">
+<h1 class="text-base font-semibold">${escapeHtml(heading)}</h1>
+<p class="mt-2 text-sm text-muted-foreground">${escapeHtml(body)}</p>
+<p class="mt-4"><a href="/login" class="text-sm font-medium text-primary underline underline-offset-4">Sign in</a></p>
+</div>
+</div>`,
+  );
+}
 
 async function renderShare(c: Context): Promise<Response> {
   const token = c.req.param('token') ?? '';
@@ -30,8 +52,13 @@ async function renderShare(c: Context): Promise<Response> {
   const p = url.searchParams.get('p') ?? '';
 
   // Invalid / revoked / expired all 404 — never reveal that a token existed.
+  // The one exception is a retired team link: its visitor was a team member,
+  // and is told where to go now.
   const share = await resolveActiveShareByToken(token);
-  if (!share) return c.notFound();
+  if (!share) {
+    if (await isRetiredTeamLinkToken(token)) return c.html(retiredTeamLinkPage(), 410);
+    return c.notFound();
+  }
   const view = await loadShareView(share);
   if (!view) return c.notFound();
 
@@ -45,41 +72,21 @@ async function renderShare(c: Context): Promise<Response> {
     defaultMode,
     neatBackground,
   } = await loadShareAppearance(share.ownerId);
-  const gated = shareModeOf(share) === 'team';
-
-  // Team-mode shares gate on a live team session; without one the visitor
-  // gets the token prompt instead of the content. Unfurl metadata stays
-  // generic for gated shares — a team title must not leak to crawlers.
-  const visitor = await resolveShareVisitor(c.req.raw.headers.get('cookie'), share);
   const meta = {
-    title: gated && !visitor ? 'Shared' : `${heading} · Shared`,
+    title: `${heading} · Shared`,
     noindex: true,
-    og:
-      gated && !visitor
-        ? { title: 'Shared', description: 'Shared via Mantle' }
-        : { title: heading, description: 'Shared via Mantle' },
+    og: { title: heading, description: 'Shared via Mantle' },
     appearance,
   };
 
-  // One reader chrome for every shelled body — the token prompt included, so
-  // the gate is already branded the way the content behind it will be. The
-  // licence key is the same env var the client app uses, so one box config
-  // serves both surfaces.
+  // One reader chrome for every shelled body. The licence key is the same
+  // env var the client app uses, so one box config serves both surfaces.
   const shareMeta = {
     defaultMode,
     neat: neatBackground,
     neatLicense: env('MANTLE_NEAT_LICENSE_KEY'),
     readerChrome: true,
   };
-
-  if (!visitor) {
-    return c.html(
-      htmlPage(
-        { ...meta, islands: true, share: shareMeta },
-        islandDiv('team-token-prompt', { shareToken: token, title: heading }),
-      ),
-    );
-  }
 
   void recordShareView(share.id); // fire-and-forget view counter
 
