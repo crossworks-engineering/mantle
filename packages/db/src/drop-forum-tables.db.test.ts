@@ -63,18 +63,20 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
         select relname as t from pg_class c join pg_namespace n on n.oid = c.relnamespace
          where n.nspname = 'public' and c.relname = any(${FORUM_TABLES}) order by 1`
     ).map((r) => r.t);
-  /** Every count the drop must leave alone, brain-wide and for the seeded owner. */
+  /** Every count the drop must leave alone, for the seeded owner only: other
+   *  DB test files run in parallel on this database and add or delete rows
+   *  brain-wide (agents, nodes), so a global count is not stable. */
   const counts = async () => {
     const [r] = await sql<Row[]>`
-      select (select count(*) from nodes)::int as nodes,
-             (select count(*) from nodes where owner_id = ${owner})::int as owner_nodes,
-             (select count(*) from nodes where type = 'app')::int as app_nodes,
-             (select count(*) from nodes where data->>'source' = 'forum-archive')::int as archive_pages,
+      select (select count(*) from nodes where owner_id = ${owner})::int as owner_nodes,
+             (select count(*) from nodes where owner_id = ${owner} and type = 'app')::int as app_nodes,
+             (select count(*) from nodes where owner_id = ${owner}
+                and data->>'source' = 'forum-archive')::int as archive_pages,
              (select count(*) from nodes where type = 'file' and owner_id = ${owner})::int as files,
-             (select count(*) from apps)::int as apps,
-             (select count(*) from sandboxes)::int as sandboxes,
-             (select count(*) from team_messages)::int as team_messages,
-             (select count(*) from agents)::int as agents`;
+             (select count(*) from apps a join nodes n on n.id = a.node_id
+               where n.owner_id = ${owner})::int as apps,
+             (select count(*) from sandboxes where owner_id = ${owner})::int as sandboxes,
+             (select count(*) from team_messages where owner_id = ${owner})::int as team_messages`;
     return r!;
   };
 
