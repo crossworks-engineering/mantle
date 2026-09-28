@@ -137,6 +137,9 @@ describe('keepSvgImages', () => {
     // An allowed symbol closes; an image after it is not inside it any more.
     const after = wrap(sym('image-okfile', 'T0s='), img('U0VDUkVU'));
     expect(keepSvgImages(after, new Set(['okfile']))).not.toContain('U0VDUkVU');
+    // A quoted > before the id does not hide the id of an allowed symbol.
+    const quoted = wrap(`<symbol data-x="a>b" id="image-okfile">${img('T0s=')}</symbol>`);
+    expect(keepSvgImages(quoted, new Set(['okfile']))).toBe(quoted);
     // Nothing allowed: nothing kept.
     expect(keepSvgImages(wrap(sym('image-okfile', 'T0s=')), new Set())).not.toContain('T0s=');
   });
