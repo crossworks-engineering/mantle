@@ -19,7 +19,10 @@
  * the reviewer who opens the item. Refused outright, never queried: an id
  * that is not a uuid (Postgres would answer 22P02, an opaque 500), an entity
  * mention (entities are brain knowledge no member can read), any other
- * scheme (`javascript:`).
+ * scheme (`javascript:`, `vbscript:`, a `data:` link; only a `data:image/`
+ * image passes). The scheme is read the way a browser reads it: controls and
+ * whitespace inside the value are ignored first, so `java<TAB>script:` is
+ * `javascript:` here too (final audit F31).
  */
 import { markdownToDoc } from '@mantle/content-core/markdown';
 import { DRAW_HREF, MEDIA_HREF, MENTION_HREF, PAGE_HREF } from '@mantle/content-core/markdown-refs';
@@ -35,6 +38,10 @@ export type EmbedRefs = { ids: string[]; refused: string[]; embeds: string[] };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UUID_ANY = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+/** C0 and C1 controls, DEL and whitespace. A browser's URL parser drops tabs
+ *  and newlines anywhere in a URL and controls and spaces at its ends, so a
+ *  scheme is tested with all of them removed. */
+const URL_NOISE = /[\u0000-\u0020\u007f-\u009f\s]/g;
 /** Attributes that hold a node id, on any node type. */
 const ID_ATTRS = ['nodeId', 'drawId', 'pageId'] as const;
 
@@ -71,29 +78,33 @@ class Collector {
     const t = v.trim();
     if (!t || t.startsWith('#')) return; // an anchor on the same page
     if (text && !t.startsWith('/') && !/^(mention|media|page|draw):/i.test(t)) return;
-    const mention = MENTION_HREF.exec(t);
+    // Classified as the browser will read it (see URL_NOISE); `t` is kept for
+    // the refusal message.
+    const u = t.replace(URL_NOISE, '');
+    const mention = MENTION_HREF.exec(u);
     if (mention) {
       if (mention[1] === 'node') this.id(mention[2], embed);
       else this.refused.add(t);
       return;
     }
-    const scheme = MEDIA_HREF.exec(t) ?? PAGE_HREF.exec(t) ?? DRAW_HREF.exec(t);
+    const scheme = MEDIA_HREF.exec(u) ?? PAGE_HREF.exec(u) ?? DRAW_HREF.exec(u);
     if (scheme) {
       this.id(scheme[1], embed);
       return;
     }
-    if (/^(https?:)?\/\//i.test(t)) {
+    if (/^(https?:)?\/\//i.test(u)) {
       if (image) this.refused.add(t);
       return;
     }
-    if (image && /^data:image\//i.test(t)) return;
-    if (!image && /^(mailto|tel):/i.test(t)) return;
-    if (/^[a-z][a-z0-9+.-]*:/i.test(t)) {
+    if (image && /^data:image\//i.test(u)) return;
+    if (!image && /^(mailto|tel):/i.test(u)) return;
+    // Every other scheme: javascript:, vbscript:, data: (not an image), …
+    if (/^[a-z][a-z0-9+.-]*:/i.test(u)) {
       this.refused.add(t);
       return;
     }
     // A relative path: every id in it, the fragment (block ids) left out.
-    const path = t.split('#')[0] ?? '';
+    const path = u.split('#')[0] ?? '';
     for (const u of path.match(UUID_ANY) ?? []) this.id(u, embed);
   }
 
