@@ -6,8 +6,9 @@
 #   1. preflight: the updater is idle, no request is pending
 #   2. count apps, sandboxes (Postgres) and app-db files (mantle_web) BEFORE
 #   3. backup: scripts/db-dump.sh on the box, strict, its OWN exit status
-#      (no pipe in front of it). Skipped only when the box's updater takes its
-#      own strict pre-roll backup (v0.232.306+), which it then must have done.
+#      (no pipe in front of it). Skipped only when the box's updater takes
+#      its own strict pre-roll backup (see pre_roll_backup in
+#      infra/updater/updater.sh), which it then must have done.
 #   4. request: request.json holding only {"target": <tag>}, written into the
 #      updater's signal dir by a throwaway alpine container (the dir is
 #      root-owned on the host), exactly as the in-app Update button would

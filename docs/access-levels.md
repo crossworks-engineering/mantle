@@ -120,16 +120,23 @@ them (the control). Tests: `packages/db/src/*.db.test.ts`,
 
 ## 6. Operations
 
-- **Restore** (`scripts/db-restore.sh`) creates the three roles before
-  `pg_restore` (a dump does not carry roles, but its policies name them) and
-  warns if the policies did not restore.
+- **Restore** (`scripts/db-restore.sh`) creates the four roles
+  (`mantle_view_team`, `mantle_view_client`, `mantle_view_public` and
+  `mantle_view_space`) before `pg_restore` (a dump does not carry roles, but
+  its policies and grants name them; migrate later gives them their login
+  and password) and warns if the policies did not restore.
+- **Backups before a roll.** The updater takes a strict four-part backup
+  (Postgres, app-dbs, table-dbs, spaces) into `backups/pre-roll/` before
+  every server roll and refuses the roll when it fails (docs/update-prod.md).
+  Restoring one of them is the only way back past a forward-only migration.
 - **Every box connects as the Postgres superuser**, which bypasses row level
   security: the owner's paths are unaffected. The `demo` branch's
   `demo_reader` role is NOT a superuser: before this migration reaches the
   demo box it needs `ALTER ROLE demo_reader BYPASSRLS` (on the demo branch).
 - **Still to come:** share links (`/s/`) running at the link's level ships in
-  a later release, after the closure gaps the shadow report lists are fixed;
-  member logins (Phase 1) and personal spaces (Phase 2) build on this.
+  a later release, after the closure gaps the shadow report lists are fixed
+  (section 7, "Not yet"). Member logins and personal spaces, which build on
+  this, have shipped (docs/member-logins.md).
 
 ## 7. Levels drive links
 

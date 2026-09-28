@@ -217,9 +217,11 @@ it. The file node's path is `space_files`, not under `files`, so every brain
 file helper resolves no disk path for it. The filename is metadata (a rename
 touches no disk). `scripts/db-dump.sh` and the scheduled backup tar the root
 to `backups/mantle-spaces-<ts>.tgz`; `scripts/db-restore.sh` puts it back with
-the dump. Only web, api and the events worker (which runs the scheduled
-backup, read-only mount) carry `MANTLE_SPACES_ROOT`; a production process
-without it answers member uploads 503 instead of writing into the container.
+the dump. Four services carry `MANTLE_SPACES_ROOT`: web, api, the events
+worker (which runs the scheduled backup, read-only mount) and the maintenance
+worker (the nightly space purge deletes a deactivated login's bytes); a
+production process without it answers member uploads 503 instead of writing
+into the container.
 A delete unlinks the bytes only after the space transaction commits, and a
 create that rolls back removes the bytes it wrote.
 
@@ -263,7 +265,11 @@ DEACTIVATED login's private items are purged after 30 days, rows and bytes
 
 **Rollback.** 0165 is safe under older code: the brain row keeps every
 existing owner id valid. Once personal items exist, never roll back below
-v0.232.255 (the extractor's owner check).
+v0.232.255 (the extractor's owner check). Once migration 0178 ran (it drops
+`contact_team_tokens`), never roll back below v0.232.301: v0.232.300 still
+reads that table for invite redeem and the Team admin Members tab, and both
+fail. The pre-roll backup (`backups/pre-roll/`, taken by the updater before
+every server roll) is the only way back past 0178.
 
 **Comments** (migration 0168). The author comments while an item is shared
 with the team or submitted (409 `not-shared` otherwise); a teammate while it

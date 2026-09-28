@@ -11,7 +11,9 @@
 
 ## 1. Posture in one page
 
-- **Self-hosted, single-owner.** A brain runs on infrastructure you control.
+- **Self-hosted, one owner.** A brain runs on infrastructure you control. Its
+  data anchors to one owner; named admins act as themselves, and invited
+  member logins read below admin (section 2).
   All state lives under `${MANTLE_DATA_DIR}` on that host (Postgres, the object
   store, files, per-app SQLite, backups). There is no vendor SaaS in the data path
   and no phone-home with content.
@@ -24,12 +26,15 @@
   connector you explicitly connect** (compiled http tools calling the one
   base URL you set; see [`openapi-connectors.md`](./openapi-connectors.md)),
   and update checks (version metadata only). That's the list.
-- **The brain is the trust boundary.** This is a deliberate design decision:
-  everyone admitted to a brain (owner, admins, team members within their
-  surface) is trusted to the level that surface grants. There are no in-brain
-  tiered read ACLs, when different groups need different visibility, you
-  deploy **separate brains**, one per boundary. Features are permissive
-  _within_ the boundary and strict _at_ it.
+- **Levels inside the brain, brains between boundaries.** Every item, agent
+  and tool group carries a level (admin > team > client > public), and
+  Postgres row level security enforces it: a member login and a team-level
+  agent run on a limited database role and read only team-level items (plus
+  the member's own personal space), whatever the code asks for
+  ([access-levels.md](./access-levels.md)). Admins read everything. So a
+  level separates what members may read from what only admins may; groups
+  that must not share admins at all still get **separate brains**, one per
+  boundary. Features are permissive _within_ a level and strict _at_ it.
 - **Robustness over seamlessness.** Standing engineering rule: gates
   (approvals, allowlists, shown-once tokens) are not eroded for convenience,
   and integrity-adjacent changes get the slow, careful treatment.
@@ -70,16 +75,15 @@ Notes that matter to a reviewer:
 Everything an outside person can touch, in one table. "Write path" is the
 complete list of ways that surface can change the brain.
 
-| Surface                                       | Auth                                                             | Reads                                                                                                                             | Write path                                                                                                                  | Audit                             |
-| --------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `/s/<token>` shared page/note/task/event/file | link token                                                       | that one item + its own embedded assets only                                                                                      | none                                                                                                                        | view count                        |
-| `/s/<token>` **public app**                   | link token                                                       | the app's own SQLite, read-only                                                                                                   | none (no brain tools, no DB writes)                                                                                         | app access log                    |
-| `/s/<token>` **team app**                     | link token + team token                                          | app SQLite + the app's _declared_ tools (built-ins only)                                                                          | app SQLite writes + declared tools                                                                                          | app access log, per member        |
-| **Member routes** (`/api/member/*`)           | member login                                                     | team-level items (row security on the team role), their own personal space, member apps; the team agent via their own chat thread | their personal space + submitting items for review + one wrapped tool that files a task for human review                    | access log + full per-turn traces |
-| Telegram                                      | explicit bot pairing                                             | owner-level assistant (this is _your_ channel, not a team one)                                                                    | assistant tools per its grants                                                                                              | traces                            |
-| MCP (Claude Desktop etc.)                     | SSH/exec into the container, operator-only today                 | owner-level tools                                                                                                                 | owner-level tools                                                                                                           | traces                            |
-| MCP connectors (outbound)                     | owner connects a server explicitly; key/OAuth creds vault-sealed | the external server sees only the arguments of calls to ITS tools                                                                 | agents granted the connector's `mcp-*` group call the remote tools; results return fenced as untrusted                      | traces                            |
-| OpenAPI connectors (outbound)                 | owner connects a spec explicitly; key stays a vault ref          | the service sees only the arguments of calls compiled from ITS spec, sent to the one owner-set base URL                           | agents granted the connector's `openapi-*` group call the compiled http tools; results return fenced like every http result | traces                            |
+| Surface                                       | Auth                                                             | Reads                                                                                                                             | Write path                                                                                                                                                                                                           | Audit                             |
+| --------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `/s/<token>` shared page/note/task/event/file | link token                                                       | that one item + its own embedded assets only                                                                                      | none                                                                                                                                                                                                                 | view count                        |
+| `/s/<token>` **public app**                   | link token                                                       | the app's own SQLite, read-only                                                                                                   | none (no brain tools, no DB writes)                                                                                                                                                                                  | app access log                    |
+| **Member routes** (`/api/member/*`)           | member login                                                     | team-level items (row security on the team role), their own personal space, member apps; the team agent via their own chat thread | their own personal space (items, files, comments on shared items), submit / recall for review, team-level apps (the app's SQLite + its declared built-in tools), one wrapped tool that files a task for human review | access log + full per-turn traces |
+| Telegram                                      | explicit bot pairing                                             | owner-level assistant (this is _your_ channel, not a team one)                                                                    | assistant tools per its grants                                                                                                                                                                                       | traces                            |
+| MCP (Claude Desktop etc.)                     | SSH/exec into the container, operator-only today                 | owner-level tools                                                                                                                 | owner-level tools                                                                                                                                                                                                    | traces                            |
+| MCP connectors (outbound)                     | owner connects a server explicitly; key/OAuth creds vault-sealed | the external server sees only the arguments of calls to ITS tools                                                                 | agents granted the connector's `mcp-*` group call the remote tools; results return fenced as untrusted                                                                                                               | traces                            |
+| OpenAPI connectors (outbound)                 | owner connects a spec explicitly; key stays a vault ref          | the service sees only the arguments of calls compiled from ITS spec, sent to the one owner-set base URL                           | agents granted the connector's `openapi-*` group call the compiled http tools; results return fenced like every http result                                                                                          | traces                            |
 
 Two structural points:
 
@@ -88,7 +92,9 @@ Two structural points:
   so the answer is none (enforced by a hard server-side gate, not convention).
 - **Identified beats anonymous.** Everything with real capability requires a
   member login, and every action is logged against that name. (Team-mode
-  shares, where a team token named the visitor, are retired.)
+  shares, where a team token named the visitor, are retired: a shared app's
+  tool broker refuses every call, and members use an app's tools from their
+  own login.)
 
 ## 4. The assistant's guard rails
 
@@ -116,7 +122,8 @@ The AI itself is fenced the same way people are:
 ## 5. Member chat security (deep): [`member-logins.md`](./member-logins.md), [`team-chat.md`](./team-chat.md) (history)
 
 The design assumption: a team member is _trusted to read the brain's
-knowledge_ but _never trusted to write_, and everything they do must be
+team-level knowledge_ and to work in their own space, but _never trusted to
+write the brain_ without an admin's review, and everything they do must be
 attributable.
 
 - **Read-only by construction.** The team responder's tool group is read-only
@@ -135,12 +142,16 @@ attributable.
   runs its whole turn on a limited Postgres login role, and row level
   security decides what it reads: no per-tool checks to forget. See
   [access-levels.md](./access-levels.md).
-- **One write path, provenance-stamped.** The single write tool files a
-  review-queue task whose provenance (who, from which message, which
-  attachments) is stamped **by the server, never from model arguments**: so
-  the worst-case prompt-injection outcome is a _clearly team-labelled task in
-  a human-reviewed queue_. Team requests never touch the agent
-  tool-execution gate directly.
+- **The brain is written only through review.** A member writes their own
+  personal space (a separate owner in the same database: never indexed,
+  never read by the extractor, invisible to other members unless shared with
+  the team) and the databases of team-level apps. Nothing of theirs becomes
+  brain content until an admin accepts it (member-logins.md section 6). The
+  team agent's one write tool files a review-queue task whose provenance
+  (who, from which message, which attachments) is stamped **by the server,
+  never from model arguments**: so the worst-case prompt-injection outcome is
+  a _clearly team-labelled task in a human-reviewed queue_. Team requests
+  never touch the agent tool-execution gate directly.
 - **Member isolation.** A member's turn id is minted server-side as
   `member-<loginId>.<nonce>`; a client can never address another member's
   turn, and each login has its own thread. Context assembly injects no owner
@@ -153,11 +164,11 @@ attributable.
 - **Cost containment.** Per-login rate limit (6 a minute) +
   `TEAM_CHAT_DAILY_TURNS` daily cap (denials logged), so a leaked login is a
   bounded nuisance, not a wallet drain.
-- **Accepted trade-offs, stated plainly:** (1) within the boundary, a member
-  can surface anything the responder can read, including via injection in
-  content; that's the coarse-permission model, and the enable switch says so.
-  (2) Members see the same live status narration the owner sees, chosen
-  transparency, documented, within the trust boundary.
+- **Accepted trade-offs, stated plainly:** (1) a member can surface anything
+  the team agent can read (every team-level item), including via injection
+  in content; that is what setting an item to team means. (2) Members see
+  the same live status narration the owner sees, chosen transparency,
+  documented, within their level.
 
 ## 6. Apps security (deep): [`app-authoring-guide.md`](./app-authoring-guide.md)
 
@@ -189,16 +200,26 @@ even when _you_ wrote them:
 ## 7. Data protection & durability
 
 - **Backups:** built-in scheduled `pg_dump` with rotation
-  ([`backups.md`](./backups.md)); `db-dump.sh` also captures every per-app
-  SQLite. Getting the folder offsite is deliberately the operator's job.
-  Standing rule: dump before any live migration (enum changes aren't
-  reversible).
-- **Encryption:** secrets are AES-256-GCM at rest; team + asset tokens are
-  hashed; disk/transport encryption is the host's TLS + volume story (Caddy
-  auto-TLS on the standard deploy).
-- **Restore reality:** disaster recovery = restore the dump + the data dir;
-  documented and exercised (registry-pull deploys snapshot `.env` and DB
-  before every roll).
+  ([`backups.md`](./backups.md)), off until the owner turns it on.
+  `scripts/db-dump.sh` takes the full four-part set: the Postgres dump, every
+  per-app SQLite, the table workbooks and the members' personal-space files.
+  Getting the folder offsite is deliberately the operator's job.
+- **A backup before every roll, enforced.** Migrations are forward-only (some
+  drop tables), and any admin can start a roll from Settings > Updates. So
+  the updater runs `db-dump.sh` in strict mode (all four parts, or it
+  fails) into `backups/pre-roll/` before it changes anything, keeps the
+  newest three sets, and **refuses the roll**, nothing changed and the
+  reason on the Updates page, when the backup fails or the disk cannot hold
+  it ([update-prod.md](./update-prod.md)). The operator can switch it off in
+  `.env` (`MANTLE_PRE_ROLL_BACKUP=0`); a request from the app cannot.
+- **Encryption:** secrets are AES-256-GCM at rest; invite codes, pairing
+  codes and OAuth tokens are stored hashed; disk/transport encryption is the
+  host's TLS + volume story (Caddy auto-TLS on the standard deploy).
+- **Restore reality:** disaster recovery = restore the dump + the data dir
+  (`scripts/db-restore.sh` also recreates the four database roles and puts
+  the personal-space files back); documented and exercised. `.env` is not in
+  the backup: keep a copy of it, above all `MANTLE_MASTER_KEY`, which the
+  sealed secrets need, off the box.
 
 ## 8. Operational safety nets
 
@@ -211,8 +232,11 @@ The nets that catch drift and breakage before they become incidents:
 - **Sanity check**: a read-only `/debug` tab that inspects
   provisioning-hidden breakage (missing buckets, workers, seeds) on any box.
 - **Deploy discipline**: releases are pinned image tags pulled from the
-  registry; preflight includes typecheck, the full test suite (~1.9k tests),
-  and a production `next build`; prod rolls take a DB dump first.
+  registry; preflight includes typecheck, the full test suite, and a
+  production `next build`; every server roll takes the four-part backup
+  first (section 7), and after an OK roll the updater removes this product's
+  old server and client images (keeping the rollback pair), so the disk does
+  not fill one release at a time.
 - **Access logs + traces everywhere** external capability exists (app
   activity, team access log, per-turn traces with cost).
 - **Rate limiting** on every anonymous/token entry point.
@@ -226,12 +250,13 @@ The nets that catch drift and breakage before they become incidents:
    complete list), with anonymous surfaces structurally incapable of reaching
    brain data.
 2. External _people_ are **named, tokenized, audited, and instantly
-   revocable**, and their write ability is either zero or a human-reviewed
-   queue.
+   revocable**; they write only their own space and team-level apps, and
+   reach the brain only through a human-reviewed queue.
 3. The AI's capability is **declared, drift-tested, and gated**: not
    emergent.
-4. The honest limits are the coarse-permission model (§1) and the residual
-   risks of any LLM system (injection can steer _reads_ within a surface's
-   boundary; model providers see what's sent to them unless you run local
-   models). Both have a clear mitigation: **brain per boundary**, and local
-   models where content must not leave the site.
+4. The honest limits are the level model (§1: admins read everything, and
+   a member reads everything at team level) and the residual risks of any
+   LLM system (injection can steer _reads_ within a level; model providers
+   see what's sent to them unless you run local models). Both have a clear
+   mitigation: **brain per boundary**, and local models where content must
+   not leave the site.
