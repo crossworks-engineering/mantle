@@ -1,7 +1,8 @@
 /**
  * The public invite routes (member logins, Phase 6) without a database: the
  * redeem and preview are stood in, so these pin what the ROUTES do with them.
- * Rate limits per IP and brain-wide, before bcrypt; one 401 for every code
+ * Rate limits per IP and, on failed codes, brain-wide, before bcrypt (a few
+ * addresses cannot lock real invitees out); one 401 for every code
  * failure (no oracle); one 404 for every unusable code on the preview; the
  * session cookie set as /api/auth/login sets it; the password handed to the
  * redeem already hashed. The redeem itself is proven on Postgres in
@@ -165,12 +166,44 @@ describe('POST /api/auth/invite/accept', () => {
     expect((await accept({ ...GOOD, password: 'short' }, '198.51.100.8')).status).toBe(400);
   });
 
-  it('rate limits the whole brain across addresses', async () => {
+  const NO_CODE = { password: GOOD.password }; // a failed code, before bcrypt
+
+  it('does not let a few addresses lock out a real invitee', async () => {
+    // Six addresses failing at their full rate (the audit's lockout).
     for (let i = 0; i < 60; i += 1) {
       const ip = `198.51.100.${(i % 6) + 10}`;
+      expect((await accept(NO_CODE, ip)).status).toBe(401);
+    }
+    h.redeemed = {
+      loginId: LOGIN,
+      email: 'pat@example.invalid',
+      ownerId: ANCHOR,
+      contactId: null,
+      inviteId: 'i1',
+      via: 'invite',
+    };
+    expect((await accept(GOOD, '198.51.100.99')).status).toBe(200);
+  });
+
+  it('counts only failed codes brain-wide, not honest requests', async () => {
+    // A short password is refused before any code: it spends no brain-wide
+    // budget, however many addresses send one.
+    for (let i = 0; i < 300; i += 1) {
+      const ip = `198.51.100.${(i % 30) + 10}`;
       expect((await accept({ ...GOOD, password: 'short' }, ip)).status).toBe(400);
     }
-    expect((await accept(GOOD, '198.51.100.99')).status).toBe(429);
+    expect((await accept(GOOD, '198.51.100.99')).status).toBe(401);
+    expect(h.redeemCalls).toHaveLength(1);
+  });
+
+  it('rate limits the whole brain once many addresses keep failing', async () => {
+    for (let i = 0; i < 120; i += 1) {
+      const ip = `198.51.100.${(i % 12) + 10}`;
+      expect((await accept(NO_CODE, ip)).status).toBe(401);
+    }
+    const res = await accept(GOOD, '198.51.100.99');
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBeTruthy();
     expect(h.redeemCalls).toHaveLength(0);
   });
 });
@@ -193,13 +226,20 @@ describe('GET /api/auth/invite/:code', () => {
     expect(await res.json()).toEqual({ error: 'Invite not found.' });
   });
 
-  it('rate limits one address and the whole brain', async () => {
+  it('rate limits one address, and the whole brain on failed codes only', async () => {
     for (let i = 0; i < 30; i += 1) {
       expect((await preview('nope-nope', '192.0.2.1')).status).toBe(404);
     }
     expect((await preview('nope-nope', '192.0.2.1')).status).toBe(429);
-    for (let i = 0; i < 270; i += 1) {
-      expect((await preview('nope-nope', `192.0.2.${(i % 9) + 2}`)).status).toBe(404);
+    // Good previews spend no brain-wide budget.
+    h.preview = { ownerId: ANCHOR, email: 'pat@example.invalid', displayName: 'Pat' };
+    for (let i = 0; i < 600; i += 1) {
+      expect((await preview('AbCdEfGhJkMnPqRs', `192.0.2.${(i % 25) + 2}`)).status).toBe(200);
+    }
+    h.preview = null;
+    // 570 failures after the first address's 30: still under the cap.
+    for (let i = 0; i < 570; i += 1) {
+      expect((await preview('nope-nope', `198.18.0.${(i % 20) + 2}`)).status).toBe(404);
     }
     expect((await preview('nope-nope', '192.0.2.200')).status).toBe(429);
   });

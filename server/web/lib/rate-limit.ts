@@ -76,6 +76,28 @@ export function rateLimit(key: string, opts: { max: number; windowMs: number }):
 }
 
 /**
+ * Look at `key`'s bucket WITHOUT taking a token: `ok` is false when the
+ * window already holds `max` hits, so the next take would be refused. For a
+ * bucket that counts only some outcomes (failed invite codes, say): peek
+ * before the work, take with rateLimit() after a failure.
+ */
+export function rateLimitPeek(
+  key: string,
+  opts: { max: number; windowMs: number },
+): RateLimitResult {
+  const now = Date.now();
+  const bucket = buckets.get(key);
+  const max = opts.max * SCALE;
+  if (!bucket || now - bucket.windowStartMs >= opts.windowMs) {
+    return { ok: true, retryAfterSec: 0, remaining: max };
+  }
+  const retryAfterSec = Math.max(1, Math.ceil((bucket.windowStartMs + opts.windowMs - now) / 1000));
+  return bucket.count >= max
+    ? { ok: false, retryAfterSec, remaining: 0 }
+    : { ok: true, retryAfterSec, remaining: max - bucket.count };
+}
+
+/**
  * Pull a stable client identifier from the request. Trusts the standard
  * reverse-proxy headers (`x-forwarded-for`, `x-real-ip`) which Caddy /
  * nginx set; falls back to `unknown` for direct connections.
