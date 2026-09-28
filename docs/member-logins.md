@@ -445,7 +445,7 @@ app's level in its Access control; nothing else lists it to members.
   (it writes the app's registry rows).
 - **SQL limits** (every app SQL caller: members, share links, the owner,
   `app_db_query`; `packages/content/src/app-sql-runner.ts`). Each statement
-  runs in a worker thread, so a slow one never blocks the server: 5 seconds
+  runs in a child process, so a slow one never blocks the server: 5 seconds
   at most, 50,000 rows at most, 16 MiB per string or blob. The engine's
   authorizer refuses ATTACH, DETACH, VACUUM (any form) and every PRAGMA but
   `table_info` / `table_xinfo`, whatever comments or spacing the text hides
@@ -453,9 +453,14 @@ app's level in its Access control; nothing else lists it to members.
   too: one script in one transaction, same authorizer, 30
   seconds at most (a new version may index data already in the app).
   Before, it ran on the main thread with only the text guard and no time
-  limit. Open item: a WRITE stopped at the limit (an `exec` or a schema) is
-  killed with its worker, and its write lock on the app's file stays held
-  until the web process restarts; reads still work.
+  limit. The children are a small pool (at most 4 per server process, each
+  about 40 MB, one statement at a time, exiting after a minute idle; a
+  statement past the pool waits for a free child up to its own time limit).
+  A statement past its limit gets its child SIGKILLed, so the OS drops the
+  child's locks and SQLite rolls the unfinished write back on the next open:
+  the next write to that app goes straight through. Before 2026-09-28 the
+  statements ran in worker threads, and a write stopped at the limit kept the
+  app's write lock ("database is locked") until the web process restarted.
 - **Cost.** A member write into an app table that is exported to the brain
   schedules the export sync (debounced, hash-gated, and at most two minutes
   after a burst of writes starts): bounded, not zero (decided 2026-09-26).
