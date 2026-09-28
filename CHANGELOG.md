@@ -4,6 +4,14 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.290: client v0.6.156
+
+- Paired with jackdaw v0.6.156: member chat stops polling a reply the brain
+  never finished and a retried send is run once; a member table no longer
+  adds a row twice after a lost save (it reloads on a conflict); a big edit
+  a reload cut off is sent on the next open; the Access popover names an old
+  brain on a 404; member app and member-chats types come from the contract.
+
 ## 0.232.289: member logins, the audit's small items (session 9)
 
 - Lockout also unpairs the login's push devices (migration 0173,
