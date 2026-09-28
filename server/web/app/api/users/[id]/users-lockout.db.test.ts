@@ -39,6 +39,14 @@ vi.mock('@/lib/push/relay-client', () => ({
   }),
 }));
 
+// The relay identity is sealed under the master key; the tests do not need
+// real crypto (the relay itself is stood in above).
+vi.mock('@mantle/crypto', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  seal: (plain: string) => ({ ciphertext: Buffer.from(plain, 'utf8') }),
+  open: (sealed: Buffer) => sealed.toString('utf8'),
+}));
+
 type Row = Record<string, unknown>;
 
 describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links', () => {
