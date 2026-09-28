@@ -30,6 +30,7 @@ vi.mock('@mantle/content', async (importOriginal) => ({
       ? Array.from({ length: h.openRequests }, (_, i) => ({ taskId: `t${i}` }))
       : [{ taskId: 't0' }],
   ),
+  countOpenTeamRequests: vi.fn(async () => h.openRequests),
   listTeamMemberActivity: vi.fn(async () => [
     {
       contactId: CONTACT,
