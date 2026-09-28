@@ -122,6 +122,15 @@ describe('keepSvgImages', () => {
     for (const gone of ['T1VU', 'RkU=', 'TE9PU0U=']) expect(out).not.toContain(gone);
   });
 
+  it('keeps only an <image> inside an allowed symbol, never an feImage', () => {
+    const svg = wrap(
+      `<symbol id="image-okfile"><image href="data:image/png;base64,T0s="/><feImage href="data:image/png;base64,RkU="/></symbol>`,
+    );
+    const out = keepSvgImages(svg, new Set(['okfile']));
+    expect(out).toContain('T0s=');
+    expect(out).not.toContain('RkU=');
+  });
+
   it('is not fooled by a > inside an attribute value, and fails closed', () => {
     const tricky = `<symbol id="image-adminfile" data-x="a>b"><image title="x>y" href="data:image/png;base64,U0VDUkVU"></image></symbol>`;
     expect(keepSvgImages(wrap(tricky), new Set(['okfile']))).not.toContain('U0VDUkVU');
