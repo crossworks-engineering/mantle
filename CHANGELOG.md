@@ -4,6 +4,14 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.315: client v0.6.168
+
+- Pairs the client at jackdaw v0.6.168: the Access popover says how many
+  embedded items will be shared too before you confirm a lower level, and
+  shows what went down with the item afterwards. Also the client halves of
+  0.232.310 to 0.232.313 (agent delete keeps or deletes the conversation,
+  onboarding purpose limit and Memory "Runs via" default).
+
 ## 0.232.314: embedding means sharing
 
 - **An item's embeds follow it down.** Lowering a page, drawing or note below
