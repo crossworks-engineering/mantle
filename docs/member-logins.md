@@ -474,7 +474,11 @@ Every moved item keeps its node id (links stay valid),
 goes to the brain at the level the admin picks (admin by default), loses any
 leftover draft, and its `space_items` row goes to `accepted` with the
 reviewer (the row stays: it records the author), and its author's
-accepted snapshot is recorded (section 11). A page lands at the top of
+accepted snapshot is recorded (section 11). Below admin, the brain items
+the accepted item embeds (a Library image a member placed, say) go down to
+its level in the same transaction: embedding means sharing
+(docs/access-levels.md section 1), and the answer lists them in
+`alsoLowered`. A page lands at the top of
 Pages or under a chosen brain page; files land in a chosen Files folder
 (`files` by default) under a safe, unique name. Bytes move beside the rows:
 a file is copied into the folder under a dot name the files watcher ignores,
@@ -977,7 +981,7 @@ too.
 
 **Accept into brain** (`POST /api/admin/space/:id/accept`, body
 `{ audience?, parentPageId?, folderPath? }`, answer
-`{ id, audience, moved, linksStayingBehind, levelWarning? }`: the same as
+`{ id, audience, moved, linksStayingBehind, alsoLowered, levelWarning? }`: the same as
 the team-admin accept). `acceptOwnItem` shares the move with the reviewed
 Accept of section 6 (bundle, same ids, re-own, bytes, slug and path
 dedupe, drafts discarded, one transaction, the extractor told once per
@@ -1171,7 +1175,7 @@ lock).
 | ------------------------------------------------ | ---------- | ----------------------------------------------------------------------- |
 | `POST /api/team-admin/submissions/:id/take-over` | none       | `TakeOverResult` `{ id, moved: MovedSpaceItem[] }`                      |
 | `POST /api/admin/space/:id/give-back`            | `{ note }` | `GiveBackResult` `{ id, returned: MovedSpaceItem[] }`                   |
-| `POST /api/admin/space/:id/accept`               | as today   | as today (`{ id, audience, moved, linksStayingBehind }`)                |
+| `POST /api/admin/space/:id/accept`               | as today   | as today (`{ id, audience, moved, linksStayingBehind, alsoLowered }`)   |
 | `GET /api/admin/space[?review=taken]`            |            | `AdminSpaceList`: rows are `AdminSpaceItemRow`                          |
 | `GET/PATCH /api/admin/space/:id`                 |            | `AdminSpaceItem`: `{ row: AdminSpaceItemRow, body }`                    |
 | `GET /api/member/space[?review=with-admin]`      |            | `MemberSpaceList`, with `with-admin` rows on page 1                     |

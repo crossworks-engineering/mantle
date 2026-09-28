@@ -37,7 +37,7 @@ export const access_get: BuiltinToolDef = {
   preconditions: NODE_ID_PRE,
   name: 'Get an access level',
   description:
-    'Read the level (admin, team, client or public) of one brain item, agent or tool group. For an item it also returns its CLOSURE: the embedded files, drawings or folder contents its share needs, each with its own level. Use before `access_set` to see what lowering an item would leave behind.',
+    'Read the level (admin, team, client or public) of one brain item, agent or tool group. For an item it also returns its CLOSURE, each with its own level: for a page, drawing or note what it embeds (images, files, drawings, child pages), which goes down with it when it is lowered; for a folder its contents, which keep their own levels. Use before `access_set` to see what lowering an item will also share.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -102,7 +102,7 @@ export const access_set: BuiltinToolDef = {
   preconditions: NODE_ID_PRE,
   name: 'Set an access level',
   description:
-    "Set the level of one brain item, agent or tool group: admin (default), team, client or public. A caller sees what is at or below its level. Only pages, notes, drawings, tables, files, folders, apps and formulas go below admin. Setting an item reports its closure (embeds, folder contents) still above or below it; `with_closure: true` lowers those above, `raise_closure: true` raises those below. The share link follows the level: none at admin or team (members read team items with their own logins), open at client and public. An agent's level decides what it reads. Takes effect at once. Read a level with `access_get`.",
+    "Set the level of one brain item, agent or tool group: admin (default), team, client or public. A caller sees what is at or below its level. Only pages, notes, drawings, tables, files, folders, apps and formulas go below admin. Lowering an item is your decision for it AND what it embeds: a page's, drawing's or note's images, files, drawings and child pages go down with it, listed in `alsoLowered` (never raised; an embed that cannot go below admin stays admin, in `stillAbove`). A folder's contents keep their levels unless `with_closure: true`. `raise_closure: true` raises closure items below the new level. The link follows the level: none at admin or team, open at client and public. Check with `access_get` first.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -113,7 +113,8 @@ export const access_set: BuiltinToolDef = {
       with_closure: {
         type: 'boolean',
         default: false,
-        description: "items only: also lower the item's embeds / folder contents",
+        description:
+          "folders only: also lower the folder's contents (a page's, drawing's or note's embeds always go down with it)",
       },
       raise_closure: {
         type: 'boolean',
@@ -147,6 +148,7 @@ export const access_set: BuiltinToolDef = {
           id: nodeId,
           level,
           lowered: res.lowered.length,
+          alsoLowered: res.alsoLowered.length,
           raised: res.raised.length,
         });
         return { ok: true, output: warnings.length ? { ...res, warnings } : res };
@@ -181,7 +183,7 @@ export const access_shadow_report: BuiltinToolDef = {
   readOnly: true,
   name: 'Access shadow report',
   description:
-    'What the team responder would LOSE if it ran at team level today: items recent team and forum turns used that are still admin, shared items that can never go below admin (a shared task or event), shares whose embeds or folder contents sit above them, how many facts stay usable, and any tool group the responder holds above team. Read-only, no model call. Read it before lowering `team-responder` with `access_set`; fix what it lists first.',
+    'What the team responder would LOSE if it ran at team level today: items recent team and forum turns used that are still admin, shared items that can never go below admin (a shared task or event), items below admin whose embeds sit above them (an embed an admin raised on purpose; lowering an item takes its embeds with it), how many facts stay usable, and any tool group the responder holds above team. Read-only, no model call. Read it before lowering `team-responder` with `access_set`; fix what it lists first.',
   inputSchema: {
     type: 'object',
     properties: {

@@ -7,13 +7,18 @@
  *  - Only workspace kinds may go below admin (the type ceiling): journal,
  *    email, contacts, secrets, tasks, events and every other kind are admin
  *    forever.
- *  - No inheritance. Lowering an item offers its CLOSURE (what its share or
- *    its embeds need to keep working: a page's embedded files and drawings, a
- *    folder's contents, a drawing's images) as one explicit extra step.
- *    Raising an item offers the mirror step: closure items still BELOW it (a
- *    folder taken back to admin whose files stay at team) can be raised with
- *    it. Both are explicit (`withClosure`, `raiseClosure`); nothing follows
- *    an item on its own.
+ *  - Embedding means sharing (audit F19 follow-up). Lowering an item is an
+ *    admin's decision for the item AND what it embeds: a page's images, file
+ *    embeds, drawings and child pages, a drawing's images, a note's images
+ *    (embed-closure.ts) go down with it, in the same transaction, and come
+ *    back in `alsoLowered`. Nothing is raised, and an embed already at or
+ *    below the level is left alone.
+ *  - A folder's contents do not follow it (folder links show only their
+ *    level, audit F19): "Lower them too" (`withClosure`) stays one explicit
+ *    extra step for a folder. Raising an item offers the mirror step: closure
+ *    items still BELOW it (a folder taken back to admin whose files stay at
+ *    team, a page's images left public) can be raised with it
+ *    (`raiseClosure`). Lowering never raises and raising never lowers.
  *  - An agent may hold only tool groups at or below its level, checked when
  *    either level changes (and at grant time, see agentGrantProblems).
  */
@@ -21,7 +26,6 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   agents,
   db,
-  draws,
   isViewerLevel,
   lowerLevel,
   nodes,
@@ -30,8 +34,13 @@ import {
   WORKSPACE_NODE_TYPES,
   type ViewerLevel,
 } from '@mantle/db';
-import { referencedDrawIds, referencedFileIds } from './doc-assets';
-import { getPage } from './pages/read';
+import {
+  EMBEDDING_KINDS,
+  embedClosure,
+  lowerEmbedClosure,
+  type EmbedItem,
+  type LoweredItem,
+} from './embed-closure';
 import {
   applyLevelToShare,
   getActiveShareForNode,
@@ -59,9 +68,11 @@ function isAbove(a: ViewerLevel, b: ViewerLevel): boolean {
 }
 
 /**
- * The items an item's share or embeds need, beyond itself: a page's embedded
- * files and drawings, a folder's workspace contents (recursive), a drawing's
- * images. Workspace kinds only (anything else cannot go below admin).
+ * The items an item's share or embeds need, beyond itself: for a page,
+ * drawing or note its embed closure (embed-closure.ts: images, file embeds,
+ * drawings and child pages, transitively), which follows the item down; for
+ * a folder its workspace contents (recursive), which do not. Workspace kinds
+ * only (anything else cannot go below admin).
  */
 export async function accessClosure(ownerId: string, nodeId: string): Promise<AccessItem[]> {
   const [root] = await db
@@ -71,31 +82,23 @@ export async function accessClosure(ownerId: string, nodeId: string): Promise<Ac
     .limit(1);
   if (!root) return [];
 
-  let ids: string[] = [];
-  if (root.type === 'page') {
-    const page = await getPage(ownerId, nodeId);
-    if (page) ids = [...referencedFileIds(page.doc), ...referencedDrawIds(page.doc)];
-  } else if (root.type === 'draw') {
-    const [d] = await db
-      .select({ fileRefs: draws.fileRefs })
-      .from(draws)
-      .where(eq(draws.nodeId, nodeId))
-      .limit(1);
-    ids = Object.values(d?.fileRefs ?? {});
-  } else if (root.type === 'branch') {
-    const rows = await db
-      .select({ id: nodes.id })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, ownerId),
-          sql`${nodes.path} <@ ${root.path}::ltree`,
-          sql`${nodes.id} <> ${nodeId}`,
-        ),
-      );
-    ids = rows.map((r) => r.id);
+  if (EMBEDDING_KINDS.includes(root.type)) {
+    return (await embedClosure(ownerId, nodeId))
+      .filter((r) => isWorkspaceKind(r.type))
+      .map(({ id, type, title, audience }) => ({ id, type, title, audience }));
   }
-  ids = [...new Set(ids)].filter((id) => id !== nodeId);
+  if (root.type !== 'branch') return [];
+  const contents = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        sql`${nodes.path} <@ ${root.path}::ltree`,
+        sql`${nodes.id} <> ${nodeId}`,
+      ),
+    );
+  const ids = [...new Set(contents.map((r) => r.id))];
   if (ids.length === 0) return [];
 
   const rows = await db
@@ -119,10 +122,16 @@ export class AccessError extends Error {
 
 export type SetItemAudienceResult = {
   item: AccessItem;
-  /** Closure items lowered with it (only when asked). */
+  /** Everything lowered with it, at its new level: the embeds that followed
+   *  it (always) and a folder's contents (only when `withClosure`). The
+   *  Access control reads this to refresh the screens they live on. */
   lowered: AccessItem[];
-  /** Closure items still ABOVE the new level (not asked, or asked = false):
-   *  the share or embeds that need them will not show them at this level. */
+  /** The embeds that followed the item down, with the level each left and
+   *  took (embedding means sharing). Empty when the item went to admin. */
+  alsoLowered: LoweredItem[];
+  /** Closure items still ABOVE the new level: an embed that can never go
+   *  below admin (the type ceiling), or a folder's contents when not asked.
+   *  People at the item's level will not see them. */
   stillAbove: AccessItem[];
   /** Closure items raised with it (only when `raiseClosure`). */
   raised: AccessItem[];
@@ -174,7 +183,9 @@ async function planItemAudience(
   };
 }
 
-/** Write a planned level change (and the closure, when asked) through `q`. */
+/** Write a planned level change through `q`: the item, its embeds (always,
+ *  when it goes below admin), a folder's contents or the closure below it
+ *  (when asked). */
 async function applyItemAudience(
   ownerId: string,
   plan: AudiencePlan,
@@ -188,8 +199,21 @@ async function applyItemAudience(
       .update(nodes)
       .set({ audience })
       .where(and(eq(nodes.id, item.id), eq(nodes.ownerId, ownerId)));
-    let lowered: AccessItem[] = [];
-    if (opts.withClosure && above.length > 0) {
+    // Embedding means sharing: what the item embeds goes down with it, walked
+    // again inside this transaction (the plan's read was only a preview).
+    const embeds = EMBEDDING_KINDS.includes(item.type);
+    let alsoLowered: LoweredItem[] = [];
+    let ceiling: EmbedItem[] = [];
+    if (embeds && audience !== 'admin') {
+      ({ lowered: alsoLowered, ceiling } = await lowerEmbedClosure(ownerId, item.id, audience, tx));
+    }
+    let lowered: AccessItem[] = alsoLowered.map(({ id, type, title, to }) => ({
+      id,
+      type,
+      title,
+      audience: to,
+    }));
+    if (!embeds && opts.withClosure && above.length > 0) {
       await tx
         .update(nodes)
         .set({ audience })
@@ -204,6 +228,15 @@ async function applyItemAudience(
         );
       lowered = above.map((a) => ({ ...a, audience }));
     }
+    // Still above: for an embedding kind, the embeds the type ceiling keeps at
+    // admin; for a folder, its contents when not asked.
+    const stillAbove: AccessItem[] = embeds
+      ? audience === 'admin'
+        ? []
+        : ceiling.map(({ id, type, title, audience: a }) => ({ id, type, title, audience: a }))
+      : opts.withClosure
+        ? []
+        : above;
     let raised: AccessItem[] = [];
     if (opts.raiseClosure && below.length > 0) {
       await tx
@@ -223,7 +256,8 @@ async function applyItemAudience(
     return {
       item,
       lowered,
-      stillAbove: opts.withClosure ? [] : above,
+      alsoLowered,
+      stillAbove,
       raised,
       stillBelow: opts.raiseClosure ? [] : below,
     };
@@ -231,9 +265,11 @@ async function applyItemAudience(
 }
 
 /**
- * Set a brain item's level. `withClosure` also lowers the closure items that
- * sit above the new level; `raiseClosure` also raises the ones below it. The
- * two are separate on purpose: "Lower them too" can never raise anything.
+ * Set a brain item's level. Below admin, what a page, drawing or note embeds
+ * goes down with it (`alsoLowered`). `withClosure` also lowers a folder's
+ * contents that sit above the new level (a folder's contents never follow it
+ * on their own); `raiseClosure` also raises the closure items below it. The
+ * two are separate on purpose: lowering can never raise anything.
  * Refuses a non-workspace kind below admin.
  */
 export async function setItemAudience(

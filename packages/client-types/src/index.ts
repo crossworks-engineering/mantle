@@ -37,6 +37,7 @@ export type {
   AccessItemView,
   AccessLevel,
   AccessLinkView,
+  AccessLoweredView,
   AccessNodeUpdate,
   AccessNodeView,
   MemberItemAuthor,

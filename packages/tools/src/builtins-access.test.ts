@@ -35,6 +35,7 @@ describe('access tools', () => {
     h.setItem.mockResolvedValueOnce({
       item: { id: 'n1' },
       lowered: [{ id: 'f1' }],
+      alsoLowered: [],
       stillAbove: [],
       raised: [],
       stillBelow: [],
@@ -54,6 +55,7 @@ describe('access tools', () => {
     h.setItem.mockResolvedValueOnce({
       item: { id: 'n1' },
       lowered: [],
+      alsoLowered: [],
       stillAbove: [],
       raised: [{ id: 'f1' }],
       stillBelow: [],

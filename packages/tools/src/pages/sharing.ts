@@ -11,6 +11,7 @@ import {
   setShareCascade,
   getActiveShareForNode,
   shareUrlForToken,
+  type LoweredItem,
 } from '@mantle/content';
 import type { BuiltinToolDef } from '../types';
 import { str } from '../coerce';
@@ -24,7 +25,7 @@ export const page_share: BuiltinToolDef = {
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Share a page',
   description:
-    "Create (or fetch) a read-only link to a page and return its URL. Idempotent — one active link per page. The link is **public**: anyone with it can view, no login, and the page goes to public level (a client page stays client). There are no team links: members sign in with their own logins, so to show a page to members only, set its level with `access_set(level: 'team')` instead. `children: true` also shares every sub-page beneath it (a whole documentation section in one call); `children: false` revokes those sub-page links. Publishes brain content outward-facing. Use when the user asks to share or publish a page or a section; to turn a link off use `page_unshare`.",
+    "Create (or fetch) a read-only link to a page and return its URL. Idempotent — one active link per page. The link is **public**: anyone with it can view, no login, and the page goes to public level (a client page stays client), its embeds too (`alsoLowered`). There are no team links: members sign in with their own logins, so to show a page to members only, set its level with `access_set(level: 'team')` instead. `children: true` also shares every sub-page beneath it (a whole documentation section in one call); `children: false` revokes those sub-page links. Publishes brain content outward-facing. Use when the user asks to share or publish a page or section; to turn a link off use `page_unshare`.",
   // Publishes brain content to the public web, so gated. `children` can share a
   // large subtree at once, so confirm.
   requiresConfirm: true,
@@ -55,10 +56,11 @@ export const page_share: BuiltinToolDef = {
     try {
       const page = await getPage(ctx.ownerId, id);
       if (!page) return notFound('page', id, 'page_list / search_nodes');
-      const share = await createShare(ctx.ownerId, id);
+      const alsoLowered: LoweredItem[] = [];
+      const share = await createShare(ctx.ownerId, id, { alsoLowered });
       let subpages: number | undefined;
       if (children !== undefined) {
-        subpages = (await setShareCascade(ctx.ownerId, id, children)).count;
+        subpages = (await setShareCascade(ctx.ownerId, id, children, alsoLowered)).count;
       }
       const url = shareUrlForToken(share.token);
       ctx.step?.setOutput({ id, url, mode: share.mode });
@@ -72,6 +74,7 @@ export const page_share: BuiltinToolDef = {
           mode: share.mode,
           ...(children === true ? { subpagesShared: subpages } : {}),
           ...(children === false ? { subpagesRevoked: subpages } : {}),
+          ...(alsoLowered.length ? { alsoLowered } : {}),
         },
       };
     } catch (err) {

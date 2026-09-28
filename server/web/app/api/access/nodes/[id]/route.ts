@@ -1,14 +1,17 @@
 /**
- * GET   /api/access/nodes/:id  -> the item's level, its closure (the embeds /
- *                                 folder contents its share needs), its link
+ * GET   /api/access/nodes/:id  -> the item's level, its closure (what it
+ *                                 embeds / a folder's contents), its link
  *                                 and what the control may offer.
  * PATCH /api/access/nodes/:id  { audience, withClosure?, raiseClosure? } -> set the level;
- *                                 the link follows it (none at admin or team,
- *                                 open at client and public).
+ *                                 what a page, drawing or note embeds goes
+ *                                 down with it (`alsoLowered`); the link
+ *                                 follows it (none at admin or team, open at
+ *                                 client and public).
  *
- * Owner only. The Access control's API. The rules (type ceiling, closure
- * lowered on request and never raised, levels drive links) live in
- * @mantle/content access.ts and shares.ts.
+ * Owner only. The Access control's API. The rules (type ceiling, embeds
+ * follow an item down and are never raised, a folder's contents only on
+ * request, levels drive links) live in @mantle/content access.ts,
+ * embed-closure.ts and shares.ts.
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
@@ -21,6 +24,7 @@ import {
   accessClosure,
   canShareNode,
   countPageDescendants,
+  EMBEDDING_KINDS,
   getActiveShareForNode,
   isWorkspaceKind,
   setItemLevel,
@@ -46,6 +50,7 @@ function linkView(share: ShareSummary | null): AccessLinkView | null {
 
 const PatchBody = z.object({
   audience: z.enum(VIEWER_LEVELS),
+  /** Folders only: also lower the folder's contents. */
   withClosure: z.boolean().optional(),
   /** Also raise the closure items still below the new level. */
   raiseClosure: z.boolean().optional(),
@@ -84,6 +89,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     // link only where the item can carry one (not a folder outside files).
     canLower: isWorkspaceKind(item.type),
     canLink: canShareNode({ type: item.type, path }),
+    // A page's, drawing's or note's embeds go down with it (embedding means
+    // sharing); a folder's contents do not.
+    embedsFollow: EMBEDDING_KINDS.includes(item.type),
     // A member wrote it and an admin accepted it (member logins Phase 4).
     author: authors.get(item.id) ?? null,
   };

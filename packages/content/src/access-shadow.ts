@@ -11,14 +11,19 @@
  *    still admin, so a team-level turn would not see them;
  *  - sharedAtCeiling: items with an active share that can never go below
  *    admin (a shared task or event): members lose them under enforcement;
- *  - closureGaps: items below admin whose closure (embeds, folder contents)
- *    is still above them, so their share or embeds would break;
+ *  - closureGaps: items below admin whose embeds (a page's images, files,
+ *    drawings and child pages, a drawing's images, a note's images) sit above
+ *    them. Lowering an item takes its embeds with it and the boot reconcile
+ *    closed the older gaps, so this should be empty; an embed an admin
+ *    raised on purpose shows here (its link no longer serves it). A folder's
+ *    contents are not gaps: a folder link shows only its level (audit F19);
  *  - facts: how many current facts a team-level turn could still use;
  *  - agent: the responder's own level and any granted group above team.
  */
 import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { agents, db, facts, nodes, shares, toolGroups, traces, traceSteps } from '@mantle/db';
-import { accessClosure, isWorkspaceKind, type AccessItem } from './access';
+import { isWorkspaceKind, type AccessItem } from './access';
+import { findEmbedClosureGaps } from './embed-closure';
 
 const UUID_G = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 
@@ -133,17 +138,10 @@ export async function accessShadowReport(
     .filter((s) => !isWorkspaceKind(s.type))
     .map(({ id, type, title, mode }) => ({ id, type, title, mode }));
 
-  // ── Closure gaps for items below admin that are shared ────────────────────
-  const closureGaps: AccessShadowReport['closureGaps'] = [];
-  const LEVEL_RANK: Record<string, number> = { public: 0, client: 1, team: 2, admin: 3 };
-  for (const s of shared) {
-    if (s.audience === 'admin' || !isWorkspaceKind(s.type)) continue;
-    const above = (await accessClosure(ownerId, s.id)).filter(
-      (c) => (LEVEL_RANK[c.audience] ?? 3) > (LEVEL_RANK[s.audience] ?? 3),
-    );
-    if (above.length > 0)
-      closureGaps.push({ id: s.id, title: s.title, audience: s.audience, above });
-  }
+  // ── Items below admin whose embeds sit above them ─────────────────────────
+  const closureGaps: AccessShadowReport['closureGaps'] = (await findEmbedClosureGaps(ownerId)).map(
+    ({ id, title, audience, above }) => ({ id, title, audience, above }),
+  );
 
   // ── Facts a team-level turn could still use ───────────────────────────────
   const [factCounts] = await db

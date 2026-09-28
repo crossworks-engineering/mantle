@@ -19,6 +19,34 @@ import { docToText } from '../doc-to-text';
 import { recallAfterPageWrite } from '../recall';
 import { EMPTY_DOC, dedupeTags, detailOf, type PageDetail } from './shared';
 import { embeddedAssetText } from './embed';
+import { referencedEmbedIds } from '../doc-assets';
+import { followNewEmbeds } from '../embed-closure';
+
+/** Later embeds follow on save (embedding means sharing): a page below admin
+ *  that gains an embed in this write takes it, and what it embeds, to the
+ *  page's level, inside the write's transaction. Reads the page's level and
+ *  its published doc BEFORE the write replaces it. */
+async function followPageEmbeds(
+  tx: PageTx,
+  ownerId: string,
+  id: string,
+  next: Record<string, unknown>,
+): Promise<void> {
+  const [prev] = await tx
+    .select({ audience: nodes.audience, doc: pages.doc })
+    .from(nodes)
+    .innerJoin(pages, eq(pages.nodeId, nodes.id))
+    .where(eq(nodes.id, id))
+    .limit(1);
+  if (!prev || prev.audience === 'admin') return;
+  await followNewEmbeds(
+    ownerId,
+    { id, audience: prev.audience },
+    referencedEmbedIds(prev.doc),
+    referencedEmbedIds(next),
+    tx,
+  );
+}
 
 // ── Draft concurrency control (audit item #3) ────────────────────────────────
 // Page drafts mirror the Tables registry-lock spine (see table-storage.ts):
@@ -139,6 +167,7 @@ export async function updatePage(
 
     if (docChanged) {
       const doc = input.doc as Record<string, unknown>;
+      await followPageEmbeds(tx, ownerId, id, doc);
       await tx
         .update(pages)
         .set({
@@ -301,6 +330,7 @@ export async function commitPage(
     if (decision.conflict) {
       return { ok: false as const, conflict: true as const, rev: decision.rev };
     }
+    await followPageEmbeds(tx, ownerId, id, enriched);
     const [row] = await tx
       .update(nodes)
       .set({ data: newData, embedding: null, updatedAt: new Date() })

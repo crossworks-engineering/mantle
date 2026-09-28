@@ -18,6 +18,7 @@ import {
   type Node,
   type ViewerLevel,
 } from '@mantle/db';
+import { followNewEmbeds, noteEmbedIds } from './embed-closure';
 
 export const NOTES_ROOT_LABEL = 'notes';
 
@@ -200,19 +201,33 @@ export async function updateNote(
     delete newData.summary_at;
     delete newData.entities;
   }
-  const [updated] = await db
-    .update(nodes)
-    .set({
-      ...(input.title !== undefined
-        ? { title: input.title.trim().slice(0, 200) || 'Untitled note' }
-        : {}),
-      ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
-      data: newData,
-      ...(contentChanged ? { embedding: null } : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(nodes.id, id))
-    .returning();
+  const [updated] = await db.transaction(async (tx) => {
+    // Later embeds follow on save: a note below admin that gains an image,
+    // file or drawing takes it to its level (embedding means sharing).
+    if (contentChanged && node.audience !== 'admin') {
+      const before = typeof oldData.content === 'string' ? oldData.content : '';
+      await followNewEmbeds(
+        ownerId,
+        { id, audience: node.audience },
+        noteEmbedIds(before),
+        noteEmbedIds(input.content ?? ''),
+        tx,
+      );
+    }
+    return tx
+      .update(nodes)
+      .set({
+        ...(input.title !== undefined
+          ? { title: input.title.trim().slice(0, 200) || 'Untitled note' }
+          : {}),
+        ...(input.tags !== undefined ? { tags: dedupeTags(input.tags) } : {}),
+        data: newData,
+        ...(contentChanged ? { embedding: null } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(nodes.id, id))
+      .returning();
+  });
   if (!updated) throw new Error('updateNote: update returned no row');
   if (contentChanged) {
     await notifyNodeIngested(id);

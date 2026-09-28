@@ -10,6 +10,7 @@ import { and, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { db, nodes, shares, WORKSPACE_NODE_TYPES, type Share, type ViewerLevel } from '@mantle/db';
 import type { ShareMode } from '@mantle/client-types';
 import { env } from '@mantle/config';
+import { EMBEDDING_KINDS, levelAbove, lowerEmbedClosure, type LoweredItem } from './embed-closure';
 
 export type { ShareMode };
 
@@ -120,12 +121,16 @@ export function levelForShareMode(
 }
 
 /** Re-derive the level of `nodeIds` from their active links (workspace kinds
- *  only). `preferred` = a cascading parent's level, for its sub-pages. */
+ *  only). `preferred` = a cascading parent's level, for its sub-pages. A node
+ *  this LOWERS takes its embeds down with it (embedding means sharing,
+ *  embed-closure.ts), in one transaction with its own level; what went down
+ *  is pushed to `alsoLowered` when given. */
 async function syncLevelsFromShares(
   ownerId: string,
   nodeIds: readonly string[],
   preferred?: ViewerLevel,
   q: ShareDb = db,
+  alsoLowered?: LoweredItem[],
 ): Promise<void> {
   const ids = [...new Set(nodeIds)];
   if (ids.length === 0) return;
@@ -142,19 +147,30 @@ async function syncLevelsFromShares(
   // Every active link is open (team links are retired and never active).
   const linked = new Set(links.map((l) => l.nodeId));
   const byTarget = new Map<ViewerLevel, string[]>();
+  const followers: { id: string; level: ViewerLevel }[] = [];
   for (const r of rows) {
     if (!(WORKSPACE_NODE_TYPES as readonly string[]).includes(r.type)) continue;
     const current = r.audience as ViewerLevel;
     const target = levelForShareMode(current, linked.has(r.id) ? 'public' : null, preferred);
     if (target === current) continue;
     byTarget.set(target, [...(byTarget.get(target) ?? []), r.id]);
+    if (levelAbove(current, target) && EMBEDDING_KINDS.includes(r.type)) {
+      followers.push({ id: r.id, level: target });
+    }
   }
-  for (const [audience, targetIds] of byTarget) {
-    await q
-      .update(nodes)
-      .set({ audience })
-      .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, targetIds)));
-  }
+  if (byTarget.size === 0) return;
+  await q.transaction(async (tx) => {
+    for (const [audience, targetIds] of byTarget) {
+      await tx
+        .update(nodes)
+        .set({ audience })
+        .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, targetIds)));
+    }
+    for (const f of followers) {
+      const { lowered } = await lowerEmbedClosure(ownerId, f.id, f.level, tx);
+      alsoLowered?.push(...lowered);
+    }
+  });
 }
 
 /** The level of one node (admin when unknown). */
@@ -323,12 +339,13 @@ export async function getActiveShareForNode(
  * Validates owner + shareable type. `mode` may only be public: a team link
  * throws {@link TeamLinkRetiredError}. `preferred` = the level the node's link
  * should leave it at (a cascading parent's level), so a sub-page never passes
- * through public on its way to client.
+ * through public on its way to client. A node the link lowers takes its
+ * embeds with it; `alsoLowered` collects them for the caller to show.
  */
 export async function createShare(
   ownerId: string,
   nodeId: string,
-  opts: { mode?: ShareMode; preferred?: ViewerLevel } = {},
+  opts: { mode?: ShareMode; preferred?: ViewerLevel; alsoLowered?: LoweredItem[] } = {},
   q: ShareDb = db,
 ): Promise<ShareSummary> {
   assertLinkMode(opts.mode);
@@ -366,7 +383,7 @@ export async function createShare(
     .values({ ownerId, nodeId, nodeType: node.type, token: genToken() })
     .returning();
   if (!row) throw new Error('failed to create share');
-  await syncLevelsFromShares(ownerId, [nodeId], opts.preferred, q);
+  await syncLevelsFromShares(ownerId, [nodeId], opts.preferred, q, opts.alsoLowered);
   return toSummary(row);
 }
 
@@ -499,6 +516,8 @@ export async function setShareCascade(
   ownerId: string,
   parentNodeId: string,
   on: boolean,
+  /** Collects the embeds the sub-pages took down with them. */
+  alsoLowered?: LoweredItem[],
 ): Promise<{ ok: boolean; count: number }> {
   const parent = await getActiveShareForNode(ownerId, parentNodeId);
   if (!parent) return { ok: false, count: 0 };
@@ -516,8 +535,8 @@ export async function setShareCascade(
     // passed into every step so a sub-page never passes through a level below
     // it (an open link alone would put it at public first).
     const level = await levelOf(ownerId, parentNodeId);
-    for (const id of ids) await createShare(ownerId, id, { preferred: level }); // idempotent
-    await syncLevelsFromShares(ownerId, ids, level);
+    for (const id of ids) await createShare(ownerId, id, { preferred: level, alsoLowered }); // idempotent
+    await syncLevelsFromShares(ownerId, ids, level, db, alsoLowered);
     return { ok: true, count: ids.length };
   }
 

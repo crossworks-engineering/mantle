@@ -1,4 +1,4 @@
-import { resolveActiveShareByToken } from '@/lib/shares';
+import { isDrawServable, linkLevels, resolveActiveShareByToken } from '@/lib/shares';
 import { getDrawSvg, getPage, referencedDrawIds } from '@mantle/content';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
@@ -9,7 +9,9 @@ import { rateLimit, clientIp } from '@/lib/rate-limit';
  * node; this one serves a drawing a shared *page* places with
  * `![alt](draw:<id>)`. Authorization mirrors `/s/:token/a/:fileId` exactly:
  * the token must be active, and the id must appear in the shared page's own
- * doc, so a share never becomes a way to read arbitrary drawings by id.
+ * doc, so a share never becomes a way to read arbitrary drawings by id. The
+ * drawing and every image its snapshot carries must sit at the link's levels
+ * (linkLevels): one an admin raised above the page on purpose is not served.
  *
  * Cache-only, deliberately. Rendering a missing snapshot spawns a browser, and
  * anonymous share traffic does not get to do that (see
@@ -43,6 +45,9 @@ export async function GET(
 
   const page = await getPage(share.ownerId, share.nodeId);
   if (!page || !referencedDrawIds(page.doc).includes(drawId)) return notFound();
+  if (!(await isDrawServable(share.ownerId, drawId, linkLevels(page.audience), { self: true }))) {
+    return notFound();
+  }
 
   const svg = await getDrawSvg(share.ownerId, drawId);
   if (!svg) return notFound();

@@ -189,13 +189,13 @@ describe('page_share', () => {
 
   it('cascades and reports the count when children is true', async () => {
     const res = await share.handler({ id: PAGE_ID, children: true }, ctx);
-    expect(setShareCascade).toHaveBeenCalledWith('o1', PAGE_ID, true);
+    expect(setShareCascade).toHaveBeenCalledWith('o1', PAGE_ID, true, []);
     expect(outputOf(res).subpagesShared).toBe(3);
   });
 
   it('revokes sub-page links when children is false', async () => {
     const res = await share.handler({ id: PAGE_ID, children: false }, ctx);
-    expect(setShareCascade).toHaveBeenCalledWith('o1', PAGE_ID, false);
+    expect(setShareCascade).toHaveBeenCalledWith('o1', PAGE_ID, false, []);
     // Reported under a DIFFERENT key, so the caller can tell "shared 3" from
     // "revoked 3" without inspecting the request it sent.
     expect(outputOf(res).subpagesRevoked).toBe(3);

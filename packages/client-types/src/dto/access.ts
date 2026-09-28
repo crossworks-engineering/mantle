@@ -37,8 +37,11 @@ export type MemberItemAuthor = { name: string; acceptedAt: string | null };
 
 export type AccessNodeView = {
   item: AccessItemView;
-  /** What the item's link or embeds need: a page's files and drawings, a
-   *  folder's contents, a drawing's images. Each carries its own level. */
+  /** What the item's link or embeds need, each at its own level. For a page,
+   *  drawing or note: what it embeds (images, files, drawings, child pages,
+   *  transitively), which goes down with it when it is lowered (0.232.311
+   *  on; before that it only did on "Lower them too"). For a folder: its
+   *  contents, which keep their own levels. */
   closure: AccessItemView[];
   share: AccessLinkView | null;
   /** Descendant pages (pages only; 0 otherwise). */
@@ -47,17 +50,39 @@ export type AccessNodeView = {
   canLower: boolean;
   /** Whether the item can carry a link (a folder only under `files`). */
   canLink: boolean;
+  /** True for a page, drawing or note: lowering it lowers its embeds with it
+   *  (embedding means sharing), so the control says what will be shared
+   *  instead of offering "Lower them too". False for a folder, whose
+   *  contents keep their levels. Absent from brains before 0.232.311, which
+   *  lower embeds only on request. */
+  embedsFollow?: boolean;
   /** Set when a member wrote it and an admin accepted it into the brain (the
    *  member-authored badge). Absent from brains before 0.232.285. */
   author?: MemberItemAuthor | null;
 };
 
-/** PATCH /api/access/nodes/:id { audience, withClosure?, raiseClosure? } */
+/** One item that went down with the item that embeds it. */
+export type AccessLoweredView = {
+  id: string;
+  type: string;
+  title: string;
+  from: AccessLevel;
+  to: AccessLevel;
+};
+
+/** PATCH /api/access/nodes/:id { audience, withClosure?, raiseClosure? }.
+ *  `withClosure` only matters for a folder (its contents); a page's,
+ *  drawing's or note's embeds always follow it down. */
 export type AccessNodeUpdate = {
   item: AccessItemView;
-  /** Closure items lowered with it (only when `withClosure`). */
+  /** Everything lowered with it, at its new level: the embeds that followed
+   *  it and, with `withClosure`, a folder's contents. */
   lowered: AccessItemView[];
-  /** Closure items still above the new level (when not `withClosure`). */
+  /** The embeds that followed it down, with the level each left and took.
+   *  Absent from brains before 0.232.311. */
+  alsoLowered?: AccessLoweredView[];
+  /** Closure items still above the new level: an embed that can never go
+   *  below admin, or a folder's contents when not `withClosure`. */
   stillAbove: AccessItemView[];
   /** Closure items raised with it (only when `raiseClosure`). Absent from
    *  brains before 0.232.264. */

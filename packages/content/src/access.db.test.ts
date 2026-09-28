@@ -1,7 +1,8 @@
 /**
  * Setting levels against a real, migrated Postgres (member logins Phase 0b):
- * the type ceiling, share closure (lowered or raised on request only, the two
- * never mixed), and the agent / tool-group rule. Seeds its own owner and rows and removes them.
+ * the type ceiling, closure (a page's embeds follow it down; a folder's
+ * contents are lowered or raised on request only, the two never mixed), and
+ * the agent / tool-group rule. Seeds its own owner and rows and removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/access.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -93,14 +94,21 @@ describe.skipIf(!URL)('setting levels on Postgres', () => {
     });
   });
 
-  it('lowering a page reports its embedded file, and lowers it only when asked', async () => {
-    const first = await a.setItemAudience(owner, ids.page, 'team');
-    expect(first.stillAbove.map((i) => i.id)).toEqual([ids.embeddedFile]);
-    expect(await audienceOf(ids.embeddedFile)).toBe('admin');
-
-    const second = await a.setItemAudience(owner, ids.page, 'team', { withClosure: true });
-    expect(second.lowered.map((i) => i.id)).toEqual([ids.embeddedFile]);
+  it('lowering a page takes its embedded file down with it (embedding means sharing)', async () => {
+    const res = await a.setItemAudience(owner, ids.page, 'team');
+    expect(res.lowered.map((i) => i.id)).toEqual([ids.embeddedFile]);
+    expect(res.alsoLowered.map((i) => [i.id, i.from, i.to])).toEqual([
+      [ids.embeddedFile, 'admin', 'team'],
+    ]);
+    expect(res.stillAbove).toEqual([]);
     expect(await audienceOf(ids.embeddedFile)).toBe('team');
+  });
+
+  it("a folder's contents do not follow it unless asked", async () => {
+    const res = await a.setItemAudience(owner, ids.folder, 'client');
+    expect(res.lowered).toEqual([]);
+    expect(res.stillAbove.map((i) => i.id)).toEqual([ids.child]);
+    expect(await audienceOf(ids.child)).toBe('admin');
   });
 
   it('a folder closure lowers its contents but never raises one', async () => {

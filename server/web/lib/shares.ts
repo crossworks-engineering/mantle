@@ -6,8 +6,9 @@
  * only ever reaches the one shared node (+ its referenced files).
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { asViewerLevel, db, nodes, tables, type Share, type ViewerLevel } from '@mantle/db';
+import { asViewerLevel, db, draws, nodes, tables, type Share, type ViewerLevel } from '@mantle/db';
 import {
+  drawPlacedFileIds,
   getPage,
   getApp,
   getDrawSvg,
@@ -134,16 +135,68 @@ export type ShareView =
   | { kind: 'draw'; title: string; hasSvg: boolean; hasImage?: boolean };
 
 /**
- * The item levels an open folder link shows (audit F19). A folder link opens
- * at the folder's own level, and shows only what sits at or below it: a
- * public link shows public items, a client link client and public ones. A
- * file uploaded later into the folder lands at admin (no inheritance), so it
- * stays out until someone lowers it. The level rule never leaves an open link
- * on a folder at team or admin; if one survives, it fails closed to public.
- * Single-item links (a file, a page) are not filtered: the item IS the link.
+ * The item levels an open link shows beyond the item itself (audit F19): a
+ * folder link's contents, a page link's embedded files and drawings, a
+ * drawing link's images. A link opens at its item's own level, and shows
+ * only what sits at or below it: a public link shows public items, a client
+ * link client and public ones. A file uploaded later into a folder lands at
+ * admin (no inheritance), so it stays out until someone lowers it; an embed
+ * follows its page down when the page is lowered (embedding means sharing),
+ * so it is served unless an admin raised it again on purpose. The level rule
+ * never leaves an open link on an item at team or admin; if one survives, it
+ * fails closed to public. The shared item itself is not filtered: the item
+ * IS the link.
  */
 export function linkLevels(folderAudience: string): ViewerLevel[] {
   return asViewerLevel(folderAudience) === 'client' ? ['client', 'public'] : ['public'];
+}
+
+/** Whether every one of `ids` (the owner's items that still exist) sits at
+ *  `levels`. An id with no row is not a reason to refuse: the byte route
+ *  404s it on its own. */
+async function allAtLevels(
+  ownerId: string,
+  ids: readonly string[],
+  levels: readonly ViewerLevel[],
+): Promise<boolean> {
+  if (ids.length === 0) return true;
+  const [hit] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        inArray(nodes.id, [...ids]),
+        sql`${nodes.audience} not in (${levelList(levels)})`,
+      ),
+    )
+    .limit(1);
+  return !hit;
+}
+
+/**
+ * May a link at `levels` show this drawing's snapshot? The snapshot carries
+ * every image the committed scene places, so one image above the link's
+ * levels (an admin raised it on purpose) keeps the whole snapshot off the
+ * link: there is no serving it without that image. `self`: the drawing is an
+ * EMBED (in a shared page), so its own level counts too; a drawing that is
+ * itself the shared item is the link and is not filtered.
+ */
+export async function isDrawServable(
+  ownerId: string,
+  drawId: string,
+  levels: readonly ViewerLevel[],
+  opts: { self: boolean },
+): Promise<boolean> {
+  const [row] = await db
+    .select({ audience: nodes.audience, scene: draws.scene, fileRefs: draws.fileRefs })
+    .from(nodes)
+    .innerJoin(draws, eq(draws.nodeId, nodes.id))
+    .where(and(eq(nodes.id, drawId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'draw')))
+    .limit(1);
+  if (!row) return false;
+  if (opts.self && !levels.includes(asViewerLevel(row.audience))) return false;
+  return allAtLevels(ownerId, drawPlacedFileIds(row.scene, row.fileRefs), levels);
 }
 
 /** SQL list of `levels`, for an IN / NOT IN. */
@@ -406,7 +459,9 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
 }
 
 /** Is `fileId` allowed to be served under this share? A file share serves
- *  itself; a page share serves only the files its doc references; a folder
+ *  itself; a page share serves only the files its doc references that sit
+ *  at the link's levels (an embed an admin raised above the page is not
+ *  served; linkLevels); a folder
  *  share serves the files under the folder's subtree (recursive, evaluated
  *  per request: a file moved out is denied on its next fetch) that sit at
  *  the link's levels, under no folder above them (linkLevels, audit F19): a
@@ -417,7 +472,19 @@ export async function isAssetAllowed(share: Share, fileId: string): Promise<bool
   if (share.nodeType === 'page') {
     const page = await getPage(share.ownerId, share.nodeId);
     if (!page) return false;
-    return referencedFileIds(page.doc).includes(fileId);
+    if (!referencedFileIds(page.doc).includes(fileId)) return false;
+    const [hit] = await db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.id, fileId),
+          eq(nodes.ownerId, share.ownerId),
+          inArray(nodes.audience, linkLevels(page.audience)),
+        ),
+      )
+      .limit(1);
+    return !!hit;
   }
   if (share.nodeType === 'branch') {
     // Hot path (one call per file/download under a folder share): fetch only

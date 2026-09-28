@@ -131,6 +131,21 @@ export {
   type AccessShadowReport,
   type ShadowItem,
 } from './access-shadow';
+// Embedding means sharing: an item's embeds follow it down (audit F19 follow-up).
+export {
+  EMBEDDING_KINDS,
+  EMBED_RECONCILE_VERSION,
+  drawPlacedFileIds,
+  embedClosure,
+  findEmbedClosureGaps,
+  levelAbove,
+  lowerEmbedClosure,
+  reconcileEmbedClosures,
+  reconcileEmbedClosuresOnce,
+  type EmbedClosureGap,
+  type EmbedItem,
+  type LoweredItem,
+} from './embed-closure';
 export {
   LIBRARY_KINDS,
   getLibraryItem,

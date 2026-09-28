@@ -1070,7 +1070,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'access',
     name: 'Access levels',
     description:
-      "The owner's levers for the one level system (admin > team > client > public) on brain items, agents and tool groups: read a level (and an item's closure), set one. Owner-side only (refused on team surfaces). ⚠ ATTACHED TO NO AGENT: levels are set by the owner through MCP / the API first; grant it to the persona once the Access UI ships.",
+      "The owner's levers for the one level system (admin > team > client > public) on brain items, agents and tool groups: read a level (and what an item embeds: lowering an item takes its embeds down with it), set one. Owner-side only (refused on team surfaces). ⚠ ATTACHED TO NO AGENT: levels are set by the owner through MCP / the API first; grant it to the persona once the Access UI ships.",
     toolSlugs: ['access_get', 'access_set', 'access_shadow_report'],
   },
   {
