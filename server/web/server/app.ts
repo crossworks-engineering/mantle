@@ -3,10 +3,12 @@ import { RedirectError } from './http-compat/redirect-error';
 import { gate } from './middleware/gate';
 import { registerRoutes } from './route-loader';
 import { mountRedirects, mountStatic, trailingSlashRedirect } from './static';
+import { mountRetiredTeamPages } from './pages/stubs';
 
 /**
  * The server/web HTTP app. Layering (first match wins):
- *   legacy redirects → static assets → auth/CORS gate → app/** route handlers
+ *   legacy + retired-page redirects → static assets → auth/CORS gate →
+ *   app/** route handlers
  *   → render surfaces (/s, /print, stubs — mounted by server/pages, H2).
  */
 export async function createApp(): Promise<Hono> {
@@ -14,6 +16,8 @@ export async function createApp(): Promise<Hono> {
 
   app.use('*', trailingSlashRedirect());
   mountRedirects(app);
+  // The retired team-code pages (/team, /hub) redirect to /login, gate or not.
+  mountRetiredTeamPages(app);
   mountStatic(app);
   app.use('*', gate());
 

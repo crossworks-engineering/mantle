@@ -180,7 +180,7 @@ const video_ingest: BuiltinToolDef = {
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     // Belt-and-braces on top of the tool-group grant: an outbound fetch of an
     // arbitrary URL never runs for a team surface.
-    if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
+    if (ctx.surface?.kind === 'team') {
       return { ok: false, error: 'owner-side tool — not available on the team surfaces' };
     }
     if (!mediaSidecarEnabled()) {

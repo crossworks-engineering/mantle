@@ -1,12 +1,18 @@
 # Team Forum: shared topic threads
 
-> **Status: CLOSED (member logins Phase 6, 2026-09-28).** Team contacts become
-> member logins through invites ([member-logins.md](./member-logins.md)
-> section 9); a member chats with the team agent from their own login. Every
-> forum write now answers 410 `forum-closed` (section 8), and the forum's
-> content lives on as the admin-level **Forum archive** pages. Reads stay open
-> until the forum code is deleted. The rest of this document describes the
-> forum as it ran.
+> **Status: RETIRED (member logins Phase 6, 2026-09-28).** Team contacts
+> became member logins through invites ([member-logins.md](./member-logins.md)
+> section 9); a member chats with the team agent from their own login. The
+> forum was first closed to writes (section 8), then its code was deleted:
+> every `/api/team/forum/**` route and `/team/forum` (which now redirects to
+> `/login`), the admin forum routes (`forum/pin`, `forum/post`,
+> `forum/topics/[id]/read`, `forum/uploads/[id]/{dismiss,download,file}`,
+> `/api/team-admin/topics`), the turn runner (`runForumTurn`, the
+> `forumTurnWorkflow` workflow, the `mantle_forum` queue) and the forum
+> modules of `@mantle/content`. Its content lives on as the admin-level
+> **Forum archive** pages (section 8); the forum tables and the export stay
+> until the tables are dropped. The rest of this document describes the forum
+> as it ran.
 
 The Forum is the team's shared conversation surface at `/team/forum`, the
 successor to the per-member 1:1 Team Chat (removed 2026-09-26; the owner
@@ -141,7 +147,8 @@ Requests tab.
 
 ## 8. Closed, and the Forum archive (Phase 6)
 
-**Writes are closed.** A new topic (`POST /api/team/forum/topics`), a reply
+**Writes were closed** (stage 4; since stage 5 the routes are gone and
+answer 404, or 401 without a session). A new topic (`POST /api/team/forum/topics`), a reply
 (`POST /api/team/forum/topics/[id]/posts`), a staged upload
 (`POST /api/team/forum/uploads`) and the admin's post
 (`POST /api/team-admin/forum/post`) answer, once the caller's credential
@@ -155,10 +162,10 @@ resolves (an anonymous caller still gets its 401):
 }
 ```
 
-with status 410 (`server/web/lib/forum-closed.ts`). `enqueueForumTurn`
-throws `ForumClosedError`, so no path starts a new forum turn; a turn already
-queued before the freeze runs to completion. Reads stay open until the
-deletion stage.
+with status 410 (`server/web/lib/forum-closed.ts`, deleted in stage 5).
+`enqueueForumTurn` threw `ForumClosedError`, so no path started a new forum
+turn; a turn already
+queued before the freeze ran to completion.
 
 **The archive.** `exportForumArchive`
 (`packages/content/src/forum/export.ts`) freezes the forum into pages:
@@ -223,11 +230,31 @@ of the brain either way: its level decides who may open it, not whether it
 is indexed.
 
 **Tests.** `packages/content/src/forum/export.db.test.ts` (Postgres: two runs,
-no duplicates, the cost checks, the lock, deferral and adoption),
-`server/web/app/api/team/forum/forum-closed-routes.test.ts`,
+no duplicates, the cost checks, the lock, deferral, adoption and the
+stale-reply sweep),
 `server/web/app/api/team-admin/forum/export/export-route.test.ts`,
-`server/api/src/forum-archive-boot.test.ts` and the `extract_exempt` case in
+`server/api/src/forum-archive-boot.test.ts`,
+`server/api/src/workflows/forum-turn-retired.test.ts` and
+`forum-turn-retired.db.test.ts` (the stub), and the `extract_exempt` case in
 `server/api/src/agent/extract/gates.test.ts`.
 
-**Left for the deletion stage:** the forum routes, screens, tables and
-turn pipeline go; the archive pages, filed files, dump and task links stay.
+**Deleted (stage 5).** The routes, the turn pipeline and the content code
+went; the export (`export.ts`), its boot task and `GET/POST
+/api/team-admin/forum/export` stay while the tables do. Two things keep an
+upgrade clean:
+
+- **A forum turn still queued or in flight** when a box upgrades has no
+  runner. `server/api/src/workflows/forum-turn-retired.ts` registers a no-op
+  under the old name (`forumTurnWorkflow`): it fails that topic's pending
+  agent reply, runs the archive boot task, and ends in SUCCESS. Without it
+  DBOS finds no function for the name and the turn stays PENDING, retried on
+  every boot. The `mantle_forum` queue is no longer registered; its row in the
+  DBOS system database persists on a box that had it, so the queue runner
+  still dispatches a leftover turn into the stub
+  (`forum-turn-retired.db.test.ts` proves it on a real DBOS).
+- **A pending reply nothing will finish.** The export fails an agent reply
+  pending for more than 15 minutes (`STALE_REPLY_MS`, the old runner's
+  stale-pending sweep) before it looks for topics to defer, so such a topic is
+  archived with "This reply failed" instead of being deferred for good.
+
+The archive pages, filed files, dump and task links stay.

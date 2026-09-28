@@ -1,56 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachmentKindForMime, formatAttachmentSize, topicFolderSlug } from './forum-uploads-meta';
-
-describe('attachmentKindForMime', () => {
-  it('classifies the media families', () => {
-    expect(attachmentKindForMime('image/png')).toBe('image');
-    expect(attachmentKindForMime('image/svg+xml')).toBe('image');
-    expect(attachmentKindForMime('audio/mpeg')).toBe('audio');
-    expect(attachmentKindForMime('video/mp4')).toBe('video');
-  });
-
-  it('defaults everything else to document', () => {
-    expect(attachmentKindForMime('application/pdf')).toBe('document');
-    expect(attachmentKindForMime('text/plain; charset=utf-8')).toBe('document');
-    expect(attachmentKindForMime('')).toBe('document');
-    expect(attachmentKindForMime(null)).toBe('document');
-    expect(attachmentKindForMime(undefined)).toBe('document');
-  });
-
-  it('ignores casing and mime parameters', () => {
-    expect(attachmentKindForMime('IMAGE/PNG')).toBe('image');
-    expect(attachmentKindForMime('audio/ogg; codecs=opus')).toBe('audio');
-  });
-
-  it('never infers voice (transport-only kind)', () => {
-    expect(attachmentKindForMime('audio/ogg')).toBe('audio');
-  });
-});
-
-describe('topicFolderSlug', () => {
-  it('slugifies a plain title', () => {
-    expect(topicFolderSlug('How do we PDF?')).toBe('how-do-we-pdf');
-  });
-
-  it('strips diacritics via NFKD', () => {
-    expect(topicFolderSlug('Café menu réview')).toBe('cafe-menu-review');
-  });
-
-  it('collapses punctuation runs and trims edge dashes', () => {
-    expect(topicFolderSlug('  ...vibration -- report!!  ')).toBe('vibration-report');
-  });
-
-  it('falls back to topic when nothing survives', () => {
-    expect(topicFolderSlug('🎉🎉🎉')).toBe('topic');
-    expect(topicFolderSlug('')).toBe('topic');
-  });
-
-  it('caps at 64 chars without a trailing dash', () => {
-    const slug = topicFolderSlug(`${'a'.repeat(63)} tail words beyond the cap`);
-    expect(slug.length).toBeLessThanOrEqual(64);
-    expect(slug.endsWith('-')).toBe(false);
-  });
-});
+import { formatAttachmentSize } from './forum-uploads-meta';
 
 describe('formatAttachmentSize', () => {
   it('renders each magnitude', () => {

@@ -18,22 +18,16 @@ export const ASSISTANT_TURN_WORKFLOW = 'assistantTurnWorkflow';
 /** Team Chat turn workflow (external team-member surface). */
 export const TEAM_TURN_WORKFLOW = 'teamTurnWorkflow';
 
-/** Team Forum turn workflow (shared-topic surface — the agent answering a
- *  member's post in a topic every member can read). */
-export const FORUM_TURN_WORKFLOW = 'forumTurnWorkflow';
+/** The retired Team Forum turn workflow's name (member logins Phase 6). No
+ *  one enqueues it any more; server/api keeps a no-op stub registered under
+ *  it so a forum turn still queued, or in flight, on a box when it upgrades
+ *  finishes cleanly instead of failing on every boot. */
+export const RETIRED_FORUM_TURN_WORKFLOW = 'forumTurnWorkflow';
 
 /** The shared runner queue. Its concurrency cap (set where the queue is
  *  registered, in server/api) bounds total in-flight runs across processes — the
  *  LLM-provider backpressure valve. */
 export const RUNNER_QUEUE = 'mantle';
-
-/** Dedicated PARTITIONED queue for forum turns (registered in server/api with
- *  `{ concurrency: 1, partitionQueue: true }`). Enqueue with
- *  `queuePartitionKey = topicId` ⇒ at most one forum turn runs per topic at a
- *  time (the serializer that replaces the in-workflow spin-lock), while
- *  different topics run in parallel. Forum turns live here, NOT on
- *  RUNNER_QUEUE, so a waiting topic can never starve the owner's assistant. */
-export const FORUM_QUEUE = 'mantle_forum';
 
 /** Serializable input the runner carries in its journal — mirrors
  *  runAssistantTurn's (ownerId, text, options) arguments. */
@@ -68,26 +62,6 @@ export type TeamTurnRunResult = {
   outbound: {
     id: string;
     text: string;
-    model: string | null;
-    traceId: string | null;
-    createdAt: string;
-  };
-  reply: string;
-};
-
-/** Serializable input for the forum turn runner — mirrors runForumTurn's
- *  (ownerId, options) arguments. The triggering member post is already
- *  persisted by the route, so there is no `text` half. */
-export type ForumTurnInput = {
-  ownerId: string;
-  options: import('./run-forum-turn').RunForumTurnOptions;
-};
-
-/** Serializable forum-turn result DTO (dates pre-stringified). */
-export type ForumTurnRunResult = {
-  outbound: {
-    id: string;
-    body: string;
     model: string | null;
     traceId: string | null;
     createdAt: string;

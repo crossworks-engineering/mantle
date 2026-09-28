@@ -2,6 +2,24 @@
  * Pure helper for the boot reconcile. Dependency-free so it's unit-testable
  * (the vitest setup loads pure-logic modules only, not @/-aliased / DB code).
  */
+import { createHash } from 'node:crypto';
+
+/**
+ * The shipped prompt an agent should move to on upgrade, or null to leave its
+ * prompt alone. A prompt is replaced only when it is, byte for byte, one of
+ * the defaults the manifest shipped before (`retiredSha256`, see
+ * ManifestAgent.retiredPromptSha256): nobody edited it, so the new default is
+ * what the operator would have had. Any edit, even whitespace, keeps it.
+ */
+export function shippedPromptUpgrade(
+  live: string | null | undefined,
+  current: string | undefined,
+  retiredSha256: readonly string[] | undefined,
+): string | null {
+  if (live == null || !current || !retiredSha256?.length || live === current) return null;
+  const hash = createHash('sha256').update(live, 'utf8').digest('hex');
+  return retiredSha256.includes(hash) ? current : null;
+}
 
 /**
  * The manifest-persona groups an agent is MISSING. Reconcile uses this to UNION

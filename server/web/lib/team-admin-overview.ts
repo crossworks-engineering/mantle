@@ -4,21 +4,21 @@
  * tab loaded first — one helper, one definition of "what's awaiting the
  * specialist".
  */
-import { listTeamRequests, countPendingForumUploads } from '@mantle/content';
+import { listTeamRequests } from '@mantle/content';
 
 export type TeamAdminBadges = {
-  /** The Requests-tab badge: open change requests + forum uploads pending
-   *  review — everything awaiting the specialist. */
+  /** The Requests-tab badge: open change requests, everything awaiting the
+   *  specialist. */
   openRequestCount: number;
-  /** Raw halves, for panes that need them (the uploads queue shows "N more"). */
+  /** Raw halves, kept in the shape older clients read. */
   openRequests: number;
-  pendingUploadCount: number;
+  /** Always 0: forum uploads went with the forum (member logins Phase 6; the
+   *  archive export filed the unreviewed ones). Kept one contract cycle for
+   *  client builds that still read it. */
+  pendingUploadCount: 0;
 };
 
 export async function teamAdminBadges(userId: string): Promise<TeamAdminBadges> {
-  const [openRequests, pendingUploadCount] = await Promise.all([
-    listTeamRequests(userId, { status: 'open' }).then((r) => r.length),
-    countPendingForumUploads(userId),
-  ]);
-  return { openRequestCount: openRequests + pendingUploadCount, openRequests, pendingUploadCount };
+  const openRequests = await listTeamRequests(userId, { status: 'open' }).then((r) => r.length);
+  return { openRequestCount: openRequests, openRequests, pendingUploadCount: 0 };
 }

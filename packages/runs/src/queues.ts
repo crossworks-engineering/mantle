@@ -30,9 +30,9 @@ export const RUN_RESUME_QUEUE = 'mantle.run.resume';
  * A run that fans out N worker turns would then queue ahead of a live chat
  * message and the owner waits behind their own background job. Background runs
  * turns must NEVER starve foreground turns, so they get their own queue with
- * its own (deliberately low) concurrency cap — the same isolation FORUM_QUEUE
- * gives topic turns. This is a DBOS queue name (parallel to RUNNER_QUEUE /
- * FORUM_QUEUE in @mantle/runtime/assistant), distinct from the pg-boss queues
+ * its own (deliberately low) concurrency cap, the same isolation the retired
+ * forum queue gave topic turns. This is a DBOS queue name (parallel to
+ * RUNNER_QUEUE in @mantle/runtime/assistant), distinct from the pg-boss queues
  * above.
  *
  * Deploy-skew posture: a runs worker that enqueues to 'mantle.runs' before

@@ -1,3 +1,5 @@
+import { execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
 import {
   MANIFEST_AGENTS,
@@ -400,6 +402,60 @@ describe('system manifest integrity', () => {
     // Restyles fold existing blocks into containers with the wrap op, never
     // by re-emitting their content.
     expect(editing!.instructions).toContain("'wrap' op");
+  });
+
+  it("a retired prompt hash is never the agent's current default (no upgrade loop)", () => {
+    const sha = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');
+    const withHistory = MANIFEST_AGENTS.filter((a) => a.retiredPromptSha256?.length);
+    expect(withHistory.map((a) => a.slug)).toContain('team-responder');
+    for (const a of withHistory) {
+      for (const h of a.retiredPromptSha256!) expect(h, a.slug).toMatch(/^[0-9a-f]{64}$/);
+      expect(a.retiredPromptSha256, a.slug).not.toContain(sha(a.systemPrompt!));
+    }
+  });
+
+  // The two hashes must be the defaults that actually shipped, or the upgrade
+  // silently never fires. Checked against the commits that shipped them when
+  // the history is there (a shallow CI clone skips it).
+  it('the retired team-responder hashes are the defaults git shipped', () => {
+    const shipped = [
+      '0f4b2246f72b9136e2374930b72fd04a79880da3', // 2026-07-05, the 1:1 portal chat
+      '5dc930df4bca33f1c7025b25f296857ffc24d9ef', // 2026-07-17, the forum
+    ];
+    const src = (sha: string): string | null => {
+      try {
+        return execSync(`git show ${sha}:apps/web/lib/system-manifest/prompts.ts`, {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          maxBuffer: 1e8,
+        });
+      } catch {
+        return null;
+      }
+    };
+    const sources = shipped.map(src);
+    if (sources.some((x) => x === null)) return; // no history here
+    const sha = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');
+    const hashes = sources.map((text) => {
+      const file = text!;
+      const start = file.indexOf("'team-responder': `") + "'team-responder': `".length;
+      let raw = '';
+      for (let i = start; file.charAt(i) !== '`'; i++) {
+        raw += file.charAt(i) === '\\' ? file.charAt(i) + file.charAt(++i) : file.charAt(i);
+      }
+      // The template literal's own escapes (\` only), as the compiler reads them.
+      return sha(raw.replace(/\\`/g, '`'));
+    });
+    const def = MANIFEST_AGENTS.find((a) => a.slug === 'team-responder')!;
+    expect([...def.retiredPromptSha256!].sort()).toEqual([...hashes].sort());
+  });
+
+  it('the team responder prompt is about member chat: no forum, no portal', () => {
+    const p = MANIFEST_AGENTS.find((a) => a.slug === 'team-responder')!.systemPrompt!;
+    expect(p).not.toMatch(/forum|topic|1:1|portal|team code/i);
+    expect(p).toMatch(/member login/);
+    expect(p).toMatch(/team_request_create/);
+    expect(p).not.toMatch(/\u2014/); // house style: no em dashes
   });
 
   it('every specialist agent has a system prompt; the persona has none (persona-bank)', () => {

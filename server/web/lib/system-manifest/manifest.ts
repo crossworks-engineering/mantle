@@ -113,6 +113,13 @@ export type ManifestAgent = {
   /** Verbatim system prompt (from ./prompts) — specialists only; the persona
    *  carries none (its prompt is built from the persona bank). */
   systemPrompt?: string;
+  /** SHA-256 (hex) of every EARLIER shipped default of `systemPrompt`. The
+   *  boot reconcile replaces a live prompt with the current default only when
+   *  it hashes to one of these: the operator never edited it. An edited prompt
+   *  hashes to none of them and is kept (prompts are operator-owned; see
+   *  CLAUDE.md). Add the old default's hash here in the change that rewrites a
+   *  prompt, when existing brains should get the rewrite. */
+  retiredPromptSha256?: readonly string[];
   /** Skills that SHOULD be attached to this agent. */
   skillSlugs: string[];
   /** Tool groups granted to this agent (named bundles). P6: the SOLE grant
@@ -488,6 +495,21 @@ export const MANIFEST_HTTP_TOOL_SLUGS: readonly string[] = MANIFEST_HTTP_TOOLS.m
 // `table-admin`, `contacts-admin`, `journal-admin`) so they're granted only by
 // deliberate group membership, never as a side effect of an authoring grant.
 // The `pages`/`tables` groups carry the AUTHORING subsets only.
+
+/**
+ * Tool groups and builtin tools the manifest USED to ship and no longer does.
+ * Removals are otherwise add-only (the rows live on), so the boot reconcile
+ * DISABLES these rows: a stale builtin row would still be offered to any
+ * agent granted it, and its handler is gone (the call would only fail). Kept
+ * disabled, not deleted, so an operator can see what went and nothing that
+ * points at a row breaks.
+ *
+ *   team-notify / team_member_list / team_notify: member-to-member
+ *   notifications from the forum era, attached to no agent by default
+ *   (member logins Phase 6).
+ */
+export const RETIRED_TOOL_GROUP_SLUGS: readonly string[] = ['team-notify'];
+export const RETIRED_BUILTIN_TOOL_SLUGS: readonly string[] = ['team_member_list', 'team_notify'];
 
 export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   {
@@ -966,7 +988,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   },
   {
     slug: 'team-read',
-    name: 'Team Chat (member-facing)',
+    name: 'Team reads (member-facing)',
     description:
       "The team responder's entire tool surface: read-only access across the brain (search, files, notes, pages, tables, events, tasks, contacts, app data) — including `show_image`, which renders a file the member could already read — plus its ONE write action — filing a team change request into the specialist review queue. email_*/journal_* are ALSO granted here but gated at runtime by the owner's `teamPrivateReads` switch (default OFF — see run-team-turn.ts / TEAM_PRIVATE_READ_SLUGS), so the owner's private corpus is off-limits unless explicitly opted in. Deliberately excludes export_node (bulk exfiltration ease), replay_window (replays the OWNER's private conversations), all other writes, delegation, terminal, http, and send tools. Non-private reads are brain-wide BY DESIGN (brain = the trust boundary).",
     toolSlugs: [
@@ -1020,7 +1042,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
   },
   {
     slug: 'team-read-admin',
-    name: 'Team Chat reads that need admin level',
+    name: 'Team reads that need admin level',
     description:
       "The team responder's reads that touch what a team-level role may never read: the knowledge graph (entity names are learned from every source, email included), events, tasks, contacts, and the private corpus (email_* / journal_*, still gated by `teamPrivateReads`). ADMIN level (member logins Phase 0b): the responder holds it while it runs at admin; lowering the responder to team first means removing this group, and the run-time level cap drops it regardless.",
     toolSlugs: [
@@ -1052,17 +1074,10 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     toolSlugs: ['access_get', 'access_set', 'access_shadow_report'],
   },
   {
-    slug: 'team-notify',
-    name: 'Team notifications (member-to-member)',
-    description:
-      "Let the team responder tell one member's message to another ('can you ask Deepthi to check this?') — resolve a colleague's name to an id, then send. The notification lands in the recipient's dash, carries a link back to the forum topic it came from, and can be replied to. NOT an outbound send: it reaches only LIVE members of this brain, by id, with the sender stamped from the authenticated surface — so unlike email/telegram it cannot carry anything across the trust boundary. ⚠ ATTACHED TO NO AGENT YET: the data path ships (migration 0138) but the recipient's dash inbox does not, and a responder that reports 'I've let her know' for a notification nobody can see is worse than today's honest 'I can't reach her'. Grant this to the team responder in the change that lands the surface.",
-    toolSlugs: ['team_member_list', 'team_notify'],
-  },
-  {
     slug: 'team-admin',
-    name: 'Team Chat admin',
+    name: 'Team chat admin',
     description:
-      "Owner-side view over the Team Chat surface: list members + activity, read any member's thread, read the access log. Granted to the persona so the brain can answer 'what has <member> asked about?' — NEVER to the team responder itself.",
+      "Owner-side view over the member chats: list member logins + activity, read any member's thread (and old team-code portal threads, history), read the access log. Granted to the persona so the brain can answer 'what has <member> asked about?', NEVER to the team responder itself.",
     toolSlugs: ['team_chat_list', 'team_chat_read', 'team_access_list'],
   },
   {
@@ -1474,11 +1489,18 @@ export const MANIFEST_AGENTS: readonly ManifestAgent[] = [
     slug: 'team-responder',
     name: 'Team Responder',
     description:
-      "Permission-limited responder for the external Team Chat surface (/team) — serves team-member contacts, read-only plus filing change requests. Never appears in the owner's Conversations inbox and is never a delegate.",
+      "Permission-limited responder for the member chat (member logins chat with it in the assistant dock): read-only plus filing change requests. Never appears in the owner's Conversations inbox and is never a delegate.",
     role: 'custom',
     model: DEFAULT_AGENT_MODEL,
     envModelVar: 'TEAM_RESPONDER_MODEL',
     systemPrompt: AGENT_PROMPTS['team-responder']!,
+    // The two defaults it shipped with before member logins Phase 6 (the
+    // 1:1 portal chat, 2026-07-05, and the forum, 2026-07-17). A brain whose
+    // prompt is still one of them gets the member-chat rewrite on upgrade.
+    retiredPromptSha256: [
+      '60f5262a299ecaefe17696d89fba1234cf03d76de1283aed8c61f62d2cb305b1',
+      '3cc6514ff02f41ae7c32bc2bca326b764440ebbadd39ff23a883d4c1da074841',
+    ],
     // `team-read` is the bulk of its surface (see that group's description for
     // the exclusion rationale). `formulas-eval` is the one addition, and it
     // holds to the same posture: non-private reads of the owner's calculation

@@ -11,7 +11,7 @@
 > draft/commit model. Notes remain the lightweight markdown quick-capture.
 > For first-person self-knowledge (who you are, how you feel) that also feeds
 > the assistant's always-on identity context, see [`journal.md`](./journal.md)
->, a fourth `nodes.data` sibling that rides this same shape.
+> , a fourth `nodes.data` sibling that rides this same shape.
 >
 > Any of the three can be shared read-only via a public link (`/s/[token]`),
 > see [`sharing.md`](./sharing.md).
@@ -28,7 +28,7 @@ The three are 80% the same. Each is:
 - Indexed by the extractor on insert + on every meaningful update.
 - Exposed via REST (`/api/{notes,tasks,events}`), a web UI (`/notes`,
   `/tasks`, `/events`), and MCP tools (`{note,task,event}_{list,get,
-  create,update,delete}`).
+create,update,delete}`).
 
 All the shared logic lives in `packages/content/`. Web + MCP both import
 from there.
@@ -98,8 +98,9 @@ admin login), `member` (a team contact), `agent` — attributed
 server-side from the session/surface, never from a request body.
 Owner routes: `GET/POST /api/nodes/[id]/comments`,
 `PATCH/DELETE /api/comments/[id]` (edit is author-only; delete is any
-admin login). Member routes: `GET/POST /api/team/comments` (gated on an
-ACTIVE share — what a member may read, a member may comment on). Agent
+admin login). The team-code member routes (`GET/POST /api/team/comments`)
+were retired with the team portal (member logins Phase 6); member logins
+comment on personal items through `/api/member/*` (member-logins.md). Agent
 tools: `task_comments_list` / `task_comment_add`. `TaskRow.commentCount`
 rides on every list row; the thread DTO computes `mine` per viewer.
 
@@ -141,8 +142,8 @@ All three are in `DEFAULT_EXTRACT_TYPES` in
 
 - **note**: `data.content`, the markdown verbatim.
 - **task**: title + `Status:` + `Priority:` + `Due:` + body. Surfaces
-  the structured metadata so a summary can say *"OPEN, due tomorrow:
-  ship the events feature"* instead of just the title.
+  the structured metadata so a summary can say _"OPEN, due tomorrow:
+  ship the events feature"_ instead of just the title.
 - **event**: title + `Starts:` + `Ends:` + `Location:` + body. Same
   reason, the assistant searching for "meeting with Alex on Tuesday"
   needs to find the row by its date.
@@ -177,7 +178,7 @@ already (`remind_at` + `reminder_sent_at`); a restart loses nothing.
 a meeting earlier, the next tick picks up the new `remind_at`
 automatically, no schedule to cancel + re-enqueue.
 
-**At-least-once delivery**: we mark sent *after* the Telegram API
+**At-least-once delivery**: we mark sent _after_ the Telegram API
 call returns. If the worker crashes between send + mark, the next
 tick re-sends. Single-user, low-traffic; duplicate reminders are
 better than missed ones.
@@ -194,23 +195,23 @@ section under `/settings/agents` and the next tick will drain the backlog.
 The assistant in Claude Desktop can drive all three end-to-end via
 the new tools (server/mcp/src/server.ts):
 
-| Surface | Tools                                                            |
-|---------|------------------------------------------------------------------|
-| notes   | `note_list`, `note_get`, `note_create`, `note_update`, `note_delete` |
+| Surface | Tools                                                                                                          |
+| ------- | -------------------------------------------------------------------------------------------------------------- |
+| notes   | `note_list`, `note_get`, `note_create`, `note_update`, `note_delete`                                           |
 | tasks   | `task_list`, `task_get`, `task_create`, `task_update`, `task_delete`, `task_comments_list`, `task_comment_add` |
-| events  | `event_list`, `event_get`, `event_create`, `event_update`, `event_delete` |
+| events  | `event_list`, `event_get`, `event_create`, `event_update`, `event_delete`                                      |
 
 Typical flows the assistant can now do without any custom plumbing:
 
-- *"Remind me of my meeting at 10am"* →
+- _"Remind me of my meeting at 10am"_ →
   `event_create({title: 'meeting', startsAt: '…T10:00:00…', remindMinutesBefore: 0})`.
   The reminder fires at 10am, the worker pings your Telegram DM.
-- *"Add a task to renew my passport, due end of month, high priority"* →
+- _"Add a task to renew my passport, due end of month, high priority"_ →
   `task_create({title: 'renew passport', priority: 'high', dueAt: '…'})`.
-- *"What notes do I have about the printer project?"* →
+- _"What notes do I have about the printer project?"_ →
   `searchNodes` (semantic) brings back the relevant note rows; the
   assistant follow-ups with `note_get` for full content.
-- *"Mark the secrets feature task as done"* → `task_list` (find it),
+- _"Mark the secrets feature task as done"_ → `task_list` (find it),
   then `task_update({id, status: 'done'})`.
 
 Same owner-scoping as the rest of the MCP surface

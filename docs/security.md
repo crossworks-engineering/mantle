@@ -3,9 +3,9 @@
 > How a Mantle brain protects its data, what each external surface can and
 > cannot reach, and the safety nets that keep an install honest over time.
 > Written to be readable by a security reviewer during a corporate pilot; each
-> section links to the deeper doc. The two surfaces external people actually
-> touch (**Team Chat** and **shared Apps**) get their own detailed sections
-> (§5, §6).
+> section links to the deeper doc. The two surfaces team members and outside
+> people actually touch (**member chat** and **shared Apps**) get their own
+> detailed sections (§5, §6).
 
 ---
 
@@ -36,17 +36,23 @@
 
 ## 2. Identity & credentials
 
-| Credential                                            | Who holds it                         | Scope                                                                                                                      | Revocation                                                  |
-| ----------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Owner/admin login + session cookie                    | you and named admins                 | the whole app                                                                                                              | change password; delete the admin user                      |
-| **Team token** (8 chars, shown once, SHA-256 at rest) | a Contact you flagged as team member | the `/team` workspace (every ACTIVE share, read-only) + the `/team/forum`, `/hub`, and team-mode `/s` shares; nothing else | flip the toggle or delete the contact, instant, mid-session |
-| Share token (~128-bit CSPRNG in the URL)              | anyone with the link                 | exactly one shared item (or one public app)                                                                                | turn the share off                                          |
+| Credential                                            | Who holds it                         | Scope                                                                                                                                            | Revocation                                                  |
+| ----------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| Owner/admin login + session cookie                    | you and named admins                 | the whole app                                                                                                                                    | change password; delete the admin user                      |
+| **Member login** + session cookie                     | a person you invited (role member)   | the member routes only (`MEMBER_ROUTES`): the Library, their chat with the team agent, their personal space, member apps; read at the team level | disable, demote or delete the login, instant, mid-session   |
+| **Team token** (8 chars, shown once, SHA-256 at rest) | a Contact you flagged as team member | team-mode `/s` shares only (until member logins stage 6), and one invite redeem in place of the invite code; nothing else                        | flip the toggle or delete the contact, instant, mid-session |
+| Share token (~128-bit CSPRNG in the URL)              | anyone with the link                 | exactly one shared item (or one public app)                                                                                                      | turn the share off                                          |
 
 Notes that matter to a reviewer:
 
 - **Multi-admin** uses an actor/anchor split: every admin acts as themselves
   (auditable), the brain's data anchors to one owner. Revoking an admin =
   deleting their user.
+- The team-code portal (`/team`, `/hub`, the Team Forum, `/api/team/*`)
+  was retired in member logins Phase 6: its pages redirect to `/login`, its
+  API is gone, and the brain-level team-chat credential (cookie or bearer)
+  opens nothing. Team members sign in with member logins
+  ([member-logins.md](./member-logins.md)).
 - Team tokens are **hashed at rest**; the plaintext is shown once at mint.
   Token-entry endpoints return a **uniform 401** for wrong-vs-unknown tokens
   (no oracle) and are **rate-limited** per-IP (hardened client-IP derivation
@@ -62,17 +68,16 @@ Notes that matter to a reviewer:
 Everything an outside person can touch, in one table. "Write path" is the
 complete list of ways that surface can change the brain.
 
-| Surface                                       | Auth                                                             | Reads                                                                                                                                                                                                           | Write path                                                                                                                  | Audit                             |
-| --------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `/s/<token>` shared page/note/task/event/file | link token                                                       | that one item + its own embedded assets only                                                                                                                                                                    | none                                                                                                                        | view count                        |
-| `/s/<token>` **public app**                   | link token                                                       | the app's own SQLite, read-only                                                                                                                                                                                 | none (no brain tools, no DB writes)                                                                                         | app access log                    |
-| `/s/<token>` **team app**                     | link token + team token                                          | app SQLite + the app's _declared_ tools (built-ins only)                                                                                                                                                        | app SQLite writes + declared tools                                                                                          | app access log, per member        |
-| `/team` **workspace**                         | team token                                                       | the owner's ACTIVE shares (team + public mode), rendered read-only through the `/s` presenters; the share stays the only content door                                                                           | none                                                                                                                        | share view counts + access log    |
-| `/team/forum` **Team Forum**                  | team token                                                       | brain knowledge via a read-only responder, PLUS the shared forum itself, a member reads every other member's `team` topics + posts (a member-to-member content channel; `private` topics are author+owner only) | create topic / post (member-visible content) + one wrapped tool that files a task for human review                          | access log + full per-turn traces |
-| Telegram                                      | explicit bot pairing                                             | owner-level assistant (this is _your_ channel, not a team one)                                                                                                                                                  | assistant tools per its grants                                                                                              | traces                            |
-| MCP (Claude Desktop etc.)                     | SSH/exec into the container, operator-only today                 | owner-level tools                                                                                                                                                                                               | owner-level tools                                                                                                           | traces                            |
-| MCP connectors (outbound)                     | owner connects a server explicitly; key/OAuth creds vault-sealed | the external server sees only the arguments of calls to ITS tools                                                                                                                                               | agents granted the connector's `mcp-*` group call the remote tools; results return fenced as untrusted                      | traces                            |
-| OpenAPI connectors (outbound)                 | owner connects a spec explicitly; key stays a vault ref          | the service sees only the arguments of calls compiled from ITS spec, sent to the one owner-set base URL                                                                                                         | agents granted the connector's `openapi-*` group call the compiled http tools; results return fenced like every http result | traces                            |
+| Surface                                       | Auth                                                             | Reads                                                                                                                             | Write path                                                                                                                  | Audit                             |
+| --------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `/s/<token>` shared page/note/task/event/file | link token                                                       | that one item + its own embedded assets only                                                                                      | none                                                                                                                        | view count                        |
+| `/s/<token>` **public app**                   | link token                                                       | the app's own SQLite, read-only                                                                                                   | none (no brain tools, no DB writes)                                                                                         | app access log                    |
+| `/s/<token>` **team app**                     | link token + team token                                          | app SQLite + the app's _declared_ tools (built-ins only)                                                                          | app SQLite writes + declared tools                                                                                          | app access log, per member        |
+| **Member routes** (`/api/member/*`)           | member login                                                     | team-level items (row security on the team role), their own personal space, member apps; the team agent via their own chat thread | their personal space + submitting items for review + one wrapped tool that files a task for human review                    | access log + full per-turn traces |
+| Telegram                                      | explicit bot pairing                                             | owner-level assistant (this is _your_ channel, not a team one)                                                                    | assistant tools per its grants                                                                                              | traces                            |
+| MCP (Claude Desktop etc.)                     | SSH/exec into the container, operator-only today                 | owner-level tools                                                                                                                 | owner-level tools                                                                                                           | traces                            |
+| MCP connectors (outbound)                     | owner connects a server explicitly; key/OAuth creds vault-sealed | the external server sees only the arguments of calls to ITS tools                                                                 | agents granted the connector's `mcp-*` group call the remote tools; results return fenced as untrusted                      | traces                            |
+| OpenAPI connectors (outbound)                 | owner connects a spec explicitly; key stays a vault ref          | the service sees only the arguments of calls compiled from ITS spec, sent to the one owner-set base URL                           | agents granted the connector's `openapi-*` group call the compiled http tools; results return fenced like every http result | traces                            |
 
 Two structural points:
 
@@ -80,8 +85,8 @@ Two structural points:
   there is no "safe slice" of a private brain to expose to anonymous visitors,
   so the answer is none (enforced by a hard server-side gate, not convention).
 - **Identified beats anonymous.** Everything with real capability requires a
-  team token that maps to a named Contact, and every action is logged against
-  that name.
+  member login (or, on a team-mode share, a team token that maps to a named
+  Contact), and every action is logged against that name.
 
 ## 4. The assistant's guard rails
 
@@ -106,7 +111,7 @@ The AI itself is fenced the same way people are:
 - **Everything is traced.** Every turn and every tool call lands in `/traces`
   with steps, cost, and timing, the "show me exactly what happened" view.
 
-## 5. Team Chat security (deep): [`team-chat.md`](./team-chat.md)
+## 5. Member chat security (deep): [`member-logins.md`](./member-logins.md), [`team-chat.md`](./team-chat.md) (history)
 
 The design assumption: a team member is _trusted to read the brain's
 knowledge_ but _never trusted to write_, and everything they do must be
@@ -134,19 +139,18 @@ attributable.
   the worst-case prompt-injection outcome is a _clearly team-labelled task in
   a human-reviewed queue_. Team requests never touch the agent
   tool-execution gate directly.
-- **Member isolation.** Turn ids are minted server-side embedding the caller's
-  contact id; the stream route rejects any id whose contact doesn't match the
-  authenticated caller. A member cannot construct, replay, or tail another
-  member's turn, and owner turns are unreachable from the team route
-  entirely. Context assembly injects no owner persona notes, digests, or other
-  members' threads.
+- **Member isolation.** A member's turn id is minted server-side as
+  `member-<loginId>.<nonce>`; a client can never address another member's
+  turn, and each login has its own thread. Context assembly injects no owner
+  persona notes, digests, or other members' threads. The engine refuses an
+  admin-level agent for a member login, and a turn with no login.
 - **No memory contamination.** Team conversations are not semantically indexed
   into the brain's memory corpus; the owner reads them via dedicated tools.
-  Uploaded _files_ do ingest (deliberately) carrying
-  `source = 'team:<contactId>'` provenance forever.
-- **Cost containment.** Per-contact rate limit + `TEAM_CHAT_DAILY_TURNS` daily
-  cap (denials logged), so a leaked token is a bounded nuisance, not a wallet
-  drain.
+  Items a member submits reach the brain only when an admin accepts them
+  (member-logins.md section 6).
+- **Cost containment.** Per-login rate limit (6 a minute) +
+  `TEAM_CHAT_DAILY_TURNS` daily cap (denials logged), so a leaked login is a
+  bounded nuisance, not a wallet drain.
 - **Accepted trade-offs, stated plainly:** (1) within the boundary, a member
   can surface anything the responder can read, including via injection in
   content; that's the coarse-permission model, and the enable switch says so.

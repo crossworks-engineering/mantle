@@ -203,7 +203,7 @@ describe('gate: CORS', () => {
     const app = makeApp();
     const data = await app.request('/api/version', { headers: { origin: 'https://any.example' } });
     expect(data.headers.get('access-control-allow-origin')).toBe('https://any.example');
-    for (const path of ['/api/auth/me', '/api/team/auth', '/api/team/sso']) {
+    for (const path of ['/api/auth/me', '/api/auth/sso', '/api/auth/invite/accept']) {
       const res = await app.request(path, { headers: { origin: 'https://any.example' } });
       expect(res.headers.get('access-control-allow-origin'), path).toBeNull();
     }

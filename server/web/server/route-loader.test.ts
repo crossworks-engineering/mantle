@@ -57,12 +57,12 @@ describe('route loader', () => {
     const app = new Hono();
     registerRoutes(app, [
       entry({
-        pattern: '/team/*',
+        pattern: '/wiki/*',
         catchAll: 'rest',
         load: async () => ({ GET: echo('GET') }),
       }),
     ]);
-    const res = await app.request('/team/forum/topic%201/x');
+    const res = await app.request('/wiki/forum/topic%201/x');
     expect((await res.json()).params).toEqual({ rest: ['forum', 'topic 1', 'x'] });
   });
 
@@ -70,14 +70,14 @@ describe('route loader', () => {
     const app = new Hono();
     registerRoutes(app, [
       entry({
-        pattern: '/team/*',
+        pattern: '/wiki/*',
         catchAll: 'rest',
         catchAllOptional: true,
         load: async () => ({ GET: echo('GET') }),
       }),
     ]);
-    expect((await (await app.request('/team')).json()).params).toEqual({});
-    expect((await (await app.request('/team/a/b')).json()).params).toEqual({ rest: ['a', 'b'] });
+    expect((await (await app.request('/wiki')).json()).params).toEqual({});
+    expect((await (await app.request('/wiki/a/b')).json()).params).toEqual({ rest: ['a', 'b'] });
   });
 
   it('required catch-all [...rest] does NOT match the bare prefix (Next parity)', async () => {

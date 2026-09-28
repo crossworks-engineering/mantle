@@ -22,7 +22,7 @@ import { appMemberToolWarnings } from './member-app-tools';
 const LEVELS = ['admin', 'team', 'client', 'public'];
 
 function ownerOnly(ctx: ToolHandlerContext): ToolHandlerResult | null {
-  if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
+  if (ctx.surface?.kind === 'team') {
     return {
       ok: false,
       error: 'access_get / access_set are owner-side only: ask the owner to change a level.',

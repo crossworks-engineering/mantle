@@ -103,7 +103,8 @@ them (the control). Tests: `packages/db/src/*.db.test.ts`,
 
 ## 5. Turning it on for the team responder
 
-1. Run the shadow report. It lists what recent team and forum turns used that
+1. Run the shadow report. It lists what recent member turns used (the last
+   30 days; traces of the retired forum still count until they age out) that
    is still admin, shared tasks and events (admin forever: members lose
    them), shares whose embeds sit above them, and how many facts stay
    usable.
@@ -129,12 +130,12 @@ them (the control). Tests: `packages/db/src/*.db.test.ts`,
 
 The level is the truth; an item's share link (docs/sharing.md) follows it.
 
-| Level  | The item's link                                                                                         |
-| ------ | ------------------------------------------------------------------------------------------------------- |
-| admin  | none (revoked)                                                                                          |
-| team   | team-only: the `/team` workspace lists and opens items through it (removing it leaves the item at team) |
-| client | open (anyone with the link), shown to the owner                                                         |
-| public | open (anyone with the link), shown to the owner                                                         |
+| Level  | The item's link                                                                                                  |
+| ------ | ---------------------------------------------------------------------------------------------------------------- |
+| admin  | none (revoked)                                                                                                   |
+| team   | team-only: member logins list and open it in their Library; a team-code holder opens it on `/s/` (until stage 6) |
+| client | open (anyone with the link), shown to the owner                                                                  |
+| public | open (anyone with the link), shown to the owner                                                                  |
 
 - **Level to link.** `setItemLevel` (`@mantle/content` access.ts) writes the
   level, then `applyLevelToShare` (shares.ts) revokes, creates or re-modes

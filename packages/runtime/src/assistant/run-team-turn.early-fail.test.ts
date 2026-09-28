@@ -39,7 +39,6 @@ describe('runTeamTurn: an early failure leaves the message in the thread', () =>
   it('records the inbound and a failed outbound, then rethrows', async () => {
     await expect(
       runTeamTurn('owner-1', 'hello there', {
-        contactId: 'contact-1',
         loginId: 'login-1',
         channel: 'web',
       }),
@@ -49,10 +48,21 @@ describe('runTeamTurn: an early failure leaves the message in the thread', () =>
     expect(h.appended[0]).toMatchObject({
       direction: 'inbound',
       text: 'hello there',
-      contactId: 'contact-1',
+      contactId: null,
       loginId: 'login-1',
     });
     expect(h.appended[1]).toMatchObject({ direction: 'outbound', loginId: 'login-1' });
     expect(String(h.appended[1]!.error)).toMatch(/isn't provisioned/);
+  });
+});
+
+describe('runTeamTurn: the retired portal contact path', () => {
+  // A turn input from before Phase 6 names only a portal contact. It must be
+  // refused before anything is written, not run into an unowned thread.
+  it('refuses a turn with no member login', async () => {
+    await expect(
+      runTeamTurn('owner-1', 'hello there', { contactId: 'contact-1' } as never),
+    ).rejects.toThrow(/loginId required/);
+    expect(h.appended).toEqual([]);
   });
 });

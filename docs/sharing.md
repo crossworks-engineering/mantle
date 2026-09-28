@@ -133,29 +133,18 @@ them through without a session cookie.
   excluded at the API.
 - **Team mode** (`settings.mode = 'team'`, toggle in `<ShareControl teamMode>`):
   the link additionally requires a **live team credential**: the share-scoped
-  visitor cookie (minted at the link's own token prompt) or the brain-level
-  `/team` hub cookie. Enforced uniformly on the `/s/` surface: the page render,
-  the asset-bytes route, and the app brokers all resolve
+  visitor cookie (`mantle_team`, minted at the link's own token prompt,
+  `POST /s/<token>/auth`). Enforced uniformly on the `/s/` surface: the page
+  render, the asset-bytes route, and the app brokers all resolve
   `resolveShareVisitor` and re-check membership liveness per request
-  (revocation is instant). Team-mode **page** shares double as the `/team`
-  hub's briefing sections, and team-mode **app** shares (with a green published
-  build) double as the hub's "Team apps" launcher cards, revoking the share,
-  or the build going red, delists them (`@mantle/content/team-hub`). The
-  designated hub app itself never appears on its own launcher.
-- **Curated Dashboard sections** (Team admin → "Dashboard sections", pref
-  `teamHubTags`): the owner picks page TAGS; each renders on the `/team`
-  overview as a section of up to 5 team-visible shared pages carrying that tag
-  (team **and** public mode; anything a member could already open), newest
-  node update first, title + summary; items open in the workspace reader
-  (`/team/pages?s=<token>`), not a bare `/s/` page. The pref only
-  groups; the share stays the single source of truth for what is visible, so
-  curation can never widen access. Tag + share a page to feature it; unshare
-  or untag to remove it (the admin panel shows a live shared-page count per
-  pill and renders a dead tag (0 visible pages) muted). When a page's LLM
-  summary is missing (just committed, or never indexed), listings fall back
-  to an excerpt of its published plaintext (`excerptFromDocText`). Data:
-  `curatedTeamSections` in `@mantle/content/team-hub`, served by
-  `GET /api/team/curated`.
+  (revocation is instant). Until member logins Phase 6 the brain-level `/team`
+  hub cookie (and the same value as a bearer) was accepted too, and team-mode
+  shares doubled as the `/team` workspace, the `/hub` briefing sections, its
+  app launcher and its curated Dashboard sections (pref `teamHubTags`, served
+  by `GET /api/team/curated`). All of that was retired with the team-code
+  portal: members now list team-level items in their Library
+  ([member-logins.md](./member-logins.md)). Team-mode share admission itself
+  goes in stage 6.
 
 ---
 
@@ -209,7 +198,7 @@ media presenters are net-new here.)_
 > **Levels drive links (2026-09-26).** The owner UI no longer sets a link's
 > mode directly. The Access control sets the item's **level**
 > (`PATCH /api/access/nodes/:id`) and the link follows it: none at admin, a
-> team-only link at team (so it lists in the `/team` workspace), an open link
+> team-only link at team (members list the item in their Library), an open link
 > at client and public. Every share path below re-derives the level from the
 > link it leaves, so they stay in step. See
 > [access-levels.md §7](./access-levels.md). The share API stays for the
@@ -221,9 +210,8 @@ detail screen (pages, notes, tasks, events, files, apps, tables, folders): a _"A
 view"_ toggle → mint token → show URL + **Copy** → **Revoke** (and, P4, expiry +
 "allow search engines"). **Every** shareable type also offers the
 public/team admission toggle (`teamMode`), pages/apps/tables/folders carry
-kind-specific hints; notes/tasks/events/files use the default. The `/team`
-workspace lists shares of **both** modes per section (public ones marked with
-a `public` badge); the mode only controls who can open the `/s/` link.
+kind-specific hints; notes/tasks/events/files use the default. The mode only
+controls who can open the `/s/` link.
 
 Pages and Draw carry it on their **list preview** as well as in the editor, so
 an item can be shared without opening it. The preview's control deliberately

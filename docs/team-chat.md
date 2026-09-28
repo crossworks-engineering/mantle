@@ -1,33 +1,38 @@
 # Team Chat: tokenized Contacts chat with the brain
 
-> **Status: REMOVED (2026-09-26).** The 1:1 team-code chat is gone: its routes
-> (`POST /api/team/turn`, `GET /api/team/messages`, the
-> `/api/team/messages/{media,drawing}` doors) and the member screens
-> (`/team/assistant`, the hub's chat view) were deleted. It had taken no
-> message on any brain for weeks: posting was closed by default since the
-> [Team Forum](./team-forum.md) shipped. Users are the team now: a member LOGIN
-> chats with the team agent ([member-logins.md](./member-logins.md)).
+> **Status: RETIRED (member logins Phase 6, 2026-09-28).** The team-code
+> portal is gone, all of it: the 1:1 chat (removed 2026-09-26), then `/team`,
+> `/hub`, the Team Forum ([team-forum.md](./team-forum.md)), and every
+> `/api/team/*` route (`auth`, `sso`, `workspace`, `list`, `hub`, `curated`,
+> `comments`, `turn/[turnId]/stream`, `forum/**`) plus `/api/team-portal`.
+> `/team`, anything under it and `/hub` redirect to `/login`. The signed
+> team-chat credential (the `mantle_team_chat` cookie and the same value as a
+> bearer, kind `c`) is no longer minted or accepted anywhere, and the raw
+> team-code bearer went with the routes.
 >
-> What STAYS until members have replacements: team codes and their login
-> (`/api/team/auth`, team SSO), the Forum (which reuses the auth, isolation and
-> cost model below; read "turn" as "forum turn", and its turns still stream
-> from `/api/team/turn/[turnId]/stream`), team-mode share links and app
-> admission, `/hub`, and the team workspace. Old portal transcripts stay
-> readable as history: **Chat archive** on `/team-admin` > Members, and
-> `team_chat_read` with a `contactId`. Once the person is a member login,
-> the admin's Member chats view (`selected.portalThread`) and
-> `team_chat_read` with the `loginId` (`portal_history`) show that
-> transcript too, apart from the login's live thread, which it never joins
-> ([member-logins.md](./member-logins.md) section 9, "History"). An admin revokes a team code from
-> `/team-admin` > Members; no screen mints new codes (new people get logins).
+> **What replaced it:** a member LOGIN. An admin invites the person
+> ([member-logins.md](./member-logins.md) section 9); they sign in and chat
+> with the team agent from the assistant dock (`/api/member/chat`, the same
+> `team-responder` and turn pipeline, keyed by login). A person may redeem an
+> invite with the team code they already hold, once.
 >
-> **Team codes become logins (Phase 6).** An admin invites the person
-> ([member-logins.md](./member-logins.md) section 9). The person may redeem
-> the invite with the team code they already hold, once, while their contact
-> has an open invite: redeeming creates their member login and deletes the
-> team code (its `contact_team_tokens` row), so the portal access that code
-> gave ends there.
+> Old portal transcripts stay readable as history: **Chat archive** on
+> `/team-admin` > Members, and `team_chat_read` with a `contactId`. Once the
+> person is a member login, the admin's Member chats view
+> (`selected.portalThread`) and `team_chat_read` with the `loginId`
+> (`portal_history`) show that transcript too, apart from the login's live
+> thread, which it never joins ([member-logins.md](./member-logins.md)
+> section 9, "History").
 >
+> **What stays until stage 6:** team codes (`contact_team_tokens`) and the
+> team-mode `/s` share admission they give (the share-scoped `mantle_team`
+> visitor cookie from `/s/<token>/auth`); `team_messages`,
+> `team_access_log` and `team_read_cursors`, with their admin readers
+> (`/team-admin` > Member chats and > Members "Chat archive",
+> `team_chat_list` / `team_chat_read` with a `contactId`, `team_access_list`).
+>
+> Everything below is history: how the portal worked while it ran.
+
 > **Originally BUILT** (v0.117.0, 2026-07-06; Phases 1+2 of the plan). Team members
 > (Contacts holding a team token) chat with the brain through a
 > permission-limited responder at `/team`. They can ask anything the brain

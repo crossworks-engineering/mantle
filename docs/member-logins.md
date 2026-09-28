@@ -14,8 +14,9 @@
 - **Users are the team** (Jason, 2026-09-26). A login with role member IS
   the team member: it needs no contact, and its display name (else the part
   of its email before the @) is how the agent and the admin see it. Contacts
-  are plain contacts; the old team switch and team codes on contacts belong
-  to the team portal, which is being retired. `auth.users.contact_id` is an
+  are plain contacts; the old team switch and team codes on contacts belonged
+  to the team portal, retired in Phase 6 (section 9): a team code now opens
+  only team-mode `/s` shares, and redeems an invite once. `auth.users.contact_id` is an
   optional link, no longer required. When set it must be a contact of this
   brain, and a contact links to one login at most: a second login on it is
   a 409.
@@ -124,6 +125,9 @@ Member logins are always on; there is nothing to switch on (Phase 6 removed
 the `MANTLE_MEMBERS` flag).
 
 1. Set item levels and lower `team-responder` to team (access-levels.md §5).
+   Its shipped prompt speaks to a member login in their own chat; a brain
+   whose team-responder prompt was never edited gets it on upgrade (section
+   9, "The team portal is retired").
 2. Invite the person (section 9): pick their contact, or type an email, and
    hand them the invite link. They set their own password and are signed in.
    A person who still holds an old team code can use it instead of the
@@ -615,15 +619,51 @@ is a member login. Nobody hands a password around. The table is
   `expired`), `MemberInviteList`, `MemberInviteCreated`,
   `MemberInvitePreview`, `MemberInviteAccepted` in `@mantle/client-types`
   (`dto/member-invites.ts`).
-- **The forum is closed.** With invites in place the team forum takes no
-  new topics, replies, uploads or admin posts (410 `forum-closed`, with an
-  `inviteHint` telling the person to ask for an invite). Its content is kept
-  as admin-level "Forum archive" pages, never indexed; see
-  [team-forum.md](./team-forum.md) section 8.
+- **The team portal is retired** (Phase 6, 2026-09-28). With invites in
+  place, the forum was closed to writes (410 `forum-closed`) and exported
+  into admin-level "Forum archive" pages ([team-forum.md](./team-forum.md)
+  section 8), then the whole team-code portal was deleted:
+  - `/team`, anything under it, and `/hub` redirect to `/login` (before the
+    gate, for everyone, with no `next` and no query); they and `/api/team`
+    left `PUBLIC_PATHS`.
+  - Every `/api/team/*` route (auth, sso, workspace, list, hub, curated,
+    comments, the turn stream, the forum) and `/api/team-portal` are gone,
+    with the raw team-code bearer and the signed team-chat credential (kind
+    `c`, cookie or bearer): nothing mints or accepts it, so it no longer
+    opens team-mode `/s` shares either.
+  - The admin forum routes, `/api/team-admin/topics`,
+    `/api/team-admin/members/:id/thread-read` and `dashboard-tags` are gone.
+    `/api/team-admin/members`, `requests` and `settings` keep their answer
+    shape with the forum, upload and curated-tag parts empty, one contract
+    cycle for older clients.
+  - The forum turn runner is gone; a forum turn left queued or in flight on
+    a box that upgrades runs into a no-op stub under the old workflow name
+    and ends cleanly (team-forum.md section 8).
+  - `runTeamTurn` serves member logins only; `team_member_list`,
+    `team_notify` and the `team-notify` group are gone (the boot reconcile
+    disables their rows on existing brains), and the `forum` tool surface
+    with them.
+  - **The team-responder prompt** was rewritten for member chat. Prompts are
+    operator-owned, so the boot reconcile replaces a live prompt only when it
+    is, byte for byte, one of the earlier shipped defaults
+    (`retiredPromptSha256` in the system manifest, checked against the
+    commits that shipped them); an edited prompt is kept. The change goes
+    through Studio prose versioning, so the old default is v1, one revert
+    away.
+  - Kept until stage 6: team-mode `/s` share admission (the share-scoped
+    visitor cookie), `contact_team_tokens` and the code check invites need,
+    `team_messages` / `team_access_log` / `team_read_cursors` with their
+    admin readers, the forum tables and the archive export.
 - **Tests.** `packages/content/src/member-invites.db.test.ts` and
   `member-history-links.db.test.ts` (Postgres: 0175's backfill and the
   redeem's), `packages/tools/src/builtins-team-portal.db.test.ts`,
   `server/web/app/api/team-admin/member-chats/member-chats-portal.db.test.ts`,
   `server/web/app/api/auth/invite/invite-routes.test.ts` and
   `server/web/app/api/team-admin/invites/invites-admin-routes.test.ts`; the
-  member and auth sweeps cover the new routes.
+  member and auth sweeps cover the new routes. The retirement:
+  `server/web/server/auth-sweep.test.ts` (the redirects, `/api/team` gone),
+  `server/pages/stubs.test.ts`, `lib/team-gate.test.ts`,
+  `lib/auth-tokens.test.ts` (kind `c` refused everywhere),
+  `server/api/src/workflows/forum-turn-retired{,.db}.test.ts`,
+  `lib/system-manifest/prompt-upgrade.db.test.ts` and the manifest drift
+  guard.

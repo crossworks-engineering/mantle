@@ -222,8 +222,6 @@ const HTTP_SURFACE = [
   'find_window',
   'replay_window',
   'team_request_create',
-  'team_member_list',
-  'team_notify',
   'team_chat_list',
   'team_chat_read',
   'team_access_list',

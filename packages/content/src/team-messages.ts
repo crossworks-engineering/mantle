@@ -14,7 +14,6 @@ import {
   db,
   systemDb,
   teamMessages,
-  teamReadCursors,
   contactTeamTokens,
   nodes,
   type ConversationAttachment,
@@ -359,20 +358,4 @@ export async function listMemberChatActivity(ownerId: string): Promise<MemberCha
     lastMessageDirection: (r.lastMessageDirection ?? null) as 'inbound' | 'outbound' | null,
     messageCount: r.messageCount,
   }));
-}
-
-/** Mark a member's thread read up to now (owner opened it in /team-admin).
- *  Upsert on the composite PK. Best-effort — a failed cursor write must never
- *  break the admin view. */
-export async function markTeamThreadRead(ownerId: string, contactId: string): Promise<void> {
-  await db
-    .insert(teamReadCursors)
-    .values({ ownerId, contactId, lastReadAt: new Date() })
-    .onConflictDoUpdate({
-      target: [teamReadCursors.ownerId, teamReadCursors.contactId],
-      set: { lastReadAt: new Date() },
-    })
-    .catch(() => {
-      /* best-effort — the unread badge is a convenience, not a gate */
-    });
 }

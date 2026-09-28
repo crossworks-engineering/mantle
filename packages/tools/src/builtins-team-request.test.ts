@@ -1,6 +1,6 @@
 /**
  * Behavioural tests for team_request_create's WRITE path. builtins-team.test.ts
- * pins the surface gate, the arg check and the forum-side provenance stamp;
+ * pins the surface gate, the arg check and the member provenance stamp;
  * this file pins what actually lands in the task row and for whom.
  *
  * The tool is the ONLY write the team responder holds, and its whole safety
@@ -22,14 +22,10 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 vi.mock('@mantle/content', () => ({
   createTask: vi.fn(),
-  listNotifiableMembers: vi.fn(),
   listTeamAccess: vi.fn(),
   listTeamMemberActivity: vi.fn(),
   listTeamThread: vi.fn(),
   nodeUrl: (id: string) => `https://brain.test/n/${id}`,
-  notifyMembers: vi.fn(),
-  MAX_NOTIFICATION_BODY: 2000,
-  MAX_NOTIFY_RECIPIENTS: 5,
 }));
 
 import { createTask, listTeamThread } from '@mantle/content';
@@ -92,8 +88,6 @@ describe('team_request_create write path', () => {
       contactId: 'contact-9',
       contactName: 'Sam',
       threadMessageId: null,
-      topicId: null,
-      postId: null,
       attachments: [],
     });
     expect(typeof teamRequest.filedAt).toBe('string');

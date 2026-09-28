@@ -56,6 +56,11 @@ describe.skipIf(!URL)('forum archive export', () => {
     privatePost: randomUUID(),
     busyPost: randomUUID(),
     busyAgent: randomUUID(),
+    staleTopic: randomUUID(), // agent reply pending for an hour: abandoned
+    stalePost: randomUUID(),
+    staleAgent: randomUUID(),
+    stubTopic: randomUUID(), // a fresh pending reply the retired-workflow stub fails
+    stubAgent: randomUUID(),
     filedNode: randomUUID(), // a file the admin filed long ago
     upPending: randomUUID(), // pending, bytes present
     upFiled: randomUUID(),
@@ -137,7 +142,7 @@ describe.skipIf(!URL)('forum archive export', () => {
         (${ids.busyPost}, ${anchor}, ${ids.busyTopic}, 'member', ${ids.pat}, 'Pat Doe', null, null,
          'Anyone?', '[]'::jsonb, 'complete', '2026-09-03T10:00:00Z'),
         (${ids.busyAgent}, ${anchor}, ${ids.busyTopic}, 'agent', null, 'Team Responder', null, null,
-         '', '[]'::jsonb, 'pending', '2026-09-03T10:00:05Z')`;
+         '', '[]'::jsonb, 'pending', now())`; // fresh: in flight, not stale
     await admin`insert into forum_uploads
         (id, owner_id, topic_id, post_id, contact_id, filename, mime, size_bytes, status, node_id)
       values
@@ -420,5 +425,51 @@ describe.skipIf(!URL)('forum archive export', () => {
     expect(await archivePages()).toHaveLength(4);
     const [t] = await admin<Row[]>`select node_id from forum_topics where id = ${ids.privateTopic}`;
     expect(t!.node_id).toBe(privatePageId);
+  });
+
+  // Stage 5 deleted the forum's turn runner, so nothing finishes a pending
+  // reply any more. A stale one (older than STALE_REPLY_MS) must not hold its
+  // topic out of the archive for good.
+  it('fails a reply pending past STALE_REPLY_MS and exports its topic', async () => {
+    await admin`insert into forum_topics
+        (id, owner_id, title, kind, visibility, status, pinned, created_by_contact_id,
+         author_name, post_count, created_at)
+      values (${ids.staleTopic}, ${anchor}, 'Abandoned turn', 'question', 'team', 'open', false,
+              ${ids.pat}, 'Pat Doe', 2, now() - interval '2 hours')`;
+    await admin`insert into forum_posts
+        (id, owner_id, topic_id, author_kind, contact_id, author_name, body, attachments,
+         status, created_at)
+      values
+        (${ids.stalePost}, ${anchor}, ${ids.staleTopic}, 'member', ${ids.pat}, 'Pat Doe',
+         'Hello?', '[]'::jsonb, 'complete', now() - interval '2 hours'),
+        (${ids.staleAgent}, ${anchor}, ${ids.staleTopic}, 'agent', null, 'Team Responder',
+         '', '[]'::jsonb, 'pending', now() - interval '1 hour')`;
+    const res = await ex.exportForumArchive(anchor, { now: NOW });
+    expect(res).toMatchObject({ status: 'done', exported: 1, deferred: 0 });
+    const [post] = await admin<Row[]>`select status from forum_posts where id = ${ids.staleAgent}`;
+    expect(post!.status).toBe('failed');
+    const [t] = await admin<Row[]>`select node_id from forum_topics where id = ${ids.staleTopic}`;
+    expect(t!.node_id).not.toBeNull();
+    const page = (await archivePages()).find((p) => p.id === t!.node_id)!;
+    expect(page.doc_text).toContain('This reply failed');
+  });
+
+  it('failPendingForumReplies with a topic fails only that topic, fresh or not', async () => {
+    await admin`insert into forum_topics
+        (id, owner_id, title, kind, visibility, status, pinned, author_name, post_count)
+      values (${ids.stubTopic}, ${anchor}, 'Mid-turn at deploy', 'question', 'team', 'open',
+              false, 'Pat Doe', 1)`;
+    await admin`insert into forum_posts
+        (id, owner_id, topic_id, author_kind, author_name, body, attachments, status, created_at)
+      values (${ids.stubAgent}, ${anchor}, ${ids.stubTopic}, 'agent', 'Team Responder', '',
+              '[]'::jsonb, 'pending', now()),
+             (${randomUUID()}, ${anchor}, ${ids.staleTopic}, 'agent', 'Team Responder', '',
+              '[]'::jsonb, 'pending', now())`;
+    expect(await ex.failPendingForumReplies(anchor, { olderThanMs: ex.STALE_REPLY_MS })).toBe(0);
+    expect(await ex.failPendingForumReplies(anchor, { topicId: ids.stubTopic })).toBe(1);
+    const rows = await admin<Row[]>`select topic_id, status from forum_posts
+                                     where owner_id = ${anchor} and author_kind = 'agent'
+                                       and status = 'pending'`;
+    expect(rows.map((r) => r.topic_id)).toEqual([ids.staleTopic]);
   });
 });
