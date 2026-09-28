@@ -7,7 +7,10 @@
  *     devices only and tell the relay, and the FK cascades on a raw delete;
  *   - lockout releases the login's personal assistant (the agent survives);
  *   - a member login cannot be given a personal assistant;
- *   - a contact link must be a contact of this brain, not another login's.
+ *   - a contact link must be a contact of this brain, not another login's;
+ *   - a deleted login's space records when it lost its login (0180, F21),
+ *     and a member made admin gets their shared and submitted items back as
+ *     private drafts.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run 'server/web/app/api/users/[id]/users-lockout.db.test.ts'
  */
@@ -68,6 +71,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     source: randomUUID(),
   };
   let createdInstance = false;
+  let deeSpace: string | undefined;
 
   const as = (actorId: string) => ({
     id: anchor,
@@ -145,6 +149,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     await admin`delete from agents where owner_id in ${admin([anchor, otherBrain])}`;
     await admin`delete from nodes where owner_id in ${admin([anchor, otherBrain])}`;
     await admin`update auth.users set contact_id = null where id in ${admin(logins)}`;
+    if (deeSpace) await admin`delete from spaces where id = ${deeSpace}`;
     await admin`delete from spaces where login_id in ${admin(logins)} or id in ${admin(logins)}`;
     await admin`delete from auth.users where id in ${admin(logins)}`;
     if (createdInstance) await admin`delete from push_instance`;
@@ -202,12 +207,22 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
 
   it('deleting a login removes its devices and tells the relay', async () => {
     await enroll(dee, `${tag}-dee-1`);
+    const [sp] = await admin<Row[]>`
+      select id, orphaned_at from spaces where kind = 'personal' and login_id = ${dee}`;
+    deeSpace = sp?.id as string;
+    expect(sp?.orphaned_at).toBeNull();
     h.caller = as(anchor);
     const { DELETE } = await import('./route');
     const res = await DELETE(new Request('http://x', { method: 'DELETE' }), ctx(dee));
     expect(res.status).toBe(200);
     expect(await devicesOf(dee)).toEqual([]);
     expect(h.relayDeleted).toEqual([`${tag}-dee-1`]);
+    // The space stays, with no login, and records when (the purge's clock).
+    const [after] = await admin<
+      Row[]
+    >`select login_id, orphaned_at from spaces where id = ${deeSpace}`;
+    expect(after?.login_id).toBeNull();
+    expect(after?.orphaned_at).toBeInstanceOf(Date);
   });
 
   it('the login FK cascades: a login deleted by hand takes its devices', async () => {
@@ -232,6 +247,43 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     expect(none).toEqual({ n: 0 });
     // The same source clones for an admin: the refusal was the role.
     expect((await PUT(json('PUT', { ...body, name: `${tag} eve2` }), ctx(eve))).status).toBe(200);
+  });
+
+  it('a member made admin gets their shared and submitted items back as private drafts', async () => {
+    // cal is a member now (demoted above). A shared note and a submitted one.
+    const [sp] = await admin<Row[]>`
+      select id from spaces where kind = 'personal' and login_id = ${cal}`;
+    const space = sp!.id as string;
+    const shared = randomUUID();
+    const submitted = randomUUID();
+    const kept = randomUUID();
+    await admin`insert into nodes (id, owner_id, type, title, path) values
+      (${shared}, ${space}, 'note', 'shared', 'notes'),
+      (${submitted}, ${space}, 'note', 'submitted', 'notes'),
+      (${kept}, ${space}, 'note', 'private', 'notes')`;
+    await admin`insert into space_items (node_id, author_login_id, sharing, review_state, submitted_at)
+      values (${shared}, ${cal}, 'team', 'draft', null),
+             (${submitted}, ${cal}, 'private', 'submitted', now()),
+             (${kept}, ${cal}, 'private', 'draft', null)`;
+    await admin`insert into space_item_bundles (root_id, node_id, position)
+      values (${submitted}, ${submitted}, 0), (${submitted}, ${kept}, 1)`;
+    h.caller = as(anchor);
+    const { PATCH } = await import('./route');
+    expect((await PATCH(json('PATCH', { role: 'admin' }), ctx(cal))).status).toBe(200);
+    const rows = await admin<Row[]>`
+      select node_id, sharing, review_state, submitted_at from space_items
+       where node_id in ${admin([shared, submitted, kept])} order by node_id`;
+    for (const r of rows) {
+      expect(r, String(r.node_id)).toMatchObject({
+        sharing: 'private',
+        review_state: 'draft',
+        submitted_at: null,
+      });
+    }
+    const bundles = await admin<Row[]>`
+      select 1 from space_item_bundles where root_id = ${submitted}`;
+    expect(bundles).toHaveLength(0);
+    await admin`delete from nodes where owner_id = ${space}`;
   });
 
   describe('contact links', () => {

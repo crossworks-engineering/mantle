@@ -272,10 +272,148 @@ describe.skipIf(!URL)('personal spaces under row level security', () => {
       n: number;
     }[];
     expect(left).toEqual([{ login_id: null, n: 1 }]);
+    // It records when it lost its login: the purge's 30 days (0180, F21).
+    const [orphan] = (await m.systemDb.execute(
+      sqlTag`select orphaned_at is not null as orphaned from spaces where id = ${space!.id}`,
+    )) as unknown as { orphaned: boolean }[];
+    expect(orphan?.orphaned).toBe(true);
     await m.systemDb.execute(sqlTag`delete from spaces where id = ${space!.id}`);
     const cascaded = (await m.systemDb.execute(
       sqlTag`select count(*)::int as n from nodes where title = ${`${tag} orphan`}`,
     )) as unknown as { n: number }[];
     expect(cascaded[0]?.n).toBe(0);
+  });
+
+  it('a deleted member is not a member: their shared items leave team drafts (F21)', async () => {
+    const gone = randomUUID();
+    const shared = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into auth.users (id, email, password_hash, role)
+      values (${gone}, ${`${tag}-gone2@example.invalid`}, 'x', 'member')`);
+    const [space] = (await m.systemDb.execute(
+      sqlTag`select id from spaces where login_id = ${gone}`,
+    )) as unknown as { id: string }[];
+    await m.systemDb.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path)
+      values (${shared}, ${space!.id}, 'note', ${`${tag} gone-team`}, 'notes')`);
+    await m.systemDb.execute(sqlTag`
+      insert into space_items (node_id, author_login_id, sharing) values (${shared}, ${gone}, 'team')`);
+    try {
+      expect(await m.withTeamDrafts(titles)).toContain('gone-team');
+      await m.systemDb.execute(sqlTag`delete from auth.users where id = ${gone}`);
+      expect(await m.withTeamDrafts(titles)).not.toContain('gone-team');
+      const si = await m.withTeamDrafts(() =>
+        rows<{ node_id: string }>(
+          sqlTag`select node_id from space_items where node_id = ${shared}`,
+        ),
+      );
+      expect(si).toEqual([]);
+    } finally {
+      await m.systemDb.execute(sqlTag`delete from spaces where id = ${space!.id}`);
+      await m.systemDb.execute(sqlTag`delete from auth.users where id = ${gone}`);
+    }
+  });
+
+  it('the bundle of a submitted item is frozen with it, and stays recorded (F04)', async () => {
+    const embed = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path)
+      values (${embed}, ${spaceA}, 'note', ${`${tag} a-embed`}, 'notes')`);
+    // The member records the bundle, then submits (the app's order).
+    await asA(async () => {
+      await m.db.execute(sqlTag`insert into space_item_bundles (root_id, node_id, position)
+        values (${ids.aPrivate}, ${ids.aPrivate}, 0), (${ids.aPrivate}, ${embed}, 1)`);
+      await m.db
+        .execute(sqlTag`update space_items set review_state = 'submitted', submitted_at = now()
+        where node_id = ${ids.aPrivate}`);
+    });
+    const titleOf = async (id: string) =>
+      (
+        (await m.systemDb.execute(sqlTag`select title from nodes where id = ${id}`)) as unknown as {
+          title: string;
+        }[]
+      )[0]?.title;
+    const bundleRows = async () =>
+      (
+        (await m.systemDb.execute(
+          sqlTag`select count(*)::int as n from space_item_bundles where root_id = ${ids.aPrivate}`,
+        )) as unknown as { n: number }[]
+      )[0]?.n;
+    try {
+      // The embedded item: no edit, no delete; and the bundle cannot be
+      // dropped or changed while the root is submitted.
+      await asA(async () => {
+        await m.db.execute(sqlTag`update nodes set title = 'edited' where id = ${embed}`);
+        await m.db.execute(sqlTag`delete from nodes where id = ${embed}`);
+        await m.db.execute(sqlTag`delete from space_item_bundles where root_id = ${ids.aPrivate}`);
+      });
+      expect(await titleOf(embed)).toBe(`${tag} a-embed`);
+      expect(await bundleRows()).toBe(2);
+      const added = await asA(() =>
+        m.db.execute(sqlTag`insert into space_item_bundles (root_id, node_id, position)
+          values (${ids.aPrivate}, ${ids.aPrivate}, 9)`),
+      ).catch((e: unknown) => e);
+      expect(codeOf(added)).toBe(INSUFFICIENT_PRIVILEGE);
+
+      // Recall: back to draft, the bundle is the member's to drop, and the
+      // embed is editable again.
+      await asA(async () => {
+        await m.db.execute(sqlTag`update space_items set review_state = 'draft', submitted_at = null
+          where node_id = ${ids.aPrivate}`);
+        await m.db.execute(sqlTag`delete from space_item_bundles where root_id = ${ids.aPrivate}`);
+        await m.db.execute(
+          sqlTag`update nodes set title = ${`${tag} a-embed2`} where id = ${embed}`,
+        );
+      });
+      expect(await bundleRows()).toBe(0);
+      expect(await titleOf(embed)).toBe(`${tag} a-embed2`);
+
+      // Another member never sees A's bundles.
+      await m.systemDb.execute(sqlTag`insert into space_item_bundles (root_id, node_id, position)
+        values (${ids.aPrivate}, ${embed}, 0)`);
+      const seenByB = await m.withSpace({ spaceId: spaceB, loginId: loginB }, () =>
+        rows<{ n: number }>(sqlTag`select count(*)::int as n from space_item_bundles`),
+      );
+      expect(seenByB[0]?.n).toBe(0);
+    } finally {
+      await m.systemDb.execute(
+        sqlTag`delete from space_item_bundles where root_id = ${ids.aPrivate}`,
+      );
+    }
+  });
+
+  it('the SECURITY DEFINER space functions are not open to PUBLIC (F22)', async () => {
+    const fns = [
+      'mantle_is_brain_space',
+      'mantle_member_space',
+      'mantle_member_space_node',
+      'mantle_personal_space',
+    ];
+    const open = (await m.systemDb.execute(sqlTag`
+      select p.proname from pg_proc p
+        cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+       where p.pronamespace = 'public'::regnamespace
+         and p.proname in (${sqlTag.join(
+           fns.map((f) => sqlTag`${f}`),
+           sqlTag`, `,
+         )})
+         and a.grantee = 0 and a.privilege_type = 'EXECUTE'`)) as unknown as {
+      proname: string;
+    }[];
+    expect(open.map((r) => r.proname)).toEqual([]);
+    const can = (await m.systemDb.execute(sqlTag`
+      select has_function_privilege('mantle_view_team', 'public.mantle_member_space(uuid)', 'EXECUTE') as team_member,
+             has_function_privilege('mantle_view_client', 'public.mantle_member_space(uuid)', 'EXECUTE') as client_member,
+             has_function_privilege('mantle_view_space', 'public.mantle_is_brain_space(uuid)', 'EXECUTE') as space_brain,
+             has_function_privilege('mantle_view_public', 'public.mantle_is_brain_space(uuid)', 'EXECUTE') as public_brain`)) as unknown as Record<
+      string,
+      boolean
+    >[];
+    expect(can[0]).toEqual({
+      team_member: true,
+      client_member: false,
+      space_brain: true,
+      public_brain: false,
+    });
   });
 });

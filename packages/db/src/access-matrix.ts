@@ -165,6 +165,16 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     writer: 'content',
     space: 'write',
   },
+  // The bundle a submitted item was submitted with (0180): the space role
+  // records its own at Submit and drops it on Recall; the level roles never
+  // see it (the ids of a member's private embeds are nobody else's business).
+  {
+    table: 'public.space_item_bundles',
+    read: 'none',
+    rule: 'none',
+    writer: 'content',
+    space: 'write',
+  },
   // Read only through mantle_is_brain_space() (security definer).
   none('public.spaces'),
   // The upload ledger (0169): the space role inserts and reads its own

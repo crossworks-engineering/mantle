@@ -78,6 +78,15 @@ import {
   requireSpace,
   spaceNotFound as notFound,
 } from './member-space-core';
+import {
+  BUNDLE_MAX_ITEMS,
+  bundleHolder,
+  clearBundles,
+  lockBundleRows,
+  recordBundle,
+  walkBundle,
+  type BundleItem,
+} from './member-bundle';
 
 export { SPACE_ITEM_LIMIT, SpaceItemStateError, assertItemRoom } from './member-space-core';
 
@@ -318,10 +327,12 @@ export async function createMineItem(
 }
 
 /**
- * The frozen rule, as a clear error before a write: a submitted item is
- * edited by nobody until Accept, Return or Recall. The row rules refuse the
- * write anyway (it would match no row); this turns that into a 409 the member
- * can read. Returns the row for the caller's convenience.
+ * The frozen rule, as a clear error before a write: a submitted item, and
+ * everything in the bundle it was submitted with (an embedded drawing or
+ * file, a child page: audit F04), is edited by nobody until Accept, Return or
+ * Recall. The row rules refuse the write anyway (it would match no row); this
+ * turns that into a 409 the member can read. Returns the row for the
+ * caller's convenience.
  */
 export async function assertEditable(spaceId: string, id: string): Promise<SpaceItemRow> {
   const row = await getMineRow(spaceId, id);
@@ -332,7 +343,18 @@ export async function assertEditable(spaceId: string, id: string): Promise<Space
       'This item is submitted for review. Recall it to make changes.',
     );
   }
+  const holder = await bundleHolder(db, id);
+  if (holder) throw frozenBy(holder);
   return row;
+}
+
+/** The 409 for an item frozen by the bundle of another submitted item. */
+function frozenBy(holder: { id: string; title: string }): SpaceItemStateError {
+  return new SpaceItemStateError(
+    'frozen',
+    `This item is part of "${holder.title}", which is submitted for review. Recall that item to make changes.`,
+    [holder.id],
+  );
 }
 
 /** Private or shared with the team. Allowed in any state before Accept: it
@@ -411,7 +433,12 @@ export async function savedState(
 /**
  * Submit to an admin: draft or returned -> submitted. The admin reviews the
  * SAVED version, so unsaved edits refuse ("Save version first"): after Submit
- * nothing could save them until a Recall.
+ * nothing could save them until a Recall. That holds for the whole bundle
+ * (audit F04): every item that renders inside this one is checked too, and
+ * the bundle is recorded, so all of it stays frozen until Accept, Return or
+ * Recall and Accept moves exactly what the admin reviewed. The rows are
+ * locked first, so an autosave from a second tab cannot land between the
+ * check and the change (audit F24).
  */
 export async function submitItem(spaceId: string, id: string): Promise<SpaceItemRow> {
   const row = await getMineRow(spaceId, id);
@@ -419,39 +446,99 @@ export async function submitItem(spaceId: string, id: string): Promise<SpaceItem
   if (row.reviewState !== 'draft' && row.reviewState !== 'returned') {
     throw new SpaceItemStateError('not-draft', 'This item is already submitted.');
   }
-  const saved = await savedState(row.type, id);
-  if (saved.unsaved) {
+  const holder = await bundleHolder(db, id);
+  if (holder) throw frozenBy(holder);
+  await ensureItemRow(spaceId, id);
+  // The state row, locked (as Accept, Return and Recall lock it) and read
+  // again: a Submit from another tab that committed first wins.
+  const [state] = await db
+    .select({ reviewState: spaceItems.reviewState })
+    .from(spaceItems)
+    .where(eq(spaceItems.nodeId, id))
+    .for('update');
+  if (state?.reviewState !== 'draft' && state?.reviewState !== 'returned') {
+    throw new SpaceItemStateError('not-draft', 'This item is already submitted.');
+  }
+
+  // Lock, walk, lock what joined, until the bundle stops growing: a Save
+  // version can add an embed until its row is locked.
+  const root: BundleItem = { id, type: row.type, title: row.title };
+  const locked = new Set<string>();
+  let items: BundleItem[] = [root];
+  for (;;) {
+    const fresh = items.filter((b) => !locked.has(b.id));
+    if (!fresh.length) break;
+    await lockBundleRows(db, fresh);
+    for (const b of fresh) locked.add(b.id);
+    items = (
+      await walkBundle(db, spaceId, root, {
+        tooLarge: () =>
+          new SpaceItemStateError(
+            'too-large',
+            `This item brings more than ${BUNDLE_MAX_ITEMS} items with it. Submit a smaller one.`,
+          ),
+      })
+    ).items;
+  }
+
+  const unsaved: BundleItem[] = [];
+  let version: number | null = null;
+  for (const b of items) {
+    const saved = await savedState(b.type, b.id);
+    if (b.id === id) version = saved.version;
+    if (saved.unsaved) unsaved.push(b);
+  }
+  if (unsaved.some((b) => b.id === id)) {
     throw new SpaceItemStateError(
       'unsaved-draft',
       'This item has unsaved changes. Save a version first, then submit.',
+      [id],
     );
   }
-  await ensureItemRow(spaceId, id);
-  await db
+  if (unsaved.length) {
+    const names = unsaved.map((b) => `"${b.title}"`).join(', ');
+    throw new SpaceItemStateError(
+      'unsaved-draft',
+      `Items shown in this one have unsaved changes: ${names}. Save a version of each, then submit.`,
+      unsaved.map((b) => b.id),
+    );
+  }
+
+  await recordBundle(db, id, items);
+  const now = new Date();
+  const changed = await db
     .update(spaceItems)
-    .set({
-      reviewState: 'submitted',
-      submittedAt: new Date(),
-      submittedVersion: saved.version,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(spaceItems.nodeId, id), ne(spaceItems.reviewState, 'submitted')));
+    .set({ reviewState: 'submitted', submittedAt: now, submittedVersion: version, updatedAt: now })
+    .where(and(eq(spaceItems.nodeId, id), ne(spaceItems.reviewState, 'submitted')))
+    .returning({ id: spaceItems.nodeId });
+  // Submitted (or accepted) by a request that committed first.
+  if (!changed.length)
+    throw new SpaceItemStateError('not-draft', 'This item is already submitted.');
   await notifySpaceItemChanged(id, 'state', { spaceId, team: row.sharing === 'team' });
   return (await getMineRow(spaceId, id))!;
 }
 
 /** Recall for correction: submitted -> draft, any time before Accept. The
- *  admin's review queue drops it; the author edits and submits again. */
+ *  admin's review queue drops it, and its bundle unfreezes; the author edits
+ *  and submits again. A Recall that loses to an Accept (the item is gone)
+ *  is a 404, to a Return a 409 `not-submitted` (audit F24). */
 export async function recallItem(spaceId: string, id: string): Promise<SpaceItemRow> {
   const row = await getMineRow(spaceId, id);
   if (!row) throw notFound();
   if (row.reviewState !== 'submitted') {
     throw new SpaceItemStateError('not-submitted', 'Only a submitted item can be recalled.');
   }
-  await db
+  const changed = await db
     .update(spaceItems)
     .set({ reviewState: 'draft', submittedAt: null, updatedAt: new Date() })
-    .where(and(eq(spaceItems.nodeId, id), eq(spaceItems.reviewState, 'submitted')));
+    .where(and(eq(spaceItems.nodeId, id), eq(spaceItems.reviewState, 'submitted')))
+    .returning({ id: spaceItems.nodeId });
+  if (!changed.length) {
+    if (!(await getMineRow(spaceId, id))) throw notFound();
+    throw new SpaceItemStateError('not-submitted', 'Only a submitted item can be recalled.');
+  }
+  // After the state change: the rule keeps a submitted item's bundle.
+  await clearBundles(db, [id]);
   await notifySpaceItemChanged(id, 'state', { spaceId, team: row.sharing === 'team' });
   return (await getMineRow(spaceId, id))!;
 }

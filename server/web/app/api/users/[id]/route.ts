@@ -13,6 +13,7 @@ import {
   oauthAuthCodes,
   pairingCodes,
 } from '@mantle/db';
+import { settleSpaceOnPromotion } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 import { releaseAssignedAgent } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
@@ -99,6 +100,10 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   let releasedAgentId: string | null = null;
   await db.transaction(async (tx) => {
     await tx.update(authUsers).set(changes).where(eq(authUsers.id, targetId));
+    // A member made admin: what they shared or submitted as a member goes
+    // back to private drafts (audit F21). An admin's items are never team
+    // drafts or reviewed, and a later demotion must not bring them back.
+    if (body.role === 'admin') await settleSpaceOnPromotion(tx, targetId);
     // Cookies re-read the row every request, so they stop at once. Bearers
     // and connector (OAuth) grants would too (both re-check the login), but
     // revoke them so the device and connector lists tell the truth. Unclaimed

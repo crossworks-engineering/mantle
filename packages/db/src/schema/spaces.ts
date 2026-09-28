@@ -4,6 +4,7 @@ import {
   index,
   integer,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -26,6 +27,8 @@ export type SpaceKind = (typeof SPACE_KINDS)[number];
  *   extractor gate checks the owner.
  *
  * `login_id` goes null on a hard login delete; nothing cascades into items.
+ * `orphaned_at` records when (a trigger, migration 0180): the purge treats an
+ * orphaned space like a deactivated login's, 30 days on.
  */
 export const spaces = pgTable(
   'spaces',
@@ -35,6 +38,7 @@ export const spaces = pgTable(
       .default(sql`gen_random_uuid()`),
     kind: text('kind').$type<SpaceKind>().notNull(),
     loginId: uuid('login_id').references(() => authUsers.id, { onDelete: 'set null' }),
+    orphanedAt: timestamp('orphaned_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
@@ -87,6 +91,32 @@ export const spaceItems = pgTable(
       .on(t.submittedAt)
       .where(sql`${t.reviewState} = 'submitted'`),
     index('space_items_author_idx').on(t.authorLoginId),
+  ],
+);
+
+/**
+ * The bundle a submitted item was submitted with (migration 0180, audit F04):
+ * the item itself and everything that renders inside it, recorded at Submit.
+ * While the root is submitted every item here is frozen too (the row rules'
+ * `mantle_space_item_frozen`), and Accept moves exactly these items. Recall,
+ * Return and Accept remove the rows. The space role writes its own space's
+ * bundles, only while the root is not submitted.
+ */
+export const spaceItemBundles = pgTable(
+  'space_item_bundles',
+  {
+    rootId: uuid('root_id')
+      .notNull()
+      .references(() => spaceItems.nodeId, { onDelete: 'cascade' }),
+    nodeId: uuid('node_id')
+      .notNull()
+      .references(() => nodes.id, { onDelete: 'cascade' }),
+    /** Bundle order: the root first, a parent page before its children. */
+    position: integer('position').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.rootId, t.nodeId] }),
+    index('space_item_bundles_node_idx').on(t.nodeId),
   ],
 );
 
