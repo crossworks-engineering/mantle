@@ -98,9 +98,9 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
       if (!col) continue;
       const [r] = await exec<{ n: number }>(
         sqlTag`select count(*)::int as n from ${sqlTag.identifier(t.table_name)}
-                where owner_id = ${space}
-                  and ${sqlTag.identifier(col)} in (${sqlTag.join(
-                    ids.map((i) => sqlTag`${i}::uuid`),
+                where owner_id::text = ${space}
+                  and ${sqlTag.identifier(col)}::text in (${sqlTag.join(
+                    ids.map((i) => sqlTag`${i}`),
                     sqlTag`, `,
                   )})`,
       );
