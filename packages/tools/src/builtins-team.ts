@@ -19,6 +19,7 @@
  */
 
 import {
+  countTeamRequestsFiled,
   createTask,
   listTeamAccess,
   listLoginPortalThread,
@@ -26,12 +27,15 @@ import {
   listTeamMemberActivity,
   listTeamThread,
   nodeUrl,
+  TEAM_REQUESTS_PER_DAY,
+  TEAM_REQUESTS_PER_TURN,
   type TaskPriority,
 } from '@mantle/content';
 import type { ToolPrecondition, BuiltinToolDef, ToolHandlerResult } from './types';
 import { str, strOpt, numOpt } from './coerce';
 import { errorMessage, UUID_RE } from '@mantle/std';
 import { asSystem } from '@mantle/db/viewer';
+import { TEAM_REQUEST_SOURCE } from '@mantle/db';
 
 const TEAM_CONTACT_ID_PRE: readonly ToolPrecondition[] = [
   {
@@ -50,7 +54,8 @@ const team_request_create: BuiltinToolDef = {
   description:
     'File a change/update/correction REQUEST from the team member you are serving into the review queue for a brain specialist. You cannot modify any content yourself — this is your only write action. ' +
     "`title` is a short imperative summary of what they want changed ('Update RBI report 30257 with revised inspection dates'); `body` restates the request in full: WHAT should change, WHERE (link the pages/notes/tables you found), and the member's reasoning. Any files the member attached to their message are linked to the request automatically. " +
-    'After filing, tell the member their request is queued for specialist review — do not promise it will be applied.',
+    'After filing, tell the member their request is queued for specialist review — do not promise it will be applied. ' +
+    `Limit: ${TEAM_REQUESTS_PER_TURN} per message, ${TEAM_REQUESTS_PER_DAY} a day.`,
   inputSchema: {
     type: 'object',
     properties: {
@@ -89,6 +94,39 @@ const team_request_create: BuiltinToolDef = {
 
     // Provenance comes from the authenticated surface context, not the model.
     const { contactId, contactName, loginId, inboundMessageId } = surface;
+
+    // Caps (audit F08): each request is an admin task, so a runaway or
+    // injected turn must not flood the review queue. Counted from the tasks
+    // already filed, per turn (this inbound message) and per member per day;
+    // asSystem, as the team role cannot see admin tasks to count them.
+    if (inboundMessageId) {
+      const thisTurn = await asSystem(() =>
+        countTeamRequestsFiled(ctx.ownerId, { threadMessageId: inboundMessageId }),
+      );
+      if (thisTurn >= TEAM_REQUESTS_PER_TURN) {
+        return {
+          ok: false,
+          error:
+            `request limit reached: ${TEAM_REQUESTS_PER_TURN} requests per message. Tell the member ` +
+            'the requests so far are queued, and to send any others in a later message.',
+        };
+      }
+    }
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const requester = loginId ? { loginId, since } : contactId ? { contactId, since } : null;
+    if (
+      requester &&
+      (await asSystem(() => countTeamRequestsFiled(ctx.ownerId, requester))) >=
+        TEAM_REQUESTS_PER_DAY
+    ) {
+      return {
+        ok: false,
+        error:
+          `request limit reached: ${TEAM_REQUESTS_PER_DAY} requests in 24 hours. Tell the member the ` +
+          'requests so far are queued, and to try again tomorrow or ask an admin directly.',
+      };
+    }
+
     let attachments: { nodeId: string }[] = [];
     if (inboundMessageId) {
       // A member login's thread is read by login; a portal thread by contact.
@@ -102,7 +140,7 @@ const team_request_create: BuiltinToolDef = {
     }
 
     try {
-      const requester = contactName ? `${contactName}` : 'a team member';
+      const who = contactName ? `${contactName}` : 'a team member';
       const attachmentLines = attachments.length
         ? `\n\n**Attachments:**\n${attachments.map((a) => `- [attached file](${nodeUrl(a.nodeId)})`).join('\n')}`
         : '';
@@ -112,10 +150,13 @@ const team_request_create: BuiltinToolDef = {
       const row = await asSystem(() =>
         createTask(ctx.ownerId, {
           title,
-          body: `**Team request from ${requester}.**\n\n${body}${attachmentLines}`,
+          body: `**Team request from ${who}.**\n\n${body}${attachmentLines}`,
           priority: (strOpt(input.priority) as TaskPriority | undefined) ?? 'normal',
           tags: [TEAM_REQUEST_TAG],
           extraData: {
+            // Member text no admin has read yet: extract-exempt until an
+            // admin acts on the task (audit F08, extract-exempt.ts).
+            source: TEAM_REQUEST_SOURCE,
             teamRequest: {
               contactId: contactId ?? null,
               loginId: loginId ?? null,

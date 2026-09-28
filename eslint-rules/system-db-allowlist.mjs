@@ -20,6 +20,8 @@ export const SYSTEM_DB_ALLOWLIST = [
   'packages/content/src/team-messages.ts',
   'packages/content/src/app-access-log.ts',
   'packages/content/src/team-access-log.ts',
+  // member_turn_ledger writes and the member chat traces' token sums (audit F09).
+  'packages/content/src/member-turn-ledger.ts',
   'packages/runtime/src/agent/tool-loop/execute-call.ts',
   'server/web/lib/audit.ts',
   'packages/api-keys/src/index.ts',

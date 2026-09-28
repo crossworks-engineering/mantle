@@ -158,6 +158,7 @@ export const search_nodes: BuiltinToolDef = {
 
 export const search_chunks: BuiltinToolDef = {
   slug: 'search_chunks',
+  spends: true,
   readOnly: true,
   name: 'Search document passages',
   description:

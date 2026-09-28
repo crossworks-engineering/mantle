@@ -131,9 +131,19 @@ not something an owner chose. To list an item to members, set it to Team.
   the turn engine refuses an admin agent for a member (`assertMemberAgent`).
   One thread per login (`team_messages.login_id`, migration 0163), never in
   the owner's assistant stream. A member's rows carry the login and no
-  contact (migration 0167). Limits per login: 6 messages a minute and the
-  team daily cap. A retry with the same `Idempotency-Key` is the same turn;
-  the same key with different text is a 409. The admin reads member chats in `/team-admin` > Member
+  contact (migration 0167). Limits per login: 6 messages a minute, the
+  daily turn cap (`TEAM_CHAT_DAILY_TURNS`, default 100) and a daily token
+  budget (`MANTLE_MEMBER_DAILY_TOKENS`, model tokens in plus out, default
+  2,000,000, 0 = off). Both daily limits are checked when the turn is QUEUED:
+  the route writes a row to the turn ledger (`member_turn_ledger`, migration 0182) before the enqueue and counts those rows, so turns waiting on a busy
+  queue count; the token budget sums the login's `responder_turn` traces
+  since midnight UTC (a turn's tokens land when it finishes, so turns
+  already queued can pass it by a few). A refusal is a 429 with `reason`
+  `daily_cap` or `token_budget`, logged as `denied`. Member turns run on
+  their own queue (`MEMBER_TURN_QUEUE`, `MANTLE_MEMBER_TURN_CONCURRENCY`,
+  default 2), never ahead of the owner's turns. A NUL in the text is
+  stripped. A retry with the same `Idempotency-Key` is the same turn, counted
+  once; the same key with different text is a 409. The admin reads member chats in `/team-admin` > Member
   chats (`GET /api/team-admin/member-chats`) and with the `team_chat_list` /
   `team_chat_read` tools (`loginId`). A login invited from a team contact
   also shows that contact's old portal chat there, apart (section 9,
@@ -300,7 +310,13 @@ migration 0169), so deleting a file does not give its bytes back to today's
 budget. The upload route compares Content-Length with the space's headroom
 before it spools a byte, and a table draft is refused once the space is
 full. Every quota check takes a per-space advisory lock, so two parallel
-writes cannot both pass the same headroom.
+writes cannot both pass the same headroom. Every write route (the table
+above: create, rename, delete, autosave, Save version, share, submit, recall,
+comments, uploads) is rate limited per login, 120 a minute (429 `rate-limit`
+with Retry-After; `memberWriteGate`). A NUL character anywhere in a JSON
+body (a pasted `\u0000` in a note or page) is stripped before the body is
+read, on the member and the admin private-space routes alike; Postgres
+cannot store it, and it used to answer 500.
 
 **Deleting a login** leaves its space and items behind (`login_id` goes
 null, and a trigger stamps `spaces.orphaned_at`, migration 0180); deleting
@@ -357,7 +373,11 @@ Admins never see a member's private items, and that holds for the chat too
 follows such a reply in the history the model saw, is marked `used_private`;
 the admin readers (the Member chats tab, `team_chat_read`, the
 `team_chat_list` preview) show a placeholder instead of its text, while the
-member reads their own thread in full. The my-space tool results are not
+member reads their own thread in full. Replies written before 0170 were
+marked by a backfill in migration 0182 (the same rule, from the turns'
+`tool: my_*` trace steps and each agent's history window). The history a
+turn loads leaves out its own inbound message, so a turn the durable engine
+recovers does not send the member's message twice. The my-space tool results are not
 journaled by the durable engine and never spill to the tool-result store.
 The durable engine's own step log still holds each model round's output
 (the reply as written), which no admin screen shows; it is database-level
@@ -526,9 +546,14 @@ app's level in its Access control; nothing else lists it to members.
   group for chat stays out); it needs no confirmation; an ENABLED tool group
   at team level or lower holds it; and neither its slug nor its built-in is
   one of `my_items_list` / `my_item_open` (an app could copy the member's
-  private items into shared app data), `summarize_text` and `search_chunks`
-  (LLM work: passage scoring calls the decider), `team_request_create` (a
-  chat turn's write) or `read_result`. The call runs on the team role, on a
+  private items into shared app data), `summarize_text`,
+  `extract_from_image` and `search_chunks` (LLM work: a chat model, the
+  vision model, and passage scoring calls the decider), `team_request_create`
+  (a chat turn's write) or `read_result`. Beyond that list, a built-in
+  flagged `spends` (it starts paid model work on a call; a read can spend)
+  is refused whatever its slug; `spends-drift.test.ts` fails until every
+  built-in that calls a chat, vision, speech, image, decider or web-search
+  model, or delegates to an agent, carries the flag. The call runs on the team role, on a
   team surface that names the login, with the private corpus off: row
   security decides what it reads (team, client and public items), and team
   refusals apply. `app_tools_set`, `app_publish` and `access_set` on an app

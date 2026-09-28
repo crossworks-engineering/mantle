@@ -136,6 +136,7 @@ type TranscriptSource = `captions:${'manual' | 'auto'}` | `stt:${string}`;
 
 const video_ingest: BuiltinToolDef = {
   slug: 'video_ingest',
+  spends: true,
   name: 'Ingest a video into the brain',
   description:
     "Turn a video into a searchable, timestamped transcript page. Pass `url` for an online video (captions are used when available — free; otherwise the audio is extracted and transcribed via the STT worker), or `file_node_id` for a video file already in Files (always audio + STT). The extracted audio is kept as a file beside the source; `keep_video: true` additionally stores the video itself. For the user's own reference material. Long-running — up to several minutes for an uncaptioned video.",

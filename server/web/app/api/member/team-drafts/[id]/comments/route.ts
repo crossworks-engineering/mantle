@@ -2,11 +2,13 @@ import { NextResponse } from '@/server/http-compat';
 import { withTeamDrafts } from '@mantle/db';
 import { addTeamDraftComment, listTeamDraftComments, toNodeCommentDto } from '@mantle/content';
 import { getMemberOr401 } from '@/lib/auth';
+import { readJsonNoNul } from '@/lib/strip-nul';
 import {
   CommentBody,
-  SpaceIdParams,
   memberAuthor,
+  memberWriteGate,
   notFound,
+  SpaceIdParams,
   spaceStateResponse,
 } from '@/lib/member-space';
 import { firstIssue } from '@/lib/zod-issue';
@@ -30,9 +32,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
+  const limited = memberWriteGate(member);
+  if (limited) return limited;
   const params = SpaceIdParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
-  const body = CommentBody.safeParse(await req.json().catch(() => null));
+  const body = CommentBody.safeParse(await readJsonNoNul(req));
   if (!body.success) return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   try {
     const row = await withTeamDrafts(() =>

@@ -2,7 +2,14 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { deleteMineItem, getMineItem, updateMineItem } from '@mantle/content';
 import { getMemberOr401 } from '@/lib/auth';
-import { SpaceIdParams, inMySpace, notFound, spaceStateResponse } from '@/lib/member-space';
+import { readJsonNoNul } from '@/lib/strip-nul';
+import {
+  inMySpace,
+  memberWriteGate,
+  notFound,
+  SpaceIdParams,
+  spaceStateResponse,
+} from '@/lib/member-space';
 import { firstIssue } from '@/lib/zod-issue';
 
 const Patch = z
@@ -43,9 +50,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
+  const limited = memberWriteGate(member);
+  if (limited) return limited;
   const params = SpaceIdParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
-  const body = Patch.safeParse(await req.json().catch(() => null));
+  const body = Patch.safeParse(await readJsonNoNul(req));
   if (!body.success) return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   try {
     const got = await inMySpace(member, () =>
@@ -60,6 +69,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
+  const limited = memberWriteGate(member);
+  if (limited) return limited;
   const params = SpaceIdParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   try {

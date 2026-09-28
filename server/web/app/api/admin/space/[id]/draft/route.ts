@@ -10,6 +10,7 @@ import {
 import type { TableOp } from '@mantle/tabledb';
 import type { TableDoc } from '@mantle/content-core/table-model';
 import { getAdminSpaceOr401, inAdminSpace } from '@/lib/admin-space';
+import { readJsonNoNul } from '@/lib/strip-nul';
 import {
   DraftBody,
   SpaceIdParams,
@@ -32,7 +33,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   const params = SpaceIdParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   const bodyBytes = Number(req.headers.get('content-length')) || 0;
-  const body = DraftBody.safeParse(await req.json().catch(() => null));
+  const body = DraftBody.safeParse(await readJsonNoNul(req));
   if (!body.success) return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   const { spaceId } = caller;
   const id = params.data.id;

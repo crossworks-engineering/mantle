@@ -207,6 +207,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.audit_log', 'system'),
   none('public.app_access_log', 'system'),
   none('public.team_access_log', 'system'),
+  none('public.member_turn_ledger', 'system'),
   none('public.embedding_cache', 'system'),
   none('public.team_messages', 'system'),
   none('public.team_notifications', 'system'),

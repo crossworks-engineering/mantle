@@ -12,10 +12,12 @@
  *   3. it exists and is enabled, has a BUILTIN handler (no http, shell,
  *      recipe or mcp: those reach URLs, the shell or composed tools under the
  *      brain) and does not require confirmation (nobody is there to confirm);
- *   4. that builtin is marked read-only (`readOnly`, the default-deny flag
- *      the read-only turn uses): an app loop has no model in between, so a
+ *   4. that builtin does not spend (`spends`: it starts paid model work on a
+ *      call) and is marked read-only (`readOnly`, the default-deny flag the
+ *      read-only turn uses): an app loop has no model in between, so a
  *      writing or spending builtin an admin put in a team-level group for
- *      chat must not become callable 60 times a minute (audit 2026-09-27);
+ *      chat must not become callable 60 times a minute (audit 2026-09-27;
+ *      `spends` since audit F17, as a read can spend too);
  *   5. an ENABLED tool group at team level or lower holds it.
  * The caller then dispatches inside `withViewer('team', …)` on a team surface
  * that carries the login, so row security still decides what the tool reads.
@@ -32,8 +34,11 @@ const MEMBER_GROUP_LEVELS = ['team', 'client', 'public'];
  * Tools a member's app may never call, even from a team-level group:
  * - my_items_list / my_item_open read the member's PRIVATE items; an app
  *   could copy them into its database, which every member and admin reads.
- * - summarize_text starts LLM work, and search_chunks does when the decider's
- *   passage scoring is on (cost-safety: a member app starts none).
+ * - summarize_text and extract_from_image start LLM work (a chat and a
+ *   vision model), and search_chunks does when the decider's passage scoring
+ *   is on (cost-safety: a member app starts none). Every builtin flagged
+ *   `spends` is refused by rule 4 as well; these stay listed so the refusal
+ *   holds before any lookup.
  * - team_request_create files an admin task from a chat turn; it needs the
  *   turn's message, and an app could file them in a loop.
  * - read_result opens a spilled result of an agent turn by handle.
@@ -42,6 +47,7 @@ export const MEMBER_APP_REFUSED_SLUGS: readonly string[] = [
   'my_items_list',
   'my_item_open',
   'summarize_text',
+  'extract_from_image',
   'search_chunks',
   'team_request_create',
   'read_result',
@@ -96,7 +102,14 @@ export async function memberAppToolVerdict(
     return { ok: false, status: 403, reason: `The tool '${slug}' is not available in team apps.` };
   }
   // Lazy: the registry imports every builtin, app_tools_set among them.
-  const { isBuiltinReadOnly } = await import('./registry');
+  const { isBuiltinReadOnly, isBuiltinSpending } = await import('./registry');
+  if (isBuiltinSpending(tool.handler.ref)) {
+    return {
+      ok: false,
+      status: 403,
+      reason: `The tool '${slug}' starts paid model work on every call, so a team app can't use it.`,
+    };
+  }
   if (!isBuiltinReadOnly(tool.handler.ref)) {
     return {
       ok: false,

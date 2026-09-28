@@ -547,9 +547,13 @@ export type TeamRequest = {
   status: 'open' | 'done';
   priority: string;
   createdAt: string;
-  /** Provenance from data.teamRequest — null contactId means a malformed row
-   *  (shouldn't happen; team_request_create always stamps it). */
+  /** Provenance from data.teamRequest. A member LOGIN's request (the only
+   *  kind filed since the team-code portal retired) has `loginId` set and
+   *  `contactId` null; a request from the old portal has a contact and no
+   *  login. Reply and "View their chat" apply when either is set. */
   contactId: string | null;
+  /** The member login that filed it; null on a portal-era request. */
+  loginId: string | null;
   contactName: string | null;
   /** When the owner last posted a resolution to the member for this request. */
   notifiedAt: string | null;

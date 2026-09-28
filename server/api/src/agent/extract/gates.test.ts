@@ -180,6 +180,28 @@ describe('admitForExtraction — refusals', () => {
     expect(h.updates).toEqual([]);
   });
 
+  it('refuses an unreviewed team request before any pass (member text, no admin read yet)', async () => {
+    // Audit F08: a member asking the team agent to file ten requests must not
+    // start ten extractor runs before an admin has looked at any of them.
+    h.selectQueue.push([
+      node({ type: 'task', data: { source: 'team-request', body: 'please change X' } }),
+    ]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(false);
+    expect(disposition()).toBe('extract_exempt');
+    expect(h.embed).not.toHaveBeenCalled();
+    expect(h.resolveChatKey).not.toHaveBeenCalled();
+  });
+
+  it('admits a team request once an admin has acted on it (reviewed_at)', async () => {
+    h.selectQueue.push([
+      node({
+        type: 'task',
+        data: { source: 'team-request', reviewed_at: '2026-09-28T10:00:00.000Z', body: 'x' },
+      }),
+    ]);
+    expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);
+  });
+
   it('admits an ordinary page (the exemption is the source, not the type)', async () => {
     h.selectQueue.push([node({ type: 'page', data: { source: 'editor' } })]);
     expect((await admitForExtraction('n1', 'o1')).proceed).toBe(true);

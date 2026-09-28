@@ -29,6 +29,14 @@ export const RETIRED_FORUM_TURN_WORKFLOW = 'forumTurnWorkflow';
  *  LLM-provider backpressure valve. */
 export const RUNNER_QUEUE = 'mantle';
 
+/** The member chat's own queue (audit F31): member turns used to share
+ *  RUNNER_QUEUE with the owner's interactive turns, so a few busy members could
+ *  queue ahead of the owner. Registered in server/api with a low concurrency
+ *  (MANTLE_MEMBER_TURN_CONCURRENCY, default 2), as background runs got
+ *  RUNS_TURN_QUEUE. A turn enqueued here before server/api registers it waits
+ *  until the api process rolls (compose restarts web and api together). */
+export const MEMBER_TURN_QUEUE = 'mantle.member';
+
 /** Serializable input the runner carries in its journal — mirrors
  *  runAssistantTurn's (ownerId, text, options) arguments. */
 export type AssistantTurnInput = {

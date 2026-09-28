@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { REVIEW_STATES, type ReviewState } from '@mantle/db';
 import { SPACE_ITEM_KINDS, createMineItem, listMine } from '@mantle/content';
 import { adminWriter, getAdminSpaceOr401, inAdminSpace } from '@/lib/admin-space';
+import { readJsonNoNul } from '@/lib/strip-nul';
 import { spaceStateResponse } from '@/lib/member-space';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -67,7 +68,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const caller = await getAdminSpaceOr401();
   if (caller instanceof Response) return caller;
-  const parsed = Create.safeParse(await req.json().catch(() => null));
+  const parsed = Create.safeParse(await readJsonNoNul(req));
   if (!parsed.success)
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   try {

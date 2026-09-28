@@ -24,6 +24,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
     })),
     nodeUrl: (id: string) => `/n/${id}`,
     listTeamThread: vi.fn(async () => []),
+    countTeamRequestsFiled: vi.fn(async () => 0),
     listLoginPortalThread: vi.fn(async () => null),
     listTeamAccess: vi.fn(async () => []),
     listMemberChatActivity: vi.fn(async () => []),

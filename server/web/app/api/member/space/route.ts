@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { REVIEW_STATES, type ReviewState } from '@mantle/db';
 import { SPACE_ITEM_KINDS, createMineItem, listMine } from '@mantle/content';
 import { getMemberOr401 } from '@/lib/auth';
-import { inMySpace, spaceStateResponse } from '@/lib/member-space';
+import { readJsonNoNul } from '@/lib/strip-nul';
+import { inMySpace, memberWriteGate, spaceStateResponse } from '@/lib/member-space';
 import { firstIssue } from '@/lib/zod-issue';
 
 const Query = z.object({
@@ -65,7 +66,9 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
-  const parsed = Create.safeParse(await req.json().catch(() => null));
+  const limited = memberWriteGate(member);
+  if (limited) return limited;
+  const parsed = Create.safeParse(await readJsonNoNul(req));
   if (!parsed.success)
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   try {

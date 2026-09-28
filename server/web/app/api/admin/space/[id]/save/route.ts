@@ -8,6 +8,7 @@ import {
 } from '@mantle/content';
 import type { TableDoc } from '@mantle/content-core/table-model';
 import { adminWriter, getAdminSpaceOr401, inAdminSpace } from '@/lib/admin-space';
+import { readJsonNoNul } from '@/lib/strip-nul';
 import {
   SaveBody,
   SpaceIdParams,
@@ -31,7 +32,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (caller instanceof Response) return caller;
   const params = SpaceIdParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
-  const body = SaveBody.safeParse(await req.json().catch(() => null));
+  const body = SaveBody.safeParse(await readJsonNoNul(req));
   if (!body.success) return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   const { spaceId } = caller;
   const writer = adminWriter(caller);

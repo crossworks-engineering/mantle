@@ -7,16 +7,22 @@ import { ASSISTANT_TURN_MAX_CHARS } from '@mantle/client-types/assistant-limits'
 import {
   TEAM_RESPONDER_SLUG,
   TEAM_TURN_WORKFLOW,
-  RUNNER_QUEUE,
+  MEMBER_TURN_QUEUE,
   type TeamTurnInput,
   type TeamTurnRunResult,
 } from '@mantle/runtime/assistant';
-import { countMemberInboundSince, listTeamThread, recordTeamAccess } from '@mantle/content';
+import {
+  claimMemberTurn,
+  listTeamThread,
+  recordTeamAccess,
+  releaseMemberTurn,
+} from '@mantle/content';
 import { errorMessage } from '@mantle/std';
 import type { MemberChatThread } from '@mantle/client-types';
 import { getMemberOr401, type MemberCaller } from '@/lib/auth';
 import { getDbosClient } from '@/lib/dbos-client';
-import { MEMBER_DAILY_CAP, startOfTodayUtc } from '@/lib/member-daily-cap';
+import { MEMBER_DAILY_CAP, MEMBER_DAILY_TOKENS, startOfTodayUtc } from '@/lib/member-daily-cap';
+import { stripNul } from '@/lib/strip-nul';
 import { rateLimit } from '@/lib/rate-limit';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -35,8 +41,11 @@ import { firstIssue } from '@/lib/zod-issue';
  * admin agent for a member too. The turn runs at the agent's level (RLS), so
  * the agent reads only what the member's level may see. One thread per login
  * (team_messages.login_id), never in the owner's assistant stream. The login
- * IS the team member: no contact is needed (0167). Limits: 6 messages a
- * minute and the team daily cap, both per login.
+ * IS the team member: no contact is needed (0167). Limits, per login: 6
+ * messages a minute, and the daily turn cap and token budget
+ * (member-daily-cap.ts), both checked when the turn is QUEUED against the turn
+ * ledger (audit F09), so turns waiting on the queue count. Member turns run on
+ * their own queue, never ahead of the owner's (MEMBER_TURN_QUEUE).
  */
 
 const tooLong = (length: number) =>
@@ -89,9 +98,6 @@ export async function GET(req: Request) {
   ]);
   const body: MemberChatThread = {
     agent,
-    // Users are the team (0167): a member login needs no contact. Kept for
-    // older clients, which showed an "ask the admin to link you" state.
-    linked: true,
     messages: rows.map((r) => ({
       id: r.id,
       direction: r.direction as 'inbound' | 'outbound',
@@ -124,22 +130,9 @@ export async function POST(req: Request) {
       { status: 429, headers: { 'Retry-After': String(gate.retryAfterSec) } },
     );
   }
-  const usedToday = await countMemberInboundSince(ownerId, loginId, startOfTodayUtc());
-  if (usedToday >= MEMBER_DAILY_CAP) {
-    recordTeamAccess({
-      ownerId,
-      contactId: null,
-      loginId,
-      kind: 'denied',
-      detail: { reason: 'daily_cap', cap: MEMBER_DAILY_CAP, login_id: loginId },
-    });
-    return NextResponse.json(
-      { error: `daily message limit reached (${MEMBER_DAILY_CAP}/day) — try again tomorrow` },
-      { status: 429 },
-    );
-  }
-
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  // NUL cannot be stored in Postgres text; strip it here rather than fail the
+  // turn after the 202 (audit F14).
+  const parsed = Body.safeParse(stripNul(await req.json().catch(() => ({}))));
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }
@@ -149,6 +142,36 @@ export async function POST(req: Request) {
     // another member's turn; the idempotency key is only the nonce half.
     const key = req.headers.get('idempotency-key')?.slice(0, 64) || null;
     const turnId = `member-${member.loginId}.${key ?? randomUUID()}`;
+    // The day's budget, checked and taken BEFORE the enqueue (audit F09): a
+    // turn counts from the moment it is queued, and a retry with the same key
+    // is the same turn, counted once.
+    const claim = await claimMemberTurn({
+      ownerId,
+      loginId,
+      turnId,
+      since: startOfTodayUtc(),
+      limits: { dailyTurns: MEMBER_DAILY_CAP, dailyTokens: MEMBER_DAILY_TOKENS },
+    });
+    if (!claim.ok) {
+      const cap = claim.reason === 'daily_cap' ? MEMBER_DAILY_CAP : MEMBER_DAILY_TOKENS;
+      recordTeamAccess({
+        ownerId,
+        contactId: null,
+        loginId,
+        kind: 'denied',
+        detail: { reason: claim.reason, cap, used: claim.used, login_id: loginId },
+      });
+      return NextResponse.json(
+        {
+          error:
+            claim.reason === 'daily_cap'
+              ? `daily message limit reached (${MEMBER_DAILY_CAP}/day) — try again tomorrow`
+              : 'daily usage limit reached for the chat — try again tomorrow, or ask an admin to raise it',
+          reason: claim.reason,
+        },
+        { status: 429 },
+      );
+    }
     const input: TeamTurnInput = {
       ownerId,
       text: parsed.data.text,
@@ -160,10 +183,16 @@ export async function POST(req: Request) {
       },
     };
     const client = await getDbosClient();
-    await client.enqueue<(i: TeamTurnInput) => Promise<TeamTurnRunResult>>(
-      { workflowName: TEAM_TURN_WORKFLOW, queueName: RUNNER_QUEUE, workflowID: turnId },
-      input,
-    );
+    try {
+      await client.enqueue<(i: TeamTurnInput) => Promise<TeamTurnRunResult>>(
+        { workflowName: TEAM_TURN_WORKFLOW, queueName: MEMBER_TURN_QUEUE, workflowID: turnId },
+        input,
+      );
+    } catch (err) {
+      // Not queued: give the slot back (only one this request took).
+      if (claim.fresh) await releaseMemberTurn(turnId).catch(() => undefined);
+      throw err;
+    }
     // A reused key lands on the turn that key started: DBOS keeps the first
     // input and drops this one. The same text is a retry (202, same turn); new
     // text would vanish without a word, so it is a 409. Read after the

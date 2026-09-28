@@ -36,6 +36,7 @@ export {
 export { notifyNodeIngested, notifyNodeIndexed } from './notify';
 export {
   FORUM_ARCHIVE_SOURCE,
+  TEAM_REQUEST_SOURCE,
   isExtractExempt,
   extractExemptSql,
   unextractedNodeConds,
