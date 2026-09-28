@@ -14,7 +14,7 @@
  * iPhone photos thumbnail like everything else.
  *
  * Cache layout: `<filesRoot>/../file-thumbs/<sha256>.<maxDim>.jpg` — a
- * SIBLING of the files root, the same pattern as forum-uploads' quarantine,
+ * SIBLING of the files root (the retired forum-upload quarantine did the same),
  * deliberately outside the watched `files` tree so the disk-sync watcher
  * never mistakes a derivative for a user file. Keyed by CONTENT hash: an
  * overwritten file gets a new sha and therefore a fresh thumbnail; the stale

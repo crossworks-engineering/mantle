@@ -6,10 +6,6 @@ import type {
   BuildRef,
   ConversationAttachment,
   ContextSource as CtContextSource,
-  ForumPostRequestKind,
-  ForumTopicKind,
-  ForumTopicStatus,
-  ForumTopicVisibility,
   MemberAppCard,
   MemberAppLevel,
   MemberChatArchiveMessage,
@@ -94,10 +90,6 @@ describe('client-types mirrors have not drifted from their source of truth', () 
     expectTypeOf<
       SameUnion<Db.NodeCommentAuthorKind, NodeCommentAuthorKind>
     >().toEqualTypeOf<true>();
-    expectTypeOf<SameUnion<Db.ForumTopicKind, ForumTopicKind>>().toEqualTypeOf<true>();
-    expectTypeOf<SameUnion<Db.ForumTopicVisibility, ForumTopicVisibility>>().toEqualTypeOf<true>();
-    expectTypeOf<SameUnion<Db.ForumTopicStatus, ForumTopicStatus>>().toEqualTypeOf<true>();
-    expectTypeOf<SameUnion<Db.ForumPostRequestKind, ForumPostRequestKind>>().toEqualTypeOf<true>();
   });
 
   /**

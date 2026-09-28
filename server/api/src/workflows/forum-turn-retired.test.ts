@@ -6,13 +6,10 @@
  * (forum-turn-retired.db.test.ts proves the same on a real DBOS.)
  */
 import { readFileSync } from 'node:fs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   registered: [] as { name: string; fn: (input: unknown) => Promise<unknown> }[],
-  failed: 0,
-  failCalls: [] as unknown[][],
-  bootRuns: 0,
 }));
 
 vi.mock('@dbos-inc/dbos-sdk', () => ({
@@ -24,30 +21,13 @@ vi.mock('@dbos-inc/dbos-sdk', () => ({
     logger: { info: vi.fn(), error: vi.fn() },
   },
 }));
-vi.mock('@mantle/content', () => ({
-  failPendingForumReplies: vi.fn(async (...args: unknown[]) => {
-    h.failCalls.push(args);
-    return h.failed;
-  }),
-}));
 // The real contract module (the name under test), without the whole runtime.
 vi.mock('@mantle/runtime/assistant', async () => ({
   RETIRED_FORUM_TURN_WORKFLOW: (await import('../../../../packages/runtime/src/assistant/contract'))
     .RETIRED_FORUM_TURN_WORKFLOW,
 }));
-vi.mock('../forum-archive-boot', () => ({
-  runForumArchiveBootTask: vi.fn(async () => {
-    h.bootRuns++;
-  }),
-}));
 
 import { retiredForumTurn } from './forum-turn-retired';
-
-beforeEach(() => {
-  h.failed = 0;
-  h.failCalls = [];
-  h.bootRuns = 0;
-});
 
 describe('the retired forum turn workflow', () => {
   it("is registered under the old forum turn's exact name", () => {
@@ -62,29 +42,23 @@ describe('the retired forum turn workflow', () => {
     expect(main).not.toMatch(/workflows\/forum-turn';/);
   });
 
-  it("fails the topic's pending reply and lets the archive export run", async () => {
-    h.failed = 1;
+  it('ends the turn without running it', async () => {
     const input = {
       ownerId: 'o1',
       options: { contactId: 'c1', topicId: 't1', inboundPostId: 'p' },
     };
-    expect(await retiredForumTurn(input)).toEqual({ retired: true, failedReplies: 1 });
-    expect(h.failCalls).toEqual([['o1', { topicId: 't1' }]]);
-    expect(h.bootRuns).toBe(1);
-  });
-
-  it('with nothing pending it only ends the workflow', async () => {
-    expect(await retiredForumTurn({ ownerId: 'o1', options: { topicId: 't1' } })).toEqual({
-      retired: true,
-      failedReplies: 0,
-    });
-    expect(h.bootRuns).toBe(0);
+    expect(await retiredForumTurn(input)).toEqual({ retired: true });
   });
 
   it('never throws on an input it cannot read', async () => {
     for (const input of [undefined, null, 'x', { ownerId: 1 }, { ownerId: 'o1' }]) {
-      await expect(retiredForumTurn(input)).resolves.toEqual({ retired: true, failedReplies: 0 });
+      await expect(retiredForumTurn(input)).resolves.toEqual({ retired: true });
     }
-    expect(h.failCalls).toEqual([]);
+  });
+
+  it('touches no forum table and no brain code (the tables are dropped, 0177)', () => {
+    const src = readFileSync(new URL('./forum-turn-retired.ts', import.meta.url), 'utf8');
+    expect(src).not.toMatch(/from '@mantle\/(content|db)'/);
+    expect(src).not.toMatch(/forum-archive-boot/);
   });
 });

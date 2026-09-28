@@ -20,8 +20,8 @@ import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
  *
  * ── Identity ────────────────────────────────────────────────────────────────
  * `recipient_id` / `sender_id` hold a contact node id for a member, or the
- * OWNER's id for the owner — the same dual convention as
- * `forum_read_cursors.reader_id`, and the reason there is no FK on them (the
+ * OWNER's id for the owner — the same dual convention as the retired
+ * forum's read cursors had, and the reason there is no FK on them (the
  * owner is not a node). A deleted contact's rows are inert junk; every read
  * path joins live contacts, and `sender_name` is captured at send time so a
  * thread stays readable after the sender is revoked.

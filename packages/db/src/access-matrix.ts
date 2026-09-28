@@ -202,7 +202,6 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.team_notifications', 'system'),
   none('public.team_read_cursors', 'system'),
   none('public.assistant_read_cursors', 'system'),
-  none('public.forum_read_cursors', 'system'),
   none('public.sync_runs', 'system'),
   none('public.maintenance_runs', 'system'),
   none('public.heartbeat_fires', 'system'),
@@ -266,9 +265,6 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.heartbeats'),
   none('public.sandboxes'),
   none('public.app_table_exports'),
-  none('public.forum_topics', 'content'),
-  none('public.forum_posts', 'content'),
-  none('public.forum_uploads', 'content'),
 ];
 
 /** Columns no viewer role may ever read, whatever the matrix says. */

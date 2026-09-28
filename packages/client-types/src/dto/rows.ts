@@ -893,14 +893,14 @@ export type TeamVisibleShare = {
 export type TaskStatus = 'open' | 'in_progress' | 'blocked' | 'done';
 export type TaskPriority = 'low' | 'normal' | 'high';
 
-/** Mirrors @mantle/db `ForumTopicKind`. */
+/** The retired team forum's vocabulary, frozen: its tables were dropped
+ *  (migration 0177), so nothing on the brain mirrors these now. The Forum*
+ *  DTOs above stay only while older clients still name them (the forum parts
+ *  of the team-admin answers are empty); remove them with the client. */
 export type ForumTopicKind = 'question' | 'review' | 'feature' | 'bug' | 'discussion';
-/** Mirrors @mantle/db `ForumTopicVisibility`. */
 export type ForumTopicVisibility = 'team' | 'private';
-/** Mirrors @mantle/db `ForumTopicStatus`. */
 export type ForumTopicStatus = 'open' | 'answered' | 'closed';
-/** Mirrors @mantle/db `ForumPostRequestKind` — the topic kinds that file an
- *  owner review task. */
+/** The topic kinds that filed an owner review task. */
 export type ForumPostRequestKind = 'review' | 'feature' | 'bug';
 
 /** Mirrors @mantle/db `ConversationAttachment` (jsonb on conversation rows). */

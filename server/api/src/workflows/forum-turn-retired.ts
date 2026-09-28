@@ -8,41 +8,26 @@
  * when the process stopped mid-turn (recovery re-dispatches it). With no
  * function under the name, DBOS logs "Cannot find workflow function" and the
  * turn stays PENDING, to be retried on every boot. This stub takes it
- * instead: it fails the topic's pending agent reply (the post the real turn
- * would have finished), lets the Forum archive export pick the topic up, and
- * returns, so the workflow ends in SUCCESS and never comes back.
+ * instead and returns, so the workflow ends in SUCCESS and never comes back.
  *
- * It calls no model and writes nothing but that one status.
+ * It reads and writes nothing: the forum's tables were dropped (migration
+ * 0177) after every topic was exported into the Forum archive pages.
  */
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { failPendingForumReplies } from '@mantle/content';
 import { RETIRED_FORUM_TURN_WORKFLOW } from '@mantle/runtime/assistant';
-import { errorMessage } from '@mantle/std';
-import { runForumArchiveBootTask } from '../forum-archive-boot';
 
 /** The old input, as the forum routes enqueued it. Read defensively: it comes
  *  from a journal written by an older release. */
-type RetiredForumTurnInput = { ownerId?: unknown; options?: { topicId?: unknown } };
+type RetiredForumTurnInput = { options?: { topicId?: unknown } };
 
-export type RetiredForumTurnResult = { retired: true; failedReplies: number };
+export type RetiredForumTurnResult = { retired: true };
 
 export async function retiredForumTurn(input: unknown): Promise<RetiredForumTurnResult> {
-  const { ownerId, options } = (input ?? {}) as RetiredForumTurnInput;
-  const topicId = options?.topicId;
-  let failedReplies = 0;
-  if (typeof ownerId === 'string' && typeof topicId === 'string') {
-    try {
-      failedReplies = await failPendingForumReplies(ownerId, { topicId });
-    } catch (err) {
-      console.error('[forum_turn] retired: could not fail the pending reply:', errorMessage(err));
-    }
-    if (failedReplies > 0) await runForumArchiveBootTask((line) => DBOS.logger.info(line));
-  }
+  const topicId = ((input ?? {}) as RetiredForumTurnInput).options?.topicId;
   DBOS.logger.info(
-    `[forum_turn] retired: a queued forum turn ended without running (topic=${String(topicId)}, ` +
-      `failed replies=${failedReplies})`,
+    `[forum_turn] retired: a queued forum turn ended without running (topic=${String(topicId)})`,
   );
-  return { retired: true, failedReplies };
+  return { retired: true };
 }
 
 export const retiredForumTurnWorkflow = DBOS.registerWorkflow(retiredForumTurn, {

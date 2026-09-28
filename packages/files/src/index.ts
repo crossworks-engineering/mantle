@@ -44,7 +44,6 @@ export { MAX_UPLOAD_BYTES, maxStreamedUploadBytes } from './limits';
 
 export {
   filesRoot,
-  quarantineRoot,
   isFilesPath,
   diskPathForLtree,
   diskPathForFile,
@@ -52,14 +51,6 @@ export {
   ltreeForDiskPath,
   FILES_ROOT_LABEL,
 } from './paths';
-
-export {
-  quarantinePathFor,
-  writeQuarantineBytes,
-  readQuarantineBytes,
-  deleteQuarantineBytes,
-  listQuarantineBlobIds,
-} from './quarantine';
 
 export {
   ensureRoot,

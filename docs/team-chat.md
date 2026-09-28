@@ -149,9 +149,9 @@ trail.
 
 > ⚠️ **Known gap.** Those two `team_chat_*` tools read `team_messages`, which
 > the Forum froze (see the status banner), on a brain provisioned after it
-> they return nothing, and there is no `forum_*` equivalent yet. The owner UI
-> recovered this view (the Members tab reads `forum_posts` directly); the
-> assistant has not. Tracked as the forum owner-tools follow-up.
+> they return nothing. The forum is retired and its tables were dropped
+> (migration 0177); its content is in the admin-level Forum archive pages
+> ([team-forum.md](./team-forum.md) section 8), which are never indexed.
 
 ## 6. Private reads: email + journal are off by default
 
