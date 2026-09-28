@@ -225,16 +225,23 @@ describe.skipIf(!URL)('needs you: the live event and the counts', () => {
     expect((await ny.loadNeedsYou(anchor)).review.submitted).toBe(0);
   });
 
-  it('a deactivated member’s shared item is left behind (event), and Discard clears it (event)', async () => {
+  it('a deactivated member’s shared items are left behind (event); Discard and Accept clear them (events)', async () => {
     const left = await newPage(member2, `${tag} left`);
+    const kept = await newPage(member2, `${tag} kept`);
     await as(member2, () => sp.setSharing(spaceOf[member2]!, left, 'team'));
+    await as(member2, () => sp.setSharing(spaceOf[member2]!, kept, 'team'));
     expect(
       await sent(() =>
         m.systemDb.execute(sqlTag`update auth.users set disabled_at = now() where id = ${member2}`),
       ),
     ).toEqual([anchor]);
-    expect((await ny.loadNeedsYou(anchor)).review).toMatchObject({ submitted: 0, leftBehind: 1 });
+    expect((await ny.loadNeedsYou(anchor)).review).toMatchObject({ submitted: 0, leftBehind: 2 });
     expect(await sent(() => rv.discardLeftBehind(left))).toEqual([anchor]);
+    expect((await ny.loadNeedsYou(anchor)).review.leftBehind).toBe(1);
+    // A left-behind item is a draft until accepted: Accept still wakes them.
+    expect(await sent(() => rv.acceptReviewItem(anchor, kept, { loginId: adminA }))).toEqual([
+      anchor,
+    ]);
     expect((await ny.loadNeedsYou(anchor)).review.leftBehind).toBe(0);
   });
 
