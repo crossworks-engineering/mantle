@@ -16,6 +16,12 @@
  *  - a row cap on what a query returns.
  * The worker is terminated at the time limit, and an unfinished write is
  * rolled back with its connection.
+ *
+ * Mode 'script' runs an app's declared schema DDL (several statements) in
+ * one transaction, under the same authorizer and limits: CREATE TABLE,
+ * CREATE INDEX, ALTER TABLE and the rest pass; ATTACH, VACUUM and PRAGMAs
+ * (bar table_info / table_xinfo) are refused, and nothing of the script
+ * stays when any statement fails.
  */
 import { Worker } from 'node:worker_threads';
 import { errorMessage } from '@mantle/std';
@@ -27,6 +33,9 @@ export const APP_SQL_TIMEOUT_MS = 5_000;
 export const APP_SQL_MAX_ROWS = 50_000;
 /** The largest string or blob one statement may produce (16 MiB). */
 export const APP_SQL_MAX_LENGTH = 16 * 1024 * 1024;
+/** How long an app's schema script may run. Longer than one statement: a new
+ *  schema version may index a table that already holds the app's data. */
+export const APP_SCHEMA_TIMEOUT_MS = 30_000;
 
 const WORKER_SOURCE = `
 const { workerData, parentPort } = require('node:worker_threads');
@@ -48,8 +57,25 @@ try {
     }
     return C.SQLITE_OK;
   });
-  const stmt = db.prepare(sql);
-  if (mode === 'run') {
+  if (mode === 'script') {
+    // All or nothing: SQLite DDL is transactional, so a script that fails on
+    // statement 3 leaves nothing of 1 and 2 behind.
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.exec(sql);
+      db.exec('COMMIT');
+    } catch (err) {
+      try {
+        db.exec('ROLLBACK');
+      } catch {
+        // already rolled back by the failing statement
+      }
+      throw err;
+    }
+    db.close();
+    parentPort.postMessage({ ok: true, result: null });
+  } else if (mode === 'run') {
+    const stmt = db.prepare(sql);
     const r = stmt.run(...params);
     db.close();
     parentPort.postMessage({
@@ -57,6 +83,7 @@ try {
       result: { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) },
     });
   } else {
+    const stmt = db.prepare(sql);
     const rows = [];
     for (const row of stmt.iterate(...params)) {
       if (rows.length >= maxRows) {
@@ -75,19 +102,22 @@ try {
 type Reply = { ok: true; result: unknown } | { ok: false; error: string };
 
 /** Run `sql` with `params`: mode 'all' returns rows, 'run' returns
- *  `{ changes, lastInsertRowid }`. Rejects on SQL error, a refused statement,
- *  the row or size cap, or the time limit. */
+ *  `{ changes, lastInsertRowid }`, 'script' runs several statements (no
+ *  params) in one transaction and returns null. Rejects on SQL error, a
+ *  refused statement, the row or size cap, or the time limit. */
 export async function runAppSql(
   file: string,
   opts: {
     sql: string;
     params?: unknown[];
-    mode: 'all' | 'run';
+    mode: 'all' | 'run' | 'script';
     readOnly: boolean;
     timeoutMs?: number;
   },
 ): Promise<unknown> {
   const timeoutMs = opts.timeoutMs ?? APP_SQL_TIMEOUT_MS;
+  if (opts.mode === 'script' && opts.readOnly)
+    throw new Error('a schema script needs a writable open');
   const reply = await new Promise<Reply>((resolve) => {
     const worker = new Worker(WORKER_SOURCE, {
       eval: true,

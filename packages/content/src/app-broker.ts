@@ -21,7 +21,7 @@ import { db, nodes, appDatabases } from '@mantle/db';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { stripLiterals } from '@mantle/tabledb';
-import { runAppSql } from './app-sql-runner';
+import { APP_SCHEMA_TIMEOUT_MS, runAppSql } from './app-sql-runner';
 
 /** Root dir for per-app SQLite files. A dedicated volume in prod (see compose);
  *  one file per app: <root>/<owner>/<app>.sqlite. When APP_DB_DIR is unset
@@ -220,33 +220,25 @@ export async function ensureAppDatabase(
 ): Promise<{ id: string; storagePath: string; schemaVersion: number }> {
   const reg = await ensureRegistry(ownerId, appNodeId);
   if (schema && schema.schemaSql.trim() && schema.schemaVersion > reg.schemaVersion) {
-    // Defense in depth: the schema DDL is agent-authored and applied via a raw
-    // multi-statement exec, so it must clear the same file-escape guard as the
-    // runtime broker — otherwise an ATTACH in the DDL would reach the filesystem.
+    // Defense in depth: the schema DDL is agent-authored, so it must clear the
+    // same file-escape guard as the runtime broker, and then runs in the
+    // worker runner like every other app statement: the engine authorizer
+    // refuses ATTACH, VACUUM and PRAGMA whatever the text looks like, and a
+    // time limit stops an endless statement without freezing this process
+    // (it used to run here, on the main thread, with no timeout).
     assertSafeScript(schema.schemaSql);
-    const handle = await openSqlite(reg.storagePath);
-    try {
-      // Apply the whole DDL atomically. SQLite autocommits each statement, so a
-      // bare multi-statement exec that fails on statement 3 leaves 1–2
-      // committed while schemaVersion stays old — the next open re-runs the
-      // full script and now trips on the already-created table, bricking the
-      // app until someone hand-writes guarded DDL. A wrapping transaction makes
-      // it all-or-nothing (SQLite DDL is transactional).
-      handle.exec('BEGIN IMMEDIATE');
-      try {
-        handle.exec(schema.schemaSql);
-        handle.exec('COMMIT');
-      } catch (err) {
-        try {
-          handle.exec('ROLLBACK');
-        } catch {
-          /* already rolled back by the failing statement */
-        }
-        throw err;
-      }
-    } finally {
-      handle.close();
-    }
+    await mkdir(path.dirname(reg.storagePath), { recursive: true });
+    // Applied atomically ('script' mode wraps it in one transaction). SQLite
+    // autocommits each statement, so a bare multi-statement exec that fails
+    // on statement 3 would leave 1-2 committed while schemaVersion stays old;
+    // the next open re-runs the full script, trips on the already-created
+    // table, and bricks the app until someone hand-writes guarded DDL.
+    await runAppSql(reg.storagePath, {
+      sql: schema.schemaSql,
+      mode: 'script',
+      readOnly: false,
+      timeoutMs: APP_SCHEMA_TIMEOUT_MS,
+    });
     await db
       .update(appDatabases)
       .set({ schemaVersion: schema.schemaVersion, updatedAt: new Date() })
