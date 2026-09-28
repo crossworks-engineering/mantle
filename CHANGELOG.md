@@ -4,6 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.317: client v0.6.169
+
+- Pairs the client at jackdaw v0.6.169, the client half of 0.232.316: a live
+  "N waiting for review / N open requests" notice at the top of the rail, a
+  toast when something arrives, the tab title "(N)" and a favicon dot, an
+  opt-in browser notification (profile menu, per browser), and in the desktop
+  app the dock badge, a dock bounce (macOS) or taskbar flash (Linux) until
+  focused, and a native notification that opens the item.
+
 ## 0.232.316: admins are told what waits for them
 
 - **"Needs you" live event.** Migration 0186 raises `needs_you_changed`
