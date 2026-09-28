@@ -4,6 +4,14 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.298: client v0.6.160
+
+- Paired with jackdaw v0.6.160, the client side of stage 6: no Revoke code
+  button (its route is gone), a shared link is always public (no team pill),
+  the home app toast speaks of the Team level, and /team or /hub go straight
+  to /login with nothing carried (an old team code no longer rides along in
+  `next`). The client pins the contract at 0.232.297.
+
 ## 0.232.297: team links retired (Phase 6 stage 6)
 
 - Migration 0176 revokes every team-mode share link. Items keep their level:
