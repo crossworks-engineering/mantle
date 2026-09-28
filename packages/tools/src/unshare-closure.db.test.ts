@@ -81,7 +81,7 @@ describe.skipIf(!URL)('the unshare tools report the closure on Postgres', () => 
       };
       expect(out.unshared).toBe(true);
       expect(out.stillBelow?.map((i) => [i.id, i.audience])).toEqual([[ids.file, 'public']]);
-      expect(out.warning).toMatch(/img\.png \(file, client\)/);
+      expect(out.warning).toMatch(/img\.png \(file, public\)/);
       expect(await audienceOf(ids.page)).toBe('admin');
       expect(await c.getActiveShareForNode(owner, ids.page)).toBeNull();
       // Reported, not raised: raising is the explicit access_set step.
