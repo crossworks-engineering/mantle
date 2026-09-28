@@ -60,6 +60,16 @@ export type {
   MemberSpaceList,
   MemberSpaceSharing,
 } from './dto/member';
+export type {
+  MemberAppCard,
+  MemberAppLevel,
+  MemberAppList,
+  MemberChatArchiveMessage,
+  MemberChatRow,
+  MemberChatsResponse,
+  MemberHomeApp,
+  MemberHomeData,
+} from './dto/member-apps';
 export type { MemberItemKind } from './member-kinds';
 
 // Types only at the root; the runtime constants (APP_TINTS, limits) are the

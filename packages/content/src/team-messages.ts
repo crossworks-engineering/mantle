@@ -21,7 +21,7 @@ import {
   type TeamChannel,
   type TeamMessage,
 } from '@mantle/db';
-import type { TeamMemberActivity } from '@mantle/client-types';
+import type { MemberChatRow, TeamMemberActivity } from '@mantle/client-types';
 
 // The member's thread (team_messages) is infrastructure in the access matrix:
 // a team turn runs under the team viewer role (member logins Phase 0b) and
@@ -271,21 +271,11 @@ export async function listTeamMemberActivity(ownerId: string): Promise<TeamMembe
   }));
 }
 
-/** One member login and its chat thread, for the owner's views. */
-export type MemberChatActivity = {
-  loginId: string;
-  /** Display name, else the part of the email before the @ (the name the
-   *  agent uses for the member). */
-  name: string;
-  email: string;
-  /** False when the login is disabled or no longer a member (its old
-   *  thread still shows). */
-  active: boolean;
-  lastMessageAt: string | null;
-  lastMessageText: string | null;
-  lastMessageDirection: 'inbound' | 'outbound' | null;
-  messageCount: number;
-};
+/** One member login and its chat thread, for the owner's views: the
+ *  published contract row (GET /api/team-admin/member-chats). The name is
+ *  the display name, else the part of the email before the @ (the name the
+ *  agent uses for the member). */
+export type MemberChatActivity = MemberChatRow;
 
 /**
  * The owner's index of member chats (users are the team): every member login,
