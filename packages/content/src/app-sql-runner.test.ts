@@ -1,5 +1,5 @@
 /**
- * The app SQL runner (audit 2026-09-27): app SQL runs in a worker with an
+ * The app SQL runner (audit 2026-09-27): app SQL runs in a child process with an
  * engine authorizer, a time limit, a row cap and a size cap, so neither a
  * clever statement nor an endless one can escape the file or freeze the
  * server. Real SQLite files in a temp dir; no Postgres.
@@ -8,7 +8,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { APP_SQL_MAX_ROWS, runAppSql } from './app-sql-runner';
+import { APP_SQL_MAX_ROWS, appSqlChildPids, runAppSql } from './app-sql-runner';
 
 describe('runAppSql', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'app-sql-runner-'));
@@ -164,11 +164,94 @@ describe("runAppSql mode 'script' (schema DDL)", () => {
     expect(ticks).toBeGreaterThan(5);
     // The killed transaction left nothing, and the file still reads.
     expect(await tables()).not.toContain('early');
+    // Its BEGIN IMMEDIATE lock went with its process: the next script writes
+    // at once instead of waiting out busy_timeout into "database is locked".
+    const next = Date.now();
+    await script('CREATE TABLE after_kill (x);');
+    expect(Date.now() - next).toBeLessThan(2_000);
+    expect(await tables()).toContain('after_kill');
   });
 
   it('never runs read-only', async () => {
     await expect(
       runAppSql(file, { sql: 'CREATE TABLE ro (x)', mode: 'script', readOnly: true }),
     ).rejects.toThrow(/writable/);
+  });
+});
+
+/**
+ * The child processes (2026-09-28). A worker thread terminated at the time
+ * limit kept its SQLite connection, so a killed WRITE held the app's write
+ * lock until the web process restarted. A killed process lets go.
+ */
+describe('runAppSql child processes', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'app-sql-child-'));
+  const file = path.join(dir, 'app.sqlite');
+  const write = (sql: string, timeoutMs?: number) =>
+    runAppSql(file, { sql, mode: 'run', readOnly: false, timeoutMs });
+  const count = async () =>
+    (
+      (await runAppSql(file, {
+        sql: 'SELECT count(*) AS n FROM t',
+        mode: 'all',
+        readOnly: true,
+      })) as { n: number }[]
+    )[0]?.n;
+  const until = async (cond: () => boolean) => {
+    for (let i = 0; i < 100 && !cond(); i++) await new Promise((r) => setTimeout(r, 20));
+    expect(cond()).toBe(true);
+  };
+
+  beforeAll(async () => {
+    await write('CREATE TABLE t (x INTEGER)');
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('a write stopped at the time limit lets go of the lock: the next write goes straight through', async () => {
+    await write('INSERT INTO t VALUES (1)');
+    const before = appSqlChildPids();
+    await expect(
+      write(
+        'INSERT INTO t SELECT x FROM (WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT x FROM c)',
+        400,
+      ),
+    ).rejects.toThrow(/longer than 400 ms/);
+    // The child that ran it is gone.
+    expect(appSqlChildPids().filter((p) => !before.includes(p))).toEqual([]);
+    const started = Date.now();
+    await expect(write('INSERT INTO t VALUES (2)')).resolves.toMatchObject({ changes: 1 });
+    // Straight through, not after waiting out busy_timeout (5 s).
+    expect(Date.now() - started).toBeLessThan(2_000);
+    // Nothing of the killed write stayed.
+    expect(await count()).toBe(2);
+  });
+
+  it('reuses one child for statement after statement', async () => {
+    await count();
+    const pids = appSqlChildPids();
+    expect(pids.length).toBeGreaterThan(0);
+    for (let i = 0; i < 5; i++) await count();
+    expect(appSqlChildPids()).toEqual(pids);
+  });
+
+  it('replaces a child killed from outside, and the next statement works', async () => {
+    await count();
+    const killed = appSqlChildPids();
+    expect(killed.length).toBeGreaterThan(0);
+    for (const pid of killed) process.kill(pid, 'SIGKILL');
+    await until(() => appSqlChildPids().every((p) => !killed.includes(p)));
+    await expect(write('INSERT INTO t VALUES (3)')).resolves.toMatchObject({ changes: 1 });
+    expect(await count()).toBe(3);
+    const now = appSqlChildPids();
+    expect(now.length).toBeGreaterThan(0);
+    expect(now.some((p) => killed.includes(p))).toBe(false);
+  });
+
+  it('answers with the SQL error and keeps the child for the next statement', async () => {
+    await count();
+    const pids = appSqlChildPids();
+    await expect(write('INSERT INTO nope VALUES (1)')).rejects.toThrow(/no such table/);
+    expect(appSqlChildPids()).toEqual(pids);
+    expect(await count()).toBe(3);
   });
 });
