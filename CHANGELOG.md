@@ -4,6 +4,20 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.301: team codes retired (Phase 6, migration 0178)
+
+- Migration 0178 drops `contact_team_tokens` (its one FK to nodes dropped by
+  name first, then the table without CASCADE). Contacts, their old portal
+  chat and every other row stay.
+- An old 8-character team code no longer redeems anything: only a
+  16-character invite code does. Invites made before 0178 still redeem. The
+  invite code's alphabet cutoff is fixed (216, not 224) so every character is
+  equally likely.
+- Team admin's first tab lists every contact with old portal chat (a chat
+  archive), newest first. `TeamMemberActivity.tokenLastUsedAt` is always null
+  (deprecated one cycle); `memberSince` is the first portal message.
+  `ContactRow.team` is gone.
+
 ## 0.232.300: client v0.6.161
 
 - Paired with jackdaw v0.6.161: Team admin no longer shows the forum Export
