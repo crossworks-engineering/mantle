@@ -224,7 +224,15 @@ provenance, that's the point of "please update X, attached".)
 ## 8. Request → task → reply loop
 
 1. Member asks for a change → responder calls `team_request_create` → a task
-   tagged `team-request` with full provenance.
+   tagged `team-request` with full provenance, and `data.source =
+'team-request'`. At most 3 per member message and 20 per login in 24 hours
+   (the tool answers an error past either). The task is **extract-exempt
+   until an admin acts on it** (`packages/db/src/extract-exempt.ts`): member
+   text reaches no model before an admin has read it. Editing or closing it
+   through the task routes or tools, or replying from Requests, stamps
+   `data.reviewed_at` and announces it once; from then on it is an ordinary
+   task. `GET /api/team-admin/requests` rows carry `loginId` (the member
+   login that filed it; `contactId` is null for a login's request).
 2. Owner works the **Requests** tab on `/team-admin` (or the tasks screen
    filtered by tag), the human review surface. Open-request count badges the
    tab.
@@ -238,11 +246,14 @@ queue directly.
 
 ## 9. Rate & cost controls
 
-- Per-contact turn rate limit + `TEAM_CHAT_DAILY_TURNS` daily cap (denials
-  logged with kind `denied`).
+- Member chat (member-logins.md): per-login 6 a minute, then the daily turn
+  cap (`TEAM_CHAT_DAILY_TURNS`) and daily token budget
+  (`MANTLE_MEMBER_DAILY_TOKENS`), both checked at enqueue against the turn
+  ledger (migration 0182) and the login's traces; denials logged with kind
+  `denied`. Member turns run on their own DBOS queue (`MEMBER_TURN_QUEUE`).
 - Auth is rate-limited per-IP + per-brain.
-- Traces carry `cost_micro_usd` per turn, so per-contact spend is queryable
-  today; a hard per-contact cost cap is Phase-3 material.
+- Traces carry `cost_micro_usd` and tokens per turn, with `login_id`, so
+  per-member spend is queryable.
 
 ## 10. Testing
 

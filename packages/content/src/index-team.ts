@@ -48,7 +48,6 @@ export {
 export {
   appendTeamMessage,
   updateTeamMessageOutcome,
-  countMemberInboundSince,
   listLoginPortalThread,
   listTeamThread,
   PRIVATE_REPLY_PLACEHOLDER,
@@ -61,6 +60,14 @@ export {
   type TeamMemberActivity,
   type MemberChatActivity,
 } from './team-messages';
+
+export {
+  claimMemberTurn,
+  releaseMemberTurn,
+  memberTokensSince,
+  type MemberTurnLimits,
+  type ClaimMemberTurnResult,
+} from './member-turn-ledger';
 
 export {
   listTeamRequests,

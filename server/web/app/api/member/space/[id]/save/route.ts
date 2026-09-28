@@ -8,12 +8,14 @@ import {
 } from '@mantle/content';
 import type { TableDoc } from '@mantle/content-core/table-model';
 import { getMemberOr401 } from '@/lib/auth';
+import { readJsonNoNul } from '@/lib/strip-nul';
 import {
-  SaveBody,
-  SpaceIdParams,
   conflict,
   inMySpace,
+  memberWriteGate,
   notFound,
+  SaveBody,
+  SpaceIdParams,
   spaceStateResponse,
 } from '@/lib/member-space';
 import { firstIssue } from '@/lib/zod-issue';
@@ -31,9 +33,11 @@ import { firstIssue } from '@/lib/zod-issue';
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
+  const limited = memberWriteGate(member);
+  if (limited) return limited;
   const params = SpaceIdParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
-  const body = SaveBody.safeParse(await req.json().catch(() => null));
+  const body = SaveBody.safeParse(await readJsonNoNul(req));
   if (!body.success) return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   const { spaceId } = member;
   const id = params.data.id;

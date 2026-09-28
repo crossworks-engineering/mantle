@@ -151,8 +151,13 @@ attributable.
   Items a member submits reach the brain only when an admin accepts them
   (member-logins.md section 6).
 - **Cost containment.** Per-login rate limit (6 a minute) +
-  `TEAM_CHAT_DAILY_TURNS` daily cap (denials logged), so a leaked login is a
-  bounded nuisance, not a wallet drain.
+  `TEAM_CHAT_DAILY_TURNS` daily turn cap + `MANTLE_MEMBER_DAILY_TOKENS` daily
+  token budget, both checked when a turn is queued (turn ledger, migration
+  0182; denials logged), on a queue of their own, so a leaked login is a
+  bounded nuisance, not a wallet drain. Change requests a member files are
+  capped (3 a message, 20 a day) and reach no model until an admin acts on
+  them. A member app never calls a built-in flagged `spends`. Member writes
+  are rate limited too (120 a minute per login).
 - **Accepted trade-offs, stated plainly:** (1) within the boundary, a member
   can surface anything the responder can read, including via injection in
   content; that's the coarse-permission model, and the enable switch says so.

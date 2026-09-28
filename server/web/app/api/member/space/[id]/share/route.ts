@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { SPACE_SHARING } from '@mantle/db';
 import { setSharing } from '@mantle/content';
 import { getMemberOr401 } from '@/lib/auth';
-import { SpaceIdParams, inMySpace, spaceStateResponse } from '@/lib/member-space';
+import { readJsonNoNul } from '@/lib/strip-nul';
+import { inMySpace, memberWriteGate, SpaceIdParams, spaceStateResponse } from '@/lib/member-space';
 import { firstIssue } from '@/lib/zod-issue';
 
 const Body = z.object({ sharing: z.enum(SPACE_SHARING) });
@@ -16,9 +17,11 @@ const Body = z.object({ sharing: z.enum(SPACE_SHARING) });
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
+  const limited = memberWriteGate(member);
+  if (limited) return limited;
   const params = SpaceIdParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
-  const body = Body.safeParse(await req.json().catch(() => null));
+  const body = Body.safeParse(await readJsonNoNul(req));
   if (!body.success) return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   try {
     const item = await inMySpace(member, () =>

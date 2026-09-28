@@ -116,8 +116,8 @@ networks:
 x-logging: &default-logging
   driver: json-file
   options:
-    max-size: "10m"
-    max-file: "3"
+    max-size: '10m'
+    max-file: '3'
 
 # Liveness probe for the port-less long-runners (api + the 8 workers). Those
 # services already restart-on-exit if the process DIES (restart: unless-stopped)
@@ -249,6 +249,13 @@ x-app-env: &app-env
   MS_REDIRECT_URI: ${MS_REDIRECT_URI:-}
   # Team forum limits: per-member daily gates (forum-gate.ts).
   TEAM_CHAT_DAILY_TURNS: ${TEAM_CHAT_DAILY_TURNS:-}
+  # Member chat: model tokens (in + out) per member login per UTC day, checked
+  # before a turn is queued (server/web/lib/member-daily-cap.ts). Default
+  # 2000000; 0 turns the token budget off (the turn cap still holds).
+  MANTLE_MEMBER_DAILY_TOKENS: ${MANTLE_MEMBER_DAILY_TOKENS:-}
+  # Cap on the member chat's own DBOS queue in server/api (MEMBER_TURN_QUEUE),
+  # off the owner's queue so members never queue ahead of the owner. Default 2.
+  MANTLE_MEMBER_TURN_CONCURRENCY: ${MANTLE_MEMBER_TURN_CONCURRENCY:-}
   TEAM_UPLOAD_DAILY_BYTES: ${TEAM_UPLOAD_DAILY_BYTES:-}
   # How many proxy hops sit in front of the app, for client-IP extraction in
   # the rate limiter (X-Forwarded-For, counted from the right). Default 1 =
@@ -324,7 +331,7 @@ services:
     # idle and climbs under load. A crash-looping service can briefly double its
     # connection churn and exhaust 100, wedging the DB (even psql locked out).
     # 200 is cheap on an 11 GB box (~10 MB/conn worst case) and absorbs spikes.
-    command: ["postgres", "-c", "max_connections=200"]
+    command: ['postgres', '-c', 'max_connections=200']
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env — scripts/install.sh writes one}
@@ -342,7 +349,7 @@ services:
       - ${MANTLE_DATA_DIR:-./data}/postgres:/var/lib/postgresql/data
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d postgres']
       interval: 5s
       timeout: 3s
       retries: 20
@@ -368,9 +375,9 @@ services:
   objectstore_init:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-rustfs:${RUSTFS_IMAGE_TAG:-1.0.0}
     container_name: mantle_objectstore_init
-    restart: "no"
-    user: "0:0"
-    entrypoint: ["sh", "-ec"]
+    restart: 'no'
+    user: '0:0'
+    entrypoint: ['sh', '-ec']
     command:
       - |
         D=/mantle-data; SRC=$$D/minio; DST=$$D/rustfs; TMP=$$D/rustfs.partial
@@ -425,15 +432,15 @@ services:
       RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:?set it in .env — scripts/install.sh writes one}
       RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:?set it in .env — scripts/install.sh writes one}
       RUSTFS_VOLUMES: /data
-      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_CONSOLE_ENABLE: 'false'
       RUSTFS_REGION: ${S3_REGION:-us-east-1}
       # Empty = log to stdout, so docker's log rotation applies (the image
       # default writes files under /logs inside the container).
-      RUSTFS_OBS_LOG_DIRECTORY: ""
+      RUSTFS_OBS_LOG_DIRECTORY: ''
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/rustfs:/data
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health/ready"]
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:9000/health/ready']
       interval: 10s
       timeout: 5s
       retries: 12
@@ -462,7 +469,7 @@ services:
       # ceiling). On an 8 GB+ box with heavy deck/Office workloads, -Xmx2g is
       # safe. JAVA_TOOL_OPTIONS not JAVA_OPTS — Tika's launcher doesn't
       # propagate JAVA_OPTS to the forked TikaServerProcess (verified live).
-      JAVA_TOOL_OPTIONS: "-Xmx1g -Xms128m"
+      JAVA_TOOL_OPTIONS: '-Xmx1g -Xms128m'
     healthcheck:
       # apache/tika image has only bash (no curl/wget/nc), so probe via
       # bash's built-in /dev/tcp + a minimal HTTP/1.0 GET against /version.
@@ -496,11 +503,12 @@ services:
       # Two concurrent renders + a small queue covers a team clicking Download;
       # 60s per-session cap kills stuck renders. Raise CONCURRENT on big boxes
       # if PDF exports start queueing (503s with 'queue is full').
-      CONCURRENT: "2"
-      QUEUED: "10"
-      TIMEOUT: "60000"
+      CONCURRENT: '2'
+      QUEUED: '10'
+      TIMEOUT: '60000'
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/meta?token=$${TOKEN} >/dev/null || exit 1"]
+      test:
+        ['CMD-SHELL', 'curl -sf http://localhost:3000/meta?token=$${TOKEN} >/dev/null || exit 1']
       interval: 10s
       timeout: 5s
       retries: 12
@@ -524,7 +532,7 @@ services:
     # (SIGCHLD auto-reap would destroy subprocess return codes).
     init: true
     logging: *default-logging
-    profiles: ["media"]
+    profiles: ['media']
     # Transcodes stream through temp files, never RAM; 1g covers ffmpeg
     # peaks. DWF renders (v0.232.92+) run in a group-killed child whose
     # per-sheet canvas is pixel-capped, and the JSON reply is assembled in
@@ -549,9 +557,9 @@ services:
       # python-slim has no curl/wget; probe with the interpreter itself.
       test:
         [
-          "CMD",
-          "python",
-          "-c",
+          'CMD',
+          'python',
+          '-c',
           "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8095/healthz', timeout=3).status==200 else 1)",
         ]
       interval: 30s
@@ -577,13 +585,13 @@ services:
     # Online embedding (set up in onboarding) is the default; by default this
     # service does NOT run and NO app service waits on it — so a fresh box boots
     # even on a locked-down network that can't pull the ~300MB model.
-    profiles: ["local-embedder"]
+    profiles: ['local-embedder']
     environment:
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-5m}
     volumes:
       - ${MANTLE_DATA_DIR:-./data}/ollama:/root/.ollama
     healthcheck:
-      test: ["CMD", "ollama", "list"]
+      test: ['CMD', 'ollama', 'list']
       interval: 10s
       timeout: 5s
       retries: 12
@@ -594,13 +602,13 @@ services:
   ollama_pull:
     image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.2}
     container_name: mantle_ollama_pull
-    restart: "no"
-    profiles: ["local-embedder"]
+    restart: 'no'
+    profiles: ['local-embedder']
     depends_on:
       ollama: { condition: service_healthy }
     environment:
       OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["ollama", "pull", "${MANTLE_EMBEDDING_PULL_MODEL:-embeddinggemma}"]
+    entrypoint: ['ollama', 'pull', '${MANTLE_EMBEDDING_PULL_MODEL:-embeddinggemma}']
 
   # ── Tailscale (always-on sidecar, idle until activated) ───────────────────
   # Reaches capable chat/vision models running on a box you own (home GPU, LAN
@@ -638,7 +646,7 @@ services:
     # "tailscaled is up + the socket is listening" — true whether or not we've
     # joined a tailnet. Nothing depends_on this service.
     healthcheck:
-      test: ["CMD-SHELL", "test -S /var/run/tailscale/tailscaled.sock"]
+      test: ['CMD-SHELL', 'test -S /var/run/tailscale/tailscaled.sock']
       interval: 15s
       timeout: 5s
       retries: 8
@@ -656,9 +664,14 @@ services:
     # CreateBucket, any backend). It replaced the `createbuckets` one-shot,
     # which needed MinIO's `mc`: without a bucket, the first upload, app build
     # or file ingest fails "The specified bucket does not exist".
-    command: ["sh", "-c", "pnpm -C packages/db migrate && pnpm -C server/web pgboss:init && pnpm -C server/api provision && pnpm -C packages/storage objectstore:ensure"]
+    command:
+      [
+        'sh',
+        '-c',
+        'pnpm -C packages/db migrate && pnpm -C server/web pgboss:init && pnpm -C server/api provision && pnpm -C packages/storage objectstore:ensure',
+      ]
     container_name: mantle_migrate
-    restart: "no"
+    restart: 'no'
     depends_on:
       postgres: { condition: service_healthy }
       objectstore: { condition: service_healthy }
@@ -686,9 +699,9 @@ services:
     # WEB_MEM_LIMIT higher on a box with RAM to spare (16 GB box: 6g).
     mem_limit: ${WEB_MEM_LIMIT:-3g}
     depends_on:
-      postgres:      { condition: service_healthy }
-      objectstore:   { condition: service_healthy }
-      migrate:       { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      objectstore: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
       # Personal-space file bytes (member logins): <root>/<spaceId>/files/<nodeId>.
@@ -730,7 +743,7 @@ services:
     # port here automatically; sanity.sh fails loudly if a publish was requested
     # but never bound.
     ports:
-      - "127.0.0.1:${MANTLE_WEB_DEBUG_PORT:-3000}:3000"
+      - '127.0.0.1:${MANTLE_WEB_DEBUG_PORT:-3000}:3000'
     # Liveness, in two parts — and the first part exists because the second
     # one lied.
     #
@@ -794,9 +807,9 @@ services:
     # port means no certificate — install.sh only moves these for installs that
     # aren't issuing one.
     ports:
-      - "${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTP_PORT:-80}:80"
-      - "${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTPS_PORT:-443}:443"
-      - "${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTPS_PORT:-443}:443/udp" # HTTP/3 (QUIC)
+      - '${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTP_PORT:-80}:80'
+      - '${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTPS_PORT:-443}:443'
+      - '${MANTLE_BIND_ADDR:-0.0.0.0}:${MANTLE_HTTPS_PORT:-443}:443/udp' # HTTP/3 (QUIC)
     environment:
       # Drives the Caddyfile site block. Hostname → auto-TLS; ":80" → HTTP only.
       MANTLE_SITE_ADDRESS: ${MANTLE_SITE_ADDRESS:-:80}
@@ -843,7 +856,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 128m
-    entrypoint: ["sh", "/updater.sh"]
+    entrypoint: ['sh', '/updater.sh']
     environment:
       MANTLE_STACK_DIR: ${MANTLE_STACK_DIR:-}
     volumes:
@@ -869,12 +882,12 @@ services:
   # by hand. Boxes without the profile don't run any of it.
   sandboxd:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/sandboxd", "start"]
+    command: ['pnpm', '-C', 'server/sandboxd', 'start']
     container_name: mantle_sandboxd
     restart: unless-stopped
     logging: *default-logging
     mem_limit: 512m
-    profiles: ["sandboxes"]
+    profiles: ['sandboxes']
     environment:
       SANDBOXD_TOKEN: ${SANDBOXD_TOKEN:-}
       SANDBOXES_DIR: ${MANTLE_SANDBOXES_HOST_DIR:-/opt/mantle-data/sandboxes}
@@ -900,9 +913,9 @@ services:
     healthcheck:
       test:
         [
-          "CMD",
-          "node",
-          "-e",
+          'CMD',
+          'node',
+          '-e',
           "fetch('http://127.0.0.1:8090/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
         ]
       interval: 30s
@@ -951,7 +964,17 @@ services:
     # the dashboard stack card) so the operator is the actuator of last resort.
     healthcheck:
       test:
-        ['CMD', 'curl', '--fail', '--silent', '--max-time', '4', '--unix-socket', '/var/run/docker.sock', 'http://localhost/_ping']
+        [
+          'CMD',
+          'curl',
+          '--fail',
+          '--silent',
+          '--max-time',
+          '4',
+          '--unix-socket',
+          '/var/run/docker.sock',
+          'http://localhost/_ping',
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -964,7 +987,7 @@ services:
   # the separate `agent` service). Same image, different command.
   api:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/api", "start"]
+    command: ['pnpm', '-C', 'server/api', 'start']
     container_name: mantle_api
     restart: unless-stopped
     logging: *default-logging
@@ -982,9 +1005,9 @@ services:
     labels:
       - autoheal=true
     depends_on:
-      postgres:      { condition: service_healthy }
-      objectstore:   { condition: service_healthy }
-      migrate:       { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      objectstore: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
       MANTLE_SPACES_ROOT: /data/spaces
@@ -1001,7 +1024,7 @@ services:
 
   worker_email:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/email-sync.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/email-sync.ts']
     container_name: mantle_worker_email
     restart: unless-stopped
     logging: *default-logging
@@ -1013,15 +1036,15 @@ services:
     labels:
       - autoheal=true
     depends_on:
-      postgres:      { condition: service_healthy }
-      objectstore:   { condition: service_healthy }
-      migrate:       { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      objectstore: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
   worker_telegram:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/telegram-poll.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/telegram-poll.ts']
     container_name: mantle_worker_telegram
     restart: unless-stopped
     logging: *default-logging
@@ -1034,7 +1057,7 @@ services:
       - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
@@ -1043,7 +1066,7 @@ services:
   # like the email worker.
   worker_microsoft:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/microsoft-sync.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/microsoft-sync.ts']
     container_name: mantle_worker_microsoft
     restart: unless-stopped
     logging: *default-logging
@@ -1055,9 +1078,9 @@ services:
     labels:
       - autoheal=true
     depends_on:
-      postgres:      { condition: service_healthy }
-      objectstore:   { condition: service_healthy }
-      migrate:       { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      objectstore: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
@@ -1065,7 +1088,7 @@ services:
   # changes (Syncthing / vim / cp) into the brain. Needs the files volume.
   worker_files:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/files-watch.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/files-watch.ts']
     container_name: mantle_worker_files
     restart: unless-stopped
     logging: *default-logging
@@ -1077,9 +1100,9 @@ services:
     labels:
       - autoheal=true
     depends_on:
-      postgres:      { condition: service_healthy }
-      objectstore:   { condition: service_healthy }
-      migrate:       { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      objectstore: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
     volumes:
@@ -1092,7 +1115,7 @@ services:
   # operator opts in at /settings/documentation.
   worker_docs:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/docs-sync.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/docs-sync.ts']
     container_name: mantle_worker_docs
     restart: unless-stopped
     logging: *default-logging
@@ -1105,7 +1128,7 @@ services:
       - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
@@ -1113,7 +1136,7 @@ services:
   # reminders silently never fire in prod (they work in `pnpm dev`).
   worker_events:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/events-reminders.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/events-reminders.ts']
     container_name: mantle_worker_events
     restart: unless-stopped
     logging: *default-logging
@@ -1126,7 +1149,7 @@ services:
       - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
       MANTLE_SPACES_ROOT: /data/spaces
@@ -1148,7 +1171,7 @@ services:
   # later) into the brain as event nodes. No volume — events live in Postgres.
   worker_calendar:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/calendar-sync.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/calendar-sync.ts']
     container_name: mantle_worker_calendar
     restart: unless-stopped
     logging: *default-logging
@@ -1161,7 +1184,7 @@ services:
       - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
@@ -1171,7 +1194,7 @@ services:
   # same history the CLI and the /debug/integrity Maintenance tab write.
   worker_maintenance:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/maintenance.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/maintenance.ts']
     container_name: mantle_worker_maintenance
     restart: unless-stopped
     logging: *default-logging
@@ -1184,7 +1207,7 @@ services:
       - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
       MANTLE_SPACES_ROOT: /data/spaces
@@ -1202,7 +1225,7 @@ services:
   # healthy with the feature off.
   worker_runs:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/runs.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/runs.ts']
     container_name: mantle_worker_runs
     restart: unless-stopped
     logging: *default-logging
@@ -1212,7 +1235,7 @@ services:
       - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env
 
@@ -1221,7 +1244,7 @@ services:
   # No-op until a device Connects (push_instance/push_subscriptions empty).
   worker_push:
     image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:-latest}
-    command: ["pnpm", "-C", "server/web", "exec", "tsx", "workers/push-notify.ts"]
+    command: ['pnpm', '-C', 'server/web', 'exec', 'tsx', 'workers/push-notify.ts']
     container_name: mantle_worker_push
     restart: unless-stopped
     logging: *default-logging
@@ -1234,6 +1257,6 @@ services:
       - autoheal=true
     depends_on:
       postgres: { condition: service_healthy }
-      migrate:  { condition: service_completed_successfully }
+      migrate: { condition: service_completed_successfully }
     environment:
       <<: *app-env

@@ -157,6 +157,12 @@ export function teamThreadToHistory(rows: TeamMessage[]): HistoryTurn[] {
     }));
 }
 
+/** The loaded thread window less this turn's own inbound row (present when
+ *  the turn was recovered after writing it). Exported for the tests. */
+export function historyBeforeInbound<T extends { id: string }>(rows: T[], inboundId: string): T[] {
+  return rows.filter((r) => r.id !== inboundId);
+}
+
 export async function runTeamTurn(
   ownerId: string,
   text: string,
@@ -257,13 +263,12 @@ async function runTeamTurnSteps(
       }),
     );
     const memoryConfig = (agent.memoryConfig ?? {}) as { history_limit?: number };
-    const teamHistoryRows = await recentTeamMessages(
+    const loadedHistoryRows = await recentTeamMessages(
       ownerId,
       '', // a login's thread is read by login
       memoryConfig.history_limit ?? 20,
       loginId,
     );
-    const history = teamThreadToHistory(teamHistoryRows);
 
     const inbound = await runDurableStep('record_team_inbound', () =>
       appendTeamMessage({
@@ -277,6 +282,12 @@ async function runTeamTurnSteps(
       }),
     );
     progress.inboundWritten = true;
+    // The history is read before the inbound step, outside any durable step,
+    // so a turn RECOVERED after that step (DBOS replays it from the journal)
+    // finds its own inbound row already in the thread: it would reach the
+    // model twice, once as history and once as the new message (audit F31).
+    const teamHistoryRows = historyBeforeInbound(loadedHistoryRows, inbound.id);
+    const history = teamThreadToHistory(teamHistoryRows);
 
     // Durable "thinking…" bubble — same contract as the owner surface, so the
     // member UI + a reload mid-turn can bind to a stable outbound id. History

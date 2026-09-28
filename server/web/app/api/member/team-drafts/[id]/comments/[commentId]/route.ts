@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { withTeamDrafts } from '@mantle/db';
 import { deleteTeamDraftComment } from '@mantle/content';
 import { getMemberOr401 } from '@/lib/auth';
-import { CommentParams, notFound } from '@/lib/member-space';
+import { CommentParams, memberWriteGate, notFound } from '@/lib/member-space';
 
 /** DELETE /api/member/team-drafts/:id/comments/:commentId : remove one of the
  *  member's own comments on a teammate's item, shared now or unshared since
@@ -13,6 +13,8 @@ export async function DELETE(
 ) {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
+  const limited = memberWriteGate(member);
+  if (limited) return limited;
   const params = CommentParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
   const ok = await withTeamDrafts(() =>

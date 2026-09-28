@@ -1261,6 +1261,13 @@
       "when": 1790017020000,
       "tag": "0179_admin_private_spaces",
       "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1790017200000,
+      "tag": "0182_member_turn_ledger",
+      "breakpoints": true
     }
   ]
 }

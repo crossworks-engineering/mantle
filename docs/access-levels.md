@@ -70,7 +70,7 @@ item when the caller's level is at or above the item's level.
 - **`systemDb`** is the admin pool whatever the viewer, for the
   infrastructure a limited turn still writes: traces, tool-result spills, the
   approval queue, access and audit logs, the replay buffer, the embedding
-  cache, the member's own thread, API key reads. The lint rule
+  cache, the member's own thread, the member turn ledger, API key reads. The lint rule
   `mantle-db/system-db-allowlist` lets only those modules import it.
 - **`asSystem(fn)`** is the one audited escape for a write a limited turn
   needs: `team_request_create` files its admin-level task through it. The

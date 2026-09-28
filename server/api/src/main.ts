@@ -17,7 +17,14 @@ import { registerRecallEmbedder, startProcessHeartbeat } from '@mantle/content';
 import { embedBatch } from '@mantle/embeddings';
 import { runTableStorageProbes } from '@mantle/tabledb';
 import { registerLogSink } from '@mantle/tracing';
-import { configureDBOS, RUNNER_QUEUE, runnerConcurrency, runsTurnConcurrency } from './config';
+import {
+  configureDBOS,
+  MEMBER_TURN_QUEUE,
+  memberTurnConcurrency,
+  RUNNER_QUEUE,
+  runnerConcurrency,
+  runsTurnConcurrency,
+} from './config';
 import { assertEnvShape } from '@mantle/config';
 import { RUNS_TURN_QUEUE } from '@mantle/runs';
 import { startAgentRuntime, stopAgentRuntime } from './agent/runtime';
@@ -129,9 +136,13 @@ async function main(): Promise<void> {
   // the owner's interactive assistant/telegram turns (the starvation isolation;
   // see RUNS_TURN_QUEUE in @mantle/runs). Deliberately low concurrency.
   await DBOS.registerQueue(RUNS_TURN_QUEUE, { concurrency: runsTurnConcurrency() });
+  // Member chat turns get their own queue too (audit F31): a few busy members
+  // must not queue ahead of the owner's turns. Low concurrency by default.
+  await DBOS.registerQueue(MEMBER_TURN_QUEUE, { concurrency: memberTurnConcurrency() });
   DBOS.logger.info(
     `[api] runner service online — queue='${RUNNER_QUEUE}' concurrency=${runnerConcurrency()}; ` +
-      `runs-turn queue='${RUNS_TURN_QUEUE}' concurrency=${runsTurnConcurrency()}`,
+      `runs-turn queue='${RUNS_TURN_QUEUE}' concurrency=${runsTurnConcurrency()}; ` +
+      `member-turn queue='${MEMBER_TURN_QUEUE}' concurrency=${memberTurnConcurrency()}`,
   );
 
   // Absorbed agent runtime: wires up the Telegram responder + background ticks

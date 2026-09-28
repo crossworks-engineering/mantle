@@ -200,9 +200,11 @@ into pages:
 `data.source = 'forum-archive'`. The node insert trigger still announces each
 page on `node_ingested`, but the extractor's admission gate refuses it before
 any pass (disposition `extract_exempt`: no summary, embedding, chunks or
-facts), and the boot drain and the missed-event sweep leave it out
-(`isExtractExempt` / `unextractedNodeConds` in
-`packages/db/src/extract-exempt.ts`). The filed uploads and the dump are
+facts), and the boot drain, the missed-event sweep and a repopulating
+re-embed leave it out (`isExtractExempt` / `extractExemptSql` /
+`unextractedNodeConds` in `packages/db/src/extract-exempt.ts`; the same rule
+holds a member's team request until an admin acts on it, team-chat.md
+section 8). The filed uploads and the dump are
 metadata-only: no LLM, one local spine embedding each. The export itself calls
 no model and no embedder. So search and the agents never read the archive
 pages; an admin reads them in Pages.

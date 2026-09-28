@@ -7,7 +7,7 @@
  * the owner's resolution back into the member's thread.
  */
 import { and, count, desc, eq, gte, sql } from 'drizzle-orm';
-import { TEAM_REQUEST_SOURCE, db, nodes, notifyNodeIngested, systemDb } from '@mantle/db';
+import { TEAM_REQUEST_SOURCE, db, nodes, notifyNodeIngested } from '@mantle/db';
 import { appendTeamMessage } from './team-messages';
 import type { TeamRequest } from '@mantle/client-types';
 export type { TeamRequest };
@@ -25,9 +25,10 @@ export const TEAM_REQUESTS_PER_DAY = 20;
 
 /**
  * Team requests already filed: those stamped with this inbound message (the
- * turn), or by this requester since `since`. Read on the system connection:
- * the team turn runs on the limited team role, which cannot see admin tasks,
- * and an under-count would open the cap.
+ * turn), or by this requester since `since`. The tasks are admin level: a
+ * caller on the limited team role (the team turn) must run this inside
+ * `asSystem`, as `team_request_create` does, or it counts nothing and the cap
+ * never closes.
  */
 export async function countTeamRequestsFiled(
   ownerId: string,
@@ -51,7 +52,7 @@ export async function countTeamRequestsFiled(
         : sql`${nodes.data}->'teamRequest'->>'contactId' = ${by.contactId}`,
     );
   }
-  const [row] = await systemDb
+  const [row] = await db
     .select({ n: count() })
     .from(nodes)
     .where(and(...conds));

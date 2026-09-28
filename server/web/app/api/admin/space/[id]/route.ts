@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { deleteMineItem, getMineItem, updateMineItem } from '@mantle/content';
 import { adminWriter, getAdminSpaceOr401, inAdminSpace } from '@/lib/admin-space';
+import { readJsonNoNul } from '@/lib/strip-nul';
 import { SpaceIdParams, notFound, spaceStateResponse } from '@/lib/member-space';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -44,7 +45,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (caller instanceof Response) return caller;
   const params = SpaceIdParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
-  const body = Patch.safeParse(await req.json().catch(() => null));
+  const body = Patch.safeParse(await readJsonNoNul(req));
   if (!body.success) return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   try {
     const got = await inAdminSpace(caller, () =>

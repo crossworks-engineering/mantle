@@ -8,7 +8,7 @@
  * Rows keyed by a contact (`contact_id`, no login) are the retired team-code
  * portal chat: history only, read by the admin archive and `team_chat_read`.
  */
-import { and, count, desc, eq, gte, isNull, lt, or, sql as dsql } from 'drizzle-orm';
+import { and, desc, eq, isNull, lt, or, sql as dsql } from 'drizzle-orm';
 import {
   authUsers,
   db,
@@ -197,27 +197,6 @@ export async function recentTeamMessages(
     withPrivate: true,
     ...(loginId ? { loginId } : {}),
   });
-}
-
-/** Inbound turns a member LOGIN has sent since `since`: the member chat's
- *  daily-cap gate (users are the team; a member needs no contact). */
-export async function countMemberInboundSince(
-  ownerId: string,
-  loginId: string,
-  since: Date,
-): Promise<number> {
-  const [row] = await systemDb
-    .select({ n: count() })
-    .from(teamMessages)
-    .where(
-      and(
-        eq(teamMessages.ownerId, ownerId),
-        eq(teamMessages.loginId, loginId),
-        eq(teamMessages.direction, 'inbound'),
-        gte(teamMessages.createdAt, since),
-      ),
-    );
-  return row?.n ?? 0;
 }
 
 /**

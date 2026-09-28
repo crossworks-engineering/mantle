@@ -15,7 +15,7 @@ import {
   sweepSpool,
 } from '@mantle/files';
 import { getMemberOr401 } from '@/lib/auth';
-import { inMySpace, spaceStateResponse } from '@/lib/member-space';
+import { inMySpace, memberWriteGate, spaceStateResponse } from '@/lib/member-space';
 import { readMultipartUpload, type ParsedUpload } from '@/lib/upload-stream';
 
 /** Multipart framing around the file part (boundaries, part headers). */
@@ -35,6 +35,8 @@ const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
 export async function POST(req: Request) {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
+  const limited = memberWriteGate(member);
+  if (limited) return limited;
   if (!spacesRootAvailable()) {
     return NextResponse.json({ error: new SpacesRootUnavailableError().message }, { status: 503 });
   }
