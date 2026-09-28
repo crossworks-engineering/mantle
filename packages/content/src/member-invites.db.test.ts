@@ -19,7 +19,7 @@ describe.skipIf(!URL)('member invites', () => {
   let inv: Mod;
   let teamTokens: typeof import('./team-tokens');
   let m: typeof import('@mantle/db');
-  let admin: <T = Row[]>(s: TemplateStringsArray, ...v: unknown[]) => Promise<T>;
+  let admin: Parameters<typeof m.ensureViewerRoles>[0];
   const tag = `inv-${randomUUID().slice(0, 8)}`;
   const anchor = randomUUID();
   const otherBrain = randomUUID();
@@ -30,6 +30,7 @@ describe.skipIf(!URL)('member invites', () => {
     lee: randomUUID(), // linked to a login already
     kim: randomUUID(), // domain wildcard only, no address
     ray: randomUUID(), // for the race
+    tia: randomUUID(), // team code revoked mid-redeem
     foreign: randomUUID(), // another brain's contact
     note: randomUUID(), // not a contact
   };
@@ -71,6 +72,7 @@ describe.skipIf(!URL)('member invites', () => {
       (${ids.lee}, ${anchor}, 'contact', 'Lee', 'contacts', ${data([email('lee')])}::jsonb),
       (${ids.kim}, ${anchor}, 'contact', 'Kim', 'contacts', ${data(['@example.invalid'])}::jsonb),
       (${ids.ray}, ${anchor}, 'contact', 'Ray', 'contacts', ${data([email('ray')])}::jsonb),
+      (${ids.tia}, ${anchor}, 'contact', 'Tia', 'contacts', ${data([email('tia')])}::jsonb),
       (${ids.foreign}, ${otherBrain}, 'contact', 'Far', 'contacts', ${data([email('far')])}::jsonb),
       (${ids.note}, ${anchor}, 'note', 'a note', 'notes', '{}'::jsonb)`;
     await admin`insert into auth.users (id, email, password_hash, role, contact_id)
@@ -290,6 +292,29 @@ describe.skipIf(!URL)('member invites', () => {
       });
       expect(ok?.email).toBe(email('open'));
       expect(ok?.contactId).toBeNull();
+    });
+
+    it('does not redeem a team code revoked while the redeem runs', async () => {
+      const { token } = (await teamTokens.enableTeamMember(anchor, ids.tia)) as { token: string };
+      const { invite } = await inv.createMemberInvite(anchor, {
+        contactId: ids.tia,
+        createdBy: adminLogin,
+      });
+      // The admin's revoke holds the token row, uncommitted; the redeem reads
+      // the code as valid, then waits on that row, and finds it gone.
+      let revoking!: () => void;
+      const started = new Promise<void>((r) => (revoking = r));
+      const revoke = admin.begin(async (t) => {
+        await t`delete from contact_team_tokens where contact_id = ${ids.tia}`;
+        revoking();
+        await new Promise((r) => setTimeout(r, 500));
+      });
+      await started;
+      const redeem = inv.redeemMemberInvite({ code: token, passwordHash: HASH });
+      await revoke;
+      expect(await redeem).toBeNull();
+      expect(await loginByEmail(email('tia'))).toBeNull();
+      expect((await inviteRow(invite.id)).redeemed_at).toBeNull();
     });
 
     it('refuses when a login took the email after the invite was made', async () => {
