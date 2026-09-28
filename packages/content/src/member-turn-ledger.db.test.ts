@@ -72,14 +72,30 @@ describe.skipIf(!URL)('claimMemberTurn', () => {
     expect(await claim(pat, 'pat.f')).toEqual({ ok: true, fresh: true });
   });
 
-  it('lets only one of several concurrent claims take the last slot', async () => {
+  it('waits for a claim in flight on the same login, then sees its row', async () => {
+    // A claim in flight holds the per-login lock (its key is the one
+    // claimMemberTurn takes). A second claim must wait for it, so it counts
+    // the slot the first one took instead of both taking the last slot.
     const who = randomUUID();
     await admin`insert into auth.users (id, email, password_hash, role) values
       (${who}, ${`race-${tag}@example.invalid`}, 'x', 'member')`;
-    const results = await Promise.all(
-      Array.from({ length: 8 }, (_, i) => claim(who, `race.${i}`, 1)),
-    );
-    expect(results.filter((r) => r.ok).length).toBe(1);
+    const raw = admin as unknown as {
+      begin: (fn: (tx: typeof admin) => Promise<unknown>) => Promise<unknown>;
+    };
+    let second: Promise<unknown> | null = null;
+    let settled = false;
+    await raw.begin(async (tx) => {
+      await tx`select pg_advisory_xact_lock(hashtextextended(${`member-turn:${who}`}, 0))`;
+      second = claim(who, 'race.second', 1).then((r) => {
+        settled = true;
+        return r;
+      });
+      await new Promise((r) => setTimeout(r, 400));
+      expect(settled).toBe(false);
+      await tx`insert into member_turn_ledger (turn_id, owner_id, login_id)
+               values ('race.first', ${anchor}, ${who})`;
+    });
+    expect(await second).toEqual({ ok: false, reason: 'daily_cap', used: 1 });
     await admin`delete from auth.users where id = ${who}`;
   });
 
