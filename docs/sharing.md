@@ -215,10 +215,12 @@ media presenters are net-new here.)_
 
 > **Levels drive links (2026-09-26).** The owner UI no longer sets a link's
 > mode directly. The Access control sets the item's **level**
-> (`PATCH /api/access/nodes/:id`) and the link follows it: none at admin and at
-> team (members list a team item in their Library), an open link at client and
-> public. Every share path below re-derives the level from the
-> link it leaves, so they stay in step. See
+> (`PATCH /api/access/nodes/:id`) and the link follows it: none at admin, at
+> team (members list a team item in their Library) and at client (signed-in
+> clients, client logins C1: a link on a client item is refused with
+> `client-links-retired`), an open link at public. Every share path below
+> re-derives the level from the link it leaves (a client item never moves
+> because of a link), so they stay in step. See
 > [access-levels.md §7](./access-levels.md). The share API stays for the
 > agent tools and older clients. The text below describes the share model the
 > level now drives.

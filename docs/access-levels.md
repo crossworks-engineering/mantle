@@ -8,7 +8,12 @@
 ## 1. The model
 
 Four levels, one rule: **admin > team > client > public**. A caller sees an
-item when the caller's level is at or above the item's level.
+item when the caller's level is at or above the item's level, with one
+exception (client logins C1, migration 0187, decision 3): the client role
+reads CLIENT items only, not public ones. Migration 0161 set every item with
+an open link to public, so on a real box public means "every item ever
+link-shared with an outsider"; a client login must not find all of it.
+Public items stay reachable by their own open link.
 
 | Thing             | Column                 | Default | Who changes it    |
 | ----------------- | ---------------------- | ------- | ----------------- |
@@ -103,7 +108,13 @@ item when the caller's level is at or above the item's level.
   owner's own chats and stays admin).
 - **Grants** come from one checked-in list, `ACCESS_MATRIX`
   (`packages/db/src/access-matrix.ts`), applied by `applyViewerGrants` at
-  every migrate. SELECT only. Draft columns (`pages.draft_doc`,
+  every migrate. SELECT only. Per role since client logins C1 (`byRole`):
+  the client role reads agents and tool groups at client level and below
+  only (a row rule for that role alone, migration 0187; the team role keeps
+  every row, because a team-level agent may still delegate to an admin
+  agent), and holds no grant on `auth.users` at all: `mantle_brain_id()` is
+  SECURITY DEFINER, and the nodes rule calls it once per query as an init
+  plan. Draft columns (`pages.draft_doc`,
   `draws.draft_scene`, `tables.draft_data`, `apps.draft_source`, …) and login
   secrets are never granted. A table not in the list is a loud
   `permission denied`, never a silent leak.
@@ -202,7 +213,7 @@ The level is the truth; an item's share link (docs/sharing.md) follows it.
 | ------ | ------------------------------------------------------------------------- |
 | admin  | none (revoked)                                                            |
 | team   | none (revoked): member logins list and open it in their Library, by level |
-| client | open (anyone with the link), shown to the owner                           |
+| client | none: signed-in clients read it (client logins C1)                        |
 | public | open (anyone with the link), shown to the owner                           |
 
 Team links are retired (member logins Phase 6 stage 6, migration 0176; see
@@ -212,8 +223,8 @@ share mode but `public`. The team codes those links took are gone too
 outside a login reaches a team item.
 
 - **Level to link.** `setItemLevel` (`@mantle/content` access.ts) writes the
-  level, then `applyLevelToShare` (shares.ts) revokes the link (admin, team)
-  or creates it (client, public), in ONE transaction: a link that cannot be made leaves the level
+  level, then `applyLevelToShare` (shares.ts) revokes the link (admin, team,
+  client) or creates it (public), in ONE transaction: a link that cannot be made leaves the level
   where it was. `PATCH /api/access/nodes/:id` and `access_set` both use it.
   What goes down with the item (its embeds, a folder's contents when asked)
   gets the level only, never a link of their own: it is reached through the
@@ -221,8 +232,9 @@ outside a login reaches a team item.
   expired one that was never revoked (it still holds the one-link slot).
 - **Link to level.** Every share mutation (`createShare`, `applyShareMode`,
   `setShareCascade`, `revokeShare`, `revokeShareTree`) re-derives the level
-  of the nodes it touched (`levelForShareMode`): no link is admin, except
-  that an item at team stays at team; an open link keeps client or public
+  of the nodes it touched (`levelForShareMode`): an item at client never
+  moves because of a link (below); otherwise no link is admin, except
+  that an item at team stays at team; an open link keeps public
   and drops anything higher to public (so `node_share` on a team item puts
   it at public: to show an item to members only, set team instead). A
   node a link lowers takes its embeds down with it (section 1).
@@ -231,6 +243,22 @@ outside a login reaches a team item.
   when a cascading link is revoked, a parent that went to admin takes its
   sub-pages with it, and a parent that went to team takes them to team. So
   `node_share` / `page_share` and the email link never drift from the level.
+- **No client links** (client logins C1). Client means signed-in clients
+  (a client login reads client items with its own login), never "anyone
+  with the link": setting an item to client revokes its open link, and
+  `createShare` refuses an item at client, or a sub-page asked to follow a
+  client parent, with `client-links-retired` (`ClientLinkRetiredError`), so
+  `node_share`, `page_share`, `POST /api/shares`, the email link and
+  `setShareCascade` all meet it (the email tool sends the page without a
+  link and says why in `linkRefused`). Old links on client items, made
+  when client meant an open link, stay live until they are retired
+  (client logins C3), and no re-sync moves their item: `levelForShareMode`
+  keeps a client item at client whatever its link, and turning an old
+  client link off (`unshareItem`) keeps the item at client. The "What
+  clients see" report (`GET /api/access/client-report`) lists every item
+  at client, its old link, the addresses a page was emailed to and the
+  team or admin items it names; an admin acknowledges it
+  (`POST /api/access/client-report/ack`) before the first client login.
 - **No team links** (member logins Phase 6 stage 6). Team is a level members
   read by, never a link: setting an item to team revokes its open link, and
   asking for a team link (`PATCH /api/shares/:id` `mode: 'team'`,

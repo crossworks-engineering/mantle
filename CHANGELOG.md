@@ -4,6 +4,47 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.NEXT: client logins, phases C0 and C1 (the client level, dark)
+
+No client login can be made yet (the users API refuses role client until
+phase C2). What changes for an admin today: **client no longer means "anyone
+with the link"**. It means signed-in clients, and public is the only level
+with an open link.
+
+- **Three login roles, fail closed (C0).** A login is an admin, a member or a
+  client. The session code names each role; a role it does not know is no
+  login at all (before, every role that was not member resolved as an
+  admin). Every admin and member gate refuses a client with 403
+  `client-login`. Password sign-in, an admin password reset, change
+  password, a personal assistant and MCP consent refuse a client; a role
+  change to or from client is refused. `role-sweep.test.ts` drives every
+  route with a client login and with an unknown role. Contract types
+  `LoginKind`, `LoginRefusedReason`, `LoginRefused`.
+- **The client level in the database (C1, migration 0187).** The role CHECK
+  admits client. The client role reads client items only, not public ones
+  (decision 3), on every search arm. It reads agents and tool groups at
+  client level and below only (the team role keeps every row), and holds no
+  grant on logins (`mantle_brain_id()` is SECURITY DEFINER). The access
+  matrix is per role. Proven on a copy of the dev brain: no leak on any arm,
+  client searches 1 to 5 ms. The team-drafts read rule stops early now
+  (it called the brain id once per hidden row).
+- **No client links.** Setting an item to client removes its open link. A
+  link on a client item is refused (`client-links-retired`) inside
+  `createShare`, so `node_share`, `page_share`, `POST /api/shares`, the
+  email link and the sub-page cascade all meet it. Old client links stay live
+  until phase C3 retires them, and no re-sync moves their item. Turning an
+  old client link off keeps the item at client. `/api/shares/all` shows each
+  link's level. Contract type `ShareRetiredReason`, `SharedLinkRow`.
+- **"What clients see"** (`GET /api/access/client-report`, `POST
+  /api/access/client-report/ack`, table `client_report_acks`): every item
+  at client level, its old link and views, the addresses a page was
+  emailed to, and the team or admin items it names. Adding a client (C2)
+  waits until an admin acknowledges it. Contract types `ClientReport*`.
+- **Client spaces.** `withSpace` takes its level from the login's role
+  (client for a client). A client draft may name only its own items and
+  client items. Accept of a client-authored item defaults to team; client
+  or public needs `lowerConfirmed` (409 `confirm-level`). Give back after
+  Take over checks the item at the author's level.
 ## 0.232.317: client v0.6.169
 
 - Pairs the client at jackdaw v0.6.169, the client half of 0.232.316: a live
