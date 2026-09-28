@@ -45,12 +45,7 @@ import {
   MEMBER_ITEM_KINDS as SPACE_ITEM_KINDS,
   type MemberItemKind as SpaceItemKind,
 } from '@mantle/client-types/member-kinds';
-import {
-  extOf,
-  mimeForExt,
-  removeSpaceFile,
-  spaceFilePath,
-} from '@mantle/files';
+import { extOf, mimeForExt, removeSpaceFile, spaceFilePath } from '@mantle/files';
 import {
   publishedPath,
   relativeStoragePath,
@@ -116,7 +111,13 @@ export async function moveBetweenSpaces(
     if (!root) continue;
     await tx
       .insert(nodes)
-      .values({ ownerId: to, type: 'branch', title: root.title, slug: root.label, path: root.label })
+      .values({
+        ownerId: to,
+        type: 'branch',
+        title: root.title,
+        slug: root.label,
+        path: root.label,
+      })
       .onConflictDoNothing({
         target: [nodes.ownerId, nodes.path],
         where: sql`${nodes.type} = 'branch'`,
@@ -264,7 +265,11 @@ export async function takenGroup(via: Via, spaceId: string, id: string): Promise
     .from(spaceItems)
     .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
     .where(
-      and(eq(spaceItems.nodeId, id), eq(nodes.ownerId, spaceId), eq(spaceItems.reviewState, 'taken')),
+      and(
+        eq(spaceItems.nodeId, id),
+        eq(nodes.ownerId, spaceId),
+        eq(spaceItems.reviewState, 'taken'),
+      ),
     )
     .limit(1);
   if (!me) return [];
@@ -295,12 +300,7 @@ export async function detachFromGroups(tx: Pick<Tx, 'update'>, ids: string[]): P
   await tx
     .update(spaceItems)
     .set({ takenRoot: null })
-    .where(
-      and(
-        inArray(spaceItems.takenRoot, ids),
-        notInArray(spaceItems.nodeId, ids),
-      ),
-    );
+    .where(and(inArray(spaceItems.takenRoot, ids), notInArray(spaceItems.nodeId, ids)));
 }
 
 // ── The author ─────────────────────────────────────────────────────────────

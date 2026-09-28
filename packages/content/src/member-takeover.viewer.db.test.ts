@@ -176,11 +176,11 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
     imageId = await as(member, async () =>
       sf.createMineFile(M, { filename: 'Photo.png', spooled: await spool('MEMBERPNG') }),
     );
-    pageId = (await as(member, () => sp.createMineItem(M, { type: 'page', title: `${tag} p` })))
-      .id;
+    pageId = (await as(member, () => sp.createMineItem(M, { type: 'page', title: `${tag} p` }))).id;
     const img = { type: 'image', attrs: { nodeId: imageId } };
-    expect((await as(member, () => sp.saveMinePage(M, pageId, say('member words', [img])))).ok)
-      .toBe(true);
+    expect(
+      (await as(member, () => sp.saveMinePage(M, pageId, say('member words', [img])))).ok,
+    ).toBe(true);
     await as(member, () => sp.setSharing(M, pageId, 'team'));
     await as(member, () => sp.submitItem(M, pageId));
     expect((await rv.listReviewQueue()).items.map((i) => i.id)).toContain(pageId);
@@ -300,8 +300,11 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
       content: [{ type: 'mention', attrs: { id: secretId, ref: 'node' } }],
     };
     expect(
-      (await as(adminA, () => sp.saveMinePage(A, pageId, say('admin words', [img, secret]), writer)))
-        .ok,
+      (
+        await as(adminA, () =>
+          sp.saveMinePage(A, pageId, say('admin words', [img, secret]), writer),
+        )
+      ).ok,
     ).toBe(true);
     await expect(
       tk.giveBackTakenItem(anchor, actorA(), pageId, 'Please fix'),
@@ -433,14 +436,18 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
     await expect(as(adminA, () => sp.deleteMineItem(A, note.id))).rejects.toMatchObject({
       reason: 'taken',
     });
-    await m.systemDb.execute(sqlTag`update auth.users set disabled_at = now() where id = ${member2}`);
+    await m.systemDb.execute(
+      sqlTag`update auth.users set disabled_at = now() where id = ${member2}`,
+    );
     await expect(
       tk.giveBackTakenItem(anchor, actorA(), note.id, 'Back to you'),
     ).rejects.toMatchObject({ reason: 'author-inactive' });
     expect((await tk.takenFromOf(A, [note.id])).get(note.id)?.canGiveBack).toBe(false);
     expect(await as(adminA, () => sp.deleteMineItem(A, note.id))).toBe(true);
     expect(await ownerOf(note.id)).toBeUndefined();
-    await m.systemDb.execute(sqlTag`update auth.users set disabled_at = null where id = ${member2}`);
+    await m.systemDb.execute(
+      sqlTag`update auth.users set disabled_at = null where id = ${member2}`,
+    );
   });
 
   let heldId: string;
@@ -491,7 +498,9 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
   it('a released item can be returned from the queue: a give-back to the member', async () => {
     const M = spaceOf[member]!;
     // B is deactivated now: released again, and returned by the anchor.
-    await m.systemDb.execute(sqlTag`update auth.users set disabled_at = now() where id = ${adminB}`);
+    await m.systemDb.execute(
+      sqlTag`update auth.users set disabled_at = now() where id = ${adminB}`,
+    );
     await rv.returnReviewItem(heldId, { loginId: anchor }, 'Over to you again.', anchor);
     expect(await ownerOf(heldId)).toBe(M);
     expect(await rowOf(heldId)).toMatchObject({
@@ -510,11 +519,15 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
       sp.createMineItem(N, { type: 'note', title: `${tag} lb`, content: 'x' }),
     );
     await as(member2, () => sp.setSharing(N, shared.id, 'team'));
-    await m.systemDb.execute(sqlTag`update auth.users set disabled_at = now() where id = ${member2}`);
+    await m.systemDb.execute(
+      sqlTag`update auth.users set disabled_at = now() where id = ${member2}`,
+    );
     await expect(rv.takeOverReviewItem(shared.id, actorA())).rejects.toMatchObject({
       reason: 'not-submitted',
     });
-    await m.systemDb.execute(sqlTag`update auth.users set disabled_at = null where id = ${member2}`);
+    await m.systemDb.execute(
+      sqlTag`update auth.users set disabled_at = null where id = ${member2}`,
+    );
   });
 
   it('a missing or pending snapshot is completed from the brain on the author’s first read', async () => {

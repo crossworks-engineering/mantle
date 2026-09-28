@@ -20,9 +20,12 @@ const Query = z.object({
         .map((x) => x.trim())
         .filter(Boolean),
     )
-    .refine((v) => v.every((x) => x === 'with-admin' || (REVIEW_STATES as readonly string[]).includes(x)), {
-      message: 'unknown review state',
-    })
+    .refine(
+      (v) => v.every((x) => x === 'with-admin' || (REVIEW_STATES as readonly string[]).includes(x)),
+      {
+        message: 'unknown review state',
+      },
+    )
     .optional(),
   page: z.coerce.number().int().min(1).max(10_000).default(1),
 });

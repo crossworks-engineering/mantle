@@ -168,7 +168,7 @@ describe.skipIf(!hasManifest)('admin private-space routes', () => {
   });
 
   // Audit F07: Take over lands in the ACTING admin's own space.
-  it('take-over: admin only, into the acting login\'s own space', async () => {
+  it("take-over: admin only, into the acting login's own space", async () => {
     const path = '/api/team-admin/submissions/not-a-uuid/take-over';
     expect((await app.request(path, { method: 'POST' })).status).toBe(401);
     const asMember = await app.request(path, {

@@ -680,11 +680,7 @@ async function authorCanTakeBack(id: string): Promise<boolean> {
       .from(spaceItems)
       .innerJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
       .where(
-        and(
-          eq(spaceItems.nodeId, id),
-          eq(authUsers.role, 'member'),
-          isNull(authUsers.disabledAt),
-        ),
+        and(eq(spaceItems.nodeId, id), eq(authUsers.role, 'member'), isNull(authUsers.disabledAt)),
       )
       .limit(1),
   );
