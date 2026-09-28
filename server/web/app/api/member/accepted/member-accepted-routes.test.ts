@@ -26,7 +26,7 @@ const h = vi.hoisted(() => ({
 }));
 
 const member = {
-  role: 'member',
+  role: 'member' as const,
   loginId: LOGIN,
   anchorId: ANCHOR,
   spaceId: SPACE,

@@ -464,12 +464,14 @@ export async function cloneAgentForUser(
 
 /** Drop a login's assignment. The agent and its whole archive survive — it just
  *  becomes a shared agent again (same reasoning as migration 0127). Returns the
- *  released agent, or null when the login had none. */
+ *  released agent, or null when the login had none. Pass `tx` to release
+ *  inside a caller's transaction (a lockout). */
 export async function releaseAssignedAgent(
   userId: string,
   actorId: string,
+  tx: Executor = db,
 ): Promise<AgentSummary | null> {
-  const [row] = await db
+  const [row] = await tx
     .update(agents)
     .set({ assignedUserId: null, assignedAt: null, updatedAt: new Date() })
     .where(and(eq(agents.ownerId, userId), eq(agents.assignedUserId, actorId)))
