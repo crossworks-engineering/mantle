@@ -4,7 +4,8 @@
  * GET  — topics visible to the calling member ('team' topics + their own
  *        private ones), pinned first then latest activity, with last-post
  *        previews and the member's unread counts.
- * POST — create a topic (title + opening post). Unless the post waves the
+ * POST — CLOSED (Phase 6): answers 410 `forum-closed` (lib/forum-closed.ts).
+ *        What it did: create a topic (title + opening post). Unless the post waves the
  *        agent off (`noReply`, defaulted ON for `discussion` topics), the
  *        durable forum turn is enqueued and the agent's answer lands as the
  *        second post.
@@ -21,6 +22,7 @@ import { enqueueForumTurn } from '@/lib/forum-turn-enqueue';
 import { forumDailySpend, FORUM_DAILY_CAP } from '@/lib/forum-gate';
 import { resolveStagedAttachments } from '@/lib/forum-attachments';
 import { titleForTopic } from '@/lib/forum-title';
+import { FORUM_CLOSED, forumClosedResponse } from '@/lib/forum-closed';
 import {
   FORUM_TOPIC_SORTS,
   countForumTopics,
@@ -79,6 +81,17 @@ export async function POST(req: Request) {
   const caller = await resolveTeamChatCaller(req);
   if (!caller) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { ownerId, contactId, channel } = caller;
+
+  // Phase 6: the forum is closed; nothing below runs (lib/forum-closed.ts).
+  if (FORUM_CLOSED) {
+    recordTeamAccess({
+      ownerId,
+      contactId,
+      kind: 'denied',
+      detail: { reason: 'forum_closed', surface: 'forum', action: 'topic_create' },
+    });
+    return forumClosedResponse();
+  }
 
   const gate = rateLimit(`forum-post:${contactId}`, { max: 6, windowMs: 60_000 });
   if (!gate.ok) {

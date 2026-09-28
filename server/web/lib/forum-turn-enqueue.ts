@@ -8,6 +8,7 @@
 import { getDbosClient } from '@/lib/dbos-client';
 import { isTurnStreamingEnabled } from '@mantle/client-types/turn-streaming';
 import { mintTeamTurnId } from '@/lib/team-chat-gate';
+import { FORUM_CLOSED, ForumClosedError } from '@/lib/forum-closed';
 import {
   FORUM_TURN_WORKFLOW,
   FORUM_QUEUE,
@@ -35,6 +36,10 @@ export type EnqueueForumTurnResult =
 export async function enqueueForumTurn(
   args: EnqueueForumTurnArgs,
 ): Promise<EnqueueForumTurnResult> {
+  // Phase 6: the forum takes no new turns. Every caller is a forum write
+  // route that already answers 410; this is the backstop behind them. A turn
+  // queued before the freeze still runs to completion in server/api.
+  if (FORUM_CLOSED) throw new ForumClosedError();
   const turnId = mintTeamTurnId(args.contactId, args.idempotencyKey);
   const streaming = isTurnStreamingEnabled();
 
