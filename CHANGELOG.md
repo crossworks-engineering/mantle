@@ -4,6 +4,21 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.297: team links retired (Phase 6 stage 6)
+
+- Migration 0176 revokes every team-mode share link. Items keep their level:
+  a team item stays at team, members read it with their own logins.
+- A team link can no longer be made: `PATCH /api/shares/:id` answers 400
+  `team-links-retired`, and `node_share` / `page_share` take only `public`.
+  An old team `/s` link shows a "Sign in as a member" page (410).
+- Removed: the team gate, `/s/[token]/auth`, the team visitor cookie, the
+  contact id on share frame tickets and `/api/contacts/[id]/team`. A shared
+  app's tool broker refuses every call (public apps never had tools).
+- Home app designation puts an admin-level app at team instead of making a
+  team link, and answers `levelChanged` (`modeChanged` stays one cycle).
+- Contract: `ShareMode` is `'public'`; `DELETE /api/shares/:id` drops
+  `keptTeam`; the hub-app PUT drops `shareToken`.
+
 ## 0.232.296: client v0.6.159
 
 - Paired with jackdaw v0.6.159: the team-code portal screens (/team, /hub,
