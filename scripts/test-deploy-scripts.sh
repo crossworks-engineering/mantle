@@ -757,7 +757,15 @@ case "$1" in
           echo "[updater] pre-roll backup ok: mantle-x.dump" > "$RS/sig/update.log"
         fi
         cat "$RS/sig/status.json" ;;
-      *update.log*) grep 'pre-roll backup ok' "$RS/sig/update.log" ;;
+      *update.log*)
+        # Run what was asked, as the real box would: the words exactly as
+        # the remote shell split them (the ssh stub joins its arguments the
+        # way ssh does), with /signal/ pointed at the fake signal dir.
+        shift 2; n=$#
+        while [ "$n" -gt 0 ]; do
+          a=$1; shift; set -- "$@" "$(printf '%s' "$a" | sed "s#^/signal/#$RS/sig/#")"; n=$((n - 1))
+        done
+        exec "$@" ;;
       *api/version*) echo '{"version":"fake"}' ;;
       *) : ;;
     esac

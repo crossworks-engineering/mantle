@@ -206,7 +206,9 @@ if ! printf '%s' "$S" | grep -q '"ok":true'; then
   die "ROLL NOT OK: $(printf '%s' "$S" | field error)"
 fi
 if [ -n "$UPDATER_DUMPS" ]; then
-  rsh docker exec mantle_updater grep 'pre-roll backup ok' /signal/update.log 2>/dev/null \
+  # One string: ssh joins its arguments, so separate quoted words lose their
+  # quotes on the box and grep reads "backup" and "ok" as file names.
+  rsh "docker exec mantle_updater grep -q 'pre-roll backup ok' /signal/update.log" 2>/dev/null \
     || die "the roll finished but update.log shows no pre-roll backup; check backups/pre-roll by hand"
 fi
 
