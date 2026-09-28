@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.293: the team forum closes and becomes an archive (Phase 6 stage 4)
+
+- The forum takes no new topics, replies, uploads or admin posts (410
+  forum-closed, with a hint to ask for an invite); reads stay for now.
+- Team admin can export the forum (POST /api/team-admin/forum/export; a
+  boot task also runs it once while topics are unexported): one admin-level
+  page per topic under "Forum archive", a JSON dump in files/archive,
+  unreviewed uploads filed to files/review/forum-archive, requests linked.
+  Archive pages are never extracted or embedded (no model cost).
+- The member daily cap and dedupeFilename moved out of the forum modules.
+
 ## 0.232.292: invites in the client; old team history follows the login (Phase 6 stage 3)
 
 - Paired with jackdaw v0.6.157: Team admin > Invites (Invite as member on a
