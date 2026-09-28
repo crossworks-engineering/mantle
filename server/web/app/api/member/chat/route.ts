@@ -165,8 +165,8 @@ export async function POST(req: Request) {
         {
           error:
             claim.reason === 'daily_cap'
-              ? `daily message limit reached (${MEMBER_DAILY_CAP}/day) — try again tomorrow`
-              : 'daily usage limit reached for the chat — try again tomorrow, or ask an admin to raise it',
+              ? `daily message limit reached (${MEMBER_DAILY_CAP}/day). Try again tomorrow.`
+              : 'daily usage limit reached for the chat. Try again tomorrow, or ask an admin to raise it.',
           reason: claim.reason,
         },
         { status: 429 },
