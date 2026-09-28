@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.309: the client with the audit fixes and Take over
+
+- Pairs the client at jackdaw v0.6.164: Take over and Give back in Team
+  admin > Review and the Private view, "With admin" for members, the
+  accepted snapshot notice, "Sign out everywhere" (account menu, and each
+  login's Devices card in Settings > Users), member citation links that open
+  from any source, the admin reply to a member's request, and the error
+  states the audit listed.
+- `scripts/roll.sh` no longer reads a fleet box's url as its stack dir when
+  the box has no `stack` field.
+
 ## 0.232.308: final audit fixes for member logins, and Take over
 
 Fixes every finding of the final member-logins audit (F01 to F31). Migrations
