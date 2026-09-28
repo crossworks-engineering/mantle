@@ -41,7 +41,7 @@ import {
   spaceNotFound,
 } from './member-space-core';
 import { notifySpaceItemChanged } from './member-space-events';
-import { dedupeFilename } from './forum-uploads-meta';
+import { dedupeFilename } from './dedupe-filename';
 
 /** The ltree path every personal file node carries (not under `files`). */
 export const SPACE_FILES_PATH = 'space_files';

@@ -169,10 +169,10 @@ export {
 export {
   attachmentKindForMime,
   topicFolderSlug,
-  dedupeFilename,
   formatAttachmentSize,
   type ForumAttachmentKind,
 } from './forum-uploads-meta';
+export { dedupeFilename } from './dedupe-filename';
 
 export {
   recordTeamAccess,

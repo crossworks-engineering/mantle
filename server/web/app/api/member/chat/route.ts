@@ -16,7 +16,7 @@ import { errorMessage } from '@mantle/std';
 import type { MemberChatThread } from '@mantle/client-types';
 import { getMemberOr401, type MemberCaller } from '@/lib/auth';
 import { getDbosClient } from '@/lib/dbos-client';
-import { FORUM_DAILY_CAP, startOfTodayUtc } from '@/lib/forum-gate';
+import { MEMBER_DAILY_CAP, startOfTodayUtc } from '@/lib/member-daily-cap';
 import { rateLimit } from '@/lib/rate-limit';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -125,15 +125,15 @@ export async function POST(req: Request) {
     );
   }
   const usedToday = await countMemberInboundSince(ownerId, loginId, startOfTodayUtc());
-  if (usedToday >= FORUM_DAILY_CAP) {
+  if (usedToday >= MEMBER_DAILY_CAP) {
     recordTeamAccess({
       ownerId,
       contactId: null,
       kind: 'denied',
-      detail: { reason: 'daily_cap', cap: FORUM_DAILY_CAP, login_id: loginId },
+      detail: { reason: 'daily_cap', cap: MEMBER_DAILY_CAP, login_id: loginId },
     });
     return NextResponse.json(
-      { error: `daily message limit reached (${FORUM_DAILY_CAP}/day) — try again tomorrow` },
+      { error: `daily message limit reached (${MEMBER_DAILY_CAP}/day) — try again tomorrow` },
       { status: 429 },
     );
   }

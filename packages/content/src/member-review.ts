@@ -80,7 +80,7 @@ import { NOTES_ROOT_LABEL } from './notes';
 import { PAGES_ROOT_LABEL } from './pages/shared';
 import { childPagePath } from './page-path';
 import { draftAbsFor, removeTableFile } from './table-storage';
-import { dedupeFilename } from './forum-uploads-meta';
+import { dedupeFilename } from './dedupe-filename';
 import { setItemLevel } from './access';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
