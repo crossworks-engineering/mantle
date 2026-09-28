@@ -96,6 +96,21 @@ export type MemberCaller = {
   contactId: string | null;
 };
 
+/**
+ * A CLIENT login (client logins, Phase C0): a person at the brain's one
+ * client company. No route serves one yet (the client routes come in Phase
+ * C2): every admin and member gate refuses it with reason `client-login`.
+ * Like MemberCaller it has no `.id`, so no anchor-scoped call site can take
+ * it by mistake.
+ */
+export type ClientLogin = {
+  role: 'client';
+  loginId: string;
+  anchorId: string;
+  email: string;
+  displayName: string | null;
+};
+
 /** Whether a login row may hold a session at all: not disabled, and it has
  *  an email. Admin and member alike (member logins are always on since
  *  Phase 6; the MANTLE_MEMBERS flag is gone). */
@@ -104,10 +119,11 @@ export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolea
 }
 
 /** Who is calling, resolved from the login row: an admin (today's
- *  SessionUser) or a member. */
+ *  SessionUser), a member or a client. */
 type Resolved =
   | { kind: 'admin'; user: SessionUser; source: AuthSource }
-  | { kind: 'member'; member: MemberCaller; source: AuthSource };
+  | { kind: 'member'; member: MemberCaller; source: AuthSource }
+  | { kind: 'client'; client: ClientLogin; source: AuthSource };
 
 /**
  * Owner gate for the byte-serving asset routes only. Resolves the session
@@ -293,30 +309,57 @@ async function sessionUserFor(row: ActorRow): Promise<SessionUser | null> {
   };
 }
 
-/** An admin row becomes a SessionUser (id = the anchor); a member row a
- *  MemberCaller. Null when the brain has no anchor (a corrupt state). */
+/**
+ * An admin row becomes a SessionUser (id = the anchor), a member row a
+ * MemberCaller, a client row a ClientLogin. Every role is named: a role this
+ * code does not know is NO login (null), never an admin (client logins C0:
+ * before it, every role that was not member resolved as an admin). Null too
+ * when the brain has no anchor (a corrupt state).
+ */
 async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved | null> {
-  if (row.role === 'member') {
-    const anchorId = await getAnchorId();
-    if (!anchorId) return null;
-    const spaceId = await loadPersonalSpaceId(row.id);
-    if (!spaceId) return null;
-    return {
-      kind: 'member',
-      source,
-      member: {
-        role: 'member',
-        loginId: row.id,
-        anchorId,
-        spaceId,
-        email: row.email,
-        displayName: row.displayName,
-        contactId: row.contactId,
-      },
-    };
+  const role: string = row.role;
+  switch (role) {
+    case 'admin': {
+      const user = await sessionUserFor(row);
+      return user ? { kind: 'admin', user, source } : null;
+    }
+    case 'member': {
+      const anchorId = await getAnchorId();
+      if (!anchorId) return null;
+      const spaceId = await loadPersonalSpaceId(row.id);
+      if (!spaceId) return null;
+      return {
+        kind: 'member',
+        source,
+        member: {
+          role: 'member',
+          loginId: row.id,
+          anchorId,
+          spaceId,
+          email: row.email,
+          displayName: row.displayName,
+          contactId: row.contactId,
+        },
+      };
+    }
+    case 'client': {
+      const anchorId = await getAnchorId();
+      if (!anchorId) return null;
+      return {
+        kind: 'client',
+        source,
+        client: {
+          role: 'client',
+          loginId: row.id,
+          anchorId,
+          email: row.email,
+          displayName: row.displayName,
+        },
+      };
+    }
+    default:
+      return null;
   }
-  const user = await sessionUserFor(row);
-  return user ? { kind: 'admin', user, source } : null;
 }
 
 /** Resolve the calling login, admin or member, cookie first then bearer. */
@@ -458,18 +501,25 @@ export async function getOwnerOr401WithSource(): Promise<
 > {
   const res = await resolveLogin();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  // Deny by default: a member is refused by every admin gate. Member routes use
-  // getMemberOr401 and are listed in MEMBER_ROUTES (the auth sweep checks it).
-  if (res.kind === 'member') return memberRefused();
+  // Deny by default: every admin gate takes an admin and nothing else. A
+  // member or a client is refused (member routes use getMemberOr401 and are
+  // listed in MEMBER_ROUTES; the auth sweeps check both).
+  if (res.kind !== 'admin') return loginRefused(res.kind);
   await auditMutation(res.user);
   return { user: res.user, source: res.source };
 }
 
-function memberRefused(): NextResponse {
-  return NextResponse.json(
-    { error: 'forbidden', reason: 'member-login', message: 'Not available to member logins.' },
-    { status: 403 },
-  );
+/** The 403 a gate answers a login of the wrong role with. The reason names
+ *  the CALLER's role: `member-login`, `client-login`, or `admin-login` from
+ *  a member route. */
+export function loginRefused(kind: Resolved['kind']): NextResponse {
+  const body =
+    kind === 'member'
+      ? { reason: 'member-login', message: 'Not available to member logins.' }
+      : kind === 'client'
+        ? { reason: 'client-login', message: 'Not available to client logins.' }
+        : { reason: 'admin-login', message: 'This route is for member logins.' };
+  return NextResponse.json({ error: 'forbidden', ...body }, { status: 403 });
 }
 
 /**
@@ -482,12 +532,9 @@ function memberRefused(): NextResponse {
 export async function getMemberOr401(): Promise<MemberCaller | NextResponse> {
   const res = await resolveLogin();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  if (res.kind !== 'member') {
-    return NextResponse.json(
-      { error: 'forbidden', reason: 'admin-login', message: 'This route is for member logins.' },
-      { status: 403 },
-    );
-  }
+  // A member and nothing else: an admin gets admin-login, a client
+  // client-login (client routes are their own list, never a member route).
+  if (res.kind !== 'member') return loginRefused(res.kind);
   return res.member;
 }
 
@@ -510,31 +557,43 @@ export async function sessionCookieExpiryMs(): Promise<number | null> {
   return data ? data.exp * 1000 : null;
 }
 
-/** The calling login's own row, admin or member: for the few routes about the
- *  login itself (change its password, sign out, who am I). Never for brain
- *  data. */
+/** The calling login's own row, whatever its role: for the few routes about
+ *  the login itself (change its password, sign out, who am I). Never for
+ *  brain data. Each caller decides per role; a client is its own kind. */
 export async function getLoginOr401(): Promise<
   | { kind: 'admin'; loginId: string; email: string; source: AuthSource; user: SessionUser }
   | { kind: 'member'; loginId: string; email: string; source: AuthSource; member: MemberCaller }
+  | { kind: 'client'; loginId: string; email: string; source: AuthSource; client: ClientLogin }
   | NextResponse
 > {
   const res = await resolveLogin();
   if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
-  return res.kind === 'admin'
-    ? {
+  switch (res.kind) {
+    case 'admin':
+      return {
         kind: 'admin',
         loginId: res.user.actor.id,
         email: res.user.actor.email,
         source: res.source,
         user: res.user,
-      }
-    : {
+      };
+    case 'member':
+      return {
         kind: 'member',
         loginId: res.member.loginId,
         email: res.member.email,
         source: res.source,
         member: res.member,
       };
+    case 'client':
+      return {
+        kind: 'client',
+        loginId: res.client.loginId,
+        email: res.client.email,
+        source: res.source,
+        client: res.client,
+      };
+  }
 }
 
 /**
@@ -575,7 +634,14 @@ export async function authenticatePassword(
   if (!row?.hash) return null;
   // Check the password first, so a disabled login answers like a wrong one
   // (no account-state oracle), then refuse it.
-  return ok && loginUsable(row) ? { id: row.id, sessionEpoch: row.sessionEpoch } : null;
+  // Password sign-in is for admins and members only: a client signs in with a
+  // link or a code (client logins C2), and a role this code does not know
+  // never signs in. Refused like a wrong password (no role oracle).
+  const role: string = row.role;
+  const passwordRole = role === 'admin' || role === 'member';
+  return ok && passwordRole && loginUsable(row)
+    ? { id: row.id, sessionEpoch: row.sessionEpoch }
+    : null;
 }
 
 /** authenticatePassword, the login id only (the bearer logins: a bearer is

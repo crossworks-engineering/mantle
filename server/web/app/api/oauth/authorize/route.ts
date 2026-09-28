@@ -61,17 +61,25 @@ function htmlError(message: string, status = 400): Response {
   );
 }
 
-/** Who is signed in: an admin, a member (who cannot connect a client), or
- *  nobody. A member used to read as nobody here and was sent to /login, where
- *  they were already signed in: a loop with no way out. */
-async function signedIn(): Promise<SessionUser | 'member' | null> {
+/** Who is signed in: an admin, a member or client (who cannot connect a
+ *  client), or nobody. A member used to read as nobody here and was sent to
+ *  /login, where they were already signed in: a loop with no way out. */
+async function signedIn(): Promise<SessionUser | 'member' | 'client' | null> {
   const login = await getLoginOr401();
   if (login instanceof Response) return null;
-  return login.kind === 'admin' ? login.user : 'member';
+  switch (login.kind) {
+    case 'admin':
+      return login.user;
+    case 'member':
+      return 'member';
+    case 'client':
+      return 'client';
+  }
 }
 
 const MEMBER_REFUSED =
   'Member logins cannot connect MCP clients to this brain. Ask an admin of this brain.';
+const CLIENT_REFUSED = 'Client logins cannot connect MCP clients to this brain.';
 
 /** Bind the consent form to (user, client, redirect, challenge) so only a POST
  *  originating from the page we rendered to THIS signed-in user is honoured. */
@@ -113,6 +121,7 @@ export async function GET(req: Request) {
 
   const user = await signedIn();
   if (user === 'member') return htmlError(MEMBER_REFUSED, 403);
+  if (user === 'client') return htmlError(CLIENT_REFUSED, 403);
   if (!user) {
     // Bounce through login, then return to this exact authorize request.
     const next = encodeURIComponent(url.pathname + url.search);
@@ -149,6 +158,7 @@ export async function POST(req: Request) {
 
   const user = await signedIn();
   if (user === 'member') return htmlError(MEMBER_REFUSED, 403);
+  if (user === 'client') return htmlError(CLIENT_REFUSED, 403);
   if (!user) return htmlError('your session expired — start the connection again', 401);
 
   if (!consentTokenValid(get('consent_token'), consentToken(user.id, p))) {

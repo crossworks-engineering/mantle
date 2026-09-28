@@ -89,6 +89,7 @@ export type {
   MemberInviteState,
 } from './dto/member-invites';
 export type { MemberItemKind } from './member-kinds';
+export type { LoginKind, LoginRefused, LoginRefusedReason } from './dto/logins';
 
 // Types only at the root; the runtime constants (APP_TINTS, limits) are the
 // `@mantle/client-types/app-nav` subpath.

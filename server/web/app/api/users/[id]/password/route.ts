@@ -49,11 +49,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const targetId = idParsed.data.id;
 
   const [target] = await db
-    .select({ id: authUsers.id, email: authUsers.email })
+    .select({ id: authUsers.id, email: authUsers.email, role: authUsers.role })
     .from(authUsers)
     .where(eq(authUsers.id, targetId))
     .limit(1);
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
+  // Admins and members sign in with a password; a client never does (a link
+  // or a code, client logins C2), so no password is set on one. Named roles
+  // only: an unknown role is refused too.
+  if (target.role !== 'admin' && target.role !== 'member') {
+    return NextResponse.json(
+      { error: 'This login does not sign in with a password.' },
+      { status: 400 },
+    );
+  }
 
   await updatePassword(targetId, parsed.data.newPassword);
   const self = targetId === user.actor.id;

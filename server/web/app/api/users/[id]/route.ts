@@ -33,7 +33,8 @@ function isUniqueViolation(err: unknown): boolean {
 const PatchBody = z
   .object({
     displayName: z.string().trim().max(120).nullable().optional(),
-    /** Never 'member' on the anchor or yourself. */
+    /** Never 'member' on the anchor or yourself. Never 'client': a client
+     *  login is made as one and stays one (client logins, decision 11). */
     role: z.enum(['admin', 'member']).optional(),
     /** true = the login cannot sign in or use a session it holds. */
     disabled: z.boolean().optional(),
@@ -69,7 +70,22 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     .limit(1);
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
 
-  const lockingOut = body.role === 'member' || body.disabled === true;
+  // Any role but admin locks the login out of admin sessions (client logins
+  // C0: named, not "is it member", so a new role can never skip this).
+  const lockingOut = (body.role !== undefined && body.role !== 'admin') || body.disabled === true;
+  // A role change touches admins and members only: to or from any other role
+  // (a client) is refused; disable the login and make a new one (decision 11).
+  if (
+    body.role !== undefined &&
+    body.role !== target.role &&
+    target.role !== 'admin' &&
+    target.role !== 'member'
+  ) {
+    return NextResponse.json(
+      { error: 'This login cannot change role. Disable it and create a new login.' },
+      { status: 400 },
+    );
+  }
   if (lockingOut && target.isOwner) {
     return NextResponse.json(
       { error: 'The original account is always an admin and cannot be disabled.' },

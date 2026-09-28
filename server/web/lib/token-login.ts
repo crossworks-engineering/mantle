@@ -82,10 +82,12 @@ export async function handleTokenLogin(
     // exists. No token is minted.
     if (row?.role !== 'admin') {
       return NextResponse.json(
-        {
-          error: 'Member logins use the web app. Sign in from a browser instead.',
-          reason: 'member-login',
-        },
+        row?.role === 'member'
+          ? {
+              error: 'Member logins use the web app. Sign in from a browser instead.',
+              reason: 'member-login',
+            }
+          : { error: 'This login cannot use this app.', reason: 'client-login' },
         { status: 403 },
       );
     }

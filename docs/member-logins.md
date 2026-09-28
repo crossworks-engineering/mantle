@@ -99,6 +99,22 @@
   an admin is refused on every member route.
 - A member route is always member-specific. Never put a shared owner route on
   the list.
+- **Three roles, fail closed** (client logins, Phase C0). A login is an
+  admin, a member or a client (a person at the brain's one client company;
+  client logins are built in phases, and no client row can exist before
+  Phase C1's migration). The session code names each role (`resolvedFor`
+  in lib/auth/session.ts is a switch with `default: null`): a role it does
+  not know is no login at all, never an admin. Every admin gate takes an
+  admin and nothing else, and every member gate a member: a client gets 403
+  `client-login` from both. Password sign-in (`/api/auth/login`, the
+  mobile and bearer logins), a password set by an admin
+  (`POST /api/users/:id/password`), `POST /api/auth/change-password`, a
+  personal assistant (`PUT /api/users/:id/agent`, admins only) and MCP
+  consent are refused to a client; `PATCH /api/users/:id` refuses a role
+  change to or from any role but admin and member, and counts any role but
+  admin as a lockout. `server/web/server/role-sweep.test.ts` drives every
+  manifest route, member routes included, with a client login (each
+  refuses it) and with an unknown role (each answers as to a stranger).
 - The sweep also proves the positive half: a member session gets past the
   gate on member routes, and a member `?at=` asset token
   (`getMemberForAsset`) is refused when it was minted under another anchor,

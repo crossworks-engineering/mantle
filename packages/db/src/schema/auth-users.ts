@@ -24,8 +24,10 @@ export const authUsers = authSchema.table('users', {
   isOwner: boolean('is_owner').notNull().default(false),
   displayName: text('display_name'),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
-  /** 'admin' | 'member' (0162). Read from this row on every request, never
-   *  from a token. The anchor is always admin (CHECK). */
+  /** 'admin' | 'member' (0162) | 'client' (client logins). Read from this
+   *  row on every request, never from a token. The anchor is always admin
+   *  (CHECK). Code that branches on it names every role and treats an
+   *  unknown value as no login (client logins C0: fail closed). */
   role: text('role').$type<LoginRole>().notNull().default('admin'),
   /** The team contact a member login belongs to (FK to nodes, SET NULL).
    *  At most one login per contact (partial unique index, 0181). */
@@ -38,7 +40,10 @@ export const authUsers = authSchema.table('users', {
   sessionEpoch: integer('session_epoch').notNull().default(0),
 });
 
-export const LOGIN_ROLES = ['admin', 'member'] as const;
+/** Every role a login can hold. 'client' is typed from Phase C0 so each
+ *  branch names it; the database CHECK admits it from Phase C1, and no route
+ *  creates one before Phase C2. */
+export const LOGIN_ROLES = ['admin', 'member', 'client'] as const;
 export type LoginRole = (typeof LOGIN_ROLES)[number];
 
 export type AuthUser = typeof authUsers.$inferSelect;
