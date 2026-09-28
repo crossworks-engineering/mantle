@@ -33,6 +33,8 @@ vi.mock('@mantle/db', async (importOriginal) => ({
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   assertEditable: vi.fn(async () => ({ type: 'page' })),
+  // Not taken over by an admin (the with-admin guard reads the database).
+  isWithAdmin: vi.fn(async () => false),
   saveDraft: vi.fn(async () => ({ ok: true, rev: 2 })),
   updateMineItem: vi.fn(async () => ({ id: ITEM })),
 }));

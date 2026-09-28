@@ -32,7 +32,10 @@ vi.mock('@mantle/content', async (importOriginal) => {
 });
 // Returns a promise: windowFile does `tableSqlSurface(...).catch(...)`, so a
 // bare vi.fn() (undefined) throws before the tool's own logic is reached.
-vi.mock('@mantle/content/table-storage', () => ({ tableSqlSurface: vi.fn(async () => null) }));
+vi.mock('@mantle/content/table-storage', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  tableSqlSurface: vi.fn(async () => null),
+}));
 vi.mock('@mantle/files', () => ({ fileById: vi.fn(), readFileById: vi.fn() }));
 vi.mock('@mantle/files/sheet-to-grid', () => ({
   parseSheetToGrid: vi.fn(),

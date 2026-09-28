@@ -16,7 +16,10 @@ vi.mock('@mantle/content', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content')>();
   return { ...actual, getTable: vi.fn(), applyTableOps: vi.fn() };
 });
-vi.mock('@mantle/content/table-storage', () => ({ tableSqlSurface: vi.fn() }));
+vi.mock('@mantle/content/table-storage', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  tableSqlSurface: vi.fn(),
+}));
 vi.mock('@mantle/files', () => ({ fileById: vi.fn(), readFileById: vi.fn() }));
 vi.mock('@mantle/files/sheet-to-grid', () => ({
   parseSheetToGrid: vi.fn(),
