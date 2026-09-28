@@ -80,6 +80,11 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
 
   beforeAll(async () => {
     sql = postgres(URL!, { max: 1, onnotice: () => {} });
+    // The migration drop tests rebuild tables that reference nodes (ALTER
+    // TABLE ... ADD FOREIGN KEY locks nodes); two of them at once deadlock.
+    // One session lock, shared by every such test, runs them one at a time;
+    // sql.end() releases it.
+    await sql`select pg_advisory_lock(hashtext('mantle-migration-drop-tests'))`;
     goneAfterMigrate = await forumTablesPresent();
     // The tables as the forum had them.
     for (const file of [
@@ -119,7 +124,7 @@ describe.skipIf(!URL)('migration 0177: drop the forum tables', () => {
                       'text/plain', 10, 'filed', ${id.filedFile})`;
     await sql`insert into forum_read_cursors (owner_id, reader_id, topic_id)
               values (${owner}, ${id.contact}, ${id.topic})`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     // Leave no forum table behind if a test failed midway.

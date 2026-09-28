@@ -78,6 +78,11 @@ describe.skipIf(!URL)('migration 0178: drop contact_team_tokens', () => {
 
   beforeAll(async () => {
     sql = postgres(URL!, { max: 1, onnotice: () => {} });
+    // The migration drop tests rebuild tables that reference nodes (ALTER
+    // TABLE ... ADD FOREIGN KEY locks nodes); two of them at once deadlock.
+    // One session lock, shared by every such test, runs them one at a time;
+    // sql.end() releases it.
+    await sql`select pg_advisory_lock(hashtext('mantle-migration-drop-tests'))`;
     goneAfterMigrate = !(await tablePresent());
     // The table as the team codes had it.
     for (const stmt of statementsOf('0112_contact_team_tokens.sql')) await sql.unsafe(stmt);
@@ -102,7 +107,7 @@ describe.skipIf(!URL)('migration 0178: drop contact_team_tokens', () => {
               values (${id.access}, ${owner}, ${id.contact}, 'auth', '{}'::jsonb)`;
     await sql`insert into contact_team_tokens (id, owner_id, contact_id, token_hash)
               values (${id.teamToken}, ${owner}, ${id.contact}, ${`hash-${tag}`})`;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     // Leave no code table behind if a test failed midway.
