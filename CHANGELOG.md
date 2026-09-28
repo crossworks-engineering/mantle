@@ -4,6 +4,21 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.307: the installer survives a dropped image download
+
+- `scripts/install.sh` retries a failed `docker compose pull` three times
+  (10s, then 20s). One reset connection to a registry used to abort the
+  whole pull, and the `up` after it created only some services. If every
+  attempt fails, the installer now stops before `up` and prints the exact
+  command to re-run. A re-run is safe. The client image pull retries too.
+- The owner UI step first checks that the server network (`mantle_default`,
+  read from `docker-compose.client.yml`) exists. If it does not, the step is
+  skipped with a clear message instead of compose's "declared as external,
+  but could not be found".
+- `scripts/install.sh --check` no longer calls Caddy's own HTTP to HTTPS
+  redirect for the configured site address "not Mantle". It names it as the
+  redirect. Other output is unchanged.
+
 ## 0.232.306: sandboxd negotiates the Docker API version
 
 - sandboxd no longer pins Docker Engine API 1.43. Docker 29.0 and 29.1
