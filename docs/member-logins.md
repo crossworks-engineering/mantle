@@ -176,6 +176,25 @@ item is FROZEN: the row rules refuse every write until Accept, Return or
 Recall. Recall (the author, before Accept) puts it back to draft. The member
 can never set accepted.
 
+**The submitted bundle** (migration 0180, audit F04). What renders inside a
+submitted item (an embedded drawing or file, a child page: section 6) is
+frozen with it. Submit works out the bundle from the saved versions and
+refuses with 409 `unsaved-draft` and the `ids` when any item in it has
+unsaved edits (save a version of each first). It then records the bundle in
+`space_item_bundles` (root first, in bundle order), and the frozen rule
+follows it: `mantle_space_item_frozen` in the row rules, and
+`assertEditable` in the app, which names the submitted item in its 409
+`frozen` (`ids` holds its id). An item frozen this way cannot be submitted
+on its own either. Recall, Return and Accept remove the record; the space
+role can write it only while the root is not submitted, so the author
+cannot unfreeze anything by dropping it. Submit locks the state row and the
+bundle's rows first (the same row locks every draft write takes), so an
+autosave from a second tab cannot land between the check and the change; a
+Submit or Recall that loses a race to another request answers 409 (or 404
+when an Accept moved the item), never a stale 200. An item submitted before
+0180 has no record: only the item itself is frozen, and Accept works its
+bundle out at accept time, as before.
+
 **Routes** (all in `MEMBER_ROUTES`, all through `inMySpace` or
 `withTeamDrafts`):
 
@@ -201,8 +220,8 @@ can never set accepted.
 The draft and save routes keep the owner routes' etag contract (`if_rev` in,
 `draft_rev` out, 409 with `current_rev`). State refusals answer 409 with a
 `reason` (`frozen`, `not-draft`, `not-submitted`, `unsaved-draft`, `quota`,
-`embed`, `not-shared`); an empty comment is a 400 (`invalid`); another
-member's item is a plain 404.
+`embed`, `not-shared`, `too-large`: a bundle of more than 200 items); an
+empty comment is a 400 (`invalid`); another member's item is a plain 404.
 
 A table's draft takes a whole `table` document or an `ops` batch (the owner
 op schema); Save version publishes the draft workbook. `GET …/:id?tab=` picks
@@ -257,9 +276,13 @@ full. Every quota check takes a per-space advisory lock, so two parallel
 writes cannot both pass the same headroom.
 
 **Deleting a login** leaves its space and items behind (`login_id` goes
-null); deleting a space deletes its rows, never its bytes on its own. A
-DEACTIVATED login's private items are purged after 30 days, rows and bytes
-(section 6).
+null, and a trigger stamps `spaces.orphaned_at`, migration 0180); deleting
+a space deletes its rows, never its bytes on its own. A DEACTIVATED login's
+private items are purged after 30 days, rows and bytes, and so are a
+DELETED login's, 30 days after `orphaned_at` (section 6). A space with no
+login is nobody's member space: a deleted member's shared items leave Team
+drafts at once (an admin still finds them in the Review queue as left
+behind, to accept or discard).
 
 **Rollback.** 0165 is safe under older code: the brain row keeps every
 existing owner id valid. Once personal items exist, never roll back below
@@ -332,7 +355,7 @@ redacted for admins (section 5).
 | --------------------------------------------------- | ------------------------------------------------ |
 | `GET /api/team-admin/submissions`                   | The queue: submitted (oldest first), left behind |
 | `GET /api/team-admin/submissions/:id[?tab=]`        | The saved body (never a draft) and the thread    |
-| `GET /api/team-admin/submissions/:id/bundle`        | What Accept would move, links that stay behind   |
+| `GET /api/team-admin/submissions/:id/bundle`        | What Accept would move, what stays behind        |
 | `GET /api/team-admin/submissions/:id/bytes[?node=]` | The file, or a file in its bundle (`?thumb=1`)   |
 | `GET /api/team-admin/submissions/:id/svg[?node=]`   | A drawing's saved SVG, or one in its bundle      |
 | `GET/POST /api/team-admin/submissions/:id/comments` | The thread; the reviewer's review talk           |
@@ -350,14 +373,22 @@ submitted.
 **Return** puts a submitted item back to `returned` with the note (the
 member sees it as a banner, edits, and submits again).
 
-**Accept** (plan 6.2) is one transaction per bundle. The bundle is the item
-plus everything that renders inside it, repeated until nothing new joins:
+**Accept** (plan 6.2) is one transaction per bundle. The bundle
+(`member-bundle.ts`) is the item plus everything that renders inside it,
+repeated until nothing new joins:
 `embed-refs.ts` splits every reference into EMBEDS (an id, `src` or `href`
 on a node: an image, a file embed, an embedded drawing or child page; a
 drawing's file refs) and LINKS (a link mark, a mention chip, a drawing's
 element link, a table cell). Embeds of the author's own items move; links
 stay where they are, and the dialog says how many point at items that stay
-in a personal space. Every moved item keeps its node id (links stay valid),
+in a personal space. A submitted item moves the bundle recorded at Submit
+(section 5: frozen since, so what the admin reviewed is what moves). A
+left-behind item (never submitted) takes only items that are themselves
+shared with the team or submitted (audit F18): its author's private embeds
+stay behind, count as staying behind, and the review file and SVG routes
+never serve them. The bundle's rows are locked still in the space: an item
+another Accept moved first (a shared embed) is dropped, never moved twice.
+Every moved item keeps its node id (links stay valid),
 goes to the brain at the level the admin picks (admin by default), loses any
 leftover draft, and its `space_items` row goes to `accepted` with the
 reviewer (the row stays: it records the author). A page lands at the top of
@@ -368,8 +399,10 @@ renamed into place after the commit, and its space copy removed; a table's
 workbook is snapshotted into `TABLE_DB_DIR/<brain>/` and the old one removed
 after the commit. A rollback removes what was staged. Accept is the ONE
 place a personal item is announced to the extractor: once per moved item,
-inside the transaction, so it is heard only on commit. A Recall that lands
-first wins (Accept then answers 404). A DB test walks every table with an
+after the commit and after the bytes are renamed into place, so the
+extractor never opens a file that is not there yet (never for a rollback).
+The recorded bundle is removed. A Recall that lands first wins (Accept then
+answers 404). A DB test walks every table with an
 `owner_id` column and asserts no row keeps the space as owner of a moved
 item (the owner-copy registry).
 
@@ -379,7 +412,23 @@ what it submitted, shows up in the Review queue as "left behind": accept or
 discard. Its private items are purged 30 days after the deactivation by the
 nightly `space-purge` maintenance task (`pnpm -C server/web space:purge`
 for a dry run, `--apply` to run it by hand): rows and bytes, counts only,
-never titles. A space the purge leaves empty loses its
+never titles. A deleted login's space is purged the same way, 30 days after
+it lost its login (`spaces.orphaned_at`). The purge keeps every private
+item that a shared or submitted item shows (its bundle), so nothing an
+admin may still accept loses a piece; once that item is accepted or
+discarded, the rest goes the next night. The purge and Discard delete only
+rows still in the space: an Accept that re-owns a row to the brain at the
+same moment wins, and the delete matches nothing (audit F03). Discard locks
+the item's state row as Accept does.
+
+Tests: `packages/content/src/member-bundle.viewer.db.test.ts` (Postgres: the
+bundle refused with unsaved edits, recorded, frozen, forgotten on Recall,
+Return and Accept, and Accept moving exactly the record; left-behind
+bundles; the purge keeping bundles and taking a deleted login's space; the
+purge and Discard racing an Accept on a second connection; Submit and
+Recall losing races) and `packages/db/src/spaces.db.test.ts` (the frozen
+rule and the bundle rules in SQL, a deleted member in team drafts, EXECUTE
+on the space functions). A space the purge leaves empty loses its
 `MANTLE_SPACES_ROOT/<space>` and `TABLE_DB_DIR/<space>` directories (audit
 D6). The purge refuses to run where the spaces root is missing or
 read-only, so it never deletes rows and keeps their bytes. A login enabled
@@ -815,8 +864,11 @@ dedupe, drafts discarded, one transaction, the extractor told once per
 moved item, on commit). Its own guard: the item is in the caller's own
 personal space, the caller is a usable admin, it is not accepted, and it
 has no unsaved edits (409 `unsaved-draft`: save a version first).
-Anything else is a 404. The bundle's `space_items` rows are DROPPED: an
-admin's own item keeps no author record, so it never shows the
+Anything else is a 404. Unsaved edits on any item the bundle holds refuse
+too (409 `unsaved-draft` with the `ids`: Accept would move the saved
+version and drop the draft); the bundle's rows are locked first, so the
+admin's own autosave cannot slip in. The bundle's `space_items` rows are
+DROPPED: an admin's own item keeps no author record, so it never shows the
 member-authored badge and never lists as a member's accepted item.
 
 **Never seen by anyone else.**
@@ -827,17 +879,26 @@ member-authored badge and never lists as a member's accepted item.
   submitted before the login was promoted.
 - Team drafts come from member spaces only (migration 0179:
   `mantle_member_space`, in the team-drafts rules on `nodes` and
-  `space_items`). A member who shared items and was then promoted keeps a
-  'team' row, and those items leave team drafts at once; a teammate's
-  comment is refused the same way. A deleted member's shared items stay
-  readable, as before.
+  `space_items`). A promotion (`PATCH /api/users/:id` with `role: 'admin'`)
+  turns the login's shared and submitted items back into private drafts in
+  the same transaction (`settleSpaceOnPromotion`; migration 0180 did it once
+  for the admins of the day), so a later demotion or delete never brings
+  them back, and a submitted item nobody can recall is editable again. A
+  deleted login's space is no member's either (0180): a deleted member's
+  shared items leave Team drafts; admins still find them in the Review queue
+  as left behind.
+- The SECURITY DEFINER space functions are not open to PUBLIC (0169 for
+  `mantle_personal_space`, 0180 for the rest): `mantle_is_brain_space` runs
+  for the team and space roles (their comment rules, and the nodes triggers
+  under a member's writes), `mantle_member_space` and
+  `mantle_member_space_node` for the team role.
 - Admin lists and the brain filter on the brain id, so admin B finds
   nothing of admin A's by id (`/api/admin/space/:id` is a 404) or through
   any brain route.
 
-**Deactivation.** A deactivated admin's private items are purged after 30
-days by the nightly `space-purge`, like a member's (section 6); an admin's
-item never goes to the Review queue as "left behind".
+**Deactivation.** A deactivated (or deleted) admin's private items are
+purged after 30 days by the nightly `space-purge`, like a member's (section
+6); an admin's item never goes to the Review queue as "left behind".
 
 **Tests.** `packages/content/src/admin-space.viewer.db.test.ts` (Postgres:
 the embed rule both ways, another admin by id and through the brain, the
