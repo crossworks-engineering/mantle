@@ -130,7 +130,13 @@ export async function registerClient(input: {
   return row!;
 }
 
+/** Client ids are uuids (the registry's primary key). Anything else is an
+ *  unknown client, answered before the query: Postgres would refuse a
+ *  non-uuid with 22P02, which surfaced as a 500 (F31). */
+const CLIENT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function getClient(clientId: string): Promise<OAuthClient | null> {
+  if (!CLIENT_ID_RE.test(clientId)) return null;
   const [row] = await db.select().from(oauthClients).where(eq(oauthClients.id, clientId)).limit(1);
   return row ?? null;
 }
@@ -225,16 +231,15 @@ export async function exchangeAuthCode(input: {
   redirectUri: string;
   codeVerifier: string;
 }): Promise<GrantResult> {
+  // Single-use: the code is claimed and burned in ONE statement, before any
+  // further branching, so it can never be replayed regardless of the
+  // validation outcome below. Two exchanges of one code at once: only one
+  // DELETE returns the row (F31; a SELECT then DELETE let both through).
   const [row] = await db
-    .select()
-    .from(oauthAuthCodes)
+    .delete(oauthAuthCodes)
     .where(eq(oauthAuthCodes.codeHash, sha256Hex(input.code)))
-    .limit(1);
+    .returning();
   if (!row) return { ok: false, error: 'invalid_grant' };
-
-  // Single-use: burn the code immediately, before any further branching, so it
-  // can never be replayed regardless of the validation outcome below.
-  await db.delete(oauthAuthCodes).where(eq(oauthAuthCodes.id, row.id));
 
   if (row.expiresAt.getTime() < Date.now()) return { ok: false, error: 'invalid_grant' };
   if (row.clientId !== input.clientId) return { ok: false, error: 'invalid_grant' };

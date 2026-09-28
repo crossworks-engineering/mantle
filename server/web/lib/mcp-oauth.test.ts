@@ -113,6 +113,7 @@ vi.mock('@mantle/content', () => ({
 vi.mock('./auth/request', () => ({ bearerFrom: vi.fn(() => 'mtlmcp_at_x') }));
 
 import {
+  getClient,
   ownerFromBearer,
   refreshAccessToken,
   REFRESH_GRACE_SEC,
@@ -157,6 +158,23 @@ beforeEach(() => {
 
 afterEach(() => {
   warn.mockRestore();
+});
+
+describe('getClient', () => {
+  it('answers a non-uuid client_id as unknown, without a query', async () => {
+    // Postgres refuses a non-uuid with 22P02: that was a 500 on
+    // /api/oauth/authorize (final audit F31). Now it is an unknown client.
+    for (const id of ['x', 'client-1', `${CLIENT}x`, "' or 1=1 --", '']) {
+      expect(await getClient(id)).toBeNull();
+    }
+    expect(dbState.selectWheres).toEqual([]);
+  });
+
+  it('looks a uuid up', async () => {
+    dbState.selectResults = [[{ id: CLIENT, clientName: 'C', redirectUris: [] }]];
+    expect((await getClient(CLIENT))?.id).toBe(CLIENT);
+    expect(dbState.selectWheres).toHaveLength(1);
+  });
 });
 
 describe('refreshAccessToken — concurrency-safe rotation', () => {
