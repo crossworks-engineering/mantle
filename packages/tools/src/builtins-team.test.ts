@@ -45,16 +45,12 @@ const teamCtx: ToolHandlerContext = {
   ownerId: 'owner-1',
   surface: { kind: 'team', contactId: 'contact-9', contactName: 'Sam' },
 };
-const forumCtx: ToolHandlerContext = {
-  ownerId: 'owner-1',
-  surface: { kind: 'forum', contactId: 'contact-9', contactName: 'Sam', topicId: 'topic-1' },
-};
 
 describe('team_request_create surface gate', () => {
   it('refuses off the team surfaces (web)', async () => {
     const r = await bySlug.team_request_create!.handler({ title: 't', body: 'b' }, ownerCtx);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toMatch(/Team Chat \/ Team Forum surfaces/i);
+    if (!r.ok) expect(r.error).toMatch(/only runs on the team surface/i);
   });
 
   it('refuses with no surface at all (background callers)', async () => {
@@ -79,26 +75,15 @@ describe('owner-side team tools refuse on the team surfaces', () => {
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error).toMatch(/owner-side/i);
     });
-    it(`${slug} refuses on the forum`, async () => {
-      const r = await bySlug[slug]!.handler({ contactId: 'contact-9' }, forumCtx);
-      expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.error).toMatch(/owner-side/i);
-    });
   }
 });
 
-describe('team_request_create forum accept-path provenance', () => {
-  it('stamps topicId + postId from the forum surface, never from model args', async () => {
+describe('team_request_create member accept-path provenance', () => {
+  it('stamps the member login from the surface, never from model args, and no forum ids', async () => {
     vi.mocked(createTask).mockClear();
-    const forumWithPost: ToolHandlerContext = {
+    const memberCtx: ToolHandlerContext = {
       ownerId: 'owner-1',
-      surface: {
-        kind: 'forum',
-        contactId: 'contact-9',
-        contactName: 'Sam',
-        topicId: 'topic-42',
-        inboundPostId: 'post-77',
-      },
+      surface: { kind: 'team', loginId: 'login-7', contactName: 'Sam' },
     };
     // A hostile model tries to forge provenance via args — must be ignored.
     const r = await bySlug.team_request_create!.handler(
@@ -107,16 +92,19 @@ describe('team_request_create forum accept-path provenance', () => {
         body: 'The value in the table is wrong.',
         topicId: 'ATTACKER-TOPIC',
         contactId: 'ATTACKER-CONTACT',
+        loginId: 'ATTACKER-LOGIN',
       },
-      forumWithPost,
+      memberCtx,
     );
     expect(r.ok).toBe(true);
     expect(vi.mocked(createTask)).toHaveBeenCalledTimes(1);
     const [, taskArgs] = vi.mocked(createTask).mock.calls[0]!;
     const tr = (taskArgs.extraData as { teamRequest: Record<string, unknown> }).teamRequest;
-    expect(tr.contactId).toBe('contact-9'); // from surface, not the forged arg
-    expect(tr.topicId).toBe('topic-42');
-    expect(tr.postId).toBe('post-77');
+    expect(tr.loginId).toBe('login-7'); // from surface, not the forged arg
+    expect(tr.contactId).toBeNull();
+    // The forum branch is gone (member logins Phase 6): no topic or post ids.
+    expect(tr).not.toHaveProperty('topicId');
+    expect(tr).not.toHaveProperty('postId');
     expect(taskArgs.tags).toContain(TEAM_REQUEST_TAG);
   });
 });

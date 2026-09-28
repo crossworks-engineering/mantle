@@ -74,14 +74,16 @@ export type ToolHandlerContext = {
       }
     | { kind: 'web' }
     | {
-        /** Turn came from the external Team Chat surface (/team or
-         *  /api/team/*) — the caller is a team-member CONTACT, not the
-         *  owner. `team_request_create` reads its provenance from here
-         *  (never from model args, which an injected prompt could forge);
-         *  owner-only and send tools must refuse on this surface. */
+        /** A team member is on the other end, not the owner: a member
+         *  login's chat turn (POST /api/member/chat) or a team-mode shared
+         *  app's tool call (/s/[token]/tool-broker). `team_request_create`
+         *  reads its provenance from here (never from model args, which an
+         *  injected prompt could forge); owner-only and send tools must
+         *  refuse on this surface. */
         kind: 'team';
-        /** The team portal contact. Absent on a member LOGIN's turn: users
-         *  are the team, and `loginId` names the member instead. */
+        /** The team-code contact of a team-mode share visitor. Absent on a
+         *  member LOGIN's turn: users are the team, and `loginId` names the
+         *  member instead. */
         contactId?: string;
         /** A member login's turn (member logins): the login is the member. */
         loginId?: string;
@@ -93,20 +95,6 @@ export type ToolHandlerContext = {
         /** The inbound team_messages row that started this turn — stamped
          *  into a request task so the specialist can jump to the ask. */
         inboundMessageId?: string;
-      }
-    | {
-        /** Turn came from the Team Forum (/team/forum) — a team-member
-         *  CONTACT posting in a SHARED topic every member can read. Same
-         *  trust posture and provenance rules as 'team'; the topic/post ids
-         *  let `team_request_create` stamp which thread the ask came from. */
-        kind: 'forum';
-        contactId: string;
-        contactName?: string;
-        /** Same as the 'team' surface: absent = OFF. */
-        privateReads?: boolean;
-        topicId: string;
-        /** The forum_posts row that triggered this turn. */
-        inboundPostId?: string;
       };
 };
 

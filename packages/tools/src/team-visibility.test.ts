@@ -1,7 +1,7 @@
 /**
  * What a team-member surface may read (member logins Phase 0).
  *
- * Team chat, the forum and a team-mode shared app run every tool under the
+ * A member's chat and a team-mode shared app run every tool under the
  * OWNER's id. Before this, the private-reads switch only removed the four
  * email_* / journal_* tools, so search_nodes, search_chunks, node_read,
  * read_section and the entity tools still returned email and journal rows to
@@ -107,12 +107,6 @@ describe('surfaceHiddenNodeTypes', () => {
       );
     }
     expect(surfaceHiddenNodeTypes(TEAM_ON.surface)).not.toContain('email');
-  });
-
-  it('treats the forum like team chat', () => {
-    expect(surfaceHiddenNodeTypes({ kind: 'forum', contactId: 'c1', topicId: 't1' })).toContain(
-      'journal',
-    );
   });
 });
 

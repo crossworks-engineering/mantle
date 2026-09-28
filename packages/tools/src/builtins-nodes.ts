@@ -158,7 +158,7 @@ export const content_supersede: BuiltinToolDef = {
   handler: async (input, ctx) => {
     // Members must not re-weight the owner's brain: curation is an owner-side
     // action (mirrors the other owner-only tools' team-surface refusal).
-    if (ctx.surface?.kind === 'team' || ctx.surface?.kind === 'forum') {
+    if (ctx.surface?.kind === 'team') {
       return {
         ok: false,
         error:

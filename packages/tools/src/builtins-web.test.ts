@@ -452,18 +452,18 @@ describe('web_map', () => {
     vi.mocked(getApiKey).mockResolvedValue('fc-key');
   });
 
-  it.each([
-    ['team', { kind: 'team', contactId: 'c1' }],
-    ['forum', { kind: 'forum', contactId: 'c1', topicId: 't1' }],
-  ])('refuses the %s surface before vetting the url or spending credit', async (_k, surface) => {
-    const res = await webMap.handler(
-      { url: PUBLIC },
-      { ownerId: 'o1', surface: surface as ToolHandlerContext['surface'] },
-    );
-    expect(errorOf(res)).toMatch(/owner-side tool/);
-    expect(getApiKey).not.toHaveBeenCalled();
-    expect(h.fcCtor).not.toHaveBeenCalled();
-  });
+  it.each([['team', { kind: 'team', contactId: 'c1' }]])(
+    'refuses the %s surface before vetting the url or spending credit',
+    async (_k, surface) => {
+      const res = await webMap.handler(
+        { url: PUBLIC },
+        { ownerId: 'o1', surface: surface as ToolHandlerContext['surface'] },
+      );
+      expect(errorOf(res)).toMatch(/owner-side tool/);
+      expect(getApiKey).not.toHaveBeenCalled();
+      expect(h.fcCtor).not.toHaveBeenCalled();
+    },
+  );
 
   it('refuses a private target BEFORE resolving a key', async () => {
     // Firecrawl's cloud does the fetching, but the hygiene check still runs

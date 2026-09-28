@@ -3,7 +3,7 @@
  * generic node group. It had no test.
  *
  * Supersession re-weights retrieval for the whole brain, which is why the
- * tool refuses on the team and forum surfaces: a member contact must not be
+ * tool refuses on the team surface: a team member must not be
  * able to demote the owner's content by asking the assistant nicely. That
  * refusal has to fire BEFORE the store is touched, and it has to be keyed on
  * `ctx.surface` (runtime-stamped), not on anything in the arguments.
