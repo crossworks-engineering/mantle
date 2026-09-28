@@ -229,9 +229,10 @@ export async function listReviewQueue(): Promise<{
   };
 }
 
-/** How many items wait for review (the nav badge). */
-export async function countSubmitted(): Promise<number> {
-  const [r] = await db
+/** How many items wait for review (the nav badge). `via` reads on another
+ *  connection (a test's one snapshot). */
+export async function countSubmitted(via: Pick<Tx, 'select'> = db): Promise<number> {
+  const [r] = await via
     .select({ n: sql<number>`count(*)::int` })
     .from(spaceItems)
     .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))

@@ -169,6 +169,28 @@ describe.skipIf(!hasManifest)('route manifest auth sweep', () => {
     }
   });
 
+  // Member logins Phase 7: an admin's private items. Anonymous here; a
+  // member login's 403 and the admin's own space are pinned in
+  // admin-space-sweep.test.ts (it stands in the login rows).
+  it('the admin private-space routes refuse a credential-less request', async () => {
+    const admin = manifest.filter((e) => e.pattern.startsWith('/api/admin/'));
+    expect(admin.map((e) => e.pattern).sort()).toEqual([
+      '/api/admin/space',
+      '/api/admin/space-files',
+      '/api/admin/space/:id',
+      '/api/admin/space/:id/accept',
+      '/api/admin/space/:id/bytes',
+      '/api/admin/space/:id/draft',
+      '/api/admin/space/:id/save',
+    ]);
+    for (const entry of admin) {
+      for (const method of entry.methods.filter((m) => m !== 'OPTIONS')) {
+        const res = await app.request(concretePath(entry.pattern), { method });
+        expect(res.status, `${method} ${entry.pattern}`).toBe(401);
+      }
+    }
+  });
+
   it('lists which manifest routes are public, so a new public prefix is a visible diff', () => {
     const publicPatterns = manifest
       .filter((e) => isPublic(concretePath(e.pattern)))
