@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.299: the forum tables are dropped (Phase 6, migration 0177)
+
+- Migration 0177 drops forum_topics, forum_posts, forum_uploads and
+  forum_read_cursors. Their foreign keys are dropped by name first, then each
+  table without CASCADE. It aborts if a topic has no Forum archive page.
+  The archive pages, the files the export filed, the JSON dump and every row
+  outside those four tables stay.
+- The forum export goes with the tables: its api boot task, the
+  `/api/team-admin/forum/export` route (now 404) and the Drizzle schemas.
+  The archive pages stay admin-level and un-indexed.
+
 ## 0.232.298: client v0.6.160
 
 - Paired with jackdaw v0.6.160, the client side of stage 6: no Revoke code
