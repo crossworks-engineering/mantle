@@ -80,21 +80,13 @@ export {
   type TeamAccessRow,
 } from './team-access-log';
 export {
-  verifyTeamToken,
-  teamStatusByContact,
-  teamStatusFor,
-  generateAlphabetCode,
-  generateTeamToken,
-  hashTeamToken,
-  TEAM_TOKEN_LENGTH,
-  type TeamStatus,
-} from './team-tokens';
-export {
+  INVITE_CODE_ALPHABET,
   MEMBER_INVITE_CODE_LENGTH,
   MEMBER_INVITE_TTL_MS,
   MemberInviteError,
   createMemberInvite,
   generateInviteCode,
+  hashInviteCode,
   inviteLinkPath,
   listMemberInvites,
   previewMemberInvite,
