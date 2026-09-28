@@ -24,6 +24,7 @@ import {
   accessClosure,
   canShareNode,
   countPageDescendants,
+  EMBEDDING_KINDS,
   getActiveShareForNode,
   isWorkspaceKind,
   setItemLevel,
@@ -88,6 +89,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     // link only where the item can carry one (not a folder outside files).
     canLower: isWorkspaceKind(item.type),
     canLink: canShareNode({ type: item.type, path }),
+    // A page's, drawing's or note's embeds go down with it (embedding means
+    // sharing); a folder's contents do not.
+    embedsFollow: EMBEDDING_KINDS.includes(item.type),
     // A member wrote it and an admin accepted it (member logins Phase 4).
     author: authors.get(item.id) ?? null,
   };

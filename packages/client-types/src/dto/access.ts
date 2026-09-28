@@ -50,6 +50,12 @@ export type AccessNodeView = {
   canLower: boolean;
   /** Whether the item can carry a link (a folder only under `files`). */
   canLink: boolean;
+  /** True for a page, drawing or note: lowering it lowers its embeds with it
+   *  (embedding means sharing), so the control says what will be shared
+   *  instead of offering "Lower them too". False for a folder, whose
+   *  contents keep their levels. Absent from brains before 0.232.311, which
+   *  lower embeds only on request. */
+  embedsFollow?: boolean;
   /** Set when a member wrote it and an admin accepted it into the brain (the
    *  member-authored badge). Absent from brains before 0.232.285. */
   author?: MemberItemAuthor | null;
