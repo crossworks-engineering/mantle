@@ -18,7 +18,10 @@ export async function POST(req: Request) {
   if (user instanceof Response) return user;
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
-    return NextResponse.json({ error: firstIssue(parsed.error, 'itemIds required.') }, { status: 400 });
+    return NextResponse.json(
+      { error: firstIssue(parsed.error, 'itemIds required.') },
+      { status: 400 },
+    );
   }
   return NextResponse.json(
     await acknowledgeClientReport(user.id, user.actor.id, parsed.data.itemIds),

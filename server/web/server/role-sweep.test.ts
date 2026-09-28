@@ -38,7 +38,11 @@ const row = (id: string, role: string) => ({
 
 vi.mock('../lib/auth/login-row', () => ({
   loadLoginRow: async (id: string) =>
-    id === CLIENT_ID ? row(CLIENT_ID, 'client') : id === UNKNOWN_ID ? row(UNKNOWN_ID, 'auditor') : null,
+    id === CLIENT_ID
+      ? row(CLIENT_ID, 'client')
+      : id === UNKNOWN_ID
+        ? row(UNKNOWN_ID, 'auditor')
+        : null,
   loadAnchorId: async () => ANCHOR_ID,
   loadPersonalSpaceId: async () => SPACE_ID,
 }));
@@ -111,7 +115,11 @@ describe.skipIf(!hasManifest)('role sweep: only admin and member logins are serv
    *  does not accept. */
   async function sweep(
     cookie: string,
-    refused: (a: { key: string; status: number; body: { error?: string; reason?: string } | null }) => boolean,
+    refused: (a: {
+      key: string;
+      status: number;
+      body: { error?: string; reason?: string } | null;
+    }) => boolean,
   ): Promise<{ checked: number; failures: string[] }> {
     const failures: string[] = [];
     let checked = 0;

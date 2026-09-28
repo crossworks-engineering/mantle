@@ -41,7 +41,9 @@ describe.skipIf(!URL)('the "What clients see" report', () => {
       insert into auth.users (id, email, password_hash, display_name) values
         (${owner}, ${`${tag}@example.invalid`}, 'x', null),
         (${admin}, ${`${tag}-a@example.invalid`}, 'x', 'Ada Admin')`);
-    await exec(sqlTag`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
+    await exec(
+      sqlTag`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`,
+    );
     const doc = {
       type: 'doc',
       content: [
@@ -84,7 +86,11 @@ describe.skipIf(!URL)('the "What clients see" report', () => {
       insert into trace_steps (trace_id, ordinal, name, kind, input) values
         (${t!.id}, 0, 'tool: email_page', 'send', ${JSON.stringify({
           slug: 'email_page',
-          args: { pageId: id.page, to: 'Ann@Example.invalid, bob@example.invalid', cc: 'cy@example.invalid' },
+          args: {
+            pageId: id.page,
+            to: 'Ann@Example.invalid, bob@example.invalid',
+            cc: 'cy@example.invalid',
+          },
         })}::jsonb)`);
   });
 
@@ -105,7 +111,11 @@ describe.skipIf(!URL)('the "What clients see" report', () => {
       [id.page, id.note, id.linked, id.clientNote].sort(),
     );
     const page = rep.items.find((i) => i.id === id.page)!;
-    expect(page.emailedTo).toEqual(['ann@example.invalid', 'bob@example.invalid', 'cy@example.invalid']);
+    expect(page.emailedTo).toEqual([
+      'ann@example.invalid',
+      'bob@example.invalid',
+      'cy@example.invalid',
+    ]);
     expect(page.link).toBeNull();
     // The team note and the admin page it names; the client note is fine.
     expect(page.refsAbove.map((x) => [x.id, x.audience]).sort()).toEqual(

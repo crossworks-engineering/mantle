@@ -48,25 +48,33 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
   }
 
   // Per role (client logins C1): the client role differs from the others.
-  it.each(LEVELS)('mantle_view_%s holds exactly its matrix: SELECT only, named columns only', async (level) => {
-    const live = await liveGrants(`mantle_view_${level}`);
-    expect(live.other, 'no write privilege of any kind').toBe(0);
-    const whole = ACCESS_MATRIX.filter((t) => readFor(t, level) === 'all').map((t) => t.table);
-    expect(live.tables).toEqual([...whole].sort());
-    for (const t of ACCESS_MATRIX) {
-      const read = readFor(t, level);
-      if (!Array.isArray(read)) continue;
-      const cols = live.cols.filter((c) => c.t === t.table).map((c) => c.c);
-      expect(cols.sort(), t.table).toEqual([...read].sort());
-    }
-    // Tables the role may not read carry no column grant either.
-    for (const t of ACCESS_MATRIX.filter((x) => readFor(x, level) === 'none')) {
-      expect(live.cols.filter((c) => c.t === t.table), `${t.table} columns`).toEqual([]);
-    }
-  });
+  it.each(LEVELS)(
+    'mantle_view_%s holds exactly its matrix: SELECT only, named columns only',
+    async (level) => {
+      const live = await liveGrants(`mantle_view_${level}`);
+      expect(live.other, 'no write privilege of any kind').toBe(0);
+      const whole = ACCESS_MATRIX.filter((t) => readFor(t, level) === 'all').map((t) => t.table);
+      expect(live.tables).toEqual([...whole].sort());
+      for (const t of ACCESS_MATRIX) {
+        const read = readFor(t, level);
+        if (!Array.isArray(read)) continue;
+        const cols = live.cols.filter((c) => c.t === t.table).map((c) => c.c);
+        expect(cols.sort(), t.table).toEqual([...read].sort());
+      }
+      // Tables the role may not read carry no column grant either.
+      for (const t of ACCESS_MATRIX.filter((x) => readFor(x, level) === 'none')) {
+        expect(
+          live.cols.filter((c) => c.t === t.table),
+          `${t.table} columns`,
+        ).toEqual([]);
+      }
+    },
+  );
 
   it('level-rows tables: RLS on, the client role filtered by level, the others all rows', async () => {
-    for (const t of ACCESS_MATRIX.filter((x) => LEVELS.some((l) => ruleFor(x, l) === 'level-rows'))) {
+    for (const t of ACCESS_MATRIX.filter((x) =>
+      LEVELS.some((l) => ruleFor(x, l) === 'level-rows'),
+    )) {
       const [schema, name] = t.table.split('.');
       const [rls] = await sql<{ on: boolean }[]>`
         select relrowsecurity as on from pg_class

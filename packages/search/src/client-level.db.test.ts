@@ -41,7 +41,11 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
   const member = randomUUID();
   const adminLogin = randomUUID();
   const clientLogin = randomUUID();
-  const notBrain = { memberItem: randomUUID(), teamDraft: randomUUID(), adminPrivate: randomUUID() };
+  const notBrain = {
+    memberItem: randomUUID(),
+    teamDraft: randomUUID(),
+    adminPrivate: randomUUID(),
+  };
   const agentSlug = (l: Level) => `${tag}-agent-${l}`;
   const groupSlug = (l: Level) => `${tag}-group-${l}`;
 
@@ -114,17 +118,34 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
   });
 
   const ours = (ids: string[]) =>
-    [...new Set(ids)].filter((id) => [...Object.values(item), ...Object.values(notBrain)].includes(id));
+    [...new Set(ids)].filter((id) =>
+      [...Object.values(item), ...Object.values(notBrain)].includes(id),
+    );
   const want = (levels: Level[]) => levels.map((l) => item[l]).sort();
 
   /** Every search arm at `level`: the ids of OUR items each returns. */
   async function arms(level: 'team' | 'client' | 'public') {
     return m.withViewer(level, async () => {
       const fts = await s.searchNodes({ ownerId: anchor, q: tag, limit: 50 });
-      const hybrid = await s.searchNodes({ ownerId: anchor, q: tag, queryEmbedding: vec, limit: 50 });
+      const hybrid = await s.searchNodes({
+        ownerId: anchor,
+        q: tag,
+        queryEmbedding: vec,
+        limit: 50,
+      });
       const vectorOnly = await s.searchNodes({ ownerId: anchor, queryEmbedding: vec, limit: 500 });
-      const branchTags = await s.searchNodes({ ownerId: anchor, branch: 'pages', tags: [tag], limit: 50 });
-      const chunksHybrid = await s.searchChunks({ ownerId: anchor, embedding: vec, q: tag, limit: 50 });
+      const branchTags = await s.searchNodes({
+        ownerId: anchor,
+        branch: 'pages',
+        tags: [tag],
+        limit: 50,
+      });
+      const chunksHybrid = await s.searchChunks({
+        ownerId: anchor,
+        embedding: vec,
+        q: tag,
+        limit: 50,
+      });
       const chunksVector = await s.searchChunks({ ownerId: anchor, embedding: vec, limit: 500 });
       const facts = (await m.db.execute(sqlTag`
         select f.source_node_id as id from facts f

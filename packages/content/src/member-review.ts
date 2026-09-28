@@ -674,44 +674,49 @@ export async function acceptReviewItem(
   // The level by the author's role (client logins C1): read before the move,
   // refused before anything moves.
   const audience = acceptAudience(await authorRoleOf(id), opts);
-  return moveIntoBrain(brainId, id, { ...opts, audience }, {
-    locate: async (tx) => {
-      // The state row, locked. A Recall, Return or second Accept waits.
-      const [locked] = await tx
-        .select({ kind: spaces.kind })
-        .from(spaceItems)
-        .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
-        .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
-        .where(eq(spaceItems.nodeId, id))
-        .for('update', { of: spaceItems })
-        .limit(1);
-      if (!locked || locked.kind !== 'personal') throw notFound();
-      const found = await reviewRow(id, tx);
-      if (!found) throw notFound();
-      return {
-        spaceId: found.spaceId,
-        root: { id, type: found.row.type, title: found.row.title },
-        bundle: () => reviewBundle(tx, found.spaceId, found.row),
-      };
+  return moveIntoBrain(
+    brainId,
+    id,
+    { ...opts, audience },
+    {
+      locate: async (tx) => {
+        // The state row, locked. A Recall, Return or second Accept waits.
+        const [locked] = await tx
+          .select({ kind: spaces.kind })
+          .from(spaceItems)
+          .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+          .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+          .where(eq(spaceItems.nodeId, id))
+          .for('update', { of: spaceItems })
+          .limit(1);
+        if (!locked || locked.kind !== 'personal') throw notFound();
+        const found = await reviewRow(id, tx);
+        if (!found) throw notFound();
+        return {
+          spaceId: found.spaceId,
+          root: { id, type: found.row.type, title: found.row.title },
+          bundle: () => reviewBundle(tx, found.spaceId, found.row),
+        };
+      },
+      // The state rows: accepted, by whom. They stay: they record the author.
+      settle: async (tx, ids, now) => {
+        await tx
+          .update(spaceItems)
+          .set({
+            reviewState: 'accepted',
+            reviewedBy: reviewer.loginId,
+            reviewedAt: now,
+            acceptedAt: now,
+            updatedAt: now,
+            takenBy: null,
+            takenAt: null,
+            takenRoot: null,
+          })
+          .where(inArray(spaceItems.nodeId, ids));
+        await detachFromGroups(tx, ids);
+      },
     },
-    // The state rows: accepted, by whom. They stay: they record the author.
-    settle: async (tx, ids, now) => {
-      await tx
-        .update(spaceItems)
-        .set({
-          reviewState: 'accepted',
-          reviewedBy: reviewer.loginId,
-          reviewedAt: now,
-          acceptedAt: now,
-          updatedAt: now,
-          takenBy: null,
-          takenAt: null,
-          takenRoot: null,
-        })
-        .where(inArray(spaceItems.nodeId, ids));
-      await detachFromGroups(tx, ids);
-    },
-  });
+  );
 }
 
 /**

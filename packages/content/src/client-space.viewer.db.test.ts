@@ -178,9 +178,9 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
 
     const second = await submitted(client, `${tag} request 2`);
     for (const audience of ['client', 'public'] as const) {
-      await expect(rv.acceptReviewItem(brain, second, reviewer, { audience })).rejects.toMatchObject(
-        { reason: 'confirm-level' },
-      );
+      await expect(
+        rv.acceptReviewItem(brain, second, reviewer, { audience }),
+      ).rejects.toMatchObject({ reason: 'confirm-level' });
     }
     expect(await audienceOf(second)).toBe('admin'); // still the client's, untouched
     const confirmed = await rv.acceptReviewItem(brain, second, reviewer, {
@@ -201,7 +201,9 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     expect(rv.acceptAudience('client', {})).toBe('team');
     expect(rv.acceptAudience('client', { audience: 'admin' })).toBe('admin');
     expect(() => rv.acceptAudience('client', { audience: 'client' })).toThrow(/client wrote/);
-    expect(rv.acceptAudience('client', { audience: 'public', lowerConfirmed: true })).toBe('public');
+    expect(rv.acceptAudience('client', { audience: 'public', lowerConfirmed: true })).toBe(
+      'public',
+    );
     expect(rv.acceptAudience('member', { audience: 'client' })).toBe('client');
   });
 

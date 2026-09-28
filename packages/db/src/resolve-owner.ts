@@ -52,9 +52,9 @@ export async function resolveSingleOwnerId(): Promise<string | null> {
   // Through mantle_brain_id() (SECURITY DEFINER since 0187), not a read of
   // auth.users: the answer is the same, and it works under every viewer
   // scope, the client level included, whose role holds no grant on logins.
-  const [anchor] = (await db.execute(
-    sql`select mantle_brain_id() as id`,
-  )) as unknown as { id: string | null }[];
+  const [anchor] = (await db.execute(sql`select mantle_brain_id() as id`)) as unknown as {
+    id: string | null;
+  }[];
   if (anchor?.id) return anchor.id;
   // No anchor marked — fresh install (0 rows: wait) or a pre-0111 DB mid-upgrade
   // (1 row: it's the owner). Multiple rows without an anchor is corrupt.
