@@ -1214,3 +1214,20 @@ changed file answers `changedByAdmin`),
 member's drawing, and stays in their own accepted snapshot),
 `server/web/server/admin-space-sweep.test.ts` and `auth-sweep.test.ts`
 (the routes and their gates).
+
+**In the client** (jackdaw, the release after v0.6.163). Team admin > Review
+has Take over beside Accept and Return, confirmed in a dialog that lists
+what moves (the bundle preview); the admin then lands in the Private view of
+the item's kind with it open. A released item says "released" in the queue
+and in its header, can be taken over again, and has no comment box. In the
+Private view a taken item says "From <member>"; Give back (a required note)
+shows while `canGiveBack`, Delete only once it is false; a refused Give back
+stays in its dialog and names the items to save or remove. A member's Mine
+shows a `with-admin` row as "With admin" and opens nothing of it: the row,
+the item's own 409 `with-admin` and a `/n/<id>` link all show the same
+notice, and Recall is not offered. The member home lists them apart ("With
+an admin", its own `?review=with-admin` read; a brain before 0183 answers
+400 and the group stays empty). An accepted file or drawing with
+`changedByAdmin` says so instead of the picture. A page frozen inside a
+submitted item (409 `frozen` with `ids`) names and links that item, and
+Submit's 409 `unsaved-draft` lists the items to save first, each a link.
