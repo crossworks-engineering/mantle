@@ -14,7 +14,9 @@ import { buildMobileToken } from '@/lib/auth';
  * its SHA-256; it lives {@link PAIR_CODE_TTL_SEC}; it is single-use — the
  * claim is one conditional UPDATE (unclaimed AND unexpired) so two claims of
  * the same frame cannot both win; it is bound to the login that asked for
- * it. Every failure to claim is the same `null` — the phone shows one line.
+ * it, and claims only while that login is still an admin that is not
+ * disabled. Every failure to claim is the same `null` — the phone shows one
+ * line.
  */
 export const PAIR_CODE_TTL_SEC = 90;
 
@@ -88,12 +90,16 @@ export async function claimPairCode(
     .returning({ id: pairingCodes.id, userId: pairingCodes.userId });
   if (!won) return null;
 
+  // The login is re-read, not trusted from the code: lockout drops unclaimed
+  // codes, but a claim racing it (or a row that outlived it) must not mint a
+  // bearer for a login that is gone, disabled or no longer an admin. Pairing
+  // is admin-only (POST /api/auth/pair), and so is the companion app.
   const [user] = await db
-    .select({ email: authUsers.email })
+    .select({ email: authUsers.email, role: authUsers.role, disabledAt: authUsers.disabledAt })
     .from(authUsers)
     .where(eq(authUsers.id, won.userId))
     .limit(1);
-  if (!user) return null;
+  if (!user || user.disabledAt || user.role !== 'admin') return null;
 
   const label = deviceName?.trim() || 'Mobile device (paired by QR)';
   const jti = randomUUID();
