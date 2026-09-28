@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.306: sandboxd negotiates the Docker API version
+
+- sandboxd no longer pins Docker Engine API 1.43. Docker 29.0 and 29.1
+  raised the daemon's minimum to 1.44, so every sandboxd call failed,
+  `/healthz` answered 503 and a fresh install ended "Installation
+  incomplete". sandboxd now asks the daemon's unversioned `/version` once
+  and keeps 1.43 inside the range the daemon accepts (1.44 on Docker
+  29.0/29.1). If Docker is not up yet, it asks again on the next call.
+- `scripts/install.sh` preflight notes a raised Docker API minimum, since
+  an older pinned `--image-tag` still carries the 1.43-only sandboxd.
+
 ## 0.232.305: Phase 6 compatibility fields removed
 
 - The fields Phase 6 kept for one client cycle are gone (every box runs
