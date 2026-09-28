@@ -90,7 +90,26 @@ describe.skipIf(!URL)('credential races', () => {
         redirectUri: 'https://client.example.com/cb',
         codeVerifier: verifier,
       });
-    const results = await Promise.all([exchange(), exchange(), exchange()]);
+    // Hold a row lock on the code while three exchanges start, so all three
+    // have read or tried to claim it before any can burn it: the widest the
+    // race gets. A SELECT then DELETE lets all three through here; one
+    // DELETE ... RETURNING lets exactly one.
+    const codeHash = createHash('sha256').update(code, 'utf8').digest('hex');
+    let release = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    let locked = () => {};
+    const isLocked = new Promise<void>((r) => (locked = r));
+    const lock = sql.begin(async (tx) => {
+      await tx`select id from oauth_auth_codes where code_hash = ${codeHash} for update`;
+      locked();
+      await held;
+    });
+    await isLocked;
+    const racing = Promise.all([exchange(), exchange(), exchange()]);
+    await new Promise((r) => setTimeout(r, 500));
+    release();
+    await lock;
+    const results = await racing;
     expect(results.filter((r) => r.ok)).toHaveLength(1);
     const grants = await sql<Row[]>`select id from oauth_access_tokens where client_id = ${client}`;
     expect(grants).toHaveLength(1);
