@@ -45,6 +45,7 @@ const NOT_A_TOOL_SLUG = new Set<string>([
   'internal_date', // email_list result field (Gmail internalDate)
   'mentioned_in', // page_mention result field
   'draft_doc', // pages draft-state field on page rows
+  'portal_history', // team_chat_read result field (an invited contact's old portal chat)
   'next_ordinal', // read_section paging cursor field
   'total_matches', // table_query result-meta field
   'next_offset', // table_query / rows-list paging cursor field
