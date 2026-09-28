@@ -1,8 +1,10 @@
 import type { MiddlewareHandler } from 'hono';
 import {
   PUBLIC_PATHS,
+  RENDER_COOKIE_NAME,
   SESSION_COOKIE_NAME,
   isDetachedDev,
+  isRenderPath,
   requestOrigin,
 } from '../../lib/auth-constants';
 import { runWithRequestContext } from '../request-context';
@@ -213,6 +215,18 @@ export function gate(): MiddlewareHandler {
     if ((OWNER_FRAME_RE.test(path) || MEMBER_FRAME_RE.test(path)) && req.method === 'GET') {
       const t = url.searchParams.get('t');
       if (t && (await verifySignedToken(t, secret)) && tokenKind(t) === 'f') {
+        return proceed();
+      }
+    }
+
+    // The browser sidecar rendering an export carries a render cookie (kind
+    // 'r', set on the print origin only). Accepted for the render surfaces and
+    // the byte routes they load, GET only, and never as a session: anywhere
+    // else it is no credential at all. The route re-checks the login and, on
+    // a render surface, the node the cookie names.
+    if (isRenderPath(path) && req.method === 'GET') {
+      const r = cookieValue(req, RENDER_COOKIE_NAME);
+      if (r && (await verifySignedToken(r, secret)) && tokenKind(r) === 'r') {
         return proceed();
       }
     }

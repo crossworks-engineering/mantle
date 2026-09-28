@@ -37,9 +37,16 @@ Two of these carry extra semantics:
   passthrough, no draft switch, no distinct endpoint); legacy JSONB tables ship
   their whole doc in the share view. Formula columns aren't stored per-row, so
   they don't appear on the public surface.
-- **Folder** (`branch`): shares **every file under the folder, subfolders
-  included, evaluated per request**: a file added later is covered with no
-  re-share; a file moved out is denied on its next fetch. Only folders strictly
+- **Folder** (`branch`): shares **the files under the folder, subfolders
+  included, that sit at the link's level, evaluated per request**. The link
+  opens at the folder's own level: a public link shows public items, a client
+  link client and public ones (`linkLevels`, lib/shares.ts). A file added
+  later lands at admin like every new item (levels are never inherited), so
+  it is neither listed nor served until someone lowers it (the Access
+  control's closure step does that for a folder's contents); a subfolder
+  above the level is hidden with everything under it, and a subfolder's file
+  count leaves hidden files out. A file moved out is denied on its next
+  fetch. Only folders strictly
   under the `files` root qualify (`isShareableFolderPath`); the root itself is
   deliberately not shareable, so "share my entire filesystem" can never be one
   accidental toggle. Visitors get a read-only listing with downloads; subfolder
@@ -107,7 +114,11 @@ them through without a session cookie.
   **allowed set**: for a `file` share, the file itself; for a `page` share, the
   file ids referenced in its doc (walk `image`/`fileEmbed` nodeIds); for a
   `branch` (folder) share, any file whose ltree path is under the folder
-  (`path <@ folder.path`, re-derived per request). Streams via
+  (`path <@ folder.path`, re-derived per request) that sits at the link's
+  levels with no folder above those levels between it and the shared folder
+  (the same rule as the listing). A `file` or `page` share is not filtered
+  by level: the item is the link, and a page's embeds follow the Access
+  control's closure. Streams via
   `readFileById` with content-type + range support (video/audio seeking) +
   cache headers. Anything outside the set → 404.
 - `jackdaw/app/s/layout.tsx`, minimal public chrome: clean default theme,
@@ -183,7 +194,7 @@ Clean, centered, media-appropriate (`server/web/components/share/`):
 | **Task**   | Card: title, status badge, priority, due date, body markdown.                                                                                                                                         |
 | **Event**  | Card: title, formatted date/time range, location, body, **"Add to calendar" (.ics)**.                                                                                                                 |
 | **Table**  | Read-only grid (client): tab bar for multi-tab workbooks, sticky header, "Load more" offset paging via `GET /s/[token]/rows`; legacy JSONB docs render inline.                                        |
-| **Folder** | Read-only listing (server): breadcrumbs scoped to the share, subfolder navigation via `?p=`, per-file **Download** through the scoped asset route.                                                    |
+| **Folder** | Read-only listing (server) of the items at the link's level: breadcrumbs scoped to the share, subfolder navigation via `?p=`, per-file **Download** through the scoped asset route.                   |
 
 All themed via tokens. _(Note: the in-app file view only handles text today, the
 media presenters are net-new here.)_

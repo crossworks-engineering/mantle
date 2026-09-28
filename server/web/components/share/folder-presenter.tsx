@@ -1,5 +1,7 @@
 import { Download, File as FileIcon, Folder as FolderIcon } from 'lucide-react';
+import type { ViewerLevel } from '@mantle/db';
 import { listFolders, listFiles, folderByPath, ltreeToDash } from '@/lib/files';
+import { hiddenFolderBetween, visibleFileCounts } from '@/lib/shares';
 import { formatBytes } from '@mantle/client-types/lib/format-bytes';
 
 /**
@@ -9,6 +11,11 @@ import { formatBytes } from '@mantle/client-types/lib/format-bytes';
  * of the shared root before anything is listed, so a crafted ?p= can never
  * escape the share. Files are download-only, served from the scoped asset
  * route (which independently re-checks subtree membership per request).
+ *
+ * Only items at the link's levels are listed (view.levels, audit F19): a
+ * file or folder above them (a later upload lands at admin) is left out, its
+ * files are not counted, and a `?p=` into or through a hidden folder falls
+ * back to the root.
  */
 
 /** Path segments are ltree labels — allow only label characters and dots so a
@@ -29,19 +36,30 @@ export type FolderListing = {
  */
 export async function loadFolderListing(
   ownerId: string,
-  view: { path: string },
+  view: { path: string; levels: readonly ViewerLevel[] },
   sub: string,
 ): Promise<FolderListing> {
+  const shown = (audience: ViewerLevel) => view.levels.includes(audience);
   let currentPath = view.path;
   if (sub && SUBPATH_RE.test(sub)) {
     const candidate = `${view.path}.${sub}`;
     const folder = await folderByPath({ ownerId, path: candidate });
-    if (folder) currentPath = candidate;
+    if (folder && !(await hiddenFolderBetween(ownerId, view.path, candidate, view.levels))) {
+      currentPath = candidate;
+    }
   }
-  const [folders, files] = await Promise.all([
+  const [allFolders, allFiles] = await Promise.all([
     listFolders({ ownerId, parentPath: currentPath }),
     listFiles({ ownerId, parentPath: currentPath }),
   ]);
+  const visible = allFolders.filter((f) => shown(f.audience));
+  const counts = await visibleFileCounts(
+    ownerId,
+    visible.map((f) => f.path),
+    view.levels,
+  );
+  const folders = visible.map((f) => ({ ...f, fileCount: counts.get(f.path) ?? 0 }));
+  const files = allFiles.filter((f) => shown(f.audience));
   return { currentPath, folders, files };
 }
 

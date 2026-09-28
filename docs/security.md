@@ -69,6 +69,18 @@ Notes that matter to a reviewer:
   request, not per session, revocation takes effect immediately.
 - Cookies are signed; `secureCookies(req)` keeps auth working correctly on
   plain-HTTP LAN installs without weakening HTTPS ones.
+- **Exports rendered in the browser sidecar** (PDF, the drawing rasters in a
+  Word export, draw snapshot fills) carry a **render cookie** (kind `r`,
+  `mantle_render`): minted for the ACTING admin and one node, 5 minutes,
+  accepted only on the render surfaces (`/print/pages`, `/print/draws`,
+  `/render/draws`, for the node it names) and the byte routes they load
+  (`/api/files/files/:id`, `/api/draws/:id/svg`), GET only, and never as a
+  session; the login is re-read on every request. The sidecar sets it as a
+  cookie on the print origin (never as an extra header), aborts every request
+  to another origin, and the render surfaces send a CSP that allows only
+  their own origin (plus `data:` and `blob:`). Before audit F01 it was a full
+  session cookie for the anchor, sent to every host a printed page loaded
+  an image from ([`server/web/lib/render-sandbox.ts`](../server/web/lib/render-sandbox.ts)).
 
 ## 3. The external surfaces: what each can reach
 

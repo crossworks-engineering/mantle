@@ -118,9 +118,12 @@ describe('kind isolation — no credential is valid on another surface', () => {
       buildMobileToken,
       buildAssetToken,
       buildAppFrameTicket,
+      buildRenderToken,
       mobileTokenJti,
       verifyAssetToken,
       verifyAppFrameTicket,
+      verifyRenderToken,
+      verifySessionCookie,
     } = await authLib();
 
     const minted = {
@@ -128,12 +131,15 @@ describe('kind isolation — no credential is valid on another surface', () => {
       mobile: buildMobileToken('u1', 'jti-1', 3600).value,
       asset: buildAssetToken('u1'),
       frame: buildAppFrameTicket({ ownerId: 'u1', appId: 'app-1' }),
+      render: buildRenderToken({ ownerId: 'u1', actorId: 'u2', nodeId: 'n1' }),
     };
 
     const verifiers = {
+      session: (v: string) => verifySessionCookie(v),
       mobile: (v: string) => mobileTokenJti(v),
       asset: (v: string) => verifyAssetToken(v),
       frame: (v: string) => verifyAppFrameTicket(v),
+      render: (v: string) => verifyRenderToken(v),
     };
 
     for (const [mintKind, value] of Object.entries(minted)) {
@@ -145,6 +151,41 @@ describe('kind isolation — no credential is valid on another surface', () => {
         ).toBe(mintKind === verifyKind);
       }
     }
+  });
+});
+
+/**
+ * The render cookie (audit F01): what the browser sidecar carries to print an
+ * export. It used to be a full kindless session for the anchor; it must now
+ * name the acting admin and the node, and never open a session.
+ */
+describe('render cookies', () => {
+  it('carry the anchor, the acting admin and the node, and are never a session', async () => {
+    const auth = await authLib();
+    const value = auth.buildRenderToken({
+      ownerId: 'anchor',
+      actorId: 'admin-2',
+      nodeId: 'page-1',
+    });
+    expect(auth.verifyRenderToken(value)).toEqual({ uid: 'anchor', act: 'admin-2', n: 'page-1' });
+    expect(auth.verifySessionCookie(value)).toBeNull();
+    // A kind-r value missing a claim is refused, not defaulted.
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+    expect(auth.verifyRenderToken(signRaw({ uid: 'anchor', n: 'page-1', exp, k: 'r' }))).toBeNull();
+    expect(auth.verifyRenderToken(signRaw({ uid: 'anchor', act: 'a', exp, k: 'r' }))).toBeNull();
+    // Short-lived: gone after its ttl.
+    const dead = auth.buildRenderToken({
+      ownerId: 'anchor',
+      actorId: 'admin-2',
+      nodeId: 'page-1',
+      ttlSeconds: -1,
+    });
+    expect(auth.verifyRenderToken(dead)).toBeNull();
+  });
+
+  it('the kindless internal render cookie helper is gone', async () => {
+    const auth = (await authLib()) as Record<string, unknown>;
+    expect(auth.buildInternalRenderCookie).toBeUndefined();
   });
 });
 

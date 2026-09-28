@@ -8,6 +8,35 @@ import { env } from '@mantle/config';
 
 export const SESSION_COOKIE_NAME = 'mantle_session';
 
+/**
+ * The render cookie (kind 'r', lib/auth/tokens.ts): what the browser sidecar
+ * carries on the print origin when it renders an export. Its own name, so it
+ * can never be read as the session cookie.
+ */
+export const RENDER_COOKIE_NAME = 'mantle_render';
+
+/** The render surfaces themselves: the only pages a render cookie opens, each
+ *  bound to the node the cookie names. */
+const RENDER_PAGE_RE = /^\/(?:print\/pages|print\/draws|render\/draws)\/[^/]+$/;
+
+/** The byte routes a render surface loads: page images and scene images
+ *  (/api/files/files/:id) and embedded drawings (/api/draws/:id/svg). Nothing
+ *  else: not the admin private-space bytes, not any JSON API. */
+const RENDER_ASSET_RE = /^\/api\/(?:files\/files\/[^/]+|draws\/[^/]+\/svg)$/;
+
+export function isRenderPagePath(path: string): boolean {
+  return RENDER_PAGE_RE.test(path);
+}
+
+export function isRenderAssetPath(path: string): boolean {
+  return RENDER_ASSET_RE.test(path);
+}
+
+/** Every path a render cookie is accepted on (GET only; the gate checks). */
+export function isRenderPath(path: string): boolean {
+  return isRenderPagePath(path) || isRenderAssetPath(path);
+}
+
 // `/s` is the public read-only share surface (token-gated, no session). The
 // /s pages + /s/[token]/a/[fileId] asset route authorize by share token, not by
 // the owner cookie — see docs/sharing.md.

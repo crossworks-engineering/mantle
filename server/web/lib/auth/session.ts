@@ -16,8 +16,10 @@ import { loadAnchorId, loadLoginRow, loadPersonalSpaceId, type LoginRow } from '
 import {
   isDetachedDev,
   isAuditSelfLogged,
+  isRenderAssetPath,
   MANTLE_PATH_HEADER,
   MANTLE_METHOD_HEADER,
+  RENDER_COOKIE_NAME,
   secureCookies,
 } from '../auth-constants';
 import { auditFireAndForget } from '../audit';
@@ -28,6 +30,7 @@ import {
   decodeUnverifiedClaims,
   verifyAssetToken,
   verifyMobileToken,
+  verifyRenderToken,
   verifySessionCookie,
 } from './tokens';
 import { env } from '@mantle/config';
@@ -141,7 +144,32 @@ export async function getOwnerForAsset(req: Request): Promise<SessionUser | Next
       };
     }
   }
+  // The browser sidecar rendering an export: the render cookie, on the byte
+  // routes a render surface loads (page images, scene images, embedded
+  // drawings) and nowhere else. The admin private-space bytes are not among
+  // them, so a printed page can never pull a private item.
+  if (req.method === 'GET' && isRenderAssetPath(new URL(req.url).pathname)) {
+    const render = await renderCaller();
+    if (render) return render.user;
+  }
   return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+}
+
+/**
+ * The admin a render cookie (kind 'r', lib/auth/tokens.ts) was minted for,
+ * and the node it may open. The login is re-read: a disabled or demoted
+ * login's cookie stops at once, and a cookie naming another brain's anchor
+ * never matches. Null when the request carries no valid render cookie.
+ */
+async function renderCaller(): Promise<{ user: SessionUser; nodeId: string } | null> {
+  const value = (await cookies()).get(RENDER_COOKIE_NAME)?.value;
+  const claims = value ? verifyRenderToken(value) : null;
+  if (!claims) return null;
+  const row = await loadLoginRow(claims.act);
+  if (!row || row.role !== 'admin' || !loginUsable(row)) return null;
+  const user = await sessionUserFor(row);
+  if (!user || user.id !== claims.uid) return null;
+  return { user, nodeId: claims.n };
 }
 
 /**
@@ -346,6 +374,20 @@ export async function requireOwner(): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) redirect('/login');
   return user;
+}
+
+/**
+ * Gate for the render surfaces (/print/pages, /print/draws, /render/draws).
+ * An admin session opens them as before; otherwise the render cookie the
+ * browser sidecar carries, and only for the node that cookie names. Redirects
+ * to /login like requireOwner.
+ */
+export async function requireOwnerForRender(nodeId: string): Promise<SessionUser> {
+  const user = await getSessionUser();
+  if (user) return user;
+  const render = await renderCaller();
+  if (render && render.nodeId === nodeId) return render.user;
+  redirect('/login');
 }
 
 /** Like `requireOwner()` but also reports how the request authenticated, so the
