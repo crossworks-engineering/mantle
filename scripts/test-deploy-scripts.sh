@@ -465,6 +465,7 @@ check "ok: keeps the newest three sets (default)" test "$(ls "$P" | grep -c '\.d
 check "ok: the two oldest sets are gone, whole" sh -c "! ls '$P' | grep -q '2026010[12]'"
 check "ok: the operator's own backups/ file is untouched" test -f "$T/stack/backups/operator-own.dump"
 check "ok: the log lists the set" grep -q 'pre-roll backup ok: .*mantle-20260105-000000.dump' "$T/sig/update.log"
+check "ok: the dump is 0600 (a whole-brain dump, not for every host user)" test "$(mode_of "$P/mantle-20260105-000000.dump")" = 600
 
 T="$WORK/prb-keep"; fake_stack "$T"; fake_dump "$T"; P="$T/stack/backups/pre-roll"
 for s in 20260101-000000 20260102-000000; do old_set "$P" "$s"; done

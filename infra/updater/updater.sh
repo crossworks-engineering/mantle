@@ -754,8 +754,16 @@ pre_roll_backup() {
   if [ ! -f "$prb_script" ]; then
     PRB_ERR="scripts/db-dump.sh is missing from the stack dir"; return 1
   fi
+  prb_own=$(file_owner "$STACK")
+  prb_new_parent=""
+  [ -d "$STACK/backups" ] || prb_new_parent=1
   if ! mkdir -p "$prb_dir"; then
     PRB_ERR="cannot create $PRE_ROLL_REL in the stack dir"; return 1
+  fi
+  # A backups/ this root sidecar just created must still take the operator's
+  # own `bash scripts/db-dump.sh`, which writes there as the stack owner.
+  if [ -n "$prb_new_parent" ] && [ -n "$prb_own" ]; then
+    chown "$prb_own" "$STACK/backups" 2>/dev/null
   fi
 
   # Room for it? The estimate is the last pre-roll set (the best predictor of
@@ -811,7 +819,6 @@ pre_roll_backup() {
 
   # Hand the set to the stack dir's owner (this sidecar is root): the operator
   # restores and deletes these, and must be able to without sudo.
-  prb_own=$(file_owner "$STACK")
   [ -z "$prb_own" ] || chown -R "$prb_own" "$prb_dir" 2>/dev/null
   # shellcheck disable=SC2086  # one line listing the set is the point
   echo "[updater] pre-roll backup ok:" $prb_new | tee -a "$SIG/update.log"
