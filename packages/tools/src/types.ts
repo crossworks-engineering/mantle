@@ -209,6 +209,14 @@ export type BuiltinToolDef = {
    *  If you are unsure, leave it off. Excluding a safe read costs a probe
    *  some reach; including an unsafe one sends real mail. */
   readOnly?: true;
+  /** Starts paid model work on a call: a chat, vision, speech, image or
+   *  decider adapter, a web-search model, or a delegated agent turn (the
+   *  local embedder does not count). Orthogonal to `readOnly`: a read can
+   *  spend (extract_from_image reads an image through the vision model). A
+   *  member's app never calls a spending tool (member-app-tools.ts), and
+   *  spends-drift.test.ts fails until every builtin that calls one of those
+   *  adapters carries this flag. */
+  spends?: true;
   /** Referential requirements checked centrally pre-dispatch — see
    *  {@link ToolPrecondition}. */
   preconditions?: readonly ToolPrecondition[];

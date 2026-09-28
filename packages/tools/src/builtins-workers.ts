@@ -96,6 +96,7 @@ export async function resolveDefaultWorker(
 
 const synthesize_speech: BuiltinToolDef = {
   slug: 'synthesize_speech',
+  spends: true,
   name: 'Send a voice reply',
   description:
     "Synthesize text-to-speech using the owner's default TTS worker. On Telegram it sends as a voice note; on the web /assistant it returns audio bytes that the page renders inline as a play-button bubble. Use when the user explicitly asks for audio ('send me a voice note', 'read that aloud') or when a long answer would land better as audio. After calling, write a brief text follow-up — don't repeat the spoken content verbatim.",
@@ -278,6 +279,7 @@ const synthesize_speech: BuiltinToolDef = {
 
 const extract_from_image: BuiltinToolDef = {
   slug: 'extract_from_image',
+  spends: true,
   readOnly: true,
   name: 'Read text from an image',
   description:
@@ -410,6 +412,7 @@ const extract_from_image: BuiltinToolDef = {
 
 const summarize_text: BuiltinToolDef = {
   slug: 'summarize_text',
+  spends: true,
   readOnly: true,
   name: 'Summarize a note or block of text',
   description:
@@ -625,6 +628,7 @@ async function ensureGeneratedImagesDateFolder(ownerId: string): Promise<string>
 
 const generate_image: BuiltinToolDef = {
   slug: 'generate_image',
+  spends: true,
   name: 'Generate an image',
   description:
     "Generate an image from a prompt using the owner's default image_gen worker. The image is saved under /files/generated-images/<date>/ AND sent inline when running on Telegram. Use when the user asks for an illustration, mockup, sketch, or visual aid. Be concrete in the prompt — vague prompts produce vague images. After calling, summarise what you sent in one sentence (don't repeat the prompt verbatim).",

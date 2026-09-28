@@ -74,6 +74,13 @@ export function isBuiltinReadOnly(slug: string): boolean {
   return REGISTRY.get(slug)?.readOnly === true;
 }
 
+/** Does this builtin start paid model work on a call (`spends`)? Unknown
+ *  slugs answer false; the callers that refuse spenders (the member app
+ *  broker) also refuse anything that is not a known read-only builtin. */
+export function isBuiltinSpending(slug: string): boolean {
+  return REGISTRY.get(slug)?.spends === true;
+}
+
 /** Every registered builtin currently marked read-only, sorted. Used by the
  *  drift test and by `tool_catalog`-style introspection — NOT by the turn
  *  path, which filters the agent's own resolved allowlist through

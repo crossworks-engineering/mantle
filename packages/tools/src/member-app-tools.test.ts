@@ -11,6 +11,8 @@ vi.mock('./resolve', () => ({
   }),
 }));
 
+import { resolveTool } from './resolve';
+import { BUILTIN_TOOLS } from './builtins';
 import { MEMBER_APP_REFUSED_SLUGS, memberAppToolVerdict } from './member-app-tools';
 
 describe('memberAppToolVerdict refused list', () => {
@@ -22,9 +24,35 @@ describe('memberAppToolVerdict refused list', () => {
         'read_result',
         'search_chunks',
         'summarize_text',
+        'extract_from_image',
         'team_request_create',
       ].sort(),
     );
+  });
+
+  it('refuses every builtin flagged `spends`, by the flag, before the group lookup (audit F17)', async () => {
+    const spenders = BUILTIN_TOOLS.filter((t) => t.spends === true);
+    expect(spenders.map((t) => t.slug)).toContain('extract_from_image');
+    for (const def of spenders) {
+      // A tool row under another slug over the spending builtin: the slug
+      // list cannot catch it, the flag must.
+      vi.mocked(resolveTool).mockResolvedValueOnce({
+        slug: 'custom-alias',
+        enabled: true,
+        requiresConfirm: false,
+        handler: { kind: 'builtin', ref: def.slug },
+      } as never);
+      const v = await memberAppToolVerdict('brain', ['custom-alias'], 'custom-alias');
+      if (MEMBER_APP_REFUSED_SLUGS.includes(def.slug)) {
+        expect(v, def.slug).toMatchObject({ ok: false, status: 403 });
+      } else {
+        expect(v, def.slug).toMatchObject({
+          ok: false,
+          status: 403,
+          reason: expect.stringMatching(/paid model work/),
+        });
+      }
+    }
   });
 
   it('refuses every refused slug even when the app declares it', async () => {
