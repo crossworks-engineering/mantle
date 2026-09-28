@@ -153,6 +153,11 @@ recreates Caddy so it can route to the client, then runs a per-service sanity
 check. If that check fails it prints **"Installation incomplete"** and exits
 non-zero rather than a URL that will not answer.
 
+A failed image pull is retried three times with a growing wait (a reset
+connection to the registry is the usual cause). If it still fails, the
+installer stops **before** starting anything and prints the exact command to
+re-run; a re-run is safe. It never brings up a stack with some images missing.
+
 > **Back up the generated `.env`.** `MANTLE_MASTER_KEY` encrypts your stored
 > API keys and mailbox passwords at rest. Lose it and that vault is unrecoverable.
 

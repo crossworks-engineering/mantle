@@ -279,6 +279,9 @@ ${B}Examples${RS}
   scripts/install.sh --check                       # health check an existing install
 EOF
 }
+# Kept for the "re-run the installer" hint: nothing below re-reads the access
+# mode from .env, so the exact command line is what makes a re-run identical.
+ORIG_ARGS=("$@")
 while [[ $# -gt 0 ]]; do case "$1" in
   # --domain names the host; it only IMPLIES the mode. An explicit
   # --behind-proxy must survive being written either side of it.
@@ -1021,9 +1024,40 @@ hd "Starting the stack"
 STARTED_AT=$SECONDS
 COMPOSE=(docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR")
 CLIENT_COMPOSE=(docker compose --env-file "$ENV_FILE" --project-directory "$STACK_DIR" -f "$STACK_DIR/docker-compose.client.yml")
+RERUN="$(printf '%q ' "$0" "${ORIG_ARGS[@]}")"; RERUN="${RERUN% }"
+
+# `compose pull` with retries. One reset connection on one layer (a fresh
+# install over IPv6 to ghcr.io, 2026-09-28) aborts the WHOLE pull, and an `up`
+# after that creates only the services whose images happened to land: 19 were
+# missing, and the client step then failed on a network that did not exist.
+# Layers that did land are kept, so a retry only fetches what is missing.
+# MANTLE_PULL_ATTEMPTS / MANTLE_PULL_BACKOFF (seconds, doubled per retry) are
+# there for the test harness, and for a registry that needs more patience.
+PULL_ATTEMPTS="${MANTLE_PULL_ATTEMPTS:-3}"
+PULL_BACKOFF="${MANTLE_PULL_BACKOFF:-10}"
+pull_with_retry() { # <label> <compose cmd...> → 0 once a pull succeeds, 1 after the last attempt fails
+  local label="$1" attempt=1 wait="$PULL_BACKOFF"
+  shift
+  while :; do
+    if "$@" pull -q 2>&1 | sed 's/^/    /'; then return 0; fi
+    if (( attempt >= PULL_ATTEMPTS )); then return 1; fi
+    warn "$label pull failed (attempt $attempt of $PULL_ATTEMPTS). Retrying in ${wait}s…"
+    sleep "$wait"
+    attempt=$((attempt + 1)); wait=$((wait * 2))
+  done
+}
+
 inf "Pulling images (tag: ${B}$IMAGE_TAG${RS}) — a first install downloads ~2 GB…"
-"${COMPOSE[@]}" pull -q 2>&1 | sed 's/^/    /' \
-  || warn "Image pull failed. If the image is private, run 'docker login <registry>' and re-run. Continuing so the sanity check can report."
+# No `up` without every image. A partial pull used to warn and carry on, and
+# the half-created stack it left looked worse than the blip that caused it.
+if ! pull_with_retry "Image" "${COMPOSE[@]}"; then
+  hd "Image pull failed"
+  bad "The images did not download after $PULL_ATTEMPTS attempts, so the stack was not started."
+  inf "This is almost always a network blip (a reset connection to the registry)."
+  inf "Re-run the installer, it is safe: ${B}$RERUN${RS}"
+  inf "${DIM}If the image is private, run 'docker login <registry>' first.${RS}"
+  exit 1
+fi
 
 # Pre-pull the sandbox BASE image when the profile is on. It's not a compose
 # service (sandboxd creates sandboxes from it ad hoc), so `compose pull` never
@@ -1036,6 +1070,18 @@ if getval COMPOSE_PROFILES | tr ',' '\n' | grep -qx 'sandboxes'; then
   docker pull -q "$SBX_IMAGE" 2>&1 | sed 's/^/    /' \
     || warn "Sandbox base image pull failed — the first sandbox_create will pull it instead."
 fi
+# The owner UI is a separate compose project that joins the server project's
+# default network as EXTERNAL. Its name is read from docker-compose.client.yml
+# (networks.*.name) so the check and the file cannot drift apart.
+client_network_ready() { # → 0 when the network the client stack joins exists; sets CLIENT_NET
+  CLIENT_NET="$(awk '/^networks:/ { n = 1; next }
+    n && /^[^[:space:]#]/ { n = 0 }
+    n && /^[[:space:]]+name:/ { gsub(/["\047]/, "", $2); print $2; exit }' \
+    "$STACK_DIR/docker-compose.client.yml" 2>/dev/null)"
+  CLIENT_NET="${CLIENT_NET:-mantle_default}"
+  docker network inspect "$CLIENT_NET" >/dev/null 2>&1
+}
+
 inf "Bringing services up (waits for migrate + health)…"
 "${COMPOSE[@]}" up -d --wait || warn "up --wait returned non-zero — the sanity check below will show what's wrong."
 
@@ -1047,14 +1093,24 @@ inf "Bringing services up (waits for migrate + health)…"
 # switch; missing means ON.
 if [[ "$(getval MANTLE_CLIENT_ENABLED)" == 0 ]]; then
   inf "Owner web UI disabled (MANTLE_CLIENT_ENABLED=0) — headless brain: no signup screen; drive it over MCP / the API."
+elif [[ -f "$STACK_DIR/docker-compose.client.yml" ]] && ! client_network_ready; then
+  # Without this the client `up` dies on compose's bare "network ... declared
+  # as external, but could not be found", which names the symptom, not the
+  # cause. The sanity check below still reports what the server step left.
+  bad "Owner UI skipped: the server network ${B}$CLIENT_NET${RS} does not exist, so the client app has nothing to join."
+  inf "The server step above did not finish. Re-run the installer, it is safe: ${B}$RERUN${RS}"
 elif [[ -f "$STACK_DIR/docker-compose.client.yml" ]]; then
   inf "Bringing up the owner UI (client app)…"
-  "${CLIENT_COMPOSE[@]}" pull -q 2>&1 | sed 's/^/    /' || warn "Client image pull failed — the owner UI will not start."
-  "${CLIENT_COMPOSE[@]}" up -d --wait || warn "Client app did not become healthy — check 'docker logs mantle_client_web'."
-  # Caddy is already running from the step above with the OLD routing table;
-  # reload it now that the client container exists to proxy to.
-  "${COMPOSE[@]}" up -d --force-recreate caddy >/dev/null 2>&1 \
-    || warn "Could not recreate Caddy — run: docker compose up -d --force-recreate caddy"
+  if pull_with_retry "Client image" "${CLIENT_COMPOSE[@]}"; then
+    "${CLIENT_COMPOSE[@]}" up -d --wait || warn "Client app did not become healthy — check 'docker logs mantle_client_web'."
+    # Caddy is already running from the step above with the OLD routing table;
+    # reload it now that the client container exists to proxy to.
+    "${COMPOSE[@]}" up -d --force-recreate caddy >/dev/null 2>&1 \
+      || warn "Could not recreate Caddy — run: docker compose up -d --force-recreate caddy"
+  else
+    bad "Client image pull failed after $PULL_ATTEMPTS attempts, so the owner UI was not started."
+    inf "Re-run the installer, it is safe: ${B}$RERUN${RS}"
+  fi
 else
   warn "docker-compose.client.yml missing — the owner UI cannot start. Re-download the deploy bundle."
 fi

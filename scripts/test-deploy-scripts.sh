@@ -21,6 +21,10 @@
 #   caddy:   shapes are installed before the Caddyfile; a shape change forces
 #            the caddy recreate even when the Caddyfile itself is modified
 #   scripts: .pre-adopt backups are pruned to the newest three per script
+#   pull:    install.sh retries a failed image pull with backoff, and never
+#            runs `up` on a partial pull; the client step checks the server
+#            network exists before joining it
+#   sanity:  Caddy's own HTTP->HTTPS redirect is not reported as "not Mantle"
 
 set -euo pipefail
 
@@ -297,6 +301,127 @@ check "the two oldest are gone" sh -c "test ! -e '$T/stack/scripts/install.sh.pr
 check "the newest pre-existing ones survive" sh -c "test -e '$T/stack/scripts/install.sh.pre-adopt.20260103-000000' && test -e '$T/stack/scripts/install.sh.pre-adopt.20260104-000000'"
 check "the fresh backup holds the previous copy" sh -c "grep -l 'echo old install' '$T/stack/scripts'/install.sh.pre-adopt.* >/dev/null"
 check "other scripts got no backup (they were absent)" sh -c "! ls '$T/stack/scripts'/sanity.sh.pre-adopt.* >/dev/null 2>&1"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "install.sh: image pull retries, and no 'up' without every image"
+# A fresh install (2026-09-28) lost one layer to a reset connection; the pull
+# aborted, `up` created 5 of 24 services, and the client step died on a network
+# that did not exist. The functions are lifted out of install.sh and run for
+# real under bash, with the compose command and `sleep` stubbed.
+lift() { # <function>: print its definition from install.sh
+  awk -v f="$1" 'index($0, f "() {") == 1 { p = 1 } p { print } p && /^}$/ { exit }' "$ROOT/scripts/install.sh"
+}
+T="$WORK/pull"; mkdir -p "$T"
+PULL_LIB="$(lift pull_with_retry)"
+check "pull_with_retry found in install.sh" test -n "$PULL_LIB"
+pull_run() { # <failures before success>: run pull_with_retry against a flaky fake
+  rm -f "$T/calls" "$T/sleeps"
+  FAILS="$1" T="$T" MANTLE_PULL_ATTEMPTS=3 MANTLE_PULL_BACKOFF=10 bash -c '
+warn() { echo "warn: $*"; }
+sleep() { echo "$1" >> "$T/sleeps"; }
+fake_compose() {
+  echo "$*" >> "$T/calls"
+  if [ "$(wc -l < "$T/calls")" -le "$FAILS" ]; then echo "read: connection reset by peer"; return 1; fi
+  echo pulled
+}
+PULL_ATTEMPTS="${MANTLE_PULL_ATTEMPTS:-3}"; PULL_BACKOFF="${MANTLE_PULL_BACKOFF:-10}"
+set -euo pipefail
+'"$PULL_LIB"'
+if pull_with_retry Image fake_compose --env-file .env; then echo rc=0; else echo "rc=$?"; fi' 2>&1 || true
+}
+calls() { wc -l < "$T/calls" | tr -d ' '; }
+sleeps() { tr '\n' ' ' < "$T/sleeps" 2>/dev/null | sed 's/ $//'; }
+
+out=$(pull_run 0)
+check "clean pull: one attempt, no wait" sh -c "echo '$out' | grep -q 'rc=0' && test $(calls) = 1 && test ! -e '$T/sleeps'"
+check "the compose args are passed through, then 'pull -q'" grep -qx -- '--env-file .env pull -q' "$T/calls"
+out=$(pull_run 2)
+check "a transient failure is retried until it succeeds" sh -c "echo '$out' | grep -q 'rc=0' && test $(calls) = 3"
+check "backoff doubles between attempts (10s, 20s)" test "$(sleeps)" = "10 20"
+check "each retry is announced" sh -c "echo '$out' | grep -q 'attempt 1 of 3' && echo '$out' | grep -q 'attempt 2 of 3'"
+check "compose output is indented, not swallowed" sh -c "echo '$out' | grep -q '^    read: connection reset by peer'"
+out=$(pull_run 9)
+check "gives up after the last attempt with a non-zero status" sh -c "echo '$out' | grep -q 'rc=1' && test $(calls) = 3"
+check "no wait after the last attempt" test "$(sleeps)" = "10 20"
+
+# The gate itself: the server `up` must sit behind a failed-pull exit.
+gate=$(grep -n 'if ! pull_with_retry "Image"' "$ROOT/scripts/install.sh" | head -1 | cut -d: -f1)
+upl=$(grep -n '"\${COMPOSE\[@\]}" up -d --wait' "$ROOT/scripts/install.sh" | head -1 | cut -d: -f1)
+check "the server pull is gated before 'up -d --wait'" test -n "$gate" -a -n "$upl" -a "${gate:-0}" -lt "${upl:-0}"
+check "a failed pull exits with the re-run hint" sh -c "sed -n '${gate:-1},${upl:-1}p' '$ROOT/scripts/install.sh' | grep -q 'Re-run the installer, it is safe' && sed -n '${gate:-1},${upl:-1}p' '$ROOT/scripts/install.sh' | grep -q 'exit 1'"
+check "the old 'continuing anyway' path is gone" sh -c "! grep -q 'Continuing so the sanity check can report' '$ROOT/scripts/install.sh'"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "install.sh: the client step checks the server network first"
+NET_LIB="$(lift client_network_ready)"
+check "client_network_ready found in install.sh" test -n "$NET_LIB"
+net_run() { # <stack dir> <network docker knows about>
+  STACK_DIR="$1" HAVE_NET="$2" bash -c '
+docker() { [ "$1 $2" = "network inspect" ] && [ "$3" = "$HAVE_NET" ]; }
+'"$NET_LIB"'
+if client_network_ready; then echo "ready $CLIENT_NET"; else echo "missing $CLIENT_NET"; fi'
+}
+check "reads the network the real client compose joins (mantle_default)" test "$(net_run "$ROOT" mantle_default)" = "ready mantle_default"
+check "reports it missing when docker has no such network" test "$(net_run "$ROOT" nothing)" = "missing mantle_default"
+mkdir -p "$T/net"
+printf 'services:\n  client-web:\n    networks: [x]\nnetworks:\n  x:\n    external: true\n    name: "brain_default"\nvolumes:\n  v:\n    name: not_this\n' > "$T/net/docker-compose.client.yml"
+check "follows a renamed network, quotes stripped" test "$(net_run "$T/net" brain_default)" = "ready brain_default"
+check "falls back to mantle_default without a client compose" test "$(net_run "$T/nowhere" mantle_default)" = "ready mantle_default"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "sanity.sh: our own HTTP->HTTPS redirect is not 'not Mantle'"
+# The first run of that same install printed "http://localhost answered HTTP
+# 308, but it is not Mantle": Caddy redirecting to HTTPS for the configured
+# domain. Whole script, with docker and curl stubbed on PATH.
+T="$WORK/sanity"; mkdir -p "$T/bin" "$T/stack"
+printf 'MANTLE_SITE_ADDRESS=brain.example.com\n' > "$T/stack/.env"
+cat > "$T/bin/docker" <<'STUB'
+#!/bin/sh
+case "$1" in
+  info) exit 0 ;;
+  ps) case "$*" in *project=mantle\ *) echo mantle_web ;; esac; exit 0 ;;
+  inspect)
+    case "$*" in
+      *State.Status*) echo "running healthy 0" ;;
+      *NetworkSettings.Networks*) echo "mantle_default " ;;
+    esac; exit 0 ;;
+esac
+exit 0
+STUB
+# curl: $CURL_HTTPS / $CURL_HTTP / $CURL_DEBUG = "down" or "<code> <redirect-url|-> <body>"
+cat > "$T/bin/curl" <<'STUB'
+#!/bin/sh
+for a in "$@"; do url=$a; done
+case "$url" in
+  http://127.0.0.1:*) r=$CURL_DEBUG ;;
+  https://*) r=$CURL_HTTPS ;;
+  *) r=$CURL_HTTP ;;
+esac
+[ "$r" = down ] && { printf '\n\n000'; exit 7; }
+code=${r%% *}; rest=${r#* }; loc=${rest%% *}; body=${rest#* }
+[ "$loc" = - ] && loc=
+printf '%s\n%s\n%s' "$body" "$loc" "$code"
+STUB
+chmod +x "$T/bin/docker" "$T/bin/curl"
+sanity_run() { # <https> <http> → output, then "rc=N"
+  PATH="$T/bin:$PATH" CURL_HTTPS="$1" CURL_HTTP="$2" CURL_DEBUG=down NO_COLOR=1 \
+    MANTLE_STACK_DIR="$T/stack" MANTLE_ENV_FILE="$T/stack/.env" MANTLE_COMPOSE_PROJECT=mantle \
+    bash "$ROOT/scripts/sanity.sh" 2>&1; echo "rc=$?"
+}
+out=$(sanity_run down '308 https://brain.example.com/api/auth/bootstrap-state -')
+check "308 to https on the site address: not reported as 'not Mantle'" sh -c "! printf '%s' \"\$1\" | grep -q 'not Mantle'" _ "$out"
+check "308 to https on the site address: named as the HTTPS redirect" sh -c "printf '%s' \"\$1\" | grep -q 'http://localhost redirects to HTTPS (HTTP 308)'" _ "$out"
+check "...and the install still fails when HTTPS never answered" sh -c "printf '%s' \"\$1\" | grep -q 'rc=1'" _ "$out"
+out=$(sanity_run down '308 https://LOCALHOST/api/auth/bootstrap-state -')
+check "308 to https on the probed host itself: the redirect too" sh -c "printf '%s' \"\$1\" | grep -q 'redirects to HTTPS' && ! printf '%s' \"\$1\" | grep -q 'not Mantle'" _ "$out"
+out=$(sanity_run down '308 https://parked.example.net/ -')
+check "a redirect to some other host is still 'not Mantle'" sh -c "printf '%s' \"\$1\" | grep -q 'http://localhost answered HTTP 308, but it is not Mantle'" _ "$out"
+out=$(sanity_run down '301 http://brain.example.com/ -')
+check "a redirect to plain http is still 'not Mantle'" sh -c "printf '%s' \"\$1\" | grep -q 'answered HTTP 301, but it is not Mantle'" _ "$out"
+out=$(sanity_run down '200 - <html>nginx</html>')
+check "a 200 from something else is still 'not Mantle'" sh -c "printf '%s' \"\$1\" | grep -q 'answered HTTP 200, but it is not Mantle'" _ "$out"
+out=$(sanity_run '200 - {"firstRun":false}' down)
+check "Mantle over HTTPS on the site address: verified, rc 0" sh -c "printf '%s' \"\$1\" | grep -q 'App responding at https://brain.example.com → HTTP 200 (verified Mantle)' && printf '%s' \"\$1\" | grep -q 'rc=0'" _ "$out"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo
