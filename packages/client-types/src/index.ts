@@ -70,6 +70,14 @@ export type {
   MemberHomeApp,
   MemberHomeData,
 } from './dto/member-apps';
+export type {
+  MemberInviteAccepted,
+  MemberInviteCreated,
+  MemberInviteList,
+  MemberInvitePreview,
+  MemberInviteRow,
+  MemberInviteState,
+} from './dto/member-invites';
 export type { MemberItemKind } from './member-kinds';
 
 // Types only at the root; the runtime constants (APP_TINTS, limits) are the

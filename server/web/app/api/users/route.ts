@@ -1,9 +1,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import bcrypt from 'bcryptjs';
 import { db, authUsers, agents, and, asc, eq, nodes, sql } from '@mantle/db';
-import { getOwnerOr401 } from '@/lib/auth';
+import { getOwnerOr401, hashLoginPassword } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { errorMessage } from '@mantle/std';
@@ -128,7 +127,7 @@ export async function POST(req: Request) {
   }
 
   const email = parsed.data.email.trim().toLowerCase();
-  const passwordHash = await bcrypt.hash(parsed.data.password, 12);
+  const passwordHash = await hashLoginPassword(parsed.data.password);
   const id = randomUUID();
 
   // Case-insensitive pre-check: login matches on lower(email), but the column's

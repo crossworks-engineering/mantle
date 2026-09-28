@@ -18,11 +18,13 @@ import {
   isAuditSelfLogged,
   MANTLE_PATH_HEADER,
   MANTLE_METHOD_HEADER,
+  secureCookies,
 } from '../auth-constants';
 import { auditFireAndForget } from '../audit';
 import { bearerFromHeader } from './request';
 import {
   SESSION_COOKIE_NAME,
+  buildSessionCookie,
   decodeUnverifiedClaims,
   verifyAssetToken,
   verifyMobileToken,
@@ -505,9 +507,28 @@ export async function loginWithPassword(email: string, password: string): Promis
   return ok && loginUsable(row) ? row.id : null;
 }
 
+/** The one password hash every login is stored with (bcrypt, cost 12). */
+export function hashLoginPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 12);
+}
+
+/** Set the password-login session cookie for `loginId` on `res`: what
+ *  POST /api/auth/login answers a good password with (the invite accept
+ *  signs the new member in the same way). */
+export function setSessionCookie(res: NextResponse, req: Request, loginId: string): void {
+  const { value, maxAgeSec } = buildSessionCookie(loginId);
+  res.cookies.set(SESSION_COOKIE_NAME, value, {
+    httpOnly: true,
+    secure: secureCookies(req),
+    sameSite: 'lax',
+    path: '/',
+    maxAge: maxAgeSec,
+  });
+}
+
 /** Update password hash. Caller is responsible for verifying the old password first. */
 export async function updatePassword(userId: string, newPassword: string): Promise<void> {
-  const hash = await bcrypt.hash(newPassword, 12);
+  const hash = await hashLoginPassword(newPassword);
   await db.update(authUsers).set({ passwordHash: hash }).where(eq(authUsers.id, userId));
 }
 

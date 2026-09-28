@@ -26,19 +26,25 @@ export const TEAM_TOKEN_LENGTH = 8;
  *  read over the phone or retyped from paper survives the trip. 56 chars. */
 const TOKEN_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
 
-export function generateTeamToken(): string {
+/** A random code of `length` characters from the look-alike-free alphabet.
+ *  Team tokens are 8; member invite codes (member-invites.ts) are longer. */
+export function generateAlphabetCode(length: number): string {
   const out: string[] = [];
-  while (out.length < TEAM_TOKEN_LENGTH) {
+  while (out.length < length) {
     // Rejection sampling: only accept bytes below the largest multiple of the
     // alphabet size (56 × 4 = 224) so every character is equally likely.
-    const bytes = randomBytes(TEAM_TOKEN_LENGTH * 2);
+    const bytes = randomBytes(length * 2);
     for (const b of bytes) {
       if (b >= 224) continue;
       out.push(TOKEN_ALPHABET[b % TOKEN_ALPHABET.length]!);
-      if (out.length === TEAM_TOKEN_LENGTH) break;
+      if (out.length === length) break;
     }
   }
   return out.join('');
+}
+
+export function generateTeamToken(): string {
+  return generateAlphabetCode(TEAM_TOKEN_LENGTH);
 }
 
 export function hashTeamToken(token: string): string {
@@ -117,14 +123,16 @@ export async function disableTeamMember(ownerId: string, contactId: string): Pro
  * caller does that via `markTeamTokenUsed` only AFTER confirming the token
  * belongs to the relevant share's owner, so presenting a valid token from
  * brain A to brain B's link never touches brain A's row. Callers on
- * unauthenticated surfaces MUST rate-limit before calling this.
+ * unauthenticated surfaces MUST rate-limit before calling this. `exec` lets
+ * a caller read inside its own transaction (the member invite redeem).
  */
 export async function verifyTeamToken(
   token: string,
+  exec: Pick<typeof db, 'select'> = db,
 ): Promise<{ ownerId: string; contactId: string } | null> {
   const trimmed = token.trim();
   if (trimmed.length < 6 || trimmed.length > 64) return null;
-  const [row] = await db
+  const [row] = await exec
     .select({
       ownerId: contactTeamTokens.ownerId,
       contactId: contactTeamTokens.contactId,

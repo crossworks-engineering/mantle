@@ -52,6 +52,7 @@ describe('access matrix', () => {
       'public.entity_edges',
       'public.oauth_access_tokens',
       'public.mobile_tokens',
+      'public.member_invites',
     ];
     for (const table of adminForever) {
       expect(ACCESS_MATRIX.find((t) => t.table === table)?.read, table).toBe('none');

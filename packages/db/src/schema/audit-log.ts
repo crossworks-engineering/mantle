@@ -11,8 +11,9 @@ import { sql } from 'drizzle-orm';
  * cross-schema FK.
  *
  * Actions: 'auth.login' | 'auth.login_failed' | 'auth.logout' |
- * 'auth.password_change' | 'user.create' | 'user.update' | 'user.delete' |
- * 'user.password_reset' | 'api.write'.
+ * 'auth.password_change' | 'auth.invite_accepted' | 'auth.invite_failed' |
+ * 'user.create' | 'user.update' | 'user.delete' | 'user.password_reset' |
+ * 'api.write'.
  */
 export const auditLog = pgTable(
   'audit_log',
