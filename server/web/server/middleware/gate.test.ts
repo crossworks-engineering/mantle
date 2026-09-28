@@ -192,9 +192,9 @@ describe('gate: session & bearer', () => {
     });
     expect(post.status).toBe(401);
     // The same value under the session cookie's name is refused (kinded).
-    expect((await get('/api/notes', render.replace('mantle_render', 'mantle_session'))).status).toBe(
-      401,
-    );
+    expect(
+      (await get('/api/notes', render.replace('mantle_render', 'mantle_session'))).status,
+    ).toBe(401);
     // Wrong kind, expired, or forged under the render cookie's name.
     const asset = `mantle_render=${mint({ uid: 'u1', k: 'a', exp: future() })}`;
     const session = `mantle_render=${mint({ uid: 'u1', exp: future() })}`;

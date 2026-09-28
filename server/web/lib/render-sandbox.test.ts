@@ -203,7 +203,10 @@ describe('every sidecar render goes through the sandbox', () => {
     expect(page.extraHeaders).toBeNull();
     expect(page.cookies.map((c) => c.name)).toEqual(['mantle_render']);
     expect(page.aborted).toEqual([outside]);
-    expect(page.continued).toEqual([`${ORIGIN}/print/pages/p1`, `${ORIGIN}/api/files/files/f1?raw=1`]);
+    expect(page.continued).toEqual([
+      `${ORIGIN}/print/pages/p1`,
+      `${ORIGIN}/api/files/files/f1?raw=1`,
+    ]);
   });
 
   it('the draw SVG render aborts an outside request', async () => {

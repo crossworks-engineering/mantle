@@ -67,7 +67,10 @@ describe('mountStatic /excalidraw-assets', () => {
   // render sandbox now refuses (audit F01), so the text lost its font.
   const dir = mkdtempSync(join(tmpdir(), 'mantle-static-'));
   mkdirSync(join(dir, 'excalidraw-assets', 'fonts', 'Excalifont'), { recursive: true });
-  writeFileSync(join(dir, 'excalidraw-assets', 'fonts', 'Excalifont', 'Excalifont-Regular.woff2'), 'wOF2');
+  writeFileSync(
+    join(dir, 'excalidraw-assets', 'fonts', 'Excalifont', 'Excalifont-Regular.woff2'),
+    'wOF2',
+  );
   const app = new Hono();
   mountStatic(app, dir);
   app.notFound((c) => c.text('nope', 404));

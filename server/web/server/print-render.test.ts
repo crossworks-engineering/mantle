@@ -205,7 +205,11 @@ describe('getOwnerForAsset: the render cookie at the route layer', () => {
     expect(ok).toMatchObject({ id: ANCHOR, actor: { id: ADMIN } });
     expect(await call(`/api/draws/${DRAW}/svg`)).not.toBeInstanceOf(Response);
     // The route layer refuses it on every other asset route, whatever the gate did.
-    for (const path of [`/api/admin/space/${ITEM}/bytes`, `/api/export/${PAGE}`, '/api/profile/photo']) {
+    for (const path of [
+      `/api/admin/space/${ITEM}/bytes`,
+      `/api/export/${PAGE}`,
+      '/api/profile/photo',
+    ]) {
       const res = await call(path);
       expect(res, path).toBeInstanceOf(Response);
       expect((res as Response).status, path).toBe(401);

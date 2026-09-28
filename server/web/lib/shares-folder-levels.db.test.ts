@@ -79,7 +79,8 @@ describe.skipIf(!URL)('folder links filter by level on Postgres', () => {
       [id.cliAdm, 'file', 'internal.txt', cli, 'admin'],
     ];
     for (const [nid, type, title, path, audience] of rows) {
-      const data = type === 'file' ? { filename: title, mime_type: 'text/plain', size_bytes: 1 } : {};
+      const data =
+        type === 'file' ? { filename: title, mime_type: 'text/plain', size_bytes: 1 } : {};
       await m.db.execute(sqlTag`
         insert into nodes (id, owner_id, type, title, path, audience, data)
         values (${nid}, ${owner}, ${type}, ${title}, ${path}::ltree, ${audience}, ${JSON.stringify(data)}::jsonb)`);

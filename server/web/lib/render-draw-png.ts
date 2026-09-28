@@ -52,10 +52,7 @@ export type DrawPng = {
  * a caller can tell a missing drawing from a missing browser. `renderToken` is
  * a render cookie for this drawing (buildRenderToken).
  */
-export async function renderDrawPng(
-  nodeId: string,
-  renderToken: string,
-): Promise<DrawPng | null> {
+export async function renderDrawPng(nodeId: string, renderToken: string): Promise<DrawPng | null> {
   const endpoint = env('BROWSER_WS_ENDPOINT');
   if (!endpoint) throw new DrawRendererUnavailableError('BROWSER_WS_ENDPOINT is not set');
 

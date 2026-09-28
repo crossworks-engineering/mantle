@@ -162,7 +162,11 @@ describe('kind isolation — no credential is valid on another surface', () => {
 describe('render cookies', () => {
   it('carry the anchor, the acting admin and the node, and are never a session', async () => {
     const auth = await authLib();
-    const value = auth.buildRenderToken({ ownerId: 'anchor', actorId: 'admin-2', nodeId: 'page-1' });
+    const value = auth.buildRenderToken({
+      ownerId: 'anchor',
+      actorId: 'admin-2',
+      nodeId: 'page-1',
+    });
     expect(auth.verifyRenderToken(value)).toEqual({ uid: 'anchor', act: 'admin-2', n: 'page-1' });
     expect(auth.verifySessionCookie(value)).toBeNull();
     // A kind-r value missing a claim is refused, not defaulted.
