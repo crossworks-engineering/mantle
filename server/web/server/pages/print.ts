@@ -44,7 +44,7 @@ export const RENDER_CSP = [
 ].join('; ');
 
 /**
- * Admin-only print surface for a Page (port of app/print/pages/[id]) — no app
+ * Admin-only print surface for a Page (port of app/print/pages/[id]): no app
  * chrome, just the content in the shared `.ProseMirror .prose` container so it
  * reuses the editor CSS from the compiled share-runtime stylesheet. Headless
  * Chromium (lib/render-pdf.ts) navigates here with a render cookie for the

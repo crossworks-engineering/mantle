@@ -44,7 +44,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   }
 
   // PDF: rendered by headless Chromium (the browser sidecar) against the live,
-  // admin-only /print surface — highest fidelity to the on-screen page. Pages and draws.
+  // admin-only /print surface: highest fidelity to the on-screen page. Pages and draws.
   if (fmt.data === 'pdf') {
     // Draws print their committed SVG snapshot via /print/draws — same
     // sidecar, no Excalidraw involvement there (the snapshot is already

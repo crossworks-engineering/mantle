@@ -408,10 +408,10 @@ export async function loadShareView(share: Share): Promise<ShareView | null> {
 /** Is `fileId` allowed to be served under this share? A file share serves
  *  itself; a page share serves only the files its doc references; a folder
  *  share serves the files under the folder's subtree (recursive, evaluated
- *  per request — a file moved out is denied on its next fetch) that sit at
+ *  per request: a file moved out is denied on its next fetch) that sit at
  *  the link's levels, under no folder above them (linkLevels, audit F19): a
  *  file uploaded into a public folder stays admin and is not served. Anything
- *  else is denied — this is the asset route's authorization. */
+ *  else is denied. This is the asset route's authorization. */
 export async function isAssetAllowed(share: Share, fileId: string): Promise<boolean> {
   if (share.nodeType === 'file') return share.nodeId === fileId;
   if (share.nodeType === 'page') {
