@@ -61,7 +61,7 @@
 | `GET /api/member/library`       | Team-level pages, notes, drawings, tables, files (see below)           |
 | `GET /api/member/library/:id`   | One item with its published body                                       |
 | `GET /api/member/files/:id`     | File bytes (`?thumb=1` for a thumbnail); `?at=` works for `<img>` srcs |
-| `GET /api/member/draws/:id/svg` | A drawing's committed SVG                                              |
+| `GET /api/member/draws/:id/svg` | A drawing's committed SVG, with only the images the member may read    |
 | `GET /api/member/chat`          | The member's own thread with the team-level agent                      |
 | `POST /api/member/chat`         | Send a message; the reply lands in the thread                          |
 
@@ -84,6 +84,11 @@ not something an owner chose. To list an item to members, set it to Team.
   team daily cap. The admin reads member chats in `/team-admin` > Member
   chats (`GET /api/team-admin/member-chats`) and with the `team_chat_list` /
   `team_chat_read` tools (`loginId`).
+- **Drawing images.** A saved SVG carries its images' bytes inline, so the
+  member copy keeps an image only when its file passes the files route's
+  rule (team level or lower, or the member's own accepted file); any other
+  image, an admin screenshot in a team drawing say, is taken out and its
+  frame shows empty (`packages/content/src/member-draw-images.ts`).
 - **Not yet:** attachments in chat. Own items: section 5; review by an
   admin: section 6; running apps: section 7.
 
@@ -423,7 +428,13 @@ app's level in its Access control; nothing else lists it to members.
   at most, 50,000 rows at most, 16 MiB per string or blob. The engine's
   authorizer refuses ATTACH, DETACH, VACUUM (any form) and every PRAGMA but
   `table_info` / `table_xinfo`, whatever comments or spacing the text hides
-  them behind (audit 2026-09-27).
+  them behind (audit 2026-09-27). An app's declared schema DDL runs there
+  too: one script in one transaction, same authorizer, 30
+  seconds at most (a new version may index data already in the app).
+  Before, it ran on the main thread with only the text guard and no time
+  limit. Open item: a WRITE stopped at the limit (an `exec` or a schema) is
+  killed with its worker, and its write lock on the app's file stays held
+  until the web process restarts; reads still work.
 - **Cost.** A member write into an app table that is exported to the brain
   schedules the export sync (debounced, hash-gated, and at most two minutes
   after a burst of writes starts): bounded, not zero (decided 2026-09-26).
@@ -449,6 +460,13 @@ app's level in its Access control; nothing else lists it to members.
   is the page id), Library counts and the other apps members may run. The
   `/team` portal hub keeps its own rules (a team-mode share) until it is
   retired.
+- **Contract.** The response shapes are published in
+  `@crossworks/client-types` (`packages/client-types/src/dto/member-apps.ts`):
+  `MemberAppCard`, `MemberAppList`, `MemberHomeApp`, `MemberHomeData<THub>`
+  (write `MemberHomeData<HubData>`; `HubData` stays in
+  `share-ui/app-bridge-protocol`) and the admin's `MemberChatsResponse`. A
+  card's `audience` is `MemberAppLevel` (team, client or public). The routes
+  check their bodies with `satisfies`.
 
 ## 8. The member's own chrome (Phase 5)
 

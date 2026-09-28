@@ -164,7 +164,9 @@ For app-local state (caches, user-entered rows, preferences). Declare DDL via
 DB on first use. At runtime use `host.db.query/exec`. `ATTACH`, `DETACH`,
 `VACUUM` and every `PRAGMA` except `table_info` / `table_xinfo` are blocked.
 Each statement may run 5 seconds at most and return 50,000 rows at most (add
-a LIMIT or aggregate), and no single string or blob may pass 16 MiB. Treat schema as **append-only**: there
+a LIMIT or aggregate), and no single string or blob may pass 16 MiB. The
+declared schema runs under the same rules as one transaction (30 seconds at
+most): a script that fails anywhere applies nothing. Treat schema as **append-only**: there
 are no destructive migrations; add columns/tables, use views for renames.
 
 **Seeding reference data**: when the app needs pre-loaded lookup data (a
