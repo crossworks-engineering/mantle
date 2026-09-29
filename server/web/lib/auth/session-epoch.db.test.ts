@@ -20,6 +20,7 @@
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -35,7 +36,6 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
   const admin = randomUUID(); // the caller of the admin routes
   const demoted = randomUUID(); // an admin, demoted below
   const logins = [member, admin, demoted];
-  let createdAnchor: string | null = null;
   let anchor = '';
   const FIRST = 'first password 1';
   /** The member's password now (it changes below); the others keep FIRST. */
@@ -106,16 +106,9 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
     m = await import('@mantle/db');
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     tokens = await import('./tokens');
-    // A member resolves against the brain's anchor: use the one there is,
-    // or make one for this file.
-    const [a] = await sql<Row[]>`select id from auth.users where is_owner limit 1`;
-    if (a) anchor = a.id as string;
-    else {
-      anchor = randomUUID();
-      createdAnchor = anchor;
-      await sql`insert into auth.users (id, email, password_hash, role, is_owner)
-                values (${anchor}, ${emailOf(anchor)}, 'x', 'admin', true)`;
-    }
+    // A member resolves against the brain's anchor: the shared test anchor
+    // (made once, by whichever file asks first, never deleted).
+    anchor = await ensureTestAnchor(sql);
     const hash = bcrypt.hashSync(password, 4);
     await sql`insert into auth.users (id, email, password_hash, role) values
       (${member}, ${emailOf(member)}, ${hash}, 'member'),
@@ -127,7 +120,7 @@ describe.skipIf(!URL)('session epoch: ending a login’s sessions', () => {
 
   afterAll(async () => {
     if (!sql) return;
-    const all = createdAnchor ? [...logins, createdAnchor] : logins;
+    const all = logins;
     await sql`delete from audit_log where actor_email like ${`${tag}%`}`;
     await sql`delete from mobile_tokens where user_id in ${sql(all)}`;
     await sql`delete from spaces where login_id in ${sql(all)}`;

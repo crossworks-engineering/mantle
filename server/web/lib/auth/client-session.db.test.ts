@@ -21,6 +21,7 @@
 import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { ensureTestAnchor } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
@@ -34,7 +35,6 @@ describe.skipIf(!URL)('a client login, end to end', () => {
   const tag = `csess-${randomUUID().slice(0, 8)}`;
   const admin = randomUUID();
   const made: string[] = [];
-  let createdAnchor: string | null = null;
   const emailOf = (s: string) => `${tag}-${s}@example.com`;
   let ip = 0;
 
@@ -120,12 +120,9 @@ describe.skipIf(!URL)('a client login, end to end', () => {
     m = await import('@mantle/db');
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     tokens = await import('./tokens');
-    const [a] = await sql<Row[]>`select id from auth.users where is_owner limit 1`;
-    if (!a) {
-      createdAnchor = randomUUID();
-      await sql`insert into auth.users (id, email, password_hash, role, is_owner)
-                values (${createdAnchor}, ${emailOf('anchor')}, 'x', 'admin', true)`;
-    }
+    // The client resolves against the brain's anchor: the shared test
+    // anchor (made once, by whichever file asks first, never deleted).
+    await ensureTestAnchor(sql);
     await sql`insert into auth.users (id, email, password_hash, role)
               values (${admin}, ${emailOf('admin')}, ${bcrypt.hashSync('an admin pass', 4)}, 'admin')`;
     const { createApp } = await import('../../server/app');
@@ -134,7 +131,7 @@ describe.skipIf(!URL)('a client login, end to end', () => {
 
   afterAll(async () => {
     if (!sql) return;
-    const all = [...made, admin, ...(createdAnchor ? [createdAnchor] : [])];
+    const all = [...made, admin];
     await sql`delete from client_report_acks where acked_by = ${admin}`;
     await sql`delete from audit_log where actor_email like ${`${tag}%`}`;
     await sql`delete from mobile_tokens where user_id in ${sql(all)}`;
