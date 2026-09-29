@@ -7,7 +7,14 @@
  * the owner's resolution back into the member's thread.
  */
 import { and, count, desc, eq, gte, sql } from 'drizzle-orm';
-import { CLIENT_REQUEST_SOURCE, REQUEST_SOURCES, db, nodes, notifyNodeIngested } from '@mantle/db';
+import {
+  CLIENT_REQUEST_SOURCE,
+  REQUEST_SOURCES,
+  clientRequestFilings,
+  db,
+  nodes,
+  notifyNodeIngested,
+} from '@mantle/db';
 import { appendTeamMessage } from './team-messages';
 import type { TeamRequest } from '@mantle/client-types';
 export type { TeamRequest };
@@ -68,6 +75,40 @@ export async function countTeamRequestsFiled(
     .from(nodes)
     .where(and(...conds));
   return row?.n ?? 0;
+}
+
+/**
+ * Client requests filed, from the ledger (client_request_filings, migration
+ * 0197): those of this inbound message (the turn), or by this client login
+ * since `since`. A row is written for every request filed and never removed
+ * with the task, so deleting a request never gives the quota back (C5 audit
+ * fix I12). Admin level: run it inside `asSystem`, as client_request_create
+ * does.
+ */
+export async function countClientRequestFilings(
+  ownerId: string,
+  by: { threadMessageId: string } | { loginId: string; since: Date },
+): Promise<number> {
+  const conds = [eq(clientRequestFilings.ownerId, ownerId)];
+  if ('threadMessageId' in by) {
+    conds.push(eq(clientRequestFilings.threadMessageId, by.threadMessageId));
+  } else {
+    conds.push(eq(clientRequestFilings.loginId, by.loginId));
+    conds.push(gte(clientRequestFilings.createdAt, by.since));
+  }
+  const [row] = await db
+    .select({ n: count() })
+    .from(clientRequestFilings)
+    .where(and(...conds));
+  return row?.n ?? 0;
+}
+
+/** Record one client request filed, in the ledger the caps count. */
+export async function recordClientRequestFiling(
+  ownerId: string,
+  row: { loginId: string; threadMessageId: string | null; taskId: string },
+): Promise<void> {
+  await db.insert(clientRequestFilings).values({ ownerId, ...row });
 }
 
 /**

@@ -34,7 +34,12 @@ import {
   type ProfilePreferences,
 } from '@mantle/content';
 import { step } from '@mantle/tracing';
-import { newTurnTaint, taintFromText } from '@mantle/tools/client-sourced';
+import {
+  conversationTaintKey,
+  loadConversationTaint,
+  newTurnTaint,
+  taintFromText,
+} from '@mantle/tools/client-sourced';
 import { stageLabelForStep } from './stage-label';
 import type { AssembledResponderTurn } from './assemble-turn';
 import { agentLevel, withAgentViewer } from '../agent/agent-viewer';
@@ -165,6 +170,9 @@ export type RunResponderLoopOptions = {
   /** The per-turn abort signal, when the surface supports Stop. An aborted
    *  turn keeps its partial reply — no fallback substitution. */
   abortSignal?: AbortSignal | null;
+  /** false: this turn neither starts from nor keeps the conversation's
+   *  client-sourced mark (a Studio simulation, which persists nothing). */
+  conversationTaint?: false;
 };
 
 /**
@@ -213,9 +221,15 @@ async function runResponderLoopAtLevel(
     },
   );
 
-  // Client-written text in the retrieval context (a reviewed client request
-  // is indexed like any task) taints the turn before any tool runs (plan N18).
-  const taint = newTurnTaint();
+  // The conversation's mark (I9): a turn of a conversation that read
+  // client-written text in the last 24 hours starts marked, since the text
+  // is still in its history. Client-written text in the retrieval context (a
+  // reviewed client request is indexed like any task) marks the turn before
+  // any tool runs (plan N18), and renews the conversation's mark.
+  const taint =
+    opts.conversationTaint === false
+      ? newTurnTaint()
+      : await loadConversationTaint(opts.ownerId, conversationTaintKey(agent.id, opts.surface));
   await taintFromText(
     taint,
     opts.ownerId,

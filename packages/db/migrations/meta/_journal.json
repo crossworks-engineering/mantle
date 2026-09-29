@@ -1380,6 +1380,13 @@
       "when": 1790018040000,
       "tag": "0196_space_items_taken_title",
       "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "7",
+      "when": 1790018100000,
+      "tag": "0197_client_sourced_guard",
+      "breakpoints": true
     }
   ]
 }

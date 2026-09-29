@@ -36,7 +36,13 @@ import {
   type ResultHandlingConfig,
   type ToolCallRecord,
 } from '@mantle/tools';
-import { newTurnTaint, taintFromText, type TurnTaint } from '@mantle/tools/client-sourced';
+import {
+  markCreatedClientSourced,
+  newTurnTaint,
+  taintFromText,
+  type TurnTaint,
+} from '@mantle/tools/client-sourced';
+import { toolCreatesNodes } from '@mantle/tools/client-sourced-rules';
 import { type Tool, type AgentParams } from '@mantle/db';
 import type { ToolArtifact } from '@mantle/tools';
 import {
@@ -458,8 +464,10 @@ export type ToolLoopArgs = {
    *  N18). Shared by reference: the responder loop marks it from the
    *  retrieval context, every tool call's input and output marks it, and a
    *  delegated child shares its parent's. Once marked, a lowering to client
-   *  or public goes to pending approval instead of running. Absent = a fresh
-   *  one for this loop. */
+   *  or public, or a write into an item clients or the public read, goes to
+   *  pending approval instead of running (client-sourced-rules.ts), and a
+   *  node the turn creates is marked too. Absent = a fresh one for this
+   *  loop. */
   taint?: TurnTaint;
 };
 
@@ -843,6 +851,24 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
         outcome.output !== null &&
         typeof outcome.output === 'object' &&
         (outcome.output as { status?: unknown }).status === 'queued_for_approval';
+      // A node a marked turn created carries the mark (L10): a later turn
+      // that reads the copy is marked as if it read the client's text. Set
+      // here, by the loop, never by the tool or the model; after the scan
+      // above, so a copy made from a client item by id is marked too.
+      if (
+        taint.clientSourced &&
+        outcome.ok &&
+        !queuedForApproval &&
+        tool &&
+        toolCreatesNodes(tool)
+      ) {
+        await markCreatedClientSourced(
+          args.ownerId,
+          JSON.stringify(outcome.output),
+          Date.now() - startedAt,
+          slug,
+        );
+      }
       const writeTarget =
         outcome.ok && !queuedForApproval && looksLikeWriteTool(slug)
           ? extractWriteTarget(outcome.output)

@@ -80,6 +80,8 @@ export {
   countOpenTeamRequests,
   notifyTeamRequester,
   countTeamRequestsFiled,
+  countClientRequestFilings,
+  recordClientRequestFiling,
   markTeamRequestReviewed,
   TEAM_REQUEST_TAG,
   TEAM_REQUESTS_PER_TURN,
