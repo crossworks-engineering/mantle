@@ -292,10 +292,13 @@ export {
 } from './member-space-events';
 export {
   CLIENT_REPORT_MAX,
+  ClientReportChangedError,
   acknowledgeClientReport,
   clientReport,
   clientReportAcknowledged,
+  clientReportFingerprint,
 } from './client-report';
+export { oldLinksAbove, oldLinksAboveItem } from './client-old-links';
 // Client logins (C2): Team admin > Clients and the sign-in link.
 export {
   CLIENT_SIGNIN_LINK_TTL_MS,
