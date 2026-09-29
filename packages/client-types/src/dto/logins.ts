@@ -19,3 +19,12 @@ export type LoginRefused = {
   reason: LoginRefusedReason;
   message: string;
 };
+
+/** The 400 POST /api/users/:id/password answers when the target does not sign
+ *  in with a password: a client (a link or a code) or a role this brain does
+ *  not know. An admin's or a member's password can be reset. */
+export type PasswordResetRefused = {
+  error: string;
+  reason: 'not-a-password-login';
+  message: string;
+};

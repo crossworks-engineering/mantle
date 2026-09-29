@@ -62,9 +62,11 @@ export async function POST(req: Request) {
   try {
     // is_owner: the first-run account is the ANCHOR — the identity all brain
     // content is keyed to. Later co-admin logins (Settings → Logins) are not.
+    // The role is named: the column has no default (0190), and the anchor is
+    // always an admin (CHECK).
     const inserted = await db.execute(sql`
-      INSERT INTO auth.users (id, email, password_hash, is_owner)
-      SELECT ${id}, ${email}, ${passwordHash}, true
+      INSERT INTO auth.users (id, email, password_hash, is_owner, role)
+      SELECT ${id}, ${email}, ${passwordHash}, true, 'admin'
       WHERE NOT EXISTS (SELECT 1 FROM auth.users)
       RETURNING id
     `);

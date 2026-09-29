@@ -160,10 +160,15 @@ describe.skipIf(!URL)('personal spaces under row level security', () => {
   });
 
   it('with no space set, the space role sees nothing and writes nothing', async () => {
-    const res = await m.withViewer('team', async () => {
-      // Not a space scope: the team pool. The space role itself is only ever
-      // reached through withSpace, so prove the policy with an empty setting.
-      return m.withSpace({ spaceId: randomUUID(), loginId: loginA }, titles);
+    // withSpace itself refuses a space that is not the login's (audit A16),
+    // so the policy is proven inside A's own scope with the setting changed
+    // to a space that holds nothing.
+    await expect(m.withSpace({ spaceId: randomUUID(), loginId: loginA }, titles)).rejects.toThrow(
+      /not this login/,
+    );
+    const res = await asA(async () => {
+      await m.db.execute(sqlTag`select set_config('mantle.space_id', ${randomUUID()}, true)`);
+      return titles();
     });
     expect(res).toEqual([]);
   });

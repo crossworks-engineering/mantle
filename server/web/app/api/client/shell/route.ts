@@ -2,18 +2,28 @@ import { NextResponse } from '@/server/http-compat';
 import { loadPreferencesFor, logoVersion } from '@mantle/content';
 import type { ClientShell } from '@mantle/client-types';
 import { getClientOr401, mintAssetToken } from '@/lib/auth';
+import { shellPart } from '@/lib/shell-part';
+
+type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 
 /**
  * GET /api/client/shell: chrome data for a CLIENT login (client logins,
  * Phase C2). The client twin of /api/member/shell: who is signed in, the
  * brain's brand (theme, fonts, logo), and a client asset token for the image
  * and file srcs of "Shared with you". No brain items, no staff names, no
- * avatar. The app learns the role from which shell answers.
+ * avatar. The app learns the role from which shell answers, so the brand
+ * read never fails it (client logins audit A13): a failed one is logged and
+ * the brand answers unset.
  */
 export async function GET() {
   const client = await getClientOr401();
   if (client instanceof Response) return client;
-  const brain = await loadPreferencesFor(client.anchorId);
+  const brain = (await shellPart(
+    'client/shell',
+    'brand',
+    () => loadPreferencesFor(client.anchorId),
+    {},
+  )) as Prefs;
   const body: ClientShell = {
     role: 'client',
     loginId: client.loginId,

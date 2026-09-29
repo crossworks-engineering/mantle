@@ -27,8 +27,10 @@ export const authUsers = authSchema.table('users', {
   /** 'admin' | 'member' (0162) | 'client' (client logins). Read from this
    *  row on every request, never from a token. The anchor is always admin
    *  (CHECK). Code that branches on it names every role and treats an
-   *  unknown value as no login (client logins C0: fail closed). */
-  role: text('role').$type<LoginRole>().notNull().default('admin'),
+   *  unknown value as no login (client logins C0: fail closed). No default
+   *  (0190): an insert names the role, so a forgotten one fails instead of
+   *  making an admin. */
+  role: text('role').$type<LoginRole>().notNull(),
   /** The team contact a member login belongs to (FK to nodes, SET NULL).
    *  At most one login per contact (partial unique index, 0181). */
   contactId: uuid('contact_id'),

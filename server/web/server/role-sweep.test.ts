@@ -13,11 +13,17 @@
  *  - a login whose role this code does not know: it is no login at all, so
  *    every route answers as to a stranger (401, or the /login redirect).
  *
+ * The public routes (PUBLIC_PATHS: no gate in front) are skipped by the
+ * sweep; the ones that read a session themselves (/api/auth, /api/oauth, and
+ * the print and render pages) are driven one by one with an explicit answer
+ * per role (server/public-session-routes.ts, audit A4), and a completeness
+ * test fails when another public route starts reading the session.
+ *
  * No database: the login row and the anchor come from a stand-in
  * (lib/auth/login-row is mocked), as in the member sweep. A handler that
  * touches the database BEFORE its gate would fail here with a 500.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -49,8 +55,29 @@ vi.mock('../lib/auth/login-row', () => ({
   loadPersonalSpaceId: async () => SPACE_ID,
 }));
 
+// The MCP consent page checks that remote MCP is on and the client is
+// registered before it reads the login: both stood in, so the page reaches
+// its role refusals (the rest of lib/mcp-oauth is the real module).
+vi.mock('../lib/mcp-oauth', async (importOriginal) => {
+  const { SWEEP_OAUTH_CLIENT } = await import('./public-session-routes');
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    isRemoteMcpEnabled: async () => true,
+    getClient: async (id: string) =>
+      id === SWEEP_OAUTH_CLIENT.id
+        ? { id, clientName: 'Sweep client', redirectUris: [SWEEP_OAUTH_CLIENT.redirectUri] }
+        : null,
+  };
+});
+
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
-import { isClientRoute } from '../lib/auth/client-routes';
+import { CLIENT_ROUTES, isClientRoute } from '../lib/auth/client-routes';
+import {
+  PUBLIC_SESSION_ROUTES,
+  RENDER_PAGES,
+  SESSION_READER_RE,
+  drivePublic,
+} from './public-session-routes';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, 'route-manifest.gen.ts'));
@@ -64,13 +91,10 @@ const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
  *  by an admin- or member-gated route; a plain-text 401 without it. */
 const TICKET_GATED = new Set(['GET /api/apps/:id/frame', 'GET /api/member/apps/:id/frame']);
 
-/** Routes about the login itself, which answer every signed-in login. Sign
- *  out is for every role (it only ends the caller's own sessions). */
-const ANY_LOGIN = new Set(['POST /api/auth/logout']);
-
-/** The MCP consent page answers an HTML refusal (403) to a signed-in login
- *  that is not an admin, and a stranger its sign-in redirect. */
-const HTML_CONSENT = new Set(['GET /api/oauth/authorize', 'POST /api/oauth/authorize']);
+// Sign out (every role) and the MCP consent page (an HTML refusal) used to
+// be allow-lists here, but both live under PUBLIC_PATHS, which the sweep
+// skips: the lists were never consulted (audit A4). Their answers are now
+// explicit per role in server/public-session-routes.ts, driven below.
 
 function isPublic(path: string): boolean {
   return PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'));
@@ -118,7 +142,8 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
   });
 
   /** Drive every route with `cookie`; collect those whose answer `refused`
-   *  does not accept. */
+   *  does not accept, and every key driven (so an allow-list the callback
+   *  consults can be checked for keys the sweep never reaches). */
   async function sweep(
     cookie: string,
     refused: (a: {
@@ -126,8 +151,9 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
       status: number;
       body: { error?: string; reason?: string } | null;
     }) => boolean,
-  ): Promise<{ checked: number; failures: string[] }> {
+  ): Promise<{ checked: number; failures: string[]; visited: Set<string> }> {
     const failures: string[] = [];
+    const visited = new Set<string>();
     let checked = 0;
     for (const entry of manifest) {
       const path = concretePath(entry.pattern);
@@ -137,15 +163,17 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
         if (method === 'OPTIONS') continue;
         const key = `${method} ${entry.pattern}`;
         checked += 1;
+        visited.add(key);
         const res = await app.request(path, {
           method,
           headers: { cookie, 'content-type': 'application/json' },
           body: method === 'GET' || method === 'HEAD' ? undefined : '{}',
         });
         if (isApi) {
-          const body = HTML_CONSENT.has(key)
-            ? null
-            : ((await res.json().catch(() => null)) as { error?: string; reason?: string } | null);
+          const body = (await res.json().catch(() => null)) as {
+            error?: string;
+            reason?: string;
+          } | null;
           if (!refused({ key, status: res.status, body })) {
             failures.push(`${key} → ${res.status} ${body?.reason ?? body?.error ?? ''}`);
           }
@@ -157,40 +185,94 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
         }
       }
     }
-    return { checked, failures };
+    return { checked, failures, visited };
   }
 
-  it('refuses a CLIENT login on every route but its own, member routes included', async () => {
-    const { checked, failures } = await sweep(cookieFor(CLIENT_ID), ({ key, status, body }) => {
-      if (ANY_LOGIN.has(key)) return status === 200;
-      // The client routes answer a client (client-sweep.test.ts proves it).
-      const [method, pattern] = key.split(' ') as [string, string];
-      if (isClientRoute(method, pattern)) return true;
-      if (HTML_CONSENT.has(key)) return status === 403 || status === 404;
-      return (
-        (status === 403 && body?.reason === 'client-login') ||
-        (status === 401 && body?.error === 'unauthorized') ||
-        (status === 401 && TICKET_GATED.has(key))
-      );
+  // Fast first (audit A4): the full sweeps take minutes, and a regression in
+  // resolvedFor (an unknown role read as an admin) was once caught only by
+  // their timeout. Each shell answers a login it cannot name with 401.
+  it('answers an UNKNOWN role 401 on every shell (fast)', async () => {
+    const cookie = cookieFor(UNKNOWN_ID);
+    for (const path of ['/api/shell', '/api/member/shell', '/api/client/shell']) {
+      const res = await app.request(path, { headers: { cookie } });
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      expect(res.status, path).toBe(401);
+      expect(body?.error, path).toBe('unauthorized');
+    }
+  });
+
+  describe('public routes that read a session (audit A4)', () => {
+    const table = [...PUBLIC_SESSION_ROUTES, ...RENDER_PAGES];
+
+    it.each(['client', 'unknown'] as const)('each answers a %s cookie as listed', async (role) => {
+      const cookie = cookieFor(role === 'client' ? CLIENT_ID : UNKNOWN_ID);
+      const failures: string[] = [];
+      for (const route of table) {
+        const failure = await drivePublic(app, route, role, cookie);
+        if (failure) failures.push(failure);
+      }
+      expect(failures).toEqual([]);
     });
+
+    it('lists only public manifest routes, each once', () => {
+      const known = new Set(
+        manifest
+          .filter((e) => isPublic(concretePath(e.pattern)))
+          .flatMap((e) => e.methods.map((mt) => `${mt} ${e.pattern}`)),
+      );
+      const keys = PUBLIC_SESSION_ROUTES.map((r) => r.key);
+      expect(keys.filter((k) => !known.has(k))).toEqual([]);
+      expect(new Set(keys).size).toBe(keys.length);
+    });
+
+    it('every other public route reads no session (else it belongs in the table)', () => {
+      const listed = new Set(PUBLIC_SESSION_ROUTES.map((r) => r.key.split(' ')[1]));
+      const readers: string[] = [];
+      for (const entry of manifest) {
+        if (!isPublic(concretePath(entry.pattern)) || listed.has(entry.pattern)) continue;
+        // The manifest's generator maps app/<dirs>/route.ts to a pattern
+        // with [param] as :param; map it back.
+        const file = join(here, '..', 'app', entry.pattern.replace(/:(\w+)/g, '[$1]'), 'route.ts');
+        expect(existsSync(file), `${entry.pattern}: ${file}`).toBe(true);
+        const src = readFileSync(file, 'utf8');
+        if (SESSION_READER_RE.test(src)) readers.push(entry.pattern);
+      }
+      expect(readers).toEqual([]);
+    });
+  });
+
+  it('refuses a CLIENT login on every route but its own, member routes included', async () => {
+    const { checked, failures, visited } = await sweep(
+      cookieFor(CLIENT_ID),
+      ({ key, status, body }) => {
+        // The client routes answer a client (client-sweep.test.ts proves it).
+        const [method, pattern] = key.split(' ') as [string, string];
+        if (isClientRoute(method, pattern)) return true;
+        return (
+          (status === 403 && body?.reason === 'client-login') ||
+          (status === 401 && body?.error === 'unauthorized') ||
+          (status === 401 && TICKET_GATED.has(key))
+        );
+      },
+    );
     expect(checked).toBeGreaterThan(300);
     expect(failures).toEqual([]);
+    // Every allow-list the callback consults was reached (none is dead).
+    expect([...TICKET_GATED, ...CLIENT_ROUTES].filter((k) => !visited.has(k))).toEqual([]);
   }, 300_000);
 
   it('treats a login with an UNKNOWN role as no login at all', async () => {
-    const { checked, failures } = await sweep(cookieFor(UNKNOWN_ID), ({ key, status, body }) => {
-      if (ANY_LOGIN.has(key)) return status === 200;
-      // A stranger on the consent page: sent to sign in, or the feature is off.
-      if (HTML_CONSENT.has(key)) return [302, 307, 401, 404].includes(status);
-      return (
+    const { checked, failures, visited } = await sweep(
+      cookieFor(UNKNOWN_ID),
+      ({ key, status, body }) =>
         (status === 401 && body?.error === 'unauthorized') ||
         (status === 401 && TICKET_GATED.has(key)) ||
         // Routes about the login itself answer a stranger their own 401.
-        (status === 401 && typeof body?.error === 'string')
-      );
-    });
+        (status === 401 && typeof body?.error === 'string'),
+    );
     expect(checked).toBeGreaterThan(300);
     expect(failures).toEqual([]);
+    expect([...TICKET_GATED].filter((k) => !visited.has(k))).toEqual([]);
   }, 300_000);
 
   it('never answers a client with an admin or member answer on the gates', async () => {

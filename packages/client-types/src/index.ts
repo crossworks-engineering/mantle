@@ -95,7 +95,12 @@ export type {
   MemberInviteState,
 } from './dto/member-invites';
 export type { MemberItemKind } from './member-kinds';
-export type { LoginKind, LoginRefused, LoginRefusedReason } from './dto/logins';
+export type {
+  LoginKind,
+  LoginRefused,
+  LoginRefusedReason,
+  PasswordResetRefused,
+} from './dto/logins';
 export type {
   ClientAdminRefusedReason,
   ClientLinkSignIn,

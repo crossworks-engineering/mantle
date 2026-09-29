@@ -91,14 +91,30 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * The level a login's personal space runs at (client logins C1): team for an
  * admin or a member, client for a client. A role this code does not know has
  * no space level: withSpace refuses it (fail closed). Read on the admin pool
- * on every call, never cached: the role on the row is the truth.
+ * on every call, never cached: the row is the truth.
+ *
+ * The one query also checks the pair (client logins audit A16): the space
+ * must be this login's (`spaces.login_id`), and the login must be active
+ * (`disabled_at IS NULL`). Every caller takes both ids from one session
+ * today; this keeps a future caller that mixes them up from acting in
+ * another login's space, or for a disabled login.
  */
-export async function spaceLevelForLogin(loginId: string): Promise<'team' | 'client'> {
+export async function spaceLevelForLogin(
+  loginId: string,
+  spaceId: string,
+): Promise<'team' | 'client'> {
   const rows = (await getAdminDb().execute(
-    sqlTag`select role from auth.users where id = ${loginId}`,
-  )) as unknown as { role: string }[];
-  const role = rows[0]?.role;
-  switch (role) {
+    sqlTag`select u.role,
+                  u.disabled_at is null as active,
+                  exists (select 1 from spaces s
+                           where s.id = ${spaceId} and s.login_id = u.id) as owns_space
+             from auth.users u where u.id = ${loginId}`,
+  )) as unknown as { role: string; active: boolean; owns_space: boolean }[];
+  const row = rows[0];
+  if (!row) throw new Error('withSpace: no such login');
+  if (!row.owns_space) throw new Error('withSpace: the space is not this login’s');
+  if (!row.active) throw new Error('withSpace: the login is disabled');
+  switch (row.role) {
     case 'admin':
     case 'member':
       return 'team';
@@ -138,7 +154,7 @@ export async function withSpace<T>(
     }
     return fn();
   }
-  const level = await spaceLevelForLogin(scope.loginId);
+  const level = await spaceLevelForLogin(scope.loginId, scope.spaceId);
   // Disk work tied to this transaction (afterCommit / afterRollback) runs
   // once it has ended, never inside it.
   const hooks = newTxHooks();

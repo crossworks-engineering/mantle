@@ -64,7 +64,7 @@ describe.skipIf(!URL)('migration 0161: nested folders, deepest wins', () => {
     m = await import('./index');
     sqlTag = (await import('drizzle-orm')).sql;
     await m.db.execute(sqlTag`
-      insert into auth.users (id, email, password_hash) values (${owner}, ${`${tag}@example.invalid`}, 'x')`);
+      insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
     // Folders shallowest first, in separate statements: the old statement's

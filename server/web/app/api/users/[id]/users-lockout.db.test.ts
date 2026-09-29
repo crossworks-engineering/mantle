@@ -365,6 +365,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
       const { POST } = await import('./password/route');
       const res = await POST(json('POST', { newPassword: 'long-enough-pw' }), ctx(cli));
       expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ reason: 'not-a-password-login' });
       expect(await roleOf(cli)).toMatchObject({ password_hash: 'x' });
     });
   });

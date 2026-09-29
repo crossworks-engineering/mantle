@@ -19,6 +19,9 @@ import { clientIp, rateLimit } from '@/lib/rate-limit';
  * an idle one dies in ≤30 days. Always issues the WEB TTL — the mobile
  * companion doesn't refresh (it holds a 1-year token).
  */
+/** The roles whose bearer rotates here: the password roles. */
+const BEARER_ROLES: ReadonlySet<string> = new Set(['admin', 'member']);
+
 function bearer(req: Request): string | null {
   const h = req.headers.get('authorization') ?? '';
   const m = /^Bearer\s+(.+)$/i.exec(h.trim());
@@ -47,17 +50,22 @@ export async function POST(req: Request) {
       expiresAt: mobileTokens.expiresAt,
       email: authUsers.email,
       disabledAt: authUsers.disabledAt,
+      role: authUsers.role,
     })
     .from(mobileTokens)
     .innerJoin(authUsers, eq(authUsers.id, mobileTokens.userId))
     .where(eq(mobileTokens.id, jti))
     .limit(1);
-  // A disabled login cannot keep a session alive by refreshing it.
+  // A disabled login cannot keep a session alive by refreshing it. Only the
+  // roles that hold a bearer rotate one, named (client logins audit A15): a
+  // client signs in with a link or a code and never holds a bearer, and a
+  // role this code does not know is no login.
   if (
     !row ||
     row.revokedAt ||
     row.expiresAt.getTime() <= Date.now() ||
-    !loginUsable({ email: row.email, disabledAt: row.disabledAt })
+    !loginUsable({ email: row.email, disabledAt: row.disabledAt }) ||
+    !BEARER_ROLES.has(row.role)
   ) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }

@@ -37,7 +37,9 @@ describe.skipIf(!URL)('credential races', () => {
   const second = randomUUID();
   const third = randomUUID();
   const brain = randomUUID(); // owns the contact node
-  const logins = [admin, second, third, brain];
+  const member = randomUUID();
+  const clientLogin = randomUUID(); // a client login (audit A15)
+  const logins = [admin, second, third, brain, member, clientLogin];
   const contact = randomUUID();
   const client = randomUUID();
 
@@ -48,8 +50,9 @@ describe.skipIf(!URL)('credential races', () => {
     m = await import('@mantle/db');
     sql = (m.systemDb as unknown as { $client: typeof sql }).$client;
     for (const id of logins) {
+      const role = id === member ? 'member' : id === clientLogin ? 'client' : 'admin';
       await sql`insert into auth.users (id, email, password_hash, role)
-                values (${id}, ${`${tag}-${id.slice(0, 8)}@example.com`}, 'x', 'admin')`;
+                values (${id}, ${`${tag}-${id.slice(0, 8)}@example.com`}, 'x', ${role})`;
     }
     await sql`insert into spaces (id, kind, login_id) values (${brain}, 'brain', ${brain})`;
     await sql`insert into nodes (id, owner_id, type, title, path)
@@ -141,6 +144,36 @@ describe.skipIf(!URL)('credential races', () => {
                                   where user_id = ${admin} and label = ${tag} and revoked_at is null`;
     expect(live).toHaveLength(1);
     expect(live[0]!.id).not.toBe(jti);
+  });
+
+  // Audit A15: only the password roles hold a bearer. A client never does
+  // (no password login, no app, no pairing); a row that somehow carries one
+  // is refused and left as it was, never rotated into a fresh 30-day token.
+  it('rotates an admin or member bearer, never a client one', async () => {
+    const { buildMobileToken, WEB_TOKEN_TTL_SECONDS } = await import('./tokens');
+    const { POST } = await import('../../app/api/auth/token/refresh/route');
+    let n = 0;
+    const refreshAs = async (login: string) => {
+      const jti = randomUUID();
+      const minted = buildMobileToken(login, jti, WEB_TOKEN_TTL_SECONDS);
+      await sql`insert into mobile_tokens (id, user_id, label, expires_at)
+                values (${jti}, ${login}, ${`${tag}-a15`}, ${minted.expiresAt.toISOString()})`;
+      const res = await POST(
+        new Request('http://x/api/auth/token/refresh', {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${minted.value}`,
+            'x-forwarded-for': `203.0.113.${++n}`,
+          },
+        }),
+      );
+      const [old] = await sql<Row[]>`select revoked_at from mobile_tokens where id = ${jti}`;
+      const live = await sql<Row[]>`select id from mobile_tokens
+        where user_id = ${login} and label = ${`${tag}-a15`} and revoked_at is null`;
+      return { status: res.status, oldRevoked: old!.revoked_at !== null, live: live.length };
+    };
+    expect(await refreshAs(member)).toEqual({ status: 200, oldRevoked: true, live: 1 });
+    expect(await refreshAs(clientLogin)).toEqual({ status: 401, oldRevoked: false, live: 1 });
   });
 
   it('refuses a second login on one contact', async () => {

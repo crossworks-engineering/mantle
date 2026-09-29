@@ -71,6 +71,84 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
     },
   );
 
+  // Facts about the client role read straight from Postgres and written out
+  // here, not derived from ACCESS_MATRIX (client logins audit A31): the test
+  // above compares the live grants with the matrix, so a matrix edit that
+  // grants the client role auth.users passes it. This one does not.
+  it('the client role: fixed facts, whatever the matrix says', async () => {
+    const role = 'mantle_view_client';
+    const holds = async (q: ReturnType<typeof sql>) =>
+      ((await q) as unknown as { ok: boolean }[])[0]!.ok;
+    // Nothing of a login, a link, a trace, a team message, an ack or a secret.
+    for (const t of [
+      'auth.users',
+      'public.shares',
+      'public.traces',
+      'public.trace_steps',
+      'public.team_messages',
+      'public.client_report_acks',
+      'public.client_signin_codes',
+      'public.member_invites',
+      'public.mobile_tokens',
+      'public.oauth_access_tokens',
+      'public.api_keys',
+      'public.secrets',
+      'public.emails',
+      'public.assistant_messages',
+      'public.space_uploads',
+    ]) {
+      expect(
+        await holds(sql`select has_any_column_privilege(${role}, ${t}, 'SELECT') as ok`),
+        `${t}: no SELECT on the table or any column`,
+      ).toBe(false);
+    }
+    // Content with drafts: named columns only, never a draft column.
+    const drafts: Record<string, string[]> = {
+      'public.pages': ['draft_doc', 'draft_updated_at', 'draft_rev'],
+      'public.draws': ['draft_scene', 'draft_updated_at', 'draft_rev'],
+      'public.tables': ['draft_data', 'draft_updated_at', 'draft_rev'],
+    };
+    for (const [t, cols] of Object.entries(drafts)) {
+      expect(
+        await holds(sql`select has_table_privilege(${role}, ${t}, 'SELECT') as ok`),
+        `${t}: no whole-table SELECT`,
+      ).toBe(false);
+      expect(
+        await holds(sql`select has_column_privilege(${role}, ${t}, 'node_id', 'SELECT') as ok`),
+        `${t}.node_id`,
+      ).toBe(true);
+      for (const c of cols) {
+        expect(
+          await holds(sql`select has_column_privilege(${role}, ${t}, ${c}, 'SELECT') as ok`),
+          `${t}.${c}`,
+        ).toBe(false);
+      }
+    }
+    // Items: readable, but only through a row rule that is not "every row".
+    expect(
+      await holds(sql`select has_table_privilege(${role}, 'public.nodes', 'SELECT') as ok`),
+    ).toBe(true);
+    for (const priv of ['INSERT', 'UPDATE', 'DELETE']) {
+      expect(
+        await holds(sql`select has_table_privilege(${role}, 'public.nodes', ${priv}) as ok`),
+        `nodes ${priv}`,
+      ).toBe(false);
+    }
+    const [rls] = await sql<{ on: boolean; force: boolean }[]>`
+      select relrowsecurity as on, relforcerowsecurity as force from pg_class
+       where oid = 'public.nodes'::regclass`;
+    expect(rls?.on).toBe(true);
+    const nodePolicies = await sql<{ qual: string }[]>`
+      select qual from pg_policies where schemaname = 'public' and tablename = 'nodes'
+        and cmd = 'SELECT' and ${role} = any(roles)`;
+    expect(nodePolicies.length).toBeGreaterThan(0);
+    for (const p of nodePolicies) expect(p.qual).not.toBe('true');
+    // The role itself: no superuser, no bypass of row security, no inherit.
+    const [attrs] = await sql<{ rolsuper: boolean; rolbypassrls: boolean; rolinherit: boolean }[]>`
+      select rolsuper, rolbypassrls, rolinherit from pg_roles where rolname = ${role}`;
+    expect(attrs).toEqual({ rolsuper: false, rolbypassrls: false, rolinherit: false });
+  });
+
   it('level-rows tables: RLS on, the client role filtered by level, the others all rows', async () => {
     for (const t of ACCESS_MATRIX.filter((x) =>
       LEVELS.some((l) => ruleFor(x, l) === 'level-rows'),
@@ -192,8 +270,8 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
         // A throwaway login, so the test also runs on an empty database. The
         // failing insert rolls the whole transaction back.
         const [owner] = await tx<{ id: string }[]>`
-          insert into auth.users (id, email, password_hash)
-          values (gen_random_uuid(), 'ceiling-test@example.invalid', 'x') returning id`;
+          insert into auth.users (id, email, password_hash, role)
+          values (gen_random_uuid(), 'ceiling-test@example.invalid', 'x', 'admin') returning id`;
         await tx`insert into nodes (owner_id, type, title, path, audience)
                  values (${owner!.id}, 'journal', 'x', 'journal', 'team')`;
       }),

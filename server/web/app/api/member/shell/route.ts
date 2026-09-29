@@ -2,21 +2,26 @@ import { NextResponse } from '@/server/http-compat';
 import { loadPreferencesFor, logoVersion } from '@mantle/content';
 import type { MemberShell } from '@mantle/client-types';
 import { getMemberOr401, mintAssetToken } from '@/lib/auth';
+import { shellPart } from '@/lib/shell-part';
+
+type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 
 /**
  * GET /api/member/shell: chrome data for a MEMBER login (member logins,
  * Phase 1). The member twin of /api/shell: who is signed in, the brain's brand
  * (theme, fonts, logo), and a member asset token for the Library's image and
  * file srcs. No brain items here, and nothing admin (no approvals count, no
- * onboarding). The client learns the role from which shell answers.
+ * onboarding). The client learns the role from which shell answers, so the
+ * preferences reads never fail it (client logins audit A13): a failed one is
+ * logged and its part answers unset.
  */
 export async function GET() {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
-  const [brain, personal] = await Promise.all([
-    loadPreferencesFor(member.anchorId),
-    loadPreferencesFor(member.loginId),
-  ]);
+  const [brain, personal] = (await Promise.all([
+    shellPart('member/shell', 'brand', () => loadPreferencesFor(member.anchorId), {}),
+    shellPart('member/shell', 'own preferences', () => loadPreferencesFor(member.loginId), {}),
+  ])) as [Prefs, Prefs];
   const body: MemberShell = {
     role: 'member',
     loginId: member.loginId,

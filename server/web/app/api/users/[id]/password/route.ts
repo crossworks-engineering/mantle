@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { db, authUsers, eq } from '@mantle/db';
+import type { PasswordResetRefused } from '@mantle/client-types';
 import {
   bearerFromHeader,
   endLoginSessions,
@@ -56,12 +57,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!target) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
   // Admins and members sign in with a password; a client never does (a link
   // or a code, client logins C2), so no password is set on one. Named roles
-  // only: an unknown role is refused too.
+  // only: an unknown role is refused too. A member's reset stays (decision
+  // (a), 2026-09-29): it is a member's only way back in.
   if (target.role !== 'admin' && target.role !== 'member') {
-    return NextResponse.json(
-      { error: 'This login does not sign in with a password.' },
-      { status: 400 },
-    );
+    const body: PasswordResetRefused = {
+      error: 'This login does not sign in with a password.',
+      reason: 'not-a-password-login',
+      message: 'This login does not sign in with a password.',
+    };
+    return NextResponse.json(body, { status: 400 });
   }
 
   await updatePassword(targetId, parsed.data.newPassword);
