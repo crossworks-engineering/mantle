@@ -190,6 +190,10 @@ describe.skipIf(!URL)('client logins and sign-in links', () => {
     const { code } = await c.issueClientSigninLink(owner, row.id, owner);
     await exec(sqlTag`update auth.users set role = 'member' where id = ${row.id}`);
     expect(await c.redeemClientSigninLink({ code, email: email('moved') })).toBeNull();
+    expect((await c.listClientLogins(owner)).map((r) => r.id)).not.toContain(row.id);
+    made.splice(made.indexOf(row.id), 1);
+    await exec(sqlTag`delete from spaces where login_id = ${row.id}`);
+    await exec(sqlTag`delete from auth.users where id = ${row.id}`);
   });
 
   it('asks again once a new item goes to client: no new client, no new link', async () => {
