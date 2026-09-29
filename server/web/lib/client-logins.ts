@@ -3,7 +3,7 @@ import { NextResponse } from '@/server/http-compat';
 import { ClientLoginError } from '@mantle/content';
 import { hashLoginPassword } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
-import { clientIp, rateLimit, rateLimitPeek } from '@/lib/rate-limit';
+import { clientIp, clientIpKey, rateLimit, rateLimitPeek } from '@/lib/rate-limit';
 
 /**
  * Shared bits of the client login routes (client logins, Phase C2): the
@@ -14,12 +14,14 @@ import { clientIp, rateLimit, rateLimitPeek } from '@/lib/rate-limit';
  */
 
 /**
- * Caps on the public sign-in link route, as for the invite accept (lib/
- * member-invites.ts): every request counts per IP; only FAILED codes count
- * brain-wide, so an honest client never spends the budget. A link code
- * carries about 92 bits, so the caps are a flood guard, not the defence.
+ * The cap on the public sign-in link route: every request counts per
+ * address (an IPv6 caller by its /64, `clientIpKey`). There is NO brain-wide
+ * failure cap (client logins audit B11): one counted before the lookup let a
+ * stranger with a dozen addresses hold every client's link sign-in at 429. A
+ * link code carries about 92 bits, so the cap is a flood guard, not the
+ * defence.
  */
-export const CLIENT_LINK_LIMITS = { perIp: 10, globalFailures: 120 } as const;
+export const CLIENT_LINK_LIMITS = { perIp: 10 } as const;
 const WINDOW_MS = 60_000;
 
 function tooMany(retryAfterSec: number): Response {
@@ -29,27 +31,14 @@ function tooMany(retryAfterSec: number): Response {
   );
 }
 
-/** A 429 when the caller's address is over its cap, or the brain has seen
- *  too many failed codes this minute; else null. Call before any work. */
+/** A 429 when the caller's address is over its cap; else null. Call before
+ *  any work. */
 export function clientLinkRateLimited(req: Request): Response | null {
-  const ip = rateLimit(`auth:client-link:${clientIp(req)}`, {
+  const ip = rateLimit(`auth:client-link:${clientIpKey(req)}`, {
     max: CLIENT_LINK_LIMITS.perIp,
     windowMs: WINDOW_MS,
   });
-  if (!ip.ok) return tooMany(ip.retryAfterSec);
-  const all = rateLimitPeek('auth:client-link:failed', {
-    max: CLIENT_LINK_LIMITS.globalFailures,
-    windowMs: WINDOW_MS,
-  });
-  return all.ok ? null : tooMany(all.retryAfterSec);
-}
-
-/** Count one failed sign-in toward the brain-wide cap. */
-export function clientLinkFailed(): void {
-  rateLimit('auth:client-link:failed', {
-    max: CLIENT_LINK_LIMITS.globalFailures,
-    windowMs: WINDOW_MS,
-  });
+  return ip.ok ? null : tooMany(ip.retryAfterSec);
 }
 
 /** A bcrypt hash of 32 random bytes nobody keeps: a client login's

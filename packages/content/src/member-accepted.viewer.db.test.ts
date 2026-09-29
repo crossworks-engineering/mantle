@@ -341,16 +341,30 @@ describe.skipIf(!URL)('member accepted items', () => {
     expect(authors.get(pageId)?.name).toBe('Ann Author');
     expect(authors.get(noteTeamId)?.acceptedAt).toBeTruthy();
     expect(authors.get(bNoteId)?.name).toBe('A member'); // no display name, never the email
+    expect(authors.get(pageId)?.role).toBe('member');
     expect(authors.has(own.id)).toBe(false);
     // A returned item has a row but was never accepted: no badge.
     expect((await ma.acceptedAuthors(spaceOf[loginA]!, [draftId])).size).toBe(0);
     expect((await ma.acceptedAuthors(otherBrain, [pageId])).size).toBe(0);
   });
 
+  it('an author who is a client is labelled a client, never "A member" (audit B26)', async () => {
+    // Clients author nothing yet (C5): a member login turned client stands in.
+    await m.systemDb.execute(sqlTag`update auth.users set role = 'client' where id = ${loginB}`);
+    try {
+      const got = (await ma.acceptedAuthors(anchor, [bNoteId])).get(bNoteId);
+      expect(got).toMatchObject({ name: 'A client', role: 'client' });
+    } finally {
+      await m.systemDb.execute(sqlTag`update auth.users set role = 'member' where id = ${loginB}`);
+    }
+    expect((await ma.acceptedAuthors(anchor, [bNoteId])).get(bNoteId)?.role).toBe('member');
+  });
+
   it('a deleted login leaves the badge as "Removed member" and loses its list', async () => {
     await m.systemDb.execute(sqlTag`delete from auth.users where id = ${loginB}`);
     const authors = await ma.acceptedAuthors(anchor, [bNoteId]);
     expect(authors.get(bNoteId)?.name).toBe('Removed member');
+    expect(authors.get(bNoteId)?.role).toBeNull();
     expect((await ma.listAccepted(anchor, loginB)).total).toBe(0);
   });
 });

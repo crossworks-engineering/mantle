@@ -3,6 +3,7 @@ import { systemDb, auditLog } from '@mantle/db';
 // Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
 // turn under a limited role (member logins Phase 0b) still records them.
 import { isDetachedDev } from './auth-constants';
+import { clientIpFromHeaders } from './rate-limit';
 
 /**
  * Human action trail (audit_log). Two producers:
@@ -97,19 +98,23 @@ export function auditFireAndForget(entry: AuditEntry): void {
 }
 
 /** Client ip + user-agent from the ambient request headers (Server Component /
- *  route-handler context). First X-Forwarded-For hop = original client. */
+ *  route-handler context). The ip is the hop our proxy appended to
+ *  X-Forwarded-For (`clientIp`, as the rate limiter keys it), never the
+ *  leftmost entry: the caller writes that one, so an audit row naming it
+ *  could be forged (client logins audit B16). */
 export async function requestMeta(): Promise<{ ip: string | null; userAgent: string | null }> {
-  const h = await headers();
-  return {
-    ip: h.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
-    userAgent: h.get('user-agent') || null,
-  };
+  return metaOf(await headers());
 }
 
 /** Same, from an explicit `Request` (auth routes that already hold one). */
 export function requestMetaFrom(req: Request): { ip: string | null; userAgent: string | null } {
-  return {
-    ip: req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
-    userAgent: req.headers.get('user-agent') || null,
-  };
+  return metaOf(req.headers);
+}
+
+function metaOf(h: { get(name: string): string | null }): {
+  ip: string | null;
+  userAgent: string | null;
+} {
+  const ip = clientIpFromHeaders(h);
+  return { ip: ip === 'unknown' ? null : ip, userAgent: h.get('user-agent') || null };
 }

@@ -24,6 +24,7 @@ import {
   clientCodeVerifyLimited,
   existingRequestId,
 } from '@/lib/client-logins';
+import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 
 const Body = z.object({
   email: z.string().trim().min(3).max(320),
@@ -33,6 +34,8 @@ const Body = z.object({
 const FAILED_MESSAGE = 'That code did not work. Ask for a new one.';
 
 export async function POST(req: Request) {
+  const refused = refuseCrossSiteAuthPost(req);
+  if (refused) return refused;
   const parsed = Body.safeParse(await req.json().catch(() => null));
   const email = parsed.success ? parsed.data.email.toLowerCase() : '';
   const limited = clientCodeVerifyLimited(req, email);

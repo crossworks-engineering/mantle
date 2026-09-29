@@ -70,6 +70,26 @@ vi.mock('../lib/mcp-oauth', async (importOriginal) => {
   };
 });
 
+// A client's plain sign-out ends its sessions (audit B23): the epoch bump is
+// a database write, stood in here (proven on Postgres in
+// lib/auth/client-session.db.test.ts).
+vi.mock('../lib/auth/session', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  endLoginSessions: async () => 1,
+}));
+
+// The share page's token lookup, stood in (no database): an unknown token,
+// so /s/<token> answers its real not-found page (audit B24 probe below).
+vi.mock('../lib/shares', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  resolveActiveShareByToken: async () => null,
+}));
+vi.mock('@mantle/content', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  isRetiredTeamLinkToken: async () => false,
+  isRetiredClientLinkToken: async () => false,
+}));
+
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
 import { CLIENT_ROUTES, isClientRoute } from '../lib/auth/client-routes';
 import {
@@ -225,6 +245,38 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
       expect(new Set(keys).size).toBe(keys.length);
     });
 
+    // The scan below reads only the route files themselves; a session read
+    // deeper in (an import) would slip past it. So the pages a client is
+    // most likely to land on are also DRIVEN (audit B24): a client cookie
+    // must buy nothing. The share page and /login are public: the client
+    // gets exactly a stranger's answer. /n/<id> is behind the gate, which
+    // checks only the cookie's signature, so any signed cookie reaches its
+    // static "lives in the app" card: the client gets exactly what a cookie
+    // of an unknown role (no login at all) gets, and none of it is data.
+    it('the share page, /login and a node link answer a client cookie as they answer no login', async () => {
+      const client = cookieFor(CLIENT_ID);
+      const noLogin = cookieFor(UNKNOWN_ID);
+      // Per-response noise only: CSP nonces.
+      const norm = (t: string) => t.replace(/nonce="[^"]*"/g, 'nonce=""');
+      const same = async (path: string, base: Record<string, string>) => {
+        const a = await app.request(path, { headers: base });
+        const b = await app.request(path, { headers: { cookie: client } });
+        expect(b.status, path).toBe(a.status);
+        expect(b.headers.get('location'), path).toBe(a.headers.get('location'));
+        expect(b.headers.get('set-cookie'), path).toBe(a.headers.get('set-cookie'));
+        expect(norm(await b.text()), path).toBe(norm(await a.text()));
+        return a.status;
+      };
+      expect(await same('/s/not-a-real-share-token', {})).toBe(404);
+      expect(await same('/s/x', {})).toBe(404);
+      expect([200, 307]).toContain(await same('/login', {}));
+      expect([200, 307]).toContain(await same('/n/x', { cookie: noLogin }));
+      // And the stranger is still sent to sign in from the node link.
+      const stranger = await app.request('/n/x');
+      expect(stranger.status).toBe(307);
+      expect(stranger.headers.get('location') ?? '').toContain('/login');
+    });
+
     it('every other public route reads no session (else it belongs in the table)', () => {
       const listed = new Set(PUBLIC_SESSION_ROUTES.map((r) => r.key.split(' ')[1]));
       const readers: string[] = [];
@@ -287,11 +339,25 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
   });
 
   describe('asset tokens (?at=) minted for a client login', () => {
+    // The REAL byte routes with a well-formed id (audit B8): the gate lets
+    // the token through, so the route's own asset check answers. The
+    // positive control (an admin-act token gets past it) is in
+    // client-sweep.test.ts, which stands in an admin login.
     it('open no admin bytes and no member bytes', async () => {
       const { buildAssetToken } = await import('../lib/auth/tokens');
       const at = encodeURIComponent(buildAssetToken(ANCHOR_ID, CLIENT_ID));
-      for (const path of ['/api/files/not-a-uuid', '/api/member/files/not-a-uuid']) {
-        const res = await app.request(`${path}?at=${at}`);
+      const ID = '11111111-1111-4111-8111-111111111111';
+      for (const path of [
+        `/api/files/files/${ID}?raw=1`,
+        `/api/draws/${ID}/svg`,
+        `/api/attachments/${ID}`,
+        `/api/export/${ID}`,
+        '/api/profile/photo',
+        `/api/admin/space/${ID}/bytes`,
+        `/api/member/files/${ID}`,
+        `/api/member/draws/${ID}/svg`,
+      ]) {
+        const res = await app.request(`${path}${path.includes('?') ? '&' : '?'}at=${at}`);
         expect(res.status, path).toBe(401);
       }
     });

@@ -262,6 +262,11 @@ export function mobileTokenJti(token: string): string | null {
 // paths exclusively, and the session verifier rejects any kinded token.
 
 const ASSET_TOKEN_TTL_SECONDS = 2 * 60 * 60; // 2h — one working session.
+/** A CLIENT login's asset token (client logins audit B23): 10 minutes. The
+ *  client shell re-mints it every 60 s, so a live portal never sees it
+ *  expire, while a download URL left in a shared browser's history dies
+ *  soon after the client leaves. */
+export const CLIENT_ASSET_TOKEN_TTL_SECONDS = 10 * 60;
 
 /** Mint a short-lived asset-access token for `userId` (see block comment).
  *  `actorId` names the LOGIN the token was minted for, when it differs from
@@ -269,8 +274,14 @@ const ASSET_TOKEN_TTL_SECONDS = 2 * 60 * 60; // 2h — one working session.
  *  detached second admin sees their own face, while owner-scoped byte routes
  *  keep using `uid` (everything is owned by the anchor). `epoch` is the
  *  session_epoch of that login (`actorId`, else `userId`): a bump ends the
- *  token within its 2 hours, like the login's cookies. */
-export function buildAssetToken(userId: string, actorId?: string, epoch = 0): string {
+ *  token within its 2 hours, like the login's cookies. `ttlSeconds` shortens
+ *  it (a client's: CLIENT_ASSET_TOKEN_TTL_SECONDS). */
+export function buildAssetToken(
+  userId: string,
+  actorId?: string,
+  epoch = 0,
+  ttlSeconds = ASSET_TOKEN_TTL_SECONDS,
+): string {
   return signClaims(
     {
       uid: userId,
@@ -278,7 +289,7 @@ export function buildAssetToken(userId: string, actorId?: string, epoch = 0): st
       ep: epoch,
       k: 'a',
     },
-    ASSET_TOKEN_TTL_SECONDS,
+    Math.min(ttlSeconds, ASSET_TOKEN_TTL_SECONDS),
   ).value;
 }
 

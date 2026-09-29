@@ -22,7 +22,7 @@ import {
   RENDER_COOKIE_NAME,
   secureCookies,
 } from '../auth-constants';
-import { auditFireAndForget } from '../audit';
+import { auditFireAndForget, requestMeta } from '../audit';
 import { bearerFromHeader } from './request';
 import {
   SESSION_COOKIE_NAME,
@@ -500,8 +500,8 @@ async function auditMutation(user: SessionUser): Promise<void> {
     action: 'api.write',
     method,
     path,
-    ip: h.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
-    userAgent: h.get('user-agent') || null,
+    // The proxy-appended address, not the caller's leftmost (audit B16).
+    ...(await requestMeta()),
   });
 }
 
@@ -589,15 +589,12 @@ export async function getClientForAsset(req: Request): Promise<ClientCaller | Ne
 }
 
 /** Is this client login still allowed in? For work that outlives the request
- *  (a queued client turn, Phase C4): the row is re-read. */
-export async function clientLoginActive(loginId: string, epoch?: number): Promise<boolean> {
+ *  (a queued client turn, Phase C4): the row is re-read, and the session
+ *  epoch the work was started under is REQUIRED (audit B24): an admin's End
+ *  sessions, or the client's sign-out, must stop the work too. */
+export async function clientLoginActive(loginId: string, epoch: number): Promise<boolean> {
   const row = await loadLoginRow(loginId);
-  return (
-    !!row &&
-    row.role === 'client' &&
-    loginUsable(row) &&
-    (epoch === undefined || row.sessionEpoch === epoch)
-  );
+  return !!row && row.role === 'client' && loginUsable(row) && row.sessionEpoch === epoch;
 }
 
 /** The 403 a gate answers a login of the wrong role with. The reason names
@@ -850,7 +847,12 @@ export async function loginSessionEpoch(loginId: string): Promise<number> {
 }
 
 /** An `?at=` asset token for the anchor's bytes, minted for the login
- *  `loginId` and signed with that login's current session epoch. */
-export async function mintAssetToken(anchorId: string, loginId: string): Promise<string> {
-  return buildAssetToken(anchorId, loginId, await loginSessionEpoch(loginId));
+ *  `loginId` and signed with that login's current session epoch. `ttlSeconds`
+ *  shortens it (the client shell's: CLIENT_ASSET_TOKEN_TTL_SECONDS). */
+export async function mintAssetToken(
+  anchorId: string,
+  loginId: string,
+  opts: { ttlSeconds?: number } = {},
+): Promise<string> {
+  return buildAssetToken(anchorId, loginId, await loginSessionEpoch(loginId), opts.ttlSeconds);
 }

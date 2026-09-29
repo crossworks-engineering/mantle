@@ -24,6 +24,7 @@ import {
   existingRequestId,
   setClientCodeCookie,
 } from '@/lib/client-logins';
+import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 
 export async function GET() {
   // Fail closed: when the sender cannot be read, codes are off (never a 500
@@ -34,6 +35,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const refused = refuseCrossSiteAuthPost(req);
+  if (refused) return refused;
   const limited = clientCodeRequestLimited(req);
   if (limited) return limited;
 

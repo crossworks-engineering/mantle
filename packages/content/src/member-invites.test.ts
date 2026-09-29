@@ -11,7 +11,9 @@ import {
   MEMBER_INVITE_CODE_LENGTH,
   generateInviteCode,
   hashInviteCode,
+  inviteLinkPath,
 } from './member-invites';
+import { clientSigninLinkPath } from './client-logins';
 
 describe('generateInviteCode', () => {
   it('produces codes of the fixed length', () => {
@@ -68,5 +70,26 @@ describe('hashInviteCode', () => {
 
   it('differs across codes', () => {
     expect(hashInviteCode('AbCdEfGhJkMnPqRs')).not.toBe(hashInviteCode('AbCdEfGhJkMnPqRt'));
+  });
+});
+
+describe('link paths (client logins audit B12)', () => {
+  it('carry the code in the fragment, never the query, so no server log or Referer sees it', () => {
+    const code = generateInviteCode();
+    for (const [path, page] of [
+      [inviteLinkPath(code), '/invite'],
+      [clientSigninLinkPath(code), '/client-signin'],
+    ] as const) {
+      expect(path).toBe(`${page}#code=${code}`);
+      const url = new URL(path, 'https://brain.example.invalid');
+      expect(url.search).toBe('');
+      expect(url.pathname).toBe(page);
+      expect(new URLSearchParams(url.hash.slice(1)).get('code')).toBe(code);
+    }
+  });
+
+  it('escapes a code that is not from the alphabet', () => {
+    expect(inviteLinkPath('a+b/c')).toBe('/invite#code=a%2Bb%2Fc');
+    expect(clientSigninLinkPath('a&b')).toBe('/client-signin#code=a%26b');
   });
 });

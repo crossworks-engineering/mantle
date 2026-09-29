@@ -88,9 +88,12 @@ export function hashInviteCode(code: string): string {
   return createHash('sha256').update(code, 'utf8').digest('hex');
 }
 
-/** The client-app path the admin shares. The code is the only secret in it. */
+/** The client-app path the admin shares. The code is the only secret in it,
+ *  so it rides in the FRAGMENT, never sent to a server (no access log, no
+ *  Referer; client logins audit B12). The invite page still reads `?code=`
+ *  (links shared before). */
 export function inviteLinkPath(code: string): string {
-  return `/invite?code=${encodeURIComponent(code)}`;
+  return `/invite#code=${encodeURIComponent(code)}`;
 }
 
 function stateOf(r: { redeemedAt: Date | null; expiresAt: Date }, now: Date): MemberInviteState {

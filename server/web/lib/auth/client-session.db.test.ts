@@ -10,7 +10,7 @@
  *   - an admin's "End sessions" (PATCH /api/users/:id {signOut:true});
  *   - the client's own "sign out everywhere";
  *   - an admin disabling the login (enabling it again does not revive the
- *     old cookie);
+ *     old cookie, nor a link or emailed code issued before: audit B14);
  *   - deleting the login takes its links with it.
  *
  * Probe: GET /api/client/shared/not-a-uuid (a client past the gate gets the
@@ -211,6 +211,22 @@ describe.skipIf(!URL)('a client login, end to end', () => {
     expect(await probe({ cookie: there })).toBe(401);
   });
 
+  it("a client's plain sign-out ends its other sessions and its asset tokens (audit B23)", async () => {
+    const id = await addClient('jo');
+    const here = await signedIn(id, 'jo');
+    const there = await signedIn(id, 'jo');
+    const shell = await call('/api/client/shell', { cookie: there });
+    expect(shell.status).toBe(200);
+    const at = ((await shell.json()) as { assetToken: string }).assetToken;
+    const bytes = () =>
+      call(`/api/client/files/not-a-uuid?at=${encodeURIComponent(at)}`).then((r) => r.status);
+    expect(await bytes()).toBe(400); // past the gate
+    const res = await call('/api/auth/logout', { method: 'POST', cookie: here });
+    expect(res.status).toBe(200);
+    expect(await probe({ cookie: there })).toBe(401);
+    expect(await bytes()).toBe(401);
+  });
+
   it('disable ends the session and blocks new links; enable does not revive it', async () => {
     const id = await addClient('ed');
     const cookie = await signedIn(id, 'ed');
@@ -235,6 +251,65 @@ describe.skipIf(!URL)('a client login, end to end', () => {
     });
     expect(on.status).toBe(200);
     expect(await probe({ cookie })).toBe(401);
+  });
+
+  // Audit B14: an open link, or an emailed code, must not outlive a disable
+  // or an "End sessions".
+  const emailCode = async (name: string) => {
+    const content = await import('@mantle/content');
+    const requestId = randomUUID();
+    const d = await content.createClientEmailCode({
+      email: emailOf(name),
+      requestId,
+      ip: `198.51.100.${(ip += 1) % 250}`,
+      requestedAt: new Date().toISOString(),
+    });
+    expect(d.kind).toBe('send');
+    return { requestId, code: d.kind === 'send' ? d.code : '' };
+  };
+  const redeemCode = async (name: string, c: { requestId: string; code: string }) =>
+    (await import('@mantle/content')).redeemClientEmailCode({ ...c, email: emailOf(name) });
+  const openSignins = async (id: string) =>
+    Number(
+      (
+        await sql<Row[]>`select count(*)::int as n from client_signin_codes
+                         where login_id = ${id} and used_at is null and revoked_at is null`
+      )[0]!.n,
+    );
+
+  it('disable then enable revives no open link and no emailed code', async () => {
+    const id = await addClient('hal');
+    const code = await issue(id);
+    const mailed = await emailCode('hal');
+    expect(await openSignins(id)).toBe(2);
+    for (const disabled of [true, false]) {
+      const res = await call(`/api/users/${id}`, {
+        method: 'PATCH',
+        cookie: asAdmin(),
+        body: { disabled },
+      });
+      expect(res.status).toBe(200);
+    }
+    expect(await openSignins(id)).toBe(0);
+    expect((await signIn(code, emailOf('hal'))).status).toBe(401);
+    expect(await redeemCode('hal', mailed)).toBeNull();
+    // A link issued after the enable works.
+    expect(await probe({ cookie: await signedIn(id, 'hal') })).toBe(400);
+  });
+
+  it('End sessions revokes the open link and emailed code too', async () => {
+    const id = await addClient('ivy');
+    const code = await issue(id);
+    const mailed = await emailCode('ivy');
+    const res = await call(`/api/users/${id}`, {
+      method: 'PATCH',
+      cookie: asAdmin(),
+      body: { signOut: true },
+    });
+    expect(res.status).toBe(200);
+    expect(await openSignins(id)).toBe(0);
+    expect((await signIn(code, emailOf('ivy'))).status).toBe(401);
+    expect(await redeemCode('ivy', mailed)).toBeNull();
   });
 
   it('refuses a role change to or from client', async () => {

@@ -23,6 +23,7 @@ describe.skipIf(!URL)('client logins and sign-in links', () => {
   const owner = randomUUID();
   const member = randomUUID();
   const contact = randomUUID();
+  const contact2 = randomUUID();
   const clientItem = randomUUID();
   const lateItem = randomUUID();
   const tag = `clogin-${owner.slice(0, 8)}`;
@@ -58,7 +59,9 @@ describe.skipIf(!URL)('client logins and sign-in links', () => {
       insert into nodes (id, owner_id, type, title, path, audience, data) values
         (${clientItem}, ${owner}, 'note', 'For the client', 'notes', 'client', '{}'::jsonb),
         (${contact}, ${owner}, 'contact', 'Carla Client', 'contacts', 'admin',
-         ${JSON.stringify({ emails: [email('carla')] })}::jsonb)`);
+         ${JSON.stringify({ emails: [email('carla')] })}::jsonb),
+        (${contact2}, ${owner}, 'contact', 'Dora Dual', 'contacts', 'admin',
+         ${JSON.stringify({ emails: [email('dora-a'), email('dora-b')] })}::jsonb)`);
   });
 
   afterAll(async () => {
@@ -122,6 +125,30 @@ describe.skipIf(!URL)('client logins and sign-in links', () => {
     ).rejects.toMatchObject({ reason: 'contact-not-found' });
   });
 
+  it("refuses a typed email that is not one of the contact's addresses (audit B26)", async () => {
+    await expect(
+      c.createClientLogin(owner, {
+        contactId: contact2,
+        email: email('someone-else'),
+        unusablePasswordHash: 'x',
+        createdBy: owner,
+      }),
+    ).rejects.toMatchObject({ reason: 'email-not-on-contact' });
+    const [n] = await rows<{ n: number }>(
+      sqlTag`select count(*)::int as n from auth.users where contact_id = ${contact2}`,
+    );
+    expect(n!.n).toBe(0);
+    // Another of the contact's own addresses, in any case, is fine.
+    const row = await c.createClientLogin(owner, {
+      contactId: contact2,
+      email: email('dora-b').toUpperCase(),
+      unusablePasswordHash: 'x',
+      createdBy: owner,
+    });
+    made.push(row.id);
+    expect(row).toMatchObject({ email: email('dora-b'), contactId: contact2 });
+  });
+
   it('refuses an email a login already has, in any case', async () => {
     await expect(
       c.createClientLogin(owner, {
@@ -149,7 +176,7 @@ describe.skipIf(!URL)('client logins and sign-in links', () => {
     const listed = (await c.listClientLogins(owner)).find((r) => r.id === ada.id)!;
     expect(listed.openLink).toEqual(link);
     expect(JSON.stringify(listed)).not.toContain(code);
-    expect(c.clientSigninLinkPath(code)).toBe(`/client-signin?code=${code}`);
+    expect(c.clientSigninLinkPath(code)).toBe(`/client-signin#code=${code}`);
   });
 
   it('redeems once, only with the login email (any case), and records the use', async () => {

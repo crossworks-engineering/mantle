@@ -39,10 +39,27 @@
 	# that request even arrive, and how did it end?". Credentials are redacted
 	# by default. Without this an upload that died at the proxy left no trace
 	# anywhere: a 250 MB upload spun for half an hour with nothing to read.
+	#
+	# Sign-in secrets never reach the log (client logins audit B12): a `code`
+	# query parameter (a client sign-in link or member invite issued before
+	# the code moved into the URL fragment, an OAuth callback) and the invite
+	# code in the path of the invite lookup are replaced with REDACTED, and
+	# the Referer header (which carried the page URL, code and all, on every
+	# subresource) is dropped.
 	log {
 		output stdout
-		format json
+		format filter {
+			wrap json
+			request>uri regexp "(^/api/auth/invite/)[A-Za-z0-9]{16}|([?&]code=)[^&#]*" "${1}${2}REDACTED"
+			request>headers>Referer delete
+		}
 	}
+
+	# The pages a sign-in link opens: their URL can carry a code (links issued
+	# before it moved into the fragment), so the browser must never send it on
+	# as a Referer. Set at the edge, whichever app answers the page.
+	@signin_pages path /client-signin /client-signin/* /invite /invite/*
+	header @signin_pages >Referrer-Policy no-referrer
 
 	# Box-local drop-ins: extra routes such as a database MCP bridge on a client
 	# box, or a customer vhost's paths. One file per concern in
@@ -71,6 +88,9 @@
 # app.<domain> and point DNS at the box.
 {$MANTLE_CLIENT_SITE_ADDRESS::8080} {
 	encode zstd gzip
+	# The sign-in link pages live on this vhost under split: see above.
+	@signin_pages path /client-signin /client-signin/* /invite /invite/*
+	header @signin_pages >Referrer-Policy no-referrer
 	reverse_proxy client-web:3000
 	request_body {
 		max_size {$MANTLE_MAX_BODY_SIZE:1GB}

@@ -8,8 +8,9 @@
  *
  * Every failure (unknown, used, revoked or expired code; a wrong email; a
  * disabled login; a malformed body) is the same 401, so the route is no
- * oracle. Rate limited per IP and, on failed codes, for the whole brain,
- * before any lookup (lib/client-logins.ts).
+ * oracle. Rate limited per address (an IPv6 caller by its /64) before any
+ * lookup; no brain-wide cap, so a stranger cannot hold every client out
+ * (lib/client-logins.ts, audit B11).
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
@@ -17,7 +18,8 @@ import { redeemClientSigninLink } from '@mantle/content';
 import type { ClientLinkSignIn } from '@mantle/client-types';
 import { setClientSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { clientLinkFailed, clientLinkRateLimited } from '@/lib/client-logins';
+import { clientLinkRateLimited } from '@/lib/client-logins';
+import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 
 const Body = z.object({
   code: z.string().min(1).max(64),
@@ -27,13 +29,14 @@ const Body = z.object({
 const FAILED_MESSAGE = 'This sign-in link is not valid. Ask for a new one.';
 
 export async function POST(req: Request) {
+  const refused = refuseCrossSiteAuthPost(req);
+  if (refused) return refused;
   const limited = clientLinkRateLimited(req);
   if (limited) return limited;
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   const redeemed = parsed.success ? await redeemClientSigninLink(parsed.data) : null;
   if (!redeemed) {
-    clientLinkFailed();
     auditFireAndForget({
       actorEmail: (parsed.success && parsed.data.email.toLowerCase()) || '(client link)',
       action: 'auth.client_link_failed',

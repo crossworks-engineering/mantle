@@ -2,6 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { loadPreferencesFor, logoVersion } from '@mantle/content';
 import type { ClientShell } from '@mantle/client-types';
 import { getClientOr401, mintAssetToken } from '@/lib/auth';
+import { CLIENT_ASSET_TOKEN_TTL_SECONDS } from '@/lib/auth/tokens';
 import { shellPart } from '@/lib/shell-part';
 
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
@@ -31,7 +32,10 @@ export async function GET() {
     email: client.email,
     // `act` = this client login, signed with its session epoch: the client
     // byte routes re-check both; the admin and member byte routes refuse it.
-    assetToken: await mintAssetToken(client.anchorId, client.loginId),
+    // 10 minutes (audit B23): this answer is asked again every 60 s.
+    assetToken: await mintAssetToken(client.anchorId, client.loginId, {
+      ttlSeconds: CLIENT_ASSET_TOKEN_TTL_SECONDS,
+    }),
     siteName: brain.siteName ?? null,
     colorTheme: brain.colorTheme ?? null,
     fontLogo: brain.fontLogo ?? null,

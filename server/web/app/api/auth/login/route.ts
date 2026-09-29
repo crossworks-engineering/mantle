@@ -4,6 +4,7 @@ import { db, authUsers, eq, sql } from '@mantle/db';
 import { authenticatePassword, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
+import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 
 const LoginBody = z.object({
   email: z.string().email(),
@@ -16,6 +17,8 @@ const LoginBody = z.object({
 const AUTH_FAILED_MESSAGE = 'Invalid email or password.';
 
 export async function POST(req: Request) {
+  const refused = refuseCrossSiteAuthPost(req);
+  if (refused) return refused;
   // Rate limit by client IP before bcrypt so a flood doesn't pin CPU.
   // 10/min comfortably fits a user mistyping a password a few times;
   // it's brutal for credential stuffing.

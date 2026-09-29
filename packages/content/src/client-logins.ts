@@ -56,9 +56,11 @@ export class ClientLoginError extends Error {
 }
 
 /** The client-app path the admin hands the client. The code is its only
- *  secret. */
+ *  secret, so it rides in the FRAGMENT: a browser never sends a fragment to
+ *  any server, so it stays out of access logs and Referer headers (audit
+ *  B12). The client page also still reads `?code=` (links issued before). */
 export function clientSigninLinkPath(code: string): string {
-  return `/client-signin?code=${encodeURIComponent(code)}`;
+  return `/client-signin#code=${encodeURIComponent(code)}`;
 }
 
 async function requireAcknowledged(ownerId: string): Promise<void> {
@@ -183,8 +185,9 @@ export type CreateClientLoginInput = {
 /**
  * Make a CLIENT login. Refused until "What clients see" is acknowledged.
  * With a contact: it must be a contact of this brain with no login linked;
- * the email and name default to the contact's. Refused when a login already
- * has the email. The login is made with role client, set here, never the
+ * the email and name default to the contact's, and a typed email must be
+ * one of the contact's addresses (`email-not-on-contact`). Refused when a
+ * login already has the email. The login is made with role client, set here, never the
  * column default.
  */
 export async function createClientLogin(
@@ -201,7 +204,20 @@ export async function createClientLogin(
     if (await loginOnContact(contact.id)) {
       throw new ClientLoginError('contact-has-login', 'That contact already has a login.');
     }
-    email ??= contact.emails.find((e) => ADDRESS_RE.test(e))?.toLowerCase() ?? null;
+    const addresses = contact.emails
+      .filter((e) => ADDRESS_RE.test(e))
+      .map((e) => e.trim().toLowerCase());
+    // A typed email must be one of the contact's own addresses: the mail
+    // gates know a client by its contact, so a login under another address
+    // would be a stranger to them (client logins audit B26). Refused, never
+    // added to the contact behind the admin's back.
+    if (email && !addresses.includes(email)) {
+      throw new ClientLoginError(
+        'email-not-on-contact',
+        "That email is not one of the contact's addresses. Add it to the contact first, or leave the email empty.",
+      );
+    }
+    email ??= addresses[0] ?? null;
     displayName ??= contact.title.trim() || null;
   }
   if (!email || !ADDRESS_RE.test(email)) {
@@ -318,6 +334,33 @@ export async function revokeClientSigninLink(
     )
     .returning({ id: clientSigninCodes.id });
   return rows.length > 0;
+}
+
+/**
+ * Revoke EVERY open way in the login still holds: its unused sign-in links
+ * and its unused emailed codes alike (client logins audit B14). Disabling a
+ * login and ending its sessions call this in the same transaction, so a
+ * link issued before cannot come back when the login is enabled again, and
+ * "End sessions" leaves nothing to sign straight back in with. Returns how
+ * many it revoked.
+ */
+export async function revokeOpenClientSignins(
+  exec: Exec,
+  loginId: string,
+  now = new Date(),
+): Promise<number> {
+  const rows = await exec
+    .update(clientSigninCodes)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(clientSigninCodes.loginId, loginId),
+        isNull(clientSigninCodes.usedAt),
+        isNull(clientSigninCodes.revokedAt),
+      ),
+    )
+    .returning({ id: clientSigninCodes.id });
+  return rows.length;
 }
 
 export type RedeemedClientSigninLink = {
