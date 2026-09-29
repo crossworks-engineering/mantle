@@ -51,7 +51,9 @@ describe.skipIf(!URL)('client logins and sign-in links', () => {
       insert into auth.users (id, email, password_hash, role) values
         (${owner}, ${email('owner')}, 'x', 'admin'),
         (${member}, ${email('member')}, 'x', 'member')`);
-    await exec(sqlTag`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
+    await exec(
+      sqlTag`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`,
+    );
     await exec(sqlTag`
       insert into nodes (id, owner_id, type, title, path, audience, data) values
         (${clientItem}, ${owner}, 'note', 'For the client', 'notes', 'client', '{}'::jsonb),
@@ -99,12 +101,24 @@ describe.skipIf(!URL)('client logins and sign-in links', () => {
       createdBy: owner,
     });
     made.push(row.id);
-    expect(row).toMatchObject({ email: email('carla'), displayName: 'Carla Client', contactId: contact });
+    expect(row).toMatchObject({
+      email: email('carla'),
+      displayName: 'Carla Client',
+      contactId: contact,
+    });
     await expect(
-      c.createClientLogin(owner, { contactId: contact, unusablePasswordHash: 'x', createdBy: owner }),
+      c.createClientLogin(owner, {
+        contactId: contact,
+        unusablePasswordHash: 'x',
+        createdBy: owner,
+      }),
     ).rejects.toMatchObject({ reason: 'contact-has-login' });
     await expect(
-      c.createClientLogin(owner, { contactId: randomUUID(), unusablePasswordHash: 'x', createdBy: owner }),
+      c.createClientLogin(owner, {
+        contactId: randomUUID(),
+        unusablePasswordHash: 'x',
+        createdBy: owner,
+      }),
     ).rejects.toMatchObject({ reason: 'contact-not-found' });
   });
 

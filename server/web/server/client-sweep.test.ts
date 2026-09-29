@@ -33,7 +33,11 @@ const ADMIN_ID = '55555555-5555-4555-8555-555555555555';
 const SPACE_ID = '66666666-6666-4666-8666-666666666666';
 const OTHER_ANCHOR_ID = '88888888-8888-4888-8888-888888888888';
 
-const row = (id: string, role: string, extra: { disabledAt?: Date; sessionEpoch?: number } = {}) => ({
+const row = (
+  id: string,
+  role: string,
+  extra: { disabledAt?: Date; sessionEpoch?: number } = {},
+) => ({
   id,
   email: `${role}-${id.slice(0, 4)}@example.invalid`,
   isOwner: false,

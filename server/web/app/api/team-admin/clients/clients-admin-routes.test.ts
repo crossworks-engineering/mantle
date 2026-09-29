@@ -32,7 +32,11 @@ const ROW = {
   openLink: null,
   lastLinkUsedAt: null,
 };
-const LINK = { id: 'l1', createdAt: '2026-09-29T00:00:00.000Z', expiresAt: '2026-10-02T00:00:00.000Z' };
+const LINK = {
+  id: 'l1',
+  createdAt: '2026-09-29T00:00:00.000Z',
+  expiresAt: '2026-10-02T00:00:00.000Z',
+};
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
