@@ -4,6 +4,15 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.329: client v0.6.174
+
+- Pairs the client at jackdaw v0.6.174, the client half of 0.232.328 (old
+  client links retire). Team admin > Shared links lists the retired client
+  links under the live ones: each item, its level now, how often the old
+  link was viewed and when last, and when it retired, with a pointer to
+  Clients to add the people who used them. A retired link has no Copy and
+  no open action: it answers "Sign in as a client" now.
+
 ## 0.232.328: client logins, phase C3 (old client links retire)
 
 Before client logins, "client" meant "anyone with the link". Clients sign in
