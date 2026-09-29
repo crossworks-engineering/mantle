@@ -4,6 +4,33 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.334: one item list for members and admins
+
+The brain side of the item-list alignment: a member's screen for a kind and
+an admin's brain lists can now show everything the reader may see in ONE
+list, each row with a small state pill, instead of hiding items behind
+source switches. The jackdaw screens follow. Operator notes:
+docs/member-logins.md section 13.
+
+- **`GET /api/member/items?kind=&q=&state=&page=`.** A member's own items
+  (with the ones an admin took over), teammates' shared drafts, the Library,
+  and their accepted items above the Library's levels, merged newest first.
+  Each row names its `source` and wears its `pill` (`private`, `draft`,
+  `submitted`, `returned`, `with-admin`; brain rows none). Every source is
+  read under its own rules exactly as its own route reads it; the route only
+  merges. `state` narrows by pill, `brain` or `by-me`, pushed into each
+  source's own query, so paging and `total` stay exact. Pages stop at 100.
+- **`?state=brain|private|all` on the admin lists** (`/api/pages`,
+  `/api/notes`, `/api/tables`, `/api/draws`, the files root and Recent).
+  `brain`, the default, is the list as before. `all` merges the acting
+  admin's own private items in the list's sort order as
+  `AdminPrivateListRow` rows; `private` lists them alone. None under a tag,
+  in a sub-page level or outside the files root.
+- **Contract:** `MemberItemRow`, `MemberItemsPage`, `MemberItemSource`,
+  `MemberItemPill`, `AdminPrivateListRow`; `MEMBER_ITEM_FILTERS` and
+  `ADMIN_LIST_STATES` in `@mantle/client-types/member-kinds`; space rows
+  carry `createdAt`.
+
 ## 0.232.333: client logins, fixes from the C2/C2b audit
 
 Every finding of the C2/C2b audit (2026-09-29, 28 findings) is fixed. Pair
