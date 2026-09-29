@@ -104,6 +104,9 @@ describe.skipIf(!URL)('a real client turn at client level', () => {
     publicNote: crypto.randomUUID(),
   };
   const filed: string[] = [];
+  // Retrieval limits an admin might set: the client turn must load no context
+  // WHATEVER the agent's config says (the code, not the config, is the rule).
+  const RETRIEVAL_ON = { digest_limit: 0, fact_limit: 10, content_hit_limit: 5, chunk_limit: 8 };
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -165,7 +168,7 @@ describe.skipIf(!URL)('a real client turn at client level', () => {
                           tool_group_slugs, memory_config, audience)
       values (${ownerId}, ${agentSlug}, 'Client', 'fake/model', 'openrouter', ${apiKeyId},
               'You answer the client.', ${[groupSlug, trapSlug]},
-              ${JSON.stringify({ digest_limit: 0, fact_limit: 0, content_hit_limit: 0, chunk_limit: 0 })}::jsonb,
+              ${JSON.stringify(RETRIEVAL_ON)}::jsonb,
               'client')
       returning id`;
     agentId = a!.id;
