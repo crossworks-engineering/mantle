@@ -5,9 +5,12 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { MemberSpaceItemRow } from '@mantle/client-types';
-import { MEMBER_ITEM_FILTERS } from '@mantle/client-types/member-kinds';
+import { CLIENT_ITEM_FILTERS, MEMBER_ITEM_FILTERS } from '@mantle/client-types/member-kinds';
 import {
   acceptedItemRow,
+  clientAcceptedItemRow,
+  clientItemsPlan,
+  clientOwnItemRow,
   itemsPlan,
   listSortCompare,
   mergeNewestFirst,
@@ -113,6 +116,58 @@ describe('itemsPlan', () => {
           expect(keeps(plan.team, r), `${filter} team ${r.reviewState}`).toBe(wanted);
         }
       }
+    }
+  });
+});
+
+describe('clientItemsPlan (My requests, client logins C5)', () => {
+  it('reads own, with a reviewer and accepted for all; one source per pill', () => {
+    expect(clientItemsPlan('all')).toEqual({ own: {}, withAdmin: true, accepted: true });
+    expect(clientItemsPlan('with-admin')).toEqual({ own: null, withAdmin: true, accepted: false });
+    expect(clientItemsPlan('accepted')).toEqual({ own: null, withAdmin: false, accepted: true });
+    // A client's item is always private: every own row wears the pill its
+    // filter selects, and no other.
+    const rows = (['draft', 'submitted', 'returned'] as const).map((reviewState) =>
+      space({ reviewState }),
+    );
+    for (const filter of CLIENT_ITEM_FILTERS) {
+      const own = clientItemsPlan(filter).own;
+      for (const r of rows) {
+        const kept =
+          !!own &&
+          (!own.reviewStates || own.reviewStates.includes(r.reviewState)) &&
+          (!own.sharing || own.sharing === r.sharing);
+        expect(kept, `${filter} ${r.reviewState}`).toBe(filter === 'all' || filter === pillOf(r));
+      }
+    }
+  });
+
+  it('builds rows with no level and no staff name', () => {
+    const own = clientOwnItemRow(space({ reviewState: 'returned', returnedNote: 'Fix it' }));
+    expect(own).toMatchObject({ source: 'own', pill: 'returned', acceptedAt: null });
+    const accepted = clientAcceptedItemRow({
+      id: 'a',
+      type: 'note',
+      title: 'A',
+      icon: null,
+      audience: 'admin',
+      acceptedAt: at(1),
+      updatedAt: at(2),
+    });
+    expect(accepted).toEqual({
+      id: 'a',
+      type: 'note',
+      title: 'A',
+      icon: null,
+      updatedAt: at(2),
+      source: 'accepted',
+      pill: null,
+      space: null,
+      acceptedAt: at(1),
+    });
+    for (const r of [own, accepted]) {
+      expect(r).not.toHaveProperty('audience');
+      expect(r).not.toHaveProperty('author');
     }
   });
 });
