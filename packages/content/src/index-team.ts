@@ -165,6 +165,7 @@ export {
   isLibraryKind,
   listLibrary,
   libraryCounts,
+  libraryLevelsOf,
   type LibraryAudience,
   type LibraryItem,
   type LibraryKind,
@@ -262,6 +263,7 @@ export {
 } from './member-review';
 export {
   acceptedAuthors,
+  acceptedByLogin,
   acceptedDrawSnapshot,
   acceptedDrawSvg,
   acceptedFileReadable,
@@ -273,6 +275,17 @@ export {
   type AcceptedItem,
   type AcceptedRow,
 } from './member-accepted';
+export {
+  acceptedItemRow,
+  itemsPlan,
+  libraryItemRow,
+  mergeNewestFirst,
+  pillOf,
+  spaceItemRow,
+  MEMBER_ITEMS_MAX_PAGE,
+  type ItemsPlan,
+  type PagedSource,
+} from './member-items';
 export { memberDrawSvg, memberVisibleDrawFileIds } from './member-draw-images';
 export { giveBackTakenItem, takenFromOf, type GiveBackResult } from './member-takeover';
 export {

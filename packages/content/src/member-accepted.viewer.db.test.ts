@@ -190,6 +190,22 @@ describe.skipIf(!URL)('member accepted items', () => {
     expect((await ma.listAccepted(otherBrain, loginA)).total).toBe(0);
   });
 
+  it('narrows by level and orders by the row time for the one list', async () => {
+    const above = await ma.listAccepted(anchor, loginA, {
+      audiences: ['admin', 'public'],
+      order: 'updated',
+    });
+    expect(above.items.map((i) => i.id)).not.toContain(noteTeamId);
+    expect(above.items.every((i) => i.audience === 'admin' || i.audience === 'public')).toBe(true);
+    expect(above.total).toBe(above.items.length);
+    const times = above.items.map((i) => i.updatedAt);
+    expect(times).toEqual([...times].sort().reverse());
+    // byMe: exactly the ids this login wrote, of the ids asked about.
+    const mine = await ma.acceptedByLogin(anchor, loginA, [noteTeamId, bNoteId, draftId]);
+    expect([...mine]).toEqual([noteTeamId]);
+    expect((await ma.acceptedByLogin(anchor, loginA, [])).size).toBe(0);
+  });
+
   it('the author reads the SAVED version at admin, never an admin’s draft', async () => {
     // The admin works on both after Accept: drafts only, nothing committed.
     await pd.saveDraft(anchor, pageId, {

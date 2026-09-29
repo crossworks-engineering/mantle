@@ -74,6 +74,11 @@ const OPEN_LEVELS: Readonly<Record<ViewerLevel, readonly ViewerLevel[]>> = {
   public: [],
 };
 
+/** The item levels a reader at `level` finds in their Library. */
+export function libraryLevelsOf(level: ViewerLevel): readonly LibraryAudience[] {
+  return Object.hasOwn(LIBRARY_LEVELS, level) ? LIBRARY_LEVELS[level] : [];
+}
+
 /** The levels of `table` the current reader has (empty for an unknown one). */
 function levelsOf<T>(table: Readonly<Record<ViewerLevel, readonly T[]>>): readonly T[] {
   const level = currentViewerLevel();

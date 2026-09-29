@@ -61,6 +61,9 @@ export const MEMBER_ROUTES: readonly string[] = [
   // the author rule in every query (member-accepted.ts).
   'GET /api/member/accepted',
   'GET /api/member/accepted/:id',
+  // Everything above in ONE list (item-list alignment): each source read
+  // under its own rules, exactly as its own route reads it (member-items.ts).
+  'GET /api/member/items',
 ];
 
 export function isMemberRoute(method: string, pattern: string): boolean {

@@ -226,4 +226,41 @@ describe.skipIf(!URL)('member personal space', () => {
     await asA(() => sp.deleteMineItem(spaceA, a.id));
     await asA(() => sp.deleteMineItem(spaceA, b.id));
   });
+
+  it('lists Mine and team drafts by sharing and review state (the one list)', async () => {
+    const priv = await asA(() => sp.createMineItem(spaceA, { type: 'note', title: `${tag} ol1` }));
+    const shared = await asA(() =>
+      sp.createMineItem(spaceA, { type: 'note', title: `${tag} ol2` }),
+    );
+    const sent = await asA(() => sp.createMineItem(spaceA, { type: 'note', title: `${tag} ol3` }));
+    await asA(() => sp.setSharing(spaceA, shared.id, 'team'));
+    await asA(() => sp.setSharing(spaceA, sent.id, 'team'));
+    await asA(() => sp.submitItem(spaceA, sent.id));
+    const ids = (r: { items: { id: string }[] }) => r.items.map((i) => i.id).sort();
+    const q = `${tag} ol`;
+
+    const privateDrafts = await asA(() =>
+      sp.listMine(spaceA, { q, reviewStates: ['draft'], sharing: 'private' }),
+    );
+    expect(ids(privateDrafts)).toEqual([priv.id]);
+    expect(privateDrafts.total).toBe(1);
+    const teamDrafts = await asA(() =>
+      sp.listMine(spaceA, { q, reviewStates: ['draft'], sharing: 'team' }),
+    );
+    expect(ids(teamDrafts)).toEqual([shared.id]);
+
+    // B reads A's shared items as team drafts, narrowed by review state.
+    const bDrafts = await m.withTeamDrafts(() =>
+      sp.listTeamDrafts(loginB, { q, reviewStates: ['draft'] }),
+    );
+    expect(ids(bDrafts)).toEqual([shared.id]);
+    const bSubmitted = await m.withTeamDrafts(() =>
+      sp.listTeamDrafts(loginB, { q, reviewStates: ['submitted'] }),
+    );
+    expect(ids(bSubmitted)).toEqual([sent.id]);
+    expect(bSubmitted.total).toBe(1);
+
+    await asA(() => sp.recallItem(spaceA, sent.id));
+    for (const it of [priv, shared, sent]) await asA(() => sp.deleteMineItem(spaceA, it.id));
+  });
 });

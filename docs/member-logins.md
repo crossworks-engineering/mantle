@@ -480,19 +480,19 @@ redacted for admins (section 5).
 
 **Routes** (owner only, `/team-admin` > Review in the client):
 
-| Route                                               | What                                             |
-| --------------------------------------------------- | ------------------------------------------------ |
-| `GET /api/team-admin/submissions`                   | The queue: submitted (oldest first), left behind |
-| `GET /api/team-admin/submissions/:id[?tab=]`        | The saved body (never a draft) and the thread    |
-| `GET /api/team-admin/submissions/:id/bundle`        | What Accept would move, what stays behind, and `closure` |
-| `GET /api/team-admin/submissions/:id/bytes[?node=]` | The file, or a file in its bundle (`?thumb=1`)   |
-| `GET /api/team-admin/submissions/:id/svg[?node=]`   | A drawing's saved SVG, or one in its bundle      |
-| `GET/POST /api/team-admin/submissions/:id/comments` | The thread; the reviewer's review talk           |
-| `DELETE …/submissions/:id/comments/:commentId`      | Take back an own review comment                  |
+| Route                                               | What                                                                                |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `GET /api/team-admin/submissions`                   | The queue: submitted (oldest first), left behind                                    |
+| `GET /api/team-admin/submissions/:id[?tab=]`        | The saved body (never a draft) and the thread                                       |
+| `GET /api/team-admin/submissions/:id/bundle`        | What Accept would move, what stays behind, and `closure`                            |
+| `GET /api/team-admin/submissions/:id/bytes[?node=]` | The file, or a file in its bundle (`?thumb=1`)                                      |
+| `GET /api/team-admin/submissions/:id/svg[?node=]`   | A drawing's saved SVG, or one in its bundle                                         |
+| `GET/POST /api/team-admin/submissions/:id/comments` | The thread; the reviewer's review talk                                              |
+| `DELETE …/submissions/:id/comments/:commentId`      | Take back an own review comment                                                     |
 | `POST /api/team-admin/submissions/:id/accept`       | `{ audience?, parentPageId?, folderPath?, lowerConfirmed?, confirmedIds? }` (below) |
-| `POST /api/team-admin/submissions/:id/return`       | `{ note }`: back to the author                   |
-| `POST /api/team-admin/submissions/:id/take-over`    | Into the acting admin's own space (section 11)   |
-| `POST /api/team-admin/submissions/:id/discard`      | Delete a left-behind item (inactive author only) |
+| `POST /api/team-admin/submissions/:id/return`       | `{ note }`: back to the author                                                      |
+| `POST /api/team-admin/submissions/:id/take-over`    | Into the acting admin's own space (section 11)                                      |
+| `POST /api/team-admin/submissions/:id/discard`      | Delete a left-behind item (inactive author only)                                    |
 
 **The thread.** The reviewer writes review talk (`thread_scope` 'review',
 author kind `owner`): the author reads it in their own thread, teammates
@@ -1380,3 +1380,48 @@ cap; the functions only notify), `server/web/lib/push/needs-you.test.ts`,
 `server/web/lib/push/admin-subscriptions.db.test.ts`,
 `server/web/lib/realtime.needs-you.test.ts` (members' stream never gets it;
 another owner's change is dropped).
+
+## 13. One list per kind (item-list alignment, 2026-09-29)
+
+The member's screen for a kind no longer switches between Mine, Team
+drafts, Library and Accepted. One route lists everything the member can see
+of that kind, newest first, and each row wears a small state pill instead
+of living behind a source:
+
+| Route                                         | What                                      |
+| --------------------------------------------- | ----------------------------------------- |
+| `GET /api/member/items?kind=&q=&state=&page=` | `MemberItemsPage`: one list, every source |
+
+**Sources.** Own items (with the ones an admin took over), teammates'
+shared drafts, the Library, and the member's accepted items at a level the
+Library does not list (admin or public; the rest already are Library rows,
+marked `byMe`). Each row names its `source`, which picks the item view:
+`own` the member's editor, `team` a teammate's saved draft, `library` the
+brain item, `accepted` the version accepted.
+
+**No new access.** Each source is read exactly as its own route reads it:
+Mine in `withSpace`, team drafts in `withTeamDrafts`, the Library at the
+team level, accepted items on the admin pool with the author rule written
+in, and the Library rows' authors for exactly the ids the team level
+returned. The route only merges them (`member-items.ts`,
+`mergeNewestFirst`): page N reads the first N pages of every source and
+interleaves them on `updatedAt`, so paging never skips or repeats a row and
+`total` is the sum. The depth is capped at page 100.
+
+**Pills and the State filter.** A draft is `private` or `draft` (shared
+with the team); then `submitted`, `returned` and `with-admin`. Brain rows
+wear none. `state=` takes `all` (default), one pill, `brain` (the rows
+without a pill) or `by-me` (every accepted item of this member). The filter
+is pushed into each source's own query (`itemsPlan`), never applied to a
+loaded page, and the pill a row wears is always the filter that finds it
+(pinned in `member-items.test.ts`).
+
+The four source routes stay until no client calls them.
+
+**Tests.** `packages/content/src/member-items.test.ts` (pills, plans, the
+merge and its paging), `server/web/app/api/member/items/member-items-route.test.ts`
+(each source in its own scope with this member's ids, the filter reaching
+exactly its sources, authors on the page's Library rows), and the new cases
+in `member-space.viewer.db.test.ts` (sharing and review filters, team
+drafts by review state) and `member-accepted.viewer.db.test.ts` (level
+filter, row-time order, `acceptedByLogin`).

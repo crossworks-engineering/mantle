@@ -151,6 +151,9 @@ export type ListSpaceOpts = {
    *  the first page). An item with no state row counts as a draft.
    *  `with-admin` selects the items an admin has taken over (`withAdmin`). */
   reviewStates?: readonly (ReviewState | 'with-admin')[];
+  /** Only items shared this way (the one list's State filter). An item with
+   *  no state row counts as private. */
+  sharing?: SpaceSharing;
   /** The MEMBER's own list (audit F07): page 1 also carries the caller's
    *  items an admin has taken over, as `with-admin` rows (title and kind
    *  only), before the own rows; `total` counts them. */
@@ -165,6 +168,12 @@ function reviewFilter(all?: readonly (ReviewState | 'with-admin')[]) {
   if (!states.length) return sql`false`;
   const listed = inArray(spaceItems.reviewState, states);
   return states.includes('draft') ? or(isNull(spaceItems.reviewState), listed) : listed;
+}
+
+function sharingFilter(sharing?: SpaceSharing) {
+  if (!sharing) return undefined;
+  const listed = eq(spaceItems.sharing, sharing);
+  return sharing === 'private' ? or(isNull(spaceItems.sharing), listed) : listed;
 }
 
 function page(opts: ListSpaceOpts) {
@@ -188,6 +197,7 @@ export async function listMine(
     opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...SPACE_ITEM_KINDS]),
     titleFilter(opts.q),
     reviewFilter(opts.reviewStates),
+    sharingFilter(opts.sharing),
   );
   const rows = await db
     .select({ node: nodes, item: spaceItems })
@@ -906,7 +916,8 @@ export async function updateMineItem(
 // ── Team drafts ──────────────────────────────────────────────────────────────
 
 /** Other members' items shared with the team, newest first. The caller's own
- *  shared items are in Mine, not here. Published content only. */
+ *  shared items are in Mine, not here. Published content only.
+ *  `reviewStates` narrows by review state as on Mine. */
 export async function listTeamDrafts(
   loginId: string,
   opts: ListSpaceOpts = {},
@@ -918,6 +929,7 @@ export async function listTeamDrafts(
     sql`${spaceItems.authorLoginId} IS DISTINCT FROM ${loginId}`,
     opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...SPACE_ITEM_KINDS]),
     titleFilter(opts.q),
+    reviewFilter(opts.reviewStates),
   );
   const rows = await db
     .select({ node: nodes, item: spaceItems })

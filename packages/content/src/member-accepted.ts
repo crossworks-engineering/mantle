@@ -120,11 +120,20 @@ const snapCols = {
   snapAt: acceptedSnapshots.acceptedAt,
 };
 
-/** The author's accepted items, newest accept first. `q` matches the title. */
+/** The author's accepted items, newest accept first. `q` matches the title;
+ *  `audiences` keeps only items at those levels. `order: 'updated'` sorts by
+ *  the row's own `updatedAt` instead (the one list merges on it). */
 export async function listAccepted(
   anchorId: string,
   loginId: string,
-  opts: { kind?: MemberItemKind; q?: string; limit?: number; offset?: number } = {},
+  opts: {
+    kind?: MemberItemKind;
+    q?: string;
+    audiences?: readonly ViewerLevel[];
+    order?: 'accepted' | 'updated';
+    limit?: number;
+    offset?: number;
+  } = {},
 ): Promise<{ items: AcceptedRow[]; total: number }> {
   assertAdminPool();
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
@@ -134,7 +143,13 @@ export async function listAccepted(
     authoredWhere(anchorId, loginId),
     opts.kind ? eq(nodes.type, opts.kind) : undefined,
     q ? ilike(nodes.title, `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`) : undefined,
+    opts.audiences ? inArray(nodes.audience, [...opts.audiences]) : undefined,
   );
+  // rowOf's updatedAt: the snapshot's time when there is one, else the node's.
+  const order =
+    opts.order === 'updated'
+      ? [desc(sql`coalesce(${acceptedSnapshots.acceptedAt}, ${nodes.updatedAt})`), desc(nodes.id)]
+      : [desc(spaceItems.acceptedAt), desc(nodes.updatedAt)];
   const [rows, [count]] = await Promise.all([
     db
       .select({ node: nodes, acceptedAt: spaceItems.acceptedAt, ...snapCols })
@@ -142,7 +157,7 @@ export async function listAccepted(
       .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
       .leftJoin(acceptedSnapshots, eq(acceptedSnapshots.nodeId, nodes.id))
       .where(where)
-      .orderBy(desc(spaceItems.acceptedAt), desc(nodes.updatedAt))
+      .orderBy(...order)
       .limit(limit)
       .offset(offset),
     db
@@ -291,6 +306,23 @@ export async function acceptedFileReadable(
 }
 
 export type AcceptedAuthor = MemberItemAuthor;
+
+/** Which of these brain items THIS login wrote and an admin accepted (the
+ *  one list's `byMe`). Callers pass ids their reader may already see. */
+export async function acceptedByLogin(
+  anchorId: string,
+  loginId: string,
+  ids: readonly string[],
+): Promise<Set<string>> {
+  assertAdminPool();
+  if (!ids.length) return new Set();
+  const rows = await db
+    .select({ id: spaceItems.nodeId })
+    .from(spaceItems)
+    .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+    .where(and(inArray(spaceItems.nodeId, [...ids]), authoredWhere(anchorId, loginId)));
+  return new Set(rows.map((r) => r.id));
+}
 
 // Compile-time locks: what the routes send must fit the published contract.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;

@@ -6,6 +6,7 @@
  */
 import type { AccessLevel, MemberItemAuthor } from './access';
 import type { MemberItemKind } from '../member-kinds';
+export type { MemberItemFilter } from '../member-kinds';
 
 /** GET /api/member/shell */
 export type MemberShell = {
@@ -247,3 +248,50 @@ export type MemberAcceptedItem =
       sizeBytes: number | null;
       changedByAdmin?: boolean;
     });
+
+// ── One list of everything a member can see (item-list alignment) ───────
+
+/** Where a row of the one list comes from; it picks the item view that
+ *  opens it: `own` the member's editor, `team` a teammate's saved draft,
+ *  `library` the brain item, `accepted` the version this member wrote and an
+ *  admin accepted at a level above the Library's (admin or public). */
+export type MemberItemSource = 'own' | 'team' | 'library' | 'accepted';
+
+/** The small state pill a row wears beside its actions. Brain items (the
+ *  Library and accepted rows) wear none. */
+export type MemberItemPill = 'private' | 'draft' | 'submitted' | 'returned' | 'with-admin';
+
+/** One row of GET /api/member/items. */
+export type MemberItemRow = {
+  id: string;
+  type: MemberItemKind;
+  title: string;
+  icon: string | null;
+  summary: string | null;
+  updatedAt: string;
+  source: MemberItemSource;
+  pill: MemberItemPill | null;
+  /** The brain item's level (library and accepted rows); null on a draft. */
+  audience: AccessLevel | null;
+  /** A brain item a member wrote and an admin accepted: whose it is. */
+  author: MemberItemAuthor | null;
+  /** This member wrote it and an admin accepted it. */
+  byMe: boolean;
+  /** The personal-space row (own and team rows): sharing, review state, the
+   *  returned note, for the item view and the detail header. */
+  space: MemberSpaceItemRow | null;
+};
+
+/**
+ * GET /api/member/items?kind=&q=&state=&page= (brains from the item-list
+ * alignment release): the member's own items, teammates' shared drafts, the
+ * Library and their accepted items above it, in ONE list, newest first.
+ * `state` is a MemberItemFilter (default `all`). Absent on older brains: the
+ * client then falls back to the four source lists.
+ */
+export type MemberItemsPage = {
+  items: MemberItemRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
