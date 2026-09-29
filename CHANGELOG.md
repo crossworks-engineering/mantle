@@ -4,6 +4,72 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.322: client logins, fixes from the C0/C1 audit
+
+Every finding of the C0/C1 audit (2026-09-29, 32 findings, none a leak to a
+client) is fixed. Migrations 0189 and 0190; 0186 and 0187 gain a lock
+timeout.
+
+**Roll note (boxes on v0.232.315).** 0186 to 0190 land together. No manual
+step. Admins will see: the Access popover with no link box at Client, level
+badges in Shared links, the "What clients see" tab, needs-you notices, and
+the share tools refusing a client item (`client-links-retired`). Read-only
+counts before a roll: `scripts/client-level-counts.sql`. Rollback floor:
+never below v0.232.318 once any client login exists (older images treat
+every role that is not member as an admin); from this updater on, a roll
+below it is refused while client logins exist (`MANTLE_ALLOW_BELOW_CLIENT_FLOOR=1`
+overrides). The roll that brings this release still runs the old updater.
+
+- **Restore works again (A1).** `scripts/db-restore.sh` restores into a
+  pristine database. Before, the init script's `auth.users` (without
+  `session_epoch`) made pg_restore skip the table: every login and the role
+  CHECK were lost while the script said "Restore complete". It now exits 2
+  when logins, the role CHECK or the row rules for nodes, agents and tool
+  groups are missing, and prints every pg_restore error.
+- **Client and public are siblings (A5).** The client role reads client
+  items, agents and tool groups only (0189). A client scope never runs
+  public-level work and a public scope never client-level work: refused
+  (`ViewerLevelConflictError`, HTTP 403 `level-conflict`), never widened. An
+  agent holds a tool group only at a level it reads.
+- **Client role narrowed (A27).** `mantle_brain_id()` runs for the viewer
+  and space roles only; the client role reads no embedding config and only
+  `user_id, preferences` of profiles. A `read_result` spill carries its
+  writer's level; a reader below it gets not found.
+- **A client's items stay private (A17).** A database trigger refuses
+  sharing a client's space item with the team.
+- **Logins name their role (A14, A15, A16).** `auth.users.role` has no
+  default (0190). Token refresh rotates admin and member bearers only.
+  `withSpace` refuses a space that is not the login's own, and a disabled
+  login. Admin password reset refuses a client or unknown-role target with
+  400 `not-a-password-login` (member resets stay).
+- **"What clients see" (A7, A8, A23, A24, A11).** Acknowledged by a
+  fingerprint of every client item (409 `report-changed` when the set moved),
+  so a brain with more than 2000 client items can be acknowledged. A ref to
+  an item outside the brain shows no title. Email hints count finished
+  sends only (to, cc, bcc, 400 days, indexed). Drawings and tables are
+  scanned for refs. Old live links above an item (a client folder holding
+  it, a client page embedding it) are named, here and in the Access
+  popover (`oldLinksAbove`, `openLinkLevels`).
+- **Links (A9, A10, A12, A18, A19, A20, A21).** "Include sub-pages" skips
+  client sub-pages in one transaction. A client embed that goes public with
+  its page is called out in the tool answer. Setting client on an item
+  already at client keeps its old link. `/api/team-admin/shares` carries
+  each link's level. `email_page` with `includeLink` on a client page is
+  refused before sending. A revoked client link is marked
+  `retired = 'client'`. The refusal tells a model to ask the owner.
+- **Accept (A6, A22, A28).** The review queue names the author's role. The
+  Accept preview lists the embed closure; accepting a client's item at
+  client or public needs every going-down item ticked (`confirmedIds`), on
+  the review path and after Take over. The confirm copy is right at public.
+- **The admin shell survives a broken part (A13).** `/api/shell` answers
+  200 when preferences, the pending count, onboarding or the asset token
+  fail; member and client shells likewise for their brand.
+- **Tests (A3, A4, A31).** Session-reading public routes are driven for
+  every role from one table (`public-session-routes.ts`) with a completeness
+  check; a fast unknown-role check; a real team-delegation DB test;
+  non-circular client grant facts; CI fails when a database test URL is
+  missing; the admin-space count no longer races client submissions.
+
 ## 0.232.321: client v0.6.171
 
 - Pairs the client at jackdaw v0.6.171, the client half of 0.232.320: the
