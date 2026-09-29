@@ -82,6 +82,24 @@ export type BenchSummary = {
   by_category: Record<string, Tally>;
   errors: number;
   unjudged: number;
+  /** Did the sessions holding the answer reach the context? Counted over
+   *  questions the dataset labels, by title in the context (a lower bound). */
+  evidence: {
+    labelled: number;
+    all_found: number;
+    all_found_rate: number;
+    by_category: Record<string, { labelled: number; all_found: number; rate: number }>;
+  };
+  /** Wrong answers, split by cause. retrieval_miss: some evidence session
+   *  never reached the context. answer_miss: all of it did, and the answer
+   *  was still wrong. unlabelled: the dataset names no evidence. */
+  misses: {
+    wrong: number;
+    retrieval_miss: number;
+    answer_miss: number;
+    unlabelled: number;
+    said_missing: number;
+  };
   avg_context_chars: number;
   avg_context_tokens_est: number;
   avg_retrieve_ms: number;
@@ -110,6 +128,16 @@ export function summarize(
     byCat.set(q.category, t);
   }
   const correct = qs.filter((q) => q.correct).length;
+  const labelled = qs.filter((q) => !q.error && q.evidence_sessions?.length);
+  const allFound = (q: (typeof qs)[number]) => q.evidence_found === q.evidence_sessions.length;
+  const evByCat = new Map<string, { labelled: number; all_found: number }>();
+  for (const q of labelled) {
+    const t = evByCat.get(q.category) ?? { labelled: 0, all_found: 0 };
+    t.labelled++;
+    if (allFound(q)) t.all_found++;
+    evByCat.set(q.category, t);
+  }
+  const wrong = qs.filter((q) => !q.correct);
   const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
   const ctx = qs.filter((q) => !q.error).map((q) => q.context_chars);
   const extract = results.reduce((n, r) => n + r.extract_usd, 0);
@@ -128,6 +156,23 @@ export function summarize(
     ),
     errors: qs.filter((q) => q.error).length,
     unjudged: qs.filter((q) => !q.error && q.correct === null).length,
+    evidence: {
+      labelled: labelled.length,
+      all_found: labelled.filter(allFound).length,
+      all_found_rate: labelled.length ? labelled.filter(allFound).length / labelled.length : 0,
+      by_category: Object.fromEntries(
+        [...evByCat.entries()]
+          .sort()
+          .map(([k, t]) => [k, { ...t, rate: t.labelled ? t.all_found / t.labelled : 0 }]),
+      ),
+    },
+    misses: {
+      wrong: wrong.length,
+      retrieval_miss: wrong.filter((q) => q.evidence_sessions?.length && !allFound(q)).length,
+      answer_miss: wrong.filter((q) => q.evidence_sessions?.length && allFound(q)).length,
+      unlabelled: wrong.filter((q) => !q.evidence_sessions?.length).length,
+      said_missing: wrong.filter((q) => q.said_missing).length,
+    },
     avg_context_chars: Math.round(avg(ctx)),
     avg_context_tokens_est: Math.round(avg(ctx) / 4),
     avg_retrieve_ms: Math.round(avg(qs.filter((q) => !q.error).map((q) => q.retrieve_ms))),
@@ -167,11 +212,18 @@ export function renderReport(s: BenchSummary): string {
     '',
     `Errors ${s.errors}, unreadable verdicts ${s.unjudged} (both count as wrong).`,
     '',
-    '| Category | Questions | Correct | Accuracy |',
-    '|---|---|---|---|',
-    ...Object.entries(s.by_category).map(
-      ([k, t]) => `| ${k} | ${t.n} | ${t.correct} | ${pct(t.accuracy)} |`,
-    ),
+    '| Category | Questions | Correct | Accuracy | Evidence reached the context |',
+    '|---|---|---|---|---|',
+    ...Object.entries(s.by_category).map(([k, t]) => {
+      const ev = s.evidence.by_category[k];
+      return `| ${k} | ${t.n} | ${t.correct} | ${pct(t.accuracy)} | ${ev ? pct(ev.rate) : 'n/a'} |`;
+    }),
+    '',
+    `Evidence: for ${pct(s.evidence.all_found_rate)} of labelled questions, every session holding ` +
+      'the answer reached the context by title (a lower bound: facts carry no title).',
+    `Wrong answers (${s.misses.wrong}): ${s.misses.retrieval_miss} retrieval misses (evidence never ` +
+      `reached the context), ${s.misses.answer_miss} answer misses (it did; the answer was still wrong), ` +
+      `${s.misses.unlabelled} unlabelled. ${s.misses.said_missing} said the memory lacked the answer.`,
     '',
     `Context per question: ${s.avg_context_chars} chars (about ${s.avg_context_tokens_est} tokens). ` +
       `Retrieval: ${s.avg_retrieve_ms} ms.`,

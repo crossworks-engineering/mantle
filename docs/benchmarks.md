@@ -64,8 +64,23 @@ pnpm bench:memory --dataset=locomo --download --haystacks=1 --questions=20 --max
 | `--out=DIR` / `--resume=DIR`        | Where results go; resume skips haystacks already written there.     |
 | `--keep-db`                         | Keep the scratch databases for inspection.                          |
 
-Output: `results.jsonl` (one line per question, with the model's full
-response and the judge's text), `summary.json` and `report.md`.
+Output: `results.jsonl` (one line per question: the exact memory context the
+answer model got, its full response, the judge's text), `summary.json` and
+`report.md`.
+
+**Why an answer is wrong.** Both datasets label which sessions hold each
+answer. Each result records how many of those sessions reached the context,
+by note title (`evidence_found`), and whether the answer said the memory
+lacked it (`said_missing`). The report splits the wrong answers:
+
+- **retrieval miss:** a session holding the answer never reached the
+  context. Fix retrieval.
+- **answer miss:** every such session reached the context and the answer
+  was still wrong. Fix the answer prompt or model, or the gold is wrong.
+
+The title check is a lower bound: facts carry no title, so a session that
+reached the context only as facts counts as not found. Read the saved
+context for the cases that matter.
 
 **Manual runs only.** Every run spends real money; nothing schedules it
 (cost-safety rule). Estimates at the default models: a full LoCoMo run is

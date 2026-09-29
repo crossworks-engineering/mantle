@@ -31,6 +31,9 @@ export type BenchQuestion = {
   askedAt: Date | null;
   /** LongMemEval `_abs` questions: the right answer is "not in the history". */
   abstention: boolean;
+  /** Which sessions (0-based, in haystack order) hold the answer, as the
+   *  dataset labels them. Empty when it does not say. */
+  evidence: number[];
 };
 
 export type Haystack = { id: string; sessions: BenchSession[]; questions: BenchQuestion[] };
@@ -89,6 +92,21 @@ export function parseLongMemEvalDate(s: unknown): Date | null {
   );
 }
 
+/**
+ * LoCoMo evidence → session indexes (pure). Evidence is dialogue ids like
+ * "D2:1", sometimes several packed in one string ("D8:6; D9:17"); D<n> is
+ * session_<n>, mapped to its position among the haystack's sorted sessions.
+ */
+export function locomoEvidence(evidence: unknown, sessionKeys: readonly string[]): number[] {
+  const text = Array.isArray(evidence) ? evidence.join(' ') : String(evidence ?? '');
+  const out = new Set<number>();
+  for (const m of text.matchAll(/D(\d+):\d+/g)) {
+    const i = sessionKeys.indexOf(`session_${m[1]}`);
+    if (i >= 0) out.add(i);
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
 const LOCOMO_CATEGORIES: Record<number, string> = {
   1: 'single-hop',
   2: 'temporal',
@@ -100,7 +118,7 @@ type LocomoTurn = { speaker?: string; text?: string; blip_caption?: string };
 type LocomoItem = {
   sample_id: string;
   conversation: Record<string, unknown>;
-  qa: Array<{ question: string; answer?: unknown; category: number }>;
+  qa: Array<{ question: string; answer?: unknown; category: number; evidence?: unknown }>;
 };
 
 /**
@@ -136,6 +154,7 @@ export function parseLocomo(raw: unknown): Haystack[] {
         category: LOCOMO_CATEGORIES[q.category]!,
         askedAt: lastDate,
         abstention: false,
+        evidence: locomoEvidence(q.evidence, keys),
       }));
     return { id: item.sample_id, sessions, questions };
   });
@@ -150,6 +169,7 @@ type LongMemEvalItem = {
   haystack_session_ids: string[];
   haystack_dates: string[];
   haystack_sessions: Array<Array<{ role: string; content: string }>>;
+  answer_session_ids?: string[];
 };
 
 /** LongMemEval: one haystack per question (each has its own history). */
@@ -173,6 +193,10 @@ export function parseLongMemEval(raw: unknown): Haystack[] {
         category: item.question_type,
         askedAt: parseLongMemEvalDate(item.question_date),
         abstention: item.question_id.endsWith('_abs'),
+        evidence: (item.answer_session_ids ?? [])
+          .map((id) => item.haystack_session_ids.indexOf(id))
+          .filter((i) => i >= 0)
+          .sort((a, b) => a - b),
       },
     ],
   }));

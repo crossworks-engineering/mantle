@@ -28,9 +28,11 @@ import { renderContext } from './context';
 import type { BenchQuestion, DatasetName, Haystack } from './datasets';
 import {
   answerPrompt,
+  evidenceFound,
   extractFinalAnswer,
   judgePrompt,
   parseVerdict,
+  saidMissing,
   sessionToNote,
 } from './prompts';
 
@@ -51,6 +53,14 @@ export type QuestionResult = {
   correct: boolean | null;
   judge_raw: string;
   context_chars: number;
+  /** The exact memory context the answer model was given. */
+  context: string;
+  /** Sessions (0-based) the dataset says hold the answer. */
+  evidence_sessions: number[];
+  /** How many of them reached the context (a lower bound: see evidenceFound). */
+  evidence_found: number;
+  /** The answer said the memory lacks it. */
+  said_missing: boolean;
   retrieve_ms: number;
   answer_usd: number;
   judge_usd: number;
@@ -235,6 +245,10 @@ async function askOne(
     correct: parseVerdict(dataset, judged.text),
     judge_raw: judged.text,
     context_chars: context.length,
+    context,
+    evidence_sessions: q.evidence,
+    evidence_found: evidenceFound(context, q.evidence),
+    said_missing: saidMissing(answer),
     retrieve_ms: retrieveMs,
     answer_usd: answered.usd,
     judge_usd: judged.usd,
@@ -290,6 +304,10 @@ export async function runHaystack(opts: {
         correct: null,
         judge_raw: '',
         context_chars: 0,
+        context: '',
+        evidence_sessions: q.evidence,
+        evidence_found: 0,
+        said_missing: false,
         retrieve_ms: 0,
         answer_usd: 0,
         judge_usd: 0,

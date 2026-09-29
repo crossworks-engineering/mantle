@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  locomoEvidence,
   parseLocomo,
   parseLocomoDate,
   parseLongMemEval,
@@ -9,9 +10,11 @@ import {
 } from './datasets';
 import {
   answerPrompt,
+  evidenceFound,
   extractFinalAnswer,
   judgePrompt,
   parseVerdict,
+  saidMissing,
   sessionToNote,
 } from './prompts';
 import { estimateRun, renderReport, summarize } from './report';
@@ -56,7 +59,7 @@ describe('parseLocomo', () => {
         session_1_date_time: '1:56 pm on 8 May, 2023',
       },
       qa: [
-        { question: 'Where was Bob?', answer: 'Rome', category: 1 },
+        { question: 'Where was Bob?', answer: 'Rome', category: 1, evidence: ['D2:1'] },
         { question: 'Trick?', adversarial_answer: 'x', category: 5 },
         { question: 'How many?', answer: 2, category: 3 },
       ],
@@ -72,6 +75,15 @@ describe('parseLocomo', () => {
       ['conv-1_q2', 'multi-hop', '2'],
     ]);
     expect(h!.questions[0]!.askedAt?.toISOString()).toBe('2023-05-10T09:00:00.000Z');
+    expect(h!.questions[0]!.evidence).toEqual([1]);
+    expect(h!.questions[1]!.evidence).toEqual([]);
+  });
+
+  it('reads packed evidence strings and ignores sessions that do not exist', () => {
+    const keys = ['session_1', 'session_2', 'session_3', 'session_10'];
+    expect(locomoEvidence(['D8:6; D3:17', 'D1:1 D1:2'], keys)).toEqual([0, 2]);
+    expect(locomoEvidence(['D10:4'], keys)).toEqual([3]);
+    expect(locomoEvidence(undefined, keys)).toEqual([]);
   });
 });
 
@@ -85,6 +97,7 @@ describe('parseLongMemEval', () => {
         answer: 'Not mentioned',
         question_date: '2023/06/01 (Thu) 10:00',
         haystack_session_ids: ['s1'],
+        answer_session_ids: ['s1', 'gone'],
         haystack_dates: ['2023/05/30 (Tue) 23:40'],
         haystack_sessions: [
           [
@@ -97,6 +110,7 @@ describe('parseLongMemEval', () => {
     expect(hs).toHaveLength(1);
     expect(hs[0]!.sessions[0]!.turns.map((t) => t.speaker)).toEqual(['User', 'Assistant']);
     expect(hs[0]!.questions[0]!.abstention).toBe(true);
+    expect(hs[0]!.questions[0]!.evidence).toEqual([0]);
   });
 });
 
@@ -111,6 +125,7 @@ describe('selectHaystacks', () => {
       category,
       askedAt: null,
       abstention: false,
+      evidence: [],
     })),
   }));
 
@@ -151,6 +166,7 @@ describe('prompts', () => {
         category: 'temporal',
         askedAt: new Date(Date.UTC(2023, 5, 1)),
         abstention: false,
+        evidence: [],
       },
       'CTX',
     );
@@ -173,6 +189,7 @@ describe('prompts', () => {
       category: 'temporal-reasoning',
       askedAt: null,
       abstention: false,
+      evidence: [],
     };
     expect(judgePrompt('locomo', q, 'In Rome')).toContain('Gold answer: Rome');
     expect(judgePrompt('longmemeval', q, 'x')).toContain('do not penalize off-by-one errors');
@@ -182,6 +199,21 @@ describe('prompts', () => {
     expect(
       judgePrompt('longmemeval', { ...q, category: 'single-session-preference' }, 'x'),
     ).toContain('Rubric: Rome');
+  });
+
+  it('counts evidence sessions by note title, without prefix clashes', () => {
+    const ctx = '• "Conversation 11, Monday 1 May 2023" …\n— from "Conversation 2, Friday":';
+    expect(evidenceFound(ctx, [1])).toBe(1); // Conversation 2
+    expect(evidenceFound(ctx, [0])).toBe(0); // Conversation 1 is not Conversation 11
+    expect(evidenceFound(ctx, [10, 1, 4])).toBe(2);
+  });
+
+  it('spots an answer that says the memory lacks it', () => {
+    expect(saidMissing('The memory does not contain the answer.')).toBe(true);
+    expect(saidMissing('This is not mentioned in the conversations.')).toBe(true);
+    expect(saidMissing("I can't determine that from the memory.")).toBe(true);
+    expect(saidMissing('Sweden')).toBe(false);
+    expect(saidMissing('She moved from Sweden, as she mentioned.')).toBe(false);
   });
 
   it('reads verdicts, and returns null when the judge gave none', () => {
@@ -195,7 +227,12 @@ describe('prompts', () => {
 });
 
 describe('report', () => {
-  const q = (category: string, correct: boolean | null, error?: string): QuestionResult => ({
+  const q = (
+    category: string,
+    correct: boolean | null,
+    error?: string,
+    evidence: { sessions: number[]; found: number; missing?: boolean } = { sessions: [], found: 0 },
+  ): QuestionResult => ({
     query_id: category,
     category,
     question: '?',
@@ -205,6 +242,10 @@ describe('report', () => {
     correct,
     judge_raw: '',
     context_chars: 400,
+    context: 'ctx',
+    evidence_sessions: evidence.sessions,
+    evidence_found: evidence.found,
+    said_missing: evidence.missing ?? false,
     retrieve_ms: 100,
     answer_usd: 0.01,
     judge_usd: 0.001,
@@ -218,7 +259,12 @@ describe('report', () => {
     ingest_ms: 4000,
     ingest_loop_delay_ms: { p50: 20, p99: 30, max: 40 },
     extract_usd: 0.05,
-    questions: [q('a', true), q('a', false), q('b', null), q('b', null, 'boom')],
+    questions: [
+      q('a', true, undefined, { sessions: [0], found: 1 }),
+      q('a', false, undefined, { sessions: [0, 2], found: 1, missing: true }),
+      q('b', null, undefined, { sessions: [3], found: 1 }),
+      q('b', null, 'boom'),
+    ],
     stopped_for_budget: false,
     total_usd: 0.094,
   };
@@ -231,7 +277,17 @@ describe('report', () => {
     expect(s.errors).toBe(1);
     expect(s.unjudged).toBe(1);
     expect(s.by_category.a).toEqual({ n: 2, correct: 1, accuracy: 0.5 });
+    expect(s.evidence).toMatchObject({ labelled: 3, all_found: 2 });
+    expect(s.evidence.by_category.a).toEqual({ labelled: 2, all_found: 1, rate: 0.5 });
+    expect(s.misses).toEqual({
+      wrong: 3,
+      retrieval_miss: 1,
+      answer_miss: 1,
+      unlabelled: 1,
+      said_missing: 1,
+    });
     expect(renderReport(s)).toContain('**Accuracy: 25.0%**');
+    expect(renderReport(s)).toContain('1 retrieval misses');
   });
 
   it('estimates a run from its sessions and questions', () => {
@@ -239,7 +295,15 @@ describe('report', () => {
       id: 'h',
       sessions: [{ id: 's', date: null, turns: [{ speaker: 'A', text: 'x'.repeat(4000) }] }],
       questions: [
-        { id: 'q', question: '?', answer: '!', category: 'c', askedAt: null, abstention: false },
+        {
+          id: 'q',
+          question: '?',
+          answer: '!',
+          category: 'c',
+          askedAt: null,
+          abstention: false,
+          evidence: [],
+        },
       ],
     };
     const e = estimateRun([h], MODELS);
