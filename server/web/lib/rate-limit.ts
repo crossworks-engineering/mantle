@@ -130,3 +130,56 @@ export function clientIp(req: Request): string {
   if (xri) return xri.trim();
   return 'unknown';
 }
+
+/**
+ * The eight groups of an IPv6 address, each without leading zeros, or null
+ * when `ip` is not one. Accepts `::` shorthand, brackets, a zone id and an
+ * embedded IPv4 tail (`::ffff:192.0.2.1`).
+ */
+function ipv6Groups(ip: string): string[] | null {
+  let s = ip
+    .trim()
+    .replace(/^\[|\]$/g, '')
+    .split('%')[0]!
+    .toLowerCase();
+  if (!s.includes(':')) return null;
+  const v4 = /(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
+  if (v4) {
+    const [a, b, c, d] = v4.slice(1).map(Number) as [number, number, number, number];
+    if ([a, b, c, d].some((n) => n > 255)) return null;
+    s = `${s.slice(0, v4.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const halves = s.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const fill = 8 - head.length - tail.length;
+  if (halves.length === 1 ? fill !== 0 : fill < 0) return null;
+  const groups = [...head, ...Array<string>(fill).fill('0'), ...tail];
+  if (!groups.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return null;
+  return groups.map((g) => g.replace(/^0+(?=.)/, ''));
+}
+
+/**
+ * The rate-limit key for an address. An IPv6 address counts by its /64: one
+ * host is handed a whole /64, so keying by the full address would give a
+ * caller 2^64 fresh buckets (client logins audit B2, B11). An IPv4 address,
+ * and an IPv4-mapped IPv6 one, counts as itself. Anything else (`unknown`)
+ * is returned unchanged.
+ */
+export function ipRateKey(ip: string): string {
+  const groups = ipv6Groups(ip);
+  if (!groups) return ip.trim();
+  if (groups.slice(0, 5).every((g) => g === '0') && groups[5] === 'ffff') {
+    const hi = parseInt(groups[6]!, 16);
+    const lo = parseInt(groups[7]!, 16);
+    return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  }
+  return `${groups.slice(0, 4).join(':')}::/64`;
+}
+
+/** The caller's rate-limit key: `clientIp(req)` through `ipRateKey`. Use it
+ *  for every per-address cap a stranger could dodge by rotating addresses. */
+export function clientIpKey(req: Request): string {
+  return ipRateKey(clientIp(req));
+}
