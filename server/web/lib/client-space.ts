@@ -49,10 +49,24 @@ export async function assertClientItem(spaceId: string, id: string): Promise<Spa
   return row;
 }
 
+/** What a client reads when a reviewer took their item over: the reason is
+ *  the member's (`with-admin`), the words are the client's (a client never
+ *  reads "admin", audit U3). */
+export const CLIENT_HELD_MESSAGE =
+  'A reviewer is working on this item. It comes back to you if they return it; if they accept it, it shows under Accepted.';
+
 /** An item of this client's that a reviewer took over: 409 `with-admin`, as
- *  for a member (the check is by login). */
-export function clientWithAdminGuard(client: ClientCaller, id: string): Promise<Response | null> {
-  return withAdminGuard(client, id);
+ *  for a member (the check is by login), in the client's words. */
+export async function clientWithAdminGuard(
+  client: ClientCaller,
+  id: string,
+): Promise<Response | null> {
+  const held = await withAdminGuard(client, id);
+  if (!held) return null;
+  return NextResponse.json(
+    { error: CLIENT_HELD_MESSAGE, reason: 'with-admin' },
+    { status: held.status },
+  );
 }
 
 /** Writes a client may make to their space per login per minute: the same

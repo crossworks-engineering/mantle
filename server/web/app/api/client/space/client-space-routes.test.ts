@@ -48,6 +48,8 @@ const h = vi.hoisted(() => ({
   /** What the comment writers throw (a SpaceItemStateError reason), if any. */
   commentRefusal: null as null | string,
   hasMore: false,
+  /** isWithAdmin: a reviewer took the item over. */
+  withAdmin: false,
 }));
 
 const row = (id: string, role: string, email: string) => ({
@@ -105,7 +107,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
   });
   return {
     ...actual,
-    isWithAdmin: rec('isWithAdmin', () => false),
+    isWithAdmin: rec('isWithAdmin', () => h.withAdmin),
     getMineRow: rec('getMineRow', spaceRow),
     getMineItem: rec('getMineItem', () => ({ row: spaceRow(), body: { type: h.kind } })),
     createMineItem: rec('createMineItem', () => spaceRow()),
@@ -193,6 +195,7 @@ beforeEach(() => {
   h.accepted = { items: [], total: 0 };
   h.commentRefusal = null;
   h.hasMore = false;
+  h.withAdmin = false;
 });
 
 type Handler = (req: Request) => Promise<Response>;
@@ -279,6 +282,20 @@ describe('client space routes: kinds', () => {
     expect(
       (await call(CLIENT, 'GET', `/api/client/space/${ITEM}`, (r) => one.GET(r, params()))).status,
     ).toBe(200);
+  });
+});
+
+describe('client space routes: an item a reviewer holds', () => {
+  it('answers 409 with-admin in the client’s words, never "admin"', async () => {
+    h.withAdmin = true;
+    const one = await import('./[id]/route');
+    const res = await call(CLIENT, 'GET', `/api/client/space/${ITEM}`, (r) => one.GET(r, params()));
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { reason: string; error: string };
+    expect(body.reason).toBe('with-admin');
+    expect(body.error).toMatch(/reviewer/);
+    expect(body.error).not.toMatch(/admin/i);
+    expect(names()).not.toContain('getMineItem');
   });
 });
 
