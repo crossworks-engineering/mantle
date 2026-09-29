@@ -72,7 +72,8 @@ const update = (dbmod as unknown as { __update: Chain }).__update;
 const insert = (dbmod as unknown as { __insert: Chain }).__insert;
 
 const poolSet = CURATION_TOOLS.find((t) => t.slug === 'model_pool_set')!;
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// The owner's own chat: since client logins C4 a missing surface is not the owner.
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'web' } };
 
 const ROUTES = [{ provider: 'openrouter', model: 'anthropic/claude-sonnet-5' }];
 const GENERATOR = [{ provider: 'openrouter', model: 'openai/gpt-image-1' }];

@@ -59,7 +59,8 @@ const benchmarks = tool('openrouter_benchmarks');
 const taskClasses = tool('openrouter_task_classes');
 const poolList = tool('model_pool_list');
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// The owner's own chat: since client logins C4 a missing surface is not the owner.
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'web' } };
 const teamCtx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'team', contactId: 'c1' } };
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;

@@ -164,7 +164,7 @@ export const content_supersede: BuiltinToolDef = {
       return {
         ok: false,
         error:
-          'content_supersede is owner-side only: ask the owner (or file a request) instead of re-weighting content directly.',
+          'content_supersede is owner-side only: ask the owner (or file a request with team_request_create or client_request_create) instead of re-weighting content directly.',
       };
     }
     const nodeId = str(input.node_id).trim();

@@ -34,7 +34,8 @@ import { supersedeNode, unsupersedeNode } from '@mantle/content';
 import { CONTENT_CURATION_TOOLS } from './builtins-nodes';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// The owner's own chat: since client logins C4 a missing surface is not the owner.
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'web' } };
 const teamCtx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'team', contactId: 'c1' } };
 const OLD = '11111111-2222-4333-8444-555555555555';
 const NEW = '22222222-2222-4333-8444-555555555555';

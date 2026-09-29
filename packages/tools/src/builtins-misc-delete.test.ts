@@ -66,7 +66,8 @@ const deleteWheres = (dbmod as unknown as { __deleteWheres: unknown[] }).__delet
 const poolRemove = CURATION_TOOLS.find((t) => t.slug === 'model_pool_remove')!;
 const formulaDel = FORMULA_TOOLS.find((t) => t.slug === 'formula_delete')!;
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// The owner's own chat: since client logins C4 a missing surface is not the owner.
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'web' } };
 const ID = '11111111-2222-4333-8444-555555555555';
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
