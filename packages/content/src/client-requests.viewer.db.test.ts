@@ -34,7 +34,9 @@ describe.skipIf(!URL)('client requests: members read clients’ submitted items 
   const client = randomUUID();
   const reader = randomUUID();
   const author = randomUUID();
-  const logins = [client, reader, author];
+  /** A member who shared and submitted, then became a client login. */
+  const turned = randomUUID();
+  const logins = [client, reader, author, turned];
   const spaceOf: Record<string, string> = {};
   const brainTeam = randomUUID();
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-creq-'));
@@ -109,10 +111,11 @@ describe.skipIf(!URL)('client requests: members read clients’ submitted items 
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${client}, ${`${tag}-c@example.invalid`}, 'x', 'client', 'Cleo Client'),
         (${reader}, ${`${tag}-r@example.invalid`}, 'x', 'member', null),
-        (${author}, ${`${tag}-a@example.invalid`}, 'x', 'member', null)`);
+        (${author}, ${`${tag}-a@example.invalid`}, 'x', 'member', null),
+        (${turned}, ${`${tag}-t@example.invalid`}, 'x', 'member', null)`);
     const rows = (await m.systemDb.execute(sqlTag`
       select id, login_id from spaces where kind = 'personal'
-        and login_id in (${client}, ${reader}, ${author})`)) as unknown as {
+        and login_id in (${client}, ${reader}, ${author}, ${turned})`)) as unknown as {
       id: string;
       login_id: string;
     }[];
@@ -153,13 +156,16 @@ describe.skipIf(!URL)('client requests: members read clients’ submitted items 
     await setState(ids.accepted, 'accepted');
     await setState(ids.draftFile, 'draft');
 
-    // A client's items with a 'team' sharing row (no route makes one): one
-    // submitted, one a draft. Neither is a team draft.
-    ids.sharedSubmitted = await page(client, `${tag} client shared submitted`);
-    await submit(client, ids.sharedSubmitted);
-    await setState(ids.sharedSubmitted, 'submitted', 'team');
-    ids.sharedDraft = await page(client, `${tag} client shared draft`);
-    await setState(ids.sharedDraft, 'draft', 'team');
+    // Items with a 'team' sharing row in a CLIENT's space. No client can
+    // share (a trigger refuses it, 0189), but a member's login can become a
+    // client's with its team-shared items in place: one submitted, one a
+    // draft. Neither is a team draft any more.
+    ids.sharedSubmitted = await page(turned, `${tag} turned shared submitted`);
+    await as(turned, () => sp.setSharing(spaceOf[turned]!, ids.sharedSubmitted, 'team'));
+    await submit(turned, ids.sharedSubmitted);
+    ids.sharedDraft = await page(turned, `${tag} turned shared draft`);
+    await as(turned, () => sp.setSharing(spaceOf[turned]!, ids.sharedDraft, 'team'));
+    await m.systemDb.execute(sqlTag`update auth.users set role = 'client' where id = ${turned}`);
 
     // A member's submitted item, shared with the team: a team draft, never
     // a client request.
@@ -188,7 +194,9 @@ describe.skipIf(!URL)('client requests: members read clients’ submitted items 
     expect([...got].sort()).toEqual([ids.page, ids.note, ids.file, ids.sharedSubmitted].sort());
     expect(res.total).toBe(4);
     for (const r of res.items) {
-      expect(r.author).toEqual({ name: 'Cleo Client', acceptedAt: null, role: 'client' });
+      // The client's display name, else "A client" (never an email).
+      const name = r.row.id === ids.sharedSubmitted ? 'A client' : 'Cleo Client';
+      expect(r.author).toEqual({ name, acceptedAt: null, role: 'client' });
       expect(r.row.reviewState).toBe('submitted');
     }
     const times = res.items.map((r) => r.row.updatedAt);
