@@ -36,9 +36,9 @@ import { firstIssue } from '@/lib/zod-issue';
  *                                         the same Idempotency-Key is the same
  *                                         turn; the key with new text, a 409.
  *
- * The agent is team-responder, and only once an admin has set it below admin:
- * members chat only with team-level agents, and the turn engine refuses an
- * admin agent for a member too. The turn runs at the agent's level (RLS), so
+ * The agent is team-responder, and only while an admin has set it to team:
+ * members chat only with team-level agents, and the turn engine refuses any
+ * other level for a member too. The turn runs at the agent's level (RLS), so
  * the agent reads only what the member's level may see. One thread per login
  * (team_messages.login_id), never in the owner's assistant stream. The login
  * IS the team member: no contact is needed (0167). Limits, per login: 6
@@ -65,7 +65,7 @@ function memberName(member: MemberCaller): string {
   return member.displayName?.trim() || member.email.split('@')[0] || 'team member';
 }
 
-/** The agent a member chats with, or null while it is still at admin. */
+/** The agent a member chats with, or null while it is not at team level. */
 async function memberAgent(member: MemberCaller) {
   const [row] = await db
     .select({ slug: agents.slug, name: agents.name, audience: agents.audience })
@@ -78,7 +78,9 @@ async function memberAgent(member: MemberCaller) {
       ),
     )
     .limit(1);
-  return row && row.audience !== 'admin' ? { slug: row.slug, name: row.name } : null;
+  // Exactly team (client logins C4, plan section 8): not admin, and not
+  // client or public either (those serve other logins).
+  return row && row.audience === 'team' ? { slug: row.slug, name: row.name } : null;
 }
 
 export async function GET(req: Request) {

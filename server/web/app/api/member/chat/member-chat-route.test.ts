@@ -21,6 +21,7 @@ const h = vi.hoisted(() => ({
   overBudget: false,
   enqueueFails: false,
   released: [] as string[],
+  audience: 'team',
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -42,7 +43,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
   const chain = {
     from: () => chain,
     where: () => chain,
-    limit: async () => [{ slug: 'team-responder', name: 'Team', audience: 'team' }],
+    limit: async () => [{ slug: 'team-responder', name: 'Team', audience: h.audience }],
   };
   return { ...actual, db: { select: () => chain } };
 });
@@ -109,6 +110,17 @@ beforeEach(() => {
   h.overBudget = false;
   h.enqueueFails = false;
   h.released = [];
+  h.audience = 'team';
+});
+
+describe('POST /api/member/chat: the agent must be at team level (client logins C4)', () => {
+  for (const audience of ['admin', 'client', 'public']) {
+    it(`team-responder at ${audience}: 409, nothing queued`, async () => {
+      h.audience = audience;
+      expect((await send('hello')).status).toBe(409);
+      expect(h.enqueued).toEqual([]);
+    });
+  }
 });
 
 describe('POST /api/member/chat idempotency', () => {
