@@ -86,6 +86,7 @@ export type {
   MemberSpaceItem,
   MemberSpaceItemBody,
   MemberSpaceItemRow,
+  MemberClientRequestItem,
   MemberSpaceItemState,
   MemberSpaceList,
   MemberSpaceSharing,

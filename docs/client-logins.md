@@ -323,3 +323,52 @@ A client chats with the brain's **client-responder** in the client portal
 - **Admins read client chats** in Team admin > Member chats (Clients
   filter), read-only, with the private placeholder rule for replies that
   quoted the client's own drafts.
+
+## 9. Client drafts, requests and comments
+
+A client writes their own pages and notes and uploads files in their own
+space (`/api/client/space*`, `/api/client/space-files`), the member space
+routes' twins. **My requests** in the portal is one list of them
+(`GET /api/client/items`): drafts, submitted, returned, with a reviewer who
+took one over, and accepted.
+
+- **Kinds.** Pages, notes and files. No drawings, no tables.
+- **Private until submitted.** There is no share route for a client, and the
+  database refuses to share a client's item with the team (0189). A client's
+  space never shows in Team drafts. Submit sends the saved version to
+  Review; Recall takes it back before an admin acts.
+- **Caps (lower than a member's).** 20 MB a file, 200 MB a client, 50 MB
+  uploaded a day, 500 items, 10 submissions a day (counted in the
+  `space_submissions` ledger, so Recall and Submit again still counts) and
+  50 waiting for review (an item a reviewer took over counts). All client
+  spaces together hold at most 5 GB. Over a cap: 409 `quota` with the
+  reason in words (a file over 20 MB: 413).
+- **Members read client requests** (decision 5 B). A client's SUBMITTED
+  item, and what renders inside it, is readable by members as a "Client
+  requests" source in their one list (`GET /api/member/client-requests`,
+  `/:id`, `/:id/bytes`), read only. A client's draft, returned or accepted
+  item is not. Row security holds it: the team role reads a client's item
+  only with the human flag on (a member's own request, never an agent) and
+  only while it is submitted (migration 0194).
+- **Review.** The same queue, with a Client badge. Accept of a client's item
+  defaults to level team; client (or public) needs the explicit tick of
+  everything that would go down with it. Return with a note shows the note
+  to the client as the Returned banner.
+- **Review talk.** On a submitted item the client and the reviewers talk in
+  its thread (`/api/client/space/:id/comments`). The client reads only the
+  reviewers' comments and their own, never a member's; a reviewer shows as
+  the brand name. The database holds this line (0194).
+- **Comments on items shared with clients** (decision 8). An item at client
+  level carries one thread that the team, admins and every client login
+  read and write (`/api/client/shared/:id/comments`,
+  `/api/member/library/:id/comments`, the owner's `/api/nodes/:id/comments`).
+  Each comment shows its author's display name. An admin's comment on an
+  item at client level joins that thread; an agent's never does. A thread
+  on a team or admin item, a Team drafts item or a public item is never
+  shown to a client. Raise the item above client and clients read none of
+  it.
+- **Client-written text cannot lower anything** (section 8), and an item
+  accepted from a client's space counts as client-written for good
+  (`space_items.author_role`, kept after the login is deleted).
+- **Cost.** No client write starts the extractor, a trigger or a worker.
+  Accept announces each moved item once, as for a member.

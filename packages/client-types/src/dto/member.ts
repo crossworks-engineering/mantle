@@ -287,6 +287,14 @@ export type MemberItemRow = {
   space: MemberSpaceItemRow | null;
 };
 
+/** GET /api/member/client-requests/:id (client logins C5, decision 5 B): a
+ *  client's SUBMITTED item, read only, with its author (the client). File
+ *  bytes: /api/member/client-requests/:id/bytes. */
+export type MemberClientRequestItem<TDoc = unknown, TTable = unknown> = MemberSpaceItem<
+  TDoc,
+  TTable
+> & { author: MemberItemAuthor };
+
 /**
  * GET /api/member/items?kind=&q=&state=&page= (brains from the item-list
  * alignment release): the member's own items, teammates' shared drafts, the

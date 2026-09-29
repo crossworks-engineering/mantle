@@ -4,6 +4,23 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.341: client drafts, requests and comments (client logins C5)
+
+- **Clients write their own pages and notes and upload files** in their own
+  space, submit them for review and recall them (`/api/client/space*`), with
+  My requests as one list (`/api/client/items`) and their accepted items
+  (`/api/client/accepted/:id`). Lower caps than members: 20 MB a file,
+  200 MB a client, 50 MB a day, 500 items, 10 submissions a day, 50
+  waiting, and 5 GB for all client spaces together.
+- **Members read clients' submitted items** as Client requests (decision
+  5 B), read only, through row security that needs a member's own request.
+- **Comment threads on items shared with clients** (decision 8): the team,
+  admins and every client login read and write them. In a client's own
+  space the client reads only the reviewers' comments and their own.
+- **An item accepted from a client counts as client-written** for the
+  lowering guard, even after the client login is deleted.
+- Migration 0194. See docs/client-logins.md section 9.
+
 ## 0.232.340: memory benchmark fixes
 
 - **Big benchmark results no longer crash the run.** With every answer's
