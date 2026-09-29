@@ -3,7 +3,7 @@ import { NextResponse } from '@/server/http-compat';
 import { ClientLoginError } from '@mantle/content';
 import { hashLoginPassword } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
-import { clientIp, clientIpKey, rateLimit, rateLimitPeek } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit, rateLimitPeek } from '@/lib/rate-limit';
 
 /**
  * Shared bits of the client login routes (client logins, Phase C2): the
