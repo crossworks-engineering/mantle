@@ -117,7 +117,8 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
         (${brainItems.client}, ${brain}, 'note', ${`${tag} client note`}, 'notes', 'client'),
         (${brainItems.pub}, ${brain}, 'note', ${`${tag} public note`}, 'notes', 'public'),
         (${acceptFile}, ${acceptBrain}, 'file', ${`${tag} plan.png`}, 'files', 'client')`);
-  });
+    // Imports the review, take-over and share modules: a loaded run needs time.
+  }, 60_000);
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${acceptBrain}`);
