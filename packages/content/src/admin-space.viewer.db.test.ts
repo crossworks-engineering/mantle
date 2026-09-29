@@ -214,21 +214,24 @@ describe.skipIf(!URL)('admin private items', () => {
     await expect(
       as(member, () => sp.saveMinePage(M, page.id, mention(secretId), { adminOfBrain: anchor })),
     ).rejects.toMatchObject({ reason: 'embed', ids: [secretId] });
-    // A disabled admin gets the member rule too.
-    await m.systemDb.execute(
-      sqlTag`update auth.users set disabled_at = now() where id = ${adminA}`,
-    );
-    try {
-      const A = spaceOf[adminA]!;
-      expect(
-        await as(adminA, () =>
-          sp.disallowedRefs(A, er.pageRefs(mention(secretId)), { adminOfBrain: anchor }),
-        ),
-      ).toEqual([secretId]);
-    } finally {
-      await m.systemDb.execute(
-        sqlTag`update auth.users set disabled_at = null where id = ${adminA}`,
+    // A disabled admin gets the member rule too. withSpace refuses to open
+    // a disabled login's space at all (audit A16), so the login is disabled
+    // while its space is open: the rule reads the row, not the session.
+    const A = spaceOf[adminA]!;
+    const setDisabled = (on: boolean) =>
+      m.systemDb.execute(
+        sqlTag`update auth.users set disabled_at = ${on ? new Date() : null} where id = ${adminA}`,
       );
+    try {
+      expect(
+        await as(adminA, async () => {
+          await setDisabled(true);
+          return sp.disallowedRefs(A, er.pageRefs(mention(secretId)), { adminOfBrain: anchor });
+        }),
+      ).toEqual([secretId]);
+      await expect(as(adminA, async () => 1)).rejects.toThrow(/disabled/);
+    } finally {
+      await setDisabled(false);
     }
   });
 
