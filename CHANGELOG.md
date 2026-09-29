@@ -4,6 +4,19 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.325: client email codes, asking again
+
+- **Asking again no longer strands the mailed code.** A browser that asks
+  for a code again ("Send a new code", a double click) keeps its request
+  id, so the code already in the inbox still works there; no second mail
+  goes out while it is open. Once that code is used, dead or expired, the
+  same browser gets a new one. Found by the jackdaw C2b build: before, the
+  second request set a new request id and the client was stuck for up to
+  10 minutes.
+- **One browser, two emails.** "Use a different email" gets a code for each
+  email, and each code redeems only with its own email. A wrong email finds
+  no code (it no longer costs another email's code a try).
+
 ## 0.232.324: client logins, phase C2b (email sign-in codes)
 
 A client who has no sign-in link can ask for a code by email, when an admin
