@@ -61,9 +61,14 @@ export const notFound = () => NextResponse.json({ error: 'Not found.' }, { statu
  * in their space any more: every member item route answers it 409
  * `with-admin` (no content, no bytes) instead of a 404, so the client can
  * say where it is. Null for anything else (the route goes on as before).
+ * The client space routes use it too (client logins C5): only the login
+ * matters.
  */
-export async function withAdminGuard(member: MemberCaller, id: string): Promise<Response | null> {
-  return (await isWithAdmin(member.loginId, id)) ? spaceStateResponse(withAdminError()) : null;
+export async function withAdminGuard(
+  caller: { loginId: string },
+  id: string,
+): Promise<Response | null> {
+  return (await isWithAdmin(caller.loginId, id)) ? spaceStateResponse(withAdminError()) : null;
 }
 
 /** A stale draft etag, in the owner routes' shape. */

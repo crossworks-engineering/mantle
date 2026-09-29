@@ -24,8 +24,9 @@ import { COMMENT_BODY_MAX } from './node-comments';
 import { SpaceItemStateError, requireSpace, spaceNotFound } from './member-space-core';
 import { getMineRow, getTeamDraftRow } from './member-space';
 import { notifySpaceItemChanged } from './member-space-events';
+import { inClientSpace } from './space-limits';
 
-/** Who writes: the member login, with its display-name snapshot. */
+/** Who writes: the member (or client) login, with its display-name snapshot. */
 export type SpaceCommentAuthor = { loginId: string; name: string };
 
 function cleanBody(body: string): string {
@@ -60,7 +61,10 @@ export async function listMineComments(
 }
 
 /** Comment on an own item: open while it is shared with the team or
- *  submitted for review (409 `not-shared` otherwise). */
+ *  submitted for review (409 `not-shared` otherwise). In a CLIENT's space
+ *  (client logins C5) the comment is the client's own review talk: author
+ *  kind `client`, scope `review` (a client's item is never team-shared, and
+ *  row security refuses any other kind or scope there, 0194). */
 export async function addMineComment(
   spaceId: string,
   anchorId: string,
@@ -77,17 +81,19 @@ export async function addMineComment(
       'Share this item with the team or submit it before commenting.',
     );
   }
+  const client = inClientSpace();
   const [c] = await db
     .insert(nodeComments)
     .values({
       ownerId: anchorId,
       nodeId: id,
-      authorKind: 'member',
+      authorKind: client ? 'client' : 'member',
       loginId: author.loginId,
-      authorName: author.name.trim().slice(0, 200) || 'Member',
+      authorName: author.name.trim().slice(0, 200) || (client ? 'Client' : 'Member'),
       body: cleanBody(body),
-      // Private and submitted: review talk, never the team's (S6).
-      threadScope: row.sharing === 'team' ? 'team' : 'review',
+      // Private and submitted: review talk, never the team's (S6). A
+      // client's comment is always review talk.
+      threadScope: !client && row.sharing === 'team' ? 'team' : 'review',
     })
     .returning();
   if (!c) throw new Error('addMineComment: insert returned no row');

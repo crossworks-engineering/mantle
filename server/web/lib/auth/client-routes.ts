@@ -22,6 +22,28 @@ export const CLIENT_ROUTES: readonly string[] = [
   // The client's own chat with the client-responder (Phase C4).
   'GET /api/client/chat',
   'POST /api/client/chat',
+  // The client's own space (Phase C5): pages and notes they write, files
+  // they upload; private until submitted. No share, no team drafts.
+  'GET /api/client/space',
+  'POST /api/client/space',
+  'GET /api/client/space/:id',
+  'PATCH /api/client/space/:id',
+  'DELETE /api/client/space/:id',
+  'PUT /api/client/space/:id/draft',
+  'POST /api/client/space/:id/save',
+  'POST /api/client/space/:id/submit',
+  'POST /api/client/space/:id/recall',
+  'POST /api/client/space-files',
+  // Own file bytes (session or a client ?at= token).
+  'GET /api/client/space/:id/bytes',
+  // The review talk on the client's own submitted item.
+  'GET /api/client/space/:id/comments',
+  'POST /api/client/space/:id/comments',
+  'DELETE /api/client/space/:id/comments/:commentId',
+  // My requests: own, with a reviewer, and accepted, in one list.
+  'GET /api/client/items',
+  // What the client wrote and an admin accepted, as accepted.
+  'GET /api/client/accepted/:id',
 ];
 
 export function isClientRoute(method: string, pattern: string): boolean {

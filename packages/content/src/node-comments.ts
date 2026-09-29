@@ -44,7 +44,9 @@ export function toNodeCommentDto(row: NodeCommentDbRow, viewer: CommentViewer): 
     (row.authorKind === 'owner' && !!viewer.loginId && row.loginId === viewer.loginId) ||
     (row.authorKind === 'member' && !!viewer.contactId && row.contactId === viewer.contactId) ||
     // A member LOGIN (member logins Phase 2) writes as itself, no contact.
-    (row.authorKind === 'member' && !!viewer.loginId && row.loginId === viewer.loginId);
+    (row.authorKind === 'member' && !!viewer.loginId && row.loginId === viewer.loginId) ||
+    // A CLIENT login (client logins C5) writes as itself too.
+    (row.authorKind === 'client' && !!viewer.loginId && row.loginId === viewer.loginId);
   return {
     id: row.id,
     nodeId: row.nodeId,

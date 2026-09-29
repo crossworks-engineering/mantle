@@ -148,6 +148,9 @@ function titleFilter(q: string | undefined) {
 
 export type ListSpaceOpts = {
   kind?: SpaceItemKind;
+  /** Without `kind`: only these kinds (a CLIENT's space lists pages, notes
+   *  and files, client logins C5). Default: every personal kind. */
+  kinds?: readonly SpaceItemKind[];
   q?: string;
   /** Only items in these review states (audit U10: the member home's
    *  "Returned" and "Waiting for review" lists read the whole space, not
@@ -199,6 +202,13 @@ function sharingFilter(sharing?: SpaceSharing) {
   return sharing === 'private' ? or(isNull(spaceItems.sharing), listed) : listed;
 }
 
+/** One kind, else the listed kinds, else every personal kind. */
+function kindFilter(opts: Pick<ListSpaceOpts, 'kind' | 'kinds'>) {
+  return opts.kind
+    ? eq(nodes.type, opts.kind)
+    : inArray(nodes.type, [...(opts.kinds ?? SPACE_ITEM_KINDS)]);
+}
+
 function page(opts: ListSpaceOpts) {
   return {
     limit: Math.min(Math.max(opts.limit ?? 50, 1), 200),
@@ -217,7 +227,7 @@ export async function listMine(
   const { limit, offset } = page(opts);
   const where = and(
     eq(nodes.ownerId, spaceId),
-    opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...SPACE_ITEM_KINDS]),
+    kindFilter(opts),
     titleFilter(opts.q),
     reviewFilter(opts.reviewStates),
     sharingFilter(opts.sharing),
@@ -256,7 +266,7 @@ export async function listMine(
  */
 export async function listWithAdmin(
   loginId: string,
-  opts: { kind?: SpaceItemKind; q?: string } = {},
+  opts: Pick<ListSpaceOpts, 'kind' | 'kinds' | 'q'> = {},
 ): Promise<SpaceItemRow[]> {
   const rows = await asSystem(() =>
     db
@@ -275,7 +285,7 @@ export async function listWithAdmin(
           eq(spaceItems.authorLoginId, loginId),
           eq(spaceItems.reviewState, 'taken'),
           eq(spaces.kind, 'personal'),
-          opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...SPACE_ITEM_KINDS]),
+          kindFilter(opts),
           titleFilter(opts.q),
         ),
       )

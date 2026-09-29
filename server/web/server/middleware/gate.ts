@@ -65,7 +65,11 @@ function isAssetPath(path: string): boolean {
     // at client level. The routes call getClientForAsset and read at the
     // client level; the client shell mints the token with `act` = the login.
     path.startsWith('/api/client/files/') ||
-    /^\/api\/client\/draws\/[^/]+\/svg$/.test(path)
+    /^\/api\/client\/draws\/[^/]+\/svg$/.test(path) ||
+    // A client's own private file (client logins C5). The route calls
+    // getClientForAsset and reads the space of the client the token's `act`
+    // names, so the token opens only that client's own items.
+    /^\/api\/client\/space\/[^/]+\/bytes$/.test(path)
   );
 }
 
