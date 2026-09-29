@@ -39,7 +39,9 @@ export type MemberLibraryRow = {
   title: string;
   icon: string | null;
   summary: string | null;
-  audience: AccessLevel;
+  /** A member's Library holds team and client items (client logins,
+   *  decision 6): 'client' = a client login reads it too (the Client badge). */
+  audience: 'team' | 'client';
   updatedAt: string;
   /** A member wrote it and an admin accepted it (the member-authored badge).
    *  Absent from brains before 0.232.285. */

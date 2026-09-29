@@ -6,17 +6,18 @@
  * published content only (draft columns are never granted). A row this code
  * cannot see is simply absent, so a member can never reach an admin item by id.
  *
- * The LIST is narrower than what row security allows: it shows only items set
- * to exactly the reader's level. An open link makes an item client or public
- * (the agent emailing a page with a link does that), and listing every such
- * item to every member was a surprise nobody chose. Client and public items
- * stay readable by id (a link inside a team page opens them), and the team
- * agent can still read them; only the listing is narrowed. Jason, 2026-09-26.
+ * The Library is narrower than what row security allows (client logins,
+ * decision 6): a member (team level) lists and opens team and client items,
+ * each row carrying its `audience` so the app can badge a client item; a
+ * client lists and opens client items only. Public items are not in anyone's
+ * Library: an open link makes an item public (0161), and listing every item
+ * ever link-shared with an outsider was a surprise nobody chose. They stay
+ * reachable by their own open link, and the team agent can still read them.
  *
  * Read-only in Phase 1. Writing and personal spaces come in Phase 2.
  */
 import { and, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
-import { asViewerLevel, currentViewerLevel, db, nodes, type ViewerLevel } from '@mantle/db';
+import { currentViewerLevel, db, nodes, type ViewerLevel } from '@mantle/db';
 import { getNote } from './notes';
 import { getPage } from './pages/read';
 import { getTable } from './tables/read';
@@ -35,15 +36,41 @@ export {
   type MemberItemKind as LibraryKind,
 } from '@mantle/client-types/member-kinds';
 
+/** The levels an item in a Library can have (see LIBRARY_LEVELS). */
+export type LibraryAudience = 'team' | 'client';
+
 export type LibraryRow = {
   id: string;
   type: LibraryKind;
   title: string;
   icon: string | null;
   summary: string | null;
-  audience: ViewerLevel;
+  /** 'client' = a client login reads it too (the app's Client badge). */
+  audience: LibraryAudience;
   updatedAt: string;
 };
+
+/** The item levels each reader's Library lists and opens (decision 6). Every
+ *  level is named; a level not here (or an empty list) lists nothing, so a
+ *  new level fails closed until someone decides what its Library holds. */
+const LIBRARY_LEVELS: Readonly<Record<ViewerLevel, readonly LibraryAudience[]>> = {
+  admin: [],
+  team: ['team', 'client'],
+  client: ['client'],
+  public: [],
+};
+
+/** The item levels the current reader's Library holds. */
+function libraryLevels(): readonly LibraryAudience[] {
+  const level = currentViewerLevel();
+  return Object.hasOwn(LIBRARY_LEVELS, level) ? LIBRARY_LEVELS[level] : [];
+}
+
+/** The Library's level rule as SQL: false when the reader's Library is empty. */
+function levelWhere() {
+  const levels = libraryLevels();
+  return levels.length ? inArray(nodes.audience, [...levels]) : sql`false`;
+}
 
 /** Refuse to run at admin: this module exists to be read at a member's level,
  *  and at admin it would list the whole brain. */
@@ -61,7 +88,9 @@ function rowOf(n: typeof nodes.$inferSelect): LibraryRow {
     title: n.title,
     icon: typeof d.icon === 'string' && d.icon.trim() ? d.icon : null,
     summary: typeof d.summary === 'string' ? d.summary : null,
-    audience: asViewerLevel(n.audience),
+    // levelWhere admits only these two; anything else would be a bug, and
+    // reads as team (the badge a client item would lose, never gain).
+    audience: n.audience === 'client' ? 'client' : 'team',
     updatedAt: n.updatedAt.toISOString(),
   };
 }
@@ -76,21 +105,21 @@ function rowOf(n: typeof nodes.$inferSelect): LibraryRow {
  */
 const notExtractedFragment = sql`NOT (${nodes.type} = 'file' AND ${nodes.data} ? 'sourceFileId')`;
 
-/** What the Library lists: this brain's items of a Library kind set to
- *  exactly the reader's level, without extracted image fragments. */
+/** What the Library lists: this brain's items of a Library kind at a level
+ *  the reader's Library holds, without extracted image fragments. */
 function libraryWhere(anchorId: string, opts: { kind?: LibraryKind; q?: string } = {}) {
   const q = opts.q?.trim();
   return and(
     eq(nodes.ownerId, anchorId),
-    eq(nodes.audience, currentViewerLevel()),
+    levelWhere(),
     opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...LIBRARY_KINDS]),
     notExtractedFragment,
     q ? ilike(nodes.title, `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`) : undefined,
   );
 }
 
-/** The Library, newest first: the items set to exactly the reader's level,
- *  without extracted image fragments. `q` matches the title. */
+/** The Library, newest first: the items at a level the reader's Library
+ *  holds, without extracted image fragments. `q` matches the title. */
 export async function listLibrary(
   anchorId: string,
   opts: { kind?: LibraryKind; q?: string; limit?: number; offset?: number } = {},
@@ -135,9 +164,10 @@ export type LibraryItem =
       sizeBytes: number | null;
     });
 
-/** One Library item with its readable body, or null when the member's level
- *  cannot see it (or it is not a Library kind). `tabId` picks a table's tab
- *  (default the first); the table's `tabs` list names them all. */
+/** One Library item with its readable body, or null when the reader's level
+ *  cannot see it, its level is not one the reader's Library holds (the same
+ *  rule as the list), or it is not a Library kind. `tabId` picks a table's
+ *  tab (default the first); the table's `tabs` list names them all. */
 export async function getLibraryItem(
   anchorId: string,
   id: string,
@@ -147,7 +177,7 @@ export async function getLibraryItem(
   const [n] = await db
     .select()
     .from(nodes)
-    .where(and(eq(nodes.id, id), eq(nodes.ownerId, anchorId)))
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, anchorId), levelWhere()))
     .limit(1);
   if (!n || !isLibraryKind(n.type)) return null;
   const base = rowOf(n);
