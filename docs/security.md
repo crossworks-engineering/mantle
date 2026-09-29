@@ -19,10 +19,12 @@
   and no phone-home with content.
 - **What leaves the box:** prompts + retrieved context sent to the **model
   providers you configure** (or nothing, with local models), outbound email
-  you explicitly send, Telegram messages on a paired bot, tool calls to any
-  **MCP connector you explicitly connect** (model-authored arguments go to
-  that external server; results come back fenced as untrusted —
-  [`mcp-connectors.md`](./mcp-connectors.md)), HTTP calls of any **OpenAPI
+  you explicitly send, the one-time sign-in codes the brain mails to client
+  logins once an admin picks a sign-in sender
+  ([client-logins.md](./client-logins.md)), Telegram messages on a paired
+  bot, tool calls to any **MCP connector you explicitly connect**
+  (model-authored arguments go to that external server; results come back
+  fenced as untrusted; see [`mcp-connectors.md`](./mcp-connectors.md)), HTTP calls of any **OpenAPI
   connector you explicitly connect** (compiled http tools calling the one
   base URL you set; see [`openapi-connectors.md`](./openapi-connectors.md)),
   and update checks (version metadata only). That's the list.
@@ -30,7 +32,8 @@
   and tool group carries a level (admin > team > client > public), and
   Postgres row level security enforces it: a member login and a team-level
   agent run on a limited database role and read only team-level items (plus
-  the member's own personal space), whatever the code asks for
+  the member's own personal space), whatever the code asks for, and a
+  client login reads client-level items only
   ([access-levels.md](./access-levels.md)). Admins read everything. So a
   level separates what members may read from what only admins may; groups
   that must not share admins at all still get **separate brains**, one per
@@ -41,12 +44,15 @@
 
 ## 2. Identity & credentials
 
-| Credential                                            | Who holds it                       | Scope                                                                                                                                            | Revocation                                                                                                 |
-| ----------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| Owner/admin login + session cookie                    | you and named admins               | the whole app                                                                                                                                    | change password or sign out everywhere (ends every session of the login); disable or delete the admin user |
-| **Member login** + session cookie                     | a person you invited (role member) | the member routes only (`MEMBER_ROUTES`): the Library, their chat with the team agent, their personal space, member apps; read at the team level | disable, demote or delete the login, instant, mid-session                                                  |
-| **Invite code** (16 chars, SHA-256 at rest, 72 hours) | the person an admin invited        | one redeem: set a password and become that member login                                                                                          | revoke the invite; it expires                                                                              |
-| Share token (~128-bit CSPRNG in the URL)              | anyone with the link               | exactly one shared item (or one public app)                                                                                                      | turn the share off                                                                                         |
+| Credential                                                    | Who holds it                                         | Scope                                                                                                                                            | Revocation                                                                                                 |
+| ------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| Owner/admin login + session cookie                            | you and named admins                                 | the whole app                                                                                                                                    | change password or sign out everywhere (ends every session of the login); disable or delete the admin user |
+| **Member login** + session cookie                             | a person you invited (role member)                   | the member routes only (`MEMBER_ROUTES`): the Library, their chat with the team agent, their personal space, member apps; read at the team level | disable, demote or delete the login, instant, mid-session                                                  |
+| **Invite code** (16 chars, SHA-256 at rest, 72 hours)         | the person an admin invited                          | one redeem: set a password and become that member login                                                                                          | revoke the invite; it expires                                                                              |
+| **Client login** + session cookie (30 days)                   | a person at the brain's client company (role client) | the client routes only (`CLIENT_ROUTES`): "Shared with you" and the bytes of client files and drawings; read at the client level                 | sign out (ends every session of the login), End sessions, disable or delete the login                      |
+| **Client sign-in link** (16 chars, SHA-256 at rest, 72 hours) | the client an admin issued it to                     | one sign-in as that client login, with the login's email typed as a check                                                                        | revoke it, issue a new one, End sessions or disable the login; it expires                                  |
+| **Client email code** (8 digits, HMAC at rest, 10 minutes)    | the client who asked, in that browser                | one sign-in as that client login, from the browser that asked; 5 wrong tries                                                                     | End sessions or disable the login; it expires                                                              |
+| Share token (~128-bit CSPRNG in the URL)                      | anyone with the link                                 | exactly one shared item (or one public app)                                                                                                      | turn the share off                                                                                         |
 
 Notes that matter to a reviewer:
 
@@ -67,10 +73,11 @@ Notes that matter to a reviewer:
   headers) and per-brain on failed codes only, so a few addresses cannot
   lock real invitees out.
 - **Sessions can be ended (migration 0181).** The session cookie is
-  stateless (one year), so it carries the login's `session_epoch`, signed,
-  and every request compares it with the row; so does the 2-hour `?at=`
-  asset token. A password change, an admin password reset, disable (and
-  enable again), a role change, and sign out everywhere
+  stateless (one year; 30 days for a client login), so it carries the
+  login's `session_epoch`, signed, and every request compares it with the
+  row; so does the `?at=` asset token (2 hours; 10 minutes for a client).
+  A password change, an admin password reset, disable (and enable again),
+  a role change, and sign out everywhere
   (`POST /api/auth/logout` `{ "everywhere": true }`, or an admin's
   `PATCH /api/users/:id` `{ "signOut": true }`) bump it and revoke the
   login's bearers: every copied cookie and token dies on its next request.
@@ -81,6 +88,33 @@ Notes that matter to a reviewer:
   bearer refresh claims the old row with one conditional `UPDATE`, so two
   requests at once cannot both win. `/api/oauth/authorize` answers a
   non-uuid `client_id` as an unknown client, not a 500.
+- **Client sign-in** ([client-logins.md](./client-logins.md)). A client
+  login has no password. A sign-in link's code is stored as its SHA-256,
+  shown to the admin once, and works once within 72 hours. An emailed code
+  is stored as HMAC-SHA256 of the browser's request id and the code, keyed
+  from `SESSION_SECRET`, so a copy of the database alone recovers no code;
+  it works once, within 10 minutes, in the browser that asked. Every
+  failure is one 401, the code request answers the same for every email,
+  and the caps count per address (an IPv6 caller by its /64) with no
+  brain-wide failure lockout. A client's plain sign-out ends all its
+  sessions. Disabling a client, or ending its sessions, revokes its open
+  links and codes in the same transaction.
+- **Login CSRF guard on the auth POSTs** (client logins audit B15). The
+  JSON `/api/auth` POSTs that set or use the session cookie (login, signup,
+  invite/accept, change-password, client-link, client-code,
+  client-code/verify) refuse a cross-site browser request (403
+  `cross-site`) and a body not declared as JSON (415 `not-json`). A
+  cross-site HTML form can send neither JSON nor our `Origin`. Logout checks
+  the origin only; the bearer routes, which set no cookie, are untouched
+  (`server/web/lib/auth/preflight.ts`).
+- **Sign-in codes stay out of the brain.** Mail sync skips a client code
+  mail (a marker in its Message-ID, its `X-Mantle-Client-Code` header) and
+  any reply or forward of one (the marker in In-Reply-To or References),
+  before anything is stored; choosing the sign-in sender also leaves its
+  Sent folders out of sync. A sign-in link code (`/client-signin` or
+  `/invite`, in the query or the fragment) in an ingested mail's subject,
+  snippet or body is replaced with `[redacted]`. The Caddy access log
+  redacts a `code` query parameter and drops the Referer header.
 - **No account oracle on the password login:** an unknown email is checked
   against a dummy bcrypt hash of the same cost, so the answer takes as long
   as a wrong password.
@@ -118,6 +152,7 @@ complete list of ways that surface can change the brain.
 | `/s/<token>` shared page/note/task/event/file | link token                                                       | that one item + its own embedded assets only                                                                                      | none                                                                                                                                                                                                                 | view count                        |
 | `/s/<token>` **public app**                   | link token                                                       | the app's own SQLite, read-only                                                                                                   | none (no brain tools, no DB writes)                                                                                                                                                                                  | app access log                    |
 | **Member routes** (`/api/member/*`)           | member login                                                     | team-level items (row security on the team role), their own personal space, member apps; the team agent via their own chat thread | their own personal space (items, files, comments on shared items), submit / recall for review, team-level apps (the app's SQLite + its declared built-in tools), one wrapped tool that files a task for human review | access log + full per-turn traces |
+| **Client routes** (`/api/client/*`)           | client login (a link or an emailed code)                         | client-level items only (row security on the client role), with every reference to an item it cannot read hidden; no summary      | none                                                                                                                                                                                                                 | access log                        |
 | Telegram                                      | explicit bot pairing                                             | owner-level assistant (this is _your_ channel, not a team one)                                                                    | assistant tools per its grants                                                                                                                                                                                       | traces                            |
 | MCP (Claude Desktop etc.)                     | SSH/exec into the container, operator-only today                 | owner-level tools                                                                                                                 | owner-level tools                                                                                                                                                                                                    | traces                            |
 | MCP connectors (outbound)                     | owner connects a server explicitly; key/OAuth creds vault-sealed | the external server sees only the arguments of calls to ITS tools                                                                 | agents granted the connector's `mcp-*` group call the remote tools; results return fenced as untrusted                                                                                                               | traces                            |

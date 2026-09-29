@@ -5,7 +5,8 @@
 > limited login role, not by a check in each route or tool. It is live on
 > every box: an agent below admin, every member login (team) and every
 > client login (client) read through it. The owner and admin-level agents
-> read everything.
+> read everything. How an admin lets a client in, and what a client reads:
+> [client-logins.md](./client-logins.md).
 
 ## 1. The model
 
@@ -361,10 +362,11 @@ outside a login reaches a team item.
   `access_set` to raise it.
 - **What members and clients list.** Client and public items are readable
   by the team role, so the team agent can read them. The member Library
-  lists and opens team and client items, each row with its level (client
-  logins decision 6, C2: members see what clients see); a client lists
-  client items only. Public items are in nobody's Library: 0161 made every
-  link-shared item public, so they stay reachable by their own open link
+  lists team and client items, each row with its level (client logins
+  decision 6, C2: members see what clients see); a client lists and opens
+  client items only. Public items are in nobody's Library list: 0161 made
+  every link-shared item public. A member still opens a public item by id
+  (anyone with its link can read it), and a client never does
   (docs/member-logins.md section 3).
 - **Admin-only kinds** (tasks, events, …) stay admin whatever link they
   carry. Setting one to admin removes an old link.

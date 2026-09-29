@@ -5,6 +5,8 @@
 > always on (Phase 6 removed the `MANTLE_MEMBERS` flag).
 > What a member may read is decided by Postgres row security at the team level
 > ([access-levels.md](./access-levels.md)), never by a check in each route.
+> Client logins (a person at the brain's one client company) have their own
+> operator guide: [client-logins.md](./client-logins.md).
 
 ## 1. The model
 
@@ -108,9 +110,10 @@
   admin, a member or a client (a person at the brain's one client company;
   client logins are built in phases: the CHECK admits client from Phase
   C1's migration, and an admin makes one with a sign-in link from Phase
-  C2). The session code names each role (`resolvedFor`
-  in lib/auth/session.ts is a switch with `default: null`): a role it does
-  not know is no login at all, never an admin. Every admin gate takes an
+  C2; the operator guide is [client-logins.md](./client-logins.md)). The
+  session code names each role (`resolvedFor` in lib/auth/session.ts is a
+  switch with `default: null`): a role it does not know is no login
+  at all, never an admin. Every admin gate takes an
   admin and nothing else, and every member gate a member: a client gets 403
   `client-login` from both. Password sign-in (`/api/auth/login`, the
   mobile and bearer logins), `POST /api/auth/change-password`, a
@@ -150,15 +153,17 @@
 | `GET /api/member/chat`          | The member's own thread with the team-level agent                    |
 | `POST /api/member/chat`         | Send a message; the reply lands in the thread                        |
 
-The Library LISTS items set to Team or Client, each row with its level
+The Library LISTS team and client items only, each row with its level
 (client logins decision 6, C2: members see what clients see; the app marks a
 client item with a Client badge). Row security lets the team role read
 public-level items too, and the team agent reads them. But an open link
 makes an item public, often as a side effect (the agent emailing a page with
 a link), so listing every such item to every member is not something an
-owner chose: public items stay out of the Library and are reached by their
-own link. To list an item to members, set it to Team (or Client, when
-clients should read it too).
+owner chose: public items stay out of the Library list. A member still
+OPENS a public item by id (`GET /api/member/library/:id`): anyone with its
+link can read it, so hiding it from staff helped nobody. It opens without a
+Client badge (a client does not read it). To list an item to members, set
+it to Team (or Client, when clients should read it too).
 
 - **Chat** happens in the owner app's assistant dock (jackdaw v0.6.146+),
   with its three shapes (side column, movable window, full display): for a
@@ -182,7 +187,10 @@ clients should read it too).
   stripped. A retry with the same `Idempotency-Key` is the same turn, counted
   once; the same key with different text is a 409. The admin reads member chats in `/team-admin` > Member
   chats (`GET /api/team-admin/member-chats`) and with the `team_chat_list` /
-  `team_chat_read` tools (`loginId`). A login invited from a team contact
+  `team_chat_read` tools (`loginId`). The roster names each login's role:
+  every member login, and a client login that has a chat thread, listed
+  with role client, never as a team member (it is never shown active
+  there). A login invited from a team contact
   also shows that contact's old portal chat there, apart (section 9,
   "History"); it never enters the member's own thread.
 - **Drawing images.** A saved SVG carries its images' bytes inline, so the
@@ -616,8 +624,10 @@ item out of Mine, but its `space_items` row stays and names the author, so:
   It refuses to run inside a viewer scope.
 - **The member-authored badge.** The Library (list and item) and the admin's
   Access panel (`GET /api/access/nodes/:id`) carry `author: { name,
-acceptedAt }` on an accepted item: the login's display name, "A member"
-  without one (never the email), "Removed member" once the login is deleted.
+acceptedAt, role }` on an accepted item: the login's display name, "A
+  member" without one (never the email), "Removed member" once the login is
+  deleted. `role` names the author's role, and an item a client wrote shows
+  "A client" without a display name, never "A member".
   An admin's own item has no author (section 10).
 
 ## 7. Apps for members (Phase 4b)
@@ -774,10 +784,14 @@ is a member login. Nobody hands a password around. The table is
   | `DELETE /api/team-admin/invites/:id` | Revoke an invite not yet redeemed; 404 otherwise                                                                                                                                                                         |
 
   `MemberInviteCreated` is `{ invite, code, linkPath }`; `linkPath` is the
-  client-app path `/invite?code=…`, which the client prefixes with its own
-  origin. The brain does not email it: copying the link is the way (an
-  invite email would need the client's origin and a connected mail account,
-  and the brain has neither for certain).
+  client-app path `/invite#code=…`, which the client prefixes with its own
+  origin. The code rides in the fragment, which a browser never sends to a
+  server, so it lands in no access log and no Referer header (client logins
+  audit B12). Links issued before carry `/invite?code=…` and still work: the
+  app reads the fragment first, then the query. The brain does not email
+  it: copying the link is the way (an invite email would need the client's
+  origin and a connected mail account, and the brain has neither for
+  certain).
 
 - **Public routes** (under `/api/auth`, a public path; no session):
 
@@ -984,16 +998,17 @@ is a member login. Nobody hands a password around. The table is
   shapes, with the one-cycle fields gone), the share
   tool tests and the auth sweep (the deleted routes are not routed).
 
-**In the client.** `/invite` drops `?code=` from the address once read. A
-password over 1024 characters is reported as too long. A contact whose
-invite was accepted shows "Has a member login" instead of "Invite as
-member". Team admin > Requests shows Reply and "View their chat" for a
-request with a login or a contact (`TeamRequest.loginId`); a login's chat
-link opens Member chats for that login. "Sign out everywhere" sits in the
-account menu (admins and members) and on a login's Devices card in
-Settings > Users. jackdaw CI runs the member e2e on a mock brain
-(`pnpm e2e:member`) and a real-brain `member-smoke.spec.ts` (invite, redeem,
-upload into Mine, load the image by `?at=`).
+**In the client.** `/invite` drops the code (`#code=` or an old `?code=`)
+from the address as soon as it is read. A password over 1024 characters is
+reported as too long. A contact whose invite was accepted shows "Has a
+member login" instead of "Invite as member". Team admin > Requests shows
+Reply and "View their chat" for a request with a login or a contact
+(`TeamRequest.loginId`); a login's chat link opens Member chats for that
+login. "Sign out everywhere" sits in the account menu (admins and members)
+and on a login's Devices card in Settings > Users. jackdaw CI runs the
+member e2e on a mock brain (`pnpm e2e:member`) and a real-brain
+`member-smoke.spec.ts` (invite, redeem, upload into Mine, load the image by
+`?at=`).
 
 ## 10. Admin private items (Phase 7)
 

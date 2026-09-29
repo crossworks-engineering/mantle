@@ -344,6 +344,45 @@ What admins see change:
 After this roll the box has the rollback floor below: never below
 v0.232.318 once a client login exists.
 
+## Rolling to the release after v0.232.331 (client logins audit fixes)
+
+An ordinary roll through the updater (`scripts/roll.sh`). What to know:
+
+- **Migration 0193 is cheap.** Two nullable columns on
+  `client_signin_codes` (`sent_at`, `send_error`) and two small new tables
+  (`client_signin_code_skips`, `client_signin_sender_folders`). Nothing is
+  rewritten; it keeps the 30 s lock timeout of the migrations before it.
+- **Emailed codes open at the deploy stop working.** A code is stored as an
+  HMAC now (keyed from `SESSION_SECRET`), and a code stored before is not,
+  so it no longer matches. A client who asked just before the roll asks
+  again. An old open code still holds back a new one for the same email and
+  address until it expires, 10 minutes at most. Sign-in links are not
+  affected.
+- **New sign-in links and invites carry `#code=`.** The owner UI must be
+  the paired jackdaw release that reads the code from the fragment: the
+  release's `client-pair.tag` must name it (v0.6.174 reads only `?code=`
+  and opens a `#code=` link with no code). The updater rolls the client to
+  the pair; a manual roll must too (step 3b). Links issued before carry
+  `?code=` and keep working.
+- **The Caddyfile changed**: the access log redacts sign-in codes and drops
+  the Referer header, and `/client-signin` and `/invite` are served with
+  `Referrer-Policy: no-referrer`. The shapes did not change. The updater
+  refreshes the Caddyfile and recreates caddy with the roll, unless the
+  box's Caddyfile has local edits or no baseline (drift: `update.log` says
+  `CADDYFILE NOT REFRESHED`, and `pnpm status` shows it). Then replace it by
+  hand: move the box's own routes into `infra/caddy/conf.d/`, copy the
+  release's `infra/caddy/Caddyfile` over it (or run
+  `sudo sh scripts/compose-adopt.sh --apply` in the stack dir), and
+  `docker compose up -d --no-deps --force-recreate caddy`.
+
+- **A sign-in sender chosen before keeps working**, and is not checked
+  again for a Sent folder. The folders that choice left out of mail sync
+  were not recorded (the record starts with 0193), so choosing None or
+  another sender later does not put them back: take them off the account's
+  excluded folders by hand if they should sync again.
+
+The operator guide: [client-logins.md](./client-logins.md).
+
 ## Rollback
 
 ```bash

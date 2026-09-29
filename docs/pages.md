@@ -108,6 +108,27 @@ durable; commits make indexing deliberate. A 30-minute editing session is now
   and its summary reflects, what's _inside_ its images/docs, not just their
   filenames. A referenced file whose own extraction hasn't landed yet is
   skipped and picked up on the next commit (no reactive re-extract).
+- **Client and public pages index only what their level reads** (client
+  logins, audit B1; `packages/content/src/pages/level-text.ts`). `doc_text`
+  is what the extractor summarises, chunks and embeds and what search
+  matches, so for a page at client or public it holds only what a reader at
+  that level may read. An embedded file or drawing folds its text in only
+  when the page's level reads it. A mention, a link or a child page card of
+  an item the level cannot read is written as "Private item"; a readable one
+  carries its item's current title. A team or admin page is unchanged: the
+  whole doc and every embed. The filter is the client redactor
+  ([client-logins.md](./client-logins.md) section 5), with the page's level
+  deciding what is readable.
+- **A level change re-folds `doc_text` by SQL only.** When a level moves
+  (the page's own, an embed that follows it down, a link that makes it
+  public, an Accept), `refoldPageTexts` recomputes the text of that page and
+  of every client or public page that names the item. It writes `doc_text`
+  and nothing else: no extraction, no summary, no chunks, no embedding, no
+  version (cost safety: a level change never starts model work). The
+  summary and chunks catch up at the page's next commit. So client chat
+  (client logins C4) must re-chunk the client-level items before it
+  searches their chunks: a chunk made before this rule, or before a level
+  change, can hold text the level may not read.
 
 ---
 
