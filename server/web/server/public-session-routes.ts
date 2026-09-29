@@ -76,7 +76,9 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     expect: { member: { status: 400 }, client: refused('client-login'), unknown: stranger },
   },
   {
-    // Every role signs out the same way; a stranger just gets a cleared cookie.
+    // Every role signs out; a client's sign-out also ends its sessions (audit
+    // B23; the sweeps stand the epoch bump in). A stranger just gets a
+    // cleared cookie.
     key: 'POST /api/auth/logout',
     path: '/api/auth/logout',
     init: json({}),

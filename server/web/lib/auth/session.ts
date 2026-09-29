@@ -589,15 +589,12 @@ export async function getClientForAsset(req: Request): Promise<ClientCaller | Ne
 }
 
 /** Is this client login still allowed in? For work that outlives the request
- *  (a queued client turn, Phase C4): the row is re-read. */
-export async function clientLoginActive(loginId: string, epoch?: number): Promise<boolean> {
+ *  (a queued client turn, Phase C4): the row is re-read, and the session
+ *  epoch the work was started under is REQUIRED (audit B24): an admin's End
+ *  sessions, or the client's sign-out, must stop the work too. */
+export async function clientLoginActive(loginId: string, epoch: number): Promise<boolean> {
   const row = await loadLoginRow(loginId);
-  return (
-    !!row &&
-    row.role === 'client' &&
-    loginUsable(row) &&
-    (epoch === undefined || row.sessionEpoch === epoch)
-  );
+  return !!row && row.role === 'client' && loginUsable(row) && row.sessionEpoch === epoch;
 }
 
 /** The 403 a gate answers a login of the wrong role with. The reason names
