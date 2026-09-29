@@ -109,8 +109,14 @@ import { PAGES_ROOT_LABEL } from './pages/shared';
 import { childPagePath } from './page-path';
 import { draftAbsFor, removeTableFile } from './table-storage';
 import { dedupeFilename } from './dedupe-filename';
-import { setItemLevel } from './access';
-import { lowerEmbedClosure, type LoweredItem } from './embed-closure';
+import { isWorkspaceKind, setItemLevel } from './access';
+import {
+  brainEmbedsOf,
+  levelAbove,
+  lowerEmbedClosure,
+  type EmbedItem,
+  type LoweredItem,
+} from './embed-closure';
 import {
   detachFromGroups,
   giveBackTaken,
@@ -137,6 +143,9 @@ export class ReviewError extends Error {
       // A client's item to client or public level, not confirmed (C1).
       | 'confirm-level',
     message: string,
+    /** `confirm-level` only: the brain items the Accept would take down
+     *  with the item (its embed closure above the chosen level). */
+    readonly goingDown?: EmbedItem[],
   ) {
     super(message);
     this.name = 'ReviewError';
@@ -158,12 +167,20 @@ const notFound = () =>
  *  or `left-behind` when its author is gone too. */
 export type ReviewReason = 'submitted' | 'left-behind';
 
+/** The role of a reviewable item's author: a member or a client login; null
+ *  when the login is gone (client logins C1, audit A28). */
+export type ReviewAuthorRole = 'member' | 'client';
+
 export type ReviewAuthor = {
   loginId: string | null;
   name: string;
   email: string | null;
   /** Deactivated, or the login is gone. */
   inactive: boolean;
+  /** Member or client (null: the login is gone). An Accept of a client's
+   *  item takes team by default and needs a confirmation at client or
+   *  public (`acceptAudience`). */
+  role: ReviewAuthorRole | null;
 };
 
 export type ReviewItemRow = {
@@ -236,6 +253,7 @@ function reviewQuery(via: Pick<Tx, 'select'> = db) {
         email: authUsers.email,
         displayName: authUsers.displayName,
         disabledAt: authUsers.disabledAt,
+        role: authUsers.role,
       },
     })
     .from(nodes)
@@ -268,6 +286,7 @@ function rowOf({ node, item, author }: Joined): ReviewItemRow {
       name: author?.displayName?.trim() || author?.email?.split('@')[0] || 'Removed login',
       email: author?.email ?? null,
       inactive,
+      role: author?.role === 'member' || author?.role === 'client' ? author.role : null,
     },
   };
 }
@@ -527,11 +546,49 @@ async function reviewBundle(
   return withLinksStayingBehind(via, recorded);
 }
 
-/** What Accept would move, for the accept dialog. Null when not reviewable. */
-export async function previewAccept(id: string): Promise<Bundle | null> {
+/** An item of an Accept's embed closure, at its current level. */
+export type AcceptClosureItem = {
+  id: string;
+  type: string;
+  title: string;
+  audience: ViewerLevel;
+};
+
+/** What Accept would move, for the accept dialog, plus (given the brain)
+ *  `closure`: the brain items the bundle embeds, transitively, at their
+ *  current levels (workspace kinds only: nothing else ever goes below
+ *  admin). The ones above the chosen level go DOWN with the Accept; for a
+ *  client's item at client or public each needs a tick (`confirmedIds`).
+ *  Null when not reviewable. */
+export async function previewAccept(
+  id: string,
+  brainId?: string,
+): Promise<(Bundle & { closure?: AcceptClosureItem[] }) | null> {
   const found = await reviewRow(id);
   if (!found) return null;
-  return reviewBundle(db, found.spaceId, found.row);
+  const bundle = await reviewBundle(db, found.spaceId, found.row);
+  if (!brainId) return bundle;
+  return { ...bundle, closure: await acceptClosure(db, brainId, found.spaceId, bundle.items) };
+}
+
+/** The brain items an Accept of `items` (still in `spaceId`) takes along:
+ *  their embed closure in the brain, workspace kinds only. */
+async function acceptClosure(
+  via: Parameters<typeof brainEmbedsOf>[3],
+  brainId: string,
+  spaceId: string,
+  items: readonly BundleItem[],
+): Promise<AcceptClosureItem[]> {
+  const found = await brainEmbedsOf(
+    brainId,
+    spaceId,
+    items,
+    via,
+    items.map((b) => b.id),
+  );
+  return found
+    .filter((c) => isWorkspaceKind(c.type))
+    .map(({ id, type, title, audience }) => ({ id, type, title, audience }));
 }
 
 /**
@@ -572,9 +629,15 @@ export type AcceptOptions = {
    *  CLIENT wrote (client logins C1, see `acceptAudience`). */
   audience?: ViewerLevel;
   /** For an item a client wrote: the admin confirmed that it, and what it
-   *  takes with it, goes down to client or public, where every client
-   *  login reads it. Refused without it (`confirm-level`). */
+   *  takes with it, goes down to client (every client login reads it) or
+   *  public (anyone with its open link; client logins do not). Refused
+   *  without it (`confirm-level`). */
   lowerConfirmed?: boolean;
+  /** For an item a client wrote, at client or public: the ids of the brain
+   *  items its Accept takes down (the preview's `closure` above the chosen
+   *  level) that the admin ticked. Every one must be here, or the Accept is
+   *  refused with `confirm-level` and the list in `goingDown`. */
+  confirmedIds?: string[];
   /** A brain page to nest the accepted page under (pages only). */
   parentPageId?: string | null;
   /** The brain Files folder the bundle's files land in (default `files`). */
@@ -634,26 +697,43 @@ async function freeFileName(tx: Tx, brainId: string, folder: string, wanted: str
  * needs `lowerConfirmed` (the admin ticked the list of what goes down).
  */
 export function acceptAudience(authorRole: string | null, opts: AcceptOptions): ViewerLevel {
-  if (authorRole !== 'client') return opts.audience ?? 'admin';
-  const level = opts.audience ?? 'team';
-  if ((level === 'client' || level === 'public') && opts.lowerConfirmed !== true) {
-    throw new ReviewError(
-      'confirm-level',
-      `A client wrote this. At ${level} level every client login reads it, and what it embeds goes down with it. Confirm that, or accept it at team.`,
-    );
+  const level = acceptLevel(authorRole, opts);
+  if (needsLevelConfirm(authorRole, level) && opts.lowerConfirmed !== true) {
+    throw confirmLevelError(level, []);
   }
   return level;
 }
 
-/** The role of the login that wrote a reviewable item (null: none, or gone). */
-async function authorRoleOf(id: string): Promise<string | null> {
-  const [r] = await db
-    .select({ role: authUsers.role })
-    .from(spaceItems)
-    .innerJoin(authUsers, eq(authUsers.id, spaceItems.authorLoginId))
-    .where(eq(spaceItems.nodeId, id))
-    .limit(1);
-  return r?.role ?? null;
+/** The level an Accept gives, before any confirmation (see acceptAudience). */
+function acceptLevel(authorRole: string | null, opts: AcceptOptions): ViewerLevel {
+  if (authorRole !== 'client') return opts.audience ?? 'admin';
+  return opts.audience ?? 'team';
+}
+
+/** A client's item at client or public: the admin must confirm the level and
+ *  every brain item that goes down with it. */
+function needsLevelConfirm(authorRole: string | null, level: ViewerLevel): boolean {
+  return authorRole === 'client' && (level === 'client' || level === 'public');
+}
+
+/** Who reads an item at `level`, in the words of the confirm-level refusal
+ *  (client logins C1, decision 3: client logins read client items only). */
+function readersAt(level: ViewerLevel): string {
+  return level === 'public'
+    ? 'anyone with its open link reads it; client logins do not'
+    : 'every client login reads it';
+}
+
+function confirmLevelError(level: ViewerLevel, goingDown: EmbedItem[]): ReviewError {
+  const names = goingDown.map((g) => `"${g.title}" (${g.type}, ${g.audience})`).join(', ');
+  const also = goingDown.length
+    ? ` It takes ${goingDown.length === 1 ? 'this brain item' : 'these brain items'} down to ${level} with it: ${names}; tick each one.`
+    : ' What it embeds goes down with it.';
+  return new ReviewError(
+    'confirm-level',
+    `A client wrote this. At ${level} level ${readersAt(level)}.${also} Confirm that, or accept it at team.`,
+    goingDown,
+  );
 }
 
 /**
@@ -671,52 +751,47 @@ export async function acceptReviewItem(
   reviewer: { loginId: string },
   opts: AcceptOptions = {},
 ): Promise<AcceptResult> {
-  // The level by the author's role (client logins C1): read before the move,
-  // refused before anything moves.
-  const audience = acceptAudience(await authorRoleOf(id), opts);
-  return moveIntoBrain(
-    brainId,
-    id,
-    { ...opts, audience },
-    {
-      locate: async (tx) => {
-        // The state row, locked. A Recall, Return or second Accept waits.
-        const [locked] = await tx
-          .select({ kind: spaces.kind })
-          .from(spaceItems)
-          .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
-          .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
-          .where(eq(spaceItems.nodeId, id))
-          .for('update', { of: spaceItems })
-          .limit(1);
-        if (!locked || locked.kind !== 'personal') throw notFound();
-        const found = await reviewRow(id, tx);
-        if (!found) throw notFound();
-        return {
-          spaceId: found.spaceId,
-          root: { id, type: found.row.type, title: found.row.title },
-          bundle: () => reviewBundle(tx, found.spaceId, found.row),
-        };
-      },
-      // The state rows: accepted, by whom. They stay: they record the author.
-      settle: async (tx, ids, now) => {
-        await tx
-          .update(spaceItems)
-          .set({
-            reviewState: 'accepted',
-            reviewedBy: reviewer.loginId,
-            reviewedAt: now,
-            acceptedAt: now,
-            updatedAt: now,
-            takenBy: null,
-            takenAt: null,
-            takenRoot: null,
-          })
-          .where(inArray(spaceItems.nodeId, ids));
-        await detachFromGroups(tx, ids);
-      },
+  // The level by the author's role (client logins C1): checked inside the
+  // move's transaction, before anything moves (moveIntoBrain).
+  return moveIntoBrain(brainId, id, opts, {
+    locate: async (tx) => {
+      // The state row, locked. A Recall, Return or second Accept waits.
+      const [locked] = await tx
+        .select({ kind: spaces.kind })
+        .from(spaceItems)
+        .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+        .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+        .where(eq(spaceItems.nodeId, id))
+        .for('update', { of: spaceItems })
+        .limit(1);
+      if (!locked || locked.kind !== 'personal') throw notFound();
+      const found = await reviewRow(id, tx);
+      if (!found) throw notFound();
+      return {
+        spaceId: found.spaceId,
+        root: { id, type: found.row.type, title: found.row.title },
+        authorRole: found.row.author.role,
+        bundle: () => reviewBundle(tx, found.spaceId, found.row),
+      };
     },
-  );
+    // The state rows: accepted, by whom. They stay: they record the author.
+    settle: async (tx, ids, now) => {
+      await tx
+        .update(spaceItems)
+        .set({
+          reviewState: 'accepted',
+          reviewedBy: reviewer.loginId,
+          reviewedAt: now,
+          acceptedAt: now,
+          updatedAt: now,
+          takenBy: null,
+          takenAt: null,
+          takenRoot: null,
+        })
+        .where(inArray(spaceItems.nodeId, ids));
+      await detachFromGroups(tx, ids);
+    },
+  });
 }
 
 /**
@@ -752,6 +827,7 @@ export async function acceptOwnItem(
           type: nodes.type,
           title: nodes.title,
           state: spaceItems.reviewState,
+          author: spaceItems.authorLoginId,
         })
         .from(nodes)
         .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
@@ -781,10 +857,24 @@ export async function acceptOwnItem(
         )
         .limit(1);
       if (!login) throw spaceNotFound();
+      // A member's or a client's item this admin TOOK OVER (audit F07) is
+      // accepted by its author's rule (audit A6): a client's goes to team by
+      // default and needs the confirmation at client or public. The admin's
+      // own item has no author record: admin by default, no confirmation.
+      let authorRole: string | null = null;
+      if (locked.state === 'taken' && locked.author) {
+        const [a] = await tx
+          .select({ role: authUsers.role })
+          .from(authUsers)
+          .where(eq(authUsers.id, locked.author))
+          .limit(1);
+        authorRole = a?.role ?? null;
+      }
       const root: BundleItem = { id, type: locked.type as SpaceItemKind, title: locked.title };
       return {
         spaceId: own.spaceId,
         root,
+        authorRole,
         // The brain gets the SAVED version of every item that moves (audit
         // F04): unsaved edits on the item, or on anything shown in it,
         // refuse, since Accept would drop them. The rows are locked first,
@@ -987,7 +1077,13 @@ export async function takeOverReviewItem(
 type AcceptSteps = {
   /** Lock the item and prove the caller may accept it (throws otherwise);
    *  `bundle` then names what moves with it, read in the same transaction. */
-  locate: (tx: Tx) => Promise<{ spaceId: string; root: BundleItem; bundle: () => Promise<Bundle> }>;
+  locate: (tx: Tx) => Promise<{
+    spaceId: string;
+    root: BundleItem;
+    /** The role of the login that wrote the item (null: none, or gone). */
+    authorRole: string | null;
+    bundle: () => Promise<Bundle>;
+  }>;
   /** Settle the bundle's `space_items` rows once everything has moved. */
   settle: (tx: Tx, ids: string[], now: Date) => Promise<void>;
 };
@@ -1006,8 +1102,9 @@ async function moveIntoBrain(
   opts: AcceptOptions,
   steps: AcceptSteps,
 ): Promise<AcceptResult> {
-  const audience: ViewerLevel = opts.audience ?? 'admin';
-  if (!isViewerLevel(audience)) throw new ReviewError('invalid', 'Pick a level.');
+  if (opts.audience !== undefined && !isViewerLevel(opts.audience)) {
+    throw new ReviewError('invalid', 'Pick a level.');
+  }
   const folder = opts.folderPath?.trim() || 'files';
   if (!isFilesPath(folder)) throw new ReviewError('invalid', 'Pick a folder under Files.');
 
@@ -1021,8 +1118,10 @@ async function moveIntoBrain(
   let result: AcceptResult;
   try {
     result = await db.transaction(async (tx) => {
-      // 1. The item, located and locked by the caller's own rule.
-      const { spaceId, root, bundle: bundleOf } = await steps.locate(tx);
+      // 1. The item, located and locked by the caller's own rule, and its
+      //    level by its author's role (client logins C1).
+      const { spaceId, root, authorRole, bundle: bundleOf } = await steps.locate(tx);
+      const audience = acceptLevel(authorRole, opts);
 
       // 2. Destinations, checked before anything moves.
       let parent: { id: string; path: string } | null = null;
@@ -1066,6 +1165,20 @@ async function moveIntoBrain(
       if (!inSpace.has(root.id)) throw notFound();
       const items = bundle.items.filter((b) => inSpace.has(b.id));
       const ids = items.map((b) => b.id);
+
+      // 3b. A client's item at client or public (audit A28): the admin
+      //     confirmed the level AND ticked every brain item that goes down
+      //     with it, read here on the locked rows. Refused before anything
+      //     moves, with the list, so the dialog can show it.
+      if (needsLevelConfirm(authorRole, audience)) {
+        const goingDown = (await acceptClosure(tx, brainId, spaceId, items)).filter((c) =>
+          levelAbove(c.audience, audience),
+        );
+        const ticked = new Set(opts.confirmedIds ?? []);
+        if (opts.lowerConfirmed !== true || goingDown.some((g) => !ticked.has(g.id))) {
+          throw confirmLevelError(audience, goingDown);
+        }
+      }
       const sharing = await tx
         .select({ id: spaceItems.nodeId, sharing: spaceItems.sharing })
         .from(spaceItems)
@@ -1267,9 +1380,9 @@ async function moveIntoBrain(
   }
   // The item's link follows its level (levels drive links). The level itself
   // is already stored for the whole bundle.
-  if (audience !== 'admin') {
+  if (result.audience !== 'admin') {
     try {
-      await setItemLevel(brainId, id, audience);
+      await setItemLevel(brainId, id, result.audience);
     } catch (err) {
       result.levelWarning = err instanceof Error ? err.message : String(err);
     }

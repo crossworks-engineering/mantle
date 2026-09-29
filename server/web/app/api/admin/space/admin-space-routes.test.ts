@@ -149,6 +149,29 @@ describe('admin private-space routes', () => {
     ]);
   });
 
+  it('Accept after Take over passes the confirmation and the ticked ids (audit A6)', async () => {
+    const { POST } = await import('./[id]/accept/route');
+    const FILE = '77777777-7777-4777-8777-777777777777';
+    const body = { audience: 'public', lowerConfirmed: true, confirmedIds: [FILE] };
+    expect((await POST(json(body), ctx)).status).toBe(200);
+    expect(callOf('acceptOwnItem')?.[3]).toEqual(body);
+    // A refusal carries what would go down with it, for the dialog to tick.
+    const { ReviewError } = await import('@mantle/content');
+    const goingDown = [{ id: FILE, type: 'file', title: 'plan.pdf', audience: 'client' }];
+    h.accept = async () => {
+      throw new ReviewError('confirm-level', 'A client wrote this.', goingDown as never);
+    };
+    const res = await POST(json({ audience: 'public', lowerConfirmed: true }), ctx);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'A client wrote this.',
+      reason: 'confirm-level',
+      goingDown,
+    });
+    h.accept = null;
+    expect((await POST(json({ confirmedIds: ['nope'] }), ctx)).status).toBe(400);
+  });
+
   it('Accept answers the refusals: 409 unsaved-draft, 404, 400', async () => {
     const { POST } = await import('./[id]/accept/route');
     const { ReviewError, SpaceItemStateError } = await import('@mantle/content');

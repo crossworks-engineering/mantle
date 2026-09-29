@@ -14,11 +14,20 @@ export const SubmissionParams = z.object({ id: z.string().uuid() });
 
 /** A refused review action as the status the client can act on: 404 for an
  *  item the admin may not see (a private item looks like a missing one), 400
- *  for bad input, 409 for a state conflict (not submitted, not left behind). */
+ *  for bad input, 409 for a state conflict (not submitted, not left behind).
+ *  A `confirm-level` refusal carries `goingDown`: the brain items the Accept
+ *  would take down with the item, for the admin to tick. */
 export function reviewErrorResponse(err: unknown): Response {
   if (err instanceof ReviewError) {
     const status = err.reason === 'not-found' ? 404 : err.reason === 'invalid' ? 400 : 409;
-    return NextResponse.json({ error: err.message, reason: err.reason }, { status });
+    return NextResponse.json(
+      {
+        error: err.message,
+        reason: err.reason,
+        ...(err.goingDown ? { goingDown: err.goingDown } : {}),
+      },
+      { status },
+    );
   }
   throw err;
 }
