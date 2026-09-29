@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Restore a Mantle dump (from scripts/db-dump.sh) into a freshly-initialized
-# Postgres — the standard way to MOVE the brain to a new machine.
+# Postgres: the standard way to MOVE the brain to a new machine, and the way
+# back from a roll (the updater's pre-roll dumps).
 #
-# IMPORTANT — run this BEFORE the app/migrate services start:
+# IMPORTANT: run this BEFORE the app/migrate services start:
 #   1. docker compose pull
-#   2. docker compose up -d postgres --wait      # init creates extensions + auth schema
+#   2. docker compose up -d postgres --wait
 #   3. scripts/db-restore.sh backups/mantle-<ts>.dump
 #   4. docker compose up -d --wait               # migrate is now a no-op; app starts
 #
@@ -14,10 +15,15 @@
 # ${MANTLE_DATA_DIR:-./data}/spaces, only if that folder is still empty.
 # MANTLE_SPACES_ARCHIVE=<path> names another archive.
 #
-# Because the init scripts pre-create the `auth` schema, `auth.users`, and the
-# pgvector/ltree/… extensions, pg_restore will print a handful of "already
-# exists" notices for THOSE objects — that is expected and harmless (they're
-# identical). The public app tables don't exist yet, so they restore cleanly.
+# The dump goes into a PRISTINE database: the script drops the init-made
+# `postgres` database and creates an empty one first. The init scripts
+# pre-create `auth.users`; when a box's init script is older than the dumped
+# table (0181 added session_epoch), pg_restore skipped "CREATE TABLE
+# auth.users" (already exists), its COPY then failed, and the restore ended
+# "complete" with NO logins and no role CHECK (docs/postgres-18-upgrade.md).
+# So the script refuses a target that holds any item or any login, and after
+# the restore it checks the logins, the role CHECK and the viewer policies,
+# and exits non-zero when one is missing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -43,10 +49,13 @@ if ! docker exec "$CONTAINER" pg_isready -U postgres -d postgres >/dev/null 2>&1
 fi
 
 # Guard: refuse to restore over a populated brain (run before the app exists).
-EXISTING=$(docker exec "$CONTAINER" psql -U postgres -d postgres -tA \
-  -c "SELECT to_regclass('public.nodes') IS NOT NULL AND (SELECT count(*) FROM nodes) > 0" 2>/dev/null || echo "f")
+# The restore drops this database, so a login counts as data too.
+EXISTING=$(docker exec "$CONTAINER" psql -U postgres -d postgres -tA -c \
+  "SELECT (to_regclass('public.nodes') IS NOT NULL AND (SELECT count(*) FROM nodes) > 0)
+       OR (to_regclass('auth.users') IS NOT NULL AND (SELECT count(*) FROM auth.users) > 0)" \
+  2>/dev/null || echo "f")
 if [ "$EXISTING" = "t" ]; then
-  echo "✗ target already has data in public.nodes — refusing to restore over a live brain." >&2
+  echo "✗ target already has items (public.nodes) or logins (auth.users): refusing to restore over a live brain." >&2
   echo "  Restore into a fresh DB, or drop it deliberately first." >&2
   exit 1
 fi
@@ -68,24 +77,77 @@ BEGIN
   END LOOP;
 END \$\$;"
 
-echo "▶ Restoring $DUMP → '$CONTAINER' (benign 'already exists' notices for auth/extensions are expected)"
-# No --clean: public is empty so tables create cleanly; pre-existing auth/exts
-# error benignly and pg_restore continues. We don't trust the exit code (it's
-# non-zero on benign errors) — we verify by row count below.
-docker exec -i "$CONTAINER" pg_restore -U postgres -d postgres --no-owner < "$DUMP" || true
+# A pristine database: nothing from the init scripts for pg_restore to trip
+# over. The dump carries the extensions, the auth schema and every table.
+echo "▶ Replacing the empty 'postgres' database in '$CONTAINER' with a pristine one"
+docker exec "$CONTAINER" psql -U postgres -d template1 -v ON_ERROR_STOP=1 -q \
+  -c "DROP DATABASE IF EXISTS postgres WITH (FORCE);" \
+  -c "CREATE DATABASE postgres;"
 
-N=$(docker exec "$CONTAINER" psql -U postgres -d postgres -tA -c "SELECT count(*) FROM nodes" 2>/dev/null || echo "0")
-# Row level security on nodes with no viewer policy = the policies were lost:
-# a team-level agent would see nothing. Loud, not fatal (the owner still works).
-RLS_LOST=$(docker exec "$CONTAINER" psql -U postgres -d postgres -tA -c \
-  "SELECT (SELECT relrowsecurity FROM pg_class WHERE oid = 'public.nodes'::regclass)
-     AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'nodes' AND policyname = 'nodes_viewer_read')" \
-  2>/dev/null || echo "f")
-if [ "$RLS_LOST" = "t" ]; then
-  echo "⚠ nodes has row level security on but no viewer policy — the policies did not restore." >&2
-  echo "  Team-level agents will see nothing until they are recreated (see migration 0159)." >&2
+echo "▶ Restoring $DUMP → '$CONTAINER'"
+# pg_restore goes on past an error and exits non-zero at the end. Into a
+# pristine database there should be none: every one is printed, and the
+# checks below decide whether the restore is usable.
+RESTORE_LOG="$(mktemp)"
+trap 'rm -f "$RESTORE_LOG"' EXIT
+RESTORE_RC=0
+docker exec -i "$CONTAINER" pg_restore -U postgres -d postgres --no-owner < "$DUMP" \
+  > "$RESTORE_LOG" 2>&1 || RESTORE_RC=$?
+RESTORE_ERRORS=$(grep -c '^pg_restore: error:' "$RESTORE_LOG" || true)
+if [ "$RESTORE_RC" -ne 0 ] || [ "$RESTORE_ERRORS" -gt 0 ]; then
+  echo "⚠ pg_restore exited $RESTORE_RC with $RESTORE_ERRORS error(s):" >&2
+  grep -E '^pg_restore: (error|warning):|^(Command was|DETAIL|HINT):' "$RESTORE_LOG" | head -40 >&2 || true
 fi
-echo "✔ Restore complete — public.nodes now has $N rows."
+
+q() { docker exec "$CONTAINER" psql -U postgres -d postgres -tA -v ON_ERROR_STOP=1 -c "$1" 2>/dev/null; }
+
+# What the restored brain must hold. A check applies once the dump's own
+# migration ledger shows the migration that made the object, so a pre-roll
+# dump from an older release is judged by what that release had. The
+# numbers are journal `when` values (packages/db/migrations/meta/_journal.json;
+# server/web/lib/db-restore-script.test.ts keeps them in step).
+WHEN_0159=1789843200000   # 0159_viewer_access: nodes_viewer_read
+WHEN_0162=1790016000000   # 0162_member_logins: users_role_ck
+WHEN_0187=1790017500000   # 0187_client_level: agents and tool_groups rules
+FAILED=""
+fail() { FAILED="${FAILED}  - $1"$'\n'; }
+
+LEDGER=$(q "SELECT coalesce(max(created_at), 0) FROM drizzle.__drizzle_migrations" || echo "")
+N=$(q "SELECT count(*) FROM public.nodes" || echo "")
+USERS=$(q "SELECT count(*) FROM auth.users" || echo "")
+[ -n "$LEDGER" ] || { fail "no migration ledger (drizzle.__drizzle_migrations): is this a Mantle dump?"; LEDGER=0; }
+[ -n "$N" ] || fail "public.nodes is missing"
+if [ -z "$USERS" ]; then
+  fail "auth.users is missing"
+elif [ "$USERS" -eq 0 ]; then
+  fail "auth.users has no rows: every login is gone (nobody can sign in; first signup may reopen)"
+fi
+has_constraint() { [ "$(q "SELECT count(*) FROM pg_constraint WHERE conname = '$1' AND conrelid = to_regclass('$2')" || echo 0)" = "1" ]; }
+has_policy() { [ "$(q "SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = '$2' AND policyname = '$1'" || echo 0)" = "1" ]; }
+if [ "$LEDGER" -ge "$WHEN_0162" ] && ! has_constraint users_role_ck auth.users; then
+  fail "the login role CHECK (users_role_ck on auth.users) is missing"
+fi
+REQUIRED_POLICIES=""
+[ "$LEDGER" -ge "$WHEN_0159" ] && REQUIRED_POLICIES="nodes_viewer_read:nodes"
+[ "$LEDGER" -ge "$WHEN_0187" ] && REQUIRED_POLICIES="$REQUIRED_POLICIES agents_viewer_read:agents agents_client_read:agents tool_groups_viewer_read:tool_groups tool_groups_client_read:tool_groups"
+for pt in $REQUIRED_POLICIES; do
+  has_policy "${pt%%:*}" "${pt#*:}" || fail "the row policy ${pt%%:*} on ${pt#*:} is missing"
+done
+
+if [ -n "$FAILED" ]; then
+  echo "✗ Restore FAILED: the database is not a usable brain." >&2
+  printf '%s' "$FAILED" >&2
+  echo "  Row policies name the viewer roles: a missing one reads as an empty brain to" >&2
+  echo "  team and client logins (migrations 0159, 0187). Do not start the app on this" >&2
+  echo "  database. Read the pg_restore errors above, fix the cause, and run this again" >&2
+  echo "  (drop the database first: the script refuses a target that holds logins)." >&2
+  exit 2
+fi
+if [ "$RESTORE_ERRORS" -gt 0 ] || [ "$RESTORE_RC" -ne 0 ]; then
+  echo "✔ Restore complete, WITH $RESTORE_ERRORS pg_restore error(s) listed above: read them. public.nodes has $N rows, auth.users $USERS."
+else
+  echo "✔ Restore complete: public.nodes has $N rows, auth.users $USERS."
+fi
 
 # Personal-space file bytes (member logins). The rows restored above point at
 # them; without them every member file answers "gone".
