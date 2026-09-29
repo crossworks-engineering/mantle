@@ -57,6 +57,27 @@ vi.mock('@mantle/tracing', () => ({
   },
 }));
 
+// The taint scan (client logins C4): a stand-in that marks the turn when the
+// scanned text names the client request below. Its real query is covered by
+// packages/tools/src/client-sourced.db.test.ts.
+const CLIENT_TASK = '99999999-9999-4999-8999-999999999999';
+vi.mock('@mantle/tools/client-sourced', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  taintFromText: vi.fn(
+    async (
+      taint: { clientSourced: boolean; via?: string },
+      _o: string,
+      text: string,
+      via: string,
+    ) => {
+      if (text.includes(CLIENT_TASK)) {
+        taint.clientSourced = true;
+        taint.via = via;
+      }
+    },
+  ),
+}));
+
 import {
   BLOCKED_REPLY_FALLBACK,
   EMPTY_REPLY_FALLBACK,
@@ -291,5 +312,29 @@ describe('emptyLoopResult', () => {
       artifacts: [],
       tokensOut: 0,
     });
+  });
+});
+
+describe('runResponderLoop: client-written text in the retrieval context (plan N18)', () => {
+  it('a client request among the content hits taints the turn before any tool runs', async () => {
+    const ctx = { ...ctxFixture(), contentHits: [{ nodeId: CLIENT_TASK }] } as never;
+    await runResponderLoop(baseOpts({ loadContext: async () => ctx }) as never);
+    expect(h.loopCalls[0].taint).toEqual({ clientSourced: true, via: 'context' });
+  });
+
+  it('a chunk or a fact from one taints it too', async () => {
+    const byChunk = { ...ctxFixture(), chunkHits: [{ nodeId: CLIENT_TASK }] } as never;
+    await runResponderLoop(baseOpts({ loadContext: async () => byChunk }) as never);
+    const byFact = {
+      ...ctxFixture(),
+      facts: [{ fact: 'x', sourceNodeId: CLIENT_TASK }],
+    } as never;
+    await runResponderLoop(baseOpts({ loadContext: async () => byFact }) as never);
+    expect(h.loopCalls.map((c) => c.taint.clientSourced)).toEqual([true, true]);
+  });
+
+  it('an ordinary context leaves the turn untainted', async () => {
+    await runResponderLoop(baseOpts() as never);
+    expect(h.loopCalls[0].taint).toEqual({ clientSourced: false });
   });
 });

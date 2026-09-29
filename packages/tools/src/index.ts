@@ -299,3 +299,12 @@ export {
 } from './openapi-sync';
 export { parseOpenapiBinding, type ToolGroupOpenapiBinding } from './integration-meta';
 export { reconcileMeta, ruleReconcilerFor } from './rule-reconciler';
+export {
+  newTurnTaint,
+  taintFromText,
+  isLoweringCall,
+  uuidsIn,
+  namesClientSourced,
+  LOWERING_TOOL_SLUGS,
+  type TurnTaint,
+} from './client-sourced';

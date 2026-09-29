@@ -36,6 +36,7 @@ import {
   type ResultHandlingConfig,
   type ToolCallRecord,
 } from '@mantle/tools';
+import { newTurnTaint, taintFromText, type TurnTaint } from '@mantle/tools/client-sourced';
 import { type Tool, type AgentParams } from '@mantle/db';
 import type { ToolArtifact } from '@mantle/tools';
 import {
@@ -453,6 +454,13 @@ export type ToolLoopArgs = {
    *  absent. The canonical union lives on ToolHandlerContext
    *  (@mantle/tools) — this mirrors it so the two can't drift. */
   surface?: NonNullable<import('@mantle/tools').ToolHandlerContext['surface']>;
+  /** Whether this turn has read text a client wrote (client logins C4, plan
+   *  N18). Shared by reference: the responder loop marks it from the
+   *  retrieval context, every tool call's input and output marks it, and a
+   *  delegated child shares its parent's. Once marked, a lowering to client
+   *  or public goes to pending approval instead of running. Absent = a fresh
+   *  one for this loop. */
+  taint?: TurnTaint;
 };
 
 /**
@@ -533,6 +541,7 @@ export async function runToolLoop(args: ToolLoopArgs): Promise<ToolLoopResult> {
 
 async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
   const maxIters = args.maxIterations ?? DEFAULT_MAX_ITERATIONS;
+  const taint = args.taint ?? newTurnTaint();
   const handling = resolveResultHandling(args.resultHandling);
   // Always offer `read_result` when the agent has any tools, so a spilled
   // (oversized) result is never a dead end — even if the operator didn't add
@@ -814,7 +823,16 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
         argValidationMode,
         lastUserMessage,
         pendingIds,
+        taint,
       });
+      // Did this call bring client-written text into the turn? Its input
+      // (a client login's id) or its output (a client request's id) says so.
+      await taintFromText(
+        taint,
+        args.ownerId,
+        JSON.stringify({ input, output: outcome.ok ? outcome.output : null }),
+        slug,
+      );
 
       const duration = Date.now() - startedAt;
       // A confirm-gated call returns ok:true (the QUEUING succeeded) but the

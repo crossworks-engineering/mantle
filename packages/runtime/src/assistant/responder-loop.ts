@@ -34,6 +34,7 @@ import {
   type ProfilePreferences,
 } from '@mantle/content';
 import { step } from '@mantle/tracing';
+import { newTurnTaint, taintFromText } from '@mantle/tools/client-sourced';
 import { stageLabelForStep } from './stage-label';
 import type { AssembledResponderTurn } from './assemble-turn';
 import { agentLevel, withAgentViewer } from '../agent/agent-viewer';
@@ -212,6 +213,20 @@ async function runResponderLoopAtLevel(
     },
   );
 
+  // Client-written text in the retrieval context (a reviewed client request
+  // is indexed like any task) taints the turn before any tool runs (plan N18).
+  const taint = newTurnTaint();
+  await taintFromText(
+    taint,
+    opts.ownerId,
+    [
+      ...ctx.facts.map((f) => f.sourceNodeId ?? ''),
+      ...ctx.contentHits.map((c) => c.nodeId),
+      ...ctx.chunkHits.map((c) => c.nodeId),
+    ].join(' '),
+    'context',
+  );
+
   const loop = await runToolLoop({
     adapter: opts.adapter,
     apiKey: opts.apiKey,
@@ -233,6 +248,7 @@ async function runResponderLoopAtLevel(
     initialMessages: await opts.buildMessages(ctx),
     tools: assembled.allowedTools,
     surface: opts.surface,
+    taint,
   });
 
   // A user Stop ends the turn with whatever partial reply streamed (often

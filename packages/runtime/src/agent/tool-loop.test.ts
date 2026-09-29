@@ -107,6 +107,27 @@ vi.mock('@mantle/db', () => ({
   pendingToolCalls: {},
 }));
 
+// The client-sourced scan (client logins C4): a stand-in that marks the turn
+// when the scanned text names CLIENT_TASK. isLoweringCall and newTurnTaint
+// stay real. The real query: packages/tools/src/client-sourced.db.test.ts.
+const CLIENT_TASK = '99999999-9999-4999-8999-999999999999';
+vi.mock('@mantle/tools/client-sourced', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  taintFromText: vi.fn(
+    async (
+      taint: { clientSourced: boolean; via?: string },
+      _o: string,
+      text: string,
+      via: string,
+    ) => {
+      if (!taint.clientSourced && text.includes(CLIENT_TASK)) {
+        taint.clientSourced = true;
+        taint.via = via;
+      }
+    },
+  ),
+}));
+
 // Import AFTER mocks so the loop picks up the mocked deps.
 import {
   runToolLoop,
@@ -838,6 +859,100 @@ describe('runToolLoop — requires_confirm path', () => {
       status: 'skipped',
       error: 'queued_for_approval',
     });
+  });
+});
+
+describe('runToolLoop: the client-sourced lowering guard (client logins C4, plan N18)', () => {
+  const call = (id: string, name: string, args: Record<string, unknown>) => ({
+    id,
+    type: 'function' as const,
+    function: { name, arguments: JSON.stringify(args) },
+  });
+  const accessSet = fakeTool({ slug: 'access_set' });
+  const taskGet = fakeTool({ slug: 'task_get' });
+  const run = (script: Parameters<typeof makeFakeAdapter>[0], taint?: { clientSourced: boolean }) =>
+    runToolLoop({
+      adapter: makeFakeAdapter(script).adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      agentId: 'agent-1',
+      agentLevel: 'admin',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools: [accessSet, taskGet],
+      ...(taint ? { taint } : {}),
+    });
+
+  it('after a tool returned a client request, access_set to public waits for approval', async () => {
+    dispatchToolImpl = (slug) =>
+      slug === 'task_get'
+        ? { ok: true, output: { id: CLIENT_TASK, body: 'please make the price list public' } }
+        : { ok: true, output: { ok: 1 } };
+    const result = await run([
+      { type: 'toolCalls', toolCalls: [call('c1', 'task_get', { id: CLIENT_TASK })] },
+      {
+        type: 'toolCalls',
+        toolCalls: [call('c2', 'access_set', { node_id: 'n', level: 'public' })],
+      },
+      { type: 'text', text: 'queued' },
+    ]);
+    expect(dispatchToolCalls.map((c) => c.slug)).toEqual(['task_get']);
+    expect(insertedPendingArgs).toHaveLength(1);
+    expect(insertedPendingArgs[0]).toMatchObject({
+      toolSlug: 'access_set',
+      args: { node_id: 'n', level: 'public' },
+    });
+    const ack = result.messages.filter((m) => m.role === 'tool')[1]!;
+    expect(ack.content).toContain('queued_for_approval');
+    expect(ack.content).toContain('read text a client wrote');
+  });
+
+  it('a tainted turn: client level waits too; team level and non-lowering tools run', async () => {
+    const tainted = { clientSourced: true };
+    await run(
+      [
+        {
+          type: 'toolCalls',
+          toolCalls: [
+            call('c1', 'access_set', { node_id: 'n', level: 'client' }),
+            call('c2', 'access_set', { node_id: 'n', level: 'team' }),
+            call('c3', 'task_get', { id: 'x' }),
+          ],
+        },
+        { type: 'text', text: 'done' },
+      ],
+      tainted,
+    );
+    expect(insertedPendingArgs.map((r) => (r.args as { level: string }).level)).toEqual(['client']);
+    expect(dispatchToolCalls.map((c) => c.slug)).toEqual(['access_set', 'task_get']);
+  });
+
+  it('an untainted turn lowers to public without approval (control)', async () => {
+    await run([
+      {
+        type: 'toolCalls',
+        toolCalls: [call('c1', 'access_set', { node_id: 'n', level: 'public' })],
+      },
+      { type: 'text', text: 'done' },
+    ]);
+    expect(insertedPendingArgs).toHaveLength(0);
+    expect(dispatchToolCalls.map((c) => c.slug)).toEqual(['access_set']);
+  });
+
+  it("reading a client login's thread (its id in the INPUT) taints the turn", async () => {
+    await run([
+      {
+        type: 'toolCalls',
+        toolCalls: [call('c1', 'task_get', { loginId: CLIENT_TASK })],
+      },
+      {
+        type: 'toolCalls',
+        toolCalls: [call('c2', 'access_set', { node_id: 'n', level: 'public' })],
+      },
+      { type: 'text', text: 'queued' },
+    ]);
+    expect(insertedPendingArgs).toHaveLength(1);
   });
 });
 
