@@ -349,6 +349,10 @@ describe.skipIf(!URL)('the report above the list cap (audit A7)', () => {
     await m.closeDb();
   });
 
+  it('no acknowledgement is never acknowledged, even with no client items', async () => {
+    expect(await r.clientReportAcknowledged(randomUUID())).toBe(false);
+  });
+
   it('2001 client items: the list shows 2000, the fingerprint acknowledges all of them', async () => {
     const rep = await r.clientReport(owner);
     expect(rep.total).toBe(r.CLIENT_REPORT_MAX + 1);
