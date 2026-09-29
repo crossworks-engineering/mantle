@@ -3,11 +3,13 @@
  * EVERY manifest route, every method, member routes included, with a signed
  * session cookie for:
  *
- *  - a CLIENT login: no route serves a client yet, so each refuses it (403
+ *  - a CLIENT login: every route outside CLIENT_ROUTES refuses it (403
  *    with reason client-login from the admin and member gates, 401 from the
  *    admin-only session reads and the byte routes, or the /login redirect
  *    for pages). Before C0 every role that was not member resolved as an
- *    ADMIN, so this is the test that would have caught it.
+ *    ADMIN, so this is the test that would have caught it. The client
+ *    routes themselves (C2) answer a client: server/client-sweep.test.ts.
+ *    A client route answers the unknown role as a stranger here too.
  *  - a login whose role this code does not know: it is no login at all, so
  *    every route answers as to a stranger (401, or the /login redirect).
  *
@@ -48,6 +50,7 @@ vi.mock('../lib/auth/login-row', () => ({
 }));
 
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
+import { isClientRoute } from '../lib/auth/client-routes';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, 'route-manifest.gen.ts'));
@@ -79,7 +82,7 @@ function concretePath(pattern: string): string {
     .replace(/\*$/, 'a/b');
 }
 
-describe.skipIf(!hasManifest)('role sweep: only admin and member logins are served', () => {
+describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
   const saved = {
     secret: process.env.SESSION_SECRET,
     cors: process.env.MANTLE_API_CORS_ORIGINS,
@@ -94,7 +97,10 @@ describe.skipIf(!hasManifest)('role sweep: only admin and member logins are serv
     delete process.env.MANTLE_API_CORS_ORIGINS;
     delete process.env.MANTLE_DETACHED_DEV;
     const { buildSessionCookie } = await import('../lib/auth/tokens');
-    cookieFor = (id) => `${SESSION_COOKIE_NAME}=${buildSessionCookie(id).value}`;
+    // 30 days, as the client sign-in mints it: a longer client cookie is
+    // refused outright (a 401 everywhere would hide the gates' answers).
+    const ttlSeconds = 30 * 24 * 60 * 60;
+    cookieFor = (id) => `${SESSION_COOKIE_NAME}=${buildSessionCookie(id, { ttlSeconds }).value}`;
     const { createApp } = await import('./app');
     app = await createApp();
     manifest = (await import('./route-manifest.gen')).routeManifest;
@@ -154,9 +160,12 @@ describe.skipIf(!hasManifest)('role sweep: only admin and member logins are serv
     return { checked, failures };
   }
 
-  it('refuses a CLIENT login on every route, member routes included', async () => {
+  it('refuses a CLIENT login on every route but its own, member routes included', async () => {
     const { checked, failures } = await sweep(cookieFor(CLIENT_ID), ({ key, status, body }) => {
       if (ANY_LOGIN.has(key)) return status === 200;
+      // The client routes answer a client (client-sweep.test.ts proves it).
+      const [method, pattern] = key.split(' ') as [string, string];
+      if (isClientRoute(method, pattern)) return true;
       if (HTML_CONSENT.has(key)) return status === 403 || status === 404;
       return (
         (status === 403 && body?.reason === 'client-login') ||
