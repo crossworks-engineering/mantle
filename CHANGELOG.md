@@ -4,6 +4,54 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.332: client logins, fixes from the C2/C2b audit
+
+Every finding of the C2/C2b audit (2026-09-29, 28 findings) is fixed. Pair
+it with jackdaw v0.6.175: new sign-in and invite links carry the code in the
+fragment, which only that client reads. Migration 0193. Operator guide:
+docs/client-logins.md.
+
+- **No summary reaches a client (B1).** The client list and reader no longer
+  send `summary`, which the extractor wrote from the unredacted page text.
+  Client and public pages now store only text their level can read: embeds
+  the level reads, and "Private item" for mentions, links and child cards of
+  anything else. A level change re-folds that text by SQL only (no
+  extraction). Summaries and chunks refresh at the next commit.
+- **Client tables are the grid only (B13)**, and cell refs to items a client
+  cannot read show as "Private item". Every refused reference is hidden
+  (external images too); scheme case and own-host URLs no longer slip past
+  the redactor; readable labels show current titles; the drawing SVG drops
+  links to hidden items and is rate limited (B25).
+- **Members open public items by id again (B10).** A public item is open to
+  anyone. The Library list stays team and client.
+- **Email codes (B2, B3, B17 to B21).** Send caps are per email plus address
+  (3 an hour, 5 a day), 20 a day per login (an address the client signed in
+  from before is exempt), 200 a day brain-wide; IPv6 counts by /64. Every
+  send records its outcome; Team admin > Clients shows delivered, failed,
+  the last failure, cap skips and whether an email worker runs (codes are
+  off without one). Verify does the same work on every branch. Codes are
+  stored as an HMAC; open codes at deploy stop working. A plain-SQL
+  `client-codes-reap` sweep clears old rows and addresses.
+- **The sign-in sender (B4, B19)** is previewed before it is chosen, refused
+  without a Sent folder, and choosing None or another sender restores the
+  folders it excluded. Mail sync skips code mails and replies to them, and
+  blanks sign-in link codes in ingested mail.
+- **Sign-in links (B11, B12, B14, B15, B16).** No brain-wide failure cap
+  (Jason's decision); the per-address cap stays. Links and invites use
+  `#code=`; the Caddy log drops codes and Referer, and the sign-in pages
+  send `Referrer-Policy: no-referrer`. Disable and End sessions revoke open
+  links and codes. `/api/auth` POSTs refuse non-JSON (415) and cross-site
+  (403) requests. Audit rows record the address Caddy saw.
+- **Sessions (B23, B24).** Client asset tokens live 10 minutes; a client's
+  Sign out ends all its sessions; `clientLoginActive` needs the epoch.
+- **Restore (B22)** revokes open client links and codes and lists client
+  logins. **Roster and authors (B26):** clients carry their role and are
+  never shown as team members; Add client refuses an email the contact does
+  not own.
+- **Tests (B6, B7, B8, B18, B28).** Real byte routes driven with a client
+  token, the thumbnail branch, row-lock races, the code queue end to end,
+  and two flaky or order-dependent tests fixed.
+
 ## 0.232.331: duplicate writes answer 409 again
 
 - **A duplicate now answers 409, not 500.** Drizzle wraps every Postgres
