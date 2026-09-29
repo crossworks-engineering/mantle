@@ -220,7 +220,9 @@ describe.skipIf(!URL)('admin private items', () => {
     const A = spaceOf[adminA]!;
     const setDisabled = (on: boolean) =>
       m.systemDb.execute(
-        sqlTag`update auth.users set disabled_at = ${on ? new Date() : null} where id = ${adminA}`,
+        on
+          ? sqlTag`update auth.users set disabled_at = now() where id = ${adminA}`
+          : sqlTag`update auth.users set disabled_at = null where id = ${adminA}`,
       );
     try {
       expect(
