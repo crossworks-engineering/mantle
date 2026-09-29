@@ -211,7 +211,11 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
 
   it('a team parent has no link to cascade', async () => {
     await a.setItemLevel(owner, ids.teamParent, 'team');
-    expect(await s.setShareCascade(owner, ids.teamParent, true)).toEqual({ ok: false, count: 0 });
+    expect(await s.setShareCascade(owner, ids.teamParent, true)).toEqual({
+      ok: false,
+      count: 0,
+      skipped: [],
+    });
     expect(await audienceOf(ids.teamSub)).toBe('admin');
     expect(await s.getActiveShareForNode(owner, ids.teamSub)).toBeNull();
   });
