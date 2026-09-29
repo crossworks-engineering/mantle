@@ -149,7 +149,7 @@ describe.skipIf(!URL)('client logins and sign-in links', () => {
     const listed = (await c.listClientLogins(owner)).find((r) => r.id === ada.id)!;
     expect(listed.openLink).toEqual(link);
     expect(JSON.stringify(listed)).not.toContain(code);
-    expect(c.clientSigninLinkPath(code)).toBe(`/client-signin?code=${code}`);
+    expect(c.clientSigninLinkPath(code)).toBe(`/client-signin#code=${code}`);
   });
 
   it('redeems once, only with the login email (any case), and records the use', async () => {

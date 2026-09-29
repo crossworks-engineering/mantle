@@ -50,6 +50,38 @@ describe('infra/caddy layout', () => {
     expect(updater).toContain('--force-recreate');
   });
 
+  it('keeps sign-in codes out of the access log and out of Referer headers (audit B12)', () => {
+    const caddy = read('infra/caddy/Caddyfile');
+    // The log filters the uri and drops the Referer; the JSON shape stays.
+    expect(caddy).toMatch(/format filter \{\s*wrap json/);
+    expect(caddy).toContain('request>headers>Referer delete');
+    const m = /request>uri regexp "([^"]+)" "([^"]+)"/.exec(caddy);
+    expect(m).toBeTruthy();
+    // Apply the filter as Caddy does (Go's ReplaceAllString with ${n}).
+    const re = new RegExp(m![1]!, 'g');
+    const redact = (uri: string) =>
+      uri.replace(re, (_all, a?: string, b?: string) => `${a ?? ''}${b ?? ''}REDACTED`);
+    expect(m![2]).toBe('${1}${2}REDACTED');
+    const secret = 'AbCdEfGhJkMnPqRs';
+    for (const [uri, want] of [
+      [`/client-signin?code=${secret}`, '/client-signin?code=REDACTED'],
+      [`/invite?x=1&code=${secret}&y=2`, '/invite?x=1&code=REDACTED&y=2'],
+      [`/api/auth/invite/${secret}`, '/api/auth/invite/REDACTED'],
+      ['/api/auth/invite/accept', '/api/auth/invite/accept'],
+      ['/api/files/files/abc?raw=1', '/api/files/files/abc?raw=1'],
+      ['/api/x?barcode=1', '/api/x?barcode=1'],
+    ] as const) {
+      expect(redact(uri), uri).toBe(want);
+      expect(redact(uri).includes(secret), uri).toBe(false);
+    }
+    // No-referrer on the link pages, in the main site and the split vhost.
+    const pages = caddy.match(
+      /@signin_pages path \/client-signin \/client-signin\/\* \/invite \/invite\/\*/g,
+    );
+    expect(pages?.length).toBe(2);
+    expect(caddy.match(/header @signin_pages >Referrer-Policy no-referrer/g)?.length).toBe(2);
+  });
+
   it('box-local drop-ins are gitignored (public repo)', () => {
     expect(read('.gitignore')).toContain('infra/caddy/conf.d/*.caddy');
   });

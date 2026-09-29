@@ -89,7 +89,7 @@ describe('/api/team-admin/invites', () => {
     expect(await res.json()).toEqual({
       invite: ROW,
       code: 'AbCd+EfGh/JkMnPq',
-      linkPath: '/invite?code=AbCd%2BEfGh%2FJkMnPq',
+      linkPath: '/invite#code=AbCd%2BEfGh%2FJkMnPq',
     });
     // Scoped to the brain, attributed to the admin login.
     expect(h.created[0]).toEqual({

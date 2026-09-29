@@ -37,7 +37,8 @@ export type MemberInviteList = { invites: MemberInviteRow[] };
 /**
  * POST /api/team-admin/invites (201). `code` and `linkPath` are shown ONCE:
  * only the code's hash is stored. `linkPath` is a client-app path
- * (`/invite?code=…`); prefix the client's origin to share it.
+ * (`/invite#code=…` since 0.232.329: the fragment never reaches a server
+ * log; `/invite?code=…` before); prefix the client's origin to share it.
  */
 export type MemberInviteCreated = {
   invite: MemberInviteRow;

@@ -104,7 +104,9 @@ export type ClientLoginCreated = { client: ClientLoginRow };
 
 /** POST /api/team-admin/clients/:id/signin-link -> the link, ONCE. `path` is
  *  the client-app path to hand the client (the code is its only secret);
- *  72 hours, one use. Any older open link of the login is revoked. */
+ *  72 hours, one use. Any older open link of the login is revoked. Since
+ *  0.232.329 the code rides in the fragment (`/client-signin#code=...`), so
+ *  it never reaches a server log; links issued before carry `?code=`. */
 export type ClientSigninLinkCreated = {
   link: ClientSigninLinkRow;
   code: string;

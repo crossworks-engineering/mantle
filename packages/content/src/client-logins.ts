@@ -56,9 +56,11 @@ export class ClientLoginError extends Error {
 }
 
 /** The client-app path the admin hands the client. The code is its only
- *  secret. */
+ *  secret, so it rides in the FRAGMENT: a browser never sends a fragment to
+ *  any server, so it stays out of access logs and Referer headers (audit
+ *  B12). The client page also still reads `?code=` (links issued before). */
 export function clientSigninLinkPath(code: string): string {
-  return `/client-signin?code=${encodeURIComponent(code)}`;
+  return `/client-signin#code=${encodeURIComponent(code)}`;
 }
 
 async function requireAcknowledged(ownerId: string): Promise<void> {

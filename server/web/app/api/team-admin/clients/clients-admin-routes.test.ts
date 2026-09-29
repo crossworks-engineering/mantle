@@ -158,7 +158,7 @@ describe('/api/team-admin/clients/:id/signin-link', () => {
     expect(await res.json()).toEqual({
       link: LINK,
       code: 'AbCdEfGhJkMnPqRs',
-      path: '/client-signin?code=AbCdEfGhJkMnPqRs',
+      path: '/client-signin#code=AbCdEfGhJkMnPqRs',
     });
   });
 
