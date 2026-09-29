@@ -211,6 +211,22 @@ describe.skipIf(!URL)('a client login, end to end', () => {
     expect(await probe({ cookie: there })).toBe(401);
   });
 
+  it("a client's plain sign-out ends its other sessions and its asset tokens (audit B23)", async () => {
+    const id = await addClient('jo');
+    const here = await signedIn(id, 'jo');
+    const there = await signedIn(id, 'jo');
+    const shell = await call('/api/client/shell', { cookie: there });
+    expect(shell.status).toBe(200);
+    const at = ((await shell.json()) as { assetToken: string }).assetToken;
+    const bytes = () =>
+      call(`/api/client/files/not-a-uuid?at=${encodeURIComponent(at)}`).then((r) => r.status);
+    expect(await bytes()).toBe(400); // past the gate
+    const res = await call('/api/auth/logout', { method: 'POST', cookie: here });
+    expect(res.status).toBe(200);
+    expect(await probe({ cookie: there })).toBe(401);
+    expect(await bytes()).toBe(401);
+  });
+
   it('disable ends the session and blocks new links; enable does not revive it', async () => {
     const id = await addClient('ed');
     const cookie = await signedIn(id, 'ed');

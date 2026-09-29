@@ -850,7 +850,12 @@ export async function loginSessionEpoch(loginId: string): Promise<number> {
 }
 
 /** An `?at=` asset token for the anchor's bytes, minted for the login
- *  `loginId` and signed with that login's current session epoch. */
-export async function mintAssetToken(anchorId: string, loginId: string): Promise<string> {
-  return buildAssetToken(anchorId, loginId, await loginSessionEpoch(loginId));
+ *  `loginId` and signed with that login's current session epoch. `ttlSeconds`
+ *  shortens it (the client shell's: CLIENT_ASSET_TOKEN_TTL_SECONDS). */
+export async function mintAssetToken(
+  anchorId: string,
+  loginId: string,
+  opts: { ttlSeconds?: number } = {},
+): Promise<string> {
+  return buildAssetToken(anchorId, loginId, await loginSessionEpoch(loginId), opts.ttlSeconds);
 }

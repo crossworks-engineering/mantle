@@ -181,6 +181,18 @@ describe('client read routes: a client', () => {
       act: CLIENT,
       ep: 3,
     });
+    // Ten minutes, not the admin's two hours (audit B23): the shell is asked
+    // again every 60 s, so a live portal renews it long before then.
+    const token = String(body.assetToken);
+    const exp = (
+      JSON.parse(Buffer.from(token.slice(0, token.lastIndexOf('.')), 'base64url').toString()) as {
+        exp: number;
+      }
+    ).exp;
+    const now = Math.floor(Date.now() / 1000);
+    expect(exp - now).toBeLessThanOrEqual(tokens.CLIENT_ASSET_TOKEN_TTL_SECONDS);
+    expect(exp - now).toBeGreaterThan(tokens.CLIENT_ASSET_TOKEN_TTL_SECONDS - 60);
+    expect(tokens.CLIENT_ASSET_TOKEN_TTL_SECONDS).toBe(600);
   });
 
   it('a malformed id is a 400 before any read, on every :id route', async () => {
