@@ -4,6 +4,36 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.343: client tier audit fixes (C2 to C5)
+
+All findings of AUDIT: client logins C2 to C5 (leak paths 7, integrity 6.5,
+UI 7 of 10; no Blockers). Migrations 0195, 0196, 0197.
+
+- **An accepted item is redacted for its author.** A reviewer's edits made
+  after Take over no longer show a client (or a member) the titles of items
+  above their level; search, a held item's title and an accepted file's name
+  come from the snapshot, not the live item.
+- **The client chat's tools are fixed in code.** A client turn gets only the
+  client tools plus read_result, whatever the tool groups say; an agent
+  changing a group below admin goes to Pending; the reconcile resets
+  client-read.
+- **The lowering guard checks the target.** In a turn that read
+  client-written text, every write to an item at client or public level,
+  and every lowering, waits in Pending; every write tool is classified (a
+  sweep fails on a new one). The mark lasts 24 hours per conversation,
+  follows nodes the turn creates, and scans every id. Client requests stay
+  out of the corpus map. The MCP surface is documented as not gated.
+- **Abuse limits.** 100 comments a day per client login (a ledger), 1000 per
+  thread, paged threads; page and note text count toward the 200 MB and 5 GB
+  client limits (500 KB a page, 50,000 characters a note); an 8 MB JSON body
+  ceiling (64 KB on auth routes); the item cap takes the quota lock; give
+  back checks the client limits; client_request_create counts a ledger.
+- **Admins see clients' storage and comments**
+  (`/api/team-admin/clients/storage`, `/comments`, delete a client's
+  comments); the total is `MANTLE_CLIENT_SPACES_TOTAL_BYTES`.
+- A deleted client's item keeps the Client badge and the client-level
+  confirmation at Accept.
+
 ## 0.232.342: client drafts, requests and comments (client logins C5)
 
 - **Clients write their own pages and notes and upload files** in their own
