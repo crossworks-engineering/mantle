@@ -103,6 +103,31 @@ describe('node_share', () => {
     expect(createShare).not.toHaveBeenCalled();
   });
 
+  it("calls out an embedded client item the link took out of client logins' view (A10)", async () => {
+    vi.mocked(createShare).mockImplementation((async (
+      _o: string,
+      _id: string,
+      opts: { alsoLowered?: unknown[] },
+    ) => {
+      opts.alsoLowered?.push(
+        { id: 'f-1', type: 'file', title: 'plan.pdf', from: 'client', to: 'public' },
+        { id: 'f-2', type: 'file', title: 'logo.png', from: 'admin', to: 'public' },
+      );
+      return { id: 's-1', token: 'tok', mode: 'public' };
+    }) as never);
+    const out = outputOf(await share.handler({ id: NODE_ID }, ctx));
+    expect(out.warning).toBe(
+      "An embedded client item went from client to public with it and so left client logins' view: plan.pdf (file). Tell the owner; if clients should keep them, the owner decides what to change.",
+    );
+    // An admin embed going public is the ordinary rule, not called out.
+    expect(out.warning).not.toMatch(/logo\.png/);
+  });
+
+  it('says nothing extra when no client item moved', async () => {
+    const out = outputOf(await share.handler({ id: NODE_ID }, ctx));
+    expect(out).not.toHaveProperty('warning');
+  });
+
   it('surfaces the store’s own corrective when the item is not shareable', async () => {
     vi.mocked(createShare).mockRejectedValue(new Error("type 'email' is not shareable"));
     const res = await share.handler({ id: NODE_ID }, ctx);

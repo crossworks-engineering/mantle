@@ -1,7 +1,10 @@
 /**
  * GET /api/team-admin/shares — the Shared-links tab: every active share,
- * shaped exactly as SharedLinksPanel expects (the old SSR page's mapping).
+ * shaped exactly as SharedLinksPanel expects (the old SSR page's mapping),
+ * with each item's `level` (SharedLinkRow.level: `client` marks an old link,
+ * from when client meant an open link; audit A18).
  */
+import type { SharedLinkRow } from '@mantle/client-types';
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
 import { listActiveShares } from '@mantle/content';
@@ -13,7 +16,7 @@ export async function GET() {
   const [badges, active] = await Promise.all([teamAdminBadges(user.id), listActiveShares(user.id)]);
   return NextResponse.json({
     badges,
-    shares: active.map((s) => ({
+    shares: active.map((s): SharedLinkRow => ({
       id: s.id,
       path: `/s/${s.token}`,
       nodeId: s.nodeId,
@@ -25,6 +28,7 @@ export async function GET() {
       createdAt: s.createdAt,
       viewCount: s.viewCount,
       lastViewedAt: s.lastViewedAt,
+      level: s.level,
     })),
   });
 }
