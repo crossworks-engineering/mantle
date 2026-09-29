@@ -225,9 +225,25 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
           and cmd = 'SELECT'`;
       const covered = new Set(policies.flatMap((p) => p.roles));
       expect(covered.has('mantle_view_team'), t.table).toBe(true);
-      expect(covered.has('mantle_view_client'), t.table).toBe(false);
+      // The client role reads a team-drafts table only where the matrix
+      // names its own rule for it (the client thread on node_comments, 0194).
+      expect(covered.has('mantle_view_client'), t.table).toBe(
+        ruleFor(t, 'client') !== 'team-drafts',
+      );
       expect(covered.has('mantle_view_public'), t.table).toBe(false);
     }
+  });
+
+  it('the client thread is the only comment rule of the client role, and needs the human flag', async () => {
+    const tables = ACCESS_MATRIX.filter((t) => ruleFor(t, 'client') === 'client-thread');
+    expect(tables.map((t) => t.table)).toEqual(['public.node_comments']);
+    const rows = await sql<{ qual: string }[]>`
+      select qual from pg_policies
+       where schemaname = 'public' and tablename = 'node_comments' and cmd = 'SELECT'
+         and 'mantle_view_client' = any(roles)`;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.qual).toContain('mantle.human');
+    expect(rows[0]!.qual).toContain("'client'::text");
   });
 
   it('every filtered table has row level security on and a policy for each role', async () => {

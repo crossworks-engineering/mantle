@@ -57,6 +57,10 @@ export type RowRule =
   // Other members' team-shared personal items: the team role only, and only
   // with mantle.human on (a member request, never an agent). Phase 2.
   | 'team-drafts'
+  // The client thread on a client-level brain item (client logins C5,
+  // decision 8): comments with thread_scope 'client', read with mantle.human
+  // on while the item is a brain item at client level (0194).
+  | 'client-thread'
   // Rows at or below the viewer's level by the row's own `audience` column
   // (client logins C1: agents and tool groups for the client role, so a
   // client-level turn never even loads an agent or a group above client).
@@ -343,6 +347,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     rule: 'team-drafts',
     writer: 'content',
     space: 'write',
+    // The team role reads the client thread too (same policy); the client
+    // role reads ONLY that thread (0194).
+    byRole: { client: { rule: 'client-thread' } },
   },
   none('public.agent_groups'),
   none('public.channels'),
