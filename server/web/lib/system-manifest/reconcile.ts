@@ -396,6 +396,43 @@ async function provisionMissingSpecialists(ownerId: string): Promise<string[]> {
   return missing;
 }
 
+/**
+ * One brain's reconcile, the steps of the boot reconcile (the propagation
+ * contract in ./CLAUDE.md) without its production, owner and once-per-version
+ * gates. Exported for the tests: an existing brain gets what this version
+ * ships (client-responder and client-read, client logins C4, included).
+ */
+export async function reconcileOwner(ownerId: string) {
+  await seedToolCapabilities(ownerId, 'overwrite');
+  const { seededHeartbeats } = await applyManifest(ownerId, {
+    only: [],
+    mode: 'gap-fill',
+    skillMode: 'overwrite',
+  });
+  const personaChanges = await reconcilePersonaCapabilitiesByRole(ownerId);
+  const provisioned = await provisionMissingSpecialists(ownerId);
+  const specialistGrants = await grantSpecialistCapabilities(ownerId);
+  const defsSynced = await syncSpecialistDefs(ownerId);
+  const promptsUpgraded = await upgradeUneditedPrompts(ownerId);
+  const retired = await disableRetiredManifestItems(ownerId);
+  // Create any MISSING required worker (a new always-on worker shipped this
+  // version). Provision-only: an existing worker's model/provider is never
+  // overwritten (operator cost choices stand); optional media workers are left
+  // to onboarding.
+  const { created: workersCreated } = await seedManifestWorkers(ownerId, { requiredOnly: true });
+
+  return {
+    seededHeartbeats,
+    personaChanges,
+    provisioned,
+    specialistGrants,
+    defsSynced,
+    promptsUpgraded,
+    retired,
+    workersCreated,
+  };
+}
+
 export async function reconcileManifestOnBoot(): Promise<void> {
   if (ranThisProcess) return;
   ranThisProcess = true;
@@ -437,23 +474,16 @@ export async function reconcileManifestOnBoot(): Promise<void> {
     const prefs = await loadProfilePreferences(ownerId);
     if (prefs.lastReconciledVersion === APP_VERSION) return;
 
-    await seedToolCapabilities(ownerId, 'overwrite');
-    const { seededHeartbeats } = await applyManifest(ownerId, {
-      only: [],
-      mode: 'gap-fill',
-      skillMode: 'overwrite',
-    });
-    const personaChanges = await reconcilePersonaCapabilitiesByRole(ownerId);
-    const provisioned = await provisionMissingSpecialists(ownerId);
-    const specialistGrants = await grantSpecialistCapabilities(ownerId);
-    const defsSynced = await syncSpecialistDefs(ownerId);
-    const promptsUpgraded = await upgradeUneditedPrompts(ownerId);
-    const retired = await disableRetiredManifestItems(ownerId);
-    // Create any MISSING required worker (a new always-on worker shipped this
-    // version). Provision-only: an existing worker's model/provider is never
-    // overwritten (operator cost choices stand); optional media workers are left
-    // to onboarding.
-    const { created: workersCreated } = await seedManifestWorkers(ownerId, { requiredOnly: true });
+    const {
+      seededHeartbeats,
+      personaChanges,
+      provisioned,
+      specialistGrants,
+      defsSynced,
+      promptsUpgraded,
+      retired,
+      workersCreated,
+    } = await reconcileOwner(ownerId);
     await updateProfilePreferences(ownerId, { lastReconciledVersion: APP_VERSION });
 
     console.log(
