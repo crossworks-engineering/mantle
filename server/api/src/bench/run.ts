@@ -144,20 +144,21 @@ async function adminExec(adminUrl: string, statement: string): Promise<void> {
   }
 }
 
-/** Run one haystack in a child process against its own database. */
-function runChild(
-  file: string,
-  env: NodeJS.ProcessEnv,
-): Promise<{ code: number | null; out: string }> {
+/** Where a child writes its haystack's result: a file, not stdout. A result
+ *  with every question's context runs to megabytes, and a pipe write that
+ *  large is still in flight when the child exits, so the parent read a cut
+ *  line (the first A2 run died on "Unterminated string in JSON"). */
+const resultFileFor = (inputFile: string) => inputFile.replace(/\.input\.json$/, '.result.json');
+
+/** Run one haystack in a child process against its own database. The
+ *  child's output passes straight through as the run's log. */
+function runChild(file: string, env: NodeJS.ProcessEnv): Promise<number | null> {
   return new Promise((done) => {
     const child = spawn(process.execPath, [...process.execArgv, SELF, `--child=${file}`], {
       env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'inherit', 'inherit'],
     });
-    let out = '';
-    child.stdout.on('data', (d: Buffer) => (out += d.toString()));
-    child.stderr.on('data', (d: Buffer) => process.stderr.write(d));
-    child.on('close', (code) => done({ code, out }));
+    child.on('close', (code) => done(code));
   });
 }
 
@@ -230,30 +231,35 @@ async function parent(args: Args): Promise<void> {
         return;
       }
       const dbName = `mantle_bench_${runTag}_${h.id.replace(/[^a-zA-Z0-9]/g, '_')}`.slice(0, 63);
-      await createDb(dbName);
       const file = join(args.out, 'haystacks', `${h.id}.input.json`);
-      writeFileSync(file, JSON.stringify({ dataset: args.dataset, haystack: h }));
       const started = Date.now();
-      const { code, out } = await runChild(file, {
-        PATH: envDynamic('PATH'),
-        HOME: envDynamic('HOME'),
-        DATABASE_URL: withDatabase(adminUrl, dbName),
-        MANTLE_MASTER_KEY: masterKey,
-        BENCH_OPENROUTER_API_KEY: apiKey,
-        BENCH_MODELS: JSON.stringify(args.models),
-        BENCH_MAX_USD: String(Math.max(0, args.maxUsd - spent)),
-        BENCH_EXTRACT_CONCURRENCY: String(args.extractConcurrency),
-        BENCH_INGEST_ONLY: args.ingestOnly ? '1' : '',
-      });
-      if (!args.keepDb)
-        await adminExec(adminUrl, `drop database if exists "${dbName}" with (force)`);
-      const line = out.split('\n').find((l) => l.startsWith('BENCH_RESULT '));
-      if (code !== 0 || !line) {
-        console.error(`[bench] haystack ${h.id} failed (exit ${code}); see the log above`);
+      let r: HaystackResult;
+      // One haystack's failure (a database, a crashed child, an unreadable
+      // result) is logged and skipped; it never takes the rest of the run down.
+      try {
+        await createDb(dbName);
+        writeFileSync(file, JSON.stringify({ dataset: args.dataset, haystack: h }));
+        const code = await runChild(file, {
+          PATH: envDynamic('PATH'),
+          HOME: envDynamic('HOME'),
+          DATABASE_URL: withDatabase(adminUrl, dbName),
+          MANTLE_MASTER_KEY: masterKey,
+          BENCH_OPENROUTER_API_KEY: apiKey,
+          BENCH_MODELS: JSON.stringify(args.models),
+          BENCH_MAX_USD: String(Math.max(0, args.maxUsd - spent)),
+          BENCH_EXTRACT_CONCURRENCY: String(args.extractConcurrency),
+          BENCH_INGEST_ONLY: args.ingestOnly ? '1' : '',
+        });
+        if (!args.keepDb)
+          await adminExec(adminUrl, `drop database if exists "${dbName}" with (force)`);
+        if (code !== 0) throw new Error(`the child exited ${code}`);
+        r = JSON.parse(readFileSync(resultFileFor(file), 'utf8')) as HaystackResult;
+      } catch (err) {
+        console.error(
+          `[bench] haystack ${h.id} failed: ${(err as Error).message}; see the log above`,
+        );
         continue;
       }
-      const r = JSON.parse(line.slice('BENCH_RESULT '.length)) as HaystackResult;
-      writeFileSync(join(args.out, 'haystacks', `${h.id}.result.json`), JSON.stringify(r));
       for (const q of r.questions)
         appendFileSync(
           join(args.out, 'results.jsonl'),
@@ -310,7 +316,7 @@ async function child(file: string): Promise<void> {
       extractConcurrency: Number(envDynamic('BENCH_EXTRACT_CONCURRENCY') ?? 4),
       ingestOnly: envDynamic('BENCH_INGEST_ONLY') === '1',
     });
-    console.log(`BENCH_RESULT ${JSON.stringify(result)}`);
+    writeFileSync(resultFileFor(file), JSON.stringify(result));
   } finally {
     await closeDb();
   }
