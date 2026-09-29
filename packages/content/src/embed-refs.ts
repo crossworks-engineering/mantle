@@ -36,6 +36,12 @@ import { DRAW_HREF, MEDIA_HREF, MENTION_HREF, PAGE_HREF } from '@mantle/content-
  *  leaves the links where they are. */
 export type EmbedRefs = { ids: string[]; refused: string[]; embeds: string[] };
 
+/** Maps an absolute URL that points into this brain (its own host, or any
+ *  host's `/n/<id>` permalink) to its path, so it is read as the relative
+ *  path it stands for; null for any other URL. The client redactor passes
+ *  one (client-redact.ts); the member save rule does not. */
+export type OwnUrl = (url: string) => string | null;
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const UUID_ANY = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 /** C0 and C1 controls, DEL and whitespace. A browser's URL parser drops tabs
@@ -58,6 +64,8 @@ class Collector {
   private readonly embeds = new Set<string>();
   private readonly refused = new Set<string>();
 
+  constructor(private readonly ownUrl?: OwnUrl) {}
+
   /** `embed`: the id renders inside the item (see EmbedRefs). */
   id(v: unknown, embed = false): void {
     if (typeof v !== 'string' || !v) return;
@@ -76,12 +84,18 @@ class Collector {
    *  value sits on a node, so what it names renders inside the item. */
   href(v: unknown, image: boolean, text = false, embed = image): void {
     if (typeof v !== 'string') return;
-    const t = v.trim();
+    let t = v.trim();
     if (!t || t.startsWith('#')) return; // an anchor on the same page
+    // An absolute URL into this brain is the path it stands for (OwnUrl).
+    const own = this.ownUrl?.(t.replace(URL_NOISE, ''));
+    if (own != null) t = own;
     if (text && !t.startsWith('/') && !/^(mention|media|page|draw):/i.test(t)) return;
     // Classified as the browser will read it (see URL_NOISE); `t` is kept for
-    // the refusal message.
-    const u = t.replace(URL_NOISE, '');
+    // the refusal message. The scheme is case-insensitive, as a browser reads
+    // it: `PAGE:<id>` names the same item as `page:<id>`.
+    const u = t
+      .replace(URL_NOISE, '')
+      .replace(/^[a-z][a-z0-9+.-]*:/i, (scheme) => scheme.toLowerCase());
     const mention = MENTION_HREF.exec(u);
     if (mention) {
       if (mention[1] === 'node') this.id(mention[2], embed);
@@ -135,15 +149,15 @@ class Collector {
 }
 
 /** The references in a page document (ProseMirror JSON). */
-export function pageRefs(doc: unknown): EmbedRefs {
-  const c = new Collector();
+export function pageRefs(doc: unknown, ownUrl?: OwnUrl): EmbedRefs {
+  const c = new Collector(ownUrl);
   c.doc(doc);
   return c.result();
 }
 
 /** The references in a note's markdown. */
-export function noteRefs(markdown: string): EmbedRefs {
-  const c = new Collector();
+export function noteRefs(markdown: string, ownUrl?: OwnUrl): EmbedRefs {
+  const c = new Collector(ownUrl);
   if (markdown) c.doc(markdownToDoc(markdown));
   return c.result();
 }
@@ -151,8 +165,8 @@ export function noteRefs(markdown: string): EmbedRefs {
 /** The references in a drawing's scene: element links (links, never
  *  embeds: a drawing's own images are its file refs); an embedded frame's
  *  link is a source, like an image's, for the refusals. */
-export function sceneRefs(scene: unknown): EmbedRefs {
-  const c = new Collector();
+export function sceneRefs(scene: unknown, ownUrl?: OwnUrl): EmbedRefs {
+  const c = new Collector(ownUrl);
   const elements = (scene as { elements?: unknown })?.elements;
   if (Array.isArray(elements)) {
     for (const el of elements) {
@@ -167,8 +181,8 @@ export function sceneRefs(scene: unknown): EmbedRefs {
 
 /** The references in table cells (the text values that are a path or a
  *  scheme). */
-export function cellRefs(values: Iterable<unknown>): EmbedRefs {
-  const c = new Collector();
+export function cellRefs(values: Iterable<unknown>, ownUrl?: OwnUrl): EmbedRefs {
+  const c = new Collector(ownUrl);
   for (const v of values) c.href(v, false, true);
   return c.result();
 }

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { withViewer } from '@mantle/db';
 import { clientDrawSvg, getDrawSvg } from '@mantle/content';
 import { getClientForAsset } from '@/lib/auth';
+import { clientBytesGate } from '@/lib/client-bytes';
 
 const IdParams = z.object({ id: z.string().uuid() });
 
@@ -14,11 +15,15 @@ const IdParams = z.object({ id: z.string().uuid() });
  *
  * The snapshot inlines its images' bytes, so it is sent with only the images
  * whose file is a client-level file (the client files route's rule). A team
- * or admin image in a client drawing is taken out and its frame shows empty.
+ * or admin image in a client drawing is taken out and its frame shows empty,
+ * and an element link to an item the client may not read loses its href.
+ * Rate limited per login like the files route (audit B25), before any read.
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const client = await getClientForAsset(req);
   if (client instanceof Response) return client;
+  const limited = clientBytesGate(req, client);
+  if (limited) return limited;
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return new Response('Invalid id', { status: 400 });
   const id = idParsed.data.id;

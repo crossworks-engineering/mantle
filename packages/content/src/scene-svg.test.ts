@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { acceptSceneSvg, keepSvgImages, SCENE_SVG_MAX_BYTES, svgHasImages } from './scene-svg';
+import {
+  acceptSceneSvg,
+  dropSvgLinks,
+  keepSvgImages,
+  SCENE_SVG_MAX_BYTES,
+  svgHasImages,
+  svgLinkHrefs,
+} from './scene-svg';
 
 const OK = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect/></svg>';
 
@@ -149,5 +156,27 @@ describe('keepSvgImages', () => {
     expect(svgHasImages(OK)).toBe(false);
     expect(svgHasImages(wrap(sym('image-a', 'T0s=')))).toBe(true);
     expect(svgHasImages('<svg><feImage href="x"/></svg>')).toBe(true);
+  });
+});
+
+describe('svgLinkHrefs / dropSvgLinks (element links, audit B25)', () => {
+  const svg =
+    '<svg><a href="/n/team&amp;x"><path d="M0"/></a>' +
+    "<a xlink:href='https://example.invalid/'><text>site</text></a>" +
+    '<a target="_blank" href=page:bare><rect/></a><path/></svg>';
+
+  it('reads every link target, decoded, in any quoting', () => {
+    expect(svgLinkHrefs(svg)).toEqual(['/n/team&x', 'https://example.invalid/', 'page:bare']);
+    expect(svgLinkHrefs('<svg><path/></svg>')).toEqual([]);
+  });
+
+  it('takes the href off the links `keep` refuses and leaves the element', () => {
+    const out = dropSvgLinks(svg, (h) => h.startsWith('https:'));
+    expect(out).toBe(
+      '<svg><a><path d="M0"/></a>' +
+        "<a xlink:href='https://example.invalid/'><text>site</text></a>" +
+        '<a target="_blank"><rect/></a><path/></svg>',
+    );
+    expect(svgLinkHrefs(out)).toEqual(['https://example.invalid/']);
   });
 });

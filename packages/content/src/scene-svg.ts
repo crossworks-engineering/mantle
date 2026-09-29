@@ -147,3 +147,42 @@ export function keepSvgImages(svg: string, allowedFileIds: ReadonlySet<string>):
 export function svgHasImages(svg: string): boolean {
   return /<(?:image|feImage)\b/i.test(svg);
 }
+
+/** An `<a>` open tag (its attributes, quoted values skipped whole). */
+const SVG_ANCHOR_OPEN = new RegExp(`<a\\b${ATTRS}>`, 'gi');
+/** A link attribute inside one tag: `href` or `xlink:href`, quoted either
+ *  way or bare. */
+const SVG_LINK_ATTR = /(\s)((?:xlink:)?href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
+
+/** The value of an attribute as the parser reads it (the five XML entities;
+ *  acceptSceneSvg refuses numeric references). */
+function decodeAttr(v: string): string {
+  return v
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+/** Every link target on an `<a>` in the SVG (Excalidraw wraps a linked
+ *  element in one), decoded. */
+export function svgLinkHrefs(svg: string): string[] {
+  const out: string[] = [];
+  for (const tag of svg.match(SVG_ANCHOR_OPEN) ?? []) {
+    for (const m of tag.matchAll(SVG_LINK_ATTR)) out.push(decodeAttr(m[3] ?? m[4] ?? m[5] ?? ''));
+  }
+  return out;
+}
+
+/** The SVG with the link taken off every `<a>` whose target `keep` refuses:
+ *  the element stays, drawn as before, and points nowhere. */
+export function dropSvgLinks(svg: string, keep: (href: string) => boolean): string {
+  return svg.replace(SVG_ANCHOR_OPEN, (tag) =>
+    tag.replace(
+      SVG_LINK_ATTR,
+      (whole, _sp: string, _name: string, a?: string, b?: string, c?: string) =>
+        keep(decodeAttr(a ?? b ?? c ?? '')) ? whole : '',
+    ),
+  );
+}

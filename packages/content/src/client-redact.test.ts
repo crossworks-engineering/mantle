@@ -5,7 +5,17 @@
  */
 import { describe, expect, it } from 'vitest';
 import { CLIENT_PRIVATE_LABEL } from '@mantle/client-types/dto/client';
-import { docRefIds, noteRefIds, redactClientDoc, redactClientNote } from './client-redact';
+import {
+  cellRefIds,
+  clientLinkHidden,
+  clientOwnUrl,
+  docRefIds,
+  linkRefIds,
+  noteRefIds,
+  redactClientCell,
+  redactClientDoc,
+  redactClientNote,
+} from './client-redact';
 
 const OK = '11111111-1111-4111-8111-111111111111';
 const TEAM = '22222222-2222-4222-8222-222222222222';
@@ -91,7 +101,7 @@ describe('redactClientDoc', () => {
     expect(out).toEqual(
       doc(
         { type: 'fileEmbed', attrs: { nodeId: OK, filename: 'shared.pdf' } },
-        { type: 'image', attrs: { src: 'https://example.invalid/logo.png' } },
+        // An external image is refused like any other refused ref (B25).
         { type: 'blockquote', content: [{ type: 'paragraph' }] },
       ),
     );
@@ -215,5 +225,144 @@ describe('redactClientNote', () => {
     expect(out).not.toContain(TEAM);
     expect(out).toContain(CLIENT_PRIVATE_LABEL);
     expect(noteRefIds(out)).toEqual([]);
+  });
+});
+
+describe('fail closed and fresh labels (audit B25)', () => {
+  const own = clientOwnUrl(['https://brain.example.invalid']);
+
+  it('hides every refused reference, not only an entity mention', () => {
+    const out = json(
+      redactClientDoc(
+        doc(
+          para(
+            text('JSLINK', link('javascript:alert(1)')),
+            text('ODDSCHEME', link(`foo:${TEAM}`)),
+            text('BADID', link('page:not-a-uuid')),
+          ),
+          { type: 'image', attrs: { src: 'https://tracker.example.invalid/p.png', alt: 'EXTIMG' } },
+        ),
+        readable,
+      ),
+    );
+    for (const leak of ['JSLINK', 'ODDSCHEME', 'BADID', 'EXTIMG', 'tracker']) {
+      expect(out, leak).not.toContain(leak);
+    }
+    expect(out.split(CLIENT_PRIVATE_LABEL).length - 1).toBe(3);
+  });
+
+  it('reads a scheme case-insensitively: PAGE: and MEDIA: are page: and media:', () => {
+    const out = json(
+      redactClientDoc(
+        doc(para(text('UPPERTEAM', link(`PAGE:${TEAM}`)), text('UPPEROK', link(`PAGE:${OK}`))), {
+          type: 'image',
+          attrs: { src: `MEDIA:${ADMIN}`, alt: 'UPPERIMG' },
+        }),
+        readable,
+      ),
+    );
+    expect(out).not.toContain('UPPERTEAM');
+    expect(out).not.toContain('UPPERIMG');
+    expect(out).toContain('UPPEROK');
+    expect(docRefIds(doc(para(text('x', link(`PAGE:${OK}`)))))).toEqual([OK]);
+    const note = redactClientNote(`[Plan](PAGE:${TEAM}) and ![p](Media:${ADMIN})`, readable);
+    expect(note).toBe(`${CLIENT_PRIVATE_LABEL} and `);
+  });
+
+  it('reads an absolute URL into this brain as its path', () => {
+    const d = doc(
+      para(
+        text('OWNHOST', link(`https://brain.example.invalid/pages/${TEAM}`)),
+        text('HTTPOWN', link(`http://brain.example.invalid/n/${ADMIN}`)),
+        text('PERMALINK', link(`https://elsewhere.example.invalid/n/${TEAM}`)),
+        text('OWNOK', link(`https://brain.example.invalid/n/${OK}`)),
+        text('EXTERNAL', link(`https://example.invalid/docs/${TEAM}`)),
+      ),
+    );
+    const out = json(redactClientDoc(d, readable, { ownUrl: own }));
+    for (const leak of ['OWNHOST', 'HTTPOWN', 'PERMALINK', ADMIN]) {
+      expect(out, leak).not.toContain(leak);
+    }
+    expect(out).toContain('OWNOK');
+    expect(out).toContain('EXTERNAL');
+    expect(docRefIds(d, { ownUrl: own }).sort()).toEqual([OK, TEAM, ADMIN].sort());
+    // Without the brain's host, the /n/ permalink rule still holds.
+    expect(json(redactClientDoc(d, readable))).not.toContain('PERMALINK');
+    expect(
+      redactClientNote(`[x](https://brain.example.invalid/n/${TEAM}) ok`, readable, {
+        ownUrl: own,
+      }),
+    ).toBe(`${CLIENT_PRIVATE_LABEL} ok`);
+  });
+
+  it("refreshes a readable chip and child page card from today's titles", () => {
+    const titles = new Map([
+      [OK, 'Plan today'],
+      [OK2, 'Child today'],
+    ]);
+    const out = redactClientDoc(
+      doc(para({ type: 'mention', attrs: { id: OK, label: 'Plan old', ref: 'node' } }), {
+        type: 'childPage',
+        attrs: { pageId: OK2, title: 'Child old' },
+      }),
+      readable,
+      { titles },
+    );
+    expect(out).toEqual(
+      doc(para({ type: 'mention', attrs: { id: OK, label: 'Plan today', ref: 'node' } }), {
+        type: 'childPage',
+        attrs: { pageId: OK2, title: 'Child today' },
+      }),
+    );
+    expect(
+      redactClientNote(
+        `[Plan old](mention:node:${OK}) and [Child old](page:${OK2}) and [keep](/n/${OK})`,
+        readable,
+        { titles: new Map([...titles, [OK2, 'Child [today]']]) },
+      ),
+    ).toBe(
+      `[Plan today](mention:node:${OK}) and [Child \\[today\\]](page:${OK2}) and [keep](/n/${OK})`,
+    );
+  });
+
+  it('can keep a hidden child page as "Private item" (the level-filtered text)', () => {
+    const d = doc({ type: 'childPage', attrs: { pageId: TEAM, title: 'Team child' } });
+    expect(redactClientDoc(d, readable)).toEqual(doc({ type: 'paragraph' }));
+    expect(redactClientDoc(d, readable, { hiddenChildPage: 'label' })).toEqual(
+      doc({ type: 'childPage', attrs: { pageId: null, title: CLIENT_PRIVATE_LABEL } }),
+    );
+  });
+
+  it('table cells: a reference the client may not read reads "Private item"', () => {
+    const cells = [
+      `/n/${TEAM}`,
+      `PAGE:${ADMIN}`,
+      `/n/${OK}`,
+      'plain text',
+      `See /n/${TEAM}`,
+      42,
+      null,
+      [`/n/${TEAM}`, 'tag'],
+    ];
+    expect(cellRefIds(cells).sort()).toEqual([OK, TEAM, ADMIN].sort());
+    expect(cells.map((c) => redactClientCell(c, readable))).toEqual([
+      CLIENT_PRIVATE_LABEL,
+      CLIENT_PRIVATE_LABEL,
+      `/n/${OK}`,
+      'plain text',
+      `See /n/${TEAM}`,
+      42,
+      null,
+      [CLIENT_PRIVATE_LABEL, 'tag'],
+    ]);
+    expect(
+      redactClientCell(`https://brain.example.invalid/x/${TEAM}`, readable, { ownUrl: own }),
+    ).toBe(CLIENT_PRIVATE_LABEL);
+  });
+
+  it('drawing links: which ids they name, which are hidden', () => {
+    const hrefs = [`/n/${TEAM}`, `/n/${OK}`, 'https://example.invalid/', `mention:entity:e1`];
+    expect(linkRefIds(hrefs).sort()).toEqual([OK, TEAM].sort());
+    expect(hrefs.map((h) => clientLinkHidden(h, readable))).toEqual([true, false, false, true]);
   });
 });
