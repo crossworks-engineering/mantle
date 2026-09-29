@@ -29,6 +29,7 @@ import { isMcpManagedSecretService } from './mcp-oauth';
 import { UNTRUSTED_CONTENT_TOOL_SLUGS } from './untrusted';
 import type { ToolHandlerContext, ToolHandlerResult } from './types';
 import { registerToolDispatcher } from './dispatch-bridge';
+import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 
 // Same-package callers that must not import this module (it imports the
 // registry, which imports every builtin) reach dispatchTool through the bridge.
@@ -54,11 +55,17 @@ export async function dispatchTool(
         error: `builtin handler '${h.ref}' not registered in this process`,
       };
     }
+    const def = getBuiltin(h.ref);
+    // Owner-only tools refuse anyone but the owner before any other work
+    // (client logins C4): a team, client or MISSING surface is not the owner.
+    if (def?.ownerOnly && !isOwnerSurface(ctx.surface)) {
+      return { ok: false, error: OWNER_ONLY_ERROR };
+    }
     try {
       // Declared referential preconditions run first — a call aimed at a
       // missing or wrong-type node gets a uniform teaching error before any
       // handler work (see preconditions.ts).
-      const pre = getBuiltin(h.ref)?.preconditions;
+      const pre = def?.preconditions;
       if (pre && pre.length > 0) {
         const failure = await checkToolPreconditions(pre, input, ctx.ownerId);
         if (failure) return failure;
@@ -176,7 +183,13 @@ async function dispatchRecipe(
     return { ok: false, error: `recipe nesting too deep (max ${MAX_RECIPE_DEPTH})` };
   }
   const scope: RecipeScope = { input, steps: {} };
-  const subCtx: ToolHandlerContext = { ownerId: ctx.ownerId, agent: ctx.agent };
+  // Steps run for the recipe's caller: they inherit its surface, so an
+  // owner-only step is refused unless the recipe itself ran for the owner.
+  const subCtx: ToolHandlerContext = {
+    ownerId: ctx.ownerId,
+    agent: ctx.agent,
+    ...(ctx.surface ? { surface: ctx.surface } : {}),
+  };
   const trace: { tool: string; ms: number }[] = [];
   // Provenance: once ANY step pulls third-party content (an http tool, or a
   // web builtin like web_search — which the safety envelope permits), the

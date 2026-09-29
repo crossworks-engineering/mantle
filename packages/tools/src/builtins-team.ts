@@ -32,6 +32,7 @@ import {
   type TaskPriority,
 } from '@mantle/content';
 import type { ToolPrecondition, BuiltinToolDef, ToolHandlerResult } from './types';
+import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { str, strOpt, numOpt } from './coerce';
 import { errorMessage, UUID_RE } from '@mantle/std';
 import { asSystem } from '@mantle/db/viewer';
@@ -185,15 +186,14 @@ const team_request_create: BuiltinToolDef = {
 
 const team_chat_list: BuiltinToolDef = {
   slug: 'team_chat_list',
+  ownerOnly: true,
   readOnly: true,
   name: 'List team chat members',
   description:
     "List the brain's member logins (the team) and their chat activity: last message, thread size, whether the login is still active. Use for questions like 'who has been chatting with the team agent' or as the index before `team_chat_read`. The portal_archive field lists old team-code portal threads (history only; read them by `contactId`).",
   inputSchema: { type: 'object', properties: {} },
   handler: async (_input, ctx): Promise<ToolHandlerResult> => {
-    if (ctx.surface?.kind === 'team') {
-      return { ok: false, error: 'owner-side tool: not available on the team surface' };
-    }
+    if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
     const [members, portal] = await Promise.all([
       listMemberChatActivity(ctx.ownerId),
       listTeamMemberActivity(ctx.ownerId),
@@ -239,6 +239,7 @@ function chatLine(m: {
 
 const team_chat_read: BuiltinToolDef = {
   slug: 'team_chat_read',
+  ownerOnly: true,
   readOnly: true,
   preconditions: TEAM_CONTACT_ID_PRE,
   name: 'Read a team chat thread',
@@ -270,9 +271,7 @@ const team_chat_read: BuiltinToolDef = {
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    if (ctx.surface?.kind === 'team') {
-      return { ok: false, error: 'owner-side tool: not available on the team surface' };
-    }
+    if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
     const loginId = strOpt(input.loginId);
     const contactId = strOpt(input.contactId);
     if (!loginId && !contactId) {
@@ -319,6 +318,7 @@ const team_chat_read: BuiltinToolDef = {
 
 const team_access_list: BuiltinToolDef = {
   slug: 'team_access_list',
+  ownerOnly: true,
   readOnly: true,
   preconditions: TEAM_CONTACT_ID_PRE,
   name: 'List team access log',
@@ -346,9 +346,7 @@ const team_access_list: BuiltinToolDef = {
     },
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    if (ctx.surface?.kind === 'team') {
-      return { ok: false, error: 'owner-side tool: not available on the team surface' };
-    }
+    if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
     const loginId = strOpt(input.loginId);
     if (loginId && !UUID_RE.test(loginId)) {
       return { ok: false, error: 'loginId must be a login id from `team_chat_list`' };

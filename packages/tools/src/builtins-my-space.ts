@@ -2,9 +2,10 @@
  * The "my space" tools (member logins Phase 2, plan v3.1 section 2e): an
  * agent may read a member's PERSONAL items only while it works for that
  * member. The member is the turn's own login, which the server stamps on the
- * team surface (`surface.loginId`); the model can never name it. Anything
- * else (an owner turn, a heartbeat, a run, MCP) has no one to act for and
- * finds nothing: fail closed.
+ * team or client surface (`surface.loginId`); the model can never name it.
+ * Anything else (an owner turn, a heartbeat, a run, MCP) has no one to act
+ * for and finds nothing: fail closed. withSpace takes its level from the
+ * login's role, so a client login reads at client level.
  *
  * Read, never learn: personal items are never chunked, embedded or turned
  * into facts, so these tools list and open, they do not search by meaning.
@@ -32,19 +33,21 @@ const OPEN_TEXT_MAX = 30_000;
 const TEXT_FILE_MAX_BYTES = 256 * 1024;
 
 const NO_MEMBER =
-  "No member to act for: this tool reads the personal items of the member you are chatting with, so it only works in a member's own chat. For brain items use `search_nodes` or `page_get` instead.";
+  "No one to act for: this tool reads the personal items of the person you are chatting with, so it only works in a member's or client's own chat. For brain items use `search_nodes` or `page_get` instead.";
 
-/** The member this turn works for, and their personal space; null = nobody. */
+/** The login this turn works for (a member on the team surface, or a client
+ *  on the client surface), and their personal space; null = nobody. */
 async function onBehalfOf(
   ctx: ToolHandlerContext,
 ): Promise<{ loginId: string; spaceId: string } | null> {
   const s = ctx.surface;
-  if (s?.kind !== 'team' || !s.loginId) return null;
+  const loginId = s?.kind === 'team' || s?.kind === 'client' ? s.loginId : undefined;
+  if (!loginId) return null;
   const rows = (await db.execute(
-    sql`select mantle_personal_space(${s.loginId}::uuid) as id`,
+    sql`select mantle_personal_space(${loginId}::uuid) as id`,
   )) as unknown as { id: string | null }[];
   const spaceId = rows[0]?.id;
-  return spaceId ? { loginId: s.loginId, spaceId } : null;
+  return spaceId ? { loginId, spaceId } : null;
 }
 
 function clip(text: string): { text: string; truncated?: true } {

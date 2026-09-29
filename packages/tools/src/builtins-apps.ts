@@ -48,7 +48,7 @@ import { appMemberToolWarnings } from './member-app-tools';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
-import { surfaceHiddenNodeTypes } from './team-visibility';
+import { isOwnerSurface } from './surface';
 import { currentViewerLevel } from '@mantle/db/viewer';
 
 const APP_ID_PRE: readonly ToolPrecondition[] = [
@@ -670,13 +670,17 @@ const app_delete: BuiltinToolDef = {
 
 /** On a team surface, the apps at team level or lower; null on owner surfaces
  *  (no filter). A team member must not read the data of an admin-level app
- *  (member logins Phase 4b: the level is the access, not a share). */
+ *  (member logins Phase 4b: the level is the access, not a share). A client
+ *  or a missing surface reaches no app at all (client logins C4): no client
+ *  app level exists yet, so fail closed. */
 async function teamReachableApps(ctx: Parameters<BuiltinToolDef['handler']>[1]) {
   // Below admin, row level security already limits app databases to apps at
   // the viewer's level (member logins Phase 0b); this lookup is for an
-  // admin-level agent serving a team surface.
+  // admin-level agent serving a non-owner surface.
   if (currentViewerLevel() !== 'admin') return null;
-  return surfaceHiddenNodeTypes(ctx.surface) ? listTeamLevelAppIds(ctx.ownerId) : null;
+  if (isOwnerSurface(ctx.surface)) return null;
+  if (ctx.surface?.kind === 'team') return listTeamLevelAppIds(ctx.ownerId);
+  return new Set<string>();
 }
 
 const app_db_list: BuiltinToolDef = {

@@ -14,6 +14,7 @@ import { str, strOpt, numOpt as num } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { NODE_ID_PRE } from './builtins-common';
 import { HIDDEN_NODE_ERROR, surfaceHiddenNodeTypes } from './team-visibility';
+import { isOwnerSurface } from './surface';
 
 export const brain_capacity: BuiltinToolDef = {
   slug: 'brain_capacity',
@@ -118,6 +119,7 @@ export const node_read: BuiltinToolDef = {
 
 export const content_supersede: BuiltinToolDef = {
   slug: 'content_supersede',
+  ownerOnly: true,
   name: 'Mark content superseded',
   description:
     'Mark a node OUTDATED, optionally naming its replacement — the old copy is down-weighted in retrieval, and when a replacement is named every future hit on it carries a "superseded by" pointer to the successor (a bare mark down-weights only). Returns the updated mark. ' +
@@ -156,13 +158,13 @@ export const content_supersede: BuiltinToolDef = {
     required: ['node_id'],
   },
   handler: async (input, ctx) => {
-    // Members must not re-weight the owner's brain: curation is an owner-side
-    // action (mirrors the other owner-only tools' team-surface refusal).
-    if (ctx.surface?.kind === 'team') {
+    // Members and clients must not re-weight the owner's brain: curation is
+    // an owner-side action (the other owner-only tools refuse the same way).
+    if (!isOwnerSurface(ctx.surface)) {
       return {
         ok: false,
         error:
-          'content_supersede is owner-side only — on the team surface, ask the owner (or file a request with team_request_create) instead of re-weighting content directly.',
+          'content_supersede is owner-side only: ask the owner (or file a request) instead of re-weighting content directly.',
       };
     }
     const nodeId = str(input.node_id).trim();

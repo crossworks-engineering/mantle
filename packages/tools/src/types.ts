@@ -266,6 +266,12 @@ export type BuiltinToolDef = {
    *  before the audit; the flag preserves that exposure exactly while the
    *  implementation stops being a second copy. */
   mcpOnly?: true;
+  /** Runs only for the brain owner (client logins C4, plan section 8).
+   *  dispatchTool refuses it with OWNER_ONLY_ERROR unless `isOwnerSurface`
+   *  holds, before preconditions and the handler: a team, client or missing
+   *  surface never reaches it. The handler keeps its own check too, because
+   *  the MCP server calls `def.handler` directly. */
+  ownerOnly?: true;
   /** Handler implementation. */
   handler: BuiltinToolHandler;
   /** Input fields that contain sensitive data and MUST be replaced with

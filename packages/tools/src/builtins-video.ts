@@ -46,6 +46,7 @@ import { createPage, markdownToDoc } from '@mantle/content';
 import { getSttAdapter } from '@mantle/voice';
 import { recordIngest, step } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { assertFetchableUrl } from './ssrf-guard';
 import { notFound } from './errors';
 import { resolveDefaultWorker } from './builtins-workers';
@@ -136,6 +137,7 @@ type TranscriptSource = `captions:${'manual' | 'auto'}` | `stt:${string}`;
 
 const video_ingest: BuiltinToolDef = {
   slug: 'video_ingest',
+  ownerOnly: true,
   spends: true,
   name: 'Ingest a video into the brain',
   description:
@@ -179,11 +181,10 @@ const video_ingest: BuiltinToolDef = {
     },
   ],
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    // Belt-and-braces on top of the tool-group grant: an outbound fetch of an
-    // arbitrary URL never runs for a team surface.
-    if (ctx.surface?.kind === 'team') {
-      return { ok: false, error: 'owner-side tool — not available on the team surfaces' };
-    }
+    // Belt-and-braces on top of the tool-group grant and the dispatch gate (the
+    // MCP server calls handlers directly): an outbound fetch of an arbitrary
+    // URL runs only for the owner.
+    if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
     if (!mediaSidecarEnabled()) {
       return {
         ok: false,

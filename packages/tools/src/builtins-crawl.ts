@@ -29,7 +29,8 @@ import { apiKeys, db, docCollections, type DocCollection } from '@mantle/db';
 import { getApiKey, getApiKeyById } from '@mantle/api-keys';
 import { createDocCollection, slugifyFolder, upsertDocFromDisk } from '@mantle/files';
 import { recordIngest, step } from '@mantle/tracing';
-import type { BuiltinToolDef, ToolHandlerResult } from './types';
+import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
+import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { assertFetchableUrl } from './ssrf-guard';
 import { str } from './coerce';
 import { errorMessage } from '@mantle/std';
@@ -50,12 +51,11 @@ async function resolveFirecrawlKey(ownerId: string): Promise<string | null> {
   return row ? await getApiKeyById(row.id) : null;
 }
 
-/** Belt-and-braces on top of the tool-group grant: outbound fetches that spend
- *  the owner's crawl credits never run for a team surface. */
-export function refuseTeamSurface(ctx: { surface?: { kind?: string } }): ToolHandlerResult | null {
-  if (ctx.surface?.kind === 'team') {
-    return { ok: false, error: 'owner-side tool — not available on the team surfaces' };
-  }
+/** Belt-and-braces on top of the tool-group grant and the dispatch gate (the
+ *  MCP server calls handlers directly): outbound fetches that spend the
+ *  owner's crawl credits run only for the owner. */
+export function refuseNonOwner(ctx: Pick<ToolHandlerContext, 'surface'>): ToolHandlerResult | null {
+  if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
   return null;
 }
 
@@ -131,6 +131,7 @@ type CrawledDoc = {
 
 const web_map: BuiltinToolDef = {
   slug: 'web_map',
+  ownerOnly: true,
   name: 'Map a website',
   description:
     "List a website's URLs (sitemap-style discovery) WITHOUT fetching page content. Returns `links` found on the site at `url`, optionally filtered by `search`. Use it to scope a site before `web_crawl` — find how big it is and which subpath holds the content you want. For reading one page into the turn use `web_fetch`; for a synthesised answer use `web_search`. Needs a `firecrawl` API key (/settings/keys) and spends a small amount of Firecrawl credit per call.",
@@ -153,7 +154,7 @@ const web_map: BuiltinToolDef = {
     required: ['url'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    const refused = refuseTeamSurface(ctx);
+    const refused = refuseNonOwner(ctx);
     if (refused) return refused;
     const vetted = await vetUrl(str(input.url));
     if (!('url' in vetted)) return vetted;
@@ -191,6 +192,7 @@ const web_map: BuiltinToolDef = {
 
 const web_crawl: BuiltinToolDef = {
   slug: 'web_crawl',
+  ownerOnly: true,
   name: 'Crawl a website into the brain',
   description:
     'Crawl a website and store its pages as searchable documentation. Fetches up to `limit` pages under `url` as clean markdown (JS-rendered, via the Firecrawl cloud) and upserts each into a per-site documentation collection; on a re-crawl, unchanged pages are skipped free. Returns the collection key plus inserted/updated/skipped counts. **Spends Firecrawl credits — roughly one per page — so start small and scope tightly**: run `web_map` first, crawl the deepest `url` that covers the need, and use `include_paths`. For one page use `web_fetch`. Long-running — up to minutes. Needs a `firecrawl` API key (/settings/keys).',
@@ -223,7 +225,7 @@ const web_crawl: BuiltinToolDef = {
     required: ['url'],
   },
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
-    const refused = refuseTeamSurface(ctx);
+    const refused = refuseNonOwner(ctx);
     if (refused) return refused;
     const vetted = await vetUrl(str(input.url));
     if (!('url' in vetted)) return vetted;

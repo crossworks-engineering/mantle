@@ -120,7 +120,9 @@ const synthesize_speech: BuiltinToolDef = {
   handler: async (input, ctx): Promise<ToolHandlerResult> => {
     const text = str(input.text).trim();
     if (!text) return { ok: false, error: 'text required' };
-    if (!ctx.surface) {
+    // An `owner` surface (MCP, a run, an approved pending call) names the
+    // caller, not a delivery channel: no one to play the audio to.
+    if (!ctx.surface || ctx.surface.kind === 'owner') {
       return {
         ok: false,
         error:

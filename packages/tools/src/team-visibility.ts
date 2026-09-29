@@ -4,19 +4,22 @@
  * read tool reaches the owner's email, journal, secrets and Telegram chats.
  *
  * Fail closed: a team surface with no `privateReads` flag hides the
- * private corpus too. Owner surfaces (web, telegram, background) get null and
- * are not filtered.
+ * private corpus too. Only owner surfaces (web, telegram, `owner`) get null
+ * and are not filtered; a client or a MISSING surface gets the full hidden
+ * list (client logins C4: a caller that forgot its surface is not the owner).
  */
 import { teamHiddenNodeTypes } from '@mantle/content-core/profile-projections';
 import type { ToolHandlerContext } from './types';
+import { isOwnerSurface } from './surface';
 
 export function surfaceHiddenNodeTypes(
   surface: ToolHandlerContext['surface'],
 ): readonly string[] | null {
+  if (isOwnerSurface(surface)) return null;
   if (surface?.kind === 'team') {
     return teamHiddenNodeTypes(surface.privateReads === true);
   }
-  return null;
+  return teamHiddenNodeTypes(false);
 }
 
 /** The refusal a read tool returns when a team surface asks for a hidden

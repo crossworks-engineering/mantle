@@ -19,11 +19,12 @@ import { str, strOpt } from './coerce';
 import { NODE_ID_PRE } from './builtins-common';
 import { clientLeftWarning } from './builtins-share';
 import { appMemberToolWarnings } from './member-app-tools';
+import { isOwnerSurface } from './surface';
 
 const LEVELS = ['admin', 'team', 'client', 'public'];
 
 function ownerOnly(ctx: ToolHandlerContext): ToolHandlerResult | null {
-  if (ctx.surface?.kind === 'team') {
+  if (!isOwnerSurface(ctx.surface)) {
     return {
       ok: false,
       error: 'access_get / access_set are owner-side only: ask the owner to change a level.',
@@ -34,6 +35,7 @@ function ownerOnly(ctx: ToolHandlerContext): ToolHandlerResult | null {
 
 export const access_get: BuiltinToolDef = {
   slug: 'access_get',
+  ownerOnly: true,
   readOnly: true,
   preconditions: NODE_ID_PRE,
   name: 'Get an access level',
@@ -100,6 +102,7 @@ export const access_get: BuiltinToolDef = {
 
 export const access_set: BuiltinToolDef = {
   slug: 'access_set',
+  ownerOnly: true,
   preconditions: NODE_ID_PRE,
   name: 'Set an access level',
   description:
