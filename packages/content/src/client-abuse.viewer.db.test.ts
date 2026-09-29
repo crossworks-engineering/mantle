@@ -104,7 +104,7 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     await m.systemDb.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path, data) values
         (${id}, ${spaceOf[login]!}, 'file', ${`${tag} big.bin`}, 'space_files',
-         ${JSON.stringify({ filename: 'big.bin', size_bytes: bytes, storage: 'space' })}::jsonb)`);
+         ${JSON.stringify({ filename: `big-${id}.bin`, size_bytes: bytes, storage: 'space' })}::jsonb)`);
     return id;
   };
   const dropNode = (id: string) => m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);
@@ -398,8 +398,9 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     await as(c.text, () => sp.saveMineDraft(T, pg, text(noise(30_000))));
     const file = await fakeFile(c.text, 1000);
     const own = await as(c.text, () => sf.spaceStorageUsed(T));
-    // About 100 KB of incompressible text, plus the file.
-    expect(own).toBeGreaterThan(95_000);
+    // About 100 KB of random base64 (pglz takes a quarter off at most),
+    // plus the file.
+    expect(own).toBeGreaterThan(70_000);
     const [row] = await exec<{ bytes: string }>(sqlTag`
       select bytes::text from mantle_client_space_usage() where space_id = ${T}`);
     expect(Number(row!.bytes)).toBe(own);
