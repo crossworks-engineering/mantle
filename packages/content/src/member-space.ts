@@ -115,6 +115,14 @@ export type SpaceWriter = { adminOfBrain?: string };
  *  shape the client reads cannot drift from what the brain sends. */
 export type SpaceItemRow = MemberSpaceItemRow;
 
+/**
+ * A team draft sits in a MEMBER's space. Row security holds it too (0179),
+ * but the same human scope also shows clients' submitted items (client
+ * requests, 0194): a client's item is never a team draft, even one with a
+ * 'team' sharing row, so every team-drafts query names it here.
+ */
+const inMemberSpace = sql`mantle_member_space(${nodes.ownerId})`;
+
 /** Team drafts run on the team role with the human flag; never at admin. */
 function requireTeamDrafts(): void {
   if (currentViewerLevel() === 'admin' || currentSpaceScope()) {
@@ -1021,6 +1029,7 @@ export async function listTeamDrafts(
   const { limit, offset } = page(opts);
   const where = and(
     eq(spaceItems.sharing, 'team'),
+    inMemberSpace,
     sql`${spaceItems.authorLoginId} IS DISTINCT FROM ${loginId}`,
     opts.kind ? eq(nodes.type, opts.kind) : inArray(nodes.type, [...SPACE_ITEM_KINDS]),
     titleFilter(opts.q),
@@ -1053,6 +1062,7 @@ export async function getTeamDraftRow(id: string): Promise<SpaceItemRow | null> 
       and(
         eq(nodes.id, id),
         eq(spaceItems.sharing, 'team'),
+        inMemberSpace,
         inArray(nodes.type, [...SPACE_ITEM_KINDS]),
       ),
     )
@@ -1075,6 +1085,7 @@ export async function getTeamDraftItem(
       and(
         eq(nodes.id, id),
         eq(spaceItems.sharing, 'team'),
+        inMemberSpace,
         inArray(nodes.type, [...SPACE_ITEM_KINDS]),
       ),
     )
@@ -1098,7 +1109,9 @@ export async function getTeamDraftDrawSvg(id: string): Promise<string | null> {
     .select({ ownerId: nodes.ownerId })
     .from(nodes)
     .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
-    .where(and(eq(nodes.id, id), eq(nodes.type, 'draw'), eq(spaceItems.sharing, 'team')))
+    .where(
+      and(eq(nodes.id, id), eq(nodes.type, 'draw'), eq(spaceItems.sharing, 'team'), inMemberSpace),
+    )
     .limit(1);
   return n ? getDrawSvg(n.ownerId, id) : null;
 }
@@ -1111,7 +1124,9 @@ export async function openTeamDraftFile(id: string): Promise<OpenedSpaceFile | n
     .select({ ownerId: nodes.ownerId })
     .from(nodes)
     .innerJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
-    .where(and(eq(nodes.id, id), eq(nodes.type, 'file'), eq(spaceItems.sharing, 'team')))
+    .where(
+      and(eq(nodes.id, id), eq(nodes.type, 'file'), eq(spaceItems.sharing, 'team'), inMemberSpace),
+    )
     .limit(1);
   if (!n) return null;
   const file = await spaceFileOf(n.ownerId, id);

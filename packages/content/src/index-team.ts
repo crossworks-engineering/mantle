@@ -286,6 +286,7 @@ export {
   clientAcceptedItemRow,
   clientItemsPlan,
   clientOwnItemRow,
+  clientRequestItemRow,
   itemsPlan,
   libraryItemRow,
   mergeNewestFirst,
@@ -358,6 +359,21 @@ export {
 export { clientReadableIds, getClientSharedItem, listClientShared } from './client-shared';
 export { docRefIds, noteRefIds, redactClientDoc, redactClientNote } from './client-redact';
 export { clientDrawSvg, clientVisibleDrawFileIds } from './client-draw-images';
+// Client logins (C5): clients' submitted items for members (decision 5 B),
+// and the client thread on client-level items (decision 8).
+export {
+  getClientRequestItem,
+  listClientRequests,
+  openClientRequestFile,
+  type ClientRequestRow,
+  type ListClientRequestsOpts,
+} from './client-requests';
+export {
+  addClientThreadComment,
+  deleteClientThreadComment,
+  listClientThread,
+  type ClientThreadAuthor,
+} from './client-thread';
 // Client logins (C2b): email sign-in codes.
 export {
   CLIENT_CODE_CAP_REASONS,

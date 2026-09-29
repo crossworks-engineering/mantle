@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { VIEWER_LEVELS, withTeamDrafts, withViewer } from '@mantle/db';
+import { VIEWER_LEVELS, withHumanViewer, withTeamDrafts, withViewer } from '@mantle/db';
 import type { MemberItemRow } from '@mantle/client-types';
 import { MEMBER_ITEM_FILTERS } from '@mantle/client-types/member-kinds';
 import {
@@ -9,10 +9,12 @@ import {
   acceptedAuthors,
   acceptedByLogin,
   acceptedItemRow,
+  clientRequestItemRow,
   itemsPlan,
   libraryItemRow,
   libraryLevelsOf,
   listAccepted,
+  listClientRequests,
   listLibrary,
   listMine,
   listTeamDrafts,
@@ -43,11 +45,13 @@ const ABOVE_LIBRARY = VIEWER_LEVELS.filter(
  * GET /api/member/items?kind=&q=&state=&page= : everything this MEMBER can
  * see of one kind, in ONE list, newest first (item-list alignment): own items
  * (with the ones an admin took over), teammates' shared drafts, the Library,
- * and what they wrote that an admin accepted above the Library's levels.
+ * what they wrote that an admin accepted above the Library's levels, and
+ * what clients submitted for review (client requests, C5 decision 5 B).
  * Each row names its `source` and wears its `pill`; `state` narrows by pill
  * (MEMBER_ITEM_FILTERS). Every source reads under its own rules, exactly as
  * its own route does (space, team drafts, team level, the author rule on the
- * admin pool); this route only merges them (member-items.ts).
+ * admin pool, client requests on the team role with the human flag); this
+ * route only merges them (member-items.ts).
  */
 export async function GET(req: Request) {
   const member = await getMemberOr401();
@@ -108,6 +112,18 @@ export async function GET(req: Request) {
       });
       return {
         items: res.items.map((r) => acceptedItemRow(r, LIBRARY_LEVELS)),
+        total: res.total,
+      };
+    });
+  }
+
+  if (plan.clientRequests) {
+    sources.push(async (limit, offset) => {
+      const res = await withHumanViewer('team', () =>
+        listClientRequests({ kind, q, limit, offset }),
+      );
+      return {
+        items: res.items.map((r) => clientRequestItemRow(r.row, r.author)),
         total: res.total,
       };
     });

@@ -244,6 +244,10 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     '/api/member/team-drafts/not-a-uuid',
     '/api/member/files/not-a-uuid',
     '/api/member/space/not-a-uuid/bytes',
+    // Client requests and the client thread (client logins C5).
+    '/api/member/client-requests/not-a-uuid',
+    '/api/member/client-requests/not-a-uuid/bytes',
+    '/api/member/library/not-a-uuid/comments',
   ];
 
   it('lets a member session through to member routes', async () => {

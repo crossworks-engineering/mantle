@@ -356,6 +356,7 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
         `/api/admin/space/${ID}/bytes`,
         `/api/member/files/${ID}`,
         `/api/member/draws/${ID}/svg`,
+        `/api/member/client-requests/${ID}/bytes`,
       ]) {
         const res = await app.request(`${path}${path.includes('?') ? '&' : '?'}at=${at}`);
         expect(res.status, path).toBe(401);

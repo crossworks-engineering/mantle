@@ -121,6 +121,29 @@ export function spaceItemRow(row: MemberSpaceItemRow, source: 'own' | 'team'): M
   };
 }
 
+/** A client's submitted item (client logins C5, decision 5 B): read only,
+ *  wearing `submitted`, its author the client. No level: it is not a brain
+ *  item. */
+export function clientRequestItemRow(
+  row: MemberSpaceItemRow,
+  author: MemberItemAuthor,
+): MemberItemRow {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    icon: row.icon,
+    summary: null,
+    updatedAt: row.updatedAt,
+    source: 'client-request',
+    pill: 'submitted',
+    audience: null,
+    author,
+    byMe: false,
+    space: row,
+  };
+}
+
 export function libraryItemRow(
   row: LibraryRow,
   extra: { author?: MemberItemAuthor | null; byMe?: boolean } = {},

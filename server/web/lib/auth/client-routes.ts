@@ -16,6 +16,11 @@ export const CLIENT_ROUTES: readonly string[] = [
   // "Shared with you": items at client level, read at the client level.
   'GET /api/client/shared',
   'GET /api/client/shared/:id',
+  // The client thread on an item at client level (C5, decision 8): read on
+  // the client role with the human flag on, written with the level checked.
+  'GET /api/client/shared/:id/comments',
+  'POST /api/client/shared/:id/comments',
+  'DELETE /api/client/shared/:id/comments/:commentId',
   // Bytes of client-level items (session or a client ?at= token).
   'GET /api/client/files/:id',
   'GET /api/client/draws/:id/svg',
