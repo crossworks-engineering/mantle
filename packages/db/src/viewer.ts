@@ -23,8 +23,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { hkdfSync } from 'node:crypto';
 
-/** The four levels, lowest first. A caller sees an item when the caller's
- *  level is at or above the item's level. */
+/** The four levels, lowest first (the ITEM rank: raising and lowering an
+ *  item). Who reads what is not a chain at the bottom: since client logins
+ *  C1 (decision 3) the client role reads client items only and the public
+ *  role public items only, so client and public are siblings under team.
+ *  `levelCovers` is that rule; `lowerLevel` builds on it. */
 export const VIEWER_LEVELS = ['public', 'client', 'team', 'admin'] as const;
 export type ViewerLevel = (typeof VIEWER_LEVELS)[number];
 /** The levels that run on a limited role (admin runs on the admin pool). */
@@ -32,9 +35,56 @@ export type LimitedLevel = Exclude<ViewerLevel, 'admin'>;
 
 const RANK: Record<ViewerLevel, number> = { public: 0, client: 1, team: 2, admin: 3 };
 
-/** The lower of two levels. */
+/** The item rank: whether an item at `a` sits above an item at `b`
+ *  (admin > team > client > public). For raising and lowering ITEMS only;
+ *  never to decide what a viewer scope reads (use `levelCovers`). */
+export function itemLevelAbove(a: ViewerLevel, b: ViewerLevel): boolean {
+  return RANK[a] > RANK[b];
+}
+
+/**
+ * Whether a caller at `viewer` reads what sits at `level`: admin reads all,
+ * team reads team, client and public, client reads client only, public
+ * reads public only (mantle_viewer_audiences() in migration 0187).
+ */
+export function levelCovers(viewer: ViewerLevel, level: ViewerLevel): boolean {
+  if (viewer === level || viewer === 'admin') return true;
+  return viewer === 'team' && level !== 'admin';
+}
+
+/**
+ * A scope at one level asked to run at another that it does not cover and
+ * that does not cover it: a client scope meeting public, or a public scope
+ * meeting client. There is no common level (neither role reads the other's
+ * items), so the work is refused instead of widened.
+ */
+export class ViewerLevelConflictError extends Error {
+  readonly code = 'viewer-level-conflict';
+  constructor(
+    readonly current: ViewerLevel,
+    readonly requested: ViewerLevel,
+  ) {
+    super(
+      `A ${current}-level caller cannot run ${requested}-level work: ` +
+        'client and public read different items and neither covers the other.',
+    );
+    this.name = 'ViewerLevelConflictError';
+  }
+}
+
+/** Whether two levels have a common level (every pair but client with
+ *  public). */
+export function levelsMeet(a: ViewerLevel, b: ViewerLevel): boolean {
+  return levelCovers(a, b) || levelCovers(b, a);
+}
+
+/** The lower of two levels: the one the other covers. Throws
+ *  ViewerLevelConflictError for client with public (fail closed: never
+ *  widened to either). */
 export function lowerLevel(a: ViewerLevel, b: ViewerLevel): ViewerLevel {
-  return RANK[a] <= RANK[b] ? a : b;
+  if (levelCovers(a, b)) return b;
+  if (levelCovers(b, a)) return a;
+  throw new ViewerLevelConflictError(a, b);
 }
 
 export function isViewerLevel(v: unknown): v is ViewerLevel {
@@ -136,19 +186,31 @@ export function currentScopeTx(): unknown {
 /**
  * Run `fn` at `level` (or lower, if the caller already runs lower). Every
  * `db` query inside, including after awaits, uses that level's limited pool.
+ * A client scope asked for public work (or a public scope for client work)
+ * rejects with ViewerLevelConflictError: the two read different items, so
+ * there is no lower level to run at.
  * `withViewer('admin', fn)` changes nothing: it never raises a lower scope
  * back to admin and never leaves a scope's transaction. Any lower level
  * starts a plain scope at that level: from inside a member's space request,
  * `withViewer('team', …)` reads the brain's Library on the team pool.
  */
 export function withViewer<T>(level: ViewerLevel, fn: () => Promise<T>): Promise<T> {
-  const next = lowerLevel(currentViewerLevel(), level);
+  let next: ViewerLevel;
+  try {
+    next = lowerLevel(currentViewerLevel(), level);
+  } catch (err) {
+    // A client scope meeting public work (or the reverse): refused, as a
+    // rejected promise like any other failure of `fn`.
+    return Promise.reject(err);
+  }
   if (level === 'admin' || next === 'admin') return fn();
   return store.run({ level: next }, fn);
 }
 
 /** Enter a scope that runs in one transaction at `level` (or lower). Only
- *  client.ts calls this, with the transaction it opened on the right pool. */
+ *  client.ts calls this, with the transaction it opened on the right pool.
+ *  Throws ViewerLevelConflictError for client with public (a client's space
+ *  opened from a public scope). */
 export function runInTxScope<T>(
   scope: { level: LimitedLevel; space?: SpaceScope; tx: unknown; hooks?: TxHooks },
   fn: () => Promise<T>,

@@ -60,6 +60,13 @@ export type AccessNodeView = {
   /** Set when a member wrote it and an admin accepted it into the brain (the
    *  member-authored badge). Absent from brains before 0.232.285. */
   author?: MemberItemAuthor | null;
+  /** Levels at which this brain makes a NEW open link (client logins C1:
+   *  ['public']). Absent on brains before C1: the client then uses the old
+   *  copy (Client = open link). */
+  openLinkLevels?: AccessLevel[];
+  /** Old live links above this item (see ClientOldLinkAbove); only for an
+   *  item at client. */
+  oldLinksAbove?: ClientOldLinkAbove[];
 };
 
 /** One item that went down with the item that embeds it. */
@@ -96,13 +103,27 @@ export type AccessNodeUpdate = {
 
 // ── "What clients see" (client logins C1) ────────────────────────────────────
 
+/** A live open link on something ABOVE a client-level item (a folder that
+ *  holds it, or a client page that embeds it): made when client meant
+ *  "anyone with the link", still live until old client links retire.
+ *  Anyone with that link can open this item. */
+export type ClientOldLinkAbove = {
+  shareId: string;
+  /** The folder or page that carries the link. */
+  nodeId: string;
+  title: string;
+  type: string;
+  via: 'folder' | 'page';
+};
+
 /** A brain item a client-level item names but a client may not read: a
  *  mention chip, a link or an embed pointing at a team or admin item (or at
  *  something that is not the brain's). Its title reaches the client page as
  *  a label unless the client view hides it. */
 export type ClientReportRef = {
   id: string;
-  /** Null when the id names nothing the brain holds any more. */
+  /** Null when the id names nothing the brain holds: gone, or an item that
+   *  is not the brain's (a personal item), whose title is never shown. */
   type: string | null;
   title: string | null;
   /** The item's level; null when it is not a brain item (a personal item,
@@ -129,6 +150,10 @@ export type ClientReportItem = {
   emailedTo: string[];
   /** What it names that a client may not read (see ClientReportRef). */
   refsAbove: ClientReportRef[];
+  /** Live old links on a folder that holds it or a client page that embeds
+   *  it: anyone with one of those links can open this item. Absent from
+   *  brains before the audit fixes. */
+  oldLinksAbove?: ClientOldLinkAbove[];
 };
 
 /** The newest acknowledgement of the report. */
@@ -152,10 +177,18 @@ export type ClientReport = {
   acknowledged: boolean;
   /** Client-level items the newest acknowledgement did not include. */
   newSinceAck: string[];
+  /** sha256 hex of every current client-level item id (sorted, joined by
+   *  ','), the WHOLE set, not the 2000 shown. Send it back to acknowledge.
+   *  Absent from brains before the audit fixes. */
+  fingerprint?: string;
 };
 
-/** POST /api/access/client-report/ack { itemIds } -> the acknowledgement.
- *  `itemIds`: the client-level items the admin saw on the report. */
+/** POST /api/access/client-report/ack { fingerprint } (preferred) or
+ *  { itemIds } (old) -> the acknowledgement. With a fingerprint the server
+ *  recomputes it: equal records every current client-level item, different
+ *  answers 409 { error: 'conflict', reason: 'report-changed', message } and
+ *  the client reloads the report. `itemIds`: the client-level items the
+ *  admin saw on the report. */
 export type ClientReportAckResponse = { acknowledgement: ClientReportAck; acknowledged: boolean };
 
 /** GET /api/shares/all -> { shares: SharedLinkRow[] }: every live link,

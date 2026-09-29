@@ -206,9 +206,10 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   { table: 'public.space_uploads', read: 'none', rule: 'none', writer: 'content', space: 'write' },
 
   // ── Configuration the turn loop reads (no per-row secrecy) ────────────────
-  // The client role reads agents and tool groups at client level and below
-  // only (migration 0187): the team role keeps every row, because a
-  // team-level agent may still delegate to an admin agent.
+  // The client role reads agents and tool groups at client level only
+  // (migration 0187, narrowed by 0189: client and public are siblings, not
+  // a chain): the team role keeps every row, because a team-level agent may
+  // still delegate to an admin agent.
   {
     table: 'public.agents',
     read: 'all',
@@ -225,9 +226,29 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     byRole: { client: { rule: 'level-rows' } },
   },
   { table: 'public.skills', read: 'all', rule: 'all-rows', writer: 'admin' },
-  { table: 'public.embedding_config', read: 'all', rule: 'all-rows', writer: 'admin' },
+  // The client role reads none of it: resolveEmbeddingConfig reads on the
+  // admin pool (systemDb), so no client path needs the row with its base
+  // URLs (audit A27).
+  {
+    table: 'public.embedding_config',
+    read: 'all',
+    rule: 'all-rows',
+    writer: 'admin',
+    byRole: { client: { read: 'none', rule: 'none' } },
+  },
+  // Every column for the client role too: the worker resolver
+  // (ai-workers-resolve.ts) selects whole rows on the viewer's pool, so a
+  // column list would fail a client-level turn (C4). Narrow it there.
   { table: 'public.ai_workers', read: 'all', rule: 'all-rows', writer: 'admin' },
-  { table: 'public.profiles', read: 'all', rule: 'all-rows', writer: 'admin' },
+  // The client role reads the preferences only (loadProfilePreferences), not
+  // the owner's display name (audit A27).
+  {
+    table: 'public.profiles',
+    read: 'all',
+    rule: 'all-rows',
+    writer: 'admin',
+    byRole: { client: { read: ['user_id', 'preferences'] } },
+  },
   // mantle_brain_id() reads the anchor row; nothing else of a login. The
   // client role holds no grant here: mantle_brain_id() is SECURITY DEFINER
   // since migration 0187, so it needs none.

@@ -87,6 +87,12 @@ describe('access matrix', () => {
     expect(readFor(client('auth.users'), 'client')).toBe('none');
     // The team role still reads every agent: team delegation to admin agents.
     expect(ruleFor(client('public.agents'), 'team')).toBe('all-rows');
+    // Audit A27: no embedding config (base URLs) and no owner name for the
+    // client role; the team role unchanged.
+    expect(readFor(client('public.embedding_config'), 'client')).toBe('none');
+    expect(readFor(client('public.embedding_config'), 'team')).toBe('all');
+    expect(readFor(client('public.profiles'), 'client')).toEqual(['user_id', 'preferences']);
+    expect(readFor(client('public.profiles'), 'team')).toBe('all');
   });
 
   it('renders no grant on auth.users for the client role', () => {

@@ -27,6 +27,7 @@ import {
   EMBEDDING_KINDS,
   getActiveShareForNode,
   isWorkspaceKind,
+  oldLinksAboveItem,
   setItemLevel,
   type ShareSummary,
 } from '@mantle/content';
@@ -73,11 +74,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .where(and(eq(nodes.id, idParsed.data.id), eq(nodes.ownerId, user.id)))
     .limit(1);
   if (!item) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
-  const [closure, share, childCount, authors] = await Promise.all([
+  const [closure, share, childCount, authors, oldLinks] = await Promise.all([
     accessClosure(user.id, item.id),
     getActiveShareForNode(user.id, item.id),
     item.type === 'page' ? countPageDescendants(user.id, item.id) : Promise.resolve(0),
     acceptedAuthors(user.id, [item.id]),
+    // Old live links above a client item (a client folder over it, a client
+    // page embedding it): anyone with one opens this item too (audit A11).
+    item.audience === 'client' ? oldLinksAboveItem(user.id, item.id) : Promise.resolve([]),
   ]);
   const { path, ...rest } = item;
   const body: AccessNodeView = {
@@ -94,6 +98,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     embedsFollow: EMBEDDING_KINDS.includes(item.type),
     // A member wrote it and an admin accepted it (member logins Phase 4).
     author: authors.get(item.id) ?? null,
+    // A NEW open link is made at public only (client logins C1).
+    openLinkLevels: ['public'],
+    ...(item.audience === 'client' ? { oldLinksAbove: oldLinks } : {}),
   };
   return NextResponse.json(body);
 }

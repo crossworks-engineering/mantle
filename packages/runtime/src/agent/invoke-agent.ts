@@ -48,6 +48,7 @@ import {
 } from './skills';
 import type { ChatMessage } from './messages';
 import { agentLevel } from './agent-viewer';
+import { currentViewerLevel, levelsMeet } from '@mantle/db/viewer';
 
 export const invokeAgent: AgentInvoker = async ({
   ownerId,
@@ -78,6 +79,21 @@ export const invokeAgent: AgentInvoker = async ({
     return {
       ok: false,
       error: `agent '${agentSlug}' not found, not owned by this user, or disabled`,
+    };
+  }
+
+  // Client and public read different items (client logins C1, decision 3):
+  // a client-level caller never runs a public agent and a public-level
+  // caller never a client one. Refused here, before any trace or LLM work
+  // (runToolLoop would refuse too, with ViewerLevelConflictError).
+  const callerLevel = currentViewerLevel();
+  const targetLevel = agentLevel(target);
+  if (!levelsMeet(callerLevel, targetLevel)) {
+    return {
+      ok: false,
+      error:
+        `agent '${agentSlug}' is ${targetLevel}-level and this turn runs at ${callerLevel}: ` +
+        'client and public read different items, so it cannot run here',
     };
   }
 

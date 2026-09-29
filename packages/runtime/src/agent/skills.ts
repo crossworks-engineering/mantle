@@ -7,7 +7,14 @@
 
 import { and, eq, inArray } from 'drizzle-orm';
 import { db, skills, toolGroups, type Skill } from '@mantle/db';
-import { currentViewerLevel, isViewerLevel, lowerLevel, type ViewerLevel } from '@mantle/db/viewer';
+import {
+  currentViewerLevel,
+  isViewerLevel,
+  levelCovers,
+  levelsMeet,
+  lowerLevel,
+  type ViewerLevel,
+} from '@mantle/db/viewer';
 
 export type SkillForRuntime = {
   id: string;
@@ -124,8 +131,14 @@ export async function resolveAgentToolGroups(
   if (slugs.length === 0) return [];
   // Level cap (member logins Phase 0b): a group above the agent's level, or
   // above the current viewer scope (whichever is lower), is left out whatever
-  // the grant says. Fail closed: the tools simply are not there.
-  const cap = lowerLevel(currentViewerLevel(), level);
+  // the grant says. Fail closed: the tools simply are not there. A client
+  // scope and a public agent (or the reverse) have no common level: no tools.
+  const current = currentViewerLevel();
+  if (!levelsMeet(current, level)) {
+    console.warn(`[skills] a ${level}-level agent under a ${current}-level caller gets no tools`);
+    return [];
+  }
+  const cap = lowerLevel(current, level);
   const rows = await db
     .select({
       slug: toolGroups.slug,
@@ -145,7 +158,7 @@ export async function resolveAgentToolGroups(
   // cap in effectiveToolSlugs then cuts the same tools every time).
   const allowed = rows.filter((r) => {
     const groupLevel = isViewerLevel(r.audience) ? r.audience : 'admin';
-    if (lowerLevel(groupLevel, cap) === groupLevel) return true;
+    if (levelCovers(cap, groupLevel)) return true;
     console.warn(
       `[skills] tool group '${r.slug}' is ${groupLevel}-level; left out for a ${cap}-level agent`,
     );
