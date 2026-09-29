@@ -31,3 +31,16 @@ export type MemberItemFilter = (typeof MEMBER_ITEM_FILTERS)[number];
 export function isMemberItemFilter(v: unknown): v is MemberItemFilter {
   return typeof v === 'string' && (MEMBER_ITEM_FILTERS as readonly string[]).includes(v);
 }
+
+/** Which items an ADMIN's brain list holds (`?state=` on /api/pages, /notes,
+ *  /tables, /draws and the files lists): `brain` (the default, as before),
+ *  `private` (the admin's own private items only) or `all` (both, merged in
+ *  the list's own order). */
+export const ADMIN_LIST_STATES = ['brain', 'private', 'all'] as const;
+export type AdminListState = (typeof ADMIN_LIST_STATES)[number];
+
+export function adminListStateOf(v: unknown): AdminListState {
+  return typeof v === 'string' && (ADMIN_LIST_STATES as readonly string[]).includes(v)
+    ? (v as AdminListState)
+    : 'brain';
+}

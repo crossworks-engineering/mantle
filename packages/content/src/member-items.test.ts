@@ -9,7 +9,9 @@ import { MEMBER_ITEM_FILTERS } from '@mantle/client-types/member-kinds';
 import {
   acceptedItemRow,
   itemsPlan,
+  listSortCompare,
   mergeNewestFirst,
+  mergeSorted,
   pillOf,
   spaceItemRow,
   type PagedSource,
@@ -178,5 +180,37 @@ describe('mergeNewestFirst', () => {
   it('answers an empty page past the end with the full total', async () => {
     const res = await mergeNewestFirst([source(['a'], [1])], 3, 10);
     expect(res).toEqual({ items: [], total: 1 });
+  });
+});
+
+describe('mergeSorted with the brain lists’ sorts', () => {
+  const row = (id: string, title: string, created: number, updated: number) => ({
+    id,
+    title,
+    createdAt: at(created),
+    updatedAt: at(updated),
+  });
+  const src =
+    <T>(rows: T[]): PagedSource<T> =>
+    async (limit, offset) => ({ items: rows.slice(offset, offset + limit), total: rows.length });
+
+  it('merges by title, creation and edit time as each list sorts', async () => {
+    const brain = [row('b1', 'Alpha', 1, 9), row('b2', 'Delta', 5, 3)];
+    const own = [row('p1', 'Charlie', 3, 6), row('p2', 'bravo', 8, 1)];
+    const ids = async (
+      sort: 'edited' | 'newest' | 'oldest' | 'title',
+      a: typeof brain,
+      b: typeof own,
+    ) => (await mergeSorted([src(a), src(b)], 1, 10, listSortCompare(sort))).items.map((r) => r.id);
+    // Each source answers in the list's own order.
+    expect(await ids('title', brain, [own[1]!, own[0]!])).toEqual(['b1', 'p2', 'p1', 'b2']);
+    expect(await ids('newest', [brain[1]!, brain[0]!], [own[1]!, own[0]!])).toEqual([
+      'p2',
+      'b2',
+      'p1',
+      'b1',
+    ]);
+    expect(await ids('oldest', brain, own)).toEqual(['b1', 'p1', 'b2', 'p2']);
+    expect(await ids('edited', brain, own)).toEqual(['b1', 'p1', 'b2', 'p2']);
   });
 });

@@ -159,16 +159,18 @@ export const MEMBER_ITEMS_MAX_PAGE = 100;
 const CHUNK = 200;
 
 /**
- * Page `page` of the sources merged newest first (`updatedAt` desc, ISO
- * strings). The rows of merged page N are among the first N × pageSize of
- * every source, so each source is read that far (in chunks) and no further.
- * Sources run one after another: each opens its own database scope. Ties
- * keep source order, then each source's own order. `total` is the sum.
+ * Page `page` of the sources merged in `compare` order, which must be the
+ * order every source already answers in. The rows of merged page N are among
+ * the first N × pageSize of every source, so each source is read that far (in
+ * chunks) and no further. Sources run one after another: each opens its own
+ * database scope. Ties keep source order, then each source's own order.
+ * `total` is the sum.
  */
-export async function mergeNewestFirst<T extends { updatedAt: string }>(
+export async function mergeSorted<T>(
   sources: readonly PagedSource<T>[],
   page: number,
   pageSize: number,
+  compare: (a: T, b: T) => number,
 ): Promise<{ items: T[]; total: number }> {
   const need = page * pageSize;
   const pulled: T[] = [];
@@ -188,12 +190,39 @@ export async function mergeNewestFirst<T extends { updatedAt: string }>(
   }
   const merged = pulled
     .map((item, i) => ({ item, i }))
-    .sort((a, b) =>
-      a.item.updatedAt < b.item.updatedAt
-        ? 1
-        : a.item.updatedAt > b.item.updatedAt
-          ? -1
-          : a.i - b.i,
-    );
+    .sort((a, b) => compare(a.item, b.item) || a.i - b.i);
   return { items: merged.slice(need - pageSize, need).map((m) => m.item), total };
+}
+
+/** Newest `updatedAt` first (ISO strings): the member's one list. */
+export function mergeNewestFirst<T extends { updatedAt: string }>(
+  sources: readonly PagedSource<T>[],
+  page: number,
+  pageSize: number,
+): Promise<{ items: T[]; total: number }> {
+  return mergeSorted(sources, page, pageSize, listSortCompare('edited'));
+}
+
+/**
+ * The brain lists' sorts as a comparator (pageOrderBy and its siblings):
+ * `edited` newest save first, `newest` / `oldest` by creation, `title` A to
+ * Z. Title order is the database's collation there; `localeCompare` is the
+ * nearest the merge can do, so two titles that sort differently in the two
+ * can land a row off by one across a page boundary (never lost from a list
+ * that fits one page).
+ */
+export function listSortCompare<
+  T extends { updatedAt: string; createdAt?: string | null; title?: string },
+>(sort: 'edited' | 'newest' | 'oldest' | 'title'): (a: T, b: T) => number {
+  const desc = (x: string, y: string) => (x < y ? 1 : x > y ? -1 : 0);
+  switch (sort) {
+    case 'newest':
+      return (a, b) => desc(a.createdAt ?? '', b.createdAt ?? '');
+    case 'oldest':
+      return (a, b) => -desc(a.createdAt ?? '', b.createdAt ?? '');
+    case 'title':
+      return (a, b) => (a.title ?? '').localeCompare(b.title ?? '');
+    case 'edited':
+      return (a, b) => desc(a.updatedAt, b.updatedAt);
+  }
 }

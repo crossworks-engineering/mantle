@@ -1425,3 +1425,17 @@ exactly its sources, authors on the page's Library rows), and the new cases
 in `member-space.viewer.db.test.ts` (sharing and review filters, team
 drafts by review state) and `member-accepted.viewer.db.test.ts` (level
 filter, row-time order, `acceptedByLogin`).
+
+**The admin side.** The brain lists an admin reads (`/api/pages`,
+`/api/notes`, `/api/tables`, `/api/draws`, and the files root and Recent
+lists) take `?state=brain|private|all`. `brain`, the default, is the list
+exactly as before, so a client that never asks sees no change. `all` merges
+the caller's OWN private items (read in the acting login's space, as
+`GET /api/admin/space` reads them) into the list in its own sort order
+(`mergeSorted` with `listSortCompare`); `private` lists them alone. A
+private row is an `AdminPrivateListRow`: the `private` key holds the space
+row and marks it, since the item is read and written through
+`/api/admin/space`, never the brain route. Private items have no tags and
+no parent, so a tag filter, a sub-page level or a files folder other than
+the root lists none; in the pages tree they sit at the top level. Tests:
+`server/web/lib/admin-private-rows.test.ts`.

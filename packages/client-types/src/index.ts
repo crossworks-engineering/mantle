@@ -58,6 +58,7 @@ export type {
   ReviewAuthorView,
 } from './dto/review';
 export type {
+  AdminPrivateListRow,
   AdminSpaceItem,
   AdminSpaceItemRow,
   AdminSpaceList,

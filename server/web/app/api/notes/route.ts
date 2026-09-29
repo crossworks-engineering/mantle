@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import { countNotes, createNote, isDigestTag, listNoteTags, listNotes } from '@/lib/notes';
 import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
@@ -16,7 +17,8 @@ const CreateBody = z.object({
 /**
  * The /notes list — paginated + filtered, with tag facets, matching the old
  * server page. Agent digests are hidden unless `?digests=1` (or the tag is
- * itself a digest tag like `agent:assistant`).
+ * itself a digest tag like `agent:assistant`). `?state=brain|private|all`
+ * adds the caller's own private notes (lib/admin-private-rows; default brain).
  */
 export async function GET(req: Request) {
   const user = await getOwnerOr401();
@@ -27,18 +29,32 @@ export async function GET(req: Request) {
   const tag = sp.get('tag')?.trim() || undefined;
   const includeDigests = sp.get('digests') === '1' || (!!tag && isDigestTag(tag));
 
-  const [notes, total, tags] = await Promise.all([
-    listNotes(user.id, {
-      query,
-      tag,
-      includeDigests,
-      limit: PAGE_SIZE,
-      offset: (page - 1) * PAGE_SIZE,
+  const [listed, tags] = await Promise.all([
+    pageWithPrivate({
+      user,
+      kind: 'note',
+      state: listStateOf(sp),
+      q: query,
+      tagged: !!tag,
+      page,
+      pageSize: PAGE_SIZE,
+      brain: async (limit, offset) => {
+        const [items, total] = await Promise.all([
+          listNotes(user.id, { query, tag, includeDigests, limit, offset }),
+          countNotes(user.id, { query, tag, includeDigests }),
+        ]);
+        return { items, total };
+      },
     }),
-    countNotes(user.id, { query, tag, includeDigests }),
     listNoteTags(user.id, { includeDigests }),
   ]);
-  return NextResponse.json({ notes, total, page, pageSize: PAGE_SIZE, tags });
+  return NextResponse.json({
+    notes: listed.items,
+    total: listed.total,
+    page,
+    pageSize: PAGE_SIZE,
+    tags,
+  });
 }
 
 export async function POST(req: Request) {

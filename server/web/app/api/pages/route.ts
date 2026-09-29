@@ -2,6 +2,12 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
 import {
+  allPrivateRows,
+  isPrivateRow,
+  listStateOf,
+  pageWithPrivate,
+} from '@/lib/admin-private-rows';
+import {
   countPages,
   createPage,
   docToText,
@@ -41,6 +47,11 @@ const CreateBody = z.object({
  *     client-side from parent_id.
  * Always returns the tag facet counts so the filter UI needs no second request.
  *
+ * `?state=brain|private|all` (item-list alignment, lib/admin-private-rows):
+ * `brain` (default) as always; `all` adds the caller's own private pages as
+ * AdminPrivateListRow rows (top level in the tree, merged in the sort order
+ * when filtering, none under a tag); `private` lists them alone.
+ *
  * Every row carries its place in the hierarchy (`childCount`, `parentTitle`) in
  * BOTH shapes. The flat shape needs it: it returns only the hits, so without it
  * a hit that has sub-pages offers no way into them and a sub-page hit cannot
@@ -57,24 +68,56 @@ export async function GET(req: Request) {
   const sortParam = sp.get('sort');
   const sort: PageSort = SORTS.includes(sortParam as PageSort) ? (sortParam as PageSort) : 'edited';
   const filtering = Boolean(query || tag);
+  const state = listStateOf(sp);
 
   const tagsPromise = listPageTags(user.id);
 
   if (filtering) {
-    const [hits, total, tags] = await Promise.all([
-      listPages(user.id, { query, tag, sort, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
-      countPages(user.id, { query, tag }),
+    const [listed, tags] = await Promise.all([
+      pageWithPrivate({
+        user,
+        kind: 'page',
+        state,
+        q: query,
+        sort,
+        tagged: !!tag,
+        page,
+        pageSize: PAGE_SIZE,
+        brain: async (limit, offset) => {
+          const [items, total] = await Promise.all([
+            listPages(user.id, { query, tag, sort, limit, offset }),
+            countPages(user.id, { query, tag }),
+          ]);
+          return { items, total };
+        },
+      }),
       tagsPromise,
     ]);
-    const pages = await withPagePlacement(user.id, hits);
-    return NextResponse.json({ mode: 'list', pages, total, page, pageSize: PAGE_SIZE, tags });
+    const placed = new Map(
+      (
+        await withPagePlacement(
+          user.id,
+          listed.items.flatMap((r) => (isPrivateRow(r) ? [] : [r])),
+        )
+      ).map((r) => [r.id, r]),
+    );
+    const pages = listed.items.map((r) => (isPrivateRow(r) ? r : placed.get(r.id)!));
+    return NextResponse.json({
+      mode: 'list',
+      pages,
+      total: listed.total,
+      page,
+      pageSize: PAGE_SIZE,
+      tags,
+    });
   }
 
-  const [rows, tags] = await Promise.all([
-    listPages(user.id, { sort, limit: TREE_LIMIT }),
+  const [rows, privateRows, tags] = await Promise.all([
+    state === 'private' ? [] : listPages(user.id, { sort, limit: TREE_LIMIT }),
+    state === 'brain' ? [] : allPrivateRows(user, 'page', { sort }),
     tagsPromise,
   ]);
-  const pages = await withPagePlacement(user.id, rows);
+  const pages = [...(await withPagePlacement(user.id, rows)), ...privateRows];
   return NextResponse.json({
     mode: 'tree',
     pages,

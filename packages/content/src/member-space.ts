@@ -19,7 +19,7 @@
  * rule (a submitted item is edited by nobody until Accept, Return or Recall;
  * the row rules hold it too).
  */
-import { and, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import {
   asSystem,
   authUsers,
@@ -134,6 +134,7 @@ function rowOf({ node, item }: Joined): SpaceItemRow {
     submittedAt: item?.submittedAt?.toISOString() ?? null,
     returnedNote: item?.returnedNote ?? null,
     authorLoginId: item?.authorLoginId ?? null,
+    createdAt: node.createdAt.toISOString(),
     updatedAt: node.updatedAt.toISOString(),
   };
 }
@@ -151,6 +152,9 @@ export type ListSpaceOpts = {
    *  the first page). An item with no state row counts as a draft.
    *  `with-admin` selects the items an admin has taken over (`withAdmin`). */
   reviewStates?: readonly (ReviewState | 'with-admin')[];
+  /** The order, as the brain lists sort (default `edited`, newest save
+   *  first): an admin's private rows merge into those lists. */
+  sort?: SpaceListSort;
   /** Only items shared this way (the one list's State filter). An item with
    *  no state row counts as private. */
   sharing?: SpaceSharing;
@@ -168,6 +172,23 @@ function reviewFilter(all?: readonly (ReviewState | 'with-admin')[]) {
   if (!states.length) return sql`false`;
   const listed = inArray(spaceItems.reviewState, states);
   return states.includes('draft') ? or(isNull(spaceItems.reviewState), listed) : listed;
+}
+
+export type SpaceListSort = 'edited' | 'newest' | 'oldest' | 'title';
+
+/** The brain lists' orders (pageOrderBy and its siblings), with the id as
+ *  the tie-break so paging is stable. */
+function spaceOrderBy(sort: SpaceListSort | undefined) {
+  switch (sort) {
+    case 'newest':
+      return [desc(nodes.createdAt), desc(nodes.id)];
+    case 'oldest':
+      return [asc(nodes.createdAt), asc(nodes.id)];
+    case 'title':
+      return [asc(nodes.title), asc(nodes.id)];
+    default:
+      return [desc(nodes.updatedAt), desc(nodes.id)];
+  }
 }
 
 function sharingFilter(sharing?: SpaceSharing) {
@@ -204,7 +225,7 @@ export async function listMine(
     .from(nodes)
     .leftJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
     .where(where)
-    .orderBy(desc(nodes.updatedAt))
+    .orderBy(...spaceOrderBy(opts.sort))
     .limit(limit)
     .offset(offset);
   const [count] = await db

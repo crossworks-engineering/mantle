@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { allPrivateRows, listStateOf } from '@/lib/admin-private-rows';
 import { ensureFilesRootBranch, listFiles, listRecentFiles, upsertFile } from '@/lib/files';
 import {
   MEDIA_EXTS,
@@ -10,6 +11,7 @@ import {
   extOf,
   maxStreamedUploadBytes,
   sweepSpool,
+  FILES_ROOT_LABEL,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { promises as fs } from 'node:fs';
@@ -34,11 +36,29 @@ export async function GET(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid query' }, { status: 400 });
   }
+  // `?state=brain|private|all` (item-list alignment, lib/admin-private-rows):
+  // the caller's own private files join the ROOT folder (by name) and Recent
+  // (by time); no other folder holds any. Default brain, as before.
+  const state = listStateOf(url.searchParams);
   if ('recent' in parsed.data) {
-    const files = await listRecentFiles({ ownerId: user.id, limit: parsed.data.limit });
+    const limit = parsed.data.limit;
+    const [brain, own] = await Promise.all([
+      state === 'private' ? [] : listRecentFiles({ ownerId: user.id, limit }),
+      state === 'brain' ? [] : allPrivateRows(user, 'file', { cap: limit ?? 50 }),
+    ]);
+    const files = [...brain, ...own]
+      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0))
+      .slice(0, Math.min(200, Math.max(1, limit ?? 50)));
     return NextResponse.json({ files });
   }
-  const files = await listFiles({ ownerId: user.id, parentPath: parsed.data.parent });
+  const atRoot = parsed.data.parent === FILES_ROOT_LABEL;
+  const [brain, own] = await Promise.all([
+    state === 'private' ? [] : listFiles({ ownerId: user.id, parentPath: parsed.data.parent }),
+    state === 'brain' || !atRoot ? [] : allPrivateRows(user, 'file', { sort: 'title' }),
+  ]);
+  const files = [...brain, ...own].sort((a, b) =>
+    ('filename' in a ? a.filename : a.title).localeCompare('filename' in b ? b.filename : b.title),
+  );
   return NextResponse.json({ files });
 }
 

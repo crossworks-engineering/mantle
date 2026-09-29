@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import {
   countTables,
   createTable,
@@ -34,12 +35,35 @@ export async function GET(req: Request) {
     ? (sortParam as TableSort)
     : 'edited';
 
-  const [tables, total, tags] = await Promise.all([
-    listTables(user.id, { query, tag, sort, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
-    countTables(user.id, { query, tag }),
+  // `?state=brain|private|all` adds the caller's own private tables
+  // (lib/admin-private-rows; default brain, the list as before).
+  const [listed, tags] = await Promise.all([
+    pageWithPrivate({
+      user,
+      kind: 'table',
+      state: listStateOf(url.searchParams),
+      q: query,
+      sort,
+      tagged: !!tag,
+      page,
+      pageSize: PAGE_SIZE,
+      brain: async (limit, offset) => {
+        const [items, total] = await Promise.all([
+          listTables(user.id, { query, tag, sort, limit, offset }),
+          countTables(user.id, { query, tag }),
+        ]);
+        return { items, total };
+      },
+    }),
     listTableTags(user.id),
   ]);
-  return NextResponse.json({ tables, total, page, pageSize: PAGE_SIZE, tags });
+  return NextResponse.json({
+    tables: listed.items,
+    total: listed.total,
+    page,
+    pageSize: PAGE_SIZE,
+    tags,
+  });
 }
 
 export async function POST(req: Request) {

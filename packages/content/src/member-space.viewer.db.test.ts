@@ -260,6 +260,15 @@ describe.skipIf(!URL)('member personal space', () => {
     expect(ids(bSubmitted)).toEqual([sent.id]);
     expect(bSubmitted.total).toBe(1);
 
+    // The brain lists' sorts (an admin's private rows merge into them).
+    const order = async (sort: 'edited' | 'newest' | 'oldest' | 'title') =>
+      (await asA(() => sp.listMine(spaceA, { q, sort }))).items.map((i) => i.id);
+    expect(await order('oldest')).toEqual([priv.id, shared.id, sent.id]);
+    expect(await order('newest')).toEqual([sent.id, shared.id, priv.id]);
+    expect(await order('title')).toEqual([priv.id, shared.id, sent.id]);
+    const rows = (await asA(() => sp.listMine(spaceA, { q }))).items;
+    expect(rows.every((r) => typeof r.createdAt === 'string')).toBe(true);
+
     await asA(() => sp.recallItem(spaceA, sent.id));
     for (const it of [priv, shared, sent]) await asA(() => sp.deleteMineItem(spaceA, it.id));
   });

@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import {
   countDraws,
   createDraw,
@@ -39,12 +40,35 @@ export async function GET(req: Request) {
   const sortParam = sp.get('sort');
   const sort: DrawSort = SORTS.includes(sortParam as DrawSort) ? (sortParam as DrawSort) : 'edited';
 
-  const [rows, total, tags] = await Promise.all([
-    listDraws(user.id, { query, tag, sort, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
-    countDraws(user.id, { query, tag }),
+  // `?state=brain|private|all` adds the caller's own private drawings
+  // (lib/admin-private-rows; default brain, the list as before).
+  const [listed, tags] = await Promise.all([
+    pageWithPrivate({
+      user,
+      kind: 'draw',
+      state: listStateOf(sp),
+      q: query,
+      sort,
+      tagged: !!tag,
+      page,
+      pageSize: PAGE_SIZE,
+      brain: async (limit, offset) => {
+        const [items, total] = await Promise.all([
+          listDraws(user.id, { query, tag, sort, limit, offset }),
+          countDraws(user.id, { query, tag }),
+        ]);
+        return { items, total };
+      },
+    }),
     listDrawTags(user.id),
   ]);
-  return NextResponse.json({ draws: rows, total, page, pageSize: PAGE_SIZE, tags });
+  return NextResponse.json({
+    draws: listed.items,
+    total: listed.total,
+    page,
+    pageSize: PAGE_SIZE,
+    tags,
+  });
 }
 
 export async function POST(req: Request) {
