@@ -37,6 +37,9 @@ describe.skipIf(!URL)('namesClientSourced', () => {
       (${other}, ${`cs-x-${other.slice(0, 8)}@example.invalid`}, 'x', 'admin'),
       (${ids.clientLogin}, ${`cs-c-${owner.slice(0, 8)}@example.invalid`}, 'x', 'client'),
       (${ids.memberLogin}, ${`cs-m-${owner.slice(0, 8)}@example.invalid`}, 'x', 'member')`;
+    for (const o of [owner, other]) {
+      await admin`insert into spaces (id, kind, login_id) values (${o}, 'brain', ${o})`;
+    }
     const data = (source: string | null) => JSON.stringify(source ? { source } : {});
     await admin`insert into nodes (id, owner_id, type, title, path, data) values
       (${ids.clientTask}, ${owner}, 'task', 'c', 'tasks', ${data('client-request')}::jsonb),
