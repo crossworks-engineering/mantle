@@ -299,11 +299,21 @@ export async function processToolResultForModel(args: {
 
 type ResultRow = { content: string; bytes: number; chunked: boolean; toolSlug: string };
 
+/** A reader bound to one turn (client logins C4): a client or team turn
+ *  reads only the spills its OWN trace wrote, so a handle from another
+ *  login's turn (or an owner turn at the same level) reads as not found.
+ *  `traceId` null = the reader has no trace: nothing matches. */
+export type ResultBinding = { traceId: string | null };
+
 /** A spill, if the current viewer may read it: one written at a level the
  *  reader's level does not cover (an admin turn's spill read from a client
  *  turn, a client spill read from a public one) reads as not found. Null
  *  level = admin; an unknown value fails closed to admin. */
-async function loadResult(ownerId: string, handle: string): Promise<ResultRow | null> {
+async function loadResult(
+  ownerId: string,
+  handle: string,
+  bind?: ResultBinding,
+): Promise<ResultRow | null> {
   const [row] = await systemDb
     .select({
       content: toolResults.content,
@@ -311,13 +321,15 @@ async function loadResult(ownerId: string, handle: string): Promise<ResultRow | 
       chunked: toolResults.chunked,
       toolSlug: toolResults.toolSlug,
       viewerLevel: toolResults.viewerLevel,
+      traceId: toolResults.traceId,
     })
     .from(toolResults)
     .where(and(eq(toolResults.id, handle), eq(toolResults.ownerId, ownerId)))
     .limit(1);
   if (!row) return null;
   if (!levelCovers(currentViewerLevel(), asViewerLevel(row.viewerLevel ?? 'admin'))) return null;
-  const { viewerLevel: _level, ...rest } = row;
+  if (bind && (!bind.traceId || row.traceId !== bind.traceId)) return null;
+  const { viewerLevel: _level, traceId: _trace, ...rest } = row;
   return rest;
 }
 
@@ -327,11 +339,12 @@ export async function readResultPage(
   handle: string,
   page: number,
   pageBytes: number,
+  bind?: ResultBinding,
 ): Promise<
   | { ok: true; page: number; pages: number; bytes: number; text: string }
   | { ok: false; error: string }
 > {
-  const row = await loadResult(ownerId, handle);
+  const row = await loadResult(ownerId, handle, bind);
   if (!row) return { ok: false, error: `result '${handle}' not found or expired` };
   const size = Math.max(1, pageBytes);
   // Byte-accurate windows (consistent with the byte-based page count) snapped
@@ -353,11 +366,12 @@ export async function grepResult(
   handle: string,
   needle: string,
   opts?: { maxMatches?: number; context?: number },
+  bind?: ResultBinding,
 ): Promise<
   | { ok: true; count: number; matches: Array<{ offset: number; snippet: string }> }
   | { ok: false; error: string }
 > {
-  const row = await loadResult(ownerId, handle);
+  const row = await loadResult(ownerId, handle, bind);
   if (!row) return { ok: false, error: `result '${handle}' not found or expired` };
   const q = needle.trim();
   if (!q) return { ok: false, error: 'grep needs a non-empty term' };
@@ -419,11 +433,12 @@ export async function queryResult(
   handle: string,
   query: string,
   k = 5,
+  bind?: ResultBinding,
 ): Promise<
   | { ok: true; hits: Array<{ ordinal: number; text: string; distance: number }> }
   | { ok: false; error: string }
 > {
-  const row = await loadResult(ownerId, handle);
+  const row = await loadResult(ownerId, handle, bind);
   if (!row) return { ok: false, error: `result '${handle}' not found or expired` };
   const q = query.trim();
   if (!q) return { ok: false, error: 'query needs non-empty text' };

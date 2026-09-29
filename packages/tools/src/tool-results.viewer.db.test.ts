@@ -76,6 +76,34 @@ describe.skipIf(!URL)('read_result spills carry their level', () => {
     });
   });
 
+  it("a bound reader (a client or member turn) reads only its own trace's spill", async () => {
+    const turnA = randomUUID();
+    const turnB = randomUUID();
+    const mine = await m.withViewer('client', () =>
+      tr.spillToolResult({
+        ownerId: owner,
+        traceId: turnA,
+        toolSlug: 'client_shared_open',
+        content: 'turn A text',
+      }),
+    );
+    const page = (traceId: string | null) =>
+      m.withViewer('client', () => tr.readResultPage(owner, mine.handle, 1, 1000, { traceId }));
+    expect(await page(turnA)).toMatchObject({ ok: true, text: 'turn A text' });
+    // Another turn at the same level (another client login), and a reader
+    // with no trace: not found.
+    expect(await page(turnB)).toMatchObject({ ok: false });
+    expect(await page(null)).toMatchObject({ ok: false });
+    const g = await m.withViewer('client', () =>
+      tr.grepResult(owner, mine.handle, 'turn', undefined, { traceId: turnB }),
+    );
+    expect(g).toMatchObject({ ok: false });
+    // Unbound (an owner path at client level) reads it by handle as before.
+    expect(
+      await m.withViewer('client', () => tr.readResultPage(owner, mine.handle, 1, 1000)),
+    ).toMatchObject({ ok: true });
+  });
+
   it('grep and query refuse the same way', async () => {
     const g = await m.withViewer('client', () => tr.grepResult(owner, handles.admin!, 'written'));
     expect(g).toMatchObject({ ok: false });
