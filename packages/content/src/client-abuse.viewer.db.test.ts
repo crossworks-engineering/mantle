@@ -408,6 +408,14 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     expect(note && file).toBeTruthy();
   });
 
+  it('the total calls no security-definer function per row (I8)', async () => {
+    const rows = await exec<{ src: string }>(sqlTag`
+      select prosrc as src from pg_proc
+       where proname in ('mantle_client_space_usage', 'mantle_client_space_bytes')`);
+    expect(rows.length).toBe(2);
+    for (const r of rows) expect(r.src).not.toMatch(/mantle_client_space\s*\(/);
+  });
+
   it('a text write that grows past the client’s 200 MB is refused; shrinking passes', async () => {
     const T = spaceOf[c.text]!;
     const note = (
