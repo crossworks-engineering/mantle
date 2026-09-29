@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import {
+  CLIENT_REQUEST_SOURCE,
   FORUM_ARCHIVE_SOURCE,
   TEAM_REQUEST_SOURCE,
   extractExemptSql,
@@ -31,6 +32,13 @@ describe('isExtractExempt', () => {
     ).toBe(false);
   });
 
+  it('holds a CLIENT request the same way (client logins C4)', () => {
+    expect(isExtractExempt({ data: { source: CLIENT_REQUEST_SOURCE } })).toBe(true);
+    expect(
+      isExtractExempt({ data: { source: CLIENT_REQUEST_SOURCE, reviewed_at: '2026-09-29' } }),
+    ).toBe(false);
+  });
+
   it('leaves every other node alone', () => {
     expect(isExtractExempt({ data: null })).toBe(false);
     expect(isExtractExempt({ data: {} })).toBe(false);
@@ -43,6 +51,7 @@ describe('extractExemptSql', () => {
     const q = new PgDialect().sqlToQuery(extractExemptSql());
     expect(q.params).toContain(FORUM_ARCHIVE_SOURCE);
     expect(q.params).toContain(TEAM_REQUEST_SOURCE);
+    expect(q.params).toContain(CLIENT_REQUEST_SOURCE);
     expect(q.sql).toContain(`'reviewed_at'`);
   });
 });
