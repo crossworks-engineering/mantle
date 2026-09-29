@@ -57,7 +57,7 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
       content: [{ type: 'image', attrs: { nodeId: ids.embed, src: 'x' } }],
     };
     await m.db.execute(sqlTag`
-      insert into auth.users (id, email, password_hash) values (${owner}, ${`${tag}@example.invalid`}, 'x')`);
+      insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     // Items belong to a space (0165): this test's own owner is a brain row.
     await m.db.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);

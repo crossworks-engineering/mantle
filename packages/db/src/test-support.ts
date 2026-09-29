@@ -44,8 +44,8 @@ export const TEST_ANCHOR_EMAIL = 'test-anchor@example.invalid';
  */
 export async function ensureTestAnchor(sql: Sql): Promise<string> {
   await sql`
-    insert into auth.users (id, email, password_hash, is_owner)
-    values (${randomUUID()}, ${TEST_ANCHOR_EMAIL}, 'x', true)
+    insert into auth.users (id, email, password_hash, is_owner, role)
+    values (${randomUUID()}, ${TEST_ANCHOR_EMAIL}, 'x', true, 'admin')
     on conflict (is_owner) where is_owner do nothing`;
   const [row] = await sql<{ id: string | null }[]>`select mantle_brain_id() as id`;
   if (!row?.id) throw new Error('ensureTestAnchor: no anchor after the insert');

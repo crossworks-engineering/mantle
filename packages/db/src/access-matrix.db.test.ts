@@ -192,8 +192,8 @@ describe.skipIf(!URL)('access matrix on the migrated database', () => {
         // A throwaway login, so the test also runs on an empty database. The
         // failing insert rolls the whole transaction back.
         const [owner] = await tx<{ id: string }[]>`
-          insert into auth.users (id, email, password_hash)
-          values (gen_random_uuid(), 'ceiling-test@example.invalid', 'x') returning id`;
+          insert into auth.users (id, email, password_hash, role)
+          values (gen_random_uuid(), 'ceiling-test@example.invalid', 'x', 'admin') returning id`;
         await tx`insert into nodes (owner_id, type, title, path, audience)
                  values (${owner!.id}, 'journal', 'x', 'journal', 'team')`;
       }),

@@ -18,10 +18,11 @@ CREATE TABLE IF NOT EXISTS auth.users (
   is_owner      boolean     NOT NULL DEFAULT false,
   display_name  text,
   last_login_at timestamptz,
-  -- Member logins (0162): admin or member; the anchor is always admin. The
-  -- contact FK and the CHECK are added by migration 0162 (nodes does not exist
-  -- yet at cluster init).
-  role          text        NOT NULL DEFAULT 'admin',
+  -- Member logins (0162): admin, member or client; the anchor is always
+  -- admin. The contact FK and the CHECK are added by migrations (nodes does
+  -- not exist yet at cluster init). No default (0190): every insert names
+  -- the role.
+  role          text        NOT NULL,
   contact_id    uuid,
   disabled_at   timestamptz
 );

@@ -38,9 +38,9 @@ describe.skipIf(!URL)('the "What clients see" report', () => {
     r = await import('./client-report');
     sqlTag = (await import('drizzle-orm')).sql;
     await exec(sqlTag`
-      insert into auth.users (id, email, password_hash, display_name) values
-        (${owner}, ${`${tag}@example.invalid`}, 'x', null),
-        (${admin}, ${`${tag}-a@example.invalid`}, 'x', 'Ada Admin')`);
+      insert into auth.users (id, email, password_hash, display_name, role) values
+        (${owner}, ${`${tag}@example.invalid`}, 'x', null, 'admin'),
+        (${admin}, ${`${tag}-a@example.invalid`}, 'x', 'Ada Admin', 'admin')`);
     await exec(
       sqlTag`insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`,
     );
