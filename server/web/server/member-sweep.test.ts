@@ -87,8 +87,23 @@ vi.mock('../lib/auth/login-row', () => ({
   loadPersonalSpaceId: async () => SPACE_ID,
 }));
 
+// The MCP consent page checks that remote MCP is on and the client is
+// registered before it reads the login: both stood in (see role-sweep).
+vi.mock('../lib/mcp-oauth', async (importOriginal) => {
+  const { SWEEP_OAUTH_CLIENT } = await import('./public-session-routes');
+  return {
+    ...(await importOriginal<Record<string, unknown>>()),
+    isRemoteMcpEnabled: async () => true,
+    getClient: async (id: string) =>
+      id === SWEEP_OAUTH_CLIENT.id
+        ? { id, clientName: 'Sweep client', redirectUris: [SWEEP_OAUTH_CLIENT.redirectUri] }
+        : null,
+  };
+});
+
 import { PUBLIC_PATHS, SESSION_COOKIE_NAME } from '../lib/auth-constants';
 import { MEMBER_ROUTES, isMemberRoute } from '../lib/auth/member-routes';
+import { PUBLIC_SESSION_ROUTES, RENDER_PAGES, drivePublic } from './public-session-routes';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const hasManifest = existsSync(join(here, 'route-manifest.gen.ts'));
@@ -147,8 +162,20 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     }
   });
 
+  // The public routes the sweep below skips, driven one by one where they
+  // read the session themselves (audit A4; server/public-session-routes.ts).
+  it('answers a member on each session-reading public route as listed', async () => {
+    const failures: string[] = [];
+    for (const route of [...PUBLIC_SESSION_ROUTES, ...RENDER_PAGES]) {
+      const failure = await drivePublic(app, route, 'member', cookie);
+      if (failure) failures.push(failure);
+    }
+    expect(failures).toEqual([]);
+  });
+
   it('refuses a member on every route not in MEMBER_ROUTES', async () => {
     const failures: string[] = [];
+    const visited = new Set<string>();
     let checked = 0;
     for (const entry of manifest) {
       const path = concretePath(entry.pattern);
@@ -157,6 +184,7 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
       for (const method of entry.methods) {
         if (method === 'OPTIONS' || isMemberRoute(method, entry.pattern)) continue;
         checked += 1;
+        visited.add(`${method} ${entry.pattern}`);
         const res = await app.request(path, {
           method,
           headers: { cookie, 'content-type': 'application/json' },
@@ -182,6 +210,8 @@ describe.skipIf(!hasManifest)('member sweep: a member login is refused everywher
     }
     expect(checked).toBeGreaterThan(300);
     expect(failures).toEqual([]);
+    // The allow-list the check consults was reached (it is not dead).
+    expect([...TICKET_GATED].filter((k) => !visited.has(k))).toEqual([]);
   }, 300_000);
 
   it('lists only routes that exist', () => {
