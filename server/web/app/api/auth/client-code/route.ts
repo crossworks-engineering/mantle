@@ -26,7 +26,10 @@ import {
 } from '@/lib/client-logins';
 
 export async function GET() {
-  const body: ClientCodeAvailability = { enabled: !!(await loadClientSigninSender()) };
+  // Fail closed: when the sender cannot be read, codes are off (never a 500
+  // on a public page's first question).
+  const sender = await loadClientSigninSender().catch(() => null);
+  const body: ClientCodeAvailability = { enabled: !!sender };
   return NextResponse.json(body);
 }
 
