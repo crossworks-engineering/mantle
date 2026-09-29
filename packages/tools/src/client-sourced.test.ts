@@ -116,12 +116,8 @@ describe('the conversation mark (I9)', () => {
     expect(conversationTaintKey('a1', { kind: 'web' })).toBe('agent:a1');
     expect(conversationTaintKey('a1', { kind: 'telegram' })).toBe('agent:a1');
     expect(conversationTaintKey('a1', null)).toBe('agent:a1');
-    expect(conversationTaintKey('a1', { kind: 'team', loginId: 'm1' })).toBe(
-      'login:m1:agent:a1',
-    );
-    expect(conversationTaintKey('a1', { kind: 'client', loginId: 'c1' })).toBe(
-      'login:c1:agent:a1',
-    );
+    expect(conversationTaintKey('a1', { kind: 'team', loginId: 'm1' })).toBe('login:m1:agent:a1');
+    expect(conversationTaintKey('a1', { kind: 'client', loginId: 'c1' })).toBe('login:c1:agent:a1');
   });
   it('a read keeps the mark on the conversation; a carried mark is renewed by a new read', async () => {
     h.hit = true;

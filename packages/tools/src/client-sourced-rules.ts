@@ -432,7 +432,8 @@ async function writeVerdict(
     }
     if (groupSlugs.length > 0 || toolSlugs.length > 0) {
       const byGroup = groupSlugs.length > 0 ? inArray(toolGroups.slug, groupSlugs) : undefined;
-      const byTool = toolSlugs.length > 0 ? arrayOverlaps(toolGroups.toolSlugs, toolSlugs) : undefined;
+      const byTool =
+        toolSlugs.length > 0 ? arrayOverlaps(toolGroups.toolSlugs, toolSlugs) : undefined;
       const rows = await db
         .select({ audience: toolGroups.audience })
         .from(toolGroups)

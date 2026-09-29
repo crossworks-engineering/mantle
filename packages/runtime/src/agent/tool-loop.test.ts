@@ -963,7 +963,10 @@ describe('runToolLoop: the client-sourced lowering guard (client logins C4, plan
       }),
       fakeTool({
         slug: 'writes_recipe',
-        handler: { kind: 'recipe', steps: [{ tool: 'page_get' }, { tool: 'page_update' }] } as never,
+        handler: {
+          kind: 'recipe',
+          steps: [{ tool: 'page_get' }, { tool: 'page_update' }],
+        } as never,
       }),
       // An HTTP GET reads; a POST may write anywhere.
       fakeTool({ slug: 'http_get', handler: { kind: 'http', url: 'x', method: 'GET' } as never }),
@@ -1014,7 +1017,10 @@ describe('runToolLoop: the client-sourced lowering guard (client logins C4, plan
       adapter: makeFakeAdapter([
         {
           type: 'toolCalls',
-          toolCalls: [call('c1', 'run_plan', { title: 't', plan: {} }), call('c2', 'http_post', {})],
+          toolCalls: [
+            call('c1', 'run_plan', { title: 't', plan: {} }),
+            call('c2', 'http_post', {}),
+          ],
         },
         { type: 'text', text: 'done' },
       ]).adapter,

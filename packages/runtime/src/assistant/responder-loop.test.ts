@@ -70,7 +70,12 @@ vi.mock('@mantle/tools/client-sourced', async (importOriginal) => ({
   loadConversationTaint: vi.fn(async (ownerId: string, key: string) => {
     h.loadedKeys.push(key);
     return h.marked.has(key)
-      ? { clientSourced: true, via: 'an earlier turn', carried: true, conversation: { ownerId, key } }
+      ? {
+          clientSourced: true,
+          via: 'an earlier turn',
+          carried: true,
+          conversation: { ownerId, key },
+        }
       : { clientSourced: false, conversation: { ownerId, key } };
   }),
   taintFromText: vi.fn(
@@ -353,11 +358,11 @@ describe('runResponderLoop: client-written text in the retrieval context (plan N
     expect(h.loopCalls[1].taint).toMatchObject({ clientSourced: true, carried: true });
     // The owner's conversation with the agent: one key across web and
     // Telegram; a login's conversation with the agent is its own.
-    await runResponderLoop(baseOpts({ surface: { kind: 'telegram', telegramChatId: '1' } }) as never);
-    expect(h.loopCalls[2].taint.clientSourced).toBe(true);
     await runResponderLoop(
-      baseOpts({ surface: { kind: 'team', loginId: 'login-1' } }) as never,
+      baseOpts({ surface: { kind: 'telegram', telegramChatId: '1' } }) as never,
     );
+    expect(h.loopCalls[2].taint.clientSourced).toBe(true);
+    await runResponderLoop(baseOpts({ surface: { kind: 'team', loginId: 'login-1' } }) as never);
     expect(h.loopCalls[3].taint.clientSourced).toBe(false);
     expect(h.loadedKeys).toEqual([
       'agent:agent-1',

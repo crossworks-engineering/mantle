@@ -855,7 +855,13 @@ async function runToolLoopAtLevel(args: ToolLoopArgs): Promise<ToolLoopResult> {
       // that reads the copy is marked as if it read the client's text. Set
       // here, by the loop, never by the tool or the model; after the scan
       // above, so a copy made from a client item by id is marked too.
-      if (taint.clientSourced && outcome.ok && !queuedForApproval && tool && toolCreatesNodes(tool)) {
+      if (
+        taint.clientSourced &&
+        outcome.ok &&
+        !queuedForApproval &&
+        tool &&
+        toolCreatesNodes(tool)
+      ) {
         await markCreatedClientSourced(
           args.ownerId,
           JSON.stringify(outcome.output),

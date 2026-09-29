@@ -299,14 +299,61 @@ A client chats with the brain's **client-responder** in the client portal
 - **Requests.** `client_request_create` files a task in the same Requests
   queue as a member's request, tagged `client-request` and marked "from
   client". It is extract-exempt until an admin acts on it. Caps: 3 per
-  message, 10 a day per client login. An admin's reply lands in the
-  client's chat thread.
-- **Client-written text cannot lower anything.** A staff turn that has read
-  a client request or a client's chat thread cannot lower anything to
-  client or public on its own: `access_set` to client or public, a share
-  link, or `email_page` with a link waits in Pending for the owner. The turn
-  is marked from the ids in every tool call's input and output and in its
-  retrieval context; a delegated child shares the mark.
+  message, 10 a day per client login, counted in a ledger
+  (`client_request_filings`, 0197), so deleting a request gives nothing
+  back. An admin's reply lands in the client's chat thread.
+- **Client-written text cannot reach clients through a staff turn.** A staff
+  turn that has read client-written text (a client request, a client's chat
+  thread, an item a client wrote, or a copy of one) still reads freely, but
+  these wait in Pending for the owner:
+  - a lowering to client or public: `access_set` to client or public (the
+    level is read trimmed and in any case), a share link, `email_page` with
+    a link;
+  - any write INTO an item already at client or public level: a page,
+    note, table, drawing, file, folder, formula or app (its body, blocks,
+    rows, draft, commit, title or place), a new page under a client-level
+    page, an app whose exported table is at client level, and a tool group
+    or agent at client level. A commit takes a page's embeds down only to
+    the page's own level, so this also covers every embed a commit would
+    lower to client;
+  - any call whose target its input does not name by id: a run, a sandbox
+    or terminal command, a file overwrite by path, a recipe with a write
+    step, an API tool other than a GET, a connector's tool.
+
+  The gate goes by the call's target, not a list of tool names: every
+  built-in write tool is classified in
+  `packages/tools/src/client-sourced-rules.ts`, a test fails when a new one
+  is missing, and an unclassified write waits. An id that names no item of
+  the brain waits too. Approving the entry in Pending runs the original
+  call.
+
+- **How a turn is marked.** From the ids in every tool call's input and
+  output and in its retrieval context, every id checked (no cut-off); a
+  delegated child shares the mark. A node the marked turn creates (a note, a
+  page split or copied from a request) carries the mark
+  (`client_sourced_nodes`, set by the tool loop, never by a tool or the
+  model), so a later turn that reads the copy is marked as well.
+- **The mark lasts the conversation.** The next turn of the same
+  conversation holds the client's text in its history, so it starts marked
+  while the last client-sourced read is under 24 hours old
+  (`conversation_taints`). The owner's conversation with an agent is one
+  across web and Telegram; a member's or client's conversation with an agent
+  is its own. SQL only: no trigger, no worker, no model. A heartbeat, a run
+  worker and a Studio simulation start unmarked, and a marked turn cannot
+  start a run without approval.
+- **Client titles stay out of the owner's map.** The corpus map (the recent
+  titles every owner prompt carries) leaves out client requests, items a
+  client wrote and marked copies. Marking every turn that carries one in its
+  map would mark nearly every owner turn and turn Pending into a rubber
+  stamp; left out, a client's words reach a staff turn only through a read,
+  and every read is scanned.
+- **The MCP surface is not gated.** The owner's own MCP clients (Claude
+  Desktop, Claude Code) call the brain's tools directly, and the guard lives
+  in the brain's tool loop. The brain cannot see what an MCP client's model
+  has read: its context lives in the client, and each call arrives on its
+  own. A call over MCP is the owner acting by hand, with the MCP client's
+  own tool approval as the check: treat a client request read over MCP as
+  untrusted text before approving a share or a level change there.
 - **Caps.** The member caps, per client login: 6 messages a minute, the
   daily turn cap (`TEAM_CHAT_DAILY_TURNS`) and the daily token budget
   (`MANTLE_MEMBER_DAILY_TOKENS`), taken from the turn ledger when a turn is
@@ -367,8 +414,11 @@ took one over, and accepted.
   on a team or admin item, a Team drafts item or a public item is never
   shown to a client. Raise the item above client and clients read none of
   it.
-- **Client-written text cannot lower anything** (section 8), and an item
-  accepted from a client's space counts as client-written for good
-  (`space_items.author_role`, kept after the login is deleted).
+- **Client-written text cannot reach clients through a staff turn**
+  (section 8): after a staff turn reads a client's item it cannot lower
+  anything to client or public, or write into an item clients read,
+  without the owner's approval. An item accepted from a client's space
+  counts as client-written for good (`space_items.author_role`, kept after
+  the login is deleted), and so does a copy a marked turn made of it.
 - **Cost.** No client write starts the extractor, a trigger or a worker.
   Accept announces each moved item once, as for a member.

@@ -111,16 +111,18 @@ describe('verdicts that need no lookup', () => {
   it('a target named by anything but an id waits (fail closed)', async () => {
     expect((await verdict('page_update', { id: 'Pricing page' })).gate).toBe(true);
     expect((await verdict('table_row_add', { table_id: 42 })).gate).toBe(true);
-    expect((await verdict('page_from_notes', { note_ids: [ID, 7], supersede_source: true })).gate).toBe(
-      true,
-    );
+    expect(
+      (await verdict('page_from_notes', { note_ids: [ID, 7], supersede_source: true })).gate,
+    ).toBe(true);
   });
 
   it('a file overwrite by path waits; a new file runs', async () => {
-    expect((await verdict('file_create', { parent_path: 'a', filename: 'b', overwrite: true })).gate).toBe(
-      true,
-    );
-    expect(await verdict('file_create', { parent_path: 'a', filename: 'b' })).toEqual({ gate: false });
+    expect(
+      (await verdict('file_create', { parent_path: 'a', filename: 'b', overwrite: true })).gate,
+    ).toBe(true);
+    expect(await verdict('file_create', { parent_path: 'a', filename: 'b' })).toEqual({
+      gate: false,
+    });
   });
 
   it('a create with no parent runs; the always-rules wait; the free ones run', async () => {
@@ -129,7 +131,9 @@ describe('verdicts that need no lookup', () => {
     expect((await verdict('run_plan', { title: 't' })).gate).toBe(true);
     expect((await verdict('run_terminal', { command: 'ls' })).gate).toBe(true);
     expect(await verdict('web_fetch', { url: 'https://example.com' })).toEqual({ gate: false });
-    expect(await verdict('invoke_agent', { agent_slug: 'x', prompt: 'p' })).toEqual({ gate: false });
+    expect(await verdict('invoke_agent', { agent_slug: 'x', prompt: 'p' })).toEqual({
+      gate: false,
+    });
   });
 
   it('a lookup that fails sends the call to pending', async () => {
@@ -140,7 +144,10 @@ describe('verdicts that need no lookup', () => {
   it('a row slug that differs from its builtin is judged by the builtin', async () => {
     const renamed: GateTool = { slug: 'my_reader', handler: { kind: 'builtin', ref: 'page_get' } };
     expect(await verdict('my_reader', { id: ID }, renamed)).toEqual({ gate: false });
-    const renamedWrite: GateTool = { slug: 'my_plan', handler: { kind: 'builtin', ref: 'run_plan' } };
+    const renamedWrite: GateTool = {
+      slug: 'my_plan',
+      handler: { kind: 'builtin', ref: 'run_plan' },
+    };
     expect((await verdict('my_plan', {}, renamedWrite)).gate).toBe(true);
   });
 });

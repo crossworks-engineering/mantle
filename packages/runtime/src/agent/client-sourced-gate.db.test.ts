@@ -110,8 +110,7 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
        where owner_id = ${ownerId} and status = 'pending' and args::text like ${`%${id}%`}
        order by created_at`;
   const audience = async (id: string) =>
-    (await admin<{ audience: string }[]>`select audience from nodes where id = ${id}`)[0]
-      ?.audience;
+    (await admin<{ audience: string }[]>`select audience from nodes where id = ${id}`)[0]?.audience;
   const docHas = async (id: string, text: string) =>
     (
       await admin<{ hit: boolean }[]>`
@@ -243,9 +242,9 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
     expect(await gate('app_db_seed', { id: ids.appTeamOnly, table: 'rows', rows: [] })).toEqual({
       gate: false,
     });
-    expect((await gate('tool_group_ensure', { slug: groupClient, tool_slugs: ['page_get'] })).gate).toBe(
-      true,
-    );
+    expect(
+      (await gate('tool_group_ensure', { slug: groupClient, tool_slugs: ['page_get'] })).gate,
+    ).toBe(true);
     expect(await gate('tool_group_ensure', { slug: groupTeam, tool_slugs: ['page_get'] })).toEqual({
       gate: false,
     });
@@ -254,17 +253,22 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
       gate: false,
     });
     // An API tool already in the client group, edited by slug.
-    expect((await gate('api_tool_update', { slug: `${tag}_tool`, url: 'https://x' })).gate).toBe(true);
+    expect((await gate('api_tool_update', { slug: `${tag}_tool`, url: 'https://x' })).gate).toBe(
+      true,
+    );
     expect(await gate('api_tool_update', { slug: `${tag}_other`, url: 'https://x' })).toEqual({
       gate: false,
     });
     expect(
-      (await gate('agent_grant_tool_group', { agent_slug: agentClient, group_slug: groupTeam })).gate,
+      (await gate('agent_grant_tool_group', { agent_slug: agentClient, group_slug: groupTeam }))
+        .gate,
     ).toBe(true);
     // An id of no item of this brain waits (fail closed).
     expect((await gate('page_update', { id: randomUUID(), title: 'x' })).gate).toBe(true);
     // A write into a team item runs; into a client item waits.
-    expect(await gate('page_update', { id: ids.otherTeamPage, title: 'x' })).toEqual({ gate: false });
+    expect(await gate('page_update', { id: ids.otherTeamPage, title: 'x' })).toEqual({
+      gate: false,
+    });
     expect((await gate('table_row_add', { table_id: ids.appTable, cells: {} })).gate).toBe(true);
   });
 });
