@@ -4,8 +4,11 @@
  * request, a member login, an ordinary task and another brain's client
  * request are not. An item a client wrote (client logins C5) is, in any state
  * and after the client login is deleted: an item accepted from a client's
- * space still taints a staff turn that read it. Seeds its own rows on a
- * random owner; removes them.
+ * space still taints a staff turn that read it. So is a node a marked turn
+ * created (C5 audit fix L10); the corpus map leaves all of them out (L4);
+ * a conversation keeps its mark for 24 hours (I9). The gate itself runs end
+ * to end in packages/runtime/src/agent/client-sourced-gate.db.test.ts.
+ * Seeds its own rows on a random owner; removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/client-sourced.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -32,6 +35,11 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     acceptedClientItem: randomUUID(),
     acceptedMemberItem: randomUUID(),
     submittedClientItem: randomUUID(),
+    /** A copy a marked turn made, an older node, another brain's new node. */
+    copy: randomUUID(),
+    older: randomUUID(),
+    otherBrainNew: randomUUID(),
+    agent: randomUUID(),
   };
 
   beforeAll(async () => {
@@ -53,7 +61,8 @@ describe.skipIf(!URL)('namesClientSourced', () => {
       (${ids.clientTask}, ${owner}, 'task', 'c', 'tasks', ${data('client-request')}::jsonb),
       (${ids.teamTask}, ${owner}, 'task', 't', 'tasks', ${data('team-request')}::jsonb),
       (${ids.plainTask}, ${owner}, 'task', 'p', 'tasks', ${data(null)}::jsonb),
-      (${ids.otherBrainClientTask}, ${other}, 'task', 'o', 'tasks', ${data('client-request')}::jsonb)`;
+      (${ids.otherBrainClientTask}, ${other}, 'task', 'o', 'tasks', ${data('client-request')}::jsonb),
+      (${ids.otherBrainNew}, ${other}, 'note', 'n', 'notes', '{}'::jsonb)`;
     // Items written in personal spaces (C5): the author_role trigger stamps
     // the role from the login when the space_items row is made.
     await admin`insert into auth.users (id, email, password_hash, role) values
@@ -75,6 +84,7 @@ describe.skipIf(!URL)('namesClientSourced', () => {
 
   afterAll(async () => {
     if (!admin) return;
+    await admin`delete from conversation_taints where owner_id in ${admin([owner, other])}`;
     await admin`delete from nodes where owner_id in ${admin([owner, other])}`;
     await admin`delete from nodes where id = ${ids.submittedClientItem}`;
     await admin`delete from spaces where login_id in ${admin([owner, other, ids.clientLogin, ids.memberLogin])}`;
@@ -110,23 +120,68 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     expect(await cs.namesClientSourced(owner, [ids.acceptedMemberItem])).toBe(false);
   });
 
-  it('a staff turn that read an accepted client item sends a lowering to pending (C5)', async () => {
-    // What execute-call.ts checks: the turn's taint, then isLoweringCall.
-    const gated = (t: { clientSourced: boolean }, input: Record<string, unknown>) =>
-      t.clientSourced === true && cs.isLoweringCall('access_set', input);
-    const read = cs.newTurnTaint();
-    await m.withViewer('team', () =>
-      cs.taintFromText(read, owner, `{"id":"${ids.acceptedClientItem}","title":"x"}`, 'page_get'),
+  it('a node a marked turn created is client-sourced; an old node in the same output is not (L10)', async () => {
+    // Created "now" (the copy) and an hour ago (a node the output also names).
+    await admin`insert into nodes (id, owner_id, type, title, path, created_at) values
+      (${ids.copy}, ${owner}, 'note', 'copy of a client request', 'notes', now()),
+      (${ids.older}, ${owner}, 'page', 'older page', 'pages', now() - interval '1 hour')`;
+    const out = JSON.stringify({ id: ids.copy, parent: ids.older, stranger: ids.otherBrainNew });
+    expect(await cs.namesClientSourced(owner, [ids.copy])).toBe(false);
+    expect(await cs.markCreatedClientSourced(owner, out, 1500, 'note_create')).toBe(1);
+    expect(await cs.namesClientSourced(owner, [ids.copy])).toBe(true);
+    expect(await cs.namesClientSourced(owner, [ids.older])).toBe(false);
+    // Another brain's new node named in the output: never marked here.
+    expect(await cs.namesClientSourced(other, [ids.otherBrainNew])).toBe(false);
+    const [row] = await admin<{ via: string }[]>`
+      select via from client_sourced_nodes where node_id = ${ids.copy}`;
+    expect(row?.via).toBe('note_create');
+    // Marking twice is harmless.
+    expect(await cs.markCreatedClientSourced(owner, out, 1500, 'note_create')).toBe(0);
+  });
+
+  it('the corpus map leaves client-sourced items out, and only those (L4)', async () => {
+    const rows = [
+      ids.clientTask,
+      ids.teamTask,
+      ids.plainTask,
+      ids.acceptedClientItem,
+      ids.acceptedMemberItem,
+      ids.copy,
+      ids.older,
+    ].map((id) => ({ id }));
+    const kept = await m.withViewer('team', () => cs.withoutClientSourced(owner, rows));
+    expect(kept.map((r) => r.id).sort()).toEqual(
+      [ids.teamTask, ids.plainTask, ids.acceptedMemberItem, ids.older].sort(),
     );
-    expect(read).toEqual({ clientSourced: true, via: 'page_get' });
-    const target = { id: randomUUID() };
-    expect(gated(read, { ...target, level: 'client' })).toBe(true);
-    expect(gated(read, { ...target, level: 'public' })).toBe(true);
-    expect(gated(read, { ...target, level: 'team' })).toBe(false);
-    // A turn that read only the member's accepted item runs it.
-    const control = cs.newTurnTaint();
-    await cs.taintFromText(control, owner, `{"id":"${ids.acceptedMemberItem}"}`, 'page_get');
-    expect(gated(control, { ...target, level: 'public' })).toBe(false);
+  });
+
+  it('the conversation keeps the mark for 24 hours after its last read (I9)', async () => {
+    const key = `agent:${ids.agent}`;
+    const first = await cs.loadConversationTaint(owner, key);
+    expect(first).toEqual({ clientSourced: false, conversation: { ownerId: owner, key } });
+    // Turn 1 reads a client request: the conversation is marked.
+    await cs.taintFromText(first, owner, `{"id":"${ids.clientTask}"}`, 'task_get');
+    // Turn 2: starts marked, carried.
+    const second = await cs.loadConversationTaint(owner, key);
+    expect(second).toMatchObject({ clientSourced: true, carried: true });
+    // Another conversation of the same owner is not.
+    expect((await cs.loadConversationTaint(owner, `agent:${randomUUID()}`)).clientSourced).toBe(
+      false,
+    );
+    // 25 hours on, the mark has lapsed.
+    await admin`update conversation_taints set tainted_at = now() - interval '25 hours'
+      where owner_id = ${owner} and conversation_key = ${key}`;
+    expect((await cs.loadConversationTaint(owner, key)).clientSourced).toBe(false);
+    // A carried turn's new read renews it from now.
+    await admin`update conversation_taints set tainted_at = now() - interval '23 hours'
+      where owner_id = ${owner} and conversation_key = ${key}`;
+    const third = await cs.loadConversationTaint(owner, key);
+    expect(third.carried).toBe(true);
+    await cs.taintFromText(third, owner, `{"id":"${ids.clientLogin}"}`, 'team_chat_read');
+    const [row] = await admin<{ fresh: boolean; via: string }[]>`
+      select tainted_at > now() - interval '1 minute' as fresh, via from conversation_taints
+       where owner_id = ${owner} and conversation_key = ${key}`;
+    expect(row).toEqual({ fresh: true, via: 'team_chat_read' });
   });
 
   it('taintFromText marks from text that names one, at any viewer level', async () => {
