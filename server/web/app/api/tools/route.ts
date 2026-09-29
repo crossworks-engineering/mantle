@@ -6,7 +6,7 @@ import {
   describeInheritance,
   getGroupIntegration,
 } from '@mantle/tools';
-import { db, toolGroups, and, eq } from '@mantle/db';
+import { isUniqueViolation, db, toolGroups, and, eq } from '@mantle/db';
 import { createTool, listToolsForOwner } from '@/lib/tools';
 import { ToolHandlerSchema } from '@/lib/tool-handler-schema';
 import { errorMessage } from '@mantle/std';
@@ -97,7 +97,7 @@ export async function POST(req: Request) {
     });
   } catch (err) {
     const msg = errorMessage(err);
-    if (msg.includes('tools_owner_slug_uq') || msg.includes('duplicate key')) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: `A tool with slug "${parsed.data.slug}" already exists.` },
         { status: 409 },

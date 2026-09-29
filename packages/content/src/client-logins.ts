@@ -24,7 +24,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
-import { authUsers, clientSigninCodes, db } from '@mantle/db';
+import { isUniqueViolation, authUsers, clientSigninCodes, db } from '@mantle/db';
 import type {
   ClientAdminRefusedReason,
   ClientLoginRow,
@@ -386,13 +386,4 @@ async function loginOnContact(contactId: string, exec: Exec = db): Promise<boole
     .where(eq(authUsers.contactId, contactId))
     .limit(1);
   return !!row;
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  let e: unknown = err;
-  for (let i = 0; i < 3 && e && typeof e === 'object'; i += 1) {
-    if ((e as { code?: unknown }).code === '23505') return true;
-    e = (e as { cause?: unknown }).cause;
-  }
-  return false;
 }

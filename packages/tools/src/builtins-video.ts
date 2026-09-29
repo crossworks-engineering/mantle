@@ -26,7 +26,7 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, bumpWorkerUsage } from '@mantle/db';
+import { isUniqueViolation, db, nodes, bumpWorkerUsage } from '@mantle/db';
 import {
   createFolder,
   dashToLtree,
@@ -97,7 +97,7 @@ async function ensureFolder(
       await createFolder({ ownerId, parentPath, slug, description });
     } catch (err) {
       // Concurrent creation racing — swallow the unique hit, keep going.
-      if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
+      if (!isUniqueViolation(err)) throw err;
     }
   }
   return path;

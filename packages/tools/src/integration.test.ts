@@ -17,7 +17,11 @@ const folderByPath = vi.fn();
 const readFileById = vi.fn();
 const ensureFilesRootBranch = vi.fn();
 
-vi.mock('@mantle/db', () => ({ db: {}, toolGroups: {} }));
+vi.mock('@mantle/db', async (importOriginal) => ({
+  db: {},
+  toolGroups: {},
+  isUniqueViolation: (await importOriginal<typeof import('@mantle/db')>()).isUniqueViolation,
+}));
 vi.mock('@mantle/files', () => ({
   dashToLtree: (s: string) => s.replace(/-/g, '_'),
   createFolder: (...a: unknown[]) => createFolder(...a),
@@ -86,7 +90,12 @@ describe('upsertApiDocsFile', () => {
 
   it('swallows the concurrent-create race, not real folder failures', async () => {
     folderByPath.mockResolvedValue(null);
-    createFolder.mockRejectedValueOnce(new Error('duplicate key value violates unique constraint'));
+    // Drizzle's shape: the 23505 sits on `cause`, not in the message.
+    createFolder.mockRejectedValueOnce(
+      Object.assign(new Error('Failed query: insert into "nodes" ...'), {
+        cause: { code: '23505' },
+      }),
+    );
     await expect(
       mod.upsertApiDocsFile({ ownerId: OWNER, groupSlug: 'g', markdown: 'x' }),
     ).resolves.toMatchObject({ nodeId: 'node-1' });

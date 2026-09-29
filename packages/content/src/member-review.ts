@@ -49,6 +49,7 @@ import path from 'node:path';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
+  isUniqueViolation,
   authUsers,
   db,
   draws,
@@ -1110,7 +1111,7 @@ async function moveIntoBrain(
 
   // Outside the transaction: lazy, idempotent, and it may create a directory.
   await ensureFilesRootBranch(brainId).catch((err) => {
-    if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
+    if (!isUniqueViolation(err)) throw err;
   });
 
   const onCommit: (() => Promise<unknown>)[] = [];

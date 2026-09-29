@@ -20,7 +20,15 @@
  */
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
-import { authUsers, db, memberInvites, nodeComments, nodes, teamAccessLog } from '@mantle/db';
+import {
+  isUniqueViolation,
+  authUsers,
+  db,
+  memberInvites,
+  nodeComments,
+  nodes,
+  teamAccessLog,
+} from '@mantle/db';
 import type { MemberInviteRow, MemberInviteState } from '@mantle/client-types';
 import { getContact } from './contacts';
 
@@ -358,15 +366,6 @@ export async function linkContactHistoryToLogin(
 
 /** Thrown inside the redeem transaction to roll it back as a plain failure. */
 class RedeemAbort extends Error {}
-
-function isUniqueViolation(err: unknown): boolean {
-  let e: unknown = err;
-  for (let i = 0; i < 3 && e && typeof e === 'object'; i += 1) {
-    if ((e as { code?: unknown }).code === '23505') return true;
-    e = (e as { cause?: unknown }).cause;
-  }
-  return false;
-}
 
 /**
  * Trade an invite code for a MEMBER login, in ONE transaction: lock the

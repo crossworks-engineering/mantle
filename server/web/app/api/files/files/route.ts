@@ -16,6 +16,7 @@ import { promises as fs } from 'node:fs';
 import { readMultipartUpload, type ParsedUpload } from '@/lib/upload-stream';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { isUniqueViolation } from '@mantle/db';
 
 const ListQuery = z.union([
   z.object({ parent: z.string().min(1).max(500) }),
@@ -162,7 +163,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ file: row });
   } catch (err) {
     const msg = errorMessage(err);
-    if (msg.includes('file_filename_in_parent_uq') || msg.includes('duplicate key')) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: 'a file with that name already exists in this folder' },
         { status: 409 },

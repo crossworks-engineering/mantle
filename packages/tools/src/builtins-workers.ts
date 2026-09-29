@@ -29,7 +29,7 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, getDefaultWorker, type AiWorkerKind } from '@mantle/db';
+import { isUniqueViolation, db, nodes, getDefaultWorker, type AiWorkerKind } from '@mantle/db';
 import { getApiKeyById } from '@mantle/api-keys';
 import { accountForChat, downloadTelegramFile, sendPhoto, sendVoice } from '@mantle/telegram';
 import { createFolder, dashToLtree, fileById, readFileById, upsertFile } from '@mantle/files';
@@ -589,7 +589,7 @@ async function ensureGeneratedImagesDateFolder(ownerId: string): Promise<string>
     } catch (err) {
       // Concurrent creation racing — swallow the unique-constraint
       // hit and keep going. Anything else re-throw.
-      if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) {
+      if (!isUniqueViolation(err)) {
         throw err;
       }
     }
@@ -618,7 +618,7 @@ async function ensureGeneratedImagesDateFolder(ownerId: string): Promise<string>
         description: `Generated images from ${today}.`,
       });
     } catch (err) {
-      if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) {
+      if (!isUniqueViolation(err)) {
         throw err;
       }
     }

@@ -4,6 +4,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { createFolder, ensureFilesRootBranch, listAllFolders, listFolders } from '@/lib/files';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { isUniqueViolation } from '@mantle/db';
 
 const ListQuery = z.object({
   parent: z.string().optional(),
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ folder });
   } catch (err) {
     const msg = errorMessage(err);
-    if (msg.includes('nodes_branch_owner_path_uq') || msg.includes('duplicate key')) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: `A folder with that slug already exists under this parent.` },
         { status: 409 },

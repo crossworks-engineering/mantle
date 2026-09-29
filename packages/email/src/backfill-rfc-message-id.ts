@@ -31,7 +31,7 @@ import { and, eq, isNull, sql as drizzleSql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ImapFlow } from 'imapflow';
-import { emails, emailAccounts, type EmailAccount } from '@mantle/db';
+import { isUniqueViolation, emails, emailAccounts, type EmailAccount } from '@mantle/db';
 import { decodeMsgId, normalizeRfcMessageId, unsealImapPassword } from './providers/imap';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
@@ -167,8 +167,7 @@ async function backfillAccount(
             // 23505 = unique constraint violation = another row in this
             // account already has this rfc_message_id. Known cross-folder
             // duplicate; legacy row stays NULL by design.
-            const code = (err as { code?: string })?.code;
-            if (code === '23505') {
+            if (isUniqueViolation(err)) {
               collision++;
             } else {
               console.error('[backfill] update failed for', rowId, err);

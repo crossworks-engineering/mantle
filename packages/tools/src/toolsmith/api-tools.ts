@@ -5,7 +5,7 @@
  * Split out of builtins-toolsmith.ts; bodies moved verbatim.
  */
 
-import { type ToolHandler } from '@mantle/db';
+import { isUniqueViolation, type ToolHandler } from '@mantle/db';
 import { listApiKeys } from '@mantle/api-keys';
 import { loadProfilePreferences } from '@mantle/content';
 import { createTool, deleteTool, listToolsForOwner, updateTool } from '../crud';
@@ -227,7 +227,7 @@ export const api_tool_create: BuiltinToolDef = {
       };
     } catch (err) {
       const msg = errorMessage(err);
-      if (msg.includes('tools_owner_slug_uq') || msg.includes('duplicate key')) {
+      if (isUniqueViolation(err)) {
         return {
           ok: false,
           error: `a tool with slug '${slug}' already exists — use api_tool_update`,

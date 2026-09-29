@@ -7,6 +7,7 @@
 
 import { createFolder, dashToLtree, ensureFilesRootBranch, folderByPath } from '@mantle/files';
 import { env } from '@mantle/config';
+import { isUniqueViolation } from '@mantle/db';
 
 export const DEFAULT_TIMEOUT_S = 120;
 
@@ -124,7 +125,7 @@ export async function ensureExportsFolder(ownerId: string): Promise<void> {
         'Work exported from CLI sandboxes (sandbox_export): tar.gz snapshots of /files paths, one per export.',
     });
   } catch (err) {
-    if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
+    if (!isUniqueViolation(err)) throw err;
   }
 }
 

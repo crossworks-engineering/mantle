@@ -15,7 +15,7 @@
  */
 
 import { and, eq } from 'drizzle-orm';
-import { db, toolGroups, type ToolGroupIntegration } from '@mantle/db';
+import { isUniqueViolation, db, toolGroups, type ToolGroupIntegration } from '@mantle/db';
 import {
   dashToLtree,
   createFolder,
@@ -126,7 +126,7 @@ async function ensureApiDocsFolder(ownerId: string): Promise<void> {
       description: API_DOCS_FOLDER_DESCRIPTION,
     });
   } catch (err) {
-    if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
+    if (!isUniqueViolation(err)) throw err;
   }
 }
 

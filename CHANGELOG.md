@@ -4,6 +4,27 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.331: duplicate writes answer 409 again
+
+- **A duplicate now answers 409, not 500.** Drizzle wraps every Postgres
+  error from its query builder: the message is only "Failed query: ...",
+  and the error code sits one level down, on `cause`. Code that looked for
+  "duplicate key" or a constraint name in the message, or read `.code` off
+  the top, never matched. So creating a login with a taken email, a key
+  with a taken label, or an agent, skill, tool, tool group, worker group,
+  heartbeat, model pool entry, docs collection, file or folder with a taken
+  name answered 500 instead of 409.
+- **Folder races no longer fail the call.** Nine "create the folder unless
+  a parallel call just did" paths (generated images, video, API docs,
+  sandbox exports, member review, folder paths) meant to ignore the
+  duplicate and carry on. They threw instead.
+- **The rfc_message_id backfill counts a duplicate as a collision** again,
+  instead of logging it as an error.
+- One shared check in `@mantle/db` now: `isUniqueViolation(err)`,
+  `pgErrorCode(err)` and `pgConstraint(err)` walk the cause chain. The
+  three private copies are gone. A database test pins what drizzle throws,
+  so an upgrade that changes the wrapping fails there first.
+
 ## 0.232.330: memory benchmarks, and entities no longer lost to a race
 
 - **A benchmark harness for the whole memory path.** `pnpm -C server/api

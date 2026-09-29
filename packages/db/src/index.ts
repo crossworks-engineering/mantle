@@ -46,6 +46,7 @@ export {
   unextractedNodeConds,
 } from './extract-exempt';
 export { isWriteRefused } from './write-refused';
+export { isUniqueViolation, pgConstraint, pgErrorCode } from './pg-error';
 export {
   countUsers,
   resolveSingleOwnerId,

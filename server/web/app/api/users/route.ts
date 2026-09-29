@@ -1,11 +1,21 @@
 import { NextResponse } from '@/server/http-compat';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { db, authUsers, agents, and, asc, eq, nodes, sql } from '@mantle/db';
+import {
+  isUniqueViolation,
+  pgConstraint,
+  db,
+  authUsers,
+  agents,
+  and,
+  asc,
+  eq,
+  nodes,
+  sql,
+} from '@mantle/db';
 import { getOwnerOr401, hashLoginPassword } from '@/lib/auth';
 import { cloneAgentForUser } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
-import { errorMessage } from '@mantle/std';
 
 /**
  * Co-admin login management (Settings → Logins). Logins are NOT tenants: every
@@ -152,9 +162,16 @@ export async function POST(req: Request) {
       contactId: parsed.data.contactId ?? null,
     });
   } catch (err) {
-    const msg = errorMessage(err);
-    // 23505 = unique_violation (concurrent create of the same email).
-    if (msg.includes('duplicate key') || msg.includes('users_email_key')) {
+    // 23505 = unique_violation. Two rules on auth.users can fire: the contact
+    // (one login per contact, 0181; not pre-checked above) and the email
+    // (the race behind the pre-check).
+    if (isUniqueViolation(err) && pgConstraint(err) === 'users_contact_id_unique') {
+      return NextResponse.json(
+        { error: 'That contact is already linked to another user.' },
+        { status: 409 },
+      );
+    }
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: 'A user with that email already exists.' },
         { status: 409 },

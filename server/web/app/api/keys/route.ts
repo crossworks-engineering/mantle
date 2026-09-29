@@ -6,6 +6,7 @@ import { KNOWN_KEY_SERVICES } from '@mantle/api-keys';
 import { isMcpManagedSecretService } from '@mantle/tools';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { isUniqueViolation } from '@mantle/db';
 
 export async function GET() {
   const user = await getOwnerOr401();
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
   } catch (err) {
     const msg = errorMessage(err);
     // 23505 = unique_violation
-    if (msg.includes('api_keys_user_service_label_uq') || msg.includes('duplicate key')) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         {
           error: `A key already exists for ${parsed.data.service}/${parsed.data.label}. Rotate it instead.`,

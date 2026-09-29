@@ -1,7 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { and, asc, eq } from 'drizzle-orm';
-import { db, curatedModels } from '@mantle/db';
+import { isUniqueViolation, db, curatedModels } from '@mantle/db';
 import { getOwnerOr401 } from '@/lib/auth';
 import { MODEL_POOLS, MODEL_POOL_IDS, poolModelIssue } from '@/lib/model-pools';
 import { errorMessage } from '@mantle/std';
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ entry: row });
   } catch (err) {
     const msg = errorMessage(err);
-    if (msg.includes('curated_models_owner_pool_name_uq') || msg.includes('duplicate key')) {
+    if (isUniqueViolation(err)) {
       return NextResponse.json(
         { error: `'${b.name}' is already in the ${b.pool} pool.` },
         { status: 409 },

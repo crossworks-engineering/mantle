@@ -15,7 +15,7 @@ import {
   slugifyFolder,
   untrackedFilesOnDisk,
 } from '../index';
-import { db, nodes } from '@mantle/db';
+import { isUniqueViolation, db, nodes } from '@mantle/db';
 import { folderCounts, folderRowFromNode, type FolderRow } from './shared';
 import { folderById } from './queries';
 
@@ -116,7 +116,7 @@ export async function ensureDatedUploadFolder(args: {
       try {
         await createFolder({ ownerId, parentPath: parent, slug, description });
       } catch (err) {
-        if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
+        if (!isUniqueViolation(err)) throw err;
       }
     }
   }
@@ -168,7 +168,7 @@ export async function ensureExtractedImagesFolder(args: {
       try {
         await createFolder({ ownerId: args.ownerId, parentPath: parent, slug, description });
       } catch (err) {
-        if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
+        if (!isUniqueViolation(err)) throw err;
       }
     }
   }
@@ -241,7 +241,7 @@ export async function ensureFolderPath(args: {
           description: args.description ?? '',
         });
       } catch (err) {
-        if (!(err instanceof Error) || !/duplicate|unique/i.test(err.message)) throw err;
+        if (!isUniqueViolation(err)) throw err;
       }
     }
     parent = childPath;
