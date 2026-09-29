@@ -71,8 +71,8 @@ describe('parseLocomo', () => {
     expect(h!.sessions.map((s) => s.id)).toEqual(['conv-1_session_1', 'conv-1_session_2']);
     expect(h!.sessions[0]!.turns[1]!.text).toBe('Look [shares a photo: a dog on a beach]');
     expect(h!.questions.map((q) => [q.id, q.category, q.answer])).toEqual([
-      ['conv-1_q0', 'single-hop', 'Rome'],
-      ['conv-1_q2', 'multi-hop', '2'],
+      ['conv-1_q0', 'multi-hop', 'Rome'],
+      ['conv-1_q2', 'open-domain', '2'],
     ]);
     expect(h!.questions[0]!.askedAt?.toISOString()).toBe('2023-05-10T09:00:00.000Z');
     expect(h!.questions[0]!.evidence).toEqual([1]);

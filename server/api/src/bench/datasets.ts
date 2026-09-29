@@ -107,11 +107,17 @@ export function locomoEvidence(evidence: unknown, sessionKeys: readonly string[]
   return [...out].sort((a, b) => a - b);
 }
 
+/** LoCoMo's category ids. The dataset's own numbering is easy to misread
+ *  (AMB's loader labels 1 and 4 the other way round); the data settles it:
+ *  270 of the 282 category-1 questions draw on several sessions, category 4
+ *  almost never does (2 of 841), and category 3 asks for inference ("would
+ *  she…"). This matches the Mem0 paper's counts (841 single-hop, 282
+ *  multi-hop, 321 temporal, 96 open-domain). */
 const LOCOMO_CATEGORIES: Record<number, string> = {
-  1: 'single-hop',
+  1: 'multi-hop',
   2: 'temporal',
-  3: 'multi-hop',
-  4: 'open-domain',
+  3: 'open-domain',
+  4: 'single-hop',
 };
 
 type LocomoTurn = { speaker?: string; text?: string; blip_caption?: string };
