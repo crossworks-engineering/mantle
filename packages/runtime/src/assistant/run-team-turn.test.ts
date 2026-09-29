@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { assertMemberAgent, replyUsedPrivate, teamThreadToHistory } from './run-team-turn';
+import {
+  assertAgentForRole,
+  emptyLoginContext,
+  replyUsedPrivate,
+  teamThreadToHistory,
+} from './run-team-turn';
 import { isTeamPrivateReadsEnabled, TEAM_PRIVATE_READ_SLUGS } from '@mantle/content';
 import type { TeamMessage } from '@mantle/db';
 
@@ -100,22 +105,45 @@ describe('private-reads switch', () => {
   });
 });
 
-describe('assertMemberAgent (member logins: team-level agents only)', () => {
-  it('refuses an admin-level agent for a member login', () => {
+describe('assertAgentForRole (a login chats with its own level only, plan section 8)', () => {
+  it('a member takes a team-level agent and nothing else', () => {
     expect(() =>
-      assertMemberAgent({ slug: 'team-responder', audience: 'admin' }, 'login-1'),
-    ).toThrow(/admin level/);
+      assertAgentForRole({ slug: 'team-responder', audience: 'team' }, 'member'),
+    ).not.toThrow();
+    for (const audience of ['admin', 'client', 'public']) {
+      expect(() => assertAgentForRole({ slug: 'a', audience }, 'member')).toThrow(
+        /only chat with a team-level agent/,
+      );
+    }
     // A stand-in with no level counts as admin: fail closed.
-    expect(() => assertMemberAgent({ slug: 'x' }, 'login-1')).toThrow(/admin level/);
+    expect(() => assertAgentForRole({ slug: 'x' }, 'member')).toThrow(/admin level/);
   });
 
-  it('allows a team-level agent for a member, and any agent for the team portal', () => {
+  it('a client takes a client-level agent and nothing else', () => {
     expect(() =>
-      assertMemberAgent({ slug: 'team-responder', audience: 'team' }, 'login-1'),
+      assertAgentForRole({ slug: 'client-responder', audience: 'client' }, 'client'),
     ).not.toThrow();
-    expect(() =>
-      assertMemberAgent({ slug: 'team-responder', audience: 'admin' }, undefined),
-    ).not.toThrow();
+    for (const audience of ['admin', 'team', 'public']) {
+      expect(() => assertAgentForRole({ slug: 'a', audience }, 'client')).toThrow(
+        /only chat with a client-level agent/,
+      );
+    }
+    expect(() => assertAgentForRole({ slug: 'x' }, 'client')).toThrow(/admin level/);
+  });
+});
+
+describe('emptyLoginContext (a client turn loads no retrieval context)', () => {
+  it('carries no fact, hit, relation, digest, note or history', () => {
+    const ctx = emptyLoginContext('what is on the schedule?');
+    expect(ctx.facts).toEqual([]);
+    expect(ctx.contentHits).toEqual([]);
+    expect(ctx.chunkHits).toEqual([]);
+    expect(ctx.relations).toEqual([]);
+    expect(ctx.digests).toEqual([]);
+    expect(ctx.personaNotes).toEqual([]);
+    expect(ctx.history).toEqual([]);
+    expect(ctx.corpusMap.entries).toEqual([]);
+    expect(ctx.journalRelevant).toBe('');
   });
 });
 

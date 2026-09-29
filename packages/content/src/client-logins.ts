@@ -24,7 +24,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
-import { isUniqueViolation, authUsers, clientSigninCodes, db } from '@mantle/db';
+import { isUniqueViolation, authUsers, clientSigninCodes, db, systemDb } from '@mantle/db';
 import type {
   ClientAdminRefusedReason,
   ClientLoginRow,
@@ -245,6 +245,18 @@ export async function createClientLogin(
     }
     throw err;
   }
+}
+
+/**
+ * Whether a queued client turn may still run (client logins C4, plan section
+ * 4): the login is an active client and its session epoch is the one the
+ * turn was queued under, so a sign-out everywhere, an admin's End sessions or
+ * Disable stops a turn still waiting on the queue. Read on the admin pool
+ * (the turn itself runs on the client role, which reads no auth.users rows).
+ */
+export async function clientTurnMayRun(loginId: string, epoch: number): Promise<boolean> {
+  const row = await activeClient(systemDb, loginId);
+  return !!row && row.sessionEpoch === epoch;
 }
 
 /** The client login `loginId`, when it is an ACTIVE client (not disabled). */

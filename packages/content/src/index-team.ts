@@ -329,6 +329,7 @@ export {
   CLIENT_SIGNIN_LINK_TTL_MS,
   ClientLoginError,
   clientSigninLinkPath,
+  clientTurnMayRun,
   createClientLogin,
   issueClientSigninLink,
   listClientLogins,

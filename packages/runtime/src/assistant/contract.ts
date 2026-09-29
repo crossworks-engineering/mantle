@@ -18,6 +18,10 @@ export const ASSISTANT_TURN_WORKFLOW = 'assistantTurnWorkflow';
 /** Team Chat turn workflow (external team-member surface). */
 export const TEAM_TURN_WORKFLOW = 'teamTurnWorkflow';
 
+/** A CLIENT login's chat turn (client logins C4). Its own workflow, so the
+ *  role comes from which workflow runs, never from the queued input. */
+export const CLIENT_TURN_WORKFLOW = 'clientTurnWorkflow';
+
 /** The retired Team Forum turn workflow's name (member logins Phase 6). No
  *  one enqueues it any more; server/api keeps a no-op stub registered under
  *  it so a forum turn still queued, or in flight, on a box when it upgrades
@@ -36,6 +40,13 @@ export const RUNNER_QUEUE = 'mantle';
  *  RUNS_TURN_QUEUE. A turn enqueued here before server/api registers it waits
  *  until the api process rolls (compose restarts web and api together). */
 export const MEMBER_TURN_QUEUE = 'mantle.member';
+
+/** The client chat's own queue (client logins C4, plan section 8): client
+ *  turns never wait behind member or owner turns, and the queue is
+ *  PARTITIONED by login (enqueue with `queuePartitionKey` = the login id) with
+ *  one turn in flight per partition, so one busy client cannot hold both
+ *  slots. Registered in server/api (MANTLE_CLIENT_TURN_CONCURRENCY, default 2). */
+export const CLIENT_TURN_QUEUE = 'mantle.client';
 
 /** Serializable input the runner carries in its journal — mirrors
  *  runAssistantTurn's (ownerId, text, options) arguments. */
@@ -62,6 +73,13 @@ export type TeamTurnInput = {
   ownerId: string;
   text: string;
   options: import('./run-team-turn').RunTeamTurnOptions;
+};
+
+/** Serializable input for the client turn runner (runClientTurn). */
+export type ClientTurnInput = {
+  ownerId: string;
+  text: string;
+  options: import('./run-team-turn').RunClientTurnOptions;
 };
 
 /** Serializable team-turn result DTO (dates pre-stringified). */
