@@ -4,6 +4,26 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.332: memory dates from the document, and faster extraction
+
+- **Facts start on their document's date.** A fact that is not an event
+  (someone's job, a thing they own) used to start on the day it was
+  extracted, so everything imported from years back looked brand new and
+  outranked its own dated events. It now starts on the source's date: an
+  email's sent date, else when the note was made.
+- **Relative dates land on the right day.** The extractor now works
+  "yesterday", "last Saturday" and "two weeks ago" out from the date the
+  document was written, instead of stamping the event with that date. A
+  vague time ("last week") is written against that date instead of guessed
+  to a day.
+- **Extraction makes fewer embedding calls.** A note's entity names are
+  embedded in one call instead of two per new name. A provider key's
+  throughput is capped under steady load, so fewer calls means faster
+  extraction: 30% fewer calls and about 10 to 20% less time on the benchmark
+  conversation, with the same facts and links.
+- **Benchmark harness:** `--ingest-only` (extract, ask nothing, about $0.03
+  per LoCoMo conversation) and an event-loop delay reading per run.
+
 ## 0.232.331: duplicate writes answer 409 again
 
 - **A duplicate now answers 409, not 500.** Drizzle wraps every Postgres
