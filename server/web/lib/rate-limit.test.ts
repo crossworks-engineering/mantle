@@ -134,3 +134,47 @@ describe('clientIp', () => {
     expect(clientIp(req)).toBe('unknown');
   });
 });
+
+describe('ipRateKey (client logins audit B2: IPv6 by its /64)', () => {
+  it('keys an IPv6 address by its /64, whatever the spelling', async () => {
+    const { ipRateKey } = await import('./rate-limit');
+    const key = '2001:db8:1:2::/64';
+    for (const ip of [
+      '2001:db8:1:2::1',
+      '2001:0db8:0001:0002:ffff:ffff:ffff:ffff',
+      '2001:DB8:1:2:aaaa::7',
+      '[2001:db8:1:2::9]',
+      '2001:db8:1:2::1%eth0',
+    ]) {
+      expect(ipRateKey(ip), ip).toBe(key);
+    }
+    // Another /64 is another key.
+    expect(ipRateKey('2001:db8:1:3::1')).toBe('2001:db8:1:3::/64');
+    expect(ipRateKey('::1')).toBe('0:0:0:0::/64');
+    expect(ipRateKey('fe80::1:2:3:4')).toBe('fe80:0:0:0::/64');
+  });
+
+  it('leaves IPv4 as it is and unwraps an IPv4-mapped address', async () => {
+    const { ipRateKey } = await import('./rate-limit');
+    expect(ipRateKey('203.0.113.9')).toBe('203.0.113.9');
+    expect(ipRateKey(' 203.0.113.9 ')).toBe('203.0.113.9');
+    expect(ipRateKey('::ffff:203.0.113.9')).toBe('203.0.113.9');
+    expect(ipRateKey('::ffff:cb00:7109')).toBe('203.0.113.9');
+    expect(ipRateKey('unknown')).toBe('unknown');
+  });
+
+  it('keeps what does not parse as it came', async () => {
+    const { ipRateKey } = await import('./rate-limit');
+    expect(ipRateKey('1::2::3')).toBe('1::2::3');
+    expect(ipRateKey('2001:db8:zz::1')).toBe('2001:db8:zz::1');
+    expect(ipRateKey('1:2:3:4:5:6:7:8:9')).toBe('1:2:3:4:5:6:7:8:9');
+  });
+
+  it('clientIpKey keys the trusted hop', async () => {
+    const { clientIpKey } = await import('./rate-limit');
+    const req = new Request('https://x.invalid/', {
+      headers: { 'x-forwarded-for': '198.51.100.1, 2001:db8:5:6::77' },
+    });
+    expect(clientIpKey(req)).toBe('2001:db8:5:6::/64');
+  });
+});

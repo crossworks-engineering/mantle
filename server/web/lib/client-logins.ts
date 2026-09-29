@@ -3,7 +3,7 @@ import { NextResponse } from '@/server/http-compat';
 import { ClientLoginError } from '@mantle/content';
 import { hashLoginPassword } from '@/lib/auth';
 import { secureCookies } from '@/lib/auth-constants';
-import { clientIp, rateLimit, rateLimitPeek } from '@/lib/rate-limit';
+import { clientIpKey, rateLimit, rateLimitPeek } from '@/lib/rate-limit';
 
 /**
  * Shared bits of the client login routes (client logins, Phase C2): the
@@ -32,7 +32,7 @@ function tooMany(retryAfterSec: number): Response {
 /** A 429 when the caller's address is over its cap, or the brain has seen
  *  too many failed codes this minute; else null. Call before any work. */
 export function clientLinkRateLimited(req: Request): Response | null {
-  const ip = rateLimit(`auth:client-link:${clientIp(req)}`, {
+  const ip = rateLimit(`auth:client-link:${clientIpKey(req)}`, {
     max: CLIENT_LINK_LIMITS.perIp,
     windowMs: WINDOW_MS,
   });
@@ -85,7 +85,9 @@ const CODE_COOKIE_PATH = '/api/auth/client-code';
 const CODE_COOKIE_MAX_AGE = 15 * 60;
 
 /**
- * Caps on the code routes. A request: every one counts per address (a
+ * Caps on the code routes (and the link route above), per address: an IPv6
+ * caller counts by its /64 (`clientIpKey`), since one subscriber holds a
+ * whole /64. A request: every one counts per address (a
  * code is mailed at most once per open code anyway, and the mail caps live
  * with the code). A verify: every one counts per address, and FAILED tries
  * count per email plus address. There is NO brain-wide failure cap (plan
@@ -99,7 +101,7 @@ export const CLIENT_CODE_LIMITS = {
 const FAILURE_WINDOW_MS = 10 * 60_000;
 
 export function clientCodeRequestLimited(req: Request): Response | null {
-  const ip = rateLimit(`auth:client-code:${clientIp(req)}`, {
+  const ip = rateLimit(`auth:client-code:${clientIpKey(req)}`, {
     max: CLIENT_CODE_LIMITS.requestPerIp,
     windowMs: WINDOW_MS,
   });
@@ -107,12 +109,12 @@ export function clientCodeRequestLimited(req: Request): Response | null {
 }
 
 const failureKey = (req: Request, email: string) =>
-  `auth:client-code-failed:${email.trim().toLowerCase()}:${clientIp(req)}`;
+  `auth:client-code-failed:${email.trim().toLowerCase()}:${clientIpKey(req)}`;
 
 /** A 429 when the address is over its cap, or this email has failed too
  *  often from this address; else null. Call before any lookup. */
 export function clientCodeVerifyLimited(req: Request, email: string): Response | null {
-  const ip = rateLimit(`auth:client-code-verify:${clientIp(req)}`, {
+  const ip = rateLimit(`auth:client-code-verify:${clientIpKey(req)}`, {
     max: CLIENT_CODE_LIMITS.verifyPerIp,
     windowMs: WINDOW_MS,
   });

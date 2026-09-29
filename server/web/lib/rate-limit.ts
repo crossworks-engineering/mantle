@@ -130,3 +130,65 @@ export function clientIp(req: Request): string {
   if (xri) return xri.trim();
   return 'unknown';
 }
+
+/**
+ * The rate-limit key of an address: an IPv4 address as it is, an IPv6
+ * address by its /64 (`2001:db8:1:2::/64`), because one subscriber holds a
+ * whole /64 and could otherwise mint a fresh bucket per request. An
+ * IPv4-mapped IPv6 address (`::ffff:192.0.2.1`) is its IPv4 address. A zone
+ * (`%eth0`) and brackets are dropped. Anything that does not parse is
+ * returned trimmed and lower-cased (`unknown` stays `unknown`).
+ */
+export function ipRateKey(ip: string): string {
+  let s = ip.trim().toLowerCase();
+  if (s.startsWith('[')) {
+    const end = s.indexOf(']');
+    s = end > 0 ? s.slice(1, end) : s.slice(1);
+  }
+  const zone = s.indexOf('%');
+  if (zone >= 0) s = s.slice(0, zone);
+  if (!s.includes(':')) return s;
+  const groups = expandIpv6(s);
+  if (!groups) return s;
+  const n = groups.map((g) => parseInt(g, 16));
+  // IPv4-mapped (::ffff:a.b.c.d): the IPv4 address it carries.
+  if (n.slice(0, 5).every((g) => g === 0) && n[5] === 0xffff) {
+    return [n[6]! >> 8, n[6]! & 255, n[7]! >> 8, n[7]! & 255].join('.');
+  }
+  return `${n
+    .slice(0, 4)
+    .map((g) => g.toString(16))
+    .join(':')}::/64`;
+}
+
+/** The eight groups of an IPv6 address (an embedded IPv4 tail as two), or
+ *  null when it does not parse. */
+function expandIpv6(s: string): string[] | null {
+  const halves = s.split('::');
+  if (halves.length > 2) return null;
+  const split = (part: string) => (part === '' ? [] : part.split(':'));
+  const head = split(halves[0]!);
+  const tail = halves.length === 2 ? split(halves[1]!) : [];
+  const last = tail.length ? tail : head;
+  const dotted = last[last.length - 1];
+  if (dotted?.includes('.')) {
+    const o = dotted.split('.').map((x) => (/^\d{1,3}$/.test(x) ? Number(x) : NaN));
+    if (o.length !== 4 || o.some((x) => !(x >= 0 && x <= 255))) return null;
+    last.splice(
+      last.length - 1,
+      1,
+      ((o[0]! << 8) | o[1]!).toString(16),
+      ((o[2]! << 8) | o[3]!).toString(16),
+    );
+  }
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 1 ? missing !== 0 : missing < 1) return null;
+  const all = [...head, ...Array<string>(halves.length === 2 ? missing : 0).fill('0'), ...tail];
+  return all.length === 8 && all.every((g) => /^[0-9a-f]{1,4}$/.test(g)) ? all : null;
+}
+
+/** {@link clientIp} as a rate-limit key: an IPv6 caller by its /64. Use it
+ *  for every per-address cap a stranger could dodge by rotating addresses. */
+export function clientIpKey(req: Request): string {
+  return ipRateKey(clientIp(req));
+}
