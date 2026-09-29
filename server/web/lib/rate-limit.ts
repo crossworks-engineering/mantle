@@ -115,7 +115,12 @@ export function rateLimitPeek(
  * the hop count if you chain more than one trusted proxy.
  */
 export function clientIp(req: Request): string {
-  const xff = req.headers.get('x-forwarded-for');
+  return clientIpFromHeaders(req.headers);
+}
+
+/** `clientIp` from bare headers (a Server Component's `headers()`). */
+export function clientIpFromHeaders(headers: { get(name: string): string | null }): string {
+  const xff = headers.get('x-forwarded-for');
   if (xff) {
     const parts = xff
       .split(',')
@@ -126,7 +131,7 @@ export function clientIp(req: Request): string {
       return parts[Math.max(0, parts.length - hops)]!;
     }
   }
-  const xri = req.headers.get('x-real-ip');
+  const xri = headers.get('x-real-ip');
   if (xri) return xri.trim();
   return 'unknown';
 }
