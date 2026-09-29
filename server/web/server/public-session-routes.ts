@@ -147,6 +147,27 @@ export const PUBLIC_SESSION_ROUTES: PublicSessionRoute[] = [
     expect: { member: { status: 401 }, client: { status: 401 }, unknown: { status: 401 } },
   },
   {
+    // Email sign-in codes (C2b). None reads a session, so a cookie of any role
+    // buys nothing: whether codes are on, the same 200 for every request
+    // (queued, never an answer about the email), and the same 401 for a bad
+    // verify.
+    key: 'GET /api/auth/client-code',
+    path: '/api/auth/client-code',
+    expect: { member: { status: 200 }, client: { status: 200 }, unknown: { status: 200 } },
+  },
+  {
+    key: 'POST /api/auth/client-code',
+    path: '/api/auth/client-code',
+    init: json({ email: 'someone@example.invalid' }),
+    expect: { member: { status: 200 }, client: { status: 200 }, unknown: { status: 200 } },
+  },
+  {
+    key: 'POST /api/auth/client-code/verify',
+    path: '/api/auth/client-code/verify',
+    init: json({}),
+    expect: { member: { status: 401 }, client: { status: 401 }, unknown: { status: 401 } },
+  },
+  {
     // Bearer rotation: authenticates by the Authorization header only, so a
     // cookie of any role rotates nothing.
     key: 'POST /api/auth/token/refresh',

@@ -111,6 +111,15 @@ describe('GET /api/auth/client-code', () => {
     h.sender = { id: 'acc' };
     expect(await (await GET()).json()).toEqual({ enabled: true });
   });
+
+  it('says off, never 500, when the sender cannot be read', async () => {
+    const { loadClientSigninSender } = await import('@/lib/client-codes');
+    vi.mocked(loadClientSigninSender).mockRejectedValueOnce(new Error('db down'));
+    const { GET } = await import('./route');
+    const res = await GET();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ enabled: false });
+  });
 });
 
 describe('POST /api/auth/client-code', () => {
