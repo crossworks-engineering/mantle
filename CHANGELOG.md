@@ -4,6 +4,30 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.324: client logins, phase C2b (email sign-in codes)
+
+A client who has no sign-in link can ask for a code by email, when an admin
+has chosen a sign-in sender (Team admin > Clients). Codes stay off until then.
+
+- **No oracle.** `POST /api/auth/client-code { email }` answers 200 with a
+  fresh request cookie for every email and every body, and does the same
+  work each time: it only queues the request. The email-sync worker looks
+  the email up, applies the caps, stores the code and mails it (plain SMTP
+  from the chosen account: no agent, no LLM).
+- **The code.** 8 digits, 10 minutes, one use, 5 wrong tries counted in the
+  database, stored only as SHA-256 of the request id and the code, and
+  tied to the browser that asked: `POST /api/auth/client-code/verify` needs
+  that browser's request cookie, so a forwarded code opens nothing. Every
+  failure is the same 401. Success sets the 30-day client session.
+- **Limits.** No new code while one is open for the same email and address;
+  5 codes a day per email and address, 10 an hour per email, 200 a day for
+  the brain (then nothing is sent and Team admin says so). Failed tries are
+  limited per email plus address; there is no brain-wide failure lockout.
+- **Codes never enter the brain.** Choosing a sender leaves its sent-mail
+  folders out of mail sync, and every code mail carries a Message-ID marker
+  that the sync skips in any folder (a provider's All Mail too).
+- Migration 0191 adds `request_ip` and two indexes to `client_signin_codes`.
+
 ## 0.232.323: client v0.6.172
 
 - Pairs the client at jackdaw v0.6.172, the client half of 0.232.322 (the
