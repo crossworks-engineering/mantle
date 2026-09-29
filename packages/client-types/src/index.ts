@@ -109,7 +109,7 @@ export type {
   MemberInviteRow,
   MemberInviteState,
 } from './dto/member-invites';
-export type { MemberItemKind } from './member-kinds';
+export type { MemberItemKind, ClientItemKind, ClientItemFilter } from './member-kinds';
 export type {
   LoginKind,
   LoginRefused,
@@ -143,6 +143,13 @@ export type {
   ClientShell,
   ClientSigninLinkCreated,
   ClientSigninLinkRow,
+  ClientItemSource,
+  ClientItemRow,
+  ClientItemsPage,
+  ClientSpaceRefusedReason,
+  ClientAcceptedItem,
+  ClientAcceptedBase,
+  ClientCommentThread,
 } from './dto/client';
 
 // Types only at the root; the runtime constants (APP_TINTS, limits) are the

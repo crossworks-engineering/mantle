@@ -256,8 +256,11 @@ export type MemberAcceptedItem =
 /** Where a row of the one list comes from; it picks the item view that
  *  opens it: `own` the member's editor, `team` a teammate's saved draft,
  *  `library` the brain item, `accepted` the version this member wrote and an
- *  admin accepted at a level above the Library's (admin or public). */
-export type MemberItemSource = 'own' | 'team' | 'library' | 'accepted';
+ *  admin accepted at a level above the Library's (admin or public),
+ *  `client-request` a client's SUBMITTED item (client logins C5, decision
+ *  5 B), read only from /api/member/client-requests/:id; its `space` row
+ *  carries the review state, its `author` the client (role `client`). */
+export type MemberItemSource = 'own' | 'team' | 'library' | 'accepted' | 'client-request';
 
 /** The small state pill a row wears beside its actions. Brain items (the
  *  Library and accepted rows) wear none. */

@@ -25,6 +25,8 @@ export const MEMBER_ITEM_FILTERS = [
   'with-admin',
   'brain',
   'by-me',
+  // A client's submitted items (client logins C5, decision 5 B): read only.
+  'client-requests',
 ] as const;
 export type MemberItemFilter = (typeof MEMBER_ITEM_FILTERS)[number];
 
@@ -43,4 +45,31 @@ export function adminListStateOf(v: unknown): AdminListState {
   return typeof v === 'string' && (ADMIN_LIST_STATES as readonly string[]).includes(v)
     ? (v as AdminListState)
     : 'brain';
+}
+
+/** The kinds a CLIENT works with in their own space (client logins C5, plan
+ *  section 6): pages and notes they write, files they upload. */
+export const CLIENT_ITEM_KINDS = ['page', 'note', 'file'] as const;
+export type ClientItemKind = (typeof CLIENT_ITEM_KINDS)[number];
+
+export function isClientItemKind(v: unknown): v is ClientItemKind {
+  return typeof v === 'string' && (CLIENT_ITEM_KINDS as readonly string[]).includes(v);
+}
+
+/** The State filter of a client's one list, My requests (GET
+ *  /api/client/items?state=): `all`, one row pill (`private` a draft,
+ *  `submitted`, `returned`, `with-admin` an item a reviewer took over to
+ *  work on), or `accepted`. */
+export const CLIENT_ITEM_FILTERS = [
+  'all',
+  'private',
+  'submitted',
+  'returned',
+  'with-admin',
+  'accepted',
+] as const;
+export type ClientItemFilter = (typeof CLIENT_ITEM_FILTERS)[number];
+
+export function isClientItemFilter(v: unknown): v is ClientItemFilter {
+  return typeof v === 'string' && (CLIENT_ITEM_FILTERS as readonly string[]).includes(v);
 }

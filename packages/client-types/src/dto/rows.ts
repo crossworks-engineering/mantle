@@ -50,7 +50,7 @@ export type TaskTodo = {
 };
 
 /** Mirrors @mantle/db `NodeCommentAuthorKind`. */
-export type NodeCommentAuthorKind = 'owner' | 'member' | 'agent';
+export type NodeCommentAuthorKind = 'owner' | 'member' | 'agent' | 'client';
 
 /**
  * A comment on a node (tasks first; the table is node-generic). `authorName`

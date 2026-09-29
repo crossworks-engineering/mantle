@@ -4,7 +4,7 @@ import { agents } from './agents';
 import { authUsers } from './auth-users';
 import { nodes } from './nodes';
 
-export type NodeCommentAuthorKind = 'owner' | 'member' | 'agent';
+export type NodeCommentAuthorKind = 'owner' | 'member' | 'agent' | 'client';
 
 /**
  * Comments on a content node — tasks first, but node-generic by design so

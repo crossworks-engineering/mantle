@@ -65,6 +65,7 @@ describe('itemsPlan', () => {
       team: {},
       library: true,
       accepted: 'above-library',
+      clientRequests: true,
     });
     expect(itemsPlan('brain')).toMatchObject({
       own: null,
@@ -72,8 +73,18 @@ describe('itemsPlan', () => {
       withAdmin: false,
       library: true,
       accepted: 'above-library',
+      clientRequests: false,
     });
     expect(itemsPlan('by-me')).toMatchObject({ library: false, accepted: 'all', own: null });
+    // Client requests (C5): their own filter reads nothing else.
+    expect(itemsPlan('client-requests')).toEqual({
+      own: null,
+      withAdmin: false,
+      team: null,
+      library: false,
+      accepted: null,
+      clientRequests: true,
+    });
   });
 
   it('narrows each space source to exactly the rows that wear the pill', () => {

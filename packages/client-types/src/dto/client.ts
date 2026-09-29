@@ -5,7 +5,9 @@
  * client level only (the brain enforces it with row security). Client DTOs
  * never carry a staff name or an author: clients see the brand name.
  */
-import type { MemberItemKind } from '../member-kinds';
+import type { ClientItemKind, MemberItemKind } from '../member-kinds';
+import type { MemberItemPill, MemberSpaceItemRow } from './member';
+import type { NodeComment } from './rows';
 
 /** GET /api/client/shell: who is signed in and the brain's brand. */
 export type ClientShell = {
@@ -265,3 +267,100 @@ export type ClientChatUsage = {
   limits: { dailyTurns: number; dailyTokens: number };
   rows: { loginId: string; turnsToday: number; tokensToday: number }[];
 };
+
+// ── The client's own items, My requests (client logins C5) ─────────────────
+
+/**
+ * Where a row of My requests comes from: `own` an item in the client's own
+ * space (GET /api/client/space/:id; a draft, submitted, returned, or with a
+ * reviewer who took it over), `accepted` the version the client wrote and an
+ * admin accepted (GET /api/client/accepted/:id).
+ */
+export type ClientItemSource = 'own' | 'accepted';
+
+/** One row of GET /api/client/items. No level, no staff name. */
+export type ClientItemRow = {
+  id: string;
+  type: ClientItemKind;
+  title: string;
+  icon: string | null;
+  updatedAt: string;
+  source: ClientItemSource;
+  /** `private` a draft, `submitted`, `returned`, `with-admin`; null on an
+   *  accepted row. Never `draft` (a client never shares with the team). */
+  pill: MemberItemPill | null;
+  /** The space row of an own item (review state, the returned note). */
+  space: MemberSpaceItemRow | null;
+  acceptedAt: string | null;
+};
+
+/** GET /api/client/items?kind=&q=&state=&page=: the client's own items and
+ *  their accepted items in ONE list, newest first. `state` is a
+ *  ClientItemFilter (default `all`). */
+export type ClientItemsPage = {
+  items: ClientItemRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+/**
+ * The client's own space (/api/client/space*, /api/client/space-files): the
+ * member space routes' shapes (MemberSpaceItem, MemberSpaceItemRow,
+ * MemberSpaceList) for kinds page, note and file only. No share route: a
+ * client's item is private until submitted, and a submitted item goes to the
+ * reviewers (and members read it as a client request). Refusals (the 409
+ * `reason`): the member ones, plus `quota` for the client caps: 20 MB a file,
+ * 200 MB a client, 50 MB uploaded a day, 500 items, 10 submissions a day, 50
+ * waiting for review, and one total for all client uploads of the brain.
+ */
+export type ClientSpaceRefusedReason =
+  | 'not-found'
+  | 'frozen'
+  | 'not-draft'
+  | 'not-submitted'
+  | 'unsaved-draft'
+  | 'quota'
+  | 'embed'
+  | 'not-shared'
+  | 'too-large'
+  | 'invalid'
+  | 'with-admin';
+
+/** GET /api/client/accepted/:id -> { item }: the version the client wrote
+ *  and an admin accepted (the snapshot taken at Accept, never the brain's
+ *  current version). A file's bytes: /api/client/files/:id while the brain
+ *  file still holds the bytes accepted (`changedByAdmin` otherwise). */
+export type ClientAcceptedItem =
+  | (ClientAcceptedBase & { type: 'page'; doc: unknown })
+  | (ClientAcceptedBase & { type: 'note'; content: string })
+  | (ClientAcceptedBase & {
+      type: 'file';
+      filename: string;
+      mimeType: string | null;
+      sizeBytes: number | null;
+      changedByAdmin?: boolean;
+    });
+
+export type ClientAcceptedBase = {
+  id: string;
+  title: string;
+  icon: string | null;
+  acceptedAt: string | null;
+  updatedAt: string;
+};
+
+// ── Comments (client logins C5, decision 8) ─────────────────────────────────
+
+/**
+ * GET /api/client/shared/:id/comments (POST { body } -> 201 { comment },
+ * DELETE /comments/:commentId for the client's own): the thread on an item
+ * shared with clients. The team, admins and every client login read and
+ * write it; each comment shows its author's display name (clients are
+ * approved users). Only on an item at client level: any other id is a 404.
+ *
+ * GET /api/client/space/:id/comments (POST, DELETE own) on the client's own
+ * item: the review talk with the reviewers, open while it is submitted. A
+ * reviewer's comment shows the brand name, never a staff name.
+ */
+export type ClientCommentThread = { comments: NodeComment[] };

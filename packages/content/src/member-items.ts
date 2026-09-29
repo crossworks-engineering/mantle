@@ -55,14 +55,30 @@ export type ItemsPlan = {
   /** `above-library`: only accepted items the Library does not list (they
    *  are brain rows there already); `all`: every accepted item (`by-me`). */
   accepted: 'above-library' | 'all' | null;
+  /** Clients' submitted items (client logins C5, decision 5 B). */
+  clientRequests: boolean;
 };
 
-const NONE: ItemsPlan = { own: null, withAdmin: false, team: null, library: false, accepted: null };
+const NONE: ItemsPlan = {
+  own: null,
+  withAdmin: false,
+  team: null,
+  library: false,
+  accepted: null,
+  clientRequests: false,
+};
 
 export function itemsPlan(filter: MemberItemFilter): ItemsPlan {
   switch (filter) {
     case 'all':
-      return { own: {}, withAdmin: true, team: {}, library: true, accepted: 'above-library' };
+      return {
+        own: {},
+        withAdmin: true,
+        team: {},
+        library: true,
+        accepted: 'above-library',
+        clientRequests: true,
+      };
     case 'private':
       return { ...NONE, own: { reviewStates: ['draft'], sharing: 'private' } };
     case 'draft':
@@ -80,6 +96,8 @@ export function itemsPlan(filter: MemberItemFilter): ItemsPlan {
       return { ...NONE, library: true, accepted: 'above-library' };
     case 'by-me':
       return { ...NONE, accepted: 'all' };
+    case 'client-requests':
+      return { ...NONE, clientRequests: true };
   }
 }
 
