@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   aliasToAdd,
+  factValidFrom,
   findOrgVariant,
   parseClassifierDecision,
   planFileVersionSupersede,
@@ -146,5 +147,35 @@ describe('planFileVersionSupersede', () => {
       demoteIds: [],
       restoreHead: false,
     });
+  });
+});
+
+describe('factValidFrom', () => {
+  const now = new Date('2026-09-29T10:00:00Z');
+  const note = { createdAt: new Date('2023-05-08T13:56:00Z'), data: {} };
+
+  it('starts an episodic fact on its event date', () => {
+    expect(factValidFrom('2023-05-07', note, now).toISOString()).toBe('2023-05-07T00:00:00.000Z');
+  });
+
+  it("starts any other fact on its source document's date, not at ingest", () => {
+    expect(factValidFrom(undefined, note, now).toISOString()).toBe('2023-05-08T13:56:00.000Z');
+  });
+
+  it("prefers an email's sent date over the node's creation", () => {
+    const email = { createdAt: now, data: { internalDate: '2024-01-02T03:04:05Z' } };
+    expect(factValidFrom(null, email, now).toISOString()).toBe('2024-01-02T03:04:05.000Z');
+  });
+
+  it('never starts in the future, and survives bad dates', () => {
+    expect(factValidFrom(null, { createdAt: new Date('2030-01-01T00:00:00Z') }, now)).toBe(now);
+    expect(factValidFrom('not-a-date', { createdAt: 'garbage' }, now)).toBe(now);
+    expect(
+      factValidFrom(
+        null,
+        { createdAt: note.createdAt, data: { internalDate: 'garbage' } },
+        now,
+      ).toISOString(),
+    ).toBe('2023-05-08T13:56:00.000Z');
   });
 });

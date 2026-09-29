@@ -11,6 +11,31 @@ export type ClassifierDecision = {
   reason?: string;
 };
 
+/**
+ * When a fact became true (`valid_from`). An episodic fact with a parsed event
+ * date starts on that date. Any other fact starts no later than its source
+ * document: an email's sent date, else the node's creation. It used to be the
+ * ingest time, so every fact from imported history (a 2023 note, an old
+ * email) looked brand new: recency ranking then favoured it over its episodic
+ * siblings, and "newest first" put it ahead of later facts. Never in the
+ * future: a clock-skewed source date clamps to now.
+ */
+export function factValidFrom(
+  occurredAt: string | null | undefined,
+  source: { createdAt: Date | string; data?: unknown },
+  now: Date = new Date(),
+): Date {
+  if (occurredAt) {
+    const event = new Date(`${occurredAt}T00:00:00Z`);
+    if (!Number.isNaN(event.getTime())) return event;
+  }
+  const sent = (source.data as { internalDate?: unknown } | null | undefined)?.internalDate;
+  const fromSent = typeof sent === 'string' || typeof sent === 'number' ? new Date(sent) : null;
+  const doc = fromSent && !Number.isNaN(fromSent.getTime()) ? fromSent : new Date(source.createdAt);
+  if (Number.isNaN(doc.getTime()) || doc > now) return now;
+  return doc;
+}
+
 /** The fact classifier's JSON reply (optionally fenced) → a decision. Anything
  *  unparseable or off-vocabulary is a plain ADD: the safe default is to keep
  *  the new fact rather than retire an old one on garbage. */
