@@ -452,11 +452,11 @@ matches the schema. Never roll back below:
 - **v0.232.255 once personal items exist** (migration 0165; the extractor's
   owner check, docs/member-logins.md).
 - **v0.232.318 once any client login exists** (`auth.users.role =
-'client'`): older images treat every login that is not a member as an
+  'client'`): older images treat every login that is not a member as an
   admin, so each client would sign in as an admin. The updater refuses such
   a roll (above); pinning the tag by hand does not ask. Check first:
   `docker exec mantle_pg psql -U postgres -d postgres -Atc "select count(*)
-from auth.users where role = 'client'"`.
+  from auth.users where role = 'client'"`.
 
 Below a floor, restore the pre-roll backup taken before the migration instead
 of pinning the tag.
