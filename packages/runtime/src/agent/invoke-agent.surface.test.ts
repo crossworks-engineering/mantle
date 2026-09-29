@@ -94,3 +94,12 @@ describe('invokeAgent passes the surface to the child loop', () => {
     expect(loopSurface()).toBeUndefined();
   });
 });
+
+describe('invokeAgent shares the parent taint with the child loop (plan N18)', () => {
+  it('the same object reaches runToolLoop, so a child read marks the parent', async () => {
+    const taint = { clientSourced: false };
+    await invokeAgent({ ...BASE, taint });
+    const args = (h.runToolLoop.mock.calls as unknown as Array<[{ taint?: unknown }]>)[0]![0];
+    expect(args.taint).toBe(taint);
+  });
+});

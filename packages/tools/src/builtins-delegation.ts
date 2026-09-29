@@ -154,6 +154,8 @@ export const invoke_agent: BuiltinToolDef = {
       // The child works for the parent's caller (client logins C4), so a team
       // or client turn cannot reach owner-only tools by delegating.
       ...(surface ? { surface } : {}),
+      // One taint for the whole delegation tree (plan N18).
+      ...(ctx.agent.taint ? { taint: ctx.agent.taint } : {}),
     });
     if (!result.ok) {
       return { ok: false, error: `child agent failed: ${result.error}` };

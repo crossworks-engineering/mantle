@@ -192,6 +192,8 @@ export async function executeToolCall(p: {
                 // delegated specialist inherits the per-user thinking pref.
                 ...(args.thinkingBudget ? { thinkingBudget: args.thinkingBudget } : {}),
                 ...(p.lastUserMessage ? { lastUserMessage: p.lastUserMessage } : {}),
+                // Shared with a delegated child (plan N18).
+                ...(p.taint ? { taint: p.taint } : {}),
               },
             }
           : {}),

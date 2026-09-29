@@ -3,6 +3,8 @@
  * this file is the runtime contract every handler implements.
  */
 
+import type { TurnTaint } from './client-sourced';
+
 export type ToolHandlerContext = {
   /** The owner running this tool. Every handler scopes its work to one owner. */
   ownerId: string;
@@ -41,6 +43,11 @@ export type ToolHandlerContext = {
      *  specialist inherits the operator's per-user thinking preference. The
      *  child re-clamps it against its OWN max_tokens. Unset/0 ⇒ no thinking. */
     thinkingBudget?: number;
+    /** The turn's client-sourced taint (client logins C4, plan N18),
+     *  shared by reference: invoke_agent hands it to the child, so a child
+     *  that reads client-written text holds the parent back too, and a
+     *  tainted parent's child cannot lower anything on its own either. */
+    taint?: TurnTaint;
     /** The turn's latest USER message (text parts joined). invoke_agent
      *  attaches it to the child prompt as ground-truth intent — the one-shot
      *  hand-off's main miscommunication gap is a parent under-packing the

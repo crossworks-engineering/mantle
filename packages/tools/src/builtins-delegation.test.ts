@@ -281,3 +281,18 @@ describe('invoke_agent passes the caller down to the child', () => {
     expect(input.surface).toEqual(expected);
   });
 });
+
+// Client logins C4 (plan N18): one client-sourced taint for the whole
+// delegation tree, shared by reference.
+describe('invoke_agent shares the turn taint with the child', () => {
+  it('passes the very same taint object down', async () => {
+    const taint = { clientSourced: true, via: 'task_get' };
+    outputOf(await invoke_agent.handler(ARGS, parent({ taint })));
+    expect(invoker.mock.calls[0]![0].taint).toBe(taint);
+  });
+
+  it('passes none when the parent has none', async () => {
+    outputOf(await invoke_agent.handler(ARGS, parent()));
+    expect(invoker.mock.calls[0]![0].taint).toBeUndefined();
+  });
+});

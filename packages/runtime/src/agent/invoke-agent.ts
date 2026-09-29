@@ -58,6 +58,7 @@ export const invokeAgent: AgentInvoker = async ({
   parentTraceId,
   thinkingBudget,
   surface,
+  taint,
 }): Promise<InvokeAgentResult> => {
   if (depth > MAX_TERMINAL_EDGE_DEPTH) {
     // Defence in depth: the dispatcher already refused, but a caller
@@ -241,6 +242,8 @@ export const invokeAgent: AgentInvoker = async ({
         // The child runs for the parent's caller (client logins C4): the
         // parent's surface, never an implicit owner.
         ...(surface ? { surface } : {}),
+        // The parent's taint, shared: reads here hold the parent back too.
+        ...(taint ? { taint } : {}),
         parentTraceId,
         initialMessages,
         tools: allowedTools,

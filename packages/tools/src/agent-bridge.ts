@@ -18,6 +18,7 @@
  */
 
 import type { ToolHandlerContext } from './types';
+import type { TurnTaint } from './client-sourced';
 
 /** Pure-data inputs to a child agent invocation. */
 export type InvokeAgentInput = {
@@ -45,6 +46,8 @@ export type InvokeAgentInput = {
    *  `owner/delegate` for the owner (see `childSurface`), so delegation never
    *  turns a team or client turn into an owner one. */
   surface?: ToolHandlerContext['surface'];
+  /** The parent turn's client-sourced taint, shared (plan N18). */
+  taint?: TurnTaint;
 };
 
 export type InvokeAgentResult =
