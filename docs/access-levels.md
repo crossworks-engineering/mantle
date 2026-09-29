@@ -9,13 +9,19 @@
 
 ## 1. The model
 
-Four levels, one rule: **admin > team > client > public**. A caller sees an
-item when the caller's level is at or above the item's level, with one
-exception (client logins C1, migration 0187, decision 3): the client role
-reads CLIENT items only, not public ones. Migration 0161 set every item with
-an open link to public, so on a real box public means "every item ever
-link-shared with an outsider"; a client login must not find all of it.
-Public items stay reachable by their own open link.
+Four levels: admin, team, client and public. Admin reads everything; team
+reads team, client and public items. **Client and public are siblings, not
+a chain** (client logins C1, migration 0187, decision 3): the client role
+reads CLIENT items only, not public ones, and the public role public items
+only (`levelCovers` in `packages/db/src/viewer.ts`). Migration 0161 set
+every item with an open link to public, so on a real box public means
+"every item ever link-shared with an outsider"; a client login must not
+find all of it. Public items stay reachable by their own open link. Since
+migration 0189 the client role reads agents and tool groups at client
+level only, too. For lowering an item the order is still
+admin > team > client > public (`itemLevelAbove`): public ranks below
+client when an embed closure goes down (section 7), never when deciding
+what a scope reads.
 
 | Thing             | Column                 | Default | Who changes it    |
 | ----------------- | ---------------------- | ------- | ----------------- |
@@ -81,11 +87,20 @@ Public items stay reachable by their own open link.
   its turn on the team role, so it reads only team-, client- and public-level
   items. A client-level agent runs on the client role and reads client items
   only, not public ones (migration 0187, decision 3, as a client login does);
-  a public-level agent reads public items only. There is no other flag. `team-responder` ships at admin; an admin
-  lowers it once the shadow report is clean (section 5).
-- **Tool groups.** An agent may hold only groups at or below its level:
-  refused at grant time (`PATCH /api/agents/:id`, `agent_grant_tool_group`),
-  left out at run time (`resolveAgentToolGroups`).
+  a public-level agent reads public items only. There is no other flag.
+  A client scope never runs public-level work, and a public scope never
+  client-level work: there is no common level, so the work is refused,
+  never widened. `withViewer` rejects with `ViewerLevelConflictError`,
+  `invoke_agent` refuses before any trace or LLM work, and one that
+  reaches the HTTP layer answers 403 with `reason: 'level-conflict'`
+  (`server/web/server/level-conflict.ts`). `team-responder` ships at
+  admin; an admin lowers it once the shadow report is clean (section 5).
+- **Tool groups.** An agent may hold a tool group only at a level it
+  reads: a team agent may hold client and public groups, but a client agent
+  holds no public group and a public agent no client group. Refused at grant
+  time (`PATCH /api/agents/:id`, `agent_grant_tool_group`) and when an
+  agent's or a group's level changes, left out at run time
+  (`resolveAgentToolGroups`).
 
 ## 2. How it is enforced
 
@@ -113,18 +128,22 @@ Public items stay reachable by their own open link.
 - **Grants** come from one checked-in list, `ACCESS_MATRIX`
   (`packages/db/src/access-matrix.ts`), applied by `applyViewerGrants` at
   every migrate. SELECT only. Per role since client logins C1 (`byRole`):
-  the client role reads agents and tool groups at client level and below
-  only (a row rule for that role alone, migration 0187; the team role keeps
-  every row, because a team-level agent may still delegate to an admin
-  agent), and holds no grant on `auth.users` at all: `mantle_brain_id()` is
-  SECURITY DEFINER, and the nodes rule calls it once per query as an init
-  plan. Draft columns (`pages.draft_doc`,
+  the client role reads agents and tool groups at client level only (a row
+  rule for that role alone, migration 0187, narrowed to client by 0189;
+  the team role keeps every row, because a team-level agent may still
+  delegate to an admin agent), and holds no grant on `auth.users` at all:
+  `mantle_brain_id()` is SECURITY DEFINER, and the nodes rule calls it once
+  per query as an init plan. Since 0189 only the viewer roles and the space
+  role (and the `demo` branch's read-only role, where it exists) may execute
+  it. Draft columns (`pages.draft_doc`,
   `draws.draft_scene`, `tables.draft_data`, `apps.draft_source`, …) and login
   secrets are never granted. A table not in the list is a loud
   `permission denied`, never a silent leak.
 - **`systemDb`** is the admin pool whatever the viewer, for the
-  infrastructure a limited turn still writes: traces, tool-result spills, the
-  approval queue, access and audit logs, the replay buffer, the embedding
+  infrastructure a limited turn still writes: traces, tool-result spills
+  (each carries its writer's level, `tool_results.viewer_level`, migration
+  0189, and `read_result` answers not found to a reader whose level does
+  not read it), the approval queue, access and audit logs, the replay buffer, the embedding
   cache, the member's own thread, the member turn ledger, API key reads. The lint rule
   `mantle-db/system-db-allowlist` lets only those modules import it.
 - **`asSystem(fn)`** is the one audited escape for a write a limited turn
@@ -151,8 +170,9 @@ them (the control). Tests: `packages/db/src/*.db.test.ts`,
 `packages/runtime/src/assistant/run-team-turn.viewer.db.test.ts`.
 
 All of them run in CI on the shared test database
-(`MANTLE_TEST_DATABASE_URL`): the team-turn, team-groups and shadow-report
-tests seed a minimal brain of their own (the shared test anchor from
+(`MANTLE_TEST_DATABASE_URL`; a CI run without it fails in the vitest global
+setup rather than skipping them, docs/scripts.md): the team-turn,
+team-groups and shadow-report tests seed a minimal brain of their own (the shared test anchor from
 `@mantle/db/test-support`, a team-level agent and tool group, items at team
 and admin level with one fixed embedding) instead of needing a copy of a
 provisioned brain. `packages/db/src/nodes-owner-rls.db.test.ts` pins the
@@ -258,32 +278,59 @@ outside a login reaches a team item.
   `node_share` / `page_share` and the email link never drift from the level.
 - **No client links** (client logins C1). Client means signed-in clients
   (a client login reads client items with its own login), never "anyone
-  with the link": setting an item to client revokes its open link, and
-  `createShare` refuses an item at client, or a sub-page asked to follow a
-  client parent, with `client-links-retired` (`ClientLinkRetiredError`), so
-  `node_share`, `page_share`, `POST /api/shares`, the email link and
-  `setShareCascade` all meet it (the email tool sends the page without a
-  link and says why in `linkRefused`). Old links on client items, made
-  when client meant an open link, stay live until they are retired
-  (client logins C3), and no re-sync moves their item: `levelForShareMode`
-  keeps a client item at client whatever its own link says, and turning an
-  old client link off (`unshareItem`) keeps the item at client. The "What
-  clients see" report (`GET /api/access/client-report`) lists every item
-  at client, its old link, the addresses a page was emailed to and the
-  team or admin items it names; an admin acknowledges it
-  (`POST /api/access/client-report/ack`) before the first client login.
+  with the link": setting an item to client revokes its open link (an item
+  already at client keeps its old link: client to client changes nothing),
+  and `createShare` refuses an item at client, or a sub-page asked to
+  follow a client parent, with `client-links-retired`
+  (`ClientLinkRetiredError`), so `node_share`, `page_share`,
+  `POST /api/shares`, the email link and `setShareCascade` all meet it. Its
+  message tells the model to ask the owner before making anything public
+  (public puts the item on an open link and takes it out of client logins'
+  view). `email_page` with `includeLink` on a client page is refused before
+  anything is sent. Old links on client items, made when client meant an
+  open link, stay live until they are retired (client logins C3), and no
+  link of its OWN moves a client item: `levelForShareMode` keeps a client
+  item at client whatever its own link says, and turning an old client
+  link off (`unshareItem`) keeps the item at client. A revoked link on a
+  client item is marked `settings.retired = 'client'`; nothing reads the
+  mark yet, and the token is a plain 404 on `/s/` until C3.
+- **What clients see** (`GET /api/access/client-report`). Before the first
+  client login an admin reads every item at client and acknowledges it
+  (`POST /api/access/client-report/ack`); adding a client login stays
+  disabled until the newest acknowledgement covers every client item. The
+  list shows 2000 items at most (`total` counts all). The admin
+  acknowledges by the report's `fingerprint`, a hash of EVERY client item,
+  not only the ones shown; if the set moved since the report was loaded
+  the answer is 409 `report-changed` and the page reloads the report. Per item
+  the report shows:
+  - its old live link, made under the old meaning (views, last view);
+  - the addresses a page was emailed to: successful `email_page` sends of
+    the last 400 days, to, cc and bcc. Sends through the MCP connector
+    write no trace step and are not seen;
+  - the team or admin items it names (a mention chip, a link or an embed),
+    whose title would otherwise reach the client page as a label. Pages,
+    notes, drawings and tables are scanned; apps are not. A ref to an item
+    outside the brain (a member's personal item, an admin's private one)
+    shows no type, title or level;
+  - old live links above it (`oldLinksAbove`): a link on a client folder
+    that holds it or on a client page that embeds it. Anyone with that
+    link opens the item too, although its own row says "no link". The
+    Access popover (`GET /api/access/nodes/:id`) names them as well.
 - **A client item embedded in something shared goes public with it.**
   Embedding means sharing (section 1): when a page, drawing or note is set
   to public or gets an open link, its embed closure goes down to public in
   the same transaction, and a client item in that closure goes too (public
-  ranks below client). So an item's own link never moves a client item, but
-  being embedded in a public item does, and at public it leaves the client
-  logins' view (the client role reads client items only, decision 3); it
-  is then reached through the public item's link. The Access control lists
-  the embedded items that will go down before the admin applies, and every
-  setter reports them after, in `alsoLowered` (`from: 'client', to:
-  'public'`): the Access control, `access_set`, `node_share`, `page_share`,
-  `POST /api/shares` and the email link.
+  ranks below client). So no link of its OWN moves a client item, but a
+  link or the public level on an item that EMBEDS it does, and at public it
+  leaves the client logins' view (the client role reads client items only,
+  decision 3); it is then reached through the public item's link. The
+  Access control lists the embedded items that will go down before the
+  admin applies, and every setter reports them after, in `alsoLowered`
+  (`from: 'client', to: 'public'`): the Access control, `access_set`,
+  `node_share`, `page_share`, `POST /api/shares` and the email link. The
+  tools also say it in their answer (`clientLeftWarning`): which client
+  items left client logins' view, and that the owner decides what to
+  change.
 - **No team links** (member logins Phase 6 stage 6). Team is a level members
   read by, never a link: setting an item to team revokes its open link, and
   asking for a team link (`PATCH /api/shares/:id` `mode: 'team'`,

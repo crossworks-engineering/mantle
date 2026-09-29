@@ -12,6 +12,10 @@
   or `client` (client logins, migration 0187; section 2). The anchor
   (`is_owner`) is always an admin. The role is read from the login row on
   every request, never from a token, so a change takes effect at once.
+  The column has no default (migration 0190): every insert names the role
+  (first-run signup, Settings > Logins, member invites, client logins), and
+  an insert without one fails on NOT NULL. Until 0190 a forgotten role made
+  an admin.
 - **Users are the team** (Jason, 2026-09-26). A login with role member IS
   the team member: it needs no contact, and its display name (else the part
   of its email before the @) is how the agent and the admin see it. Contacts
@@ -109,14 +113,26 @@
   not know is no login at all, never an admin. Every admin gate takes an
   admin and nothing else, and every member gate a member: a client gets 403
   `client-login` from both. Password sign-in (`/api/auth/login`, the
-  mobile and bearer logins), a password set by an admin
-  (`POST /api/users/:id/password`), `POST /api/auth/change-password`, a
+  mobile and bearer logins), `POST /api/auth/change-password`, a
   personal assistant (`PUT /api/users/:id/agent`, admins only) and MCP
   consent are refused to a client; `PATCH /api/users/:id` refuses a role
   change to or from any role but admin and member, and counts any role but
-  admin as a lockout. `server/web/server/role-sweep.test.ts` drives every
+  admin as a lockout. An admin password reset
+  (`POST /api/users/:id/password`) on a client, or on a role the code does
+  not know, answers 400 with `reason: 'not-a-password-login'`; a member's
+  reset still works (it is a member's only way back in), and jackdaw hides
+  Reset password on client rows. Token refresh
+  (`POST /api/auth/token/refresh`) rotates admin and member bearers only: a
+  client never holds a bearer. `server/web/server/role-sweep.test.ts` drives every
   manifest route, member routes included, with a client login (each
   refuses it) and with an unknown role (each answers as to a stranger).
+  Public routes that read a session themselves (password change, sign
+  out, pairing, SSO, MCP consent, the client link, token refresh, the print
+  pages) have no gate in front of them: each is
+  listed with an answer per role in
+  `server/web/server/public-session-routes.ts`, and the sweeps drive it. A
+  completeness test reads every other public route's source, so a new one
+  that reads a session must be added there.
 - The sweep also proves the positive half: a member session gets past the
   gate on member routes, and a member `?at=` asset token
   (`getMemberForAsset`) is refused when it was minted under another anchor,
@@ -220,6 +236,10 @@ space's rows, workspace kinds only, level always admin (a personal item
 carries no level). Drafts are readable there: they are the member's own
 working copy. Column grants cannot differ per row, which is why this is its
 own role and not the team role: the team role never reads a draft column.
+Before it opens the transaction, `withSpace` reads the login row
+(`spaceLevelForLogin` in `packages/db/src/client.ts`) and refuses a space
+that is not the login's own (`spaces.login_id`), a disabled login and a role
+the code does not know.
 
 **Team drafts** are visible only to the team role with `mantle.human` on
 (`withTeamDrafts`): a member's own request. No agent path sets the flag, so a
@@ -227,7 +247,10 @@ team-level agent never reads anyone's drafts. Published columns only.
 
 **Sharing and review** live in `space_items` (one row per personal item):
 `sharing` private or team, `review_state` draft, submitted, returned,
-accepted. Submit sends the SAVED version (unsaved edits refuse); a submitted
+accepted. A client's items are never shared with the team: the database
+trigger `space_items_client_private` (migration 0189) refuses `sharing`
+team on a client's item, so a client's work stays private until it is
+submitted. Submit sends the SAVED version (unsaved edits refuse); a submitted
 item is FROZEN: the row rules refuse every write until Accept, Return or
 Recall. Recall (the author, before Accept) puts it back to draft. The member
 can never set accepted.
@@ -453,12 +476,12 @@ redacted for admins (section 5).
 | --------------------------------------------------- | ------------------------------------------------ |
 | `GET /api/team-admin/submissions`                   | The queue: submitted (oldest first), left behind |
 | `GET /api/team-admin/submissions/:id[?tab=]`        | The saved body (never a draft) and the thread    |
-| `GET /api/team-admin/submissions/:id/bundle`        | What Accept would move, what stays behind        |
+| `GET /api/team-admin/submissions/:id/bundle`        | What Accept would move, what stays behind, and `closure` |
 | `GET /api/team-admin/submissions/:id/bytes[?node=]` | The file, or a file in its bundle (`?thumb=1`)   |
 | `GET /api/team-admin/submissions/:id/svg[?node=]`   | A drawing's saved SVG, or one in its bundle      |
 | `GET/POST /api/team-admin/submissions/:id/comments` | The thread; the reviewer's review talk           |
 | `DELETE …/submissions/:id/comments/:commentId`      | Take back an own review comment                  |
-| `POST /api/team-admin/submissions/:id/accept`       | `{ audience?, parentPageId?, folderPath?, lowerConfirmed? }` (below) |
+| `POST /api/team-admin/submissions/:id/accept`       | `{ audience?, parentPageId?, folderPath?, lowerConfirmed?, confirmedIds? }` (below) |
 | `POST /api/team-admin/submissions/:id/return`       | `{ note }`: back to the author                   |
 | `POST /api/team-admin/submissions/:id/take-over`    | Into the acting admin's own space (section 11)   |
 | `POST /api/team-admin/submissions/:id/discard`      | Delete a left-behind item (inactive author only) |
@@ -468,6 +491,9 @@ author kind `owner`): the author reads it in their own thread, teammates
 never do. The admin reads the review talk, plus the team's comments while
 the item is shared with the team. Comments are open while the item is
 submitted.
+
+Each queue row names its author's role (`author.role`: member or client;
+null when the login is gone), so the dialog knows which Accept rule applies.
 
 **Return** puts a submitted item back to `returned` with the note (the
 member sees it as a banner, edits, and submits again).
@@ -501,8 +527,16 @@ accepted item from the snapshot whatever its level, so publishing one
 client's request to every client login is an explicit choice). Accepting a
 client-authored item at client or public needs `lowerConfirmed: true` (the
 admin confirmed that it, and what it embeds, goes down to where every client
-login reads it); without it the answer is 409 `confirm-level` and nothing
-moves. A member-authored item needs no confirmation. The moved item loses any
+login reads it) AND the id of every brain item that goes down with it in
+`confirmedIds`. The bundle preview lists those brain items in `closure`
+(what the bundle embeds, transitively, at their current levels; the ones
+above the chosen level go down). A missing confirmation or a missing tick
+answers 409 `confirm-level` with the list in `goingDown`, checked on the
+locked rows, and nothing moves. A member-authored item needs no
+confirmation. The admin's own Accept after Take over
+(`POST /api/admin/space/:id/accept`, section 11) follows the same rule for
+an item a client wrote: team by default, and client or public only with
+`lowerConfirmed` and every going-down item in `confirmedIds`. The moved item loses any
 leftover draft, and its `space_items` row goes to `accepted` with the
 reviewer (the row stays: it records the author), and its author's
 accepted snapshot is recorded (section 11). Below admin, the brain items
@@ -1011,7 +1045,7 @@ id, an entity mention, an external image or frame) is refused for an admin
 too.
 
 **Accept into brain** (`POST /api/admin/space/:id/accept`, body
-`{ audience?, parentPageId?, folderPath? }`, answer
+`{ audience?, parentPageId?, folderPath?, lowerConfirmed?, confirmedIds? }`, answer
 `{ id, audience, moved, linksStayingBehind, alsoLowered, levelWarning? }`: the same as
 the team-admin accept). `acceptOwnItem` shares the move with the reviewed
 Accept of section 6 (bundle, same ids, re-own, bytes, slug and path
@@ -1127,7 +1161,11 @@ sees the Return banner, edits and submits again. It is refused while:
 10), with the same body and answer. The taken item's row goes to
 `accepted` with the admin as `reviewed_by`, keeping the author, so the
 member lists it under Accepted and the member-authored badge names them.
-Items taken with it that the admin removed from it stay in the admin's
+An item a client wrote is accepted by the client rule of section 6 (audit
+A6): team by default, and client or public only with `lowerConfirmed` and
+every brain item that goes down in `confirmedIds`, else 409
+`confirm-level` with `goingDown`. The admin's own item has no author
+record: admin by default, no confirmation. Items taken with it that the admin removed from it stay in the admin's
 space as taken, each its own root (give them back or accept them).
 
 **What the member sees.** While taken, `GET /api/member/space` lists the

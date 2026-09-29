@@ -83,10 +83,17 @@ Onto a fresh stack:
 ```bash
 docker compose down                      # keep volumes/binds for files/rustfs
 # wipe ONLY the Postgres state (named volume or ${MANTLE_DATA_DIR}/postgres)
-docker compose up -d postgres --wait     # init scripts recreate extensions + auth
+docker compose up -d postgres --wait
 bash scripts/db-restore.sh <path-to>/mantle-<ts>.dump
 docker compose up -d --wait
 ```
+
+`db-restore.sh` drops the init-made `postgres` database and restores into a
+pristine one, so the init scripts do not matter to a restore. It refuses a
+target that already holds items or logins. After the restore it checks the
+logins, the login role CHECK and the viewer row policies. Exit code 2 means
+the restore is not usable: do not start the app. Read the `pg_restore`
+errors it printed, fix the cause, drop the database and run it again.
 
 `db-restore.sh` also puts members' personal-space files back from the
 `mantle-spaces-<ts>.tgz` beside the dump (into `${MANTLE_DATA_DIR}/spaces`,

@@ -252,7 +252,8 @@ API (owner-scoped via `requireOwner`):
 - `PATCH /api/shares/[id]` `{ mode }` → `public` only, which confirms the open link (cascades if
   the share does); `team` is refused with 400 `team-links-retired`, anything else is 400
 - `GET /api/shares?nodeId=` → current active link (if any) + `childCount` (descendant pages)
-- `POST /api/shares/cascade` `{ nodeId, on }` → turn subtree sharing on/off (§7b)
+- `POST /api/shares/cascade` `{ nodeId, on }` → turn subtree sharing on/off (§7b); `skipped`
+  lists the client sub-pages that kept client and got no link
 
 ---
 
@@ -263,6 +264,11 @@ has descendant pages (the switch rides the link, so only at Public).
 Turning it on shares every descendant page; turning it off, or un-sharing the
 parent, revokes those child links. Children take the parent's level. An old
 client link cannot be extended to sub-pages (`client-links-retired`).
+Turning it on skips client sub-pages: each keeps client and gets no link
+(clients sign in to read it; an old link of its own stays untouched). The
+route answers their ids in `skipped`, and `page_share` in `keptAtClient`.
+The flag and every sub-page link change in ONE transaction: a failure part
+way leaves nothing half done.
 
 - **Intent lives on the parent share:** `settings.cascade = true`
   (`shareCascadeOf`). Children are ordinary shares; the flag is what makes mode
@@ -298,7 +304,8 @@ so _"share that page and send me the link"_ works end to end:
   (`team-links-retired`), and a page at client is refused
   (`client-links-retired`: clients sign in to read it); `node_share` answers
   the same. `children: true|false` shares/unshares the subtree via `setShareCascade`
-  (§7b) and reports `subpagesShared` / `subpagesRevoked`. The URL is built with
+  (§7b) and reports `subpagesShared` / `subpagesRevoked`, plus `keptAtClient`
+  (the client sub-pages that kept client, with no link). The URL is built with
   `shareUrlForToken`.
 - **`page_unshare { id }`** → `getActiveShareForNode` → `revokeShareTree`
   (subtree-aware, un-shares cascaded sub-pages too). No-op if unshared.

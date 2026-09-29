@@ -232,7 +232,10 @@ mkdir -p "$MANTLE_DATA_DIR"/{postgres,rustfs,files}
 docker compose up -d postgres --wait
 
 # 3c. Restore the DB dump you took on dev (see §4) BEFORE the app starts.
-#     A few "already exists" notices for auth/vector/ltree are expected + benign.
+#     The script drops the init-made database and restores into a pristine
+#     one, so the init scripts do not matter to a restore. Exit code 2 means
+#     the restore is not usable (no logins, no role CHECK or a missing row
+#     policy): do not start the app, read the errors, fix and run it again.
 #     A mantle-spaces-<ts>.tgz beside the dump (members' personal-space files)
 #     is untarred into $MANTLE_DATA_DIR/spaces in the same step.
 scripts/db-restore.sh backups/mantle-<ts>.dump

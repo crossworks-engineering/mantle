@@ -88,7 +88,7 @@ callouts, columns, tables, task lists, highlights, embedded images, Saskia uses
 | `subject` |, | defaults to the page title |
 | `cc` / `bcc` |, | comma-separate |
 | `from` |, | which account sends; defaults to first send-enabled |
-| `includeLink` |, | also mint a public link (see [sharing.md](./sharing.md)) and add a "View online" footer |
+| `includeLink` |, | also mint a public link (see [sharing.md](./sharing.md)) and add a "View online" footer; refused before anything is sent for a client-level page (clients sign in, there is no client link) |
 
 It loads the page, renders the ProseMirror doc to **inline-styled HTML** via
 `renderPageEmail` ([`packages/content/src/render-page-email.ts`](../packages/content/src/render-page-email.ts)),

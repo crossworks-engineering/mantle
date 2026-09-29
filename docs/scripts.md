@@ -645,7 +645,7 @@ does, and `pnpm readme:stats --check` to see whether the block is stale.
 
 ### `pnpm verify` and the git hooks
 
-`pnpm verify` = `typecheck` (all packages) + `lint` + `format:check` + `vitest run`.
+`pnpm verify` = `typecheck` (all packages) + `lint` + `format:check` + `docs:check` + `vitest run`.
 It's what CI runs and what the pre-push hook runs.
 
 ```bash
@@ -669,10 +669,27 @@ survive fresh worktrees.
 
 | Workflow                            | Trigger                                    | What                                                                                                                                                                                                                                                 |
 | ----------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/build-check.yml` | push to `feat/**` or `main`, PRs to `main` | typecheck + lint + format + vitest + the **production build** (the webpack/edge-runtime gate `tsc` and vitest miss). Hermetic, no Postgres/object store. Does not build images.                                                                      |
+| `.github/workflows/build-check.yml` | push to `feat/**` or `main`, PRs to `main` | typecheck + lint + format + vitest + the **production build** (the webpack/edge-runtime gate `tsc` and vitest miss). No object store; a throwaway Postgres for the database tests only. Does not build images.                             |
 | `.github/workflows/release.yml`     | push of a `v*` tag                         | builds `mantle-server` + `mantle-client` for amd64 and arm64 on native runners in parallel, merges digests into multi-arch manifests on Docker Hub, and cuts a GitHub Release carrying the deploy bundle so compose and image are versioned together |
 
 Release needs the `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets.
+
+**Database tests on CI.** Every `*.db.test.ts` skips without its database
+URL (`MANTLE_TEST_DATABASE_URL`, `RUNS_TEST_DATABASE_URL`). On CI (`CI`
+set) the vitest global setup (`vitest.global-setup.ts`, via
+`packages/db/src/test-env-guard.ts`) fails the whole run when one is
+missing, so a job cannot report green with them skipped. A local run
+without them still skips them.
+
+**Public routes that read a session.** The role sweeps
+(`server/web/server/role-sweep.test.ts`, `member-sweep.test.ts`) drive every
+manifest route with a signed session, but a public route has no gate in
+front of it. Each public route that reads the caller's session itself
+(under `/api/auth`, `/api/oauth`, the print pages) is listed with an answer
+per role in `server/web/server/public-session-routes.ts`, and the sweeps
+drive each one. A completeness test reads the source of every other public
+route and fails when one calls a session reader: add any new one to that
+list, with its answers.
 
 ---
 
