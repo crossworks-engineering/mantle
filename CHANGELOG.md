@@ -4,6 +4,48 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.336: client logins C4, client chat
+
+A client chats with the brain's client-responder in the client portal. Pair
+it with jackdaw v0.6.176 (the client chat dock, a Clients filter on Member
+chats, each client's chat use in Team admin > Clients). No migration.
+Operator guide: docs/client-logins.md section 8.
+
+- **Every brain gets client-responder, at client level.** The system
+  manifest ships the agent and its `client-read` tool group at client level:
+  fresh installs at onboarding, existing brains on the boot reconcile. No
+  setup step. The reconcile converges `client-read` back to client; the
+  agent's level stays the admin's.
+- **The chat reads what the portal shows.** `client_shared_list`,
+  `client_shared_search` and `client_shared_open` serve the portal's
+  redacted items ("Private item" for anything a client may not read); the
+  client's own drafts through `my_items_list` and `my_item_open`; no
+  brain-wide search and no retrieval context (their chunks, facts and
+  summaries were built from text that can name team items).
+- **Client level, twice.** The agent must be exactly at client level (the
+  route and the engine refuse any other), and the whole turn also runs
+  inside `withViewer('client')`. The member chat now takes exactly a
+  team-level agent. A spilled tool result is readable only by the client or
+  member turn that wrote it.
+- **Requests.** `client_request_create` files a "from client" request in the
+  Requests queue (3 per message, 10 a day), extract-exempt until an admin
+  acts; the admin's reply reaches the client's thread.
+- **Client-written text cannot lower anything.** In a turn that read a
+  client request or a client's thread, `access_set` to client or public, a
+  share link or `email_page` with a link waits in Pending. Delegated
+  children share the mark.
+- **Owner-only tools refuse a missing surface.** They run only for the
+  owner's web and Telegram turns and the owner paths that name themselves
+  (MCP, runs, delegated children, approved pending calls, the dev console);
+  a team or client turn, or a caller with no surface, is refused. A
+  sweep pins the owner-only set and every owner call site.
+- **Caps and queue.** The member caps per client login, taken from the turn
+  ledger when queued; client turns run on their own queue (`mantle.client`),
+  one per login at a time, `MANTLE_CLIENT_TURN_CONCURRENCY` (default 2). A
+  turn queued before a sign-out, End sessions or Disable never runs.
+- **Admin.** `GET /api/team-admin/clients/usage`: each client login's chat
+  use today against the caps.
+
 ## 0.232.334: client v0.6.175
 
 - Pairs the client at jackdaw v0.6.175, the client half of 0.232.333 (the

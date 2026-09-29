@@ -168,9 +168,10 @@ it to Team (or Client, when clients should read it too).
 - **Chat** happens in the owner app's assistant dock (jackdaw v0.6.146+),
   with its three shapes (side column, movable window, full display): for a
   member the dock renders the member's own thread over these two routes. It
-  uses `team-responder`, and only once an admin has set it below
-  admin (access-levels.md §5): members chat only with team-level agents, and
-  the turn engine refuses an admin agent for a member (`assertMemberAgent`).
+  uses `team-responder`, and only while an admin has set it to team
+  (access-levels.md §5): members chat only with a team-level agent, and the
+  turn engine refuses any other level for a member (`assertAgentForRole`;
+  client and public agents serve other logins, client-logins.md §8).
   One thread per login (`team_messages.login_id`, migration 0163), never in
   the owner's assistant stream. A member's rows carry the login and no
   contact (migration 0167). Limits per login: 6 messages a minute, the
@@ -422,7 +423,8 @@ team: `{ type: 'space_item', id, kind, own }`. The client reloads.
 **Agents, on behalf of** (plan 2e). `my_items_list` and `my_item_open` (in
 `team-read`) read the personal items of the member a team turn serves. The
 member is the turn's own login, stamped on the team surface by the server,
-never named by the model; any other surface (an owner turn, a heartbeat, a
+never named by the model; a client's turn works the same way for the client
+(client-logins.md §8); any other surface (an owner turn, a heartbeat, a
 run, MCP) finds nothing. Each call opens its own short space transaction
 (`mantle_personal_space(login)` maps the login to its space). Read, never
 learn: no search by meaning over personal items.

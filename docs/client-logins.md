@@ -1,8 +1,8 @@
 # Client logins
 
-> Client logins, phases C0 to C3 and the C2/C2b audit fixes. The operator's
+> Client logins, phases C0 to C4 and the C2/C2b audit fixes. The operator's
 > guide: what a client login is, how an admin lets a client in, how emailed
-> codes work, and what a client reads. What a client may read is decided by
+> codes work, what a client reads, and the client chat (section 8). What a client may read is decided by
 > Postgres row security at the client level
 > ([access-levels.md](./access-levels.md)); the role checks every route
 > makes are in [member-logins.md](./member-logins.md) section 2.
@@ -22,8 +22,9 @@
   on the brain's origin (section 6).
 - **Deny by default.** A client reaches only the routes in `CLIENT_ROUTES`
   (`server/web/lib/auth/client-routes.ts`): its shell, "Shared with you"
-  (list and item), and the bytes of client files and drawings. Every admin
-  and member gate refuses it with 403 `client-login`.
+  (list and item), the bytes of client files and drawings, and its own chat
+  (section 8). Every admin and member gate refuses it with 403
+  `client-login`.
 - **A client stays a client.** `PATCH /api/users/:id` refuses a role change
   to or from client. To make a client a member, disable the login and
   invite the person as a member.
@@ -267,3 +268,58 @@ nothing.
   ([security.md](./security.md) section 2).
 - **Rollback floor.** Never roll a box below v0.232.318 once a client login
   exists ([update-prod.md](./update-prod.md)).
+
+## 8. Client chat
+
+A client chats with the brain's **client-responder** in the client portal
+(`GET/POST /api/client/chat`, the member chat's twin, never shared with it).
+
+- **Every brain has it.** The system manifest ships `client-responder` AT
+  CLIENT LEVEL, holding the `client-read` tool group, also at client level.
+  A fresh install gets both at onboarding; an existing brain gets both on
+  the boot reconcile after its upgrade. Nothing to set up. The reconcile
+  converges `client-read` back to client if someone raised it; the agent's
+  level is left as an admin sets it. The chat is open only while
+  client-responder is enabled and exactly at client level: disable it (or
+  raise it) to close the chat (409 `chat-closed`).
+- **What it reads is what the portal shows.** Its only tools are
+  `client_shared_list`, `client_shared_search`, `client_shared_open` (the
+  "Shared with you" items, with every reference to an item the client may
+  not read shown as "Private item", section 5), `my_items_list` and
+  `my_item_open` (the client's own drafts), and `client_request_create`. It
+  never holds the brain-wide search and read tools, and its turn loads no
+  retrieval context at all (no facts, summaries, passages or graph): those
+  were built from page text that can name team and admin items. Search
+  matches the words the client sees, not the raw text.
+- **Client level, twice.** The agent is at client level, and the whole turn
+  also runs inside `withViewer('client')`, so a raised agent still reads at
+  client level. A tool group above client that someone grants it is left
+  out at run time. A spilled tool result (`read_result`) is readable only by
+  the turn that wrote it.
+- **Requests.** `client_request_create` files a task in the same Requests
+  queue as a member's request, tagged `client-request` and marked "from
+  client". It is extract-exempt until an admin acts on it. Caps: 3 per
+  message, 10 a day per client login. An admin's reply lands in the
+  client's chat thread.
+- **Client-written text cannot lower anything.** A staff turn that has read
+  a client request or a client's chat thread cannot lower anything to
+  client or public on its own: `access_set` to client or public, a share
+  link, or `email_page` with a link waits in Pending for the owner. The turn
+  is marked from the ids in every tool call's input and output and in its
+  retrieval context; a delegated child shares the mark.
+- **Caps.** The member caps, per client login: 6 messages a minute, the
+  daily turn cap (`TEAM_CHAT_DAILY_TURNS`) and the daily token budget
+  (`MANTLE_MEMBER_DAILY_TOKENS`), taken from the turn ledger when a turn is
+  queued. Team admin > Clients shows each client's use today
+  (`GET /api/team-admin/clients/usage`).
+- **Its own queue.** Client turns run on `mantle.client`, partitioned by
+  login with one turn in flight each, `MANTLE_CLIENT_TURN_CONCURRENCY`
+  (default 2) across all clients. They never wait behind member or owner
+  turns.
+- **Sessions end turns.** A queued turn carries the session epoch it was
+  sent under. Sign out, End sessions or Disable before it runs, and it
+  never runs.
+- **Polling.** The portal polls the thread (no live stream).
+- **Admins read client chats** in Team admin > Member chats (Clients
+  filter), read-only, with the private placeholder rule for replies that
+  quoted the client's own drafts.
