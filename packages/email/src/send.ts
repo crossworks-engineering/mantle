@@ -44,6 +44,11 @@ export type SendEmailInput = {
   references?: string | string[];
   /** Inline (cid) or download attachments. */
   attachments?: EmailAttachment[];
+  /** Set the RFC Message-ID (with angle brackets) instead of a generated
+   *  one; client sign-in code mails carry a marker in it (client-code-mail.ts). */
+  messageId?: string;
+  /** Extra headers. */
+  headers?: Record<string, string>;
 };
 
 export type SendEmailResult = {
@@ -99,6 +104,8 @@ export async function sendEmail(
     inReplyTo: input.inReplyTo,
     references: input.references,
     attachments: input.attachments,
+    messageId: input.messageId,
+    headers: input.headers,
   });
 
   return {

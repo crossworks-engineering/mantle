@@ -48,6 +48,7 @@ export {
   explainImapError,
   listAccountFolders,
   setIncludedFolders,
+  excludeSentFolders,
   type SaveImapAccountInput,
   type SaveImapAccountResult,
   type ConnectImapInput,
@@ -75,3 +76,9 @@ export {
   type AddSenderResult,
   type PeekProviderResolver,
 } from './discover';
+export {
+  CLIENT_CODE_HEADER,
+  clientCodeMessageId,
+  isClientCodeMail,
+  sentFolderNames,
+} from './client-code-mail';

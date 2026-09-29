@@ -1330,13 +1330,20 @@
       "version": "7",
       "when": 1790017620000,
       "tag": "0189_client_level_fixes",
-        "breakpoints": true
-      },
-      {
+      "breakpoints": true
+    },
+    {
       "idx": 190,
       "version": "7",
       "when": 1790017680000,
       "tag": "0190_role_no_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "7",
+      "when": 1790017740000,
+      "tag": "0191_client_signin_email_codes",
       "breakpoints": true
     }
   ]

@@ -415,6 +415,9 @@ export const BRAIN_PREFERENCE_KEYS = [
   // How the brain's apps are organised: one shared tree, so a team sees the
   // same folders on every device. Pins and open counts stay personal.
   'appNav',
+  // Where client sign-in codes are mailed from (client logins C2b): one
+  // sender for the brain, whichever admin chose it.
+  'clientSigninSenderId',
 ] as const satisfies ReadonlyArray<keyof ProfilePreferences>;
 
 type BrainPreferenceKey = (typeof BRAIN_PREFERENCE_KEYS)[number];

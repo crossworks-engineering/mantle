@@ -112,6 +112,12 @@ export type {
 export type {
   ClientAdminRefusedReason,
   ClientLinkSignIn,
+  ClientCodeAvailability,
+  ClientCodeRequested,
+  ClientCodeSignIn,
+  ClientSigninSenderCandidate,
+  ClientSigninSender,
+  ClientSenderRefusedReason,
   ClientLoginCreated,
   ClientLoginList,
   ClientLoginRow,

@@ -13,6 +13,7 @@ import { db, emailAccounts, syncRuns, type EmailAccount, type SyncRun } from '@m
 import { seal } from '@mantle/crypto';
 import { probeImapConnection, unsealImapPassword } from './providers/imap';
 import { probeSmtpConnection } from './send';
+import { sentFolderNames } from './client-code-mail';
 import type { AccountFoldersResult } from '@mantle/client-types';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
@@ -457,4 +458,32 @@ export async function setIncludedFolders(
     console.error('[email] enqueue immediate sync failed', err);
   }
   return true;
+}
+
+/**
+ * Leave an account's sent-mail folders out of mail sync (client logins C2b:
+ * the sign-in sender's Sent folder must not bring live codes into the brain).
+ * Lists the server's folders, adds every sent-mail folder to the excluded
+ * list and takes it off an explicit allow-list. Owner-scoped. `ok: false`
+ * when the folders cannot be listed; the code mails are skipped by their
+ * Message-ID anyway (client-code-mail.ts), this is the second guard.
+ */
+export async function excludeSentFolders(
+  userId: string,
+  accountId: string,
+): Promise<{ ok: true; excluded: string[] } | { ok: false; error: string }> {
+  const listed = await listAccountFolders(userId, accountId);
+  if (!listed.ok) return listed;
+  const sent = sentFolderNames(listed.allFolders);
+  const excluded = [...new Set([...listed.excluded, ...sent])];
+  const included = listed.included?.filter((f) => !sent.includes(f)) ?? null;
+  await db
+    .update(emailAccounts)
+    .set({
+      imapExcludedFolders: excluded,
+      imapIncludedFolders: included && included.length > 0 ? included : null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(emailAccounts.id, accountId), eq(emailAccounts.userId, userId)));
+  return { ok: true, excluded: sent };
 }

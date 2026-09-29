@@ -16,6 +16,7 @@ import { hashBuffer, putContent } from '@mantle/storage';
 import { loadContactGate } from '@mantle/content';
 import { and, eq, or, sql } from 'drizzle-orm';
 import { domainOf } from './addresses';
+import { isClientCodeMail } from './client-code-mail';
 import { salienceForDeliveryKind } from './classify';
 import type { EmailProvider, RawMessage } from './types';
 
@@ -155,6 +156,10 @@ async function ingestOne(
     ReturnType<typeof db.select> extends never ? never : Awaited<ReturnType<typeof loadRules>>
   >,
 ): Promise<boolean> {
+  // A client sign-in code mail (a copy of one the brain sent, in any folder)
+  // never enters the brain: nothing is fetched, nothing is stored.
+  if (isClientCodeMail(message)) return false;
+
   // Dedup pre-check. Two unique constraints, two checks (OR'd in one query):
   //   1. (account_id, provider_msg_id) — same UID in same folder. Catches
   //      crash-retry / restart-replay races.

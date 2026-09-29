@@ -452,6 +452,9 @@ export type ProfilePreferences = {
    *  member home is the fallback. No share link is involved. Read via
    *  projectTeamHubAppId, never raw. */
   teamHubAppId?: string;
+  /** The email account client sign-in codes are sent from (client logins
+   *  C2b). A BRAIN key: one sender for the brain. Unset = codes are off. */
+  clientSigninSenderId?: string;
   /** Tags the owner curates as Dashboard sections on the /team overview: each
    *  tag renders a section of up to 5 team-visible shared pages carrying it
    *  (newest-updated first, title + summary + /s link). Order here = section
