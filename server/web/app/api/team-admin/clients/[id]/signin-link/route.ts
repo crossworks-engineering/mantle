@@ -48,12 +48,21 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 }
 
-export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const params = Params.safeParse(await ctx.params);
   if (!params.success || !(await revokeClientSigninLink(user.id, params.data.id))) {
     return NextResponse.json({ error: 'No open sign-in link.' }, { status: 404 });
   }
+  auditFireAndForget({
+    actorId: user.actor.id,
+    actorEmail: user.actor.email,
+    action: 'client.signin_link_revoked',
+    method: 'DELETE',
+    path: `/api/team-admin/clients/${params.data.id}/signin-link`,
+    detail: { targetId: params.data.id },
+    ...requestMetaFrom(req),
+  });
   return NextResponse.json({ ok: true });
 }

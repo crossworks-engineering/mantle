@@ -12,7 +12,8 @@
  *
  * End sessions, Disable and Delete are the users routes (PATCH and DELETE
  * /api/users/:id). POST /api/users never makes a client: clients are made
- * here only. Admin only: getOwnerOr401 refuses members and clients.
+ * here only. Admin only: getOwnerOr401 refuses members and clients. These
+ * routes write their own audit rows (AUDIT_SELF_LOGGED_PATHS).
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';

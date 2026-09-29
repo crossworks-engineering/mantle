@@ -30,6 +30,12 @@ export type AuditEntry = {
     // A member invite redeemed (member logins Phase 6), or a failed try.
     | 'auth.invite_accepted'
     | 'auth.invite_failed'
+    // A client login signed in with an admin-issued link (client logins
+    // C2), or a failed try; an admin issued or revoked a link.
+    | 'auth.client_link_signin'
+    | 'auth.client_link_failed'
+    | 'client.signin_link_issued'
+    | 'client.signin_link_revoked'
     | 'user.create'
     | 'user.update'
     | 'user.delete'
