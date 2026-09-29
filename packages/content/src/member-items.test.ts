@@ -135,7 +135,7 @@ describe('clientItemsPlan (My requests, client logins C5)', () => {
       for (const r of rows) {
         const kept =
           !!own &&
-          (!own.reviewStates || own.reviewStates.includes(r.reviewState)) &&
+          (!own.reviewStates || (own.reviewStates as readonly string[]).includes(r.reviewState)) &&
           (!own.sharing || own.sharing === r.sharing);
         expect(kept, `${filter} ${r.reviewState}`).toBe(filter === 'all' || filter === pillOf(r));
       }
