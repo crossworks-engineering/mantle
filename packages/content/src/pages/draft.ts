@@ -330,8 +330,8 @@ export async function commitPage(
     }
     await followPageEmbeds(tx, ownerId, id, enriched);
     // Fold the text *inside* embedded images (vision/OCR) + doc chips into the
-    // indexed plaintext, so the page is searchable by — and its summary
-    // reflects — its own assets, not just their filenames. At client or
+    // indexed plaintext, so the page is searchable by its own assets (and
+    // its summary reflects them), not just their filenames. At client or
     // public, only what that level reads (pages/level-text.ts). Read after
     // the embeds followed the page down, in this transaction.
     const docText = await pageDocText(ownerId, asViewerLevel(node.audience), enriched, tx);
