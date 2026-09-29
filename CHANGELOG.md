@@ -4,6 +4,19 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.344: client v0.6.178 (client logins C5)
+
+- Pairs the client at jackdaw v0.6.178, the client half of 0.232.342 and
+  0.232.343. Clients get My requests (their pages, notes and uploads, with
+  Submit, Recall, the Returned banner and the review talk) and a comment
+  thread on every item shared with them. Members get Client requests in
+  their one list and the thread on client-level Library items. Admins get
+  the thread on client-level items, and Team admin > Clients shows client
+  comments and client storage. Threads are paged and show no remote images;
+  a client never reads the word "admin".
+- A client's item a reviewer holds answers in the client's words ("a
+  reviewer"), never "admin".
+
 ## 0.232.343: client tier audit fixes (C2 to C5)
 
 All findings of AUDIT: client logins C2 to C5 (leak paths 7, integrity 6.5,
