@@ -40,6 +40,9 @@ describe.skipIf(!URL)('admin private items', () => {
   const adminA = randomUUID();
   const adminB = randomUUID();
   const member = randomUUID();
+  // A client login with a submitted item (audit A3): the badge count below
+  // must not take it for an admin's.
+  const client = randomUUID();
   const spaceOf: Record<string, string> = {};
   const root = mkdtempSync(path.join(tmpdir(), 'mantle-admin-space-'));
   const moved: string[] = [];
@@ -99,12 +102,13 @@ describe.skipIf(!URL)('admin private items', () => {
         (${anchor}, ${`${tag}-anchor@example.invalid`}, 'x', 'admin'),
         (${adminA}, ${`${tag}-a@example.invalid`}, 'x', 'admin'),
         (${adminB}, ${`${tag}-b@example.invalid`}, 'x', 'admin'),
-        (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member')`);
+        (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member'),
+        (${client}, ${`${tag}-c@example.invalid`}, 'x', 'client')`);
     await m.systemDb.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`);
     const rows = await exec<{ id: string; login_id: string }>(sqlTag`
       select id, login_id from spaces where kind = 'personal'
-        and login_id in (${adminA}, ${adminB}, ${member})`);
+        and login_id in (${adminA}, ${adminB}, ${member}, ${client})`);
     for (const r of rows) spaceOf[r.login_id] = r.id;
   });
 
@@ -117,9 +121,9 @@ describe.skipIf(!URL)('admin private items', () => {
     }
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${anchor}`);
     await m.systemDb.execute(sqlTag`
-      delete from spaces where login_id in (${anchor}, ${adminA}, ${adminB}, ${member})`);
+      delete from spaces where login_id in (${anchor}, ${adminA}, ${adminB}, ${member}, ${client})`);
     await m.systemDb.execute(sqlTag`
-      delete from auth.users where id in (${anchor}, ${adminA}, ${adminB}, ${member})`);
+      delete from auth.users where id in (${anchor}, ${adminA}, ${adminB}, ${member}, ${client})`);
     await m.closeDb();
     rmSync(root, { recursive: true, force: true });
   });
@@ -259,13 +263,23 @@ describe.skipIf(!URL)('admin private items', () => {
     await m.systemDb.execute(sqlTag`
       update space_items set sharing = 'team', review_state = 'submitted',
         submitted_at = now() where node_id = ${bNoteId}`);
+    // A client's submitted item is in the queue as well (audit A3: the count
+    // below once took every role but member for an admin, so it failed
+    // whenever a client item was submitted at the same moment).
+    const C = spaceOf[client]!;
+    const cNoteId = (
+      await as(client, () =>
+        sp.createMineItem(C, { type: 'note', title: `${tag} c`, content: 'client stuff' }),
+      )
+    ).id;
+    await as(client, () => sp.submitItem(C, cNoteId));
     // The badge count, on one snapshot (other test files submit in parallel):
     // every submitted personal item, less the ones an admin wrote.
     await m.systemDb.transaction(async (tx) => {
       await tx.execute(sqlTag`set transaction isolation level repeatable read`);
       const [c] = (await tx.execute(sqlTag`
         select count(*)::int as total,
-               count(*) filter (where u.role <> 'member')::int as admins
+               count(*) filter (where u.role = 'admin')::int as admins
           from space_items si
           join nodes n on n.id = si.node_id
           join spaces s on s.id = n.owner_id and s.kind = 'personal'
@@ -274,6 +288,8 @@ describe.skipIf(!URL)('admin private items', () => {
       expect(c!.admins).toBeGreaterThanOrEqual(1);
       expect(await rv.countSubmitted(tx)).toBe(c!.total - c!.admins);
     });
+    expect((await rv.listReviewQueue()).items.map((i) => i.id)).toContain(cNoteId);
+    await as(client, () => sp.recallItem(C, cNoteId));
     expect((await rv.listReviewQueue()).items.map((i) => i.id)).not.toContain(bNoteId);
     expect(await rv.getReviewItem(bNoteId)).toBeNull();
     expect(await rv.previewAccept(bNoteId)).toBeNull();
