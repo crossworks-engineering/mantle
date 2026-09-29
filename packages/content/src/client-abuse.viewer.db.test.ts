@@ -599,6 +599,34 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     expect(res.id).toBe(id);
   });
 
+  it('give back is refused past the client’s 200 MB, and past the total', async () => {
+    const actor = { loginId: adminA, spaceId: spaceOf[adminA]! };
+    // The item limit is not this test's rule: make room first.
+    await m.systemDb.execute(sqlTag`
+      delete from nodes where owner_id = ${spaceOf[c.back]!} and title like ${`${tag} fake %`}`);
+    const id = await page(c.back, `${tag} back bytes`);
+    await submit(c.back, id);
+    await rv.takeOverReviewItem(id, actor);
+    const used = await as(c.back, () => sf.spaceStorageUsed(spaceOf[c.back]!));
+    const big = await fakeFile(c.back, 200 * MB - used);
+    try {
+      await expect(tk.giveBackTakenItem(brain, actor, id, 'Back.')).rejects.toMatchObject({
+        reason: 'quota',
+      });
+    } finally {
+      await dropNode(big);
+    }
+    process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String(await usedBytes());
+    try {
+      await expect(tk.giveBackTakenItem(brain, actor, id, 'Back.')).rejects.toMatchObject({
+        reason: 'quota',
+      });
+    } finally {
+      delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
+    }
+    expect((await tk.giveBackTakenItem(brain, actor, id, 'Back.')).id).toBe(id);
+  });
+
   // ── author_role never changes (0194) ────────────────────────────────────
 
   it('space_items.author_role never changes after insert, by any role', async () => {
