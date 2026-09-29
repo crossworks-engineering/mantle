@@ -22,7 +22,7 @@ import {
   RENDER_COOKIE_NAME,
   secureCookies,
 } from '../auth-constants';
-import { auditFireAndForget } from '../audit';
+import { auditFireAndForget, requestMeta } from '../audit';
 import { bearerFromHeader } from './request';
 import {
   SESSION_COOKIE_NAME,
@@ -500,8 +500,8 @@ async function auditMutation(user: SessionUser): Promise<void> {
     action: 'api.write',
     method,
     path,
-    ip: h.get('x-forwarded-for')?.split(',')[0]?.trim() || null,
-    userAgent: h.get('user-agent') || null,
+    // The proxy-appended address, not the caller's leftmost (audit B16).
+    ...(await requestMeta()),
   });
 }
 
