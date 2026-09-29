@@ -138,12 +138,15 @@ describe.skipIf(!URL)('folder links filter by level on Postgres', () => {
     expect(await shares.isAssetAllowed(link, id.cliPub)).toBe(false);
   });
 
-  it('a client folder link shows client and public items, not admin ones', async () => {
+  it('an old client folder link shows public items only (client logins C3)', async () => {
+    // The public read path does not serve a link on a client folder at all
+    // (resolveActiveShareByToken, retire-client-links.db.test.ts); even when
+    // such a link reaches the listing, it shows public items, never client.
     const l = await listing(id.cli);
-    expect(l.levels).toEqual(['client', 'public']);
-    expect(l.files).toEqual(['for-all.txt', 'for-clients.txt']);
+    expect(l.levels).toEqual(['public']);
+    expect(l.files).toEqual(['for-all.txt']);
     const link = shareOf(id.cli, 'branch');
-    expect(await shares.isAssetAllowed(link, id.cliCli)).toBe(true);
+    expect(await shares.isAssetAllowed(link, id.cliCli)).toBe(false);
     expect(await shares.isAssetAllowed(link, id.cliPub)).toBe(true);
     expect(await shares.isAssetAllowed(link, id.cliAdm)).toBe(false);
   });

@@ -269,8 +269,11 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
     it('an old live link is not handed out again', async () => {
       const old = await oldLink(ids.cOld);
       await expect(s.createShare(owner, ids.cOld)).rejects.toBeInstanceOf(s.ClientLinkRetiredError);
-      // The old link itself is untouched until C3 retires it.
-      expect(await s.resolveActiveShareByToken(old.token)).not.toBeNull();
+      // Client logins C3: the public read path serves no link on a client
+      // item (migration 0192 retires them); the token reads as an old client
+      // link, so /s says "sign in as a client".
+      expect(await s.resolveActiveShareByToken(old.token)).toBeNull();
+      expect(await s.isRetiredClientLinkToken(old.token)).toBe(true);
       expect(await audienceOf(ids.cOld)).toBe('client');
     });
 
@@ -362,7 +365,8 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
       const lower = await a.setItemLevel(owner, ids.cFolder, 'client', { withClosure: true });
       expect(lower.lowered.map((i) => i.id)).toEqual([ids.cFolderFile]);
       expect(lower.share?.id).toBe(old.id);
-      expect(await s.resolveActiveShareByToken(old.token)).not.toBeNull();
+      // The link row is kept (C3: never served on a client item).
+      expect(await s.resolveActiveShareByToken(old.token)).toBeNull();
       // "Raise them too" and a plain set: the link stays too.
       await m.db.execute(
         sqlTag`update nodes set audience = 'public' where id = ${ids.cFolderFile}`,
@@ -370,7 +374,8 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
       const raise = await a.setItemLevel(owner, ids.cFolder, 'client', { raiseClosure: true });
       expect(raise.raised.map((i) => i.id)).toEqual([ids.cFolderFile]);
       expect((await a.setItemLevel(owner, ids.cFolder, 'client')).share?.id).toBe(old.id);
-      expect(await s.resolveActiveShareByToken(old.token)).not.toBeNull();
+      // The link row is kept (C3: never served on a client item).
+      expect(await s.resolveActiveShareByToken(old.token)).toBeNull();
       // A real change of level still takes the old link away.
       await a.setItemLevel(owner, ids.cFolder, 'team');
       expect(await s.resolveActiveShareByToken(old.token)).toBeNull();

@@ -103,7 +103,9 @@ describe.skipIf(!URL)('retire team links (0176 and the share read path)', () => 
       [n.clientNote, n.publicPage].sort(),
     );
     expect((await s.resolveActiveShareByToken(token.publicPage))?.nodeId).toBe(n.publicPage);
-    expect((await s.resolveActiveShareByToken(token.clientNote))?.nodeId).toBe(n.clientNote);
+    // A live link on a client item is not served either (client logins C3,
+    // retire-client-links.db.test.ts); it still counts as the item's link.
+    expect(await s.resolveActiveShareByToken(token.clientNote)).toBeNull();
   });
 
   it('revokes every live team link, expired ones too, and nothing else; no level changes', async () => {
