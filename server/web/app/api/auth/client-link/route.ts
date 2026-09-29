@@ -19,6 +19,7 @@ import type { ClientLinkSignIn } from '@mantle/client-types';
 import { setClientSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientLinkRateLimited } from '@/lib/client-logins';
+import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 
 const Body = z.object({
   code: z.string().min(1).max(64),
@@ -28,6 +29,8 @@ const Body = z.object({
 const FAILED_MESSAGE = 'This sign-in link is not valid. Ask for a new one.';
 
 export async function POST(req: Request) {
+  const refused = refuseCrossSiteAuthPost(req);
+  if (refused) return refused;
   const limited = clientLinkRateLimited(req);
   if (limited) return limited;
 

@@ -13,6 +13,7 @@ import {
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
 import { firstIssue } from '@/lib/zod-issue';
+import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 
 const ChangePasswordBody = z
   .object({
@@ -25,6 +26,8 @@ const ChangePasswordBody = z
   });
 
 export async function POST(req: Request) {
+  const refused = refuseCrossSiteAuthPost(req);
+  if (refused) return refused;
   // Admin or member: a login changes its own password. A client has no
   // password (it signs in with a link or a code, client logins C2).
   const login = await getLoginOr401();

@@ -20,6 +20,7 @@ import type { MemberInviteAccepted } from '@mantle/client-types';
 import { hashLoginPassword, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { inviteFailed, inviteRateLimited } from '@/lib/member-invites';
+import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
 
 const AcceptBody = z.object({
   code: z.string().min(1).max(64),
@@ -30,6 +31,8 @@ const AcceptBody = z.object({
 const INVITE_FAILED_MESSAGE = 'This invite is not valid. Ask for a new one.';
 
 export async function POST(req: Request) {
+  const refused = refuseCrossSiteAuthPost(req);
+  if (refused) return refused;
   const limited = inviteRateLimited(req, 'accept');
   if (limited) return limited;
 
