@@ -7,7 +7,7 @@
  * the owner's resolution back into the member's thread.
  */
 import { and, count, desc, eq, gte, sql } from 'drizzle-orm';
-import { REQUEST_SOURCES, db, nodes, notifyNodeIngested } from '@mantle/db';
+import { CLIENT_REQUEST_SOURCE, REQUEST_SOURCES, db, nodes, notifyNodeIngested } from '@mantle/db';
 import { appendTeamMessage } from './team-messages';
 import type { TeamRequest } from '@mantle/client-types';
 export type { TeamRequest };
@@ -173,6 +173,7 @@ export async function listTeamRequests(
       loginId: typeof tr.loginId === 'string' && tr.loginId ? tr.loginId : null,
       contactName: typeof tr.contactName === 'string' ? tr.contactName : null,
       notifiedAt: typeof tr.notifiedAt === 'string' ? tr.notifiedAt : null,
+      ...(d.source === CLIENT_REQUEST_SOURCE ? { fromClient: true } : {}),
     };
   });
 }

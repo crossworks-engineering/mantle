@@ -113,6 +113,10 @@ export type ClientCaller = {
   spaceId: string;
   email: string;
   displayName: string | null;
+  /** The login's session epoch, from the row the session was checked
+   *  against: work that outlives the request (a queued client chat turn, C4)
+   *  runs only while it is still the login's epoch (clientTurnMayRun). */
+  sessionEpoch: number;
 };
 /** How long a client session lasts (plan section 4): 30 days, not a year.
  *  The cookie is minted with it, and a client cookie that claims to last
@@ -368,6 +372,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
           spaceId,
           email: row.email,
           displayName: row.displayName,
+          sessionEpoch: row.sessionEpoch,
         },
       };
     }

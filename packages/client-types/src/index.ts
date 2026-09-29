@@ -118,6 +118,11 @@ export type {
 } from './dto/logins';
 export type {
   ClientAdminRefusedReason,
+  ClientChatMessage,
+  ClientChatQueued,
+  ClientChatRefusedReason,
+  ClientChatThread,
+  ClientChatUsage,
   ClientLinkSignIn,
   ClientCodeAvailability,
   ClientCodeRequested,

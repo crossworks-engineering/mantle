@@ -224,3 +224,48 @@ export type ClientSigninSenderPreview = {
 /** Why an admin's sender choice was refused (the 4xx `reason`). */
 export type ClientSenderRefusedReason =
   'account-not-found' | 'account-cannot-send' | 'no-sent-folder' | 'folders-unreadable';
+
+// ── Client chat (client logins C4) ───────────────────────────────────────
+
+/** One message of a client's own chat thread. */
+export type ClientChatMessage = {
+  id: string;
+  direction: 'inbound' | 'outbound';
+  text: string;
+  status: 'pending' | 'complete' | 'failed';
+  failed: boolean;
+  createdAt: string;
+};
+
+/** GET /api/client/chat[?before=ISO]: the client's own thread with the
+ *  client-responder, newest page first (50 a page). `agent` null = the chat
+ *  is not open (no enabled client-level client-responder): the dock says so
+ *  and offers no input. Poll it (every few seconds while a reply is pending):
+ *  there is no live stream for clients. */
+export type ClientChatThread = {
+  agent: { name: string } | null;
+  messages: ClientChatMessage[];
+};
+
+/** POST /api/client/chat { text } -> 202: the turn is queued; the reply
+ *  lands in the thread. A retry with the same Idempotency-Key is the same
+ *  turn. */
+export type ClientChatQueued = { turnId: string };
+
+/** Why a client chat send was refused (the 4xx `reason`): 409 `chat-closed`
+ *  (no client-level agent), 409 `idempotency-key-reused`, 429 `rate-limited`
+ *  (6 a minute), 429 `daily_cap` or `token_budget` (the member caps, per
+ *  client login per UTC day). */
+export type ClientChatRefusedReason =
+  | 'chat-closed'
+  | 'idempotency-key-reused'
+  | 'rate-limited'
+  | 'daily_cap'
+  | 'token_budget';
+
+/** GET /api/team-admin/clients/usage: each client login's chat use today
+ *  (UTC) against the caps every client login has (the member caps). */
+export type ClientChatUsage = {
+  limits: { dailyTurns: number; dailyTokens: number };
+  rows: { loginId: string; turnsToday: number; tokensToday: number }[];
+};

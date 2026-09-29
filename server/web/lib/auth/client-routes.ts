@@ -19,6 +19,9 @@ export const CLIENT_ROUTES: readonly string[] = [
   // Bytes of client-level items (session or a client ?at= token).
   'GET /api/client/files/:id',
   'GET /api/client/draws/:id/svg',
+  // The client's own chat with the client-responder (Phase C4).
+  'GET /api/client/chat',
+  'POST /api/client/chat',
 ];
 
 export function isClientRoute(method: string, pattern: string): boolean {

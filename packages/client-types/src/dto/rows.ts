@@ -560,6 +560,10 @@ export type TeamRequest = {
   contactName: string | null;
   /** When the owner last posted a resolution to the member for this request. */
   notifiedAt: string | null;
+  /** True for a request a CLIENT login filed through the client-responder
+   *  (client logins C4, 0.232.334 on): the reply still goes into that
+   *  login's thread. Absent on older brains = a member's request. */
+  fromClient?: boolean;
 };
 
 /** The newest thing waiting in one "needs you" queue: its title and who it
