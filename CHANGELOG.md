@@ -4,6 +4,19 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.326: client v0.6.173
+
+- Pairs the client at jackdaw v0.6.173, the client half of 0.232.324 and
+  0.232.325: sign-in by an emailed code. /client-signin without a link asks
+  for the email, then for the 8-digit code (paste friendly), with the same
+  neutral words for every email ("If this email has a client login, we
+  sent it a code"), Send a new code and Use a different email. The option
+  shows only when the brain sends codes; otherwise the page says to ask the
+  admin for a sign-in link. /login has a quiet line for clients. Team admin
+  > Clients has a "Sign-in codes by email" card: pick the sender (or none),
+  see the sent folders kept out of the brain, and a banner when the daily
+  limit is reached.
+
 ## 0.232.325: client email codes, asking again
 
 - **Asking again no longer strands the mailed code.** A browser that asks
