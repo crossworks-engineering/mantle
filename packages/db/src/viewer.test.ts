@@ -9,7 +9,11 @@ import {
   currentScopeTx,
   currentSpaceScope,
   currentViewerLevel,
+  itemLevelAbove,
+  levelCovers,
+  levelsMeet,
   lowerLevel,
+  ViewerLevelConflictError,
   readsDrafts,
   runInTxScope,
   viewerDatabaseUrl,
@@ -124,10 +128,55 @@ describe('withViewer', () => {
     });
   });
 
-  it('lowerLevel orders public < client < team < admin', () => {
+  it('lowerLevel: team and admin over the rest, client and public are siblings', () => {
     expect(lowerLevel('admin', 'team')).toBe('team');
     expect(lowerLevel('client', 'team')).toBe('client');
+    expect(lowerLevel('team', 'public')).toBe('public');
     expect(lowerLevel('public', 'admin')).toBe('public');
+    expect(lowerLevel('client', 'client')).toBe('client');
+    expect(() => lowerLevel('client', 'public')).toThrow(ViewerLevelConflictError);
+    expect(() => lowerLevel('public', 'client')).toThrow(ViewerLevelConflictError);
+    expect(levelsMeet('client', 'public')).toBe(false);
+    expect(levelsMeet('team', 'public')).toBe(true);
+    // What each level reads (mantle_viewer_audiences, 0187).
+    expect(levelCovers('client', 'public')).toBe(false);
+    expect(levelCovers('public', 'client')).toBe(false);
+    expect(levelCovers('team', 'client')).toBe(true);
+    expect(levelCovers('team', 'admin')).toBe(false);
+    // The item rank stays a chain (raising and lowering items).
+    expect(itemLevelAbove('client', 'public')).toBe(true);
+    expect(itemLevelAbove('public', 'client')).toBe(false);
+  });
+
+  it('a client scope refuses public work and a public scope client work (never widened)', async () => {
+    await withViewer('client', async () => {
+      await expect(withViewer('public', async () => currentViewerLevel())).rejects.toBeInstanceOf(
+        ViewerLevelConflictError,
+      );
+      // admin and team requests keep the client scope.
+      expect(await withViewer('team', async () => currentViewerLevel())).toBe('client');
+      expect(await withViewer('admin', async () => currentViewerLevel())).toBe('client');
+    });
+    await withViewer('public', async () => {
+      await expect(withViewer('client', async () => 1)).rejects.toMatchObject({
+        code: 'viewer-level-conflict',
+        current: 'public',
+        requested: 'client',
+      });
+    });
+    // A team scope still lowers to either.
+    await withViewer('team', async () => {
+      expect(await withViewer('public', async () => currentViewerLevel())).toBe('public');
+      expect(await withViewer('client', async () => currentViewerLevel())).toBe('client');
+    });
+  });
+
+  it("a client's space opened under a public scope is refused", async () => {
+    await withViewer('public', async () => {
+      expect(() => runInTxScope({ level: 'client', tx: { fake: 'tx' } }, async () => 1)).toThrow(
+        ViewerLevelConflictError,
+      );
+    });
   });
 });
 

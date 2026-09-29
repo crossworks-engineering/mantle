@@ -21,7 +21,14 @@
 
 import { randomBytes } from 'node:crypto';
 import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
-import { systemDb, toolResults, toolResultChunks } from '@mantle/db';
+import {
+  asViewerLevel,
+  currentViewerLevel,
+  levelCovers,
+  systemDb,
+  toolResults,
+  toolResultChunks,
+} from '@mantle/db';
 // Infrastructure writes: systemDb (the admin pool) whatever the viewer, so a
 // turn under a limited role (member logins Phase 0b) still records them.
 import { embed, embedBatch } from '@mantle/embeddings';
@@ -177,6 +184,9 @@ export async function spillToolResult(args: {
 }): Promise<{ handle: string; bytes: number }> {
   const handle = newHandle();
   const bytes = byteLen(args.content);
+  // The level it was written at (audit A27): a spill holds what a tool read
+  // at that level, so only a reader whose level covers it may page it back.
+  const level = currentViewerLevel();
   await systemDb.insert(toolResults).values({
     id: handle,
     ownerId: args.ownerId,
@@ -184,6 +194,7 @@ export async function spillToolResult(args: {
     toolSlug: args.toolSlug,
     content: args.content,
     bytes,
+    viewerLevel: level === 'admin' ? null : level,
   });
   return { handle, bytes };
 }
@@ -288,6 +299,10 @@ export async function processToolResultForModel(args: {
 
 type ResultRow = { content: string; bytes: number; chunked: boolean; toolSlug: string };
 
+/** A spill, if the current viewer may read it: one written at a level the
+ *  reader's level does not cover (an admin turn's spill read from a client
+ *  turn, a client spill read from a public one) reads as not found. Null
+ *  level = admin; an unknown value fails closed to admin. */
 async function loadResult(ownerId: string, handle: string): Promise<ResultRow | null> {
   const [row] = await systemDb
     .select({
@@ -295,11 +310,15 @@ async function loadResult(ownerId: string, handle: string): Promise<ResultRow | 
       bytes: toolResults.bytes,
       chunked: toolResults.chunked,
       toolSlug: toolResults.toolSlug,
+      viewerLevel: toolResults.viewerLevel,
     })
     .from(toolResults)
     .where(and(eq(toolResults.id, handle), eq(toolResults.ownerId, ownerId)))
     .limit(1);
-  return row ?? null;
+  if (!row) return null;
+  if (!levelCovers(currentViewerLevel(), asViewerLevel(row.viewerLevel ?? 'admin'))) return null;
+  const { viewerLevel: _level, ...rest } = row;
+  return rest;
 }
 
 /** Linear page (1-indexed) of `pageBytes` characters. */

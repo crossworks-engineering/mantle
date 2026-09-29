@@ -27,7 +27,7 @@ import {
   agents,
   db,
   isViewerLevel,
-  lowerLevel,
+  itemLevelAbove,
   nodes,
   shares,
   toolGroups,
@@ -62,9 +62,11 @@ function asLevel(v: string): ViewerLevel {
   return isViewerLevel(v) ? v : 'admin';
 }
 
-/** Rank helper: is `a` strictly above `b`? */
+/** Rank helper: is `a` strictly above `b`? The item rank (admin > team >
+ *  client > public), not what a viewer reads (lowerLevel refuses client
+ *  with public). */
 function isAbove(a: ViewerLevel, b: ViewerLevel): boolean {
-  return lowerLevel(a, b) === b && a !== b;
+  return itemLevelAbove(a, b);
 }
 
 /**

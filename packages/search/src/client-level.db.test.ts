@@ -5,7 +5,8 @@
  * embedding, so only the level decides what comes back. Also: items that are
  * not the brain's (a member's personal item, a team draft, an admin's
  * private item) never reach the client role even at level client; agents
- * and tool groups are filtered by level for the client role only; the client
+ * and tool groups are filtered by level for the client role only (client
+ * level only since 0189); the client
  * role holds no grant on logins, yet the brain id still resolves. The team
  * and public roles are the controls.
  *
@@ -210,7 +211,7 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
     }
   });
 
-  it('agents and tool groups: the client role reads client and public ones only', async () => {
+  it('agents and tool groups: the client role reads client ones only (0189)', async () => {
     const read = (level: 'team' | 'client' | 'public') =>
       m.withViewer(level, async () => ({
         agents: (
@@ -224,9 +225,11 @@ describe.skipIf(!URL)('the client role reads client items only, on every search 
           )) as unknown as { slug: string }[]
         ).map((r) => r.slug),
       }));
+    // Client and public are siblings, not a chain (decision 3, audit A5):
+    // a client-level turn never loads a public agent or group.
     const client = await read('client');
-    expect(client.agents).toEqual([agentSlug('client'), agentSlug('public')].sort());
-    expect(client.groups).toEqual([groupSlug('client'), groupSlug('public')].sort());
+    expect(client.agents).toEqual([agentSlug('client')]);
+    expect(client.groups).toEqual([groupSlug('client')]);
     // The team role keeps every row: a team agent may delegate to an admin one.
     const team = await read('team');
     expect(team.agents).toEqual(LEVELS.map(agentSlug).sort());

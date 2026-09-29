@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { RedirectError } from './http-compat/redirect-error';
+import { levelConflictResponse } from './level-conflict';
 import { gate } from './middleware/gate';
 import { registerRoutes } from './route-loader';
 import { mountRedirects, mountStatic, trailingSlashRedirect } from './static';
@@ -55,6 +56,10 @@ export async function createApp(): Promise<Hono> {
       return c.redirect(err.location, err.status);
     }
     const path = new URL(c.req.url).pathname;
+    // A client scope meeting public-level work (or the reverse): a refusal,
+    // not a crash (client logins, audit A5).
+    const refused = levelConflictResponse(err, path);
+    if (refused) return refused;
     console.error(`[server] unhandled error on ${c.req.method} ${path}:`, err);
     if (path === '/api' || path.startsWith('/api/')) {
       // Body matches Next's opaque route-handler failure: no error details leak.

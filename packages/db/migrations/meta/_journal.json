@@ -1324,6 +1324,13 @@
       "when": 1790017560000,
       "tag": "0188_client_signin_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 189,
+      "version": "7",
+      "when": 1790017620000,
+      "tag": "0189_client_level_fixes",
+      "breakpoints": true
     }
   ]
 }
