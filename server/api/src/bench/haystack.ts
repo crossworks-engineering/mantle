@@ -237,19 +237,31 @@ async function askOne(
   const prompt = answerPrompt(q, context, style);
   const answered = await callModel(ownerId, models.answer, prompt.system, prompt.user, 8000);
   const answer = extractFinalAnswer(answered.text);
-  // The judge grades the final answer, as the published harnesses do.
-  const judged = await callModel(
-    ownerId,
-    models.judge,
-    'You are a careful grader. Follow the instructions exactly.',
-    judgePrompt(dataset, q, answer),
-    400,
-  );
+  // The judge grades the final answer, as the published harnesses do. Its
+  // reply can stop short of the label (7 of 762 in the first infer run cut
+  // off at "The generated answer correctly"): allow a long reply, and ask once
+  // more when no verdict can be read. Both calls are paid for.
+  const judge = () =>
+    callModel(
+      ownerId,
+      models.judge,
+      'You are a careful grader. Follow the instructions exactly.',
+      judgePrompt(dataset, q, answer),
+      2000,
+    );
+  let judged = await judge();
+  let verdict = parseVerdict(dataset, judged.text);
+  let judgeUsd = judged.usd;
+  if (verdict === null) {
+    judged = await judge();
+    verdict = parseVerdict(dataset, judged.text);
+    judgeUsd += judged.usd;
+  }
   return {
     ...base,
     response: answered.text,
     answer,
-    correct: parseVerdict(dataset, judged.text),
+    correct: verdict,
     judge_raw: judged.text,
     context_chars: context.length,
     context,
@@ -258,7 +270,7 @@ async function askOne(
     said_missing: saidMissing(answer),
     retrieve_ms: retrieveMs,
     answer_usd: answered.usd,
-    judge_usd: judged.usd,
+    judge_usd: judgeUsd,
   };
 }
 
