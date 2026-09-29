@@ -53,6 +53,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
     withSpace: vi.fn(scoped('space')),
     withTeamDrafts: vi.fn(scoped('team-drafts')),
     withViewer: vi.fn(scoped('team')),
+    withHumanViewer: vi.fn(scoped('human')),
   };
 });
 
@@ -130,6 +131,15 @@ vi.mock('@mantle/content', async (importOriginal) => {
       () => new Map([['lib1', { name: 'Pat', acceptedAt: at(1) }]]),
     ),
     acceptedByLogin: rec('acceptedByLogin', () => new Set(['lib1'])),
+    listClientRequests: rec('listClientRequests', () => ({
+      items: [
+        {
+          row: spaceRow('req1', 45, { reviewState: 'submitted', authorLoginId: 'c1' }),
+          author: { name: 'Cleo', acceptedAt: null, role: 'client' },
+        },
+      ],
+      total: 1,
+    })),
   };
 });
 
@@ -149,15 +159,17 @@ describe('GET /api/member/items', () => {
     const body = await res.json();
     expect(body.items.map((r: { id: string }) => r.id)).toEqual([
       'own1',
+      'req1',
       'team1',
       'lib1',
       'lib2',
       'acc1',
       'held1',
     ]);
-    expect(body.total).toBe(6);
+    expect(body.total).toBe(7);
     expect(body.items.map((r: { pill: string | null }) => r.pill)).toEqual([
       'private',
+      'submitted',
       'submitted',
       null,
       null,
@@ -173,6 +185,23 @@ describe('GET /api/member/items', () => {
       listTeamDrafts: 'team-drafts',
       listLibrary: 'team',
       listAccepted: 'admin',
+      // Client requests (C5): the team role with the human flag.
+      listClientRequests: 'human',
+    });
+    const { withHumanViewer } = await import('@mantle/db');
+    expect(vi.mocked(withHumanViewer).mock.calls[0]?.[0]).toBe('team');
+    expect(h.calls.find((c) => c.fn === 'listClientRequests')!.args[0]).toMatchObject({
+      kind: 'page',
+      limit: 50,
+      offset: 0,
+    });
+    expect(body.items[1]).toMatchObject({
+      source: 'client-request',
+      pill: 'submitted',
+      audience: null,
+      byMe: false,
+      author: { name: 'Cleo', acceptedAt: null, role: 'client' },
+      space: { id: 'req1', reviewState: 'submitted' },
     });
     const mine = h.calls.find((c) => c.fn === 'listMine')!;
     expect(mine.args[0]).toBe(SPACE);
@@ -223,6 +252,14 @@ describe('GET /api/member/items', () => {
     expect(byMe.items).toEqual([
       expect.objectContaining({ id: 'acc1', byMe: true, source: 'accepted' }),
     ]);
+  });
+
+  it('the client-requests filter reads client requests only', async () => {
+    const body = await (await get('?state=client-requests')).json();
+    expect(h.calls.filter((c) => c.fn.startsWith('list')).map((c) => c.fn)).toEqual([
+      'listClientRequests',
+    ]);
+    expect(body.items.map((r: { id: string }) => r.id)).toEqual(['req1']);
   });
 
   it('refuses an unknown state and a page past the cap', async () => {
