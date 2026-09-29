@@ -2,7 +2,8 @@
  * Owner-side comment thread on a node (tasks first — the model is
  * node-generic, see node-comments.ts).
  *
- *   GET  /api/nodes/[id]/comments   → { comments: NodeComment[] }
+ *   GET  /api/nodes/[id]/comments[?before=ISO] → { comments: NodeComment[], hasMore }
+ *        the newest 100, oldest first; `before` = the oldest shown's createdAt
  *   POST /api/nodes/[id]/comments   { body } → 201 { comment }
  *
  * Attribution is stamped from the SESSION actor (the co-admin login actually
@@ -25,20 +26,26 @@ import {
   listNodeComments,
   toNodeCommentDto,
 } from '@mantle/content';
+import { commentPageQuery } from '@/lib/comment-page';
 import { firstIssue } from '@/lib/zod-issue';
 
 const PostBody = z.object({
   body: z.string().min(1).max(COMMENT_BODY_MAX),
 });
 
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const { id } = await ctx.params;
   if (!isUuid(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  const rows = await listNodeComments(user.id, id);
+  const page = commentPageQuery(req);
+  if (page instanceof Response) return page;
+  const thread = await listNodeComments(user.id, id, page);
   const viewer = { loginId: user.actor.id };
-  return NextResponse.json({ comments: rows.map((r) => toNodeCommentDto(r, viewer)) });
+  return NextResponse.json({
+    comments: thread.rows.map((r) => toNodeCommentDto(r, viewer)),
+    hasMore: thread.hasMore,
+  });
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {

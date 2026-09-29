@@ -5,7 +5,7 @@ import { CLIENT_ITEM_KINDS } from '@mantle/client-types/member-kinds';
 import { createMineItem, listMine } from '@mantle/content';
 import { getClientOr401 } from '@/lib/auth';
 import { readJsonNoNul } from '@/lib/strip-nul';
-import { clientWriteGate, inMyClientSpace } from '@/lib/client-space';
+import { clientNoteTooLarge, clientWriteGate, inMyClientSpace } from '@/lib/client-space';
 import { spaceStateResponse } from '@/lib/member-space';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -48,7 +48,8 @@ const Create = z.discriminatedUnion('type', [
  * `with-admin` rows (title and kind only), as on the member list.
  * POST /api/client/space { type: page | note, title, … } : a new private
  * draft (a drawing or a table is a 400). The client's limits apply (500
- * items; 409 `quota`).
+ * items, and the text counts toward the 200 MB: 409 `quota`; a note over
+ * 50,000 characters: 400 `too-large`).
  */
 export async function GET(req: Request) {
   const client = await getClientOr401();
@@ -78,6 +79,10 @@ export async function POST(req: Request) {
   const parsed = Create.safeParse(await readJsonNoNul(req));
   if (!parsed.success)
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
+  if (parsed.data.type === 'note') {
+    const big = clientNoteTooLarge(parsed.data.content);
+    if (big) return big;
+  }
   try {
     const item = await inMyClientSpace(client, () => createMineItem(client.spaceId, parsed.data));
     return NextResponse.json({ item }, { status: 201 });

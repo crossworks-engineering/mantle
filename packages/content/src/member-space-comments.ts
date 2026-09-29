@@ -20,11 +20,17 @@
  */
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { asSystem, db, nodeComments, type NodeCommentDbRow } from '@mantle/db';
-import { COMMENT_BODY_MAX } from './node-comments';
+import {
+  COMMENT_BODY_MAX,
+  commentPage,
+  type CommentPage,
+  type CommentPageQuery,
+} from './node-comments';
 import { SpaceItemStateError, requireSpace, spaceNotFound } from './member-space-core';
 import { getMineRow, getTeamDraftRow } from './member-space';
 import { notifySpaceItemChanged } from './member-space-events';
 import { inClientSpace } from './space-limits';
+import { takeClientCommentPlace } from './client-comment-caps';
 
 /** Who writes: the member (or client) login, with its display-name snapshot. */
 export type SpaceCommentAuthor = { loginId: string; name: string };
@@ -50,14 +56,25 @@ async function thread(nodeId: string, teamOnly = false): Promise<NodeCommentDbRo
 // ── The author, on an own item (inside withSpace) ────────────────────────────
 
 /** The thread on an own item, oldest first; null when the item is not the
- *  caller's. */
+ *  caller's. With `page`: one page of it (the routes page every read). */
 export async function listMineComments(
   spaceId: string,
   id: string,
-): Promise<NodeCommentDbRow[] | null> {
+): Promise<NodeCommentDbRow[] | null>;
+export async function listMineComments(
+  spaceId: string,
+  id: string,
+  page: CommentPageQuery,
+): Promise<CommentPage | null>;
+export async function listMineComments(
+  spaceId: string,
+  id: string,
+  page?: CommentPageQuery,
+): Promise<NodeCommentDbRow[] | CommentPage | null> {
   requireSpace(spaceId);
   const row = await getMineRow(spaceId, id);
-  return row ? thread(id) : null;
+  if (!row) return null;
+  return page ? commentPage(eq(nodeComments.nodeId, id), page) : thread(id);
 }
 
 /** Comment on an own item: open while it is shared with the team or
@@ -72,7 +89,7 @@ export async function addMineComment(
   author: SpaceCommentAuthor,
   body: string,
 ): Promise<NodeCommentDbRow> {
-  requireSpace(spaceId);
+  const scope = requireSpace(spaceId);
   const row = await getMineRow(spaceId, id);
   if (!row) throw spaceNotFound();
   if (row.sharing !== 'team' && row.reviewState !== 'submitted') {
@@ -82,6 +99,9 @@ export async function addMineComment(
     );
   }
   const client = inClientSpace();
+  // A client's comments are capped (audit I2): 100 a day across every
+  // thread, counted in the ledger, and 1000 on one thread.
+  if (client) await takeClientCommentPlace(db, scope.loginId, id, 'review');
   const [c] = await db
     .insert(nodeComments)
     .values({

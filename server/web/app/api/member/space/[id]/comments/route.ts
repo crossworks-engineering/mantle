@@ -12,25 +12,34 @@ import {
   spaceStateResponse,
   withAdminGuard,
 } from '@/lib/member-space';
+import { commentPageQuery } from '@/lib/comment-page';
 import { firstIssue } from '@/lib/zod-issue';
 
 /**
- * GET /api/member/space/:id/comments : the thread on one of the member's own
- * items, oldest first. POST { body } : add to it, open while the item is
+ * GET /api/member/space/:id/comments[?before=ISO] : the thread on one of the
+ * member's own items: its newest 100 comments, oldest first, and `hasMore`.
+ * POST { body } : add to it, open while the item is
  * shared with the team or submitted for review (409 `not-shared` otherwise).
  * Comments are kept with the brain's id, so the thread survives Accept.
  */
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const member = await getMemberOr401();
   if (member instanceof Response) return member;
   const params = SpaceIdParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
+  const page = commentPageQuery(req);
+  if (page instanceof Response) return page;
   const held = await withAdminGuard(member, params.data.id);
   if (held) return held;
-  const rows = await inMySpace(member, () => listMineComments(member.spaceId, params.data.id));
-  if (!rows) return notFound();
+  const thread = await inMySpace(member, () =>
+    listMineComments(member.spaceId, params.data.id, page),
+  );
+  if (!thread) return notFound();
   const viewer = { loginId: member.loginId };
-  return NextResponse.json({ comments: rows.map((r) => toNodeCommentDto(r, viewer)) });
+  return NextResponse.json({
+    comments: thread.rows.map((r) => toNodeCommentDto(r, viewer)),
+    hasMore: thread.hasMore,
+  });
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {

@@ -41,6 +41,8 @@ export type AuditEntry = {
     | 'client.signin_sender_set'
     | 'client.signin_link_issued'
     | 'client.signin_link_revoked'
+    // An admin removed every comment a client login wrote (C5 audit).
+    | 'client.comments_deleted'
     | 'user.create'
     | 'user.update'
     | 'user.delete'

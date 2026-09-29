@@ -5,6 +5,7 @@ import { authenticatePassword, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
+import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 
 const LoginBody = z.object({
   email: z.string().email(),
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const raw = await req.json().catch(() => ({}));
+  const raw = (await readJsonCapped(req, AUTH_BODY_CEILING_BYTES)) ?? {};
   const parsed = LoginBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: AUTH_FAILED_MESSAGE }, { status: 401 });

@@ -13,36 +13,43 @@ import {
   inMyClientSpace,
 } from '@/lib/client-space';
 import { CommentBody, notFound, SpaceIdParams, spaceStateResponse } from '@/lib/member-space';
+import { commentPageQuery } from '@/lib/comment-page';
 import { firstIssue } from '@/lib/zod-issue';
 
 /**
- * GET /api/client/space/:id/comments : the review talk on one of the
- * CLIENT's own items, oldest first (client logins C5). Row security shows a
+ * GET /api/client/space/:id/comments[?before=ISO] : the review talk on one of
+ * the CLIENT's own items: its newest 100 comments, oldest first, and
+ * `hasMore` (client logins C5). Row security shows a
  * client only a reviewer's review comments and their own (0194), never a
  * member's comment; a reviewer's comment wears the brand name, never a
  * staff name. POST { body } : add to it, open while the item is submitted
- * (409 `not-shared` otherwise); written as the client's own review talk.
+ * (409 `not-shared` otherwise); written as the client's own review talk. At
+ * most 100 comments a day across every thread (429 `comment-cap`), 1000 on
+ * one thread (409 `thread-full`).
  */
-export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const client = await getClientOr401();
   if (client instanceof Response) return client;
   const params = SpaceIdParams.safeParse(await ctx.params);
   if (!params.success) return NextResponse.json({ error: 'Invalid id.' }, { status: 400 });
+  const page = commentPageQuery(req);
+  if (page instanceof Response) return page;
   const held = await clientWithAdminGuard(client, params.data.id);
   if (held) return held;
-  let rows;
+  let thread;
   try {
-    rows = await inMyClientSpace(client, async () => {
+    thread = await inMyClientSpace(client, async () => {
       await assertClientItem(client.spaceId, params.data.id);
-      return listMineComments(client.spaceId, params.data.id);
+      return listMineComments(client.spaceId, params.data.id, page);
     });
   } catch (err) {
     return spaceStateResponse(err);
   }
-  if (!rows) return notFound();
+  if (!thread) return notFound();
   const brand = await brandName(client.anchorId);
   const body: ClientCommentThread = {
-    comments: rows.map((r) => clientCommentDto(r, client, brand)),
+    comments: thread.rows.map((r) => clientCommentDto(r, client, brand)),
+    hasMore: thread.hasMore,
   };
   return NextResponse.json(body);
 }

@@ -22,7 +22,7 @@ import type { ClientChatThread } from '@mantle/client-types';
 import { getClientOr401, type ClientCaller } from '@/lib/auth';
 import { getDbosClient } from '@/lib/dbos-client';
 import { MEMBER_DAILY_CAP, MEMBER_DAILY_TOKENS, startOfTodayUtc } from '@/lib/member-daily-cap';
-import { stripNul } from '@/lib/strip-nul';
+import { readJsonNoNul } from '@/lib/strip-nul';
 import { rateLimit } from '@/lib/rate-limit';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -132,7 +132,7 @@ export async function POST(req: Request) {
       { status: 429, headers: { 'Retry-After': String(gate.retryAfterSec) } },
     );
   }
-  const parsed = Body.safeParse(stripNul(await req.json().catch(() => ({}))));
+  const parsed = Body.safeParse((await readJsonNoNul(req)) ?? {});
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }

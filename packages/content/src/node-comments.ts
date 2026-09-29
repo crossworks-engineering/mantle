@@ -8,12 +8,43 @@
  * DTO mapping: `mine` is viewer-relative, so the lib returns raw records and
  * `toNodeCommentDto` computes `mine` from the viewer the route resolved.
  */
-import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { agents, db, nodeComments, nodes, shares, type NodeCommentDbRow } from '@mantle/db';
 import type { NodeComment, NodeCommentAuthorKind } from '@mantle/client-types';
 export type { NodeComment, NodeCommentAuthorKind };
 
 export const COMMENT_BODY_MAX = 10_000;
+
+/** Comments one page of a thread holds (client logins C5 audit, I2): the
+ *  thread routes answer the newest page, and older ones with `?before=`. */
+export const COMMENT_PAGE_SIZE = 100;
+
+/** Which page of a thread: the newest (no `before`), or the one just older
+ *  than `before` (the createdAt of the oldest comment shown). */
+export type CommentPageQuery = { before?: Date | null };
+
+/** A page of a thread, oldest first; `hasMore` when older comments exist. */
+export type CommentPage = { rows: NodeCommentDbRow[]; hasMore: boolean };
+
+/**
+ * The newest COMMENT_PAGE_SIZE comments matching `where` (older than
+ * `page.before` when given), oldest first. `before` is compared as sent: an
+ * ISO time has milliseconds and the column microseconds, so two comments in
+ * the same millisecond as the boundary may both fall on the newer side.
+ */
+export async function commentPage(
+  where: SQL | undefined,
+  page: CommentPageQuery,
+): Promise<CommentPage> {
+  const rows = await db
+    .select()
+    .from(nodeComments)
+    .where(and(where, page.before ? lt(nodeComments.createdAt, page.before) : undefined))
+    .orderBy(desc(nodeComments.createdAt), desc(nodeComments.id))
+    .limit(COMMENT_PAGE_SIZE + 1);
+  const hasMore = rows.length > COMMENT_PAGE_SIZE;
+  return { rows: rows.slice(0, COMMENT_PAGE_SIZE).reverse(), hasMore };
+}
 
 /** NOTIFY channel raised by the migration-0149 triggers on any node_comments
  *  write (payload: JSON {ownerId, nodeId}). Consumed by
@@ -75,22 +106,29 @@ const onOwnersNode = (ownerId: string) =>
     db.select({ id: nodes.id }).from(nodes).where(eq(nodes.ownerId, ownerId)),
   );
 
-/** The thread, oldest first. Empty when the node isn't this owner's. */
+/** The thread, oldest first. Empty when the node isn't this owner's. With
+ *  `page`: one page of it (the owner route pages every read). */
 export async function listNodeComments(
   ownerId: string,
   nodeId: string,
-): Promise<NodeCommentDbRow[]> {
-  return db
-    .select()
-    .from(nodeComments)
-    .where(
-      and(
-        eq(nodeComments.ownerId, ownerId),
-        eq(nodeComments.nodeId, nodeId),
-        onOwnersNode(ownerId),
-      ),
-    )
-    .orderBy(asc(nodeComments.createdAt));
+): Promise<NodeCommentDbRow[]>;
+export async function listNodeComments(
+  ownerId: string,
+  nodeId: string,
+  page: CommentPageQuery,
+): Promise<CommentPage>;
+export async function listNodeComments(
+  ownerId: string,
+  nodeId: string,
+  page?: CommentPageQuery,
+): Promise<NodeCommentDbRow[] | CommentPage> {
+  const where = and(
+    eq(nodeComments.ownerId, ownerId),
+    eq(nodeComments.nodeId, nodeId),
+    onOwnersNode(ownerId),
+  );
+  if (page) return commentPage(where, page);
+  return db.select().from(nodeComments).where(where).orderBy(asc(nodeComments.createdAt));
 }
 
 export async function getNodeComment(

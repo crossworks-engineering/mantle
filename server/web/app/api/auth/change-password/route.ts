@@ -14,6 +14,7 @@ import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
 import { firstIssue } from '@/lib/zod-issue';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
+import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 
 const ChangePasswordBody = z
   .object({
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const raw = await req.json().catch(() => ({}));
+  const raw = (await readJsonCapped(req, AUTH_BODY_CEILING_BYTES)) ?? {};
   const parsed = ChangePasswordBody.safeParse(raw);
   if (!parsed.success) {
     const message = firstIssue(parsed.error, 'Invalid input.');

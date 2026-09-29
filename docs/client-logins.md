@@ -341,8 +341,35 @@ took one over, and accepted.
   uploaded a day, 500 items, 10 submissions a day (counted in the
   `space_submissions` ledger, so Recall and Submit again still counts) and
   50 waiting for review (an item a reviewer took over counts). All client
-  spaces together hold at most 5 GB. Over a cap: 409 `quota` with the
-  reason in words (a file over 20 MB: 413).
+  spaces together hold at most 5 GB (`MANTLE_CLIENT_SPACES_TOTAL_BYTES`).
+  Over a cap: 409 `quota` with the reason in words (a file over 20 MB:
+  413). Two tabs or two clients cannot both take the last place: each cap
+  is checked under a lock.
+- **What counts toward the 200 MB and the 5 GB.** Files (their size),
+  page documents (the saved version, the draft and the plain text) and note
+  text, as the database stores them (`pg_column_size`, so compressed text
+  counts at its stored size), from one definition
+  (`mantle_client_space_usage()`, migration 0195). A text write that makes
+  the page or note larger past either limit is refused (409 `quota`); one
+  that makes it smaller always passes, so a client over the limit can cut a
+  page down. A page document is at most 500 KB serialized and a note at
+  most 50,000 characters (400 `too-large`); a member's are 2 MB and
+  200,000. A client may make 120 writes a minute (the editor autosaves
+  800 ms after a pause), the member count, each at a quarter of a member's
+  size.
+- **Comment caps.** A client login writes at most 100 comments a day
+  across every thread, its review talk and the client threads (429
+  `comment-cap`), counted in `client_comment_ledger`: deleting a comment
+  does not give the place back. One thread holds at most 1000 comments
+  (409 `thread-full`), for members writing there too. Every thread read is
+  paged: the newest 100 comments, oldest first, with `hasMore`, and
+  `?before=<createdAt of the oldest shown>` for the 100 before them.
+- **Request size.** Any JSON body over its route's ceiling is refused with
+  413 `body-too-large`: 8 MB by default, 64 KB on the sign-in routes
+  (`/api/auth/*`), 128 MB on the owner's document routes; uploads stream
+  under their own caps. The gate refuses a declared length before the
+  handler runs, and a body without one is cut off while it is read
+  (`server/web/lib/body-limit.ts`).
 - **Members read client requests** (decision 5 B). A client's SUBMITTED
   item, and what renders inside it, is readable by members as a "Client
   requests" source in their one list (`GET /api/member/client-requests`,
@@ -372,3 +399,28 @@ took one over, and accepted.
   (`space_items.author_role`, kept after the login is deleted).
 - **Cost.** No client write starts the extractor, a trigger or a worker.
   Accept announces each moved item once, as for a member.
+- **What an admin sees.** Team admin > Clients reads
+  `GET /api/team-admin/clients/storage`: the total and its use, each client
+  space's bytes, uploads today, items and open submissions, and every quota
+  refusal of the last 7 days (the reason and the login, nothing of the
+  file or text; kept to 7 days and 500 rows). A deleted client's space is
+  listed as former and still counts until the 30-day purge removes it.
+  `GET /api/team-admin/clients/comments?days=7` lists the client-level
+  items whose thread had a client's comment lately (the thread itself is
+  `/api/nodes/:id/comments`), and
+  `DELETE /api/team-admin/clients/:id/comments` removes every comment one
+  client wrote, both kinds, in one step (it does not refund their day).
+- **When the client total fills.** Every client's uploads and text growth
+  are refused with "The storage for client uploads is full" (the refusals
+  list says `total`). Read the storage card for who holds what, then any of:
+  accept or return the submitted items (accepted items leave the client's
+  space and stop counting; a returned one still counts until the client
+  deletes it), ask a client to delete drafts they do not need, raise the
+  total (set `MANTLE_CLIENT_SPACES_TOTAL_BYTES` in the stack's `.env` and
+  restart the web container; no release, but check the disk first:
+  `df -h /`), or deal with a client who should no longer have room. Deleting
+  or disabling a login frees nothing at once: a deleted client's space
+  counts until the purge 30 days later
+  (`packages/content/src/member-space-purge.ts`), and a disabled
+  client's space stays as it is. Give back of a taken item into a full
+  client space is refused (409 `quota`): accept it or delete it instead.

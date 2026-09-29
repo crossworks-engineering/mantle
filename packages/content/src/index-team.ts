@@ -198,6 +198,7 @@ export {
   updateMineItem,
   saveMineTable,
   saveMinePage,
+  saveMineDraft,
   saveMineDraw,
   getTeamDraftRow,
   disallowedPageRefs,
@@ -223,6 +224,8 @@ export {
   spaceStorageUsed,
   spaceUploadHeadroom,
   assertSpaceStorage,
+  clientSpacesUsed,
+  withClientTextRoom,
   type OpenedSpaceFile,
   type SpaceFile,
 } from './member-space-files';
@@ -300,13 +303,32 @@ export {
   type PagedSource,
 } from './member-items';
 export {
+  CLIENT_COMMENTS_PER_DAY,
+  CLIENT_DOC_MAX_BYTES,
+  CLIENT_NOTE_MAX_CHARS,
   CLIENT_SPACES_TOTAL_BYTES,
   CLIENT_SPACE_LIMITS,
+  THREAD_COMMENT_LIMIT,
+  clientSpacesTotalBytes,
   MEMBER_SPACE_LIMITS,
   inClientSpace,
   spaceLimits,
   type SpaceLimits,
 } from './space-limits';
+export {
+  clientStorageRows,
+  clientThreadActivity,
+  deleteClientComments,
+  type ClientStorageRow,
+  type ClientThreadActivityRow,
+} from './client-admin-usage';
+export {
+  CLIENT_QUOTA_REFUSAL_DAYS,
+  listClientQuotaRefusals,
+  recordClientQuotaRefusal,
+  type ClientQuotaReason,
+  type ClientQuotaRefusal,
+} from './client-quota-log';
 export { memberDrawSvg, memberVisibleDrawFileIds } from './member-draw-images';
 export { giveBackTakenItem, takenFromOf, type GiveBackResult } from './member-takeover';
 export {

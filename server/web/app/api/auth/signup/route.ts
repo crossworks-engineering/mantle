@@ -9,6 +9,7 @@ import { secureCookies } from '@/lib/auth-constants';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
+import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 
 /**
  * First-run account creation — the signup that replaces the old manual
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const raw = await req.json().catch(() => ({}));
+  const raw = (await readJsonCapped(req, AUTH_BODY_CEILING_BYTES)) ?? {};
   const parsed = SignupBody.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json(

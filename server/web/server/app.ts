@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { BodyTooLargeError, bodyTooLargeResponse } from '../lib/body-limit';
 import { RedirectError } from './http-compat/redirect-error';
 import { levelConflictResponse } from './level-conflict';
 import { gate } from './middleware/gate';
@@ -60,6 +61,8 @@ export async function createApp(): Promise<Hono> {
     // not a crash (client logins, audit A5).
     const refused = levelConflictResponse(err, path);
     if (refused) return refused;
+    // A JSON body over its route's ceiling, found while reading (I4).
+    if (err instanceof BodyTooLargeError) return bodyTooLargeResponse(err.maxBytes);
     console.error(`[server] unhandled error on ${c.req.method} ${path}:`, err);
     if (path === '/api' || path.startsWith('/api/')) {
       // Body matches Next's opaque route-handler failure: no error details leak.

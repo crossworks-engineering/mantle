@@ -3,6 +3,7 @@ import { SESSION_COOKIE_NAME, endLoginSessions, getLoginOr401 } from '@/lib/auth
 import { secureCookies } from '@/lib/auth-constants';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
+import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 
 /**
  * POST /api/auth/logout: clear this browser's session cookie. With a body of
@@ -18,7 +19,9 @@ export async function POST(req: Request) {
   // Origin only: the body is optional (a plain sign-out sends none).
   const refused = refuseCrossSiteAuthPost(req, { json: false });
   if (refused) return refused;
-  const body = (await req.json().catch(() => null)) as { everywhere?: unknown } | null;
+  const body = (await readJsonCapped(req, AUTH_BODY_CEILING_BYTES)) as {
+    everywhere?: unknown;
+  } | null;
   const everywhere = body?.everywhere === true;
   // Attribute the logout while the cookie is still readable; no valid session
   // (already logged out, expired) → nothing to record.

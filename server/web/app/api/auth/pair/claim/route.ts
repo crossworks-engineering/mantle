@@ -4,6 +4,7 @@ import { db, authUsers, eq, sql } from '@mantle/db';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientIp, rateLimit } from '@/lib/rate-limit';
 import { claimPairCode } from '@/lib/pair-code';
+import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 
 /**
  * POST /api/auth/pair/claim — the phone's half of QR sign-in. Public (the
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const raw = await req.json().catch(() => ({}));
+  const raw = (await readJsonCapped(req, AUTH_BODY_CEILING_BYTES)) ?? {};
   const parsed = Body.safeParse(raw);
   if (!parsed.success) {
     return NextResponse.json({ error: CLAIM_FAILED_MESSAGE }, { status: 401 });

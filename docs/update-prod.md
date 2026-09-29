@@ -383,6 +383,49 @@ An ordinary roll through the updater (`scripts/roll.sh`). What to know:
 
 The operator guide: [client-logins.md](./client-logins.md).
 
+## Rolling to v0.232.342 (client logins C5) and its audit fixes
+
+Ordinary rolls through the updater (`scripts/roll.sh`). The C5 release pairs
+with the jackdaw C5 client (the release's `client-pair.tag`): members on an
+older client see client requests they cannot open. What to know:
+
+- **Migration 0194 takes short exclusive locks** on `space_items`,
+  `node_comments` and `nodes` (a new column and two triggers on
+  `space_items`, policies on all three, and the `node_comments` scope
+  CHECK dropped and added again, which reads the whole table once). It
+  keeps the 30 s lock timeout: on a busy box a timeout fails the migrate
+  and the roll reports an error; roll again when it is quieter. The
+  `author_role` backfill is one UPDATE over `space_items`.
+- **Rolling back to v0.232.341** after 0194 leaves behind: comments with
+  author kind `client` and scope `client` in `node_comments` (an admin
+  still sees them on the item), `space_submissions` rows, and
+  `space_items.author_role`. 341 reads none of them and has no client
+  space route. The floor below still holds.
+- **Migration 0195 (the C5 audit fixes) is cheap.** Two small new tables
+  (`client_comment_ledger`, `client_quota_refusals`), new versions of the
+  client total functions, and one partial index on `node_comments` (its
+  build blocks comment writes for as long as it takes, seconds on any box
+  we run). Nothing is rewritten; 30 s lock timeout.
+- **Page and note text now count** toward each client's 200 MB and the
+  brain-wide client total, and so does a deleted client's space until its
+  purge. A box whose clients were near 5 GB of files may refuse client
+  uploads right after the roll: read Team admin > Clients (or
+  `GET /api/team-admin/clients/storage`) and raise
+  `MANTLE_CLIENT_SPACES_TOTAL_BYTES` in `.env` if the disk has room
+  ([client-logins.md](./client-logins.md) section 9).
+- **Request bodies have a ceiling.** A JSON body over 8 MB (64 KB on
+  `/api/auth/*`, 128 MB on the owner's document routes and MCP) is refused
+  with 413 before it is read. Uploads keep their own caps and Caddy's 1 GB.
+- **Comment threads answer the newest 100** with `hasMore`; a client older
+  than the paired release shows those only, with no way to read further
+  back.
+- **Migration 0188 has no lock timeout** (client sign-in links, v0.232.318):
+  its foreign keys take SHARE ROW EXCLUSIVE on `auth.users` and wait for as
+  long as any open transaction holds that table. It ran on every box long
+  ago and is never edited (migrations are forward-only). A box rolling from
+  before v0.232.318 should roll with no long transaction open: a stuck
+  migrate there is a lock wait, not an error.
+
 ## Rollback
 
 ```bash

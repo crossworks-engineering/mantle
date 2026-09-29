@@ -6,7 +6,8 @@
  */
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { currentSpaceScope, db, nodes } from '@mantle/db';
-import { spaceLimits } from './space-limits';
+import { inClientSpace, spaceLimits } from './space-limits';
+import { recordClientQuotaRefusal, type ClientQuotaReason } from './client-quota-log';
 
 /** Thrown when an item may not change now: it is submitted (frozen), or the
  *  requested move is not allowed from its state (routes answer 409), or it is
@@ -33,7 +34,12 @@ export class SpaceItemStateError extends Error {
       | 'author-inactive'
       // A taken item of an author who can take it back: give it back
       // instead of deleting it.
-      | 'taken',
+      | 'taken'
+      // A client login wrote its comments for the day (routes answer 429),
+      // or the thread holds all the comments it may (409). Client logins C5
+      // audit, I2.
+      | 'comment-cap'
+      | 'thread-full',
     message: string,
     /** For `embed`: the referenced ids the item may not use. */
     readonly ids: string[] = [],
@@ -74,17 +80,36 @@ export async function lockSpaceQuota(spaceId: string): Promise<void> {
  *  client's space holds fewer (space-limits.ts). */
 export const SPACE_ITEM_LIMIT = 2000;
 
-/** Refuse a new item when the space already holds its role's item limit. */
+/**
+ * A quota refusal (409 `quota`). In a CLIENT's space it is recorded too
+ * (client_quota_refusals, audit I5: the admin card lists them), on the admin
+ * pool, so the record stays when the refusal rolls the space transaction
+ * back.
+ */
+export async function quotaRefusal(
+  kind: ClientQuotaReason,
+  message: string,
+): Promise<SpaceItemStateError> {
+  if (inClientSpace()) await recordClientQuotaRefusal(currentSpaceScope()!.loginId, kind);
+  return new SpaceItemStateError('quota', message);
+}
+
+/**
+ * Refuse a new item when the space already holds its role's item limit.
+ * Takes the space's quota lock first (audit I7): two parallel creates at the
+ * last place wait for each other, so only one passes.
+ */
 export async function assertItemRoom(spaceId: string): Promise<void> {
   requireSpace(spaceId);
+  await lockSpaceQuota(spaceId);
   const limit = spaceLimits().itemLimit;
   const [held] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(nodes)
     .where(and(eq(nodes.ownerId, spaceId), ne(nodes.type, 'branch')));
   if ((held?.n ?? 0) >= limit) {
-    throw new SpaceItemStateError(
-      'quota',
+    throw await quotaRefusal(
+      'items',
       `Your space is full (${limit} items). Delete something first.`,
     );
   }

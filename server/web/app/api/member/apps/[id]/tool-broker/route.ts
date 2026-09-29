@@ -5,6 +5,7 @@ import { recordAppAccess } from '@mantle/content';
 import { dispatchTool, memberAppToolVerdict } from '@mantle/tools';
 import { getMemberOr401 } from '@/lib/auth';
 import { memberAppOr404, memberName } from '@/lib/member-apps';
+import { readJsonCapped } from '@/lib/body-limit';
 import { rateLimit } from '@/lib/rate-limit';
 
 const Body = z.object({
@@ -31,7 +32,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       { status: 429, headers: { 'retry-after': String(gate.retryAfterSec) } },
     );
   }
-  const parsed = Body.safeParse(await req.json().catch(() => ({})));
+  const parsed = Body.safeParse((await readJsonCapped(req)) ?? {});
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: 'invalid input' }, { status: 400 });
   }

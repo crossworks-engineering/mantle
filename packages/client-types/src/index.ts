@@ -151,6 +151,10 @@ export type {
   ClientAcceptedItem,
   ClientAcceptedBase,
   ClientCommentThread,
+  ClientCommentRefusedReason,
+  ClientStorageUsage,
+  ClientThreadActivity,
+  ClientCommentsDeleted,
 } from './dto/client';
 
 // Types only at the root; the runtime constants (APP_TINTS, limits) are the

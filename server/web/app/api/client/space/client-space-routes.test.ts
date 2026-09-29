@@ -45,6 +45,9 @@ const h = vi.hoisted(() => ({
   mine: { items: [] as unknown[], total: 0 },
   held: [] as unknown[],
   accepted: { items: [] as unknown[], total: 0 },
+  /** What the comment writers throw (a SpaceItemStateError reason), if any. */
+  commentRefusal: null as null | string,
+  hasMore: false,
 }));
 
 const row = (id: string, role: string, email: string) => ({
@@ -77,6 +80,7 @@ vi.mock('@mantle/db', async (importOriginal) => ({
     h.calls.push(['withSpace', [scope]]);
     return fn();
   },
+  withHumanViewer: async (_level: unknown, fn: () => Promise<unknown>) => fn(),
 }));
 
 vi.mock('@mantle/content', async (importOriginal) => {
@@ -109,7 +113,43 @@ vi.mock('@mantle/content', async (importOriginal) => {
     listMine: rec('listMine', () => h.mine),
     listWithAdmin: rec('listWithAdmin', () => h.held),
     listAccepted: rec('listAccepted', () => h.accepted),
-    listMineComments: rec('listMineComments', () => h.comments),
+    listMineComments: rec('listMineComments', () => ({ rows: h.comments, hasMore: h.hasMore })),
+    listClientThread: rec('listClientThread', () => ({ rows: h.comments, hasMore: h.hasMore })),
+    assertEditable: rec('assertEditable', spaceRow),
+    saveMineDraft: rec('saveMineDraft', () => ({ ok: true, rev: 2 })),
+    saveMinePage: rec('saveMinePage', () => ({ ok: true })),
+    updateMineItem: rec('updateMineItem', () => ({ row: spaceRow(), body: { type: h.kind } })),
+    addMineComment: rec('addMineComment', () => {
+      if (h.commentRefusal) {
+        throw new (actual.SpaceItemStateError as new (r: string, m: string) => Error)(
+          h.commentRefusal,
+          'refused',
+        );
+      }
+      return {
+        id: COMMENT,
+        nodeId: ITEM,
+        ownerId: ANCHOR,
+        authorKind: 'client',
+        loginId: CLIENT,
+        authorName: 'Client Person',
+        body: 'x',
+        threadScope: 'review',
+        contactId: null,
+        agentId: null,
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+        editedAt: null,
+      };
+    }),
+    addClientThreadComment: rec('addClientThreadComment', () => {
+      if (h.commentRefusal) {
+        throw new (actual.SpaceItemStateError as new (r: string, m: string) => Error)(
+          h.commentRefusal,
+          'refused',
+        );
+      }
+      return null;
+    }),
     loadPreferencesFor: rec('loadPreferencesFor', () => ({ siteName: 'Brand Co' })),
     spaceUploadHeadroom: rec('spaceUploadHeadroom', () => h.headroom),
   };
@@ -151,6 +191,8 @@ beforeEach(() => {
   h.mine = { items: [], total: 0 };
   h.held = [];
   h.accepted = { items: [], total: 0 };
+  h.commentRefusal = null;
+  h.hasMore = false;
 });
 
 type Handler = (req: Request) => Promise<Response>;
@@ -436,5 +478,129 @@ describe('client space routes: My requests', () => {
     expect(
       (await call(CLIENT, 'GET', '/api/client/items?state=draft', (r) => items.GET(r))).status,
     ).toBe(400);
+  });
+});
+
+describe('client space routes: the C5 audit limits', () => {
+  const doc = (bytes: number) => ({
+    type: 'doc',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a'.repeat(bytes) }] }],
+  });
+
+  it('a page document over 500 KB is a 400 too-large (draft and Save), before any write', async () => {
+    const draft = await import('./[id]/draft/route');
+    const save = await import('./[id]/save/route');
+    const url = `/api/client/space/${ITEM}`;
+    for (const [path, handler] of [
+      [`${url}/draft`, (r: Request) => draft.PUT(r, params())],
+      [`${url}/save`, (r: Request) => save.POST(r, params())],
+    ] as const) {
+      const res = await call(CLIENT, path.endsWith('draft') ? 'PUT' : 'POST', path, handler, {
+        body: JSON.stringify({ doc: doc(510_000) }),
+      });
+      expect(res.status, path).toBe(400);
+      expect(((await res.json()) as { reason: string }).reason).toBe('too-large');
+    }
+    expect(names()).not.toContain('saveMineDraft');
+    expect(names()).not.toContain('saveMinePage');
+    // Under it (and over nothing a member's 2 MB would allow): it saves,
+    // through the client's text-aware draft.
+    const ok = await call(CLIENT, 'PUT', `${url}/draft`, (r) => draft.PUT(r, params()), {
+      body: JSON.stringify({ doc: doc(490_000) }),
+    });
+    expect(ok.status).toBe(200);
+    expect(names()).toContain('saveMineDraft');
+  });
+
+  it('a note over 50,000 characters is a 400 too-large (create and edit)', async () => {
+    const list = await import('./route');
+    const one = await import('./[id]/route');
+    const big = await call(CLIENT, 'POST', '/api/client/space', (r) => list.POST(r), {
+      body: JSON.stringify({ type: 'note', title: 'n', content: 'x'.repeat(50_001) }),
+    });
+    expect(big.status).toBe(400);
+    expect(((await big.json()) as { reason: string }).reason).toBe('too-large');
+    h.kind = 'note';
+    const patch = await call(
+      CLIENT,
+      'PATCH',
+      `/api/client/space/${ITEM}`,
+      (r) => one.PATCH(r, params()),
+      {
+        body: JSON.stringify({ content: 'x'.repeat(50_001) }),
+      },
+    );
+    expect(patch.status).toBe(400);
+    expect(((await patch.json()) as { reason: string }).reason).toBe('too-large');
+    expect(names()).not.toContain('createMineItem');
+    expect(names()).not.toContain('updateMineItem');
+    const ok = await call(CLIENT, 'POST', '/api/client/space', (r) => list.POST(r), {
+      body: JSON.stringify({ type: 'note', title: 'n', content: 'x'.repeat(50_000) }),
+    });
+    expect(ok.status).toBe(201);
+  });
+
+  it('the comment caps: 429 comment-cap and 409 thread-full, on both client threads', async () => {
+    const talk = await import('./[id]/comments/route');
+    const shared = await import('../shared/[id]/comments/route');
+    for (const [reason, status] of [
+      ['comment-cap', 429],
+      ['thread-full', 409],
+    ] as const) {
+      h.commentRefusal = reason;
+      const a = await call(
+        CLIENT,
+        'POST',
+        `/api/client/space/${ITEM}/comments`,
+        (r) => talk.POST(r, params()),
+        {
+          body: JSON.stringify({ body: 'hi' }),
+        },
+      );
+      expect([a.status, ((await a.json()) as { reason: string }).reason]).toEqual([status, reason]);
+      const b = await call(
+        CLIENT,
+        'POST',
+        `/api/client/shared/${ITEM}/comments`,
+        (r) => shared.POST(r, params()),
+        {
+          body: JSON.stringify({ body: 'hi' }),
+        },
+      );
+      expect([b.status, ((await b.json()) as { reason: string }).reason]).toEqual([status, reason]);
+    }
+  });
+
+  it('thread reads are paged: `before` reaches the read, `hasMore` the answer', async () => {
+    const talk = await import('./[id]/comments/route');
+    const shared = await import('../shared/[id]/comments/route');
+    const bad = await call(
+      CLIENT,
+      'GET',
+      `/api/client/space/${ITEM}/comments?before=yesterday`,
+      (r) => talk.GET(r, params()),
+    );
+    expect(bad.status).toBe(400);
+    expect(names()).not.toContain('listMineComments');
+    h.hasMore = true;
+    const before = '2026-09-01T10:00:00.123Z';
+    const a = await call(
+      CLIENT,
+      'GET',
+      `/api/client/space/${ITEM}/comments?before=${before}`,
+      (r) => talk.GET(r, params()),
+    );
+    expect(a.status).toBe(200);
+    expect(((await a.json()) as { hasMore: boolean }).hasMore).toBe(true);
+    const page = h.calls.find(([n]) => n === 'listMineComments')![1][2] as { before: Date };
+    expect(page.before.toISOString()).toBe(before);
+    const b = await call(CLIENT, 'GET', `/api/client/shared/${ITEM}/comments`, (r) =>
+      shared.GET(r, params()),
+    );
+    expect(((await b.json()) as { hasMore: boolean }).hasMore).toBe(true);
+    const newest = h.calls.find(([n]) => n === 'listClientThread')![1][2] as {
+      before: Date | null;
+    };
+    expect(newest.before).toBeNull();
   });
 });

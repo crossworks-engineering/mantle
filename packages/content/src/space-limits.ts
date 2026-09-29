@@ -8,6 +8,7 @@
  * from the login's row (team for an admin or a member, client for a client),
  * and these limits read that level.
  */
+import { envInt } from '@mantle/config';
 import { currentSpaceScope, currentViewerLevel } from '@mantle/db';
 
 export type SpaceLimits = {
@@ -49,8 +50,32 @@ export const CLIENT_SPACE_LIMITS: SpaceLimits = {
   openSubmissions: 50,
 };
 
-/** What ALL client spaces of the brain may hold together (N12). */
+/** What ALL client spaces of the brain may hold together (N12), unless the
+ *  box sets MANTLE_CLIENT_SPACES_TOTAL_BYTES. Code that enforces the total
+ *  reads `clientSpacesTotalBytes()`, never this. */
 export const CLIENT_SPACES_TOTAL_BYTES = 5 * 1024 * MB;
+
+/** The brain-wide client total now: MANTLE_CLIENT_SPACES_TOTAL_BYTES when it
+ *  is a positive number of bytes, else 5 GB. Read on every call, so an
+ *  operator raises it with an env change and a restart, no release. */
+export function clientSpacesTotalBytes(): number {
+  const n = envInt('MANTLE_CLIENT_SPACES_TOTAL_BYTES', CLIENT_SPACES_TOTAL_BYTES, 0);
+  return n > 0 ? n : CLIENT_SPACES_TOTAL_BYTES;
+}
+
+/** A client's page document, serialized, at most (draft and Save version;
+ *  audit I3). A member's is 2 MB (server/web lib/member-space.ts). */
+export const CLIENT_DOC_MAX_BYTES = 500_000;
+/** A client's note, in characters (UTF-16 units) at most. */
+export const CLIENT_NOTE_MAX_CHARS = 50_000;
+
+/** Comments a CLIENT login may write in 24 hours across every thread (the
+ *  review talk and client threads), counted in client_comment_ledger, so a
+ *  deleted comment is never refunded (audit I2). */
+export const CLIENT_COMMENTS_PER_DAY = 100;
+/** Comments one thread holds at most, where a client writes (the review talk
+ *  on a client's item, the client thread on a client-level item). */
+export const THREAD_COMMENT_LIMIT = 1000;
 
 /** Whether the current personal-space scope is a client's. Outside a space
  *  scope this is false (the callers all run inside one). */

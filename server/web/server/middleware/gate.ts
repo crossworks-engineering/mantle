@@ -7,6 +7,7 @@ import {
   isRenderPath,
   requestOrigin,
 } from '../../lib/auth-constants';
+import { bodyCeilingFor, bodyTooLargeResponse, declaredOver } from '../../lib/body-limit';
 import { runWithRequestContext } from '../request-context';
 import { tokenKind, verifySignedToken } from './token-verify';
 import { env } from '@mantle/config';
@@ -170,6 +171,17 @@ export function gate(): MiddlewareHandler {
     // credentials and only asks "may I send this request".
     if (corsEligible && req.method === 'OPTIONS') {
       return withCors(new Response(null, { status: 204 }));
+    }
+
+    // The body ceiling (client logins C5 audit, I4): a declared body over
+    // the route's ceiling is refused before any handler buffers it, public
+    // routes included. Uploads stream under their own caps (null here); a
+    // chunked body is capped while it is read (readJsonNoNul).
+    if (isApi && req.method !== 'GET' && req.method !== 'HEAD') {
+      const ceiling = bodyCeilingFor(path);
+      if (ceiling !== null && declaredOver(req.headers, ceiling)) {
+        return withCors(bodyTooLargeResponse(ceiling));
+      }
     }
 
     // Old matcher exclusion: image-suffixed paths bypass the gate entirely

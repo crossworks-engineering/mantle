@@ -27,7 +27,13 @@ import {
   nodes,
   type NodeCommentDbRow,
 } from '@mantle/db';
-import { COMMENT_BODY_MAX } from './node-comments';
+import {
+  COMMENT_BODY_MAX,
+  commentPage,
+  type CommentPage,
+  type CommentPageQuery,
+} from './node-comments';
+import { assertThreadRoom, takeClientCommentPlace } from './client-comment-caps';
 
 /** Who writes on the client thread: a client or a member login, with its
  *  display-name snapshot (the route picks it from the session). */
@@ -45,12 +51,23 @@ function requireHumanLevel(): void {
 /**
  * The client thread on `nodeId`, oldest first; null when the caller may not
  * read the node at its level, or it is not a brain item at client level (the
- * route answers 404).
+ * route answers 404). With `page`: one page of it (the routes page every
+ * read, audit I2).
  */
 export async function listClientThread(
   anchorId: string,
   nodeId: string,
-): Promise<NodeCommentDbRow[] | null> {
+): Promise<NodeCommentDbRow[] | null>;
+export async function listClientThread(
+  anchorId: string,
+  nodeId: string,
+  page: CommentPageQuery,
+): Promise<CommentPage | null>;
+export async function listClientThread(
+  anchorId: string,
+  nodeId: string,
+  page?: CommentPageQuery,
+): Promise<NodeCommentDbRow[] | CommentPage | null> {
   requireHumanLevel();
   const [node] = await db
     .select({ id: nodes.id })
@@ -58,17 +75,20 @@ export async function listClientThread(
     .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, anchorId), eq(nodes.audience, 'client')))
     .limit(1);
   if (!node) return null;
-  return db
-    .select()
-    .from(nodeComments)
-    .where(and(eq(nodeComments.nodeId, nodeId), eq(nodeComments.threadScope, 'client')))
-    .orderBy(asc(nodeComments.createdAt));
+  const where = and(eq(nodeComments.nodeId, nodeId), eq(nodeComments.threadScope, 'client'));
+  if (page) return commentPage(where, page);
+  return db.select().from(nodeComments).where(where).orderBy(asc(nodeComments.createdAt));
 }
 
 /**
  * Add to the client thread. Written on the admin pool with the proof in the
  * same statement: the node is this brain's, a workspace item, at client
  * level now (locked for the insert). Null when it is not (404).
+ *
+ * Capped (audit I2): the thread holds at most THREAD_COMMENT_LIMIT comments
+ * (`thread-full`, whoever writes), and a CLIENT login writes at most
+ * CLIENT_COMMENTS_PER_DAY a day across every thread (`comment-cap`, counted
+ * in the ledger in this transaction). Thrown as SpaceItemStateError.
  */
 export async function addClientThreadComment(
   anchorId: string,
@@ -82,6 +102,19 @@ export async function addClientThreadComment(
     author.name.trim().slice(0, 200) || (author.kind === 'client' ? 'A client' : 'Member');
   return asSystem(() =>
     db.transaction(async (tx) => {
+      // The node first, locked (a level change waits for this transaction):
+      // a 404 takes no place of the day.
+      const there = (await tx.execute(sql`
+        select 1 as ok from nodes n
+         where n.id = ${nodeId} and n.owner_id = ${anchorId} and n.audience = 'client'
+           and mantle_workspace_kind(n.type)
+         for share of n`)) as unknown as { ok: number }[];
+      if (!there.length) return null;
+      if (author.kind === 'client') {
+        await takeClientCommentPlace(tx, author.loginId, nodeId, 'client');
+      } else {
+        await assertThreadRoom(tx, nodeId, 'client');
+      }
       const rows = (await tx.execute(sql`
         insert into node_comments (owner_id, node_id, author_kind, login_id, author_name, body, thread_scope)
         select ${anchorId}, n.id, ${author.kind}, ${author.loginId}, ${name}, ${text}, 'client'
