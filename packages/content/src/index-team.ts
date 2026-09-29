@@ -315,6 +315,7 @@ export {
   listClientLogins,
   redeemClientSigninLink,
   revokeClientSigninLink,
+  revokeOpenClientSignins,
   type CreateClientLoginInput,
   type RedeemedClientSigninLink,
 } from './client-logins';

@@ -322,6 +322,33 @@ export async function revokeClientSigninLink(
   return rows.length > 0;
 }
 
+/**
+ * Revoke EVERY open way in the login still holds: its unused sign-in links
+ * and its unused emailed codes alike (client logins audit B14). Disabling a
+ * login and ending its sessions call this in the same transaction, so a
+ * link issued before cannot come back when the login is enabled again, and
+ * "End sessions" leaves nothing to sign straight back in with. Returns how
+ * many it revoked.
+ */
+export async function revokeOpenClientSignins(
+  exec: Exec,
+  loginId: string,
+  now = new Date(),
+): Promise<number> {
+  const rows = await exec
+    .update(clientSigninCodes)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(clientSigninCodes.loginId, loginId),
+        isNull(clientSigninCodes.usedAt),
+        isNull(clientSigninCodes.revokedAt),
+      ),
+    )
+    .returning({ id: clientSigninCodes.id });
+  return rows.length;
+}
+
 export type RedeemedClientSigninLink = {
   loginId: string;
   email: string;

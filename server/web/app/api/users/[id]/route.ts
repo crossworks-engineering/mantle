@@ -13,7 +13,7 @@ import {
   oauthAuthCodes,
   pairingCodes,
 } from '@mantle/db';
-import { settleSpaceOnPromotion } from '@mantle/content';
+import { revokeOpenClientSignins, settleSpaceOnPromotion } from '@mantle/content';
 import { endLoginSessions, getOwnerOr401 } from '@/lib/auth';
 import { releaseAssignedAgent } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
@@ -145,7 +145,14 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       if (Object.keys(changes).length > 0) {
         await tx.update(authUsers).set(changes).where(eq(authUsers.id, targetId));
       }
-      if (endSessions) await endLoginSessions(targetId, { tx });
+      if (endSessions) {
+        await endLoginSessions(targetId, { tx });
+        // A client's open sign-in links and emailed codes die with its
+        // sessions (audit B14): a link issued before a disable must not
+        // work after the enable, and "End sessions" must leave no way back
+        // in. Other roles hold none, so this is a no-op for them.
+        await revokeOpenClientSignins(tx, targetId);
+      }
       // A member made admin: what they shared or submitted as a member goes
       // back to private drafts (audit F21). An admin's items are never team
       // drafts or reviewed, and a later demotion must not bring them back.
