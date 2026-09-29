@@ -35,7 +35,7 @@ describe.skipIf(!URL)('the share tools on client items, on Postgres', () => {
     file: randomUUID(),
   };
   const tag = `client-links-${owner.slice(0, 8)}`;
-  const ctx: ToolHandlerContext = { ownerId: owner };
+  const ctx: ToolHandlerContext = { ownerId: owner, surface: { kind: 'web' } }; // the owner (C4: none is not)
 
   const audienceOf = async (id: string) =>
     (

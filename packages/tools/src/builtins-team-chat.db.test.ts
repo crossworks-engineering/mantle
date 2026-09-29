@@ -30,7 +30,7 @@ describe.skipIf(!URL)('member chat thread isolation', () => {
     tm.listTeamThread(ownerId, '', { loginId, limit: 50, withPrivate: true });
   /** The admin's read: `team_chat_read` with a loginId. */
   const adminRead = async (loginId: string) => {
-    const ctx: ToolHandlerContext = { ownerId };
+    const ctx: ToolHandlerContext = { ownerId, surface: { kind: 'web' } }; // the owner (C4: none is not)
     const res = await read.handler({ loginId }, ctx);
     if (!res.ok) throw new Error(res.error);
     return (res.output as { messages: { text: string }[] }).messages;

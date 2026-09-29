@@ -23,7 +23,7 @@ describe.skipIf(!URL)('the unshare tools report the closure on Postgres', () => 
   const owner = randomUUID();
   const ids = { page: randomUUID(), file: randomUUID() };
   const tag = `unshare-closure-${owner.slice(0, 8)}`;
-  const ctx: ToolHandlerContext = { ownerId: owner };
+  const ctx: ToolHandlerContext = { ownerId: owner, surface: { kind: 'web' } }; // the owner (C4: none is not)
 
   const audienceOf = async (id: string) =>
     (

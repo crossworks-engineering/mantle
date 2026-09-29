@@ -36,7 +36,7 @@ describe.skipIf(!URL)('team_chat_read: a login and its old portal chat', () => {
   const texts = (rows: Line[]) => rows.map((r) => r.text);
 
   const adminRead = async (input: Record<string, unknown>) => {
-    const ctx: ToolHandlerContext = { ownerId: anchor };
+    const ctx: ToolHandlerContext = { ownerId: anchor, surface: { kind: 'web' } }; // the owner (C4: none is not)
     const res = await read.handler(input, ctx);
     if (!res.ok) throw new Error(res.error);
     return res.output as ReadOut;
