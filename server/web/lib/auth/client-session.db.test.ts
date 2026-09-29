@@ -165,6 +165,16 @@ describe.skipIf(!URL)('a client login, end to end', () => {
       body: { email: emailOf('bea'), password: 'any password at all' },
     });
     expect(login.status).toBe(401);
+    // Even with a password the login does know (set by hand here), password
+    // sign-in is for admins and members only.
+    await sql`update auth.users set password_hash = ${bcrypt.hashSync('known pass 1', 4)}
+              where id = ${id}`;
+    const known = await call('/api/auth/login', {
+      method: 'POST',
+      body: { email: emailOf('bea'), password: 'known pass 1' },
+    });
+    expect(known.status).toBe(401);
+    expect(known.headers.get('set-cookie') ?? '').not.toMatch(/mantle_session=[^;]/);
     const jti = randomUUID();
     const t = tokens.buildMobileToken(id, jti, 3600);
     await sql`insert into mobile_tokens (id, user_id, label, expires_at)
