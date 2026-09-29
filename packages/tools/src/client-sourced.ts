@@ -19,7 +19,8 @@
  * /pending; a missed read would cost the guard, so the scan errs wide.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { authUsers, CLIENT_REQUEST_SOURCE, nodes, systemDb } from '@mantle/db';
+import { authUsers, CLIENT_REQUEST_SOURCE, db, nodes } from '@mantle/db';
+import { asSystem } from '@mantle/db/viewer';
 
 /** A turn's taint, shared by reference across the turn (and its delegated
  *  children: a child that reads client text taints the parent too). */
@@ -50,9 +51,9 @@ export function uuidsIn(text: string): string[] {
 
 /**
  * Whether any of `ids` names client-sourced text: a client request task of
- * this brain, or a client login (its chat thread). On the admin pool: the
- * tasks are admin level and the check must see them whatever the turn's
- * level.
+ * this brain, or a client login (its chat thread). As the system: the tasks
+ * are admin level and the check must see them whatever the turn's level. It
+ * answers yes or no and returns no content.
  */
 export async function namesClientSourced(
   ownerId: string,
@@ -60,24 +61,26 @@ export async function namesClientSourced(
 ): Promise<boolean> {
   if (ids.length === 0) return false;
   const list = [...ids];
-  const [task] = await systemDb
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, ownerId),
-        inArray(nodes.id, list),
-        sql`${nodes.data}->>'source' = ${CLIENT_REQUEST_SOURCE}`,
-      ),
-    )
-    .limit(1);
-  if (task) return true;
-  const [login] = await systemDb
-    .select({ id: authUsers.id })
-    .from(authUsers)
-    .where(and(inArray(authUsers.id, list), eq(authUsers.role, 'client')))
-    .limit(1);
-  return !!login;
+  return asSystem(async () => {
+    const [task] = await db
+      .select({ id: nodes.id })
+      .from(nodes)
+      .where(
+        and(
+          eq(nodes.ownerId, ownerId),
+          inArray(nodes.id, list),
+          sql`${nodes.data}->>'source' = ${CLIENT_REQUEST_SOURCE}`,
+        ),
+      )
+      .limit(1);
+    if (task) return true;
+    const [login] = await db
+      .select({ id: authUsers.id })
+      .from(authUsers)
+      .where(and(inArray(authUsers.id, list), eq(authUsers.role, 'client')))
+      .limit(1);
+    return !!login;
+  });
 }
 
 /** Mark `taint` when `text` names client-sourced text. Never throws: a failed

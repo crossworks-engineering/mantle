@@ -18,7 +18,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
       return h.hit ? [{ id: 'x' }] : [];
     },
   };
-  return { ...actual, systemDb: { select: () => chain } };
+  return { ...actual, db: { select: () => chain } };
 });
 
 import { isLoweringCall, newTurnTaint, taintFromText, uuidsIn } from './client-sourced';

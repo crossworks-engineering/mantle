@@ -257,11 +257,7 @@ export type ClientChatQueued = { turnId: string };
  *  (6 a minute), 429 `daily_cap` or `token_budget` (the member caps, per
  *  client login per UTC day). */
 export type ClientChatRefusedReason =
-  | 'chat-closed'
-  | 'idempotency-key-reused'
-  | 'rate-limited'
-  | 'daily_cap'
-  | 'token_budget';
+  'chat-closed' | 'idempotency-key-reused' | 'rate-limited' | 'daily_cap' | 'token_budget';
 
 /** GET /api/team-admin/clients/usage: each client login's chat use today
  *  (UTC) against the caps every client login has (the member caps). */
