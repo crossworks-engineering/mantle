@@ -4,6 +4,9 @@ import { countPending } from '@mantle/tools';
 import { loadPreferencesFor, logoVersion } from '@mantle/content';
 import { getOwnerOr401, mintAssetToken } from '@/lib/auth';
 import { isOnboarded } from '@/lib/onboarding';
+import { shellPart } from '@/lib/shell-part';
+
+type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 
 /**
  * Chrome data for the (app) shell — the avatar, the pending-approvals badge
@@ -13,20 +16,36 @@ import { isOnboarded } from '@/lib/onboarding';
  * three reads that used to run in-process during layout render now live behind
  * this one HTTP round-trip. `isOnboarded` is idempotent (it self-stamps an
  * established install), so it's safe in a GET.
+ *
+ * The 200 is also how the client learns this login is an ADMIN (a member or
+ * a client gets 403 here). So the chrome reads never fail the route (client
+ * logins audit A13): each is caught and logged, and its part answers empty
+ * (the brand as unset, a pending count of 0, no asset token). Onboarding
+ * answers true when it cannot be read: a failed read must not send a working
+ * admin into the setup wizard.
  */
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const prefs = await loadPreferencesFor(user.id);
+  const read = await shellPart('shell', 'preferences', () => loadPreferencesFor(user.id), null);
+  const prefs: Prefs = read ?? ({} as Prefs);
   const [onboarded, pendingApprovals] = await Promise.all([
-    isOnboarded(user.id, prefs),
-    countPending(user.id),
+    read ? shellPart('shell', 'onboarding', () => isOnboarded(user.id, read), true) : true,
+    shellPart('shell', 'pending count', () => countPending(user.id), 0),
   ]);
   // The FACE is per-login: seed, builder pins, and the uploaded photo come
   // from the ACTOR's row (loadPreferencesFor routes brain keys to the anchor
   // regardless), while everything else here — brand, fonts, onboarding —
   // stays on the anchor read above. Same-row when the actor IS the anchor.
-  const personal = user.actor.id === user.id ? prefs : await loadPreferencesFor(user.actor.id);
+  const personal: Prefs =
+    user.actor.id === user.id
+      ? prefs
+      : ((await shellPart(
+          'shell',
+          'own preferences',
+          () => loadPreferencesFor(user.actor.id),
+          null,
+        )) ?? ({} as Prefs));
   // Gated on the SEED, which is this user's own, not on the style, which is the
   // brain's. It used to gate on the style back when that was personal too, and
   // moving the style to brain level broke both directions of this: with a style
@@ -53,7 +72,12 @@ export async function GET() {
   // srcs (which can't carry a bearer) can load `?raw=1` files + attachments. The
   // client appends it via `assetUrl()`; same-origin ignores it (cookie auth). See
   // lib/asset-url.ts + getOwnerForAsset.
-  const assetToken = await mintAssetToken(user.id, user.actor.id);
+  const assetToken = await shellPart(
+    'shell',
+    'asset token',
+    () => mintAssetToken(user.id, user.actor.id),
+    undefined,
+  );
   return NextResponse.json({
     onboarded,
     avatar,
