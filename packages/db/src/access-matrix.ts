@@ -329,6 +329,11 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // Skipped code requests and the sign-in sender's held folders (0193).
   none('public.client_signin_code_skips'),
   none('public.client_signin_sender_folders'),
+  // The lowering guard's marks and the client request ledger (0197): the
+  // tool loop and client_request_create write them as the system.
+  none('public.client_sourced_nodes', 'system'),
+  none('public.conversation_taints', 'system'),
+  none('public.client_request_filings', 'system'),
   none('public.mantle_peers'),
   none('public.peer_shares'),
   none('public.peer_share_scopes'),

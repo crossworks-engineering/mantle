@@ -12,13 +12,15 @@ import {
   redactArgsForLogging,
   processToolResultForModel,
   notifyPendingCreated,
+  isBuiltinReadOnly,
   sanitizeToolError,
   UNTRUSTED_CONTENT_TOOL_SLUGS,
   PRIVATE_OUTPUT_TOOL_SLUGS,
   type ValidateArgsResult,
   type ToolHandlerResult,
 } from '@mantle/tools';
-import { isLoweringCall, type TurnTaint } from '@mantle/tools/client-sourced';
+import type { TurnTaint } from '@mantle/tools/client-sourced';
+import { clientSourcedGate, type GateVerdict } from '@mantle/tools/client-sourced-rules';
 import { systemDb, pendingToolCalls, type Tool } from '@mantle/db';
 import { fenceRetrieved } from '../messages';
 import type { ToolLoopArgs, ToolValidationMode } from '../tool-loop';
@@ -36,8 +38,10 @@ export async function executeToolCall(p: {
   lastUserMessage: string | undefined;
   /** Pending-call ids the loop is collecting; a confirm-gated call appends. */
   pendingIds: string[];
-  /** The turn's client-sourced taint (plan N18): once set, a lowering to
-   *  client or public waits for approval like a requires_confirm tool. */
+  /** The turn's client-sourced taint (plan N18): once set, a call that
+   *  lowers anything to client or public, or writes into an item clients or
+   *  the public read (client-sourced-rules.ts), waits for approval like a
+   *  requires_confirm tool. */
   taint?: TurnTaint;
 }): Promise<ToolHandlerResult> {
   const { args, slug, call, tool, input, argParseError, argValidation, argValidationMode } = p;
@@ -106,12 +110,21 @@ export async function executeToolCall(p: {
       // the operator approves/rejects via /pending. The synthetic
       // tool_result tells the model the action is queued so it can
       // wrap up its turn coherently.
-      // The injection guard (client logins C4, plan N18): a turn that has
-      // read text a client wrote cannot lower anything to client or public
-      // on its own say. The call waits at /pending for the owner, exactly as
-      // a requires_confirm tool does.
-      const clientSourcedGate = p.taint?.clientSourced === true && isLoweringCall(slug, input);
-      if (tool.requiresConfirm || clientSourcedGate) {
+      // The injection guard (client logins C4, plan N18; by target since the
+      // C5 audit fixes): a turn that has read text a client wrote cannot, on
+      // its own say, lower anything to client or public or write into an
+      // item clients or the public read. The call waits at /pending for the
+      // owner, exactly as a requires_confirm tool does. Reads run.
+      const verdict: GateVerdict =
+        p.taint?.clientSourced === true
+          ? await clientSourcedGate({
+              ownerId: args.ownerId,
+              tool,
+              input,
+              isReadOnlyBuiltin: isBuiltinReadOnly,
+            })
+          : { gate: false };
+      if (tool.requiresConfirm || verdict.gate) {
         const traceId = currentTrace()?.id ?? null;
         // Note: pendingToolCalls.args stores the UN-REDACTED input —
         // post-repair (the central validator's safe coercions applied),
@@ -150,7 +163,9 @@ export async function executeToolCall(p: {
         handle.setMeta({
           pendingId,
           requiresConfirm: true,
-          ...(clientSourcedGate ? { clientSourcedGate: true, taintedBy: p.taint?.via } : {}),
+          ...(verdict.gate
+            ? { clientSourcedGate: true, taintedBy: p.taint?.via, gateReason: verdict.why }
+            : {}),
         });
         return {
           ok: true as const,
@@ -158,9 +173,9 @@ export async function executeToolCall(p: {
             status: 'queued_for_approval',
             pending_id: pendingId,
             message:
-              (clientSourcedGate
-                ? `This turn read text a client wrote, so '${slug}' (it would make brain ` +
-                  `content visible to clients or the public) needs the owner's approval. `
+              (verdict.gate
+                ? `This turn read text a client wrote, so '${slug}' (${verdict.why}) ` +
+                  `needs the owner's approval. `
                 : `The tool '${slug}' requires operator approval. `) +
               `A pending entry was queued at /pending. Tell the user what's queued ` +
               `and that it'll run once approved. Do not call the same tool again ` +

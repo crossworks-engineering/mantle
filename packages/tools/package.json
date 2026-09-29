@@ -7,7 +7,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./client-sourced": "./src/client-sourced.ts"
+    "./client-sourced": "./src/client-sourced.ts",
+    "./client-sourced-rules": "./src/client-sourced-rules.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

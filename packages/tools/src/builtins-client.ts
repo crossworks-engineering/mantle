@@ -21,11 +21,12 @@ import {
   CLIENT_REQUESTS_PER_DAY,
   CLIENT_REQUESTS_PER_TURN,
   TEAM_REQUEST_TAG,
-  countTeamRequestsFiled,
+  countClientRequestFilings,
   createTask,
   docToText,
   getClientSharedItem,
   listClientShared,
+  recordClientRequestFiling,
   type TaskPriority,
 } from '@mantle/content';
 import { CLIENT_REQUEST_SOURCE, withViewer } from '@mantle/db';
@@ -324,11 +325,12 @@ export const client_request_create: BuiltinToolDef = {
     // Provenance from the server-stamped surface, never from the model.
     const { loginId, contactName, inboundMessageId } = s;
 
-    // The caps count the tasks already filed (admin level, so asSystem: the
-    // client role cannot see them to count them).
+    // The caps count the filing ledger, not the live tasks (C5 audit fix
+    // I12): an admin deleting a request never gives the quota back. Admin
+    // level, so asSystem: the client role cannot read it.
     if (inboundMessageId) {
       const thisTurn = await asSystem(() =>
-        countTeamRequestsFiled(ctx.ownerId, { threadMessageId: inboundMessageId }),
+        countClientRequestFilings(ctx.ownerId, { threadMessageId: inboundMessageId }),
       );
       if (thisTurn >= CLIENT_REQUESTS_PER_TURN) {
         return {
@@ -341,7 +343,7 @@ export const client_request_create: BuiltinToolDef = {
     }
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     if (
-      (await asSystem(() => countTeamRequestsFiled(ctx.ownerId, { loginId, since }))) >=
+      (await asSystem(() => countClientRequestFilings(ctx.ownerId, { loginId, since }))) >=
       CLIENT_REQUESTS_PER_DAY
     ) {
       return {
@@ -381,6 +383,13 @@ export const client_request_create: BuiltinToolDef = {
               filedAt: new Date().toISOString(),
             },
           },
+        }),
+      );
+      await asSystem(() =>
+        recordClientRequestFiling(ctx.ownerId, {
+          loginId,
+          threadMessageId: inboundMessageId ?? null,
+          taskId: row.id,
         }),
       );
       ctx.step?.setMeta({ taskId: row.id });

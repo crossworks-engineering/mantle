@@ -244,6 +244,9 @@ export async function runSimulatedResponderTurn(
           }),
         surface: { kind: 'web' },
         abortSignal: AbortSignal.timeout(timeoutMs),
+        // Caller-held history, not the owner's conversation: it neither
+        // starts from nor keeps that conversation's client-sourced mark.
+        conversationTaint: false,
       });
     },
   );
