@@ -16,6 +16,7 @@ import { and, asc, eq, isNotNull, sql, type SQL } from 'drizzle-orm';
 import { contentChunks, db, nodes } from '@mantle/db';
 import { withHnswPool } from './hnsw';
 import { grantUnionFilter, pgArrayLiteral } from './pg';
+import { keywordSql, resolveKeywordQuery } from './keyword-query';
 import { applyRescueFloor, fuseRrf } from './rrf';
 import { env } from '@mantle/config';
 
@@ -150,13 +151,19 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
     `),
   )) as unknown as Array<{ id: string }>;
 
-  const ftsRows = await db
-    .select({ id: contentChunks.id })
-    .from(contentChunks)
-    .innerJoin(nodes, eq(nodes.id, contentChunks.nodeId))
-    .where(and(...scope, sql`${contentChunks.searchTsv} @@ plainto_tsquery('english', ${q})`))
-    .orderBy(sql`ts_rank(${contentChunks.searchTsv}, plainto_tsquery('english', ${q})) desc`)
-    .limit(pool);
+  // Rarest terms ORed, not every stem ANDed: a whole chat message ANDed
+  // matched nothing, so this arm (and the rescue floor) never fired.
+  const kq = await resolveKeywordQuery(q, 'content_chunks');
+  const kw = kq ? keywordSql(contentChunks.searchTsv, kq) : null;
+  const ftsRows = kw
+    ? await db
+        .select({ id: contentChunks.id })
+        .from(contentChunks)
+        .innerJoin(nodes, eq(nodes.id, contentChunks.nodeId))
+        .where(and(...scope, kw.match))
+        .orderBy(...kw.order)
+        .limit(pool)
+    : [];
 
   const ftsIds = ftsRows.map((r) => r.id);
   const fused = fuseRrf(

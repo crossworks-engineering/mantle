@@ -4,6 +4,18 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.327: keyword search finds the rare words in a chat question
+
+- **The keyword half of hybrid search works on real questions.** It used to
+  need a passage that held every word of the message, so it matched almost
+  nothing on a chat turn (4 of 35 recent turns on dev). It now searches the
+  rarest words of the message, ORed, and ranks the rows that hold the rarest
+  ones first. On the same turns: 33 of 35 get keyword hits, and a task id
+  buried in a long question now ranks its passages first. Applies to the
+  responder's automatic passages and to the `search` and `search_chunks`
+  tools. No model call; a short query of common words keeps the old
+  behaviour. Idea from the Hindsight memory engine's term selection.
+
 ## 0.232.326: client v0.6.173
 
 - Pairs the client at jackdaw v0.6.173, the client half of 0.232.324 and

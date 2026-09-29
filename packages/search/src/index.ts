@@ -2,6 +2,7 @@ import { db, nodes, type Node } from '@mantle/db';
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { withHnswPool } from './hnsw';
 import { grantUnionFilter, pgArrayLiteral } from './pg';
+import { keywordSql, resolveKeywordQuery } from './keyword-query';
 import { env } from '@mantle/config';
 
 export { withHnswPool } from './hnsw';
@@ -181,12 +182,15 @@ export async function searchNodes(opts: SearchOptions): Promise<Node[]> {
   )) as unknown as { id: string }[];
 
   let ftsRows: { id: string }[] = [];
-  if (opts.q && opts.q.trim()) {
+  // Rarest terms ORed (see keyword-query.ts): a long query ANDed matched nothing.
+  const kq = opts.q?.trim() ? await resolveKeywordQuery(opts.q.trim(), 'nodes') : null;
+  if (kq) {
+    const kw = keywordSql(nodes.searchTsv, kq);
     ftsRows = await db
       .select({ id: nodes.id })
       .from(nodes)
-      .where(and(...filters, sql`${nodes.searchTsv} @@ plainto_tsquery('english', ${opts.q})`))
-      .orderBy(sql`ts_rank(${nodes.searchTsv}, plainto_tsquery('english', ${opts.q})) desc`)
+      .where(and(...filters, kw.match))
+      .orderBy(...kw.order)
       .limit(pool);
   }
 

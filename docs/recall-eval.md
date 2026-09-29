@@ -267,6 +267,35 @@ Verified: full content/db/agent/agent-runtime suites green; eval no regression
 (0.91; none of these touch the clean-page gold cases; they target email/graph/
 follow-up/long-doc paths the gold set doesn't exercise).
 
+## After step (j): the keyword arm searches the rarest terms (2026-09-29)
+
+The hybrid arms bound the raw query text to `plainto_tsquery`, which ANDs every
+stem. The responder's auto-context sends the whole user message, so a passage
+had to hold every word. On dev, 4 of the last 35 inbound turns got any keyword
+hit; one realistic question matched 0 chunks, while its three key terms ORed
+matched 925. The hybrid arm and the exact-term rescue floor almost never fired.
+
+[`packages/search/src/keyword-query.ts`](../packages/search/src/keyword-query.ts)
+now builds the keyword query from the rarest terms, after Hindsight's
+`bm25_term_selection.py`:
+
+- Frequency of common lexemes comes from `pg_stats.most_common_elems` on
+  `search_tsv` (ANALYZE keeps it). Up to 32 untracked lexemes get a real count,
+  capped at 500 rows each through the GIN index.
+- Dropped: terms in more than 5% of rows, terms in no row, and a short list of
+  chat filler (`hey`, `quick`, `got`, …) that is rare in documents but carries
+  no content.
+- Up to 8 terms are ORed. Rows rank by the summed rarity (`ln(1/df)`) of the
+  terms they hold, then `ts_rank`, so a rare code outranks ordinary words.
+- Only common terms, or a failed lookup: the old `plainto_tsquery` AND.
+
+Measured on dev (read-only, same 35 turns): chunk keyword hits 4 → 33, node
+keyword hits 8 → 35. A task id buried in a 30-word question: the old AND found
+0 chunks; the new arm ranks the 3 chunks that hold it 1st to 3rd. Lookup cost
+on the server for the longest message (136 lexemes): 25 ms execution, 11 ms
+planning. The FTS-only legacy path of `searchNodes` (no query embedding) is
+unchanged.
+
 ## Automated eval: `recall_eval` + the brain-health heartbeat (2026-07-13)
 
 The harness above is manual (`pnpm -C server/web eval:recall`). The automated
