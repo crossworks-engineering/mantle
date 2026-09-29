@@ -17,6 +17,8 @@
  * wired the bridge in yet.
  */
 
+import type { ToolHandlerContext } from './types';
+
 /** Pure-data inputs to a child agent invocation. */
 export type InvokeAgentInput = {
   /** Owner whose tree the child agent runs against. Always matches the parent. */
@@ -39,6 +41,10 @@ export type InvokeAgentInput = {
    *  inherits the operator's per-user thinking preference. The child runtime
    *  re-clamps it against its OWN max_tokens. Omitted/0 ⇒ no thinking. */
   thinkingBudget?: number;
+  /** The child's surface (client logins C4): a non-owner parent's own, or
+   *  `owner/delegate` for the owner (see `childSurface`), so delegation never
+   *  turns a team or client turn into an owner one. */
+  surface?: ToolHandlerContext['surface'];
 };
 
 export type InvokeAgentResult =

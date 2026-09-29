@@ -488,7 +488,12 @@ export const api_tool_test: BuiltinToolDef = {
     }
     const args = rec(input.input) ?? {};
     const t0 = performance.now();
-    const result = await dispatchTool(row, args, { ownerId: ctx.ownerId, step: ctx.step });
+    // The test call runs for whoever asked for the test: it inherits the surface.
+    const result = await dispatchTool(row, args, {
+      ownerId: ctx.ownerId,
+      step: ctx.step,
+      ...(ctx.surface ? { surface: ctx.surface } : {}),
+    });
     const duration_ms = Math.round(performance.now() - t0);
     if (!result.ok) {
       return { ok: true, output: { slug, test_passed: false, error: result.error, duration_ms } };

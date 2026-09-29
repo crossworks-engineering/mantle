@@ -369,6 +369,9 @@ export async function runsWorkerTurnImpl(
               delegateTo: [],
               initialMessages,
               tools: allowedTools,
+              // The owner's own run (client logins C4): a missing surface is
+              // not the owner.
+              surface: { kind: 'owner', via: 'run' },
             });
             const ctx = currentTrace();
             if (ctx) {

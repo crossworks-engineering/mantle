@@ -57,6 +57,7 @@ export const invokeAgent: AgentInvoker = async ({
   depth,
   parentTraceId,
   thinkingBudget,
+  surface,
 }): Promise<InvokeAgentResult> => {
   if (depth > MAX_TERMINAL_EDGE_DEPTH) {
     // Defence in depth: the dispatcher already refused, but a caller
@@ -237,6 +238,9 @@ export const invokeAgent: AgentInvoker = async ({
         // invoke_agent tool-context bridge). The child loop re-clamps it against
         // THIS agent's own max_tokens. Omitted/0 ⇒ no thinking.
         ...(thinkingBudget ? { thinkingBudget } : {}),
+        // The child runs for the parent's caller (client logins C4): the
+        // parent's surface, never an implicit owner.
+        ...(surface ? { surface } : {}),
         parentTraceId,
         initialMessages,
         tools: allowedTools,

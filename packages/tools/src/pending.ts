@@ -408,6 +408,8 @@ export async function approvePendingCall(
         async (handle) => {
           const res = await dispatchTool(tool, (claimed.args ?? {}) as Record<string, unknown>, {
             ownerId,
+            // Only the owner approves a pending call, so it runs for the owner.
+            surface: { kind: 'owner', via: 'pending' },
             step: {
               setMeta: (m) => handle.setMeta(m),
               setOutput: (o) => handle.setOutput(o),
