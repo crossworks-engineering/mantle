@@ -43,6 +43,7 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
   let sqlTag: typeof import('drizzle-orm').sql;
   const tag = `c5aleak-${randomUUID().slice(0, 8)}`;
   let anchor = '';
+  let branchesBefore: string[] = [];
   /** Every node this file made or moved into the brain. */
   const mine: string[] = [];
   const adminA = randomUUID();
@@ -123,6 +124,13 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
     const { ensureTestAnchor } = await import('@mantle/db/test-support');
     anchor = await ensureTestAnchor(admin);
+    // Accept files an item under the brain's root folders, making any that
+    // are missing: remember the anchor's folders now, remove new ones after.
+    branchesBefore = (
+      await exec<{ id: string }>(
+        sqlTag`select id from nodes where owner_id = ${anchor} and type = 'branch'`,
+      )
+    ).map((r) => r.id);
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${adminA}, ${`${tag}-a@example.invalid`}, 'x', 'admin', 'Staff Person'),
@@ -139,6 +147,14 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     if (!m) return;
     const spaces = Object.values(spaceOf);
     for (const id of mine) await m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);
+    // The root folders Accept made in the shared anchor, once empty.
+    await m.systemDb.execute(sqlTag`
+      delete from nodes b
+       where b.owner_id = ${anchor} and b.type = 'branch'
+         and not (b.id = any(${`{${branchesBefore.join(',')}}`}::uuid[]))
+         and not exists (select 1 from nodes c
+                          where c.owner_id = b.owner_id and c.id <> b.id
+                            and c.path <@ b.path)`);
     for (const s of spaces) {
       await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${s}`);
       await m.systemDb.execute(sqlTag`delete from spaces where id = ${s}`);

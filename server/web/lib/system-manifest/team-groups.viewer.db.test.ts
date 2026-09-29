@@ -63,9 +63,12 @@ describe.skipIf(!URL)('team-level tool groups on the team viewer role', () => {
       })
     ).id;
     ids.branch = crypto.randomUUID();
+    // Its own folder path: a folder's path is unique per brain, and other
+    // test files may hold the shared anchor's `files` root at the same time.
     ids.file = crypto.randomUUID();
     await admin`insert into nodes (id, owner_id, type, title, path, audience) values
-      (${ids.branch}, ${ownerId}, 'branch', ${`${tag} folder`}, 'files', 'team')`;
+      (${ids.branch}, ${ownerId}, 'branch', ${`${tag} folder`},
+       ${`files.tg_${ids.branch.replace(/-/g, '')}`}, 'team')`;
     await admin`insert into nodes (id, owner_id, type, title, path, audience, data) values
       (${ids.file}, ${ownerId}, 'file', ${`${tag} file.txt`}, 'files', 'team',
        ${JSON.stringify({ filename: `${tag}.txt`, mime_type: 'text/plain' })}::jsonb)`;

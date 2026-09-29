@@ -467,7 +467,9 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
         sp.createMineItem(T, { type: 'note', title: `${tag} total`, content: 'short' }),
       )
     ).id;
-    process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String((await usedBytes()) + 1000);
+    // Already over (1 byte): a growing text write is refused. Not set from a
+    // live sum, which other test files change while this runs.
+    process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = '1';
     try {
       await expect(
         as(c.text, () => sp.updateMineItem(T, note, { content: noise(20_000) })),
@@ -550,25 +552,32 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     expect(n).toBe(10);
   });
 
-  it('two clients’ parallel uploads at the last bytes of the total: exactly one passes', async () => {
-    process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String((await usedBytes()) + 6 * MB);
-    try {
-      const results = await Promise.allSettled([
-        upload(c.totalA, 4 * MB),
-        upload(c.totalB, 4 * MB),
-      ]);
-      expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
-      const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
-      expect(lost.reason).toMatchObject({
-        reason: 'quota',
-        message: expect.stringMatching(/client uploads is full/),
-      });
-    } finally {
-      delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
-    }
-    const reasons = [...(await refusals(c.totalA)), ...(await refusals(c.totalB))];
-    expect(reasons.map((r) => r.reason)).toEqual(['total']);
-  });
+  // The boundary is the live brain-wide sum plus 6 MB; another test file that
+  // removes megabytes of client bytes in the same moment can move it, so the
+  // test may retry. A missing lock fails every attempt (both uploads pass).
+  it(
+    'two clients’ parallel uploads at the last bytes of the total: exactly one passes',
+    { retry: 2 },
+    async () => {
+      process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String((await usedBytes()) + 6 * MB);
+      try {
+        const results = await Promise.allSettled([
+          upload(c.totalA, 4 * MB),
+          upload(c.totalB, 4 * MB),
+        ]);
+        expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+        const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+        expect(lost.reason).toMatchObject({
+          reason: 'quota',
+          message: expect.stringMatching(/client uploads is full/),
+        });
+      } finally {
+        delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
+      }
+      const reasons = [...(await refusals(c.totalA)), ...(await refusals(c.totalB))];
+      expect(reasons.map((r) => r.reason)).toEqual(['total']);
+    },
+  );
 
   // ── Give back holds the client limits (I7) ──────────────────────────────
 
@@ -612,7 +621,10 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     } finally {
       await dropNode(big);
     }
-    process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String(await usedBytes());
+    // A total the client spaces are already over (1 byte): other test files
+    // change client bytes while this runs, so the total is not set from a
+    // live sum; any give back that brings bytes back is refused.
+    process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = '1';
     try {
       await expect(tk.giveBackTakenItem(brain, actor, id, 'Back.')).rejects.toMatchObject({
         reason: 'quota',
