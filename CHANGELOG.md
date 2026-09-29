@@ -4,6 +4,39 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.320: client logins, phase C2 (client logins and the portal, read)
+
+Clients can now sign in. An admin adds a client login in Team admin >
+Clients and hands the client a sign-in link. A client reads the items set to
+client level, and nothing else.
+
+- **Client logins and sign-in links (migration 0188).** Add client and Issue
+  sign-in link are refused (409 `report-not-acknowledged`) until an admin
+  has acknowledged "What clients see", and again once a new item goes to
+  client. A client login is made with role client and a password nobody
+  knows: password sign-in, a mobile bearer and pairing never open it. A
+  sign-in link lives 72 hours, is one use, is stored only as its SHA-256,
+  and asks the client to type their email as a check; a new link revokes
+  the older one. `POST /api/auth/client-link` answers every failure with
+  the same 401 and is rate limited per address and, on failures,
+  brain-wide. End sessions, Disable and Delete are the users routes.
+- **Client sessions last 30 days**, bound to the login's session epoch. A
+  client cookie that claims to last longer is refused.
+- **Deny by default.** A client reaches only the routes in
+  `CLIENT_ROUTES` (`GET /api/client/shell`, `shared`, `shared/:id`,
+  `files/:id`, `draws/:id/svg`); every other route refuses it, and admins
+  and members are refused on these. `client-sweep.test.ts` and
+  `role-sweep.test.ts` drive every route.
+- **The client portal, read only.** "Shared with you" lists the items at
+  client level, read at the client level. A reference in a page or note to
+  something a client may not read shows as "Private item" with no target;
+  an embed of one is left out. Client answers carry no staff or author
+  names. The client polls; there is no live stream for clients.
+- **Members see what clients see (decision 6).** The member Library lists
+  team AND client items; each row carries its level.
+- **Mail gates (decision 10).** A client login's email passes the email
+  gates only when the client is also a contact.
+
 ## 0.232.319: client v0.6.170
 
 - Pairs the client at jackdaw v0.6.170, the client half of 0.232.318: the
