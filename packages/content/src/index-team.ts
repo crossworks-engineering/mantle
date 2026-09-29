@@ -70,6 +70,7 @@ export {
   claimMemberTurn,
   releaseMemberTurn,
   memberTokensSince,
+  clientChatUsageSince,
   type MemberTurnLimits,
   type ClaimMemberTurnResult,
 } from './member-turn-ledger';

@@ -20,7 +20,7 @@
  * 6-a-minute limit's worth). It is a brake on a runaway, not an invoice.
  */
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
-import { memberTurnLedger, systemDb, traces } from '@mantle/db';
+import { authUsers, memberTurnLedger, systemDb, traces } from '@mantle/db';
 
 export type MemberTurnLimits = {
   /** Turns per UTC day. */
@@ -116,4 +116,54 @@ export async function claimMemberTurn(args: {
 /** Give a claimed slot back: the enqueue it was claimed for failed. */
 export async function releaseMemberTurn(turnId: string): Promise<void> {
   await systemDb.delete(memberTurnLedger).where(eq(memberTurnLedger.turnId, turnId));
+}
+
+/**
+ * Each CLIENT login's chat use since `since` (client logins C4, the budget
+ * card in Team admin > Clients): turns from the ledger (counted when queued)
+ * and model tokens from the finished client turns' traces. Logins with no use
+ * are absent. Admin read, on the admin pool.
+ */
+export async function clientChatUsageSince(
+  ownerId: string,
+  since: Date,
+): Promise<Map<string, { turns: number; tokens: number }>> {
+  const [turnRows, tokenRows] = await Promise.all([
+    systemDb
+      .select({ loginId: memberTurnLedger.loginId, n: sql<number>`count(*)::int` })
+      .from(memberTurnLedger)
+      .innerJoin(authUsers, eq(authUsers.id, memberTurnLedger.loginId))
+      .where(
+        and(
+          eq(memberTurnLedger.ownerId, ownerId),
+          gte(memberTurnLedger.createdAt, since),
+          eq(authUsers.role, 'client'),
+        ),
+      )
+      .groupBy(memberTurnLedger.loginId),
+    systemDb
+      .select({
+        loginId: sql<string>`${traces.data}->>'login_id'`,
+        n: sql<string>`coalesce(sum(${traces.tokensIn} + ${traces.tokensOut}), 0)::bigint`,
+      })
+      .from(traces)
+      .where(
+        and(
+          eq(traces.ownerId, ownerId),
+          eq(traces.kind, 'responder_turn'),
+          gte(traces.startedAt, since),
+          eq(traces.subjectKind, 'team_turn'),
+          sql`${traces.data}->>'login_role' = 'client'`,
+        ),
+      )
+      .groupBy(sql`${traces.data}->>'login_id'`),
+  ]);
+  const out = new Map<string, { turns: number; tokens: number }>();
+  for (const r of turnRows) out.set(r.loginId, { turns: r.n, tokens: 0 });
+  for (const r of tokenRows) {
+    if (!r.loginId) continue;
+    const cur = out.get(r.loginId) ?? { turns: 0, tokens: 0 };
+    out.set(r.loginId, { ...cur, tokens: Number(r.n) });
+  }
+  return out;
 }
