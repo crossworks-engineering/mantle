@@ -163,7 +163,9 @@ describe('redactClientDoc', () => {
 
   it('collects the ids to ask about', () => {
     expect(
-      docRefIds(doc(para(text('x', link(`/n/${TEAM}`))), { type: 'image', attrs: { nodeId: OK } })).sort(),
+      docRefIds(
+        doc(para(text('x', link(`/n/${TEAM}`))), { type: 'image', attrs: { nodeId: OK } }),
+      ).sort(),
     ).toEqual([OK, TEAM].sort());
   });
 });
@@ -185,7 +187,17 @@ describe('redactClientNote', () => {
       `[Who](mention:entity:ent-9)`,
     ].join('\n\n');
     const out = redactClientNote(md, readable);
-    for (const s of ['Pat Lee', 'Plan', 'Admin plan', 'Chart', 'Sketch', 'Spec', 'Who', TEAM, ADMIN]) {
+    for (const s of [
+      'Pat Lee',
+      'Plan',
+      'Admin plan',
+      'Chart',
+      'Sketch',
+      'Spec',
+      'Who',
+      TEAM,
+      ADMIN,
+    ]) {
       expect(out).not.toContain(s);
     }
     expect(out.split(CLIENT_PRIVATE_LABEL).length - 1).toBe(4);

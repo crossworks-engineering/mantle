@@ -22,7 +22,9 @@ export async function clientVisibleDrawFileIds(
   drawId: string,
 ): Promise<Set<string>> {
   if (currentViewerLevel() !== 'client' || currentSpaceScope()) {
-    throw new Error("clientVisibleDrawFileIds reads at the client level: wrap it in withViewer('client')");
+    throw new Error(
+      "clientVisibleDrawFileIds reads at the client level: wrap it in withViewer('client')",
+    );
   }
   const [row] = await db
     .select({ fileRefs: draws.fileRefs })
@@ -58,7 +60,11 @@ export async function clientVisibleDrawFileIds(
 
 /** The drawing's saved SVG as a client receives it: only the images the
  *  client may see (see above). Client scope only. */
-export async function clientDrawSvg(anchorId: string, drawId: string, svg: string): Promise<string> {
+export async function clientDrawSvg(
+  anchorId: string,
+  drawId: string,
+  svg: string,
+): Promise<string> {
   if (!svgHasImages(svg)) return svg;
   return keepSvgImages(svg, await clientVisibleDrawFileIds(anchorId, drawId));
 }

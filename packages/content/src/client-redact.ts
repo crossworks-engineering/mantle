@@ -71,7 +71,10 @@ function namesHidden(refs: EmbedRefs, readable: ReadonlySet<string>): boolean {
 function mentionReadable(attrs: Record<string, unknown>, readable: ReadonlySet<string>): boolean {
   const id = attrs.id;
   return (
-    attrs.ref === 'node' && typeof id === 'string' && UUID.test(id) && readable.has(id.toLowerCase())
+    attrs.ref === 'node' &&
+    typeof id === 'string' &&
+    UUID.test(id) &&
+    readable.has(id.toLowerCase())
   );
 }
 

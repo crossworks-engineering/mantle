@@ -311,10 +311,6 @@ export {
 } from './client-logins';
 // Client logins (C2): what a client reads ("Shared with you", redacted bodies,
 // drawing images at client level).
-export {
-  clientReadableIds,
-  getClientSharedItem,
-  listClientShared,
-} from './client-shared';
+export { clientReadableIds, getClientSharedItem, listClientShared } from './client-shared';
 export { docRefIds, noteRefIds, redactClientDoc, redactClientNote } from './client-redact';
 export { clientDrawSvg, clientVisibleDrawFileIds } from './client-draw-images';
