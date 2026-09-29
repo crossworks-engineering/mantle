@@ -97,6 +97,10 @@ export const spaceItems = pgTable(
     takenAt: timestamp('taken_at', { withTimezone: true }),
     /** The root this item was taken with (its bundle); NULL on the root. */
     takenRoot: uuid('taken_root'),
+    /** The item's title when it was taken (0196): what its author's list
+     *  shows while an admin holds it, never the admin's working title.
+     *  Cleared by Give back and Accept. */
+    takenTitle: text('taken_title'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

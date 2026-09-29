@@ -16,6 +16,17 @@
  * and readers get the authorship: the author's name on an accepted item
  * (the "member-authored" badge).
  *
+ * A page's doc and a note's text are the version accepted, and an admin may
+ * have written it: an item an admin TOOK OVER (audit F07) is accepted with
+ * the admin's edits, and an admin may mention, link or embed any brain item
+ * at any level while it is theirs. So what its author reads is REDACTED at
+ * the author's level (client logins C5 audit, L1), with the client shared
+ * reader's own redactor (client-redact.ts): a reference to anything the
+ * author may not read is "Private item", an embed of it is left out. The
+ * author may read the brain's items at their level (team for a member,
+ * client for a client), their own items, and the items they wrote that an
+ * admin accepted (shown by their accepted title).
+ *
  * Every function here runs on the ADMIN pool (the item may sit above the
  * author's level, and the limited roles hold no grant on `space_items`), so
  * the rule lives in every query, as in member-review.ts: the row names this
@@ -32,6 +43,8 @@ import {
   db,
   nodes,
   spaceItems,
+  spaces,
+  withViewer,
   type ViewerLevel,
 } from '@mantle/db';
 import type {
@@ -42,6 +55,16 @@ import type {
 } from '@mantle/client-types';
 import { MEMBER_ITEM_KINDS, type MemberItemKind } from '@mantle/client-types/member-kinds';
 import { getDrawSvg } from './draws';
+import {
+  clientOwnUrl,
+  docRefIds,
+  noteRefIds,
+  redactClientDoc,
+  redactClientNote,
+  type ClientRedactOptions,
+} from './client-redact';
+import { clientRedactOrigins } from './client-origins';
+import { clientReadable } from './client-shared';
 import { tableFromSnapshot, type getTable } from './tables/read';
 import {
   acceptedDrawUnchanged,
@@ -125,9 +148,11 @@ const snapCols = {
   snapAt: acceptedSnapshots.acceptedAt,
 };
 
-/** The author's accepted items, newest accept first. `q` matches the title;
- *  `audiences` keeps only items at those levels. `order: 'updated'` sorts by
- *  the row's own `updatedAt` instead (the one list merges on it). */
+/** The author's accepted items, newest accept first. `q` matches the title
+ *  the row shows (the accepted title: an admin's later rename is the
+ *  brain's, and a search on it would spell it out, audit L5); `audiences`
+ *  keeps only items at those levels. `order: 'updated'` sorts by the row's
+ *  own `updatedAt` instead (the one list merges on it). */
 export async function listAccepted(
   anchorId: string,
   loginId: string,
@@ -153,7 +178,12 @@ export async function listAccepted(
       : opts.kinds
         ? inArray(nodes.type, [...opts.kinds])
         : undefined,
-    q ? ilike(nodes.title, `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`) : undefined,
+    q
+      ? ilike(
+          sql`coalesce(${acceptedSnapshots.title}, ${nodes.title})`,
+          `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`,
+        )
+      : undefined,
     opts.audiences ? inArray(nodes.audience, [...opts.audiences]) : undefined,
   );
   // rowOf's updatedAt: the snapshot's time when there is one, else the node's.
@@ -175,6 +205,7 @@ export async function listAccepted(
       .select({ n: sql<number>`count(*)::int` })
       .from(spaceItems)
       .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+      .leftJoin(acceptedSnapshots, eq(acceptedSnapshots.nodeId, nodes.id))
       .where(where),
   ]);
   return { items: rows.map(rowOf), total: count?.n ?? 0 };
@@ -213,25 +244,116 @@ async function authoredSnapshot(
   return { row: { ...row, title: snap.title, icon: snap.icon ?? null }, snap };
 }
 
+/** The level an accepted item's author reads at: team for a member, client
+ *  for a client. */
+export type AcceptedReader = 'team' | 'client';
+
+/**
+ * The ids among `ids` an accepted item's AUTHOR may read in its body, each
+ * with the title its chip shows (audit L1): the brain's items at the
+ * author's level (read at that level, so row security decides; for a client
+ * the client shared reader's own query), the author's own personal items,
+ * and the items they wrote that an admin accepted (by their accepted title,
+ * never an admin's later rename). Keys lower-case. Admin pool.
+ */
+async function authorReadable(
+  anchorId: string,
+  loginId: string,
+  reader: AcceptedReader,
+  ids: readonly string[],
+): Promise<Map<string, string>> {
+  const wanted = [...new Set(ids.map((i) => i.toLowerCase()))].filter((i) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(i),
+  );
+  const out = new Map<string, string>();
+  if (!wanted.length) return out;
+  const brain =
+    reader === 'client'
+      ? await withViewer('client', () => clientReadable(anchorId, wanted))
+      : await withViewer('team', async () => {
+          const rows = await db
+            .select({ id: nodes.id, title: nodes.title })
+            .from(nodes)
+            .where(and(eq(nodes.ownerId, anchorId), inArray(nodes.id, wanted)));
+          return new Map(rows.map((r) => [r.id.toLowerCase(), r.title]));
+        });
+  for (const [k, v] of brain) out.set(k, v);
+  const own = await db
+    .select({ id: nodes.id, title: nodes.title })
+    .from(nodes)
+    .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
+    .where(
+      and(eq(spaces.kind, 'personal'), eq(spaces.loginId, loginId), inArray(nodes.id, wanted)),
+    );
+  for (const r of own) out.set(r.id.toLowerCase(), r.title);
+  const accepted = await db
+    .select({
+      id: nodes.id,
+      title: sql<string>`coalesce(${acceptedSnapshots.title}, ${nodes.title})`,
+    })
+    .from(spaceItems)
+    .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
+    .leftJoin(acceptedSnapshots, eq(acceptedSnapshots.nodeId, nodes.id))
+    .where(and(inArray(spaceItems.nodeId, wanted), authoredWhere(anchorId, loginId)));
+  for (const r of accepted) out.set(r.id.toLowerCase(), r.title);
+  return out;
+}
+
+/** A page doc as its author reads it: see authorReadable. */
+async function redactedDoc(
+  anchorId: string,
+  loginId: string,
+  reader: AcceptedReader,
+  doc: unknown,
+): Promise<unknown> {
+  const ownUrl = clientOwnUrl(clientRedactOrigins());
+  const titles = await authorReadable(anchorId, loginId, reader, docRefIds(doc, { ownUrl }));
+  const opts: ClientRedactOptions = { ownUrl, titles };
+  return redactClientDoc(doc, new Set(titles.keys()), opts);
+}
+
+/** A note's text as its author reads it: see authorReadable. */
+async function redactedNote(
+  anchorId: string,
+  loginId: string,
+  reader: AcceptedReader,
+  content: string,
+): Promise<string> {
+  const ownUrl = clientOwnUrl(clientRedactOrigins());
+  const titles = await authorReadable(anchorId, loginId, reader, noteRefIds(content, { ownUrl }));
+  const opts: ClientRedactOptions = { ownUrl, titles };
+  return redactClientNote(content, new Set(titles.keys()), opts);
+}
+
 /** One accepted item as ACCEPTED (its snapshot, never the brain's current
- *  version), for its author only. `tabId` picks a table's tab. A drawing's
- *  picture is its accepted SVG (acceptedDrawSvg); a file's bytes come from
- *  the member files route while they are unchanged, and `changedByAdmin`
- *  says when they are not. */
+ *  version), for its author only. `tabId` picks a table's tab. A page's doc
+ *  and a note's text are redacted at `reader`, the author's level (team by
+ *  default, a member; audit L1). A drawing's picture is its accepted SVG
+ *  (acceptedDrawSvg); a file's bytes come from the member files route while
+ *  they are unchanged, and `changedByAdmin` says when they are not. */
 export async function getAcceptedItem(
   anchorId: string,
   loginId: string,
   id: string,
-  opts: { tabId?: string } = {},
+  opts: { tabId?: string; reader?: AcceptedReader } = {},
 ): Promise<AcceptedItem | null> {
   const found = await authoredSnapshot(anchorId, loginId, id);
   if (!found) return null;
   const { row: base, snap } = found;
+  const reader = opts.reader ?? 'team';
   switch (base.type) {
     case 'page':
-      return { ...base, type: 'page', doc: snap.doc };
+      return {
+        ...base,
+        type: 'page',
+        doc: await redactedDoc(anchorId, loginId, reader, snap.doc),
+      };
     case 'note':
-      return { ...base, type: 'note', content: snap.content ?? '' };
+      return {
+        ...base,
+        type: 'note',
+        content: await redactedNote(anchorId, loginId, reader, snap.content ?? ''),
+      };
     case 'table': {
       const [node] = await db
         .select()
@@ -268,14 +390,16 @@ export async function getAcceptedItem(
  * One accepted item for its CLIENT author (client logins C5): the version
  * accepted, as getAcceptedItem reads it, of a kind a client writes (page,
  * note, file), without its level: a client never learns where an admin put
- * it. Null for anything else, the same answer as an id that does not exist.
+ * it. Its doc or text is redacted at the CLIENT level (audit L1: an admin
+ * who took it over may have named team or admin items in it). Null for
+ * anything else, the same answer as an id that does not exist.
  */
 export async function getClientAcceptedItem(
   anchorId: string,
   loginId: string,
   id: string,
 ): Promise<ClientAcceptedItem | null> {
-  const item = await getAcceptedItem(anchorId, loginId, id);
+  const item = await getAcceptedItem(anchorId, loginId, id, { reader: 'client' });
   if (!item) return null;
   const base = {
     id: item.id,
@@ -355,6 +479,21 @@ export async function acceptedFileReadable(
   return acceptedFileUnchanged(anchorId, id, found.snap);
 }
 
+/** acceptedFileReadable, with the name and type the file was ACCEPTED with
+ *  (audit L7): its bytes are served under the snapshot's name, never the
+ *  brain file's current one (an admin's rename, or the name Accept made
+ *  unique in its folder). Null when acceptedFileReadable is false. */
+export async function acceptedFileMeta(
+  anchorId: string,
+  loginId: string,
+  id: string,
+): Promise<{ filename: string; mimeType: string | null } | null> {
+  const found = await authoredSnapshot(anchorId, loginId, id);
+  if (found?.row.type !== 'file') return null;
+  if (!(await acceptedFileUnchanged(anchorId, id, found.snap))) return null;
+  return { filename: found.snap.fileName ?? found.row.title, mimeType: found.snap.fileMime };
+}
+
 export type AcceptedAuthor = MemberItemAuthor;
 
 /** Which of these brain items THIS login wrote and an admin accepted (the
@@ -402,6 +541,7 @@ export async function acceptedAuthors(
       loginId: spaceItems.authorLoginId,
       name: authUsers.displayName,
       role: authUsers.role,
+      authorRole: spaceItems.authorRole,
     })
     .from(spaceItems)
     .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
@@ -416,11 +556,14 @@ export async function acceptedAuthors(
   for (const r of rows) {
     // A deleted login keeps the badge without a name; never an email here.
     // The author's role is named: a client author is a client, never "A
-    // member" (client logins audit B26).
-    const role = !r.loginId ? null : r.role === 'client' ? 'client' : 'member';
+    // member" (client logins audit B26), also once the login is deleted:
+    // the role stamped on the row then (audit I6).
+    const role = (r.role ?? r.authorRole) === 'client' ? 'client' : r.loginId ? 'member' : null;
     const name = r.loginId
       ? r.name?.trim() || (role === 'client' ? 'A client' : 'A member')
-      : 'Removed member';
+      : role === 'client'
+        ? 'Removed client'
+        : 'Removed member';
     out.set(r.id, { name, acceptedAt: r.acceptedAt?.toISOString() ?? null, role });
   }
   return out;

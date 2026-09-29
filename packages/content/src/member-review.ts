@@ -275,6 +275,10 @@ type Joined = Awaited<ReturnType<typeof reviewQuery>>[number];
 function rowOf({ node, item, author }: Joined): ReviewItemRow {
   const d = (node.data ?? {}) as Record<string, unknown>;
   const inactive = !author?.id || author.disabledAt !== null;
+  // The login's role, or the role stamped on the row when the login is
+  // deleted (audit I6): a deleted client's item is still a client's, with
+  // the Client badge and Accept's client rules (acceptAudience).
+  const role = author?.role ?? item.authorRole;
   return {
     id: node.id,
     type: node.type as SpaceItemKind,
@@ -293,7 +297,7 @@ function rowOf({ node, item, author }: Joined): ReviewItemRow {
       name: author?.displayName?.trim() || author?.email?.split('@')[0] || 'Removed login',
       email: author?.email ?? null,
       inactive,
-      role: author?.role === 'member' || author?.role === 'client' ? author.role : null,
+      role: role === 'member' || role === 'client' ? role : null,
     },
   };
 }
@@ -799,6 +803,7 @@ export async function acceptReviewItem(
           takenBy: null,
           takenAt: null,
           takenRoot: null,
+          takenTitle: null,
         })
         .where(inArray(spaceItems.nodeId, ids));
       await detachFromGroups(tx, ids);
@@ -840,6 +845,7 @@ export async function acceptOwnItem(
           title: nodes.title,
           state: spaceItems.reviewState,
           author: spaceItems.authorLoginId,
+          authorRole: spaceItems.authorRole,
         })
         .from(nodes)
         .innerJoin(spaces, eq(spaces.id, nodes.ownerId))
@@ -873,14 +879,17 @@ export async function acceptOwnItem(
       // accepted by its author's rule (audit A6): a client's goes to team by
       // default and needs the confirmation at client or public. The admin's
       // own item has no author record: admin by default, no confirmation.
+      // A deleted author's role is the one stamped on the row (audit I6).
       let authorRole: string | null = null;
-      if (locked.state === 'taken' && locked.author) {
-        const [a] = await tx
-          .select({ role: authUsers.role })
-          .from(authUsers)
-          .where(eq(authUsers.id, locked.author))
-          .limit(1);
-        authorRole = a?.role ?? null;
+      if (locked.state === 'taken') {
+        const [a] = locked.author
+          ? await tx
+              .select({ role: authUsers.role })
+              .from(authUsers)
+              .where(eq(authUsers.id, locked.author))
+              .limit(1)
+          : [];
+        authorRole = a?.role ?? locked.authorRole ?? null;
       }
       const root: BundleItem = { id, type: locked.type as SpaceItemKind, title: locked.title };
       return {
@@ -931,6 +940,7 @@ export async function acceptOwnItem(
           takenBy: null,
           takenAt: null,
           takenRoot: null,
+          takenTitle: null,
         })
         .where(and(inArray(spaceItems.nodeId, ids), eq(spaceItems.reviewState, 'taken')));
       await tx
@@ -1010,7 +1020,7 @@ export async function takeOverReviewItem(
 
     const bundle = await reviewBundle(tx, found.spaceId, found.row);
     const still = await tx
-      .select({ id: nodes.id, state: spaceItems.reviewState })
+      .select({ id: nodes.id, state: spaceItems.reviewState, title: nodes.title })
       .from(nodes)
       .leftJoin(spaceItems, eq(spaceItems.nodeId, nodes.id))
       .where(
@@ -1071,6 +1081,21 @@ export async function takeOverReviewItem(
         updatedAt: now,
       })
       .where(eq(spaceItems.nodeId, id));
+    // The title each had when it was taken (audit L6): what the author's
+    // list shows while the admin holds it, whatever the admin renames it
+    // to. A taken item taken again (its admin is gone) keeps the first one.
+    const titleOf = new Map(still.map((r) => [r.id, r.title]));
+    for (const nodeId of ids) {
+      await tx
+        .update(spaceItems)
+        .set({
+          takenTitle:
+            stateOf.get(nodeId) === 'taken'
+              ? sql`coalesce(${spaceItems.takenTitle}, ${titleOf.get(nodeId) ?? ''})`
+              : (titleOf.get(nodeId) ?? null),
+        })
+        .where(eq(spaceItems.nodeId, nodeId));
+    }
     await clearBundles(tx, [id]);
 
     // The author's lists follow (their own space), and so do the teammates
@@ -1224,6 +1249,10 @@ async function moveIntoBrain(
       // 4. Re-own, kind by kind. Pages first in bundle order: a child's new
       //    path extends its parent's, which is set by then.
       const newPagePath = new Map<string, string>();
+      // A file's name as filed, before the brain folder made it unique (a
+      // `-2` says another file of that name is there): the name its
+      // snapshot keeps (audit L7).
+      const authorNames = new Map<string, string>();
       const now = new Date();
       for (const b of items) {
         const [n] = await tx.select().from(nodes).where(eq(nodes.id, b.id)).limit(1);
@@ -1293,6 +1322,7 @@ async function moveIntoBrain(
             const display =
               typeof data.filename === 'string' && data.filename ? data.filename : n.title;
             const wanted = sanitizeFilename(display) || `file-${b.id.slice(0, 8)}`;
+            authorNames.set(b.id, wanted);
             const name = await freeFileName(tx, brainId, folder, wanted);
             const dest = diskPathForFile(folder, name);
             if (!dest) throw new ReviewError('invalid', `Cannot file '${display}' in that folder.`);
@@ -1347,7 +1377,7 @@ async function moveIntoBrain(
       //    version accepted, which is all the author reads from now on.
       await steps.settle(tx, ids, now);
       await clearBundles(tx, ids);
-      await writeAcceptedSnapshots(tx, brainId, ids, { onRollback });
+      await writeAcceptedSnapshots(tx, brainId, ids, { onRollback, fileNames: authorNames });
 
       // 6. The change events commit with the move: to the space it left,
       //    and to its author's own space when that is another one (an item

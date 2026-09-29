@@ -120,6 +120,7 @@ export { IMAGE_TOOLS } from './builtins-images';
 export { TEAM_TOOLS } from './builtins-team';
 export { MY_SPACE_TOOLS } from './builtins-my-space';
 export { CLIENT_TOOLS } from './builtins-client';
+export { CLIENT_TURN_TOOL_SLUGS } from './client-turn-tools';
 export { RESEARCH_TOOLS, resolveOpenRouterKey } from './builtins-research';
 export { CURATION_TOOLS } from './builtins-curation';
 export { CRAWL_TOOLS } from './builtins-crawl';

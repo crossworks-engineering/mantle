@@ -274,6 +274,7 @@ export {
   acceptedByLogin,
   acceptedDrawSnapshot,
   acceptedDrawSvg,
+  acceptedFileMeta,
   acceptedFileReadable,
   acceptedRow,
   getAcceptedItem,
@@ -282,6 +283,7 @@ export {
   listAccepted,
   type AcceptedAuthor,
   type AcceptedItem,
+  type AcceptedReader,
   type AcceptedRow,
 } from './member-accepted';
 export {

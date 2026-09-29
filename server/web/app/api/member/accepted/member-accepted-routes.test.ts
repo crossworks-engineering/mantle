@@ -242,11 +242,12 @@ describe('GET /api/member/accepted[/:id]', () => {
     const { GET } = await import('./[id]/route');
     const res = await GET(new Request(`http://x/api/member/accepted/${FILE}`), ctx(FILE));
     expect(res.status).toBe(404);
-    expect(h.acceptedCalls[0]).toEqual([ANCHOR, LOGIN, FILE, {}]);
+    // Redacted at the team level, a member's (client logins C5 audit, L1).
+    expect(h.acceptedCalls[0]).toEqual([ANCHOR, LOGIN, FILE, { reader: 'team' }]);
     h.accepted = { id: FILE, type: 'note', content: 'x' };
     const ok = await GET(new Request(`http://x/api/member/accepted/${FILE}?tab=t1`), ctx(FILE));
     expect(await ok.json()).toEqual({ item: h.accepted });
-    expect(h.acceptedCalls[1]).toEqual([ANCHOR, LOGIN, FILE, { tabId: 't1' }]);
+    expect(h.acceptedCalls[1]).toEqual([ANCHOR, LOGIN, FILE, { tabId: 't1', reader: 'team' }]);
     const bad = await GET(new Request('http://x/api/member/accepted/nope'), ctx('nope'));
     expect(bad.status).toBe(400);
   });
