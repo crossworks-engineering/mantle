@@ -168,7 +168,7 @@ describe.skipIf(!URL)('a team turn under the team viewer role', () => {
               ${JSON.stringify({ digest_limit: 0 })}::jsonb, 'team')
       returning id`;
     agentId = a!.id;
-  });
+  }, 60_000);
 
   afterAll(async () => {
     if (!admin) return;
