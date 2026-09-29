@@ -42,6 +42,7 @@ import {
   type Haystack,
 } from './datasets';
 import type { BenchModels, HaystackResult } from './haystack';
+import type { AnswerStyle } from './prompts';
 import { summarize, renderReport, estimateRun } from './report';
 
 const SELF = fileURLToPath(import.meta.url);
@@ -73,6 +74,8 @@ type Args = {
   keepDb: boolean;
   dryRun: boolean;
   ingestOnly: boolean;
+  memoryConfig: Record<string, unknown>;
+  answerStyle: AnswerStyle;
 };
 
 function parseArgs(argv: string[]): Args {
@@ -111,7 +114,25 @@ function parseArgs(argv: string[]): Args {
     keepDb: flags.has('keep-db'),
     dryRun: flags.has('dry-run'),
     ingestOnly: flags.has('ingest-only'),
+    memoryConfig: parseMemoryConfig(kv.get('memory-config')),
+    answerStyle: parseAnswerStyle(kv.get('answer-prompt')),
   };
+}
+
+/** `--memory-config='{"chunk_limit":20}'`: the responder's retrieval limits,
+ *  as a real brain's agent carries them (AgentMemoryConfig). */
+function parseMemoryConfig(raw: string | undefined): Record<string, unknown> {
+  if (!raw) return {};
+  const parsed: unknown = JSON.parse(raw);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+    throw new Error('--memory-config must be a JSON object');
+  return parsed as Record<string, unknown>;
+}
+
+function parseAnswerStyle(raw: string | undefined): AnswerStyle {
+  if (raw === undefined || raw === 'infer') return 'infer';
+  if (raw === 'strict') return 'strict';
+  throw new Error('--answer-prompt must be infer or strict');
 }
 
 async function loadData(args: Args): Promise<Haystack[]> {
@@ -176,6 +197,9 @@ async function parent(args: Args): Promise<void> {
   );
   console.log(`[bench] estimate: ${estimate.text}`);
   console.log(`[bench] models: ${JSON.stringify(args.models)}  cap: $${args.maxUsd}`);
+  console.log(
+    `[bench] memory_config: ${JSON.stringify(args.memoryConfig)}  answer prompt: ${args.answerStyle}`,
+  );
   if (args.dryRun) return;
 
   const adminUrl = envDynamic('BENCH_PG_ADMIN_URL');
@@ -249,6 +273,8 @@ async function parent(args: Args): Promise<void> {
           BENCH_MAX_USD: String(Math.max(0, args.maxUsd - spent)),
           BENCH_EXTRACT_CONCURRENCY: String(args.extractConcurrency),
           BENCH_INGEST_ONLY: args.ingestOnly ? '1' : '',
+          BENCH_MEMORY_CONFIG: JSON.stringify(args.memoryConfig),
+          BENCH_ANSWER_STYLE: args.answerStyle,
         });
         if (!args.keepDb)
           await adminExec(adminUrl, `drop database if exists "${dbName}" with (force)`);
@@ -284,6 +310,8 @@ async function parent(args: Args): Promise<void> {
   const summary = summarize(args.dataset, args.models, results, {
     requested: haystacks.length,
     stoppedForBudget,
+    memoryConfig: args.memoryConfig,
+    answerStyle: args.answerStyle,
   });
   writeFileSync(join(args.out, 'summary.json'), JSON.stringify(summary, null, 2));
   writeFileSync(join(args.out, 'report.md'), renderReport(summary));
@@ -315,6 +343,11 @@ async function child(file: string): Promise<void> {
       maxUsd: Number(envDynamic('BENCH_MAX_USD') ?? 0),
       extractConcurrency: Number(envDynamic('BENCH_EXTRACT_CONCURRENCY') ?? 4),
       ingestOnly: envDynamic('BENCH_INGEST_ONLY') === '1',
+      memoryConfig: JSON.parse(envDynamic('BENCH_MEMORY_CONFIG') ?? '{}') as Record<
+        string,
+        unknown
+      >,
+      answerStyle: (envDynamic('BENCH_ANSWER_STYLE') ?? 'infer') as AnswerStyle,
     });
     writeFileSync(resultFileFor(file), JSON.stringify(result));
   } finally {

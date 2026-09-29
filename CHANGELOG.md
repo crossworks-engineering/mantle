@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
-## 0.232.341: client drafts, requests and comments (client logins C5)
+## 0.232.342: client drafts, requests and comments (client logins C5)
 
 - **Clients write their own pages and notes and upload files** in their own
   space, submit them for review and recall them (`/api/client/space*`), with
@@ -20,6 +20,16 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - **An item accepted from a client counts as client-written** for the
   lowering guard, even after the client login is deleted.
 - Migration 0194. See docs/client-logins.md section 9.
+## 0.232.341: memory benchmark experiments
+
+- **Benchmark runs can change retrieval limits.** `bench:memory
+  --memory-config='{"chunk_limit":20}'` runs with the retrieval limits a
+  real brain's agent carries, so a setting that scores better can be applied
+  to a brain as it is.
+- **The benchmark's answer prompt may infer.** The default answer prompt now
+  reasons from what the memory says ("would she...?") and answers "not in the
+  memory" only when nothing in it bears on the question; the strict prompt of
+  the first runs stays available as `--answer-prompt=strict`.
 
 ## 0.232.340: memory benchmark fixes
 

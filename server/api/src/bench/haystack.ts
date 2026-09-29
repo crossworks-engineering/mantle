@@ -26,6 +26,7 @@ import { loadConversationContext, resolveRouteAdapter } from '@mantle/runtime/ag
 import { extractNode } from '../agent/extractor';
 import { renderContext } from './context';
 import type { BenchQuestion, DatasetName, Haystack } from './datasets';
+import type { AnswerStyle } from './prompts';
 import {
   answerPrompt,
   evidenceFound,
@@ -85,6 +86,7 @@ export type HaystackResult = {
 async function seedBrain(
   models: BenchModels,
   apiKey: string,
+  memoryConfig: Record<string, unknown>,
 ): Promise<{ ownerId: string; agent: Agent }> {
   const ownerId = randomUUID();
   await db.execute(sql`
@@ -119,8 +121,10 @@ async function seedBrain(
       provider: 'openrouter',
       model: models.answer,
       systemPrompt: '',
-      // Empty = the code defaults, which match what onboarding seeds.
-      memoryConfig: {},
+      // Empty = the code defaults, which match what onboarding seeds. A run can
+      // set the retrieval limits a real brain's agent carries (chunk_limit,
+      // content_hit_limit, fact_limit, ...).
+      memoryConfig,
     })
     .returning();
   if (!agent) throw new Error('bench: agent insert returned no row');
@@ -216,6 +220,7 @@ async function askOne(
   agent: Agent,
   models: BenchModels,
   q: BenchQuestion,
+  style: AnswerStyle,
 ): Promise<QuestionResult> {
   const base = {
     query_id: q.id,
@@ -229,7 +234,7 @@ async function askOne(
   // Evidence is checked on the retrieved blocks only, never the corpus map.
   const retrieved = renderContext(ctx, models.answer, { withCorpusMap: false });
   const retrieveMs = Math.round(performance.now() - t0);
-  const prompt = answerPrompt(q, context);
+  const prompt = answerPrompt(q, context, style);
   const answered = await callModel(ownerId, models.answer, prompt.system, prompt.user, 8000);
   const answer = extractFinalAnswer(answered.text);
   // The judge grades the final answer, as the published harnesses do.
@@ -266,9 +271,12 @@ export async function runHaystack(opts: {
   extractConcurrency: number;
   /** Ingest and extract, ask nothing: a cheap run for extraction checks. */
   ingestOnly?: boolean;
+  /** The responder agent's memory_config (retrieval limits). Default {}. */
+  memoryConfig?: Record<string, unknown>;
+  answerStyle?: AnswerStyle;
 }): Promise<HaystackResult> {
   const { dataset, haystack, models } = opts;
-  const { ownerId, agent } = await seedBrain(models, opts.apiKey);
+  const { ownerId, agent } = await seedBrain(models, opts.apiKey, opts.memoryConfig ?? {});
   const t0 = performance.now();
   const loop = monitorEventLoopDelay({ resolution: 20 });
   loop.enable();
@@ -292,7 +300,7 @@ export async function runHaystack(opts: {
       break;
     }
     try {
-      const r = await askOne(dataset, ownerId, agent, models, q);
+      const r = await askOne(dataset, ownerId, agent, models, q, opts.answerStyle ?? 'infer');
       spent += r.answer_usd + r.judge_usd;
       questions.push(r);
     } catch (err) {

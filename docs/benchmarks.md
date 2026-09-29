@@ -63,6 +63,8 @@ pnpm bench:memory --dataset=locomo --download --haystacks=1 --questions=20 --max
 | `--concurrency=N` `--extract-concurrency=N` | Haystacks in parallel (2); notes extracted in parallel (4). |
 | `--out=DIR` / `--resume=DIR`        | Where results go; resume skips haystacks already written there.     |
 | `--keep-db`                         | Keep the scratch databases for inspection.                          |
+| `--memory-config='{"chunk_limit":20}'` | The responder's retrieval limits (`chunk_limit`, `content_hit_limit`, `fact_limit`, ...); default: the code's. |
+| `--answer-prompt=infer\|strict`    | `infer` (default) lets the model reason from what the memory says; `strict` (runs A, A2) makes it say so when the answer is not stated. |
 
 Output: `results.jsonl` (one line per question: the exact memory context the
 answer model got, its full response, the judge's text), `summary.json` and

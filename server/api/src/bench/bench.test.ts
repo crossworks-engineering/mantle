@@ -175,6 +175,25 @@ describe('prompts', () => {
     expect(p.user).toBe('When?');
   });
 
+  it('lets the default prompt infer, and keeps the strict one for old runs', () => {
+    const q = {
+      id: 'q',
+      question: 'Would she?',
+      answer: '',
+      category: 'open-domain',
+      askedAt: null,
+      abstention: false,
+      evidence: [],
+    };
+    const infer = answerPrompt(q, 'CTX').system;
+    const strict = answerPrompt(q, 'CTX', 'strict').system;
+    expect(infer).toContain('reason from what it does say');
+    expect(infer).toContain('only when nothing in it bears');
+    expect(infer).not.toContain('instead of guessing');
+    expect(strict).toContain('say so plainly instead of guessing');
+    expect(answerPrompt(q, 'CTX', 'infer').system).toBe(infer);
+  });
+
   it('takes the final answer line, or the whole text when there is none', () => {
     expect(extractFinalAnswer('1. a\n2. b\nAnswer: two')).toBe('two');
     expect(extractFinalAnswer('**Answer:** Rome')).toBe('Rome');
@@ -270,7 +289,12 @@ describe('report', () => {
   };
 
   it('counts errors and unreadable verdicts as wrong', () => {
-    const s = summarize('locomo', MODELS, [result], { requested: 1, stoppedForBudget: false });
+    const s = summarize('locomo', MODELS, [result], {
+      requested: 1,
+      stoppedForBudget: false,
+      memoryConfig: { chunk_limit: 20 },
+      answerStyle: 'infer',
+    });
     expect(s.total_queries).toBe(4);
     expect(s.correct).toBe(1);
     expect(s.accuracy).toBe(0.25);
@@ -288,6 +312,8 @@ describe('report', () => {
     });
     expect(renderReport(s)).toContain('**Accuracy: 25.0%**');
     expect(renderReport(s)).toContain('1 retrieval misses');
+    expect(renderReport(s)).toContain('memory_config {"chunk_limit":20}');
+    expect(s.answer_style).toBe('infer');
   });
 
   it('estimates a run from its sessions and questions', () => {
