@@ -73,7 +73,7 @@ export function touchesClientCodeMail(message: {
 /** A sign-in code in a link (`/client-signin?code=…`, `/client-signin#code=…`,
  *  `/invite?code=…`, also after other parameters): the code is replaced. */
 const SIGNIN_CODE_IN_LINK =
-  /((?:client-signin|invite)(?:\?|#)(?:[^\s"'<>#]*?[&;])?code=)[^\s"'<>&#;]+/gi;
+  /((?:client-signin|invite)(?:\?|#)(?:[^\s"'<>#]*?[&;])?code=)[A-Za-z0-9_%-]+/gi;
 
 /** Ingested mail text with sign-in link codes blanked (client logins audit
  *  K6): a link an admin mailed from a synced mailbox must not bring a live
