@@ -35,7 +35,9 @@ export type ClientSharedRow = {
   type: MemberItemKind;
   title: string;
   icon: string | null;
-  summary: string | null;
+  /** Never sent since 0.232.329 (it was built from the unredacted text); do
+   *  not show it. Optional only so older clients still compile. */
+  summary?: string | null;
   updatedAt: string;
 };
 
@@ -54,7 +56,7 @@ export type ClientSharedPage = {
 export type ClientSharedItem =
   | (ClientSharedRow & { type: 'page'; doc: unknown })
   | (ClientSharedRow & { type: 'note'; content: string })
-  | (ClientSharedRow & { type: 'table'; table: unknown })
+  | (ClientSharedRow & { type: 'table'; table: ClientSharedTable })
   | (ClientSharedRow & { type: 'draw' })
   | (ClientSharedRow & {
       type: 'file';
@@ -62,6 +64,39 @@ export type ClientSharedItem =
       mimeType: string | null;
       sizeBytes: number | null;
     });
+
+/** One column of a client table: what the grid draws a header and a cell
+ *  with. No formula, no reference source, no options. */
+export type ClientSharedTableColumn = { id: string; name: string; type: string };
+
+/** One committed row of a client table. A cell that names an item the
+ *  client may not read (`/n/<id>`, `page:`, `media:`, `draw:`, `mention:`)
+ *  arrives as "Private item". */
+export type ClientSharedTableRow = {
+  id: string;
+  cells: Record<string, string | number | boolean | string[] | null>;
+};
+
+/** A client table (GET /api/client/shared/:id, type table): the committed
+ *  grid of one tab and nothing else about the table (no description, tags,
+ *  summary, visibility, level, app link or draft). The shape the member
+ *  reader draws (`data`, `docClipped`, `tabs`, `tabId`), so one viewer reads
+ *  both. `data` is a leading window when `docClipped`; `rowCount` is the
+ *  tab's true total. */
+export type ClientSharedTable = {
+  data: {
+    columns: ClientSharedTableColumn[];
+    rows: ClientSharedTableRow[];
+    /** Footer totals the owner set, by column id. */
+    aggregates?: Record<string, string>;
+  };
+  docClipped?: boolean;
+  /** The workbook's tabs in order (absent for a one-grid table). */
+  tabs?: { id: string; name: string; rows: number; columns: number }[];
+  /** Which tab `data` holds. */
+  tabId?: string | null;
+  rowCount?: number;
+};
 
 /** The label a client sees instead of a reference it may not read. */
 export const CLIENT_PRIVATE_LABEL = 'Private item';

@@ -101,10 +101,18 @@ describe.skipIf(!URL)('member Library at the team level', () => {
     expect(frag?.type).toBe('file');
   });
 
-  it('reads a client item by id at the team level, and no longer a public one (decision 6)', async () => {
+  it('reads a client item by id at the team level, and a public one too (audit B10)', async () => {
     const note = await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.clientNote));
     expect(note).toMatchObject({ type: 'note', audience: 'client' });
-    expect(await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.publicNote))).toBeNull();
+    // Not listed (the test above), but opened by id: no Client badge.
+    const open = await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.publicNote));
+    expect(open).toMatchObject({ id: ids.publicNote, type: 'note', audience: 'team' });
+  });
+
+  it('a client does not open a public item by id', async () => {
+    expect(
+      await m.withViewer('client', () => lib.getLibraryItem(anchor, ids.publicNote)),
+    ).toBeNull();
   });
 
   it('reads a team page (published doc only) and 404s an admin one', async () => {

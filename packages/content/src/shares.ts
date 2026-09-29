@@ -11,6 +11,7 @@ import { db, nodes, shares, WORKSPACE_NODE_TYPES, type Share, type ViewerLevel }
 import type { ShareMode } from '@mantle/client-types';
 import { env } from '@mantle/config';
 import { EMBEDDING_KINDS, levelAbove, lowerEmbedClosure, type LoweredItem } from './embed-closure';
+import { refoldPageTexts } from './pages/level-text';
 
 export type { ShareMode };
 
@@ -198,6 +199,8 @@ async function syncLevelsFromShares(
       const { lowered } = await lowerEmbedClosure(ownerId, f.id, f.level, tx);
       alsoLowered?.push(...lowered);
     }
+    // The indexed text follows the levels (pages/level-text.ts, SQL only).
+    await refoldPageTexts(ownerId, [...byTarget.values()].flat(), tx);
   });
 }
 

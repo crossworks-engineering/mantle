@@ -16,6 +16,10 @@ const MEMBER = '44444444-4444-4444-8444-444444444444';
 const ADMIN = '55555555-5555-4555-8555-555555555555';
 const SPACE = '66666666-6666-4666-8666-666666666666';
 const ITEM = '77777777-7777-4777-8777-777777777777';
+/** Clients of their own, so their rate-limit budgets are their own. */
+const CLIENT2 = '88888888-8888-4888-8888-888888888888';
+const CLIENT3 = '99999999-9999-4999-8999-999999999999';
+const PICTURE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
 const h = vi.hoisted(() => ({
   reads: [] as Array<[string, string]>,
@@ -35,8 +39,8 @@ const row = (id: string, role: string, email: string) => ({
 
 vi.mock('@/lib/auth/login-row', () => ({
   loadLoginRow: async (id: string) =>
-    id === CLIENT
-      ? row(CLIENT, 'client', 'client@example.invalid')
+    id === CLIENT || id === CLIENT2 || id === CLIENT3
+      ? row(id, 'client', id === CLIENT ? 'client@example.invalid' : `${id}@example.invalid`)
       : id === MEMBER
         ? row(MEMBER, 'member', 'member@example.invalid')
         : id === ADMIN
@@ -64,15 +68,27 @@ vi.mock('@mantle/content', async (importOriginal) => {
   };
 });
 
+vi.mock('@mantle/files', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  // The thumbnail of whatever bytes the route loads (no image decoding here).
+  thumbnailFor: async (a: { loadBytes: () => Promise<Buffer | null> }) => {
+    const bytes = await a.loadBytes();
+    return bytes ? Buffer.from(`THUMB:${bytes.toString()}`) : null;
+  },
+}));
+
 vi.mock('@/lib/files', async () => {
   const { currentViewerLevel } = await import('@mantle/db');
   const { Readable } = await import('node:stream');
   return {
-    fileById: vi.fn(async () => {
+    fileById: vi.fn(async (scope: { fileId: string }) => {
       h.reads.push(['fileById', currentViewerLevel()]);
-      return null;
+      return scope.fileId === PICTURE ? { sha256: 'abc', mimeType: 'image/png' } : null;
     }),
-    readFileById: vi.fn(async () => null),
+    readFileById: vi.fn(async () => {
+      h.reads.push(['readFileById', currentViewerLevel()]);
+      return { bytes: Buffer.from('PNG') };
+    }),
     openFileById: vi.fn(async () => {
       h.reads.push(['openFileById', currentViewerLevel()]);
       return {
@@ -242,6 +258,32 @@ describe('client read routes: a client', () => {
     }
     h.reads.length = 0;
     const res = await call(CLIENT, url, byId(files, ITEM));
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBeTruthy();
+    expect(h.reads).toEqual([]);
+  });
+
+  it('a thumbnail reads the file and its bytes at the client level (audit B6)', async () => {
+    const files = await import('./files/[id]/route');
+    const res = await call(CLIENT2, `/api/client/files/${PICTURE}?thumb=1`, byId(files, PICTURE));
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/jpeg');
+    expect(await res.text()).toBe('THUMB:PNG');
+    expect(h.reads).toEqual([
+      ['fileById', 'client'],
+      ['readFileById', 'client'],
+    ]);
+  });
+
+  it('the drawing SVG route is rate limited per login before any read (audit B25)', async () => {
+    const svg = await import('./draws/[id]/svg/route');
+    const { CLIENT_BYTES_PER_MIN } = await import('@/lib/client-bytes');
+    const url = `/api/client/draws/${ITEM}/svg`;
+    for (let i = 0; i < CLIENT_BYTES_PER_MIN; i++) {
+      expect((await call(CLIENT3, url, byId(svg, ITEM))).status).toBe(200);
+    }
+    h.reads.length = 0;
+    const res = await call(CLIENT3, url, byId(svg, ITEM));
     expect(res.status).toBe(429);
     expect(res.headers.get('retry-after')).toBeTruthy();
     expect(h.reads).toEqual([]);

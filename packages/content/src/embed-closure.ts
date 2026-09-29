@@ -23,6 +23,8 @@
  *  - the owner's items only, so a personal space's items are never in a brain
  *    item's closure;
  *  - a level change starts no work: nothing here notifies the extractor.
+ *    The indexed text of the pages concerned is re-folded to the new levels
+ *    (pages/level-text.ts), SQL and TypeScript only.
  *
  * Every read and write runs through the caller's `q` (the pool or its
  * transaction): the walk that decides what to lower sees the rows the caller
@@ -41,6 +43,7 @@ import {
 } from '@mantle/db';
 import { markdownToDoc } from '@mantle/content-core/markdown';
 import { referencedDrawIds, referencedEmbedIds, referencedFileIds } from './doc-assets';
+import { refoldPageTexts } from './pages/level-text';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 /** The pool, or a caller's transaction. */
@@ -284,6 +287,9 @@ export async function lowerEmbeds(
     )
     .returning({ id: nodes.id });
   const changed = new Set(done.map((r) => r.id));
+  // What the client and public pages index follows the new levels (SQL
+  // only, no extraction: pages/level-text.ts).
+  await refoldPageTexts(ownerId, [...changed], q);
   return {
     lowered: wanted
       .filter((i) => changed.has(i.id))

@@ -54,13 +54,17 @@ export function foldEmbeddedText(
  * simply skipped — the next commit picks it up; we deliberately do NOT add a
  * reactive re-extract trigger (keeps cost bounded, per the no-runaway rule).
  */
-export async function embeddedAssetText(ownerId: string, doc: unknown): Promise<string> {
+export async function embeddedAssetText(
+  ownerId: string,
+  doc: unknown,
+  q: Pick<typeof db, 'select'> = db,
+): Promise<string> {
   const ids = referencedFileIds(doc);
   const drawIds = referencedDrawIds(doc);
   if (ids.length === 0 && drawIds.length === 0) return '';
 
   const rows = ids.length
-    ? await db
+    ? await q
         .select({ id: nodes.id, title: nodes.title, data: nodes.data })
         .from(nodes)
         .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, ids), eq(nodes.type, 'file')))
@@ -73,7 +77,7 @@ export async function embeddedAssetText(ownerId: string, doc: unknown): Promise<
   // never leak: scene_text is recomputed on commit only. Pure SQL, bounded by
   // the same fold budget — no extraction is triggered here.
   const drawRows = drawIds.length
-    ? await db
+    ? await q
         .select({ id: draws.nodeId, title: nodes.title, text: draws.sceneText })
         .from(draws)
         .innerJoin(nodes, eq(nodes.id, draws.nodeId))

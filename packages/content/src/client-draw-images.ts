@@ -9,11 +9,19 @@
  *
  * Read at the client level (the drawing's image refs and the files both
  * follow row security), with the level written in the query as well.
+ *
+ * Element links too (audit B25): exportToSvg wraps a linked element in
+ * `<a href>`, and a link to an item the client may not read (`/n/<id>`, a
+ * `page:` ref, an absolute URL into this brain) loses its href; the element
+ * stays and points nowhere. Links to readable items and external sites stay.
  */
 import { and, eq, inArray } from 'drizzle-orm';
 import { currentSpaceScope, currentViewerLevel, db, draws, nodes } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
-import { keepSvgImages, svgHasImages } from './scene-svg';
+import { clientLinkHidden, clientOwnUrl, linkRefIds } from './client-redact';
+import { clientRedactOrigins } from './client-origins';
+import { clientReadableIds } from './client-shared';
+import { dropSvgLinks, keepSvgImages, svgHasImages, svgLinkHrefs } from './scene-svg';
 
 /** The scene file ids (Excalidraw BinaryFile ids) of this drawing's images a
  *  client may see. Client scope only. */
@@ -65,6 +73,13 @@ export async function clientDrawSvg(
   drawId: string,
   svg: string,
 ): Promise<string> {
-  if (!svgHasImages(svg)) return svg;
-  return keepSvgImages(svg, await clientVisibleDrawFileIds(anchorId, drawId));
+  let out = svg;
+  const hrefs = svgLinkHrefs(out);
+  if (hrefs.length) {
+    const opts = { ownUrl: clientOwnUrl(clientRedactOrigins()) };
+    const readable = await clientReadableIds(anchorId, linkRefIds(hrefs, opts));
+    out = dropSvgLinks(out, (href) => !clientLinkHidden(href, readable, opts));
+  }
+  if (!svgHasImages(out)) return out;
+  return keepSvgImages(out, await clientVisibleDrawFileIds(anchorId, drawId));
 }

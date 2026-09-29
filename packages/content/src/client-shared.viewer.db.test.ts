@@ -68,17 +68,32 @@ describe.skipIf(!URL)('what a client reads', () => {
           { type: 'text', text: ' and ' },
           { type: 'mention', attrs: { id: b.publicNote, label: 'PUBLICTITLE', ref: 'node' } },
           { type: 'text', text: ' and ' },
-          { type: 'mention', attrs: { id: b.clientPage2, label: 'Shared two', ref: 'node' } },
+          { type: 'mention', attrs: { id: b.clientPage2, label: 'STALELABEL two', ref: 'node' } },
+          { type: 'text', text: ' and ' },
+          {
+            type: 'text',
+            text: 'UPPERTEAM link',
+            marks: [{ type: 'link', attrs: { href: `PAGE:${b.teamPage}` } }],
+          },
+          { type: 'text', text: ' and ' },
+          {
+            type: 'text',
+            text: 'ABSTEAM link',
+            marks: [
+              { type: 'link', attrs: { href: `https://brain.example.invalid/n/${b.teamPage}` } },
+            ],
+          },
         ],
       },
       { type: 'image', attrs: { nodeId: b.teamFile, alt: 'TEAMFILE alt' } },
       { type: 'childPage', attrs: { pageId: b.teamPage, title: 'TEAMTITLE child' } },
+      { type: 'childPage', attrs: { pageId: b.clientPage2, title: 'STALECHILD title' } },
       { type: 'image', attrs: { nodeId: b.clientFile, alt: 'client picture' } },
     ],
   };
   const sym = (id: string, bytes: string) =>
     `<symbol id="image-${id}"><image href="data:image/png;base64,${bytes}"></image></symbol>`;
-  const drawSvg = `<svg xmlns="http://www.w3.org/2000/svg"><defs>${sym('sClient', 'Q0xJRU5U')}${sym('sTeam', 'VEVBTQ==')}${sym('sAdmin', 'QURNSU4=')}</defs></svg>`;
+  const drawSvg = `<svg xmlns="http://www.w3.org/2000/svg"><defs>${sym('sClient', 'Q0xJRU5U')}${sym('sTeam', 'VEVBTQ==')}${sym('sAdmin', 'QURNSU4=')}</defs><a href="/n/${b.teamPage}"><path d="M1"/></a><a href="https://brain.example.invalid/n/${b.adminPage}"><path d="M2"/></a><a href="/n/${b.clientPage2}"><path d="M3"/></a><a href="https://example.invalid/"><path d="M4"/></a></svg>`;
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -138,11 +153,16 @@ describe.skipIf(!URL)('what a client reads', () => {
     const empty = JSON.stringify({ type: 'doc', content: [] });
     await m.systemDb.execute(sqlTag`
       insert into pages (node_id, doc, doc_text, draft_doc) values
-        (${b.clientPage}, ${JSON.stringify(clientDoc)}::jsonb, '', ${JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'DRAFT SECRET' }] }] })}::jsonb),
+        (${b.clientPage}, ${JSON.stringify(clientDoc)}::jsonb, 'Hello TEAMTITLE mention and TEAMTITLE child', ${JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'DRAFT SECRET' }] }] })}::jsonb),
         (${b.clientPage2}, ${empty}::jsonb, '', null),
         (${b.teamPage}, ${empty}::jsonb, '', null),
         (${b.adminPage}, ${empty}::jsonb, '', null),
         (${s.teamDraft}, ${empty}::jsonb, '', null)`);
+    // What the extractor did before the level-filtered text (audit B1): a
+    // summary written from the page's whole doc_text, team title and all.
+    await m.systemDb.execute(sqlTag`
+      update nodes set data = data || ${JSON.stringify({ summary: 'A page about TEAMTITLE mention and TEAMTITLE child' })}::jsonb
+       where id in (${b.clientPage}, ${b.clientNote}, ${b.clientFile})`);
     const refs = JSON.stringify({ sClient: b.clientFile, sTeam: b.teamFile, sAdmin: b.adminFile });
     await m.systemDb.execute(sqlTag`
       insert into draws (node_id, scene_svg, file_refs) values
@@ -179,12 +199,21 @@ describe.skipIf(!URL)('what a client reads', () => {
     expect(total).toBe(5);
   });
 
-  it('rows carry only the named fields: no author, no level, no staff id', async () => {
+  it('rows carry only the named fields: no author, no level, no staff id, no summary', async () => {
     const { items } = await client(() => cs.listClientShared(brain, { q: tag }));
     for (const i of items) {
-      expect(Object.keys(i).sort()).toEqual(
-        ['icon', 'id', 'summary', 'title', 'type', 'updatedAt'].sort(),
-      );
+      expect(Object.keys(i).sort()).toEqual(['icon', 'id', 'title', 'type', 'updatedAt'].sort());
+    }
+  });
+
+  it('a summary written from the unredacted text never reaches a client (audit B1)', async () => {
+    const list = await client(() => cs.listClientShared(brain, { q: tag }));
+    expect(JSON.stringify(list)).not.toContain('TEAMTITLE');
+    for (const id of [b.clientPage, b.clientNote, b.clientFile]) {
+      const item = await client(() => cs.getClientSharedItem(brain, id));
+      expect(item, id).not.toBeNull();
+      expect(JSON.stringify(item), id).not.toContain('TEAMTITLE');
+      expect(item && 'summary' in item, id).toBe(false);
     }
   });
 
@@ -211,13 +240,20 @@ describe.skipIf(!URL)('what a client reads', () => {
     ]) {
       expect(text, leak).not.toContain(leak);
     }
-    // Two chips and one link relabelled; the readable chip and image stay.
-    expect(text.split('Private item').length - 1).toBe(3);
-    expect(text).toContain('Shared two');
+    // Two chips and three links relabelled (one an upper-case PAGE: ref, one
+    // an absolute URL to a /n/ permalink); the readable chip and image stay.
+    expect(text.split('Private item').length - 1).toBe(5);
+    for (const leak of ['UPPERTEAM', 'ABSTEAM', 'brain.example.invalid']) {
+      expect(text, leak).not.toContain(leak);
+    }
     expect(text).toContain(b.clientPage2);
     expect(text).toContain(b.clientFile);
+    // A readable chip and child page card carry today's title, not the stored one.
+    expect(text).not.toContain('STALELABEL');
+    expect(text).not.toContain('STALECHILD');
+    expect(text.split(`${tag} client page two`).length - 1).toBe(2);
     expect(Object.keys(item!).sort()).toEqual(
-      ['doc', 'icon', 'id', 'summary', 'title', 'type', 'updatedAt'].sort(),
+      ['doc', 'icon', 'id', 'title', 'type', 'updatedAt'].sort(),
     );
   });
 
@@ -228,20 +264,65 @@ describe.skipIf(!URL)('what a client reads', () => {
     expect(content).toBe(`See Private item and [ok link](/n/${b.clientPage2}).\n\n`);
   });
 
-  it('a client table comes without the app it mirrors (its app link)', async () => {
+  it('a client table is its grid only: no app, description, tags, summary; private cell refs blanked (audit B13)', async () => {
     const write = await import('./tables/write');
-    const t = await write.createTable(brain, { title: `${tag} client table` });
+    const t = await write.createTable(brain, {
+      title: `${tag} client table`,
+      tags: ['TAGSECRET'],
+      // What an app export writes: the app's name.
+      description: 'Mirrors the APPNAME internal app',
+      data: {
+        columns: [
+          { id: 'c1', name: 'Name', type: 'text' },
+          { id: 'c2', name: 'Link', type: 'url' },
+        ],
+        rows: [
+          { id: 'r1', cells: { c1: 'plain value', c2: `/n/${b.teamPage}` } },
+          { id: 'r2', cells: { c1: `PAGE:${b.adminPage}`, c2: `/n/${b.clientPage2}` } },
+          { id: 'r3', cells: { c1: `https://brain.example.invalid/n/${b.teamFile}`, c2: null } },
+        ],
+      },
+    });
     const link = { appId: randomUUID(), appName: 'APPNAME internal', sqliteTable: 't' };
     await m.systemDb.execute(sqlTag`
       update nodes set audience = 'client',
-             data = data || ${JSON.stringify({ appLink: link })}::jsonb
+             data = data || ${JSON.stringify({ appLink: link, summary: 'SUMMARYSECRET', visibility: 'public' })}::jsonb
        where id = ${t.id}`);
     try {
       const item = await client(() => cs.getClientSharedItem(brain, t.id));
       expect(item?.type).toBe('table');
-      const table = item && item.type === 'table' ? (item.table as { appLink: unknown }) : null;
-      expect(table?.appLink).toBeNull();
-      expect(JSON.stringify(item)).not.toContain('APPNAME');
+      const table = item && item.type === 'table' ? item.table : null;
+      const allowed = ['data', 'docClipped', 'tabs', 'tabId', 'rowCount'];
+      expect(Object.keys(table ?? {}).filter((k) => !allowed.includes(k))).toEqual([]);
+      expect(
+        Object.keys(table?.data ?? {}).filter(
+          (k) => !['columns', 'rows', 'aggregates'].includes(k),
+        ),
+      ).toEqual([]);
+      const text = JSON.stringify(item);
+      for (const leak of [
+        'APPNAME',
+        'TAGSECRET',
+        'SUMMARYSECRET',
+        'visibility',
+        'audience',
+        'draft',
+        b.teamPage,
+        b.adminPage,
+        b.teamFile,
+      ]) {
+        expect(text, leak).not.toContain(leak);
+      }
+      expect(table?.data.columns).toEqual([
+        { id: 'c1', name: 'Name', type: 'text' },
+        { id: 'c2', name: 'Link', type: 'url' },
+      ]);
+      expect(table?.data.rows.map((r) => r.cells)).toEqual([
+        { c1: 'plain value', c2: 'Private item' },
+        { c1: 'Private item', c2: `/n/${b.clientPage2}` },
+        { c1: 'Private item' },
+      ]);
+      expect(table?.rowCount).toBe(3);
     } finally {
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${t.id}`);
     }
@@ -275,12 +356,19 @@ describe.skipIf(!URL)('what a client reads', () => {
     expect(svg).toContain('Q0xJRU5U');
     expect(svg).not.toContain('VEVBTQ==');
     expect(svg).not.toContain('QURNSU4=');
+    // Element links (audit B25): a link to an item the client may not read
+    // loses its href, the element stays; readable and external links stay.
+    expect(svg).not.toContain(b.teamPage);
+    expect(svg).not.toContain(b.adminPage);
+    expect(svg).toContain(`<a href="/n/${b.clientPage2}">`);
+    expect(svg).toContain('<a href="https://example.invalid/">');
+    expect(svg).toContain('<a><path d="M1"/></a>');
     expect(
       await client(async () => (await import('./draws')).getDrawSvg(brain, b.teamDraw)),
     ).toBeNull();
   });
 
-  it('the member Library lists team and client items with their level, never admin or public', async () => {
+  it('the member Library lists team and client items with their level, never admin or public; opens a public one by id', async () => {
     const { items } = await m.withViewer('team', () => lib.listLibrary(brain, { q: tag }));
     const byId = new Map(items.map((i) => [i.id, i.audience]));
     expect([...byId.keys()].sort()).toEqual(
@@ -299,7 +387,10 @@ describe.skipIf(!URL)('what a client reads', () => {
     expect(byId.get(b.clientNote)).toBe('client');
     const counts = await m.withViewer('team', () => lib.libraryCounts(brain));
     expect(counts.page).toBeGreaterThanOrEqual(3);
-    expect(await m.withViewer('team', () => lib.getLibraryItem(brain, b.publicNote))).toBeNull();
+    // A public item is not listed, but a member opens it by id (audit B10).
+    expect((await m.withViewer('team', () => lib.getLibraryItem(brain, b.publicNote)))?.id).toBe(
+      b.publicNote,
+    );
     expect(await m.withViewer('team', () => lib.getLibraryItem(brain, b.adminPage))).toBeNull();
     expect(
       (await m.withViewer('team', () => lib.getLibraryItem(brain, b.clientNote)))?.audience,
