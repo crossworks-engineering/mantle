@@ -59,7 +59,7 @@ export type MemberChatRow = {
    *  thread still shows). Always false for a client: a client is never a
    *  team member (client logins audit B26). */
   active: boolean;
-  /** The login's role, named (0.232.329 on): 'member' for the team; 'client'
+  /** The login's role, named (0.232.332 on): 'member' for the team; 'client'
    *  for a client login with a chat thread, which is NOT a team member; absent
    *  for a former member who is an admin now (its old thread still shows). */
   role?: 'member' | 'client';

@@ -34,7 +34,7 @@ export type AccessLinkView = {
 /** Who wrote a brain item, when a member wrote it and an admin accepted it
  *  (member logins Phase 4): the member-authored badge. `name` is the login's
  *  display name ("A member" without one, "A client" for a client without
- *  one, "Removed member" once deleted). `role` (0.232.329 on) names the
+ *  one, "Removed member" once deleted). `role` (0.232.332 on) names the
  *  author's role: show "Client", never "A member", for a client (client
  *  logins audit B26); null once the login is deleted. */
 export type MemberItemAuthor = {
