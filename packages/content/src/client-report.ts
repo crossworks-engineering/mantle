@@ -224,7 +224,7 @@ export async function clientReportAcknowledged(ownerId: string): Promise<boolean
        and not exists (
          select 1 from nodes n
           where n.owner_id = ${ownerId} and n.audience = 'client'
-            and not coalesce(n.id = any ((select item_ids from ack)), false)) as ok`)) as unknown as {
+            and not (n.id = any (coalesce((select item_ids from ack), '{}'::uuid[])))) as ok`)) as unknown as {
     ok: boolean;
   }[];
   return rows[0]?.ok === true;
