@@ -4,6 +4,21 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.321: client v0.6.171
+
+- Pairs the client at jackdaw v0.6.171, the client half of 0.232.320: the
+  client portal. A client opens the sign-in link, types their email and
+  lands on "Shared with you": the items at client level, newest first, by
+  kind, with read-only viewers and downloads. A reference the client may
+  not read shows as plain "Private item". The client chrome shows the brand
+  name only, with Sign out and Sign out everywhere; the portal polls, so an
+  ended session goes to sign-in on the next poll. Team admin > Clients adds
+  client logins, issues sign-in links (shown once, with copy), revokes
+  them, ends sessions, disables and deletes; Add client and Issue sign-in
+  link stay disabled until "What clients see" is acknowledged. Settings >
+  Logins shows the role Client. The member Library marks client items with
+  a Client badge.
+
 ## 0.232.320: client logins, phase C2 (client logins and the portal, read)
 
 Clients can now sign in. An admin adds a client login in Team admin >
