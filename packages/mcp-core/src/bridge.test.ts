@@ -158,6 +158,12 @@ describe('every in-app tool reaches the MCP surface', () => {
     // tools could only ever answer "nobody to act for".
     my_items_list: 'acts for the member of a team turn; MCP has none',
     my_item_open: 'acts for the member of a team turn; MCP has none',
+    // The client-responder's tools (client logins C4): they serve the client
+    // login of a client turn only. MCP is the owner, never a client.
+    client_shared_list: 'serves the client of a client turn; MCP has none',
+    client_shared_search: 'serves the client of a client turn; MCP has none',
+    client_shared_open: 'serves the client of a client turn; MCP has none',
+    client_request_create: 'files for the client of a client turn; MCP has none',
   };
 
   it('exposes every builtin slug over stdio, except the documented ones', () => {

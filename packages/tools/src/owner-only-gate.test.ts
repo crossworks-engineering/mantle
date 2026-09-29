@@ -212,6 +212,8 @@ const TEAM_KIND_ALLOWED: Record<string, string[]> = {
   'builtins-my-space.ts': [
     "const loginId = s?.kind === 'team' || s?.kind === 'client' ? s.loginId : undefined;",
   ],
+  // read_result binds a client's or member's turn to its own spills.
+  'builtins-tool-results.ts': ["if (kind !== 'client' && kind !== 'team') return undefined;"],
 };
 
 function sourceFiles(dir: string): string[] {
