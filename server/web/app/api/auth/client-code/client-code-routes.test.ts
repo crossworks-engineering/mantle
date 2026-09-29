@@ -69,12 +69,17 @@ beforeEach(() => {
   h.audits = [];
 });
 
-const request = async (body: unknown, ip = '203.0.113.1') => {
+const request = async (body: unknown, ip = '203.0.113.1', cookie?: string) => {
   const { POST } = await import('./route');
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    'x-forwarded-for': ip,
+  };
+  if (cookie) headers.cookie = cookie;
   return POST(
     new Request('https://brain.example.invalid/api/auth/client-code', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-forwarded-for': ip },
+      headers,
       body: typeof body === 'string' ? body : JSON.stringify(body),
     }),
   );
@@ -109,7 +114,7 @@ describe('GET /api/auth/client-code', () => {
 });
 
 describe('POST /api/auth/client-code', () => {
-  it('answers every body the same way, with a fresh request cookie each time', async () => {
+  it('answers every body the same way, with a new request cookie for a new browser', async () => {
     const bodies: unknown[] = [
       { email: 'client@example.invalid' },
       { email: 'stranger@example.invalid' },
@@ -140,6 +145,26 @@ describe('POST /api/auth/client-code', () => {
     const job = h.queued[0]!;
     expect(job).toMatchObject({ email: 'Client@Example.invalid', requestId: requestCookie(res) });
     expect(Object.keys(job).sort()).toEqual(['email', 'ip', 'requestId', 'requestedAt']);
+  });
+
+  it("keeps this browser's request id when it asks again (the mailed code stays good)", async () => {
+    const first = requestCookie(await request({ email: 'client@example.invalid' }))!;
+    const again = await request(
+      { email: 'client@example.invalid' },
+      '203.0.113.1',
+      `mantle_code_req=${first}`,
+    );
+    expect(again.status).toBe(200);
+    expect(requestCookie(again)).toBe(first);
+    expect(h.queued.map((j) => j.requestId)).toEqual([first, first]);
+    // A cookie that is not a request id is replaced, never trusted.
+    const odd = await request(
+      { email: 'client@example.invalid' },
+      '203.0.113.1',
+      'mantle_code_req=abc',
+    );
+    expect(requestCookie(odd)).toMatch(/^[0-9a-f-]{36}$/);
+    expect(requestCookie(odd)).not.toBe('abc');
   });
 
   it('answers 200 with a cookie even when the queue is down', async () => {

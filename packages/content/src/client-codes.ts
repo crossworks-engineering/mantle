@@ -137,19 +137,21 @@ export async function createClientEmailCode(
       eq(clientSigninCodes.kind, 'email'),
     );
     const fromHere = and(ofLogin, eq(clientSigninCodes.requestIp, ip));
-
-    // A retried job: this request already has its code.
-    if (await counted(and(ofLogin, eq(clientSigninCodes.requestId, req.requestId)))) {
-      return skip('duplicate');
-    }
-    const open = and(
-      fromHere,
+    const stillOpen = and(
       isNull(clientSigninCodes.usedAt),
       isNull(clientSigninCodes.revokedAt),
       gt(clientSigninCodes.expiresAt, now),
       sql`${clientSigninCodes.attempts} < ${CLIENT_CODE_MAX_ATTEMPTS}`,
     );
-    if (await counted(open)) return skip('code-open');
+
+    // This browser asked again (the same request id: "Send a new code", a
+    // double click, a retried job) while its code is still open: the code
+    // already mailed keeps working, and no second mail goes out. Once that
+    // code is used, dead or expired, the same browser gets a new one.
+    if (await counted(and(ofLogin, eq(clientSigninCodes.requestId, req.requestId), stillOpen))) {
+      return skip('duplicate');
+    }
+    if (await counted(and(fromHere, stillOpen))) return skip('code-open');
     if ((await counted(and(fromHere, since(DAY_MS)))) >= CLIENT_CODE_PER_EMAIL_IP_DAILY) {
       return skip('cap-email-ip');
     }
@@ -226,9 +228,10 @@ function sameHash(a: string, b: string): boolean {
 
 /**
  * Trade a code for a session, in ONE transaction: the open code of THIS
- * browser's request (locked), for an active client login whose email
- * matches. A wrong code or a wrong email costs a try; the fifth wrong try
- * kills the code. `null` for every failure.
+ * browser's request for the login with this email (locked), when that login
+ * is an active client. A wrong code costs a try; the fifth wrong try kills
+ * the code. A wrong email finds no code at all (the verify route limits
+ * failures per email plus address). `null` for every failure.
  */
 export async function redeemClientEmailCode(
   input: { requestId: string; email: string; code: string },
@@ -238,6 +241,8 @@ export async function redeemClientEmailCode(
   const code = input.code.replace(/\s+/g, '');
   if (!UUID_RE.test(input.requestId) || !email || !/^\d{8}$/.test(code)) return null;
   return db.transaction(async (tx) => {
+    // The open code of THIS request for THIS email's login: one browser may
+    // have asked for two emails (Use a different email), each with its code.
     const [row] = await tx
       .select()
       .from(clientSigninCodes)
@@ -245,6 +250,7 @@ export async function redeemClientEmailCode(
         and(
           eq(clientSigninCodes.requestId, input.requestId),
           eq(clientSigninCodes.kind, 'email'),
+          sql`${clientSigninCodes.loginId} in (select id from auth.users where lower(email) = ${email})`,
           isNull(clientSigninCodes.usedAt),
           isNull(clientSigninCodes.revokedAt),
           gt(clientSigninCodes.expiresAt, now),

@@ -19,10 +19,10 @@ import type { ClientCodeSignIn } from '@mantle/client-types';
 import { setClientSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import {
-  CLIENT_CODE_COOKIE,
   clearClientCodeCookie,
   clientCodeVerifyFailed,
   clientCodeVerifyLimited,
+  existingRequestId,
 } from '@/lib/client-logins';
 
 const Body = z.object({
@@ -32,22 +32,13 @@ const Body = z.object({
 
 const FAILED_MESSAGE = 'That code did not work. Ask for a new one.';
 
-function requestIdOf(req: Request): string | null {
-  const cookie = req.headers.get('cookie') ?? '';
-  for (const part of cookie.split(';')) {
-    const [k, ...v] = part.trim().split('=');
-    if (k === CLIENT_CODE_COOKIE) return decodeURIComponent(v.join('='));
-  }
-  return null;
-}
-
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => null));
   const email = parsed.success ? parsed.data.email.toLowerCase() : '';
   const limited = clientCodeVerifyLimited(req, email);
   if (limited) return limited;
 
-  const requestId = requestIdOf(req);
+  const requestId = existingRequestId(req);
   const redeemed =
     parsed.success && requestId
       ? await redeemClientEmailCode({ requestId, email, code: parsed.data.code })

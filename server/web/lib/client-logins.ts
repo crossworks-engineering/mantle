@@ -132,7 +132,20 @@ export function clientCodeVerifyFailed(req: Request, email: string): void {
   });
 }
 
-/** Set a fresh request cookie holding `requestId`. */
+const REQUEST_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The request id this browser's request cookie holds, when it holds one. */
+export function existingRequestId(req: Request): string | null {
+  for (const part of (req.headers.get('cookie') ?? '').split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k !== CLIENT_CODE_COOKIE) continue;
+    const id = decodeURIComponent(v.join('=')).trim();
+    return REQUEST_ID_RE.test(id) ? id.toLowerCase() : null;
+  }
+  return null;
+}
+
+/** Set the request cookie holding `requestId` (15 minutes from now). */
 export function setClientCodeCookie(res: NextResponse, req: Request, requestId: string): void {
   res.cookies.set(CLIENT_CODE_COOKIE, requestId, {
     httpOnly: true,

@@ -148,18 +148,26 @@ describe.skipIf(!URL)('client email sign-in codes', () => {
     expect(u!.last_login_at).not.toBeNull();
   });
 
-  it('a wrong email or code costs a try; the fifth wrong try kills the code', async () => {
+  it('a wrong code costs a try; the fifth wrong try kills the code', async () => {
     const d = await ask('cy');
     if (d.kind !== 'send') throw new Error('expected a code');
     const wrong = d.code === '00000000' ? '00000001' : '00000000';
     const t = at(MIN);
+    // A wrong email finds no code of this request at all: nothing counted.
     expect(
       await c.redeemClientEmailCode(
         { requestId: d.requestId, email: email('ada'), code: d.code },
         t,
       ),
     ).toBeNull();
-    for (let i = 0; i < 4; i += 1) {
+    const attempts = async () =>
+      (
+        await rows<{ attempts: number }>(
+          sqlTag`select attempts from client_signin_codes where id = ${d.codeId}`,
+        )
+      )[0]!.attempts;
+    expect(await attempts()).toBe(0);
+    for (let i = 0; i < 5; i += 1) {
       expect(
         await c.redeemClientEmailCode(
           { requestId: d.requestId, email: email('cy'), code: wrong },
@@ -167,10 +175,7 @@ describe.skipIf(!URL)('client email sign-in codes', () => {
         ),
       ).toBeNull();
     }
-    const [row] = await rows<{ attempts: number }>(
-      sqlTag`select attempts from client_signin_codes where id = ${d.codeId}`,
-    );
-    expect(row!.attempts).toBe(5);
+    expect(await attempts()).toBe(5);
     expect(
       await c.redeemClientEmailCode(
         { requestId: d.requestId, email: email('cy'), code: d.code },
@@ -200,12 +205,47 @@ describe.skipIf(!URL)('client email sign-in codes', () => {
     expect((await ask('ada', { ip: '198.51.100.1', t: t + 11 * MIN })).kind).toBe('send');
   });
 
-  it('a retried job for the same request makes no second code', async () => {
+  it('the same browser asking again keeps its open code; after it expires it gets a new one', async () => {
     const t = 4 * 60 * MIN;
     const first = await ask('bea', { ip: '198.51.100.3', t });
-    expect(first.kind).toBe('send');
-    const again = await ask('bea', { ip: '198.51.100.4', t, requestId: first.requestId });
+    if (first.kind !== 'send') throw new Error('expected a code');
+    // Asked again (Send a new code, a double click, a retried job), from
+    // another address too: no second code, and the mailed one still works.
+    const again = await ask('bea', { ip: '198.51.100.4', t: t + MIN, requestId: first.requestId });
     expect(again).toMatchObject({ kind: 'skip', reason: 'duplicate' });
+    const input = { requestId: first.requestId, email: email('bea'), code: first.code };
+    expect(await c.redeemClientEmailCode(input, at(t + 2 * MIN))).not.toBeNull();
+    // Used now: the same browser asks again and gets a new code.
+    const next = await ask('bea', {
+      ip: '198.51.100.3',
+      t: t + 3 * MIN,
+      requestId: first.requestId,
+    });
+    if (next.kind !== 'send') throw new Error('expected a new code');
+    expect(
+      await c.redeemClientEmailCode(
+        { requestId: first.requestId, email: email('bea'), code: next.code },
+        at(t + 4 * MIN),
+      ),
+    ).not.toBeNull();
+  });
+
+  it('one browser asking for two emails gets a code for each, each redeems its own', async () => {
+    const t = 8 * 60 * MIN;
+    const requestId = randomUUID();
+    const a = await ask('ada', { ip: '198.51.100.8', t, requestId });
+    const b = await ask('bea', { ip: '198.51.100.8', t, requestId });
+    if (a.kind !== 'send' || b.kind !== 'send') throw new Error('expected two codes');
+    // Each email with the other's code fails and costs its own code a try.
+    expect(
+      await c.redeemClientEmailCode({ requestId, email: email('ada'), code: b.code }, at(t)),
+    ).toBeNull();
+    expect(
+      await c.redeemClientEmailCode({ requestId, email: email('bea'), code: b.code }, at(t)),
+    ).toMatchObject({ loginId: login.bea });
+    expect(
+      await c.redeemClientEmailCode({ requestId, email: email('ada'), code: a.code }, at(t)),
+    ).toMatchObject({ loginId: login.ada });
   });
 
   it('caps codes per email and address (5 a day) and per email (10 an hour)', async () => {
