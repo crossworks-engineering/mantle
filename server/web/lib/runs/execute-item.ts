@@ -197,7 +197,7 @@ async function runResolved(
                 handle.addCost(mu);
               },
             },
-            // No ctx.agent (a queue item is headless — invoke_agent refuses).
+            // No ctx.agent (a queue item is headless: invoke_agent refuses).
             // The run is the owner's own work, so it names the owner surface
             // (client logins C4); it is no delivery channel, so send-to-user
             // tools still refuse cleanly.
