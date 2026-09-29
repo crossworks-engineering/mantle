@@ -164,4 +164,33 @@ describe.skipIf(!URL)('setting levels on Postgres', () => {
       audience: 'client',
     });
   });
+
+  it('client and public are siblings: a client agent holds no public group, a public agent no client group', async () => {
+    // State from the tests above: the agent is at team and holds the `-team`
+    // group, which now sits at client.
+    await m.db.execute(sqlTag`
+      insert into tool_groups (owner_id, slug, name, audience) values
+        (${owner}, ${`${tag}-public`}, 'public group', 'public')`);
+    await m.db.execute(
+      sqlTag`update agents set tool_group_slugs = ${`{${tag}-team,${tag}-public}`}::text[] where id = ${ids.agent}`,
+    );
+    // A team agent reads public, so it may hold both.
+    await expect(
+      a.agentGrantProblems(owner, 'team', [`${tag}-team`, `${tag}-public`]),
+    ).resolves.toEqual([]);
+    // A client agent does not read public items: the public group is refused.
+    await expect(a.setAgentAudience(owner, ids.agent, 'client')).rejects.toMatchObject({
+      code: 'group_above_agent',
+    });
+    await m.db.execute(
+      sqlTag`update agents set tool_group_slugs = ${`{${tag}-team}`}::text[] where id = ${ids.agent}`,
+    );
+    await expect(a.setAgentAudience(owner, ids.agent, 'client')).resolves.toMatchObject({
+      audience: 'client',
+    });
+    // Its client group cannot move to public under it either.
+    await expect(a.setToolGroupAudience(owner, `${tag}-team`, 'public')).rejects.toMatchObject({
+      code: 'group_above_agent',
+    });
+  });
 });

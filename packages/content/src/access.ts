@@ -28,6 +28,7 @@ import {
   db,
   isViewerLevel,
   itemLevelAbove,
+  levelCovers,
   nodes,
   shares,
   toolGroups,
@@ -384,9 +385,14 @@ async function groupsAbove(
     .select({ slug: toolGroups.slug, audience: toolGroups.audience })
     .from(toolGroups)
     .where(and(eq(toolGroups.ownerId, ownerId), inArray(toolGroups.slug, [...groupSlugs])));
-  return rows
-    .map((r) => ({ slug: r.slug, audience: asLevel(r.audience) }))
-    .filter((r) => isAbove(r.audience, level));
+  return (
+    rows
+      .map((r) => ({ slug: r.slug, audience: asLevel(r.audience) }))
+      // An agent holds a group only when its level READS that group's level:
+      // a client agent cannot hold a public group (client and public are
+      // siblings since 0187), nor a public agent a client group.
+      .filter((r) => !levelCovers(level, r.audience))
+  );
 }
 
 /**
@@ -457,7 +463,7 @@ export async function setToolGroupAudience(
     .select({ slug: agents.slug, audience: agents.audience })
     .from(agents)
     .where(and(eq(agents.ownerId, ownerId), sql`${slug} = any(${agents.toolGroupSlugs})`));
-  const lowerHolders = holders.filter((a) => isAbove(audience, asLevel(a.audience)));
+  const lowerHolders = holders.filter((a) => !levelCovers(asLevel(a.audience), audience));
   if (lowerHolders.length > 0) {
     throw new AccessError(
       lowerHolders
