@@ -85,15 +85,15 @@ describe.skipIf(!URL)('login rows: the role is always named, withSpace checks th
     };
     // Another member's real space, and a client's space under a member login
     // (which would also have run the client's space at team).
-    await expect(
-      m.withSpace({ spaceId: spaceOf[other]!, loginId: member }, run),
-    ).rejects.toThrow(/not this login/);
-    await expect(
-      m.withSpace({ spaceId: spaceOf[client]!, loginId: member }, run),
-    ).rejects.toThrow(/not this login/);
-    await expect(
-      m.withSpace({ spaceId: randomUUID(), loginId: member }, run),
-    ).rejects.toThrow(/not this login/);
+    await expect(m.withSpace({ spaceId: spaceOf[other]!, loginId: member }, run)).rejects.toThrow(
+      /not this login/,
+    );
+    await expect(m.withSpace({ spaceId: spaceOf[client]!, loginId: member }, run)).rejects.toThrow(
+      /not this login/,
+    );
+    await expect(m.withSpace({ spaceId: randomUUID(), loginId: member }, run)).rejects.toThrow(
+      /not this login/,
+    );
     expect(ran).toBe(false);
   });
 
@@ -111,8 +111,8 @@ describe.skipIf(!URL)('login rows: the role is always named, withSpace checks th
     }
     expect(ran).toBe(false);
     // Enabled again, the same pair runs.
-    expect(
-      await m.withSpace({ spaceId: spaceOf[other]!, loginId: other }, async () => 'ok'),
-    ).toBe('ok');
+    expect(await m.withSpace({ spaceId: spaceOf[other]!, loginId: other }, async () => 'ok')).toBe(
+      'ok',
+    );
   });
 });
