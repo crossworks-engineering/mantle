@@ -228,6 +228,25 @@ describe.skipIf(!URL)('what a client reads', () => {
     expect(content).toBe(`See Private item and [ok link](/n/${b.clientPage2}).\n\n`);
   });
 
+  it('a client table comes without the app it mirrors (its app link)', async () => {
+    const write = await import('./tables/write');
+    const t = await write.createTable(brain, { title: `${tag} client table` });
+    const link = { appId: randomUUID(), appName: 'APPNAME internal', sqliteTable: 't' };
+    await m.systemDb.execute(sqlTag`
+      update nodes set audience = 'client',
+             data = data || ${JSON.stringify({ appLink: link })}::jsonb
+       where id = ${t.id}`);
+    try {
+      const item = await client(() => cs.getClientSharedItem(brain, t.id));
+      expect(item?.type).toBe('table');
+      const table = item && item.type === 'table' ? (item.table as { appLink: unknown }) : null;
+      expect(table?.appLink).toBeNull();
+      expect(JSON.stringify(item)).not.toContain('APPNAME');
+    } finally {
+      await m.systemDb.execute(sqlTag`delete from nodes where id = ${t.id}`);
+    }
+  });
+
   it('one readable-ids query answers client items of this brain only', async () => {
     const ids = await client(() =>
       cs.clientReadableIds(brain, [b.clientPage2, b.teamPage, b.adminFile, s.teamDraft, 'x']),

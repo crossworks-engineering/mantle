@@ -68,7 +68,10 @@ vi.mock('@/lib/files', async () => {
   const { currentViewerLevel } = await import('@mantle/db');
   const { Readable } = await import('node:stream');
   return {
-    fileById: vi.fn(async () => null),
+    fileById: vi.fn(async () => {
+      h.reads.push(['fileById', currentViewerLevel()]);
+      return null;
+    }),
     readFileById: vi.fn(async () => null),
     openFileById: vi.fn(async () => {
       h.reads.push(['openFileById', currentViewerLevel()]);
@@ -228,6 +231,20 @@ describe('client read routes: a client', () => {
       ['getDrawSvg', 'client'],
       ['clientDrawSvg', 'client'],
     ]);
+  });
+
+  it('the bytes route is rate limited per login before any file is read', async () => {
+    const files = await import('./files/[id]/route');
+    const { CLIENT_THUMBS_PER_MIN } = await import('@/lib/client-bytes');
+    const url = `/api/client/files/${ITEM}?thumb=1`;
+    for (let i = 0; i < CLIENT_THUMBS_PER_MIN; i++) {
+      expect((await call(CLIENT, url, byId(files, ITEM))).status).toBe(404);
+    }
+    h.reads.length = 0;
+    const res = await call(CLIENT, url, byId(files, ITEM));
+    expect(res.status).toBe(429);
+    expect(res.headers.get('retry-after')).toBeTruthy();
+    expect(h.reads).toEqual([]);
   });
 
   it('a client ?at= token opens the byte routes', async () => {
