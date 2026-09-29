@@ -19,8 +19,7 @@ import { BACKFILL_QUEUE, backfillMatch, imap, syncAccount } from '@mantle/email'
 import { db, emailAccounts } from '@mantle/db';
 import { maskEmail } from './mask-email';
 import { runQueueWorker } from './_runner';
-import { CLIENT_CODE_QUEUE, runClientCodeJob } from '../lib/client-codes';
-import type { ClientCodeRequest } from '@mantle/content';
+import { CLIENT_CODE_QUEUE, workClientCodeQueue } from '../lib/client-codes';
 
 const SYNC_QUEUE = 'mantle.email.sync';
 const SCHEDULER_QUEUE = 'mantle.email.scheduler';
@@ -131,16 +130,9 @@ runQueueWorker('email-sync', async ({ boss }) => {
   // ── client sign-in codes ─────────────────────────────────────────────
   // Queued by POST /api/auth/client-code, which answers the same for every
   // email; the lookup, the caps and the mail happen here. The log names the
-  // outcome only, never the email or the code.
-  await boss.createQueue(CLIENT_CODE_QUEUE);
-  await boss.work<ClientCodeRequest>(CLIENT_CODE_QUEUE, async (jobs) => {
-    for (const job of jobs) {
-      const outcome = await runClientCodeJob(job.data);
-      console.log(
-        `[client-code] ${outcome.kind}${outcome.kind === 'skipped' ? ` (${outcome.reason})` : ''}`,
-      );
-    }
-  });
+  // outcome only, never the email or the code. Short job retention (the
+  // jobs carry an email and an address): lib/client-codes.ts.
+  await workClientCodeQueue(boss);
 
   console.log(
     '[email-sync] queues:',

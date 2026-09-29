@@ -140,6 +140,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Pure SQL and file removal. Needs the /data/spaces and /data/table-dbs mounts (worker_maintenance carries both); without MANTLE_SPACES_ROOT it skips rather than leave orphan bytes.',
   },
   {
+    slug: 'client-codes-reap',
+    title: 'Reap old client sign-in codes',
+    description:
+      'Deletes client sign-in code rows older than 30 days that are finished (used, revoked or expired; a used sign-in link is kept as the admin\'s "last used" record), blanks the request address on code rows older than 7 days, and deletes skipped-request rows older than 30 days (client logins audit B21). Only hashes and addresses are removed: nothing a client or an admin reads.',
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/client-codes-reap.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Plain SQL, no model, idempotent; a no-op once clean. The rule lives in @mantle/content client-codes.ts (reapClientSigninCodes), shared by the cron and the script.',
+  },
+  {
     slug: 'traces-reap',
     title: 'Reap abandoned traces (all owners)',
     description:

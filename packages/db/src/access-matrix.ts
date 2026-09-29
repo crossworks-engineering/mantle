@@ -313,6 +313,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.client_report_acks'),
   // Client sign-in codes and links (0188): hashes of live secrets.
   none('public.client_signin_codes'),
+  // Skipped code requests and the sign-in sender's held folders (0193).
+  none('public.client_signin_code_skips'),
+  none('public.client_signin_sender_folders'),
   none('public.mantle_peers'),
   none('public.peer_shares'),
   none('public.peer_share_scopes'),

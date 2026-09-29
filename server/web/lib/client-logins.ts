@@ -74,7 +74,8 @@ const CODE_COOKIE_PATH = '/api/auth/client-code';
 const CODE_COOKIE_MAX_AGE = 15 * 60;
 
 /**
- * Caps on the code routes. A request: every one counts per address (a
+ * Caps on the code routes, per address: an IPv6 caller counts by its /64
+ * (`clientIpKey`, client logins audit B2). A request: every one counts per address (a
  * code is mailed at most once per open code anyway, and the mail caps live
  * with the code). A verify: every one counts per address, and FAILED tries
  * count per email plus address. There is NO brain-wide failure cap (plan
@@ -88,7 +89,7 @@ export const CLIENT_CODE_LIMITS = {
 const FAILURE_WINDOW_MS = 10 * 60_000;
 
 export function clientCodeRequestLimited(req: Request): Response | null {
-  const ip = rateLimit(`auth:client-code:${clientIp(req)}`, {
+  const ip = rateLimit(`auth:client-code:${clientIpKey(req)}`, {
     max: CLIENT_CODE_LIMITS.requestPerIp,
     windowMs: WINDOW_MS,
   });
@@ -96,12 +97,12 @@ export function clientCodeRequestLimited(req: Request): Response | null {
 }
 
 const failureKey = (req: Request, email: string) =>
-  `auth:client-code-failed:${email.trim().toLowerCase()}:${clientIp(req)}`;
+  `auth:client-code-failed:${email.trim().toLowerCase()}:${clientIpKey(req)}`;
 
 /** A 429 when the address is over its cap, or this email has failed too
  *  often from this address; else null. Call before any lookup. */
 export function clientCodeVerifyLimited(req: Request, email: string): Response | null {
-  const ip = rateLimit(`auth:client-code-verify:${clientIp(req)}`, {
+  const ip = rateLimit(`auth:client-code-verify:${clientIpKey(req)}`, {
     max: CLIENT_CODE_LIMITS.verifyPerIp,
     windowMs: WINDOW_MS,
   });

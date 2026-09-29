@@ -199,7 +199,28 @@ export type ClientSigninSender = {
   dailyCap: number;
   sentLast24h: number;
   capReached: boolean;
+  /** Codes actually handed to the mail server in the last 24 h (sentLast24h counted failed ones too; it now equals this). */
+  deliveredLast24h?: number;
+  /** Sends that failed in the last 24 h, and the newest failure. */
+  failedLast24h?: number;
+  lastFailure?: { at: string; reason: string } | null;
+  /** False when no email worker serves the code queue on this box: codes are then OFF whatever the sender. */
+  emailWorker?: boolean;
+  /** Requests that were skipped because a cap was hit in the last 24 h (per email, per address or brain-wide). */
+  capSkipsLast24h?: number;
+};
+
+/** GET /api/team-admin/clients/signin-sender/preview?accountId=<id>: what
+ *  choosing that account as the sender would do, before the admin confirms.
+ *  Choosing None (or another sender) later RESTORES the folders the choice
+ *  left out (the server remembers exactly which it added). */
+export type ClientSigninSenderPreview = {
+  /** The folders that choosing this sender will leave out of mail sync. Empty + canUse false = refused. */
+  sentFolders: string[];
+  canUse: boolean;
+  reason?: 'no-sent-folder' | 'folders-unreadable' | 'account-cannot-send';
 };
 
 /** Why an admin's sender choice was refused (the 4xx `reason`). */
-export type ClientSenderRefusedReason = 'account-not-found' | 'account-cannot-send';
+export type ClientSenderRefusedReason =
+  'account-not-found' | 'account-cannot-send' | 'no-sent-folder' | 'folders-unreadable';

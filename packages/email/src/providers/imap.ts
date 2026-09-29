@@ -3,6 +3,7 @@ import { simpleParser } from 'mailparser';
 import { open } from '@mantle/crypto';
 import type { EmailAccount } from '@mantle/db';
 import { classifyDelivery, type DeliveryKind } from '../classify';
+import { touchesClientCodeMail } from '../client-code-mail';
 import type {
   EmailProvider,
   FullMessage,
@@ -49,6 +50,12 @@ const CLASSIFY_HEADERS = [
   'X-Iterable-Campaign-Id',
   'X-CIO-Delivery-ID',
 ] as const;
+
+/** Headers fetched alongside CLASSIFY_HEADERS so the sync can skip a client
+ *  sign-in code mail, and a reply or forward of one, before any body is
+ *  fetched (client-code-mail.ts `touchesClientCodeMail`). */
+const CODE_MAIL_HEADERS = ['X-Mantle-Client-Code', 'References'] as const;
+const LIST_HEADERS = [...CLASSIFY_HEADERS, ...CODE_MAIL_HEADERS] as unknown as string[];
 
 /**
  * Parse the raw header block ImapFlow returns from `headers: [...]` into a
@@ -311,6 +318,9 @@ function normalizeHeader(
   return {
     providerMsgId,
     rfcMessageId,
+    inReplyTo: env.inReplyTo ?? undefined,
+    references: headerMap['references'] || undefined,
+    clientCodeHeader: headerMap['x-mantle-client-code'] !== undefined,
     threadId: env.inReplyTo ?? undefined,
     fromAddr,
     fromName: fromRaw?.name || undefined,
@@ -419,7 +429,7 @@ export const imap: EmailProvider = {
               labels: true,
               bodyStructure: true,
               size: true,
-              headers: CLASSIFY_HEADERS as unknown as string[],
+              headers: LIST_HEADERS,
             },
             { uid: true },
           )) {
@@ -482,7 +492,7 @@ export const imap: EmailProvider = {
               labels: true,
               bodyStructure: true,
               size: true,
-              headers: CLASSIFY_HEADERS as unknown as string[],
+              headers: LIST_HEADERS,
             },
             { uid: true },
           )) {
@@ -538,7 +548,7 @@ export const imap: EmailProvider = {
               labels: true,
               bodyStructure: true,
               size: true,
-              headers: CLASSIFY_HEADERS as unknown as string[],
+              headers: LIST_HEADERS,
             },
             { uid: true },
           )) {
@@ -596,6 +606,14 @@ export const imap: EmailProvider = {
           bodyText: parsed.text || undefined,
           bodyHtml: typeof parsed.html === 'string' ? parsed.html : undefined,
           attachments,
+          clientCodeMail: touchesClientCodeMail({
+            rfcMessageId: parsed.messageId ?? null,
+            clientCodeHeader: parsed.headers.has('x-mantle-client-code'),
+            inReplyTo: parsed.inReplyTo ?? null,
+            references: Array.isArray(parsed.references)
+              ? parsed.references.join(' ')
+              : (parsed.references ?? null),
+          }),
         };
       } finally {
         lock.release();
@@ -615,6 +633,9 @@ export interface ImapProbeResult {
   serverGreeting?: string;
   /** Top-level mailbox names — proof we're actually authenticated, not just connected. */
   folders: string[];
+  /** The folders the server marks as sent mail (the `\\Sent` special use,
+   *  from SPECIAL-USE/XLIST or a known localized name). */
+  sentFolders: string[];
   /** Capability flags the server advertised. Useful debugging context. */
   capabilities: string[];
 }
@@ -649,12 +670,17 @@ export async function probeImapConnection(opts: {
       .map((m) => m.path)
       .filter((p) => !!p)
       .sort();
+    const sentFolders = mailboxes
+      .filter((m) => !!m.path && (m as { specialUse?: string }).specialUse === '\\Sent')
+      .map((m) => m.path)
+      .sort();
     const caps = Array.from(
       (client.capabilities as Map<string, unknown> | undefined)?.keys() ?? [],
     );
     return {
       serverGreeting: client.serverInfo?.name ?? undefined,
       folders,
+      sentFolders,
       capabilities: caps,
     };
   } finally {

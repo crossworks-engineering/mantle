@@ -21,6 +21,7 @@ import {
   findDuplicateCandidates,
   mergeEntities,
   purgeDeactivatedSpaces,
+  reapClientSigninCodes,
   type MergeCandidate,
 } from '@mantle/content';
 
@@ -134,6 +135,13 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
   // Turns, not traces: a trace can be closed while its assistant_messages row
   // is still 'pending', so these are genuinely separate surfaces.
   'turns-reap': async () => summariseTurnsReap(await reapStalePendingTurns()),
+  // Client logins audit B21: old sign-in code rows, addresses and skips.
+  'client-codes-reap': async () => {
+    const r = await reapClientSigninCodes();
+    return r.deleted + r.ipsCleared + r.skipsDeleted === 0
+      ? 'nothing to reap'
+      : `deleted ${r.deleted} code row(s) and ${r.skipsDeleted} skip row(s); cleared ${r.ipsCleared} address(es)`;
+  },
   // Member logins plan 6.4: a deactivated login's private items, after 30 days.
   'space-purge': async () => {
     const r = await purgeDeactivatedSpaces();

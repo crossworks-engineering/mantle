@@ -16,7 +16,7 @@ import { hashBuffer, putContent } from '@mantle/storage';
 import { loadContactGate } from '@mantle/content';
 import { and, eq, or, sql } from 'drizzle-orm';
 import { domainOf } from './addresses';
-import { isClientCodeMail } from './client-code-mail';
+import { redactSigninCodes, touchesClientCodeMail } from './client-code-mail';
 import { salienceForDeliveryKind } from './classify';
 import type { EmailProvider, RawMessage } from './types';
 
@@ -156,9 +156,12 @@ async function ingestOne(
     ReturnType<typeof db.select> extends never ? never : Awaited<ReturnType<typeof loadRules>>
   >,
 ): Promise<boolean> {
-  // A client sign-in code mail (a copy of one the brain sent, in any folder)
-  // never enters the brain: nothing is fetched, nothing is stored.
-  if (isClientCodeMail(message)) return false;
+  // A client sign-in code mail (a copy of one the brain sent, in any folder),
+  // or a reply or forward of one (it quotes the code), never enters the
+  // brain: nothing is fetched, nothing is stored. By the Message-ID marker,
+  // the X-Mantle-Client-Code header, or the marker in In-Reply-To or
+  // References; checked again on the full message's headers below.
+  if (touchesClientCodeMail(message)) return false;
 
   // Dedup pre-check. Two unique constraints, two checks (OR'd in one query):
   //   1. (account_id, provider_msg_id) — same UID in same folder. Catches
@@ -198,6 +201,7 @@ async function ingestOne(
 
   // Phase 2: deep fetch.
   const full = await provider.fetchFull(account, message.providerMsgId);
+  if (full.clientCodeMail) return false;
 
   // Insert node + email + attachments inside a transaction. Race handling:
   // the emails INSERT uses `onConflictDoNothing` on (account_id,
@@ -210,7 +214,7 @@ async function ingestOne(
       const nodeId = await insertEmailNode(tx, {
         ownerId: account.userId,
         path,
-        title: message.subject ?? '(no subject)',
+        title: redactSigninCodes(message.subject) ?? '(no subject)',
         tags: [...effects.addTags],
         message,
       });
@@ -226,10 +230,13 @@ async function ingestOne(
         toAddrs: message.toAddrs,
         ccAddrs: message.ccAddrs ?? [],
         bccAddrs: message.bccAddrs ?? [],
-        subject: message.subject ?? null,
-        snippet: message.snippet ?? null,
-        bodyText: full.bodyText ?? null,
-        bodyHtml: full.bodyHtml ?? null,
+        // A sign-in link's code (client-signin / invite `code=`) is blanked
+        // in everything stored: a link mailed from a synced mailbox must not
+        // bring a live code into the brain.
+        subject: redactSigninCodes(message.subject) ?? null,
+        snippet: redactSigninCodes(message.snippet) ?? null,
+        bodyText: redactSigninCodes(full.bodyText) ?? null,
+        bodyHtml: redactSigninCodes(full.bodyHtml) ?? null,
         internalDate: message.internalDate,
         labels: message.labels ?? [],
         folder: message.folder ?? null,

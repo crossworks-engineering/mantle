@@ -4,8 +4,10 @@
  *
  * Request: the same 200 and a FRESH request cookie for every body (a
  * client's email, a stranger's, garbage), the job queued with the cookie's
- * request id and never a code, 200 even when the queue is down; per-address
- * 429. Verify: one 401 for every failure, no session without this browser's
+ * request id and never a code, 200 even when the queue is down, nothing
+ * queued while no sender is chosen (the same answer); per-address 429, an
+ * IPv6 caller by its /64. Availability: on only with a sender AND an email
+ * worker. Verify: one 401 for every failure, no session without this browser's
  * request cookie, the 30-day client session at the login's epoch and the
  * request cookie cleared on success; failed tries capped per email plus
  * address, and NO brain-wide lockout. The code logic is proven on Postgres
@@ -20,6 +22,7 @@ const h = vi.hoisted(() => ({
   queued: [] as Array<Record<string, unknown>>,
   queueDown: false,
   sender: null as null | { id: string },
+  worker: true,
   redeemed: null as null | Record<string, unknown>,
   redeemCalls: [] as Array<{ requestId: string; email: string; code: string }>,
   audits: [] as Array<Record<string, unknown>>,
@@ -31,6 +34,7 @@ vi.mock('@/lib/client-codes', () => ({
     h.queued.push(job);
   }),
   loadClientSigninSender: vi.fn(async () => h.sender),
+  emailWorkerServesCodes: vi.fn(async () => h.worker),
 }));
 
 vi.mock('@mantle/content', async (importOriginal) => ({
@@ -64,6 +68,7 @@ beforeEach(() => {
   h.queued = [];
   h.queueDown = false;
   h.sender = null;
+  h.worker = true;
   h.redeemed = null;
   h.redeemCalls = [];
   h.audits = [];
@@ -112,6 +117,13 @@ describe('GET /api/auth/client-code', () => {
     expect(await (await GET()).json()).toEqual({ enabled: true });
   });
 
+  it('says off when no email worker serves the code queue, whatever the sender (B3)', async () => {
+    h.sender = { id: 'acc' };
+    h.worker = false;
+    const { GET } = await import('./route');
+    expect(await (await GET()).json()).toEqual({ enabled: false });
+  });
+
   it('says off, never 500, when the sender cannot be read', async () => {
     const { loadClientSigninSender } = await import('@/lib/client-codes');
     vi.mocked(loadClientSigninSender).mockRejectedValueOnce(new Error('db down'));
@@ -123,6 +135,10 @@ describe('GET /api/auth/client-code', () => {
 });
 
 describe('POST /api/auth/client-code', () => {
+  beforeEach(() => {
+    h.sender = { id: 'acc' };
+  });
+
   it('answers every body the same way, with a new request cookie for a new browser', async () => {
     const bodies: unknown[] = [
       { email: 'client@example.invalid' },
@@ -176,6 +192,30 @@ describe('POST /api/auth/client-code', () => {
     expect(requestCookie(odd)).not.toBe('abc');
   });
 
+  it('queues nothing while no sender is chosen, and answers the same (B21)', async () => {
+    const withSender = await request({ email: 'client@example.invalid' });
+    h.sender = null;
+    const without = await request({ email: 'client@example.invalid' });
+    expect(without.status).toBe(200);
+    expect(await without.json()).toEqual(await withSender.json());
+    expect(requestCookie(without)).toMatch(/^[0-9a-f-]{36}$/);
+    expect(h.queued).toHaveLength(1);
+  });
+
+  it('queues an IPv6 caller by its /64 (B2)', async () => {
+    await request({ email: 'client@example.invalid' }, '2001:db8:7:8::1234');
+    expect(h.queued[0]).toMatchObject({ ip: '2001:db8:7:8::/64' });
+  });
+
+  it('limits a whole IPv6 /64 as one address (B2)', async () => {
+    for (let i = 0; i < 10; i += 1) {
+      const ip = `2001:db8:9:9::${(i + 1).toString(16)}`;
+      expect((await request({ email: 'a@example.invalid' }, ip)).status).toBe(200);
+    }
+    expect((await request({ email: 'a@example.invalid' }, '2001:db8:9:9::ff')).status).toBe(429);
+    expect((await request({ email: 'a@example.invalid' }, '2001:db8:9:a::1')).status).toBe(200);
+  });
+
   it('answers 200 with a cookie even when the queue is down', async () => {
     h.queueDown = true;
     const res = await request({ email: 'client@example.invalid' });
@@ -197,8 +237,13 @@ const REDEEMED = { loginId: LOGIN, email: 'client@example.invalid', codeId: 'c1'
 describe('POST /api/auth/client-code/verify', () => {
   it('signs the client in for 30 days at its epoch and clears the request cookie', async () => {
     h.redeemed = REDEEMED;
+    // Import first, so a slow import under a busy run is not billed to the
+    // expiry window (audit B28: this flaked 8 of 35 runs); bound it by the
+    // times around the call itself.
+    await import('./verify/route');
     const before = Math.floor(Date.now() / 1000);
     const res = await verify(GOOD);
+    const after = Math.ceil(Date.now() / 1000);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
     expect(h.redeemCalls).toEqual([{ requestId: REQ, email: GOOD.email, code: GOOD.code }]);
@@ -208,7 +253,7 @@ describe('POST /api/auth/client-code/verify', () => {
     const { verifySessionCookie } = await import('@/lib/auth');
     const claims = verifySessionCookie(decodeURIComponent(session))!;
     expect(claims).toMatchObject({ uid: LOGIN, ep: 2 });
-    expect(claims.exp).toBeLessThanOrEqual(before + 30 * 24 * 60 * 60 + 5);
+    expect(claims.exp).toBeLessThanOrEqual(after + 30 * 24 * 60 * 60);
     expect(claims.exp).toBeGreaterThanOrEqual(before + 30 * 24 * 60 * 60);
     expect(h.audits.map((a) => a.action)).toEqual(['auth.client_code_signin']);
   });
@@ -219,6 +264,20 @@ describe('POST /api/auth/client-code/verify', () => {
     expect(res.status).toBe(401);
     expect(h.redeemCalls).toHaveLength(0);
     expect(res.headers.get('set-cookie') ?? '').not.toMatch(/mantle_session=[^;]/);
+  });
+
+  it('a refused redeem (a disabled or non-client login, a wrong code) writes no sign-in audit', async () => {
+    h.redeemed = null;
+    const res = await verify(GOOD);
+    expect(res.status).toBe(401);
+    expect(h.audits.map((a) => a.action)).toEqual(['auth.client_code_failed']);
+  });
+
+  it('caps failed tries per email and a whole IPv6 /64 as one address (B2)', async () => {
+    for (let i = 0; i < 5; i += 1) {
+      expect((await verify(GOOD, { ip: `2001:db8:4:4::${i + 1}` })).status).toBe(401);
+    }
+    expect((await verify(GOOD, { ip: '2001:db8:4:4::99' })).status).toBe(429);
   });
 
   it('answers every failure with the same 401 and no session', async () => {

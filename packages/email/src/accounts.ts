@@ -9,11 +9,18 @@
 import { createHash } from 'node:crypto';
 import { PgBoss } from 'pg-boss';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { db, emailAccounts, syncRuns, type EmailAccount, type SyncRun } from '@mantle/db';
+import {
+  clientSigninSenderFolders,
+  db,
+  emailAccounts,
+  syncRuns,
+  type EmailAccount,
+  type SyncRun,
+} from '@mantle/db';
 import { seal } from '@mantle/crypto';
 import { probeImapConnection, unsealImapPassword } from './providers/imap';
 import { probeSmtpConnection } from './send';
-import { sentFolderNames } from './client-code-mail';
+import { pickSentFolders } from './client-code-mail';
 import type { AccountFoldersResult } from '@mantle/client-types';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
@@ -460,30 +467,173 @@ export async function setIncludedFolders(
   return true;
 }
 
+/** Why an account cannot be the client sign-in sender's folder source. */
+export type SentFolderRefusal = 'account-not-found' | 'folders-unreadable' | 'no-sent-folder';
+
+/** How the sender folders are listed: the live IMAP server by default;
+ *  tests stand in a folder list. */
+export type FolderLister = (
+  account: EmailAccount,
+) => Promise<{ folders: string[]; sentFolders: string[] }>;
+
+const imapFolderLister: FolderLister = async (account) => {
+  if (
+    account.provider !== 'imap' ||
+    !account.imapHost ||
+    !account.imapPort ||
+    !account.imapConfigEnc
+  ) {
+    throw new Error('This account has no IMAP connection to list folders from.');
+  }
+  const probe = await probeImapConnection({
+    host: account.imapHost,
+    port: account.imapPort,
+    secure: account.imapSecure,
+    user: account.address,
+    pass: unsealImapPassword(account),
+  });
+  return { folders: probe.folders, sentFolders: probe.sentFolders };
+};
+
+/**
+ * The sent-mail folders of an account, as the client sign-in sender choice
+ * would leave them out of sync (client logins C2b; audit B4, B19): the
+ * `\Sent`-flagged folders when the server flags any, else the usual English
+ * names. Refused when the folders cannot be listed or no sent folder is
+ * found: then the choice cannot keep code mails out of the brain by folder,
+ * and the admin must know before choosing. Owner-scoped. Writes nothing.
+ */
+export async function planSentFolders(
+  userId: string,
+  accountId: string,
+  deps: { list?: FolderLister } = {},
+): Promise<
+  | { ok: true; account: EmailAccount; sentFolders: string[] }
+  | { ok: false; reason: SentFolderRefusal; error: string }
+> {
+  const account = await getAccount(userId, accountId);
+  if (!account) return { ok: false, reason: 'account-not-found', error: 'Account not found.' };
+  let listed: { folders: string[]; sentFolders: string[] };
+  try {
+    listed = await (deps.list ?? imapFolderLister)(account);
+  } catch (err) {
+    return { ok: false, reason: 'folders-unreadable', error: errorMessage(err) };
+  }
+  const sentFolders = pickSentFolders(listed.folders, listed.sentFolders);
+  if (sentFolders.length === 0) {
+    return { ok: false, reason: 'no-sent-folder', error: 'No sent-mail folder was found.' };
+  }
+  return { ok: true, account, sentFolders };
+}
+
 /**
  * Leave an account's sent-mail folders out of mail sync (client logins C2b:
  * the sign-in sender's Sent folder must not bring live codes into the brain).
- * Lists the server's folders, adds every sent-mail folder to the excluded
- * list and takes it off an explicit allow-list. Owner-scoped. `ok: false`
- * when the folders cannot be listed; the code mails are skipped by their
- * Message-ID anyway (client-code-mail.ts), this is the second guard.
+ * Adds each sent folder to the excluded list and remembers EXACTLY the ones
+ * it added (client_signin_sender_folders), so {@link restoreSentFolders}
+ * can put them back when the sender changes. The allow-list is never
+ * touched: the sync already scans it minus the excluded folders, so an
+ * allow-list of only sent folders now scans nothing (it never widens to
+ * "every folder"). Refused (nothing written) as {@link planSentFolders}.
+ * Owner-scoped. The code mails are also skipped by their Message-ID and
+ * header anyway (client-code-mail.ts); this is the second guard.
  */
 export async function excludeSentFolders(
   userId: string,
   accountId: string,
-): Promise<{ ok: true; excluded: string[] } | { ok: false; error: string }> {
-  const listed = await listAccountFolders(userId, accountId);
-  if (!listed.ok) return listed;
-  const sent = sentFolderNames(listed.allFolders);
-  const excluded = [...new Set([...listed.excluded, ...sent])];
-  const included = listed.included?.filter((f) => !sent.includes(f)) ?? null;
-  await db
-    .update(emailAccounts)
-    .set({
-      imapExcludedFolders: excluded,
-      imapIncludedFolders: included && included.length > 0 ? included : null,
-      updatedAt: new Date(),
-    })
-    .where(and(eq(emailAccounts.id, accountId), eq(emailAccounts.userId, userId)));
-  return { ok: true, excluded: sent };
+  deps: { list?: FolderLister } = {},
+): Promise<
+  | { ok: true; excluded: string[]; added: string[] }
+  | { ok: false; reason: SentFolderRefusal; error: string }
+> {
+  const plan = await planSentFolders(userId, accountId, deps);
+  if (!plan.ok) return plan;
+  return db.transaction(async (tx) => {
+    const [account] = await tx
+      .select({ excluded: emailAccounts.imapExcludedFolders })
+      .from(emailAccounts)
+      .where(and(eq(emailAccounts.id, accountId), eq(emailAccounts.userId, userId)))
+      .limit(1)
+      .for('update');
+    if (!account) {
+      return {
+        ok: false as const,
+        reason: 'account-not-found' as const,
+        error: 'Account not found.',
+      };
+    }
+    const [held] = await tx
+      .select({ folders: clientSigninSenderFolders.folders })
+      .from(clientSigninSenderFolders)
+      .where(eq(clientSigninSenderFolders.accountId, accountId))
+      .limit(1);
+    const added = plan.sentFolders.filter((f) => !account.excluded.includes(f));
+    const keep = [...new Set([...(held?.folders ?? []), ...added])];
+    if (added.length > 0) {
+      await tx
+        .update(emailAccounts)
+        .set({ imapExcludedFolders: [...account.excluded, ...added], updatedAt: new Date() })
+        .where(and(eq(emailAccounts.id, accountId), eq(emailAccounts.userId, userId)));
+    }
+    await tx
+      .insert(clientSigninSenderFolders)
+      .values({ accountId, folders: keep, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: clientSigninSenderFolders.accountId,
+        set: { folders: keep, updatedAt: new Date() },
+      });
+    return { ok: true as const, excluded: plan.sentFolders, added };
+  });
+}
+
+/**
+ * Put back the sent-mail folders a sign-in sender choice left out of sync:
+ * for every account of this owner that holds some (except `keepAccountId`,
+ * the sender being chosen now), take exactly the folders the choice added
+ * off the excluded list (a folder the admin had excluded before stays) and
+ * forget them. Returns the folders restored per account. Owner-scoped.
+ */
+export async function restoreSentFolders(
+  userId: string,
+  keepAccountId: string | null = null,
+): Promise<Array<{ accountId: string; restored: string[] }>> {
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        accountId: clientSigninSenderFolders.accountId,
+        folders: clientSigninSenderFolders.folders,
+        excluded: emailAccounts.imapExcludedFolders,
+      })
+      .from(clientSigninSenderFolders)
+      .innerJoin(emailAccounts, eq(emailAccounts.id, clientSigninSenderFolders.accountId))
+      .where(eq(emailAccounts.userId, userId))
+      .for('update');
+    const out: Array<{ accountId: string; restored: string[] }> = [];
+    for (const row of rows) {
+      if (row.accountId === keepAccountId) continue;
+      const restored = row.excluded.filter((f) => row.folders.includes(f));
+      await tx
+        .update(emailAccounts)
+        .set({
+          imapExcludedFolders: row.excluded.filter((f) => !row.folders.includes(f)),
+          updatedAt: new Date(),
+        })
+        .where(and(eq(emailAccounts.id, row.accountId), eq(emailAccounts.userId, userId)));
+      await tx
+        .delete(clientSigninSenderFolders)
+        .where(eq(clientSigninSenderFolders.accountId, row.accountId));
+      out.push({ accountId: row.accountId, restored });
+    }
+    return out;
+  });
+}
+
+/** The folders a sign-in sender choice holds out of sync for `accountId`. */
+export async function heldSentFolders(accountId: string): Promise<string[]> {
+  const [row] = await db
+    .select({ folders: clientSigninSenderFolders.folders })
+    .from(clientSigninSenderFolders)
+    .where(eq(clientSigninSenderFolders.accountId, accountId))
+    .limit(1);
+  return row?.folders ?? [];
 }

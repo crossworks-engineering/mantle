@@ -1352,6 +1352,13 @@
       "when": 1790017800000,
       "tag": "0192_retire_client_links",
       "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "7",
+      "when": 1790017860000,
+      "tag": "0193_client_code_outcomes",
+      "breakpoints": true
     }
   ]
 }
