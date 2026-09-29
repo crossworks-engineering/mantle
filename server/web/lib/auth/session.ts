@@ -97,19 +97,27 @@ export type MemberCaller = {
 };
 
 /**
- * A CLIENT login (client logins, Phase C0): a person at the brain's one
- * client company. No route serves one yet (the client routes come in Phase
- * C2): every admin and member gate refuses it with reason `client-login`.
- * Like MemberCaller it has no `.id`, so no anchor-scoped call site can take
- * it by mistake.
+ * A CLIENT login (client logins): a person at the brain's one client
+ * company. It reaches only the routes in CLIENT_ROUTES (lib/auth/
+ * client-routes.ts), through getClientOr401, and reads at the client level;
+ * every admin and member gate refuses it with reason `client-login`. Like
+ * MemberCaller it has no `.id`, so no anchor-scoped call site can take it by
+ * mistake.
  */
-export type ClientLogin = {
+export type ClientCaller = {
   role: 'client';
   loginId: string;
   anchorId: string;
+  /** The login's personal space (every login has one, 0165). Client drafts
+   *  come in Phase C5; nothing writes here before then. */
+  spaceId: string;
   email: string;
   displayName: string | null;
 };
+/** How long a client session lasts (plan section 4): 30 days, not a year.
+ *  The cookie is minted with it, and a client cookie that claims to last
+ *  longer is refused, whoever signed it. */
+export const CLIENT_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 /** Whether a login row may hold a session at all: not disabled, and it has
  *  an email. Admin and member alike (member logins are always on since
@@ -123,7 +131,7 @@ export function loginUsable(row: Pick<LoginRow, 'disabledAt' | 'email'>): boolea
 type Resolved =
   | { kind: 'admin'; user: SessionUser; source: AuthSource }
   | { kind: 'member'; member: MemberCaller; source: AuthSource }
-  | { kind: 'client'; client: ClientLogin; source: AuthSource };
+  | { kind: 'client'; client: ClientCaller; source: AuthSource };
 
 /**
  * Owner gate for the byte-serving asset routes only. Resolves the session
@@ -311,7 +319,7 @@ async function sessionUserFor(row: ActorRow): Promise<SessionUser | null> {
 
 /**
  * An admin row becomes a SessionUser (id = the anchor), a member row a
- * MemberCaller, a client row a ClientLogin. Every role is named: a role this
+ * MemberCaller, a client row a ClientCaller. Every role is named: a role this
  * code does not know is NO login (null), never an admin (client logins C0:
  * before it, every role that was not member resolved as an admin). Null too
  * when the brain has no anchor (a corrupt state).
@@ -343,8 +351,13 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
       };
     }
     case 'client': {
+      // Browser sessions only: a client never holds a bearer (no password
+      // login, no mobile app, no pairing), so one presented is refused.
+      if (source !== 'web') return null;
       const anchorId = await getAnchorId();
       if (!anchorId) return null;
+      const spaceId = await loadPersonalSpaceId(row.id);
+      if (!spaceId) return null;
       return {
         kind: 'client',
         source,
@@ -352,6 +365,7 @@ async function resolvedFor(row: LoginRow, source: AuthSource): Promise<Resolved 
           role: 'client',
           loginId: row.id,
           anchorId,
+          spaceId,
           email: row.email,
           displayName: row.displayName,
         },
@@ -377,7 +391,12 @@ async function resolveLogin(): Promise<Resolved | null> {
       const row = await loadLoginRow(data.uid);
       // The epoch check is what ends a cookie: a password change, a disable,
       // a role change or "sign out everywhere" bumps the row (F06).
-      if (row && loginUsable(row) && row.sessionEpoch === data.ep) {
+      // A client session lasts 30 days: a client cookie that claims a later
+      // expiry was not minted by the client sign-in, and is refused.
+      const tooLong =
+        row?.role === 'client' &&
+        data.exp > Math.floor(Date.now() / 1000) + CLIENT_SESSION_TTL_SECONDS + 60;
+      if (row && loginUsable(row) && row.sessionEpoch === data.ep && !tooLong) {
         const resolved = await resolvedFor(row, 'web');
         if (resolved) return resolved;
       }
@@ -509,6 +528,78 @@ export async function getOwnerOr401WithSource(): Promise<
   return { user: res.user, source: res.source };
 }
 
+/**
+ * The client gate (client logins C2): a CLIENT login, or 401 (no session) /
+ * 403 (an admin or a member: client routes are client-specific, never a
+ * shared route). Only for routes in CLIENT_ROUTES (lib/auth/client-routes.ts);
+ * run the handler's reads under `withViewer('client', …)`. A client write is
+ * audited like an admin's (`api.write`).
+ */
+export async function getClientOr401(): Promise<ClientCaller | NextResponse> {
+  const res = await resolveLogin();
+  if (!res) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (res.kind !== 'client') {
+    return NextResponse.json(
+      {
+        error: 'forbidden',
+        reason: res.kind === 'admin' ? 'admin-login' : 'member-login',
+        message: 'This route is for client logins.',
+      },
+      { status: 403 },
+    );
+  }
+  await auditClientMutation(res.client);
+  return res.client;
+}
+
+async function auditClientMutation(client: ClientCaller): Promise<void> {
+  await auditMutation({
+    id: client.anchorId,
+    email: client.email,
+    actor: {
+      id: client.loginId,
+      email: client.email,
+      displayName: client.displayName,
+      isOwner: false,
+    },
+  });
+}
+
+/**
+ * The client twin of getMemberForAsset, for the client byte routes: a client
+ * session, or a `?at=` token minted for a client login (the client shell
+ * mints it with `act` = the login). The login is re-read, so a disabled
+ * login, a changed role or an ended session stops the token at once.
+ */
+export async function getClientForAsset(req: Request): Promise<ClientCaller | NextResponse> {
+  const res = await resolveLogin();
+  if (res?.kind === 'client') return res.client;
+  const at = new URL(req.url).searchParams.get('at');
+  const claims = at ? verifyAssetToken(at) : null;
+  if (claims?.act) {
+    const row = await loadLoginRow(claims.act);
+    if (row && row.role === 'client' && loginUsable(row) && row.sessionEpoch === claims.ep) {
+      const resolved = await resolvedFor(row, 'web');
+      if (resolved?.kind === 'client' && resolved.client.anchorId === claims.uid) {
+        return resolved.client;
+      }
+    }
+  }
+  return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+}
+
+/** Is this client login still allowed in? For work that outlives the request
+ *  (a queued client turn, Phase C4): the row is re-read. */
+export async function clientLoginActive(loginId: string, epoch?: number): Promise<boolean> {
+  const row = await loadLoginRow(loginId);
+  return (
+    !!row &&
+    row.role === 'client' &&
+    loginUsable(row) &&
+    (epoch === undefined || row.sessionEpoch === epoch)
+  );
+}
+
 /** The 403 a gate answers a login of the wrong role with. The reason names
  *  the CALLER's role: `member-login`, `client-login`, or `admin-login` from
  *  a member route. */
@@ -563,7 +654,7 @@ export async function sessionCookieExpiryMs(): Promise<number | null> {
 export async function getLoginOr401(): Promise<
   | { kind: 'admin'; loginId: string; email: string; source: AuthSource; user: SessionUser }
   | { kind: 'member'; loginId: string; email: string; source: AuthSource; member: MemberCaller }
-  | { kind: 'client'; loginId: string; email: string; source: AuthSource; client: ClientLogin }
+  | { kind: 'client'; loginId: string; email: string; source: AuthSource; client: ClientCaller }
   | NextResponse
 > {
   const res = await resolveLogin();
@@ -666,6 +757,28 @@ export function setSessionCookie(
   epoch: number,
 ): void {
   const { value, maxAgeSec } = buildSessionCookie(loginId, { epoch });
+  res.cookies.set(SESSION_COOKIE_NAME, value, {
+    httpOnly: true,
+    secure: secureCookies(req),
+    sameSite: 'lax',
+    path: '/',
+    maxAge: maxAgeSec,
+  });
+}
+
+/** Set the CLIENT session cookie for `loginId` on `res`: 30 days (plan
+ *  section 4), signed with the login's session epoch now. Only the client
+ *  sign-in routes call this. */
+export function setClientSessionCookie(
+  res: NextResponse,
+  req: Request,
+  loginId: string,
+  epoch: number,
+): void {
+  const { value, maxAgeSec } = buildSessionCookie(loginId, {
+    epoch,
+    ttlSeconds: CLIENT_SESSION_TTL_SECONDS,
+  });
   res.cookies.set(SESSION_COOKIE_NAME, value, {
     httpOnly: true,
     secure: secureCookies(req),
