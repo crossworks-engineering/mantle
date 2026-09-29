@@ -4,6 +4,21 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.334: client v0.6.175
+
+- Pairs the client at jackdaw v0.6.175, the client half of 0.232.333 (the
+  C2/C2b audit fixes). The client portal never shows a summary, shows tables
+  as the grid only, opens readable mentions in place and offers embedded
+  files as downloads, refreshes on each poll, and uses the site name, never
+  the peer name. Sign-in and invite pages read the code from the fragment
+  (old `?code=` links still work), strip it at once and send no Referer;
+  on a split-origin address client sign-in says it is not available. Team
+  admin > Clients previews a sign-in sender and its Sent folders before it
+  is chosen, shows delivered, failed, cap skips and whether an email worker
+  runs, asks before a new link revokes an open one, and closes the link
+  dialog only on Done or Copy. Member chats and accepted items name a
+  client as a client.
+
 ## 0.232.334: one item list for members and admins
 
 The brain side of the item-list alignment: a member's screen for a kind and
