@@ -25,6 +25,7 @@ describe.skipIf(!URL)('member Library at the team level', () => {
     teamPage: randomUUID(),
     adminPage: randomUUID(),
     publicNote: randomUUID(),
+    clientNote: randomUUID(),
     task: randomUUID(),
     fragment: randomUUID(),
   };
@@ -53,6 +54,7 @@ describe.skipIf(!URL)('member Library at the team level', () => {
         (${ids.teamPage}, ${anchor}, 'page', ${`${tag} team page`}, 'pages', 'team'),
         (${ids.adminPage}, ${anchor}, 'page', ${`${tag} admin page`}, 'pages', 'admin'),
         (${ids.publicNote}, ${anchor}, 'note', ${`${tag} public note`}, 'notes', 'public'),
+        (${ids.clientNote}, ${anchor}, 'note', ${`${tag} client note`}, 'notes', 'client'),
         (${ids.task}, ${anchor}, 'task', ${`${tag} task`}, 'tasks', 'admin')`);
     // An image cut out of a document at ingest: a file pointing at its source.
     await m.systemDb.execute(sqlTag`
@@ -75,10 +77,21 @@ describe.skipIf(!URL)('member Library at the team level', () => {
     await expect(lib.listLibrary(anchor)).rejects.toThrow(/viewer scope/);
   });
 
-  it('lists only team-level items: never admin, and not open-link (public) ones', async () => {
+  it('lists team and client items with their level: never admin, and not open-link (public) ones', async () => {
     const { items, total } = await m.withViewer('team', () => lib.listLibrary(anchor, { q: tag }));
-    expect(items.map((i) => i.id)).toEqual([ids.teamPage]);
-    expect(total).toBe(1);
+    expect(items.map((i) => [i.id, i.audience]).sort()).toEqual(
+      [
+        [ids.teamPage, 'team'],
+        [ids.clientNote, 'client'],
+      ].sort(),
+    );
+    expect(total).toBe(2);
+  });
+
+  it('shows a client-level reader only client items', async () => {
+    const { items } = await m.withViewer('client', () => lib.listLibrary(anchor, { q: tag }));
+    expect(items.map((i) => i.id)).toEqual([ids.clientNote]);
+    expect(await m.withViewer('client', () => lib.getLibraryItem(anchor, ids.teamPage))).toBeNull();
   });
 
   it('leaves images cut out of documents out of the list, but reads them by id', async () => {
@@ -88,9 +101,10 @@ describe.skipIf(!URL)('member Library at the team level', () => {
     expect(frag?.type).toBe('file');
   });
 
-  it('still reads a public item by id at the team level', async () => {
-    const note = await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.publicNote));
-    expect(note?.type).toBe('note');
+  it('reads a client item by id at the team level, and no longer a public one (decision 6)', async () => {
+    const note = await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.clientNote));
+    expect(note).toMatchObject({ type: 'note', audience: 'client' });
+    expect(await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.publicNote))).toBeNull();
   });
 
   it('reads a team page (published doc only) and 404s an admin one', async () => {
@@ -101,9 +115,22 @@ describe.skipIf(!URL)('member Library at the team level', () => {
     expect(await m.withViewer('team', () => lib.getLibraryItem(anchor, ids.task))).toBeNull();
   });
 
-  it('shows a public-level reader only public items', async () => {
-    const { items } = await m.withViewer('public', () => lib.listLibrary(anchor, { q: tag }));
-    expect(items.map((i) => i.id)).toEqual([ids.publicNote]);
+  it('lists nothing for a level with no Library (public): fail closed', async () => {
+    const { items, total } = await m.withViewer('public', () =>
+      lib.listLibrary(anchor, { q: tag }),
+    );
+    expect(items).toEqual([]);
+    expect(total).toBe(0);
+    expect(
+      await m.withViewer('public', () => lib.getLibraryItem(anchor, ids.publicNote)),
+    ).toBeNull();
+    expect(await m.withViewer('public', () => lib.libraryCounts(anchor))).toEqual({
+      page: 0,
+      note: 0,
+      draw: 0,
+      table: 0,
+      file: 0,
+    });
   });
 
   it('reads a team table’s published workbook only, never the admin’s unsaved draft', async () => {
