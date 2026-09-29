@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { currentViewerLevel } from '@mantle/db/viewer';
 import type { Agent } from '@mantle/db';
 
-const h = vi.hoisted(() => ({ levels: [] as string[] }));
+const h = vi.hoisted(() => ({ levels: [] as string[], embedded: [] as string[] }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -27,8 +27,9 @@ vi.mock('@mantle/db', async (importOriginal) => {
 
 vi.mock('@mantle/embeddings', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  embed: vi.fn(async () => {
+  embed: vi.fn(async (_owner: string, text: string) => {
     h.levels.push(`embed:${currentViewerLevel()}`);
+    h.embedded.push(text);
     return new Array(768).fill(0.01);
   }),
 }));
@@ -55,6 +56,7 @@ const load = (audience: string) =>
 
 beforeEach(() => {
   h.levels = [];
+  h.embedded = [];
 });
 
 describe('loadConversationContext runs at the agent level', () => {
@@ -69,5 +71,32 @@ describe('loadConversationContext runs at the agent level', () => {
     await load('admin');
     expect(h.levels.length).toBeGreaterThan(0);
     expect(h.levels.filter((l) => !l.endsWith(':admin'))).toEqual([]);
+  });
+});
+
+// NATREF 2026-09-29: every short follow-up on the member chat ("what about in
+// pages?") failed, as the query enrichment read the owner's assistant_messages
+// at team, where the role has no grant. Here any db read throws, so a loader
+// that still reads it never reaches the embedding.
+describe('a short follow-up below admin', () => {
+  const followup = (recentTurnTexts?: string[]) =>
+    loadConversationContext({
+      ownerId: 'owner-1',
+      agent: agent('team'),
+      inboundText: 'What about in pages?',
+      includeJournal: false,
+      recentTurnTexts,
+    }).catch(() => null);
+
+  it('is enriched from the turn texts the surface passes, not the owner chat', async () => {
+    await followup(['Can you see the code in the test doc?', 'Nothing by that name.']);
+    expect(h.embedded[0]).toBe(
+      'Can you see the code in the test doc? Nothing by that name.\nWhat about in pages?',
+    );
+  });
+
+  it('with no texts passed, embeds the message alone', async () => {
+    await followup();
+    expect(h.embedded[0]).toBe('What about in pages?');
   });
 });

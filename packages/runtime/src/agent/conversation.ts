@@ -521,6 +521,11 @@ async function loadConversationContextAtLevel(args: {
    *  types are left out, and so are facts with no source node (they come
    *  from the owner's own chats). Unset = owner turn, no filter. */
   excludeNodeTypes?: readonly string[];
+  /** The surface's own recent turn texts, oldest first, for a short
+   *  follow-up's query enrichment. A surface with its own thread (team)
+   *  passes it: below admin the owner's assistant_messages is not readable,
+   *  and a team turn without it enriches nothing. */
+  recentTurnTexts?: readonly string[];
 }): Promise<ConversationContext> {
   const { ownerId, agent, inboundText } = args;
   const hiddenTypes = args.excludeNodeTypes;
@@ -636,25 +641,28 @@ async function loadConversationContextAtLevel(args: {
     // embedding resolves the referent instead of embedding "tell me more" alone.
     let embedInput = inboundText;
     if (QUERY_ENRICH && looksAnaphoricFollowup(inboundText) && historyLimit > 0) {
-      const conds = [
-        eq(assistantMessages.ownerId, ownerId),
-        eq(assistantMessages.agentId, agent.id),
-      ];
-      if (args.excludeMessageId) conds.push(ne(assistantMessages.id, args.excludeMessageId));
-      if (args.before) conds.push(lt(assistantMessages.createdAt, args.before));
-      const recent = await db
-        .select({ text: assistantMessages.text })
-        .from(assistantMessages)
-        .where(and(...conds))
-        .orderBy(desc(assistantMessages.createdAt))
-        .limit(2);
-      const ctx = recent
-        .map((r) => r.text)
-        .reverse()
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 400);
+      // Oldest first. Below admin the owner's chat is not readable (the
+      // team role has no grant on assistant_messages): reading it anyway
+      // failed every short follow-up on the member chat.
+      let recentTexts: readonly string[] = [];
+      if (args.recentTurnTexts) {
+        recentTexts = args.recentTurnTexts.slice(-2);
+      } else if (!belowAdmin) {
+        const conds = [
+          eq(assistantMessages.ownerId, ownerId),
+          eq(assistantMessages.agentId, agent.id),
+        ];
+        if (args.excludeMessageId) conds.push(ne(assistantMessages.id, args.excludeMessageId));
+        if (args.before) conds.push(lt(assistantMessages.createdAt, args.before));
+        const recent = await db
+          .select({ text: assistantMessages.text })
+          .from(assistantMessages)
+          .where(and(...conds))
+          .orderBy(desc(assistantMessages.createdAt))
+          .limit(2);
+        recentTexts = recent.map((r) => r.text).reverse();
+      }
+      const ctx = recentTexts.join(' ').replace(/\s+/g, ' ').trim().slice(0, 400);
       if (ctx) {
         embedInput = `${ctx}\n${inboundText}`;
         enrichedQuery = embedInput;
