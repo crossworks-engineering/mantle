@@ -96,8 +96,42 @@ export type ToolHandlerContext = {
         /** The inbound team_messages row that started this turn — stamped
          *  into a request task so the specialist can jump to the ask. */
         inboundMessageId?: string;
+      }
+    | {
+        /** A CLIENT login is on the other end (client logins C4): a client's
+         *  chat turn with the client-responder (POST /api/client/chat).
+         *  Never the owner and never a team member. `client_request_create`
+         *  reads its provenance from here; owner-only tools refuse. */
+        kind: 'client';
+        /** The client login the turn works for (server-stamped). */
+        loginId: string;
+        contactName?: string;
+        /** The inbound team_messages row that started this turn. */
+        inboundMessageId?: string;
+      }
+    | {
+        /** The OWNER, on a path that is not a chat channel (client logins
+         *  C4, plan section 8): MCP, a run, a delegated child, an approved
+         *  pending call, the dev tool console, an owner app. Since C4 a
+         *  missing surface is NOT the owner (see surface.ts): every owner
+         *  path names itself with this, or with 'web' / 'telegram'. */
+        kind: 'owner';
+        /** Which owner path (telemetry and the owner-regression sweep). */
+        via: OwnerSurfaceVia;
       };
 };
+
+/** The owner paths that carry an explicit owner surface (client logins C4). */
+export type OwnerSurfaceVia =
+  | 'mcp'
+  | 'run'
+  | 'delegate'
+  | 'pending'
+  | 'dev-tools'
+  | 'app'
+  | 'recipe-test'
+  | 'federation'
+  | 'heartbeat';
 
 /** A sidecar artifact a tool produces alongside its JSON output —
  *  audio bytes from synthesize_speech, an image from generate_image,

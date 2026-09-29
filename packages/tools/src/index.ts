@@ -136,6 +136,8 @@ export {
   type MemberAppToolVerdict,
 } from './member-app-tools';
 export { surfaceHiddenNodeTypes, HIDDEN_NODE_ERROR } from './team-visibility';
+export { isOwnerSurface, OWNER_ONLY_ERROR, type ToolSurface } from './surface';
+export type { OwnerSurfaceVia } from './types';
 export { safeFetch } from './safe-fetch';
 export { guardedFetch, assertFetchableUrl, isBlockedIp } from './ssrf-guard';
 export {
