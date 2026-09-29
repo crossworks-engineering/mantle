@@ -30,6 +30,8 @@
 #            failed, and writes into MANTLE_DUMP_DIR
 #   backup:  the updater's pre-roll backup (strict, retention, disk check,
 #            opt-out) and a whole roll refused with nothing changed when it fails
+#   floor:   a roll below v0.232.318 is refused with nothing changed while any
+#            client login exists (or they cannot be counted), unless .env says so
 #   prune:   after an OK roll only old mantle-server / mantle-client images go;
 #            the rollback pair, the running pair and other repositories stay
 #   roll:    scripts/roll.sh backs up first (its own exit status), requests
@@ -527,7 +529,7 @@ docker() {
       else return 1; fi
       return 0 ;;
     inspect) cat "$FAKE_STATE/$4" 2>/dev/null || return 1; return 0 ;;
-    exec) echo 1000; return 0 ;;
+    exec) [ -z "${FAKE_EXEC_FAIL:-}" ] || return 1; echo "${FAKE_EXEC_OUT:-1000}"; return 0 ;;
     image) cat "$FAKE_STATE/images"; return 0 ;;
     rmi) grep -qxF "$2" "$FAKE_STATE/in-use" 2>/dev/null && return 1; echo "$2" >> "$FAKE_STATE/removed"; return 0 ;;
     compose)
@@ -698,6 +700,53 @@ rm "$T/state/mantle_web"
 FAKE_TS=20260105-000000 roll_loop "$T"
 check "no running server before the roll: server images left alone" sh -c "! grep -q mantle-server '$T/state/removed' 2>/dev/null"
 check "no running server before the roll: says so" grep -q 'image prune: test/mantle-server skipped' "$T/sig/update.log"
+
+# ═════════════════════════════════════════════════════════════════════════════
+echo "updater.sh: the client logins rollback floor (v0.232.318)"
+tb_probe='for t in v0.232.317 0.232.317 v0.231.999 v0.9.500 v0.232.318 v0.232.319 v0.233.0 v1.0.0 latest v8 v0.232 v0.232.317.1 v0.232.x ""; do
+  if tag_below "$t" "$CLIENT_FLOOR"; then printf "%s:below " "$t"; else printf "%s:ok " "$t"; fi; done'
+T="$WORK/floor-lib"; fake_stack "$T"; mkdir -p "$T/state"
+out=$(roll_lib "$T" "$tb_probe")
+check "tag_below: only release versions under 0.232.318 are below" test "$out" = \
+  "v0.232.317:below 0.232.317:below v0.231.999:below v0.9.500:below v0.232.318:ok v0.232.319:ok v0.233.0:ok v1.0.0:ok latest:ok v8:ok v0.232:ok v0.232.317.1:ok v0.232.x:ok :ok "
+out=$(FAKE_EXEC_OUT=2 roll_lib "$T" 'client_logins_count')
+check "client_logins_count reads the count from mantle_pg" test "$out" = 2
+out=$(FAKE_EXEC_FAIL=1 roll_lib "$T" 'printf "[%s]" "$(client_logins_count)"')
+check "client_logins_count is empty when Postgres cannot be read" test "$out" = "[]"
+check "the count query survives a schema without the role column" \
+  grep -q "to_jsonb(u)->>'role' = 'client'" "$ROOT/infra/updater/updater.sh"
+
+floor_case() { # <name> <target>: a roll_case whose request names <target>
+  roll_case "$1"
+  printf '{"target":"%s"}\n' "$2" > "$T/sig/request.json"
+  cp "$T/stack/.env" "$T/env.before"; cp "$T/stack/docker-compose.yml" "$T/compose.before"
+}
+floor_case clients v0.232.317
+FAKE_TS=20260105-000000 FAKE_EXEC_OUT=1 roll_loop "$T"
+check "clients exist, target below: status error, ok false" grep -q '"phase":"error","target":"v0.232.317".*"ok":false' "$T/sig/status.json"
+check "clients exist, target below: says why and how many" grep -q 'roll refused, nothing changed: v0.232.317 is below v0.232.318, the floor once any client login exists (1 here)' "$T/sig/status.json"
+check "clients exist, target below: .env unchanged" same "$T/stack/.env" "$T/env.before"
+check "clients exist, target below: compose unchanged" same "$T/stack/docker-compose.yml" "$T/compose.before"
+check "clients exist, target below: no backup, no pull, no up" sh -c "! grep -qE 'db-dump.sh|pull| up ' '$T/calls'"
+check "clients exist, target below: the request was consumed" test ! -e "$T/sig/request.json"
+
+floor_case unreadable v0.232.300
+FAKE_TS=20260105-000000 FAKE_EXEC_FAIL=1 roll_loop "$T"
+check "logins cannot be counted, target below: refused (fails closed)" grep -q 'roll refused, nothing changed: v0.232.300 is below v0.232.318 and the client logins could not be counted' "$T/sig/status.json"
+
+floor_case noclients v0.232.317
+FAKE_TS=20260105-000000 FAKE_EXEC_OUT=0 roll_loop "$T"
+check "no client logins, target below: the roll goes ahead" grep -q '"phase":"done","target":"v0.232.317".*"ok":true' "$T/sig/status.json"
+
+floor_case override v0.232.317
+printf 'MANTLE_ALLOW_BELOW_CLIENT_FLOOR=1\n' >> "$T/stack/.env"
+FAKE_TS=20260105-000000 FAKE_EXEC_OUT=3 roll_loop "$T"
+check "MANTLE_ALLOW_BELOW_CLIENT_FLOOR=1: the roll goes ahead" grep -q '"phase":"done","target":"v0.232.317".*"ok":true' "$T/sig/status.json"
+check "MANTLE_ALLOW_BELOW_CLIENT_FLOOR=1: says so loudly" grep -q 'ROLLING BELOW v0.232.318' "$T/sig/update.log"
+
+floor_case atfloor v0.232.318
+FAKE_TS=20260105-000000 FAKE_EXEC_OUT=3 roll_loop "$T"
+check "clients exist, target at the floor: the roll goes ahead" grep -q '"phase":"done","target":"v0.232.318".*"ok":true' "$T/sig/status.json"
 
 # ═════════════════════════════════════════════════════════════════════════════
 echo "roll.sh: backup first, request only the target, stop on any count drop"

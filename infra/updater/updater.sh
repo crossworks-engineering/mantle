@@ -826,6 +826,69 @@ pre_roll_backup() {
   return 0
 }
 
+# ── rollback floor: client logins ────────────────────────────────────────────
+# v0.232.317 and older treat every login that is not a member as an admin
+# (client logins C0 made the role check fail closed in v0.232.318). Once a
+# client login exists, rolling the image below that floor would let each
+# client sign in as an admin: the cookie is the same, the row is the same.
+# So a request for a release below the floor is refused, with nothing
+# changed, while auth.users holds any client login. The updater that decides
+# is the one running now (the box's), not the target's. `latest` and tags
+# that are not a release version (vX.Y.Z) are never refused here.
+#
+# .env knob (the operator's, never the request's):
+#   MANTLE_ALLOW_BELOW_CLIENT_FLOOR=1  roll anyway (loudly). Only for a box
+#                                      whose client logins you have removed
+#                                      or restored away yourself.
+CLIENT_FLOOR=0.232.318
+CFR_ERR=""
+
+# tag_below <tag> <x.y.z>: 0 when <tag> is a release version (vX.Y.Z or
+# X.Y.Z) older than <x.y.z>; 1 for anything else, `latest` included.
+tag_below() {
+  tb_v=${1#v}
+  case "$tb_v" in *.*.*.* | *[!0-9.]* | .* | *. | *..*) return 1 ;; *.*.*) ;; *) return 1 ;; esac
+  tb_f=$2
+  tb_i=0
+  while [ "$tb_i" -lt 3 ]; do
+    tb_x=${tb_v%%.*}; tb_y=${tb_f%%.*}
+    [ "$tb_x" -lt "$tb_y" ] && return 0
+    [ "$tb_x" -gt "$tb_y" ] && return 1
+    tb_v=${tb_v#*.}; tb_f=${tb_f#*.}
+    tb_i=$((tb_i + 1))
+  done
+  return 1
+}
+
+# client_logins_count: the number of client logins ("" when Postgres cannot
+# be read). to_jsonb keeps it valid on a schema from before the role column.
+client_logins_count() {
+  clc=$(docker exec mantle_pg psql -U postgres -d postgres -Atc \
+    "select count(*) from auth.users u where to_jsonb(u)->>'role' = 'client'" 2>/dev/null | tr -d ' \r')
+  num_or "$clc" ""
+}
+
+# client_floor_refusal <tag>: 0 with CFR_ERR set when the roll must be
+# refused; 1 when it may go ahead. Fails closed: a target below the floor on
+# a box whose logins cannot be counted is refused too.
+client_floor_refusal() {
+  CFR_ERR=""
+  tag_below "$1" "$CLIENT_FLOOR" || return 1
+  if [ "$(env_val MANTLE_ALLOW_BELOW_CLIENT_FLOOR)" = 1 ]; then
+    echo "[updater] ⚠ ROLLING BELOW v$CLIENT_FLOOR: MANTLE_ALLOW_BELOW_CLIENT_FLOOR=1 in .env." \
+      "Any client login on this box would sign in as an admin on $1." | tee -a "$SIG/update.log"
+    return 1
+  fi
+  cfr_n=$(client_logins_count)
+  if [ -z "$cfr_n" ]; then
+    CFR_ERR="$1 is below v$CLIENT_FLOOR and the client logins could not be counted (is mantle_pg up?). Below that release every login that is not a member is an admin; see Rollback floors in docs/update-prod.md"
+    return 0
+  fi
+  [ "$cfr_n" -gt 0 ] || return 1
+  CFR_ERR="$1 is below v$CLIENT_FLOOR, the floor once any client login exists ($cfr_n here): older images treat every login that is not a member as an admin, so each client would sign in as an admin. Restore a backup from before the client logins instead (Rollback floors in docs/update-prod.md), or set MANTLE_ALLOW_BELOW_CLIENT_FLOOR=1 in .env"
+  return 0
+}
+
 # ── image prune: this product's images only ──────────────────────────────────
 # Nothing pruned images before this: each roll left a server + client pair
 # (about 3.4 GB) behind, and boxes filled at eight releases a day (dev hit 100%
@@ -991,6 +1054,14 @@ while true; do
     # via started_at, since the window can never be closed to zero.
     write_status pulling "$TARGET" "$STARTED" "" null ""
     echo "[updater] update requested → $TARGET" | tee -a "$SIG/update.log"
+
+    # The client logins floor first: a refusal there needs no backup.
+    if client_floor_refusal "$TARGET"; then
+      write_status error "$TARGET" "$STARTED" "$(now)" false "roll refused, nothing changed: $CFR_ERR"
+      echo "[updater] ROLL REFUSED before any change: $CFR_ERR" | tee -a "$SIG/update.log"
+      write_stack_info
+      continue
+    fi
 
     # The pre-roll backup comes FIRST, before any file on the box changes (see
     # pre_roll_backup). A refusal leaves .env, compose, Caddyfile, scripts and

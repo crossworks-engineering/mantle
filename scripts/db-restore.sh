@@ -139,7 +139,7 @@ if [ -n "$FAILED" ]; then
   printf '%s' "$FAILED" >&2
   echo "  Row policies name the viewer roles: a missing one reads as an empty brain to" >&2
   echo "  team and client logins (migrations 0159, 0187). Do not start the app on this" >&2
-  echo "  database. Read the pg_restore errors above, fix the cause, and run this again" >&2
+  echo "  database. Read any pg_restore errors above, fix the cause, and run this again" >&2
   echo "  (drop the database first: the script refuses a target that holds logins)." >&2
   exit 2
 fi
