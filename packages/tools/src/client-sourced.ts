@@ -13,13 +13,14 @@
  *
  * "Read" is decided by ids: every tool call's input and output, and the
  * retrieval context of the turn, are scanned for uuids, and one query asks
- * whether any names a client request task or a client login. Tools name the
+ * whether any names a client request task, a client login or an item a
+ * client wrote (client logins C5). Tools name the
  * items they return by id, so text that reaches the model from a client
  * request carries its id with it. A false positive only costs a click on
  * /pending; a missed read would cost the guard, so the scan errs wide.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { authUsers, CLIENT_REQUEST_SOURCE, db, nodes } from '@mantle/db';
+import { authUsers, CLIENT_REQUEST_SOURCE, db, nodes, spaceItems } from '@mantle/db';
 import { asSystem } from '@mantle/db/viewer';
 
 /** A turn's taint, shared by reference across the turn (and its delegated
@@ -51,7 +52,11 @@ export function uuidsIn(text: string): string[] {
 
 /**
  * Whether any of `ids` names client-sourced text: a client request task of
- * this brain, or a client login (its chat thread). As the system: the tasks
+ * this brain, a client login (its chat thread), or an item a client wrote
+ * (client logins C5): a `space_items` row stamped `author_role` 'client',
+ * in any state (submitted, taken over, accepted into the brain). The stamp
+ * outlives the client login, so an item accepted from a client's space still
+ * counts after that login is deleted. As the system: the tasks
  * are admin level and the check must see them whatever the turn's level. It
  * answers yes or no and returns no content.
  */
@@ -79,7 +84,13 @@ export async function namesClientSourced(
       .from(authUsers)
       .where(and(inArray(authUsers.id, list), eq(authUsers.role, 'client')))
       .limit(1);
-    return !!login;
+    if (login) return true;
+    const [written] = await db
+      .select({ id: spaceItems.nodeId })
+      .from(spaceItems)
+      .where(and(inArray(spaceItems.nodeId, list), eq(spaceItems.authorRole, 'client')))
+      .limit(1);
+    return !!written;
   });
 }
 

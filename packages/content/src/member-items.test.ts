@@ -8,6 +8,7 @@ import type { MemberSpaceItemRow } from '@mantle/client-types';
 import { MEMBER_ITEM_FILTERS } from '@mantle/client-types/member-kinds';
 import {
   acceptedItemRow,
+  clientRequestItemRow,
   itemsPlan,
   listSortCompare,
   mergeNewestFirst,
@@ -54,6 +55,27 @@ describe('pillOf', () => {
     expect(pillOf(space({ reviewState: 'with-admin' }))).toBe('with-admin');
     expect(pillOf(space({ reviewState: 'taken' }))).toBe('with-admin');
     expect(pillOf(space({ reviewState: 'accepted' }))).toBeNull();
+  });
+});
+
+describe('clientRequestItemRow', () => {
+  it('a client request is read only, submitted, by the client, with no level', () => {
+    const row = space({ id: 'r', reviewState: 'submitted', authorLoginId: 'c' });
+    const author = { name: 'Cleo', acceptedAt: null, role: 'client' as const };
+    expect(clientRequestItemRow(row, author)).toEqual({
+      id: 'r',
+      type: 'page',
+      title: 'X',
+      icon: null,
+      summary: null,
+      updatedAt: at(0),
+      source: 'client-request',
+      pill: 'submitted',
+      audience: null,
+      author,
+      byMe: false,
+      space: row,
+    });
   });
 });
 

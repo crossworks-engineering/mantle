@@ -8,7 +8,7 @@
  * DTO mapping: `mine` is viewer-relative, so the lib returns raw records and
  * `toNodeCommentDto` computes `mine` from the viewer the route resolved.
  */
-import { and, asc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { agents, db, nodeComments, nodes, shares, type NodeCommentDbRow } from '@mantle/db';
 import type { NodeComment, NodeCommentAuthorKind } from '@mantle/client-types';
 export type { NodeComment, NodeCommentAuthorKind };
@@ -31,6 +31,10 @@ export type CommentAuthor = {
   agentId?: string | null;
   /** Display-name snapshot ("Jason", the contact's name, the agent's name). */
   name: string;
+  /** The snapshot when the comment lands on the CLIENT thread (client
+   *  logins C5): what every client login reads, so never a full email.
+   *  Absent = `name`. */
+  clientName?: string;
 };
 
 /** Who is reading — used to compute `mine` per viewer. */
@@ -44,7 +48,9 @@ export function toNodeCommentDto(row: NodeCommentDbRow, viewer: CommentViewer): 
     (row.authorKind === 'owner' && !!viewer.loginId && row.loginId === viewer.loginId) ||
     (row.authorKind === 'member' && !!viewer.contactId && row.contactId === viewer.contactId) ||
     // A member LOGIN (member logins Phase 2) writes as itself, no contact.
-    (row.authorKind === 'member' && !!viewer.loginId && row.loginId === viewer.loginId);
+    (row.authorKind === 'member' && !!viewer.loginId && row.loginId === viewer.loginId) ||
+    // A client login (client logins C5) writes as itself too.
+    (row.authorKind === 'client' && !!viewer.loginId && row.loginId === viewer.loginId);
   return {
     id: row.id,
     nodeId: row.nodeId,
@@ -101,8 +107,17 @@ export async function getNodeComment(
   return row ?? null;
 }
 
-/** Append a comment. Returns null when the node doesn't belong to the owner
- *  (the caller turns that into a 404). Body is trimmed and length-capped. */
+/**
+ * Append a comment. Returns null when the node doesn't belong to the owner
+ * (the caller turns that into a 404). Body is trimmed and length-capped.
+ *
+ * The thread it joins is decided in the insert itself (client logins C5,
+ * decision 8): on an item at CLIENT level a person's comment is the client
+ * thread (`thread_scope` 'client', stored with `clientName`), which the
+ * team and every client login read; anything else, and every agent's
+ * comment, stays 'team' (admins only on a brain item). A level change
+ * cannot land between the check and the write.
+ */
 export async function addNodeComment(
   ownerId: string,
   nodeId: string,
@@ -111,27 +126,29 @@ export async function addNodeComment(
 ): Promise<NodeCommentDbRow | null> {
   const text = body.trim().slice(0, COMMENT_BODY_MAX);
   if (!text) return null;
-  const [node] = await db
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
-    .limit(1);
-  if (!node) return null;
-  const [row] = await db
-    .insert(nodeComments)
-    .values({
-      ownerId,
-      nodeId,
-      authorKind: author.kind,
-      loginId: author.loginId ?? null,
-      contactId: author.contactId ?? null,
-      agentId: author.agentId ?? null,
-      authorName: author.name.trim().slice(0, 200) || 'Unknown',
-      body: text,
-    })
-    .returning();
-  if (!row) throw new Error('addNodeComment: insert returned no row');
-  return row;
+  const name = author.name.trim().slice(0, 200) || 'Unknown';
+  const clientName = (author.clientName ?? author.name).trim().slice(0, 200) || 'Unknown';
+  // An agent never writes into what clients read.
+  const onClientThread = author.kind === 'agent' ? sql`false` : sql`n.audience = 'client'`;
+  return db.transaction(async (tx) => {
+    const rows = (await tx.execute(sql`
+      insert into node_comments
+        (owner_id, node_id, author_kind, login_id, contact_id, agent_id, author_name, body, thread_scope)
+      select ${ownerId}, n.id, ${author.kind}, ${author.loginId ?? null}, ${author.contactId ?? null},
+             ${author.agentId ?? null},
+             case when ${onClientThread} then ${clientName} else ${name} end,
+             ${text},
+             case when ${onClientThread} then 'client' else 'team' end
+        from nodes n
+       where n.id = ${nodeId} and n.owner_id = ${ownerId}
+       for share of n
+      returning id`)) as unknown as { id: string }[];
+    const newId = rows[0]?.id;
+    if (!newId) return null;
+    const [row] = await tx.select().from(nodeComments).where(eq(nodeComments.id, newId));
+    if (!row) throw new Error('addNodeComment: insert returned no row');
+    return row;
+  });
 }
 
 /**

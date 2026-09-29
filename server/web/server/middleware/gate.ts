@@ -57,6 +57,10 @@ function isAssetPath(path: string): boolean {
     // token opens only that member's items; another member's file is a 404.
     /^\/api\/member\/space\/[^/]+\/bytes$/.test(path) ||
     /^\/api\/member\/team-drafts\/[^/]+\/bytes$/.test(path) ||
+    // A file a client submitted (client logins C5, client requests): the
+    // route calls getMemberForAsset and reads on the team role with the
+    // human flag, so the token opens only a submitted client file.
+    /^\/api\/member\/client-requests\/[^/]+\/bytes$/.test(path) ||
     // An admin's own private file (member logins Phase 7). The route calls
     // getOwnerForAsset and reads the space of the login the token's `act`
     // names, so the token opens only that admin's own items.

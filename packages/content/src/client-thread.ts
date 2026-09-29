@@ -1,0 +1,127 @@
+/**
+ * The client thread on a client-level brain item (client logins C5,
+ * decision 8): one discussion that the team, the admins and every client
+ * login read and write, while the item is at client level.
+ *
+ * Stored in node_comments with `thread_scope` 'client', the brain's id as
+ * owner. Row security holds the reads (migration 0194): the client role and
+ * the team role, with the human flag on (a login's own request, never an
+ * agent), read the 'client' comments of a brain item at client level, and
+ * nothing of it once the item is raised or lowered. Other scopes on the same
+ * item (an admin's 'team' talk) stay admin-only. Run the reads inside
+ * `withHumanViewer('client')` or `withHumanViewer('team')`.
+ *
+ * The level roles never write: a comment is written on the admin pool, and
+ * the proof that the item is a brain item at client level is part of the
+ * same statement (as addTeamDraftComment does it), so a level change cannot
+ * slip in between the check and the write. Attribution comes from the
+ * session. Writing never starts LLM work.
+ */
+import { and, asc, eq, sql } from 'drizzle-orm';
+import {
+  asSystem,
+  currentSpaceScope,
+  currentViewerLevel,
+  db,
+  nodeComments,
+  nodes,
+  type NodeCommentDbRow,
+} from '@mantle/db';
+import { COMMENT_BODY_MAX } from './node-comments';
+
+/** Who writes on the client thread: a client or a member login, with its
+ *  display-name snapshot (the route picks it from the session). */
+export type ClientThreadAuthor = { kind: 'client' | 'member'; loginId: string; name: string };
+
+/** The reads run on a level role with the human flag (withHumanViewer):
+ *  never at admin, never inside a personal space. */
+function requireHumanLevel(): void {
+  const level = currentViewerLevel();
+  if ((level !== 'team' && level !== 'client') || currentSpaceScope()) {
+    throw new Error('client thread read outside withHumanViewer');
+  }
+}
+
+/**
+ * The client thread on `nodeId`, oldest first; null when the caller may not
+ * read the node at its level, or it is not a brain item at client level (the
+ * route answers 404).
+ */
+export async function listClientThread(
+  anchorId: string,
+  nodeId: string,
+): Promise<NodeCommentDbRow[] | null> {
+  requireHumanLevel();
+  const [node] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, anchorId), eq(nodes.audience, 'client')))
+    .limit(1);
+  if (!node) return null;
+  return db
+    .select()
+    .from(nodeComments)
+    .where(and(eq(nodeComments.nodeId, nodeId), eq(nodeComments.threadScope, 'client')))
+    .orderBy(asc(nodeComments.createdAt));
+}
+
+/**
+ * Add to the client thread. Written on the admin pool with the proof in the
+ * same statement: the node is this brain's, a workspace item, at client
+ * level now (locked for the insert). Null when it is not (404).
+ */
+export async function addClientThreadComment(
+  anchorId: string,
+  nodeId: string,
+  author: ClientThreadAuthor,
+  body: string,
+): Promise<NodeCommentDbRow | null> {
+  const text = body.trim().slice(0, COMMENT_BODY_MAX);
+  if (!text) return null;
+  const name =
+    author.name.trim().slice(0, 200) || (author.kind === 'client' ? 'A client' : 'Member');
+  return asSystem(() =>
+    db.transaction(async (tx) => {
+      const rows = (await tx.execute(sql`
+        insert into node_comments (owner_id, node_id, author_kind, login_id, author_name, body, thread_scope)
+        select ${anchorId}, n.id, ${author.kind}, ${author.loginId}, ${name}, ${text}, 'client'
+          from nodes n
+         where n.id = ${nodeId}
+           and n.owner_id = ${anchorId}
+           and n.audience = 'client'
+           and mantle_workspace_kind(n.type)
+         for share of n
+        returning id`)) as unknown as { id: string }[];
+      const newId = rows[0]?.id;
+      if (!newId) return null;
+      const [inserted] = await tx.select().from(nodeComments).where(eq(nodeComments.id, newId));
+      return inserted ?? null;
+    }),
+  );
+}
+
+/** Delete one of the caller's own comments on the client thread (its own
+ *  login and kind, scope client, on this brain's node). */
+export async function deleteClientThreadComment(
+  anchorId: string,
+  nodeId: string,
+  author: Pick<ClientThreadAuthor, 'kind' | 'loginId'>,
+  commentId: string,
+): Promise<boolean> {
+  const gone = await asSystem(() =>
+    db
+      .delete(nodeComments)
+      .where(
+        and(
+          eq(nodeComments.id, commentId),
+          eq(nodeComments.nodeId, nodeId),
+          eq(nodeComments.ownerId, anchorId),
+          eq(nodeComments.threadScope, 'client'),
+          eq(nodeComments.authorKind, author.kind),
+          eq(nodeComments.loginId, author.loginId),
+        ),
+      )
+      .returning({ id: nodeComments.id }),
+  );
+  return gone.length > 0;
+}

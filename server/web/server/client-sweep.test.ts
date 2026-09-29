@@ -159,6 +159,7 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
     '/api/client/shared/not-a-uuid',
     '/api/client/files/not-a-uuid',
     '/api/client/draws/not-a-uuid/svg',
+    '/api/client/shared/not-a-uuid/comments',
   ];
 
   it('lets a client session through to client routes', async () => {
@@ -224,7 +225,11 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
       '/api/profile/photo',
       `/api/admin/space/${ID}/bytes`,
     ];
-    const MEMBER_BYTES = [`/api/member/files/${ID}`, `/api/member/draws/${ID}/svg`];
+    const MEMBER_BYTES = [
+      `/api/member/files/${ID}`,
+      `/api/member/draws/${ID}/svg`,
+      `/api/member/client-requests/${ID}/bytes`,
+    ];
     const withAt = (path: string, at: string) =>
       `${path}${path.includes('?') ? '&' : '?'}at=${encodeURIComponent(at)}`;
 

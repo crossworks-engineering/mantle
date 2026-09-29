@@ -9,6 +9,11 @@
  * acting), never from the request body — the same provenance rule as
  * team_request_create. `mine` is computed here per viewer, so two logins
  * looking at one thread each see their own comments flagged.
+ *
+ * On an item at CLIENT level, a comment written here joins the client thread
+ * (thread_scope 'client', decided in the insert): the team and every client
+ * login read it, under the admin's display name (else the email's local
+ * part). The owner's GET lists every scope.
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
@@ -53,6 +58,10 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       kind: 'owner',
       loginId: user.actor.id,
       name: user.actor.displayName || user.actor.email,
+      // On an item at client level the comment joins the client thread
+      // (client logins C5): every client login reads the name, so never the
+      // full email there.
+      clientName: user.actor.displayName?.trim() || user.actor.email.split('@')[0] || 'Admin',
     },
     parsed.data.body,
   );

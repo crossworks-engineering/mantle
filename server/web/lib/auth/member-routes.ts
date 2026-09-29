@@ -64,6 +64,15 @@ export const MEMBER_ROUTES: readonly string[] = [
   // Everything above in ONE list (item-list alignment): each source read
   // under its own rules, exactly as its own route reads it (member-items.ts).
   'GET /api/member/items',
+  // Clients' submitted items (client logins C5, decision 5 B): read only, on
+  // the team role with the human flag on (client-requests.ts).
+  'GET /api/member/client-requests',
+  'GET /api/member/client-requests/:id',
+  'GET /api/member/client-requests/:id/bytes',
+  // The client thread on a Library item at client level (C5, decision 8).
+  'GET /api/member/library/:id/comments',
+  'POST /api/member/library/:id/comments',
+  'DELETE /api/member/library/:id/comments/:commentId',
 ];
 
 export function isMemberRoute(method: string, pattern: string): boolean {
