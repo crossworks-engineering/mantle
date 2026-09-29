@@ -282,8 +282,9 @@ export async function setItemAudience(
 }
 
 export type SetItemLevelResult = SetItemAudienceResult & {
-  /** The item's link after the change: null at admin and team (revoked),
-   *  an open link at client and public. */
+  /** The item's link after the change: null at admin, team and client
+   *  (revoked; client means signed-in clients, client logins C1), an open
+   *  link at public. */
   share: ShareSummary | null;
 };
 
@@ -292,7 +293,7 @@ export type SetItemLevelResult = SetItemAudienceResult & {
  * (levels drive links, docs/access-levels.md §7). Closure items only get the
  * level, never a link of their own: they are reached through the item. Level
  * and link change in ONE transaction: a link that cannot be made leaves the
- * level where it was, not an item at client with no link.
+ * level where it was, not an item at public with no link.
  */
 export async function setItemLevel(
   ownerId: string,

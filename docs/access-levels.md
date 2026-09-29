@@ -1,9 +1,11 @@
 # Access levels: one level system, enforced by the database
 
-> Member logins, Phase 0b. What an agent (and later a member) may read is
-> decided by Postgres row level security on a limited login role, not by a
-> check in each tool. Built and tested; nothing changes on a box until an
-> admin lowers an agent's level.
+> Member logins, Phase 0b; client logins C1 and C2. What an agent, a member
+> or a client may read is decided by Postgres row level security on a
+> limited login role, not by a check in each route or tool. It is live on
+> every box: an agent below admin, every member login (team) and every
+> client login (client) read through it. The owner and admin-level agents
+> read everything.
 
 ## 1. The model
 
@@ -77,7 +79,9 @@ Public items stay reachable by their own open link.
   skips both.
 - **An agent's level is the switch.** A team-level agent runs every query of
   its turn on the team role, so it reads only team-, client- and public-level
-  items. There is no other flag. `team-responder` ships at admin; an admin
+  items. A client-level agent runs on the client role and reads client items
+  only, not public ones (migration 0187, decision 3, as a client login does);
+  a public-level agent reads public items only. There is no other flag. `team-responder` ships at admin; an admin
   lowers it once the shadow report is clean (section 5).
 - **Tool groups.** An agent may hold only groups at or below its level:
   refused at grant time (`PATCH /api/agents/:id`, `agent_grant_tool_group`),
@@ -191,7 +195,15 @@ removing any one wrap fails a test.
   (`mantle_view_team`, `mantle_view_client`, `mantle_view_public` and
   `mantle_view_space`) before `pg_restore` (a dump does not carry roles, but
   its policies and grants name them; migrate later gives them their login
-  and password) and warns if the policies did not restore.
+  and password). It restores into a pristine database (it drops the empty
+  `postgres` database the init scripts made and creates a new one, and
+  refuses a target that holds any item or login), then exits 2, without
+  "Restore complete", when the restored brain has no logins, no role CHECK
+  (`users_role_ck`), or misses a viewer policy: `nodes_viewer_read`, and
+  from migration 0187 on `agents_viewer_read`, `agents_client_read`,
+  `tool_groups_viewer_read` and `tool_groups_client_read`. Each check applies
+  once the dump's own migration ledger shows the migration that made it, so
+  an older pre-roll dump is judged by what its release had.
 - **Backups before a roll.** The updater takes a strict four-part backup
   (Postgres, app-dbs, table-dbs, spaces) into `backups/pre-roll/` before
   every server roll and refuses the roll when it fails (docs/update-prod.md).
@@ -233,7 +245,8 @@ outside a login reaches a team item.
 - **Link to level.** Every share mutation (`createShare`, `applyShareMode`,
   `setShareCascade`, `revokeShare`, `revokeShareTree`) re-derives the level
   of the nodes it touched (`levelForShareMode`): an item at client never
-  moves because of a link (below); otherwise no link is admin, except
+  moves because of its own link (below; being embedded is another matter,
+  see "A client item embedded in something shared"); otherwise no link is admin, except
   that an item at team stays at team; an open link keeps public
   and drops anything higher to public (so `node_share` on a team item puts
   it at public: to show an item to members only, set team instead). A
@@ -253,12 +266,24 @@ outside a login reaches a team item.
   link and says why in `linkRefused`). Old links on client items, made
   when client meant an open link, stay live until they are retired
   (client logins C3), and no re-sync moves their item: `levelForShareMode`
-  keeps a client item at client whatever its link, and turning an old
-  client link off (`unshareItem`) keeps the item at client. The "What
+  keeps a client item at client whatever its own link says, and turning an
+  old client link off (`unshareItem`) keeps the item at client. The "What
   clients see" report (`GET /api/access/client-report`) lists every item
   at client, its old link, the addresses a page was emailed to and the
   team or admin items it names; an admin acknowledges it
   (`POST /api/access/client-report/ack`) before the first client login.
+- **A client item embedded in something shared goes public with it.**
+  Embedding means sharing (section 1): when a page, drawing or note is set
+  to public or gets an open link, its embed closure goes down to public in
+  the same transaction, and a client item in that closure goes too (public
+  ranks below client). So an item's own link never moves a client item, but
+  being embedded in a public item does, and at public it leaves the client
+  logins' view (the client role reads client items only, decision 3); it
+  is then reached through the public item's link. The Access control lists
+  the embedded items that will go down before the admin applies, and every
+  setter reports them after, in `alsoLowered` (`from: 'client', to:
+  'public'`): the Access control, `access_set`, `node_share`, `page_share`,
+  `POST /api/shares` and the email link.
 - **No team links** (member logins Phase 6 stage 6). Team is a level members
   read by, never a link: setting an item to team revokes its open link, and
   asking for a team link (`PATCH /api/shares/:id` `mode: 'team'`,
@@ -284,10 +309,13 @@ outside a login reaches a team item.
   the old version in retrieval; when the old version is below admin the
   tool result warns that it is still visible at that level and names
   `access_set` to raise it.
-- **What an open link means for members.** Client and public items are
-  readable by the team role, so a member can open one by id and the team
-  agent can read it. The member Library does not LIST them: it lists team
-  items only (docs/member-logins.md section 3).
+- **What members and clients list.** Client and public items are readable
+  by the team role, so the team agent can read them. The member Library
+  lists and opens team and client items, each row with its level (client
+  logins decision 6, C2: members see what clients see); a client lists
+  client items only. Public items are in nobody's Library: 0161 made every
+  link-shared item public, so they stay reachable by their own open link
+  (docs/member-logins.md section 3).
 - **Admin-only kinds** (tasks, events, …) stay admin whatever link they
   carry. Setting one to admin removes an old link.
 - Migration 0161 re-derived every level from the links once, for the window
@@ -298,8 +326,9 @@ outside a login reaches a team item.
   corrective one).
 - **Links show only their level** (audit F19). A link opens at its item's
   own level and lists and serves only what sits at or below it beyond the
-  item itself: a public link public items, a client link client and public
-  ones (`linkLevels` in server/web/lib/shares.ts).
+  item itself: a public link public items, an old client link (made before
+  client logins C1; none is made now, and they serve until C3) client and
+  public ones (`linkLevels` in server/web/lib/shares.ts).
   - A **folder** link: the listing (components/share/folder-presenter.tsx)
     and the asset check `isAssetAllowed`. A file uploaded into a shared
     folder later lands at admin, so it stays out of the link until someone

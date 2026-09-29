@@ -70,9 +70,9 @@ describe('migrations that lock a hot table set lock_timeout first', () => {
   it('the detector sees the locks it is meant to see', () => {
     const bare = `ALTER TABLE "auth"."users" ADD CONSTRAINT x CHECK (true);`;
     expect(missesLockTimeout(bare)).toBe(true);
-    expect(missesLockTimeout(`CREATE POLICY "p" ON "public"."agents" FOR SELECT USING (true);`)).toBe(
-      true,
-    );
+    expect(
+      missesLockTimeout(`CREATE POLICY "p" ON "public"."agents" FOR SELECT USING (true);`),
+    ).toBe(true);
     expect(
       missesLockTimeout(
         `CREATE TRIGGER t AFTER INSERT ON "public"."space_items" FOR EACH ROW EXECUTE FUNCTION f();`,
