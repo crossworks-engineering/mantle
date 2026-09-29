@@ -396,7 +396,8 @@ describe.skipIf(!URL)('client email sign-in codes', () => {
   });
 
   it('stops sending brain-wide at the daily cap, and not before', async () => {
-    const t = 60 * HOUR;
+    // A window no other case here writes in: [46h, 70h].
+    const t = 70 * HOUR;
     const cap = c.CLIENT_CODE_DAILY_CAP;
     await exec(sqlTag`
       insert into client_signin_codes (owner_id, login_id, kind, code_hash, expires_at, created_at)
