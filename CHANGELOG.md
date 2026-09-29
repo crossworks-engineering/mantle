@@ -4,6 +4,22 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.330: memory benchmarks, and entities no longer lost to a race
+
+- **A benchmark harness for the whole memory path.** `pnpm -C server/api
+  bench:memory` runs LoCoMo and LongMemEval through the real brain: each
+  conversation goes into its own scratch database as dated notes, the
+  shipped extractor processes them, the responder's retrieval answers each
+  question, and the published judges grade it. Manual runs only, with a cost
+  estimate and a hard spend cap. First smoke run (one LoCoMo conversation,
+  20 questions): 80%, at about 5.4k tokens of context per question.
+  Runbook: docs/benchmarks.md.
+- **Parallel extraction no longer drops entity links.** When two documents
+  being extracted at the same time both named a new person, the second one
+  lost its link to that person (a unique-violation handler never matched
+  the wrapped database error). It now reuses the entity the first one
+  created. The benchmark found it: 5 speaker mentions across 19 notes.
+
 ## 0.232.329: client v0.6.174
 
 - Pairs the client at jackdaw v0.6.174, the client half of 0.232.328 (old
