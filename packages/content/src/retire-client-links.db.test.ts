@@ -35,6 +35,7 @@ describe.skipIf(!URL)('retire client links (0192 and the share read path)', () =
     markedClient: randomUUID(), // client item, link already revoked and marked
     publicNote: randomUUID(), // live link on a public item
     adminNote: randomUUID(), // live link on an admin item (a leftover)
+    revokedPublic: randomUUID(), // public item, its link revoked the normal way
   };
   const token = Object.fromEntries(
     Object.keys(n).map((k) => [k, randomBytes(16).toString('base64url')]),
@@ -82,6 +83,7 @@ describe.skipIf(!URL)('retire client links (0192 and the share read path)', () =
       markedClient: 'client',
       publicNote: 'public',
       adminNote: 'admin',
+      revokedPublic: 'public',
     };
     for (const k of Object.keys(n) as (keyof typeof n)[]) {
       await admin`insert into nodes (id, owner_id, type, title, path, audience, data)
@@ -100,6 +102,7 @@ describe.skipIf(!URL)('retire client links (0192 and the share read path)', () =
     await link('markedClient', { revoked: oldRevokedAt, retired: true });
     await link('publicNote', {});
     await link('adminNote', {});
+    await link('revokedPublic', { revoked: oldRevokedAt });
   }, 60_000);
 
   afterAll(async () => {
@@ -131,6 +134,7 @@ describe.skipIf(!URL)('retire client links (0192 and the share read path)', () =
     // Other levels untouched.
     expect(after[n.publicNote]).toEqual({ retired: null, at: null });
     expect(after[n.adminNote]).toEqual({ retired: null, at: null });
+    expect(after[n.revokedPublic]).toEqual({ retired: null, at: Date.parse(oldRevokedAt) });
   });
 
   it('keeps every item level', async () => {
@@ -141,6 +145,7 @@ describe.skipIf(!URL)('retire client links (0192 and the share read path)', () =
       [n.markedClient]: 'client',
       [n.publicNote]: 'public',
       [n.adminNote]: 'admin',
+      [n.revokedPublic]: 'public',
     });
   });
 
@@ -156,6 +161,7 @@ describe.skipIf(!URL)('retire client links (0192 and the share read path)', () =
     }
     expect(await s.isRetiredClientLinkToken(token.publicNote)).toBe(false);
     expect(await s.isRetiredClientLinkToken(token.adminNote)).toBe(false);
+    expect(await s.isRetiredClientLinkToken(token.revokedPublic)).toBe(false);
     expect(await s.isRetiredClientLinkToken('no-such-token')).toBe(false);
     expect(await s.isRetiredClientLinkToken('')).toBe(false);
   });
@@ -169,6 +175,16 @@ describe.skipIf(!URL)('retire client links (0192 and the share read path)', () =
       await admin`update nodes set audience = 'public' where id = ${n.publicNote}`;
     }
     expect((await s.resolveActiveShareByToken(token.publicNote))?.nodeId).toBe(n.publicNote);
+  });
+
+  it('a retired link stays retired after its item leaves client', async () => {
+    await admin`update nodes set audience = 'team' where id = ${n.oldClient}`;
+    try {
+      expect(await s.isRetiredClientLinkToken(token.oldClient)).toBe(true);
+      expect(await s.resolveActiveShareByToken(token.oldClient)).toBeNull();
+    } finally {
+      await admin`update nodes set audience = 'client' where id = ${n.oldClient}`;
+    }
   });
 
   it('lists the retired links for Shared links, without a token', async () => {
