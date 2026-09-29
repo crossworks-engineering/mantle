@@ -4,6 +4,16 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.339: the memory benchmark says why an answer was wrong
+
+- **Each benchmark answer keeps its evidence.** `bench:memory` now saves
+  the exact memory context every answer was given, checks whether the
+  conversation sessions that hold the answer reached that context, and
+  notes when the answer said the memory lacked it. The report splits wrong
+  answers into retrieval misses (the right session never arrived) and
+  answer misses (it arrived; the answer was still wrong), with evidence
+  recall per question type. See docs/benchmarks.md.
+
 ## 0.232.338: client v0.6.177
 
 - Pairs the client at jackdaw v0.6.177, the client half of 0.232.334 (one
