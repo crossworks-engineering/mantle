@@ -81,18 +81,17 @@ export async function lockSpaceQuota(spaceId: string): Promise<void> {
 export const SPACE_ITEM_LIMIT = 2000;
 
 /**
- * A quota refusal (409 `quota`, or `reason` for the comment caps). In a
- * CLIENT's space it is recorded too (client_quota_refusals, audit I5: the
- * admin card lists them), on the admin pool, so the record stays when the
- * refusal rolls the space transaction back.
+ * A quota refusal (409 `quota`). In a CLIENT's space it is recorded too
+ * (client_quota_refusals, audit I5: the admin card lists them), on the admin
+ * pool, so the record stays when the refusal rolls the space transaction
+ * back.
  */
 export async function quotaRefusal(
   kind: ClientQuotaReason,
   message: string,
-  reason: 'quota' | 'comment-cap' | 'thread-full' = 'quota',
 ): Promise<SpaceItemStateError> {
   if (inClientSpace()) await recordClientQuotaRefusal(currentSpaceScope()!.loginId, kind);
-  return new SpaceItemStateError(reason, message);
+  return new SpaceItemStateError('quota', message);
 }
 
 /**
