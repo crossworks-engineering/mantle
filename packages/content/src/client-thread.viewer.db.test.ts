@@ -93,8 +93,9 @@ describe.skipIf(!URL)('the client thread on a client-level item', () => {
         (${items.team}, ${brain}, 'note', ${`${tag} team note`}, 'notes', 'team'),
         (${items.admin}, ${brain}, 'note', ${`${tag} admin note`}, 'notes', 'admin'),
         (${items.pub}, ${brain}, 'note', ${`${tag} public note`}, 'notes', 'public')`);
-    // A member's item shared with the team: the team role reads the node
-    // (team drafts), so only the brain-item rule keeps its thread out.
+    // A member's item shared with the team, at client level by hand: the
+    // team role reads the node (team drafts), so only the brain-item rule
+    // keeps its thread out.
     const S = spaceOf[member]!;
     personal = (
       await m.withSpace({ spaceId: S, loginId: member }, () =>
@@ -104,6 +105,7 @@ describe.skipIf(!URL)('the client thread on a client-level item', () => {
     await m.systemDb.execute(
       sqlTag`update space_items set sharing = 'team' where node_id = ${personal}`,
     );
+    await setAudience(personal, 'client');
 
     await seed(items.client, 'hello clients', 'client');
     await seed(items.client, 'admin only talk', 'team');
