@@ -35,7 +35,7 @@ export type ClientSharedRow = {
   type: MemberItemKind;
   title: string;
   icon: string | null;
-  /** Never sent since 0.232.332 (it was built from the unredacted text); do
+  /** Never sent since 0.232.333 (it was built from the unredacted text); do
    *  not show it. Optional only so older clients still compile. */
   summary?: string | null;
   updatedAt: string;
@@ -140,7 +140,7 @@ export type ClientLoginCreated = { client: ClientLoginRow };
 /** POST /api/team-admin/clients/:id/signin-link -> the link, ONCE. `path` is
  *  the client-app path to hand the client (the code is its only secret);
  *  72 hours, one use. Any older open link of the login is revoked. Since
- *  0.232.332 the code rides in the fragment (`/client-signin#code=...`), so
+ *  0.232.333 the code rides in the fragment (`/client-signin#code=...`), so
  *  it never reaches a server log; links issued before carry `?code=`. */
 export type ClientSigninLinkCreated = {
   link: ClientSigninLinkRow;

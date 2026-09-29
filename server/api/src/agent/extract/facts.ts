@@ -5,7 +5,7 @@
  * unchanged; the sequencer in ../extractor.ts calls into here.
  */
 
-import { parseClassifierDecision, resolveCostCap } from './rules';
+import { factValidFrom, parseClassifierDecision, resolveCostCap } from './rules';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { db, facts, nodes, type AiWorker, type ExtractorParams } from '@mantle/db';
 
@@ -26,16 +26,14 @@ async function classifyAndApplyFact(
   ownerId: string,
   candidate: ExtractedFact,
   candidateEmbedding: number[],
-  sourceNodeId: string,
+  source: Pick<typeof nodes.$inferSelect, 'id' | 'createdAt' | 'data'>,
   primaryEntityId: string | null,
   worker: AiWorker,
 ): Promise<'ADD' | 'UPDATE' | 'DELETE' | 'NOOP'> {
-  // valid_from = when the fact became true. For an episodic fact with a parsed
-  // event date, that's the EVENT date (so recency decays by when it happened,
-  // not when we ingested it); otherwise now.
-  const validFrom = candidate.occurredAt
-    ? new Date(`${candidate.occurredAt}T00:00:00Z`)
-    : new Date();
+  const sourceNodeId = source.id;
+  // valid_from = when the fact became true: the event date for an episodic
+  // fact, else the source document's own date (see factValidFrom).
+  const validFrom = factValidFrom(candidate.occurredAt, source);
 
   // Find near-neighbour facts among currently-valid rows.
   const neighbours = await db
@@ -292,7 +290,7 @@ export async function processFacts(
             ownerId,
             candidate,
             vec,
-            node.id,
+            node,
             primaryEntityId,
             worker,
           );

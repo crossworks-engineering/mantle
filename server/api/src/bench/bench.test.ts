@@ -216,6 +216,7 @@ describe('report', () => {
     extracted: 2,
     extract_failed: 0,
     ingest_ms: 4000,
+    ingest_loop_delay_ms: { p50: 20, p99: 30, max: 40 },
     extract_usd: 0.05,
     questions: [q('a', true), q('a', false), q('b', null), q('b', null, 'boom')],
     stopped_for_budget: false,

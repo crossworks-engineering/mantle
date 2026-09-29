@@ -72,6 +72,7 @@ type Args = {
   resume: boolean;
   keepDb: boolean;
   dryRun: boolean;
+  ingestOnly: boolean;
 };
 
 function parseArgs(argv: string[]): Args {
@@ -109,6 +110,7 @@ function parseArgs(argv: string[]): Args {
     resume: Boolean(resumeDir),
     keepDb: flags.has('keep-db'),
     dryRun: flags.has('dry-run'),
+    ingestOnly: flags.has('ingest-only'),
   };
 }
 
@@ -162,7 +164,10 @@ function runChild(
 async function parent(args: Args): Promise<void> {
   const all = await loadData(args);
   const haystacks = selectHaystacks(all, args);
-  const estimate = estimateRun(haystacks, args.models);
+  const estimate = estimateRun(
+    args.ingestOnly ? haystacks.map((h) => ({ ...h, questions: [] })) : haystacks,
+    args.models,
+  );
   console.log(
     `[bench] ${args.dataset}: ${haystacks.length} haystacks, ` +
       `${haystacks.reduce((n, h) => n + h.questions.length, 0)} questions, ` +
@@ -238,6 +243,7 @@ async function parent(args: Args): Promise<void> {
         BENCH_MODELS: JSON.stringify(args.models),
         BENCH_MAX_USD: String(Math.max(0, args.maxUsd - spent)),
         BENCH_EXTRACT_CONCURRENCY: String(args.extractConcurrency),
+        BENCH_INGEST_ONLY: args.ingestOnly ? '1' : '',
       });
       if (!args.keepDb)
         await adminExec(adminUrl, `drop database if exists "${dbName}" with (force)`);
@@ -302,6 +308,7 @@ async function child(file: string): Promise<void> {
       apiKey: envDynamic('BENCH_OPENROUTER_API_KEY') ?? '',
       maxUsd: Number(envDynamic('BENCH_MAX_USD') ?? 0),
       extractConcurrency: Number(envDynamic('BENCH_EXTRACT_CONCURRENCY') ?? 4),
+      ingestOnly: envDynamic('BENCH_INGEST_ONLY') === '1',
     });
     console.log(`BENCH_RESULT ${JSON.stringify(result)}`);
   } finally {

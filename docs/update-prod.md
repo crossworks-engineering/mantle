@@ -344,7 +344,7 @@ What admins see change:
 After this roll the box has the rollback floor below: never below
 v0.232.318 once a client login exists.
 
-## Rolling to the release after v0.232.331 (client logins audit fixes)
+## Rolling to v0.232.333 (client logins C2/C2b audit fixes)
 
 An ordinary roll through the updater (`scripts/roll.sh`). What to know:
 

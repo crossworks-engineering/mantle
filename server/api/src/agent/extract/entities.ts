@@ -8,7 +8,7 @@
 import { aliasToAdd, findOrgVariant } from './rules';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, entities, entityEdges, nodes, pages, type Entity } from '@mantle/db';
-import { embed } from '@mantle/embeddings';
+import { embed, embedBatch } from '@mantle/embeddings';
 import { step } from '@mantle/tracing';
 import { mentionRefs, normaliseOrgName } from '@mantle/content';
 import { isLikelyDifferentPerson } from '../person-names';
@@ -234,6 +234,22 @@ export async function reconcileEntities(
       const edgedEntityIds = new Set<string>();
       let created = 0;
       let matched = 0;
+      // Warm the embedding cache for every text reconcileEntity may embed
+      // (the bare name it compares, the "kind: name" it stores) in ONE call.
+      // Each new mention used to cost two sequential API round trips, and a
+      // provider key's throughput is capped under sustained load (2026-09-29:
+      // four parallel extractions got no more embeddings per minute than one,
+      // each call waiting ~6 s), so the call count is what sets the pace.
+      // The per-mention embeds below then hit the cache; results unchanged.
+      try {
+        if (uniqueMentions.length > 0)
+          await embedBatch(
+            ownerId,
+            uniqueMentions.flatMap((m) => [m.name.trim(), `${m.kind}: ${m.name.trim()}`]),
+          );
+      } catch {
+        // The per-mention path embeds (or skips) on its own.
+      }
       for (const mention of uniqueMentions) {
         try {
           // reconcileEntity already does the exact-match probe as its
