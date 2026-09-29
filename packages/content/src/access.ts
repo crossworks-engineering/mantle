@@ -282,9 +282,9 @@ export async function setItemAudience(
 }
 
 export type SetItemLevelResult = SetItemAudienceResult & {
-  /** The item's link after the change: null at admin, team and client
-   *  (revoked; client means signed-in clients, client logins C1), an open
-   *  link at public. */
+  /** The item's link after the change: an open link at public, null at
+   *  admin and team (revoked) and at client, except an item already at
+   *  client keeps its old link (client logins C1: it lives until C3). */
   share: ShareSummary | null;
 };
 
@@ -303,8 +303,23 @@ export async function setItemLevel(
 ): Promise<SetItemLevelResult> {
   const plan = await planItemAudience(ownerId, nodeId, audience);
   return db.transaction(async (tx) => {
+    // The level before the change, read under a row lock: another writer
+    // cannot move it between this read and the write below.
+    const [before] = await tx
+      .select({ audience: nodes.audience })
+      .from(nodes)
+      .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ownerId)))
+      .for('update')
+      .limit(1);
     const res = await applyItemAudience(ownerId, plan, opts, tx);
-    const share = await applyLevelToShare(ownerId, nodeId, res.item.audience, tx);
+    // Client to client ("Lower them too", "Raise them too", access_set
+    // client on a client item) leaves the item's own link alone: an old
+    // client link lives until the old links are retired (client logins C3),
+    // and setting the level it already has is no reason to break it.
+    const keepLink = before?.audience === 'client' && res.item.audience === 'client';
+    const share = keepLink
+      ? await getActiveShareForNode(ownerId, nodeId, tx)
+      : await applyLevelToShare(ownerId, nodeId, res.item.audience, tx);
     // A raised closure item that carries a link of its OWN (a file shared on
     // its own, say) must have that link follow it, or level and link drift: an
     // open link on an item now at admin. Items without a link get none.

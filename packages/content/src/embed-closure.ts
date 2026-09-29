@@ -233,6 +233,25 @@ export async function embedClosureOf(
 }
 
 /**
+ * The brain's items that `items` (rows of another owner: a personal space's
+ * bundle before Accept moves it in) embed, plus their own embed closures in
+ * the brain, each at its current level: what an Accept at a level below
+ * admin takes down with the bundle (member-review.ts). `exclude`: ids never
+ * to include (the bundle itself).
+ */
+export async function brainEmbedsOf(
+  brainId: string,
+  fromOwnerId: string,
+  items: readonly { id: string; type: string }[],
+  q: ClosureDb = db,
+  exclude: readonly string[] = [],
+): Promise<EmbedItem[]> {
+  const direct = await directEmbeds(q, fromOwnerId, items);
+  if (direct.length === 0) return [];
+  return embedClosureOf(brainId, direct, q, exclude);
+}
+
+/**
  * Take `items` down to `level`: every workspace-kind item above it goes to
  * it; one already at or below it is left alone, and nothing is ever raised.
  * A kind that can never go below admin stays admin and comes back in

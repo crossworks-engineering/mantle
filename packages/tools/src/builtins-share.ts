@@ -55,15 +55,40 @@ const node_share: BuiltinToolDef = {
       const share = await createShare(ctx.ownerId, id, { alsoLowered });
       const url = shareUrlForToken(share.token);
       ctx.step?.setOutput({ id, url, mode: share.mode });
+      const warning = clientLeftWarning(alsoLowered);
       return {
         ok: true,
-        output: { id, url, mode: share.mode, ...(alsoLowered.length ? { alsoLowered } : {}) },
+        output: {
+          id,
+          url,
+          mode: share.mode,
+          ...(alsoLowered.length ? { alsoLowered } : {}),
+          ...(warning ? { warning } : {}),
+        },
       };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }
   },
 };
+
+/**
+ * What a link (or the public level) on one item did to CLIENT items it
+ * embeds (audit A10): embedding means sharing, so they went down to public
+ * with it, and client logins read client items only (client logins C1,
+ * decision 3), so they left the clients' view. Said out loud in the tool's
+ * answer, never silently. Null when no client item moved.
+ */
+export function clientLeftWarning(alsoLowered: readonly LoweredItem[]): string | null {
+  const moved = alsoLowered.filter((l) => l.from === 'client');
+  if (moved.length === 0) return null;
+  const names = moved.map((l) => `${l.title} (${l.type})`).join(', ');
+  return (
+    `${moved.length === 1 ? 'An embedded client item' : `${moved.length} embedded client items`} ` +
+    `went from client to ${moved[0]!.to} with it and so left client logins' view: ${names}. ` +
+    'Tell the owner; if clients should keep them, the owner decides what to change.'
+  );
+}
 
 /**
  * The share tools' answer to a link mode other than public. Team links are

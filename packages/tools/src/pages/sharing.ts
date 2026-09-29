@@ -18,14 +18,14 @@ import { str } from '../coerce';
 import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { PAGE_NODE_ID_PRE } from './common';
-import { linkModeRefusal, unshareOutput } from '../builtins-share';
+import { clientLeftWarning, linkModeRefusal, unshareOutput } from '../builtins-share';
 
 export const page_share: BuiltinToolDef = {
   slug: 'page_share',
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Share a page',
   description:
-    'Create (or fetch) a read-only link to a page and return its URL. Idempotent — one active link per page. The link is **public**: anyone with it can view, no login, and the page goes to public level, its embeds too (`alsoLowered`). No team or client links: members and clients sign in, so for them set the level with `access_set` instead (a client page is refused a link). `children: true` also shares every sub-page beneath it (a whole documentation section in one call); `children: false` revokes those sub-page links. Publishes brain content outward-facing. Use when the user asks to share or publish a page or section; to turn a link off use `page_unshare`.',
+    'Create (or fetch) a read-only link to a page and return its URL. Idempotent: one active link per page. The link is **public**: anyone with it can view, no login, and the page goes to public level, its embeds too (`alsoLowered`). No team or client links: members and clients sign in, so for them set the level with `access_set` instead (a client page is refused a link). `children: true` also shares every sub-page beneath it (a client sub-page keeps client, no link: `keptAtClient`); `children: false` revokes those sub-page links. Publishes brain content outward-facing. Use when the user asks to share or publish a page or section; to turn a link off use `page_unshare`.',
   // Publishes brain content to the public web, so gated. `children` can share a
   // large subtree at once, so confirm.
   requiresConfirm: true,
@@ -59,11 +59,23 @@ export const page_share: BuiltinToolDef = {
       const alsoLowered: LoweredItem[] = [];
       const share = await createShare(ctx.ownerId, id, { alsoLowered });
       let subpages: number | undefined;
+      let keptAtClient: string[] = [];
       if (children !== undefined) {
-        subpages = (await setShareCascade(ctx.ownerId, id, children, alsoLowered)).count;
+        const cascade = await setShareCascade(ctx.ownerId, id, children, alsoLowered);
+        subpages = cascade.count;
+        keptAtClient = cascade.skipped;
       }
       const url = shareUrlForToken(share.token);
       ctx.step?.setOutput({ id, url, mode: share.mode });
+      // A sub-page at client keeps client and gets no link (client logins C1).
+      const notes = [
+        ...(keptAtClient.length
+          ? [
+              `Kept at client: ${keptAtClient.length} sub-page${keptAtClient.length === 1 ? '' : 's'} (clients sign in to read ${keptAtClient.length === 1 ? 'it' : 'them'}; no open link).`,
+            ]
+          : []),
+        ...[clientLeftWarning(alsoLowered)].filter((w): w is string => !!w),
+      ];
       return {
         ok: true,
         output: {
@@ -74,7 +86,9 @@ export const page_share: BuiltinToolDef = {
           mode: share.mode,
           ...(children === true ? { subpagesShared: subpages } : {}),
           ...(children === false ? { subpagesRevoked: subpages } : {}),
+          ...(keptAtClient.length ? { keptAtClient } : {}),
           ...(alsoLowered.length ? { alsoLowered } : {}),
+          ...(notes.length ? { warning: notes.join(' ') } : {}),
         },
       };
     } catch (err) {

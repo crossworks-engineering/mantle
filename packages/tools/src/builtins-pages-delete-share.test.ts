@@ -101,7 +101,7 @@ beforeEach(() => {
   vi.mocked(getPage).mockResolvedValue(page() as never);
   vi.mocked(saveDraft).mockResolvedValue({ ok: true, rev: 4 } as never);
   vi.mocked(createShare).mockResolvedValue({ id: 's-1', token: 'tok', mode: 'public' } as never);
-  vi.mocked(setShareCascade).mockResolvedValue({ count: 3 } as never);
+  vi.mocked(setShareCascade).mockResolvedValue({ ok: true, count: 3, skipped: [] } as never);
   vi.mocked(deletePage).mockResolvedValue(true as never);
   vi.mocked(getActiveShareForNode).mockResolvedValue({ id: 's-1', token: 'tok' } as never);
   vi.mocked(unshareItem).mockResolvedValue({ revoked: true, stillBelow: [] });
@@ -191,6 +191,18 @@ describe('page_share', () => {
     const res = await share.handler({ id: PAGE_ID, children: true }, ctx);
     expect(setShareCascade).toHaveBeenCalledWith('o1', PAGE_ID, true, []);
     expect(outputOf(res).subpagesShared).toBe(3);
+  });
+
+  it('reports client sub-pages kept at client instead of failing (client logins C1, A9)', async () => {
+    vi.mocked(setShareCascade).mockResolvedValue({
+      ok: true,
+      count: 2,
+      skipped: ['c-1'],
+    } as never);
+    const out = outputOf(await share.handler({ id: PAGE_ID, children: true }, ctx));
+    expect(out.subpagesShared).toBe(2);
+    expect(out.keptAtClient).toEqual(['c-1']);
+    expect(out.warning).toMatch(/Kept at client: 1 sub-page \(clients sign in/);
   });
 
   it('revokes sub-page links when children is false', async () => {

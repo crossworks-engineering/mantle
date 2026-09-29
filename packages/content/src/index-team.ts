@@ -44,6 +44,7 @@ export {
   type ShareMode,
   type ShareableType,
   type ShareSummary,
+  type ShareCascadeResult,
 } from './shares';
 
 export {
@@ -246,11 +247,13 @@ export {
   reviewDrawSvg,
   takeOverReviewItem,
   type TakeOverResult,
+  type AcceptClosureItem,
   type AcceptOptions,
   type AcceptResult,
   type Bundle,
   type BundleItem,
   type ReviewAuthor,
+  type ReviewAuthorRole,
   type ReviewItemRow,
   type ReviewReason,
 } from './member-review';

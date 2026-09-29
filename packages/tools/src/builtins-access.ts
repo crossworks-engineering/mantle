@@ -17,6 +17,7 @@ import { errorMessage } from '@mantle/std';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { str, strOpt } from './coerce';
 import { NODE_ID_PRE } from './builtins-common';
+import { clientLeftWarning } from './builtins-share';
 import { appMemberToolWarnings } from './member-app-tools';
 
 const LEVELS = ['admin', 'team', 'client', 'public'];
@@ -102,7 +103,7 @@ export const access_set: BuiltinToolDef = {
   preconditions: NODE_ID_PRE,
   name: 'Set an access level',
   description:
-    "Set the level of one brain item, agent or tool group: admin (default), team, client or public. A caller sees what is at or below its level. Only pages, notes, drawings, tables, files, folders, apps and formulas go below admin. Lowering an item is your decision for it AND what it embeds: a page's, drawing's or note's images, files, drawings and child pages go down with it, listed in `alsoLowered` (never raised; an embed that cannot go below admin stays admin, in `stillAbove`). A folder's contents keep their levels unless `with_closure: true`. `raise_closure: true` raises closure items below the new level. The link follows the level: open at public only. Check with `access_get` first.",
+    "Set the level of one brain item, agent or tool group: admin (default), team, client or public. A caller sees what is at or below its level. Only pages, notes, drawings, tables, files, folders, apps and formulas go below admin. Lowering an item is your decision for it AND what it embeds: a page's, drawing's or note's images, files, drawings and child pages go down with it, listed in `alsoLowered` (never raised; an embed that cannot go below admin stays admin, in `stillAbove`). A folder's contents keep their levels unless `with_closure: true`. `raise_closure: true` raises closure items below the new level. The link follows the level: open at public only; set public only when the owner asks. Check `access_get` first.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -144,6 +145,10 @@ export const access_set: BuiltinToolDef = {
         // its declared tools they would be refused (member logins Phase 4b).
         const warnings =
           res.item.type === 'app' ? await appMemberToolWarnings(ctx.ownerId, nodeId) : [];
+        // Client items it embeds that went to public left client logins'
+        // view (audit A10): say so.
+        const left = clientLeftWarning(res.alsoLowered);
+        if (left) warnings.push(left);
         ctx.step?.setOutput({
           id: nodeId,
           level,

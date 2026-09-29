@@ -49,6 +49,13 @@ export type {
   SharedLinkRow,
 } from './dto/access';
 export type {
+  AcceptConfirmLevelRefusal,
+  AcceptPreview,
+  AcceptRequest,
+  ReviewAuthorRole,
+  ReviewAuthorView,
+} from './dto/review';
+export type {
   AdminSpaceItem,
   AdminSpaceItemRow,
   AdminSpaceList,
