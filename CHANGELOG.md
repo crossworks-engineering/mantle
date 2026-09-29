@@ -4,6 +4,22 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.323: client v0.6.172
+
+- Pairs the client at jackdaw v0.6.172, the client half of 0.232.322 (the
+  C0/C1 audit fixes). The app shell keeps failing closed when /api/shell
+  fails, but now retries by itself (2, 4, 8 s, then every 15 s), treats an
+  offline probe as failed, and offers Sign out on every neutral screen.
+  "What clients see" acknowledges by the fingerprint of the whole set,
+  shows "New since checked" only after a check, names old links above an
+  item, and never shows the title of an item outside the brain. The Access
+  popover can revoke an old client link on the item (it stays at Client),
+  names old links above it, and keeps the old copy on brains before C1.
+  Shared links reads each link's level from Team admin and hides Copy on
+  old client links. The review dialog shows the author's role, starts a
+  client's item at Team, and at Client or Public asks for a tick on every
+  item that goes down. Reset password shows for admin and member rows only.
+
 ## 0.232.322: client logins, fixes from the C0/C1 audit
 
 Every finding of the C0/C1 audit (2026-09-29, 32 findings, none a leak to a
