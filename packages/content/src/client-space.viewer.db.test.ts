@@ -154,10 +154,10 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     expect(seen).toEqual([brainItems.client]);
   });
 
-  it('withSpace refuses a login with a role it does not know', async () => {
+  it('withSpace refuses a login that does not exist', async () => {
     await expect(
       m.withSpace({ spaceId: spaceOf[client]!, loginId: randomUUID() }, async () => 1),
-    ).rejects.toThrow(/no personal space level/);
+    ).rejects.toThrow(/no such login/);
   });
 
   it('the embed rule reads at the author’s level: a client may not name a team item', async () => {
