@@ -41,6 +41,8 @@ export { notifyNodeIngested, notifyNodeIndexed } from './notify';
 export {
   FORUM_ARCHIVE_SOURCE,
   TEAM_REQUEST_SOURCE,
+  CLIENT_REQUEST_SOURCE,
+  REQUEST_SOURCES,
   isExtractExempt,
   extractExemptSql,
   unextractedNodeConds,

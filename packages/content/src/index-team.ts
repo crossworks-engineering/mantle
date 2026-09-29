@@ -83,6 +83,9 @@ export {
   TEAM_REQUEST_TAG,
   TEAM_REQUESTS_PER_TURN,
   TEAM_REQUESTS_PER_DAY,
+  CLIENT_REQUEST_TAG,
+  CLIENT_REQUESTS_PER_TURN,
+  CLIENT_REQUESTS_PER_DAY,
   type TeamRequest,
   type NotifyTeamRequesterResult,
 } from './team-requests';

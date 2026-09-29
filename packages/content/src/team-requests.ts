@@ -7,7 +7,7 @@
  * the owner's resolution back into the member's thread.
  */
 import { and, count, desc, eq, gte, sql } from 'drizzle-orm';
-import { TEAM_REQUEST_SOURCE, db, nodes, notifyNodeIngested } from '@mantle/db';
+import { REQUEST_SOURCES, db, nodes, notifyNodeIngested } from '@mantle/db';
 import { appendTeamMessage } from './team-messages';
 import type { TeamRequest } from '@mantle/client-types';
 export type { TeamRequest };
@@ -22,6 +22,17 @@ export const TEAM_REQUEST_TAG = 'team-request';
  */
 export const TEAM_REQUESTS_PER_TURN = 3;
 export const TEAM_REQUESTS_PER_DAY = 20;
+
+/**
+ * A CLIENT's request (client logins C4, `client_request_create`) is a team
+ * request too: the same task, tag and Requests queue, so an admin's reply
+ * reaches the client's thread by login. It also carries this tag, and
+ * `data.source = 'client-request'` (client-sourced text, extract-exempt until
+ * an admin acts). Lower caps than a member's (plan section 8).
+ */
+export const CLIENT_REQUEST_TAG = 'client-request';
+export const CLIENT_REQUESTS_PER_TURN = 3;
+export const CLIENT_REQUESTS_PER_DAY = 10;
 
 /**
  * Team requests already filed: those stamped with this inbound message (the
@@ -77,7 +88,10 @@ export async function markTeamRequestReviewed(ownerId: string, taskId: string): 
         eq(nodes.id, taskId),
         eq(nodes.ownerId, ownerId),
         eq(nodes.type, 'task'),
-        sql`${nodes.data}->>'source' = ${TEAM_REQUEST_SOURCE}`,
+        sql`${nodes.data}->>'source' in (${sql.join(
+          REQUEST_SOURCES.map((s) => sql`${s}`),
+          sql`, `,
+        )})`,
         sql`coalesce(${nodes.data}->>'reviewed_at', '') = ''`,
       ),
     )

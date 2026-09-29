@@ -11,7 +11,9 @@
  *    (`team_request_create`), stamped `data.source = 'team-request'`. Its text
  *    is the member's, written before any admin read it, so it is exempt UNTIL
  *    an admin acts on the task (edits it, closes it, or replies to it), which
- *    stamps `data.reviewed_at`. From then on it is an ordinary task.
+ *    stamps `data.reviewed_at`. From then on it is an ordinary task. A CLIENT
+ *    request (`client_request_create`, client logins C4) is the same, stamped
+ *    `data.source = 'client-request'`.
  *
  * Every node insert announces itself on `node_ingested` (migration 0018), so
  * these are still announced; the extractor's admission gate refuses them
@@ -31,18 +33,28 @@ export const FORUM_ARCHIVE_SOURCE = 'forum-archive';
 /** `data.source` of a task a member filed through `team_request_create`. */
 export const TEAM_REQUEST_SOURCE = 'team-request';
 
+/** `data.source` of a task a CLIENT filed through `client_request_create`
+ *  (client logins C4). Client-sourced text: exempt until an admin acts, and a
+ *  turn that reads it cannot lower anything without approval. */
+export const CLIENT_REQUEST_SOURCE = 'client-request';
+
+/** The sources of requests someone outside the admins wrote. */
+export const REQUEST_SOURCES: readonly string[] = [TEAM_REQUEST_SOURCE, CLIENT_REQUEST_SOURCE];
+
 /** True when the extractor must leave this node alone. */
 export function isExtractExempt(node: { data: unknown }): boolean {
   const data = (node.data ?? null) as Record<string, unknown> | null;
   if (data?.source === FORUM_ARCHIVE_SOURCE) return true;
-  // An unreviewed team request: the member's text, no admin has acted yet.
-  return data?.source === TEAM_REQUEST_SOURCE && !data.reviewed_at;
+  // An unreviewed team or client request: their text, no admin has acted yet.
+  return (
+    typeof data?.source === 'string' && REQUEST_SOURCES.includes(data.source) && !data.reviewed_at
+  );
 }
 
 /** The same rule as a condition on `nodes`. */
 export function extractExemptSql(): SQL {
   return sql`(coalesce(${nodes.data}->>'source', '') = ${FORUM_ARCHIVE_SOURCE}
-    or (coalesce(${nodes.data}->>'source', '') = ${TEAM_REQUEST_SOURCE}
+    or (coalesce(${nodes.data}->>'source', '') in (${TEAM_REQUEST_SOURCE}, ${CLIENT_REQUEST_SOURCE})
         and coalesce(${nodes.data}->>'reviewed_at', '') = ''))`;
 }
 
