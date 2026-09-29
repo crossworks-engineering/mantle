@@ -53,6 +53,7 @@ pnpm bench:memory --dataset=locomo --download --haystacks=1 --questions=20 --max
 | `--dataset=locomo\|longmemeval`     | Required.                                                            |
 | `--download`                        | Fetch the data file to `~/.cache/mantle-bench/data/` when missing.   |
 | `--dry-run`                         | Print the plan and a cost estimate; no database, no model call.      |
+| `--ingest-only`                     | Ingest and extract, ask nothing (with `--keep-db`: inspect facts).  |
 | `--haystacks=N` `--questions=N`     | The first N haystacks; the first N questions of each.                |
 | `--per-category=N`                  | Up to N questions of each category, in file order (LongMemEval).     |
 | `--only=id,id`                      | Only these haystacks.                                                |

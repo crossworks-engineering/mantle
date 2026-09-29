@@ -244,6 +244,8 @@ export async function runHaystack(opts: {
   apiKey: string;
   maxUsd: number;
   extractConcurrency: number;
+  /** Ingest and extract, ask nothing: a cheap run for extraction checks. */
+  ingestOnly?: boolean;
 }): Promise<HaystackResult> {
   const { dataset, haystack, models } = opts;
   const { ownerId, agent } = await seedBrain(models, opts.apiKey);
@@ -255,7 +257,7 @@ export async function runHaystack(opts: {
   let spent = extractUsd;
   const questions: QuestionResult[] = [];
   let stopped = ingested.stopped;
-  for (const q of haystack.questions) {
+  for (const q of opts.ingestOnly ? [] : haystack.questions) {
     if (stopped || spent >= opts.maxUsd) {
       stopped = true;
       break;
