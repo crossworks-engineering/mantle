@@ -8,9 +8,10 @@
 
 ## 1. The model
 
-- **Two roles.** `auth.users.role` is `admin` or `member` (migration 0162).
-  The anchor (`is_owner`) is always an admin. The role is read from the login
-  row on every request, never from a token, so a change takes effect at once.
+- **Three roles.** `auth.users.role` is `admin`, `member` (migration 0162)
+  or `client` (client logins, migration 0187; section 2). The anchor
+  (`is_owner`) is always an admin. The role is read from the login row on
+  every request, never from a token, so a change takes effect at once.
 - **Users are the team** (Jason, 2026-09-26). A login with role member IS
   the team member: it needs no contact, and its display name (else the part
   of its email before the @) is how the agent and the admin see it. Contacts
@@ -101,8 +102,9 @@
   the list.
 - **Three roles, fail closed** (client logins, Phase C0). A login is an
   admin, a member or a client (a person at the brain's one client company;
-  client logins are built in phases, and no client row can exist before
-  Phase C1's migration). The session code names each role (`resolvedFor`
+  client logins are built in phases: the CHECK admits client from Phase
+  C1's migration, and an admin makes one with a sign-in link from Phase
+  C2). The session code names each role (`resolvedFor`
   in lib/auth/session.ts is a switch with `default: null`): a role it does
   not know is no login at all, never an admin. Every admin gate takes an
   admin and nothing else, and every member gate a member: a client gets 403
@@ -132,12 +134,15 @@
 | `GET /api/member/chat`          | The member's own thread with the team-level agent                    |
 | `POST /api/member/chat`         | Send a message; the reply lands in the thread                        |
 
-The Library LISTS only items set to exactly Team. Row security lets the team
-role read client- and public-level items too, and those stay readable by id
-(a link inside a team page opens them) and by the team agent. But an open
-link makes an item client or public, often as a side effect (the agent
-emailing a page with a link), so listing every such item to every member is
-not something an owner chose. To list an item to members, set it to Team.
+The Library LISTS items set to Team or Client, each row with its level
+(client logins decision 6, C2: members see what clients see; the app marks a
+client item with a Client badge). Row security lets the team role read
+public-level items too, and the team agent reads them. But an open link
+makes an item public, often as a side effect (the agent emailing a page with
+a link), so listing every such item to every member is not something an
+owner chose: public items stay out of the Library and are reached by their
+own link. To list an item to members, set it to Team (or Client, when
+clients should read it too).
 
 - **Chat** happens in the owner app's assistant dock (jackdaw v0.6.146+),
   with its three shapes (side column, movable window, full display): for a
@@ -300,9 +305,12 @@ A delete unlinks the bytes only after the space transaction commits, and a
 create that rolls back removes the bytes it wrote.
 
 **The embed rule.** Save version refuses an item that embeds or links
-anything other than the member's own items and Library items (409 `embed`
-with the refused `ids`): never another member's item, shared or not, and
-never an admin-only brain item. Accept (Phase 4) moves an item's embed
+anything other than the author's own items and the brain items the
+author's level reads (409 `embed` with the refused `ids`): never another
+login's item, shared or not, and never a brain item above the author's
+level. The brain is read at the AUTHOR's level through row security: a
+member's space runs at team (team, client and public items), a client's
+space at client (client items only, never a team item: client logins C1). Accept (Phase 4) moves an item's embed
 closure into the brain, so a foreign id would drag someone else's work
 along. It reads every reference (`packages/content/src/embed-refs.ts`): on a
 page every node's `nodeId`, `drawId` and `pageId`, mention chips, and every
@@ -450,7 +458,7 @@ redacted for admins (section 5).
 | `GET /api/team-admin/submissions/:id/svg[?node=]`   | A drawing's saved SVG, or one in its bundle      |
 | `GET/POST /api/team-admin/submissions/:id/comments` | The thread; the reviewer's review talk           |
 | `DELETE …/submissions/:id/comments/:commentId`      | Take back an own review comment                  |
-| `POST /api/team-admin/submissions/:id/accept`       | `{ audience?, parentPageId?, folderPath? }`      |
+| `POST /api/team-admin/submissions/:id/accept`       | `{ audience?, parentPageId?, folderPath?, lowerConfirmed? }` (below) |
 | `POST /api/team-admin/submissions/:id/return`       | `{ note }`: back to the author                   |
 | `POST /api/team-admin/submissions/:id/take-over`    | Into the acting admin's own space (section 11)   |
 | `POST /api/team-admin/submissions/:id/discard`      | Delete a left-behind item (inactive author only) |
@@ -487,7 +495,14 @@ stay behind, count as staying behind, and the review file and SVG routes
 never serve them. The bundle's rows are locked still in the space: an item
 another Accept moved first (a shared embed) is dropped, never moved twice.
 Every moved item keeps its node id (links stay valid),
-goes to the brain at the level the admin picks (admin by default), loses any
+goes to the brain at the level the admin picks (admin by default; team by
+default for an item a CLIENT wrote, client logins C1: the author reads the
+accepted item from the snapshot whatever its level, so publishing one
+client's request to every client login is an explicit choice). Accepting a
+client-authored item at client or public needs `lowerConfirmed: true` (the
+admin confirmed that it, and what it embeds, goes down to where every client
+login reads it); without it the answer is 409 `confirm-level` and nothing
+moves. A member-authored item needs no confirmation. The moved item loses any
 leftover draft, and its `space_items` row goes to `accepted` with the
 reviewer (the row stays: it records the author), and its author's
 accepted snapshot is recorded (section 11). Below admin, the brain items
@@ -1100,9 +1115,10 @@ sees the Return banner, edits and submits again. It is refused while:
   item is allowed then, and refused with 409 `taken` while the member can
   still take it back);
 - any item of the group has unsaved edits: 409 `unsaved-draft` with `ids`;
-- its saved versions use something the MEMBER may not (section 5's embed
-  rule: only the group itself, the member's own items and Library items):
-  409 `embed` with `ids`. An admin may have added an admin-level brain item
+- its saved versions use something the AUTHOR may not (section 5's embed
+  rule, read at the author's level: only the group itself, the author's own
+  items and the brain items that level reads, so client items only for a
+  client author): 409 `embed` with `ids`. An admin may have added an admin-level brain item
   or one of their own private items while it was theirs; giving that back
   would show the member an id, a mention chip's title or a link. Remove
   them, save, give it back.

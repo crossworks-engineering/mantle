@@ -68,8 +68,12 @@ export function canShareNode(node: { type: string; path: string | null }): boole
 // (docs/access-levels.md §7). Public items carry an open link; admin, team and
 // client items carry none. Client means "signed-in clients" (client logins
 // C1), never an open link: no path makes a new link on a client item
-// (ClientLinkRetiredError, inside createShare), and no link, old or new,
-// changes a client item's level. Team links are retired (member logins Phase 6
+// (ClientLinkRetiredError, inside createShare), and an item's OWN link, old
+// or new, never changes a client item's level. Being embedded does: a client
+// item in the embed closure of something that goes public (a level or a new
+// link) goes public with it, because embedding means sharing, and so leaves
+// the client logins' view. The Access control previews that, and every
+// setter reports it in alsoLowered (docs/access-levels.md §7). Team links are retired (member logins Phase 6
 // stage 6): members read team items by level with their own logins, migration
 // 0176 revoked every team link, and nothing makes one (TeamLinkRetiredError).
 // Every share mutation below re-derives the level from the link it leaves, so
@@ -119,7 +123,7 @@ function assertLinkMode(mode: string | undefined): void {
 
 /**
  * The level a node's link implies. A node at client stays at client whatever
- * its link says (client logins C1: until the old client links are retired
+ * its own link says (client logins C1: until the old client links are retired
  * they are still live, and no re-sync may flip them, or their embeds, to
  * public or admin). `mode` null = no active link: admin, except that a node
  * at team stays at team (team is a level members read by, not a link),
@@ -207,8 +211,9 @@ async function levelOf(ownerId: string, nodeId: string, q: ShareDb = db): Promis
 
 /**
  * Make a node's link match the level it was just set to: revoke it at admin
- * and team, create it at client and public. Returns the link left in place (null at admin,
- * or when the node cannot carry one, e.g. a folder outside `files`). The
+ * team and client, create it at public. Returns the link left in place (null
+ * below public, or when the node cannot carry one, e.g. a folder outside
+ * `files`). The
  * owner's level path (`setItemLevel`) calls this after writing the level.
  */
 export async function applyLevelToShare(
@@ -361,7 +366,8 @@ export async function getActiveShareForNode(
  * Validates owner + shareable type. `mode` may only be public: a team link
  * throws {@link TeamLinkRetiredError}. `preferred` = the level the node's link
  * should leave it at (a cascading parent's level), so a sub-page never passes
- * through public on its way to client. A node the link lowers takes its
+ * through public on its way to its parent's level (a client parent is
+ * refused: ClientLinkRetiredError). A node the link lowers takes its
  * embeds with it; `alsoLowered` collects them for the caller to show.
  */
 export async function createShare(

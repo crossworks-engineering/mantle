@@ -90,6 +90,23 @@ describe('ops docs match the code', () => {
     expect(security).not.toMatch(/no in-brain\s+tiered read ACLs/);
   });
 
+  it('update-prod.md states the client logins floor the updater enforces, and its knob', () => {
+    const updater = read('infra/updater/updater.sh');
+    const floor = updater.match(/^CLIENT_FLOOR=(\d+\.\d+\.\d+)$/m)?.[1];
+    expect(floor, 'CLIENT_FLOOR not found in updater.sh').toBeTruthy();
+    const doc = oneLine(read('docs/update-prod.md'));
+    const floors = doc.slice(doc.search(/never roll back below/i));
+    expect(floors).toContain(`**v${floor} once any client login exists**`);
+    const knob = updater.match(/env_val (MANTLE_ALLOW_BELOW_CLIENT_FLOOR)\)/)?.[1];
+    expect(knob, 'the override knob is not read by updater.sh').toBeTruthy();
+    expect(doc).toContain(knob!);
+    // The refusal sits before the pre-roll backup: nothing changes first.
+    const loop = updater.slice(updater.indexOf('# ── poll loop'));
+    const refusal = loop.indexOf('if client_floor_refusal "$TARGET"; then');
+    expect(refusal).toBeGreaterThan(0);
+    expect(refusal).toBeLessThan(loop.indexOf('if ! pre_roll_backup; then'));
+  });
+
   it('both rollback docs state the 0178 floor', () => {
     for (const p of ['docs/update-prod.md', 'docs/member-logins.md']) {
       const doc = oneLine(read(p));

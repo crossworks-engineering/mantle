@@ -39,8 +39,9 @@ Two of these carry extra semantics:
   they don't appear on the public surface.
 - **Folder** (`branch`): shares **the files under the folder, subfolders
   included, that sit at the link's level, evaluated per request**. The link
-  opens at the folder's own level: a public link shows public items, a client
-  link client and public ones (`linkLevels`, lib/shares.ts). A file added
+  opens at the folder's own level: a public link shows public items, an old
+  client link client and public ones (`linkLevels`, lib/shares.ts; no client
+  link is made since client logins C1, and the old ones serve until C3). A file added
   later lands at admin like every new item (levels are never inherited), so
   it is neither listed nor served until someone lowers it (the Access
   control's "Lower them too" does that for a folder's contents: a folder's
@@ -220,18 +221,22 @@ media presenters are net-new here.)_
 > clients, client logins C1: a link on a client item is refused with
 > `client-links-retired`), an open link at public. Every share path below
 > re-derives the level from the link it leaves (a client item never moves
-> because of a link), so they stay in step. See
+> because of its own link; a client item embedded in something that goes
+> public goes public with it, access-levels.md §7), so they stay in step. See
 > [access-levels.md §7](./access-levels.md). The share API stays for the
 > agent tools and older clients. The text below describes the share model the
 > level now drives.
 
-A reusable **`<ShareControl>`** (`components/share/share-control.tsx`) on every
-detail screen (pages, notes, tasks, events, files, apps, tables, folders): a _"Anyone with the link can
-view"_ toggle → mint token → show URL + **Copy** → **Revoke** (and, P4, expiry +
-"allow search engines"). **Every** shareable type also offers the
-public/team admission toggle (`teamMode`), pages/apps/tables/folders carry
-kind-specific hints; notes/tasks/events/files use the default. The mode only
-controls who can open the `/s/` link.
+The owner app (jackdaw) shows the **Access control**
+(`components/share/access-control.tsx`, which replaced the old
+`<ShareControl>`) on every detail screen (pages, notes, tasks, events,
+files, apps, tables, folders): one level, Admin / Team / Client / Public,
+applied explicitly. Only at Public does a link show, with **Copy**; taking
+the item back above public revokes it. There is no admission toggle any
+more: every link is open (`public` is the only mode), team links are
+retired (member logins Phase 6) and client items have no link (client
+logins C1). The owner's Shared links list (`/team-admin?view=shares`) shows
+each live link with its level and marks the old client links.
 
 Pages and Draw carry it on their **list preview** as well as in the editor, so
 an item can be shared without opening it. The preview's control deliberately
@@ -244,7 +249,8 @@ API (owner-scoped via `requireOwner`):
 
 - `POST /api/shares` `{ nodeId }` → `{ token, url }`
 - `DELETE /api/shares/[id]` → revoke (cascades to the subtree if the share does, §7b)
-- `PATCH /api/shares/[id]` `{ mode }` → public/team admission (cascades if the share does)
+- `PATCH /api/shares/[id]` `{ mode }` → `public` only, which confirms the open link (cascades if
+  the share does); `team` is refused with 400 `team-links-retired`, anything else is 400
 - `GET /api/shares?nodeId=` → current active link (if any) + `childCount` (descendant pages)
 - `POST /api/shares/cascade` `{ nodeId, on }` → turn subtree sharing on/off (§7b)
 
@@ -252,11 +258,11 @@ API (owner-scoped via `requireOwner`):
 
 ## 7b. Sharing a page's subtree: "Share sub-pages"
 
-A page's Share popover shows a third toggle, **Share sub-pages**, whenever the
-page has descendant pages (`teamMode` pages via `<ShareControl allowCascade>`).
+A public page's Access control shows **Include sub-pages** whenever the page
+has descendant pages (the switch rides the link, so only at Public).
 Turning it on shares every descendant page; turning it off, or un-sharing the
-parent, revokes those child links. Children **mirror the parent's mode**: flip
-the parent public↔team and the shared children follow.
+parent, revokes those child links. Children take the parent's level. An old
+client link cannot be extended to sub-pages (`client-links-retired`).
 
 - **Intent lives on the parent share:** `settings.cascade = true`
   (`shareCascadeOf`). Children are ordinary shares; the flag is what makes mode
@@ -286,9 +292,12 @@ cascade
 so _"share that page and send me the link"_ works end to end:
 
 - **`page_share { id, mode?, children? }`** → `createShare` (idempotent, one
-  active link per node) → returns `{ url, token, mode }`. `mode: 'public' |
-'team'` sets admission via `applyShareMode` (team also lists the page on the
-  hub); `children: true|false` shares/unshares the subtree via `setShareCascade`
+  active link per node) → returns `{ url, token, mode }`, and `alsoLowered`
+  when the page's embeds went down with it (a client item among them goes
+  to public). `mode` may only be `'public'`: `'team'` is refused
+  (`team-links-retired`), and a page at client is refused
+  (`client-links-retired`: clients sign in to read it); `node_share` answers
+  the same. `children: true|false` shares/unshares the subtree via `setShareCascade`
   (§7b) and reports `subpagesShared` / `subpagesRevoked`. The URL is built with
   `shareUrlForToken`.
 - **`page_unshare { id }`** → `getActiveShareForNode` → `revokeShareTree`

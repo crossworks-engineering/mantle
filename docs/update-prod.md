@@ -140,6 +140,16 @@ when it failed before step 4), 2 usage, 3 counts dropped.
   postgres), volumes or containers, never forces, and logs each removal to
   `update.log`; an image docker refuses to remove (still in use) is logged
   and kept. `MANTLE_IMAGE_PRUNE=0` in `.env` switches it off.
+- **No roll below the client logins floor.** A request for a release
+  version below v0.232.318 (a rollback) is **refused with nothing changed**
+  (no backup, no pull, no `.env` write) while `auth.users` holds any client
+  login, and also when the logins cannot be counted: older images treat
+  every login that is not a member as an admin (see the rollback floors).
+  `latest` and tags that are not a release version are never refused here.
+  `MANTLE_ALLOW_BELOW_CLIENT_FLOOR=1` in `.env` rolls anyway, loudly in
+  `update.log`. The check is the RUNNING updater's: the roll that first
+  brings it still runs the old updater (below), so it guards the rolls
+  after that one. A manual roll (pinning the tag by hand) bypasses it.
 - **The first roll to a release with these steps still runs the OLD
   updater** (it refreshes itself at the end of an OK roll), so that one roll
   takes no updater backup and prunes nothing: `roll.sh` takes the backup
@@ -284,6 +294,55 @@ Then smoke-test the surface the release actually changed in the browser (and
 - **migrations are forward-only**: the pre-roll `db-dump` is the only way back.
   See the rollback floors below.
 
+## Rolling a box from v0.232.315 to the client logins releases
+
+The first roll past v0.232.315 brings client logins (v0.232.318 on). It is
+an ordinary roll through the updater (`scripts/roll.sh`): migrations 0186
+(needs-you notices), 0187 (the client level) and 0188 (client sign-in
+links), and any later ones, land together in the one migrate, each in its
+own transaction. **No manual step.** 0186 and 0187 take short exclusive
+locks on `nodes`, `auth.users`, `agents`, `tool_groups` and `space_items`
+with a 30 s lock timeout: on a busy box a timeout fails the migrate and the
+roll reports an error. Each migration is all or nothing (one that ran stays,
+and the code before it runs on it); roll again when it is quieter.
+
+Before the roll, and again after, read the box's counts (read-only: one
+READ ONLY transaction, rolled back):
+
+```bash
+ssh <box> "docker exec -i mantle_pg psql -U postgres -d postgres -X -q" < scripts/client-level-counts.sql
+```
+
+It lists the logins by role, the client-level items, the links on them (and
+on folders above them), the public items and where their level came from,
+and the agents and tool groups at client or public. Look at section 4 first:
+an agent or tool group at client reads **client items only** after 0187
+(decision 3), not public ones any more.
+
+What admins see change:
+
+- **Access popover.** Client means "signed-in clients (and the team)", with
+  no link box; Public is the only level with an open link. Setting an item
+  to client removes its open link. Lowering a page, drawing or note lists
+  the embedded items that go down with it; a client item embedded in
+  something set to public goes to public with it.
+- **Shared links** (Team admin) show each link's level and mark the old
+  client links: they still open until client logins C3 retires them.
+- **What clients see** (Team admin): every client-level item, its old link,
+  the addresses a page was emailed to and the team or admin items it names.
+  Acknowledge it before the first client login: Add client and Issue sign-in
+  link (Team admin > Clients, v0.232.320 on) stay disabled until then, and
+  again once a new item goes to client.
+- **Needs-you notices**: a live "N waiting" notice for submissions, left
+  behind items and team requests (0186).
+- **The share tools refuse client items**: `node_share`, `page_share`,
+  `POST /api/shares` and the email link answer `client-links-retired`
+  (the email tool sends the page without a link and says why).
+- The member Library lists client items too, with a Client badge.
+
+After this roll the box has the rollback floor below: never below
+v0.232.318 once a client login exists.
+
 ## Rollback
 
 ```bash
@@ -296,7 +355,10 @@ CI publishes every release as `:vX.Y.Z` **and** `:latest`, so a rollback is just
 pinning the prior `vX.Y.Z`. **Code rolls back instantly; schema does not**: a
 migration is forward-only, so to undo one, restore the pre-update dump into a
 fresh DB (deploy.md §3b–c). The updater's dumps are in `backups/pre-roll/`
-(newest three), restored with `scripts/db-restore.sh` like any other.
+(newest three), restored with `scripts/db-restore.sh` like any other. It
+restores into a pristine database and exits 2, without "Restore complete",
+when the result has no logins, no role CHECK or a missing viewer policy:
+do not start the app then.
 
 **Rollback floors.** Pinning an older tag is safe only while that code still
 matches the schema. Never roll back below:
@@ -306,6 +368,12 @@ matches the schema. Never roll back below:
   Members tab, and both fail. The pre-roll backup is the only way back.
 - **v0.232.255 once personal items exist** (migration 0165; the extractor's
   owner check, docs/member-logins.md).
+- **v0.232.318 once any client login exists** (`auth.users.role =
+  'client'`): older images treat every login that is not a member as an
+  admin, so each client would sign in as an admin. The updater refuses such
+  a roll (above); pinning the tag by hand does not ask. Check first:
+  `docker exec mantle_pg psql -U postgres -d postgres -Atc "select count(*)
+  from auth.users where role = 'client'"`.
 
 Below a floor, restore the pre-roll backup taken before the migration instead
 of pinning the tag.
