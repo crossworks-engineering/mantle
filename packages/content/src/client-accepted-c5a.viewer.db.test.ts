@@ -17,7 +17,9 @@
  *    rules (the confirmation at client level), from the stamped role.
  *
  * Every hidden fixture is in the accepted snapshot as written (checked
- * first), so only the redaction under test hides it.
+ * first), so only the redaction under test hides it. Brain items belong to
+ * the shared test anchor (mantle_brain_id()): the level roles' row security
+ * knows only that brain. Removes its own rows after (the anchor stays).
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/client-accepted-c5a.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -40,7 +42,9 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
   let fp: typeof import('@mantle/files');
   let sqlTag: typeof import('drizzle-orm').sql;
   const tag = `c5aleak-${randomUUID().slice(0, 8)}`;
-  const anchor = randomUUID();
+  let anchor = '';
+  /** Every node this file made or moved into the brain. */
+  const mine: string[] = [];
   const adminA = randomUUID();
   const member = randomUUID();
   const client = randomUUID();
@@ -89,6 +93,7 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
         ? (await (await import('./pages/tree')).createPage(anchor, { title })).id
         : (await (await import('./notes')).createNote(anchor, { title, content: 'x' })).id;
     await m.systemDb.execute(sqlTag`update nodes set audience = ${level} where id = ${id}`);
+    mine.push(id);
     return id;
   };
   const snapshotText = async (id: string) =>
@@ -116,15 +121,14 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
       .$client;
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
+    const { ensureTestAnchor } = await import('@mantle/db/test-support');
+    anchor = await ensureTestAnchor(admin);
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role, display_name) values
-        (${anchor}, ${`${tag}-anchor@example.invalid`}, 'x', 'admin', null),
         (${adminA}, ${`${tag}-a@example.invalid`}, 'x', 'admin', 'Staff Person'),
         (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member', 'Mia Member'),
         (${client}, ${`${tag}-c@example.invalid`}, 'x', 'client', 'Cara Client'),
         (${gone}, ${`${tag}-g@example.invalid`}, 'x', 'client', 'Gone Client')`);
-    await m.systemDb.execute(sqlTag`
-      insert into spaces (id, kind, login_id) values (${anchor}, 'brain', ${anchor})`);
     const rows = await exec<{ id: string; login_id: string }>(sqlTag`
       select id, login_id from spaces where kind = 'personal'
         and login_id = any(${`{${logins.join(',')}}`}::uuid[])`);
@@ -134,13 +138,13 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
   afterAll(async () => {
     if (!m) return;
     const spaces = Object.values(spaceOf);
-    for (const s of [...spaces, anchor]) {
+    for (const id of mine) await m.systemDb.execute(sqlTag`delete from nodes where id = ${id}`);
+    for (const s of spaces) {
       await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${s}`);
+      await m.systemDb.execute(sqlTag`delete from spaces where id = ${s}`);
     }
-    for (const s of spaces) await m.systemDb.execute(sqlTag`delete from spaces where id = ${s}`);
-    await m.systemDb.execute(sqlTag`delete from spaces where id = ${anchor}`);
     await m.systemDb.execute(
-      sqlTag`delete from auth.users where id = any(${`{${[...logins, anchor].join(',')}}`}::uuid[])`,
+      sqlTag`delete from auth.users where id = any(${`{${logins.join(',')}}`}::uuid[])`,
     );
     await m.closeDb();
     rmSync(root, { recursive: true, force: true });
@@ -169,6 +173,7 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     const A = spaceOf[adminA]!;
     imageId = await upload(client, 'photo.png', 'CLIENTPNG');
     pageId = await create(client, 'page', `${tag} Quote request`);
+    mine.push(imageId, pageId);
     const img = { type: 'image', attrs: { nodeId: imageId } };
     expect(
       (
@@ -269,6 +274,7 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
   it('a client’s note taken over and accepted: a team link reads "Private item" (L1)', async () => {
     const A = spaceOf[adminA]!;
     const noteId = await create(client, 'note', `${tag} note`, 'hello');
+    mine.push(noteId);
     await submit(client, noteId);
     await rv.takeOverReviewItem(noteId, actorA());
     const content = `see [TEAMLINK](/n/${teamNote}) and [the shared one](/n/${clientNote})`;
@@ -291,6 +297,7 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     const M = spaceOf[member]!;
     const A = spaceOf[adminA]!;
     const id = await create(member, 'page', `${tag} member page`);
+    mine.push(id);
     expect(
       (
         await as(member, () =>
@@ -328,26 +335,29 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
   // ── An accepted file keeps its author's name (L7) ───────────────────────
 
   it('an accepted file keeps the name its author gave it, not the name Accept made unique', async () => {
-    // The brain folder already holds a quote.txt: Accept files this one
-    // under another name.
-    await m.systemDb.execute(sqlTag`
+    // The brain folder already holds a file of that name: Accept files this
+    // one under another.
+    const name = `${tag}-quote.txt`;
+    const [existing] = await exec<{ id: string }>(sqlTag`
       insert into nodes (owner_id, type, title, slug, path, data) values
-        (${anchor}, 'file', 'quote.txt', 'quote.txt', 'files',
-         ${JSON.stringify({ filename: 'quote.txt' })}::jsonb)`);
-    const fileId = await upload(client, 'quote.txt', 'QUOTEBYTES');
+        (${anchor}, 'file', ${name}, ${name}, 'files', ${JSON.stringify({ filename: name })}::jsonb)
+      returning id`);
+    mine.push(existing!.id);
+    const fileId = await upload(client, name, 'QUOTEBYTES');
+    mine.push(fileId);
     await submit(client, fileId);
     await rv.acceptReviewItem(anchor, fileId, { loginId: adminA });
     const [live] = await exec<{ filename: string }>(
       sqlTag`select data->>'filename' as filename from nodes where id = ${fileId}`,
     );
-    expect(live?.filename).not.toBe('quote.txt');
+    expect(live?.filename).not.toBe(name);
     expect(await ma.acceptedFileMeta(anchor, client, fileId)).toEqual({
-      filename: 'quote.txt',
-      mimeType: expect.any(String),
+      filename: name,
+      mimeType: 'text/plain',
     });
     expect(await ma.getClientAcceptedItem(anchor, client, fileId)).toMatchObject({
       type: 'file',
-      filename: 'quote.txt',
+      filename: name,
     });
     // Someone else's accepted file answers nothing.
     expect(await ma.acceptedFileMeta(anchor, member, fileId)).toBeNull();
@@ -358,6 +368,7 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
   it('a deleted client’s item keeps the Client badge and needs the confirmation at client', async () => {
     const queued = await create(gone, 'page', `${tag} gone queued`);
     const taken = await create(gone, 'page', `${tag} gone taken`);
+    mine.push(queued, taken);
     await submit(gone, queued);
     await submit(gone, taken);
     await rv.takeOverReviewItem(taken, actorA());
