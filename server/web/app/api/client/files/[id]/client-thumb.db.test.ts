@@ -62,16 +62,17 @@ describe.skipIf(!URL)('client files route: thumbnails', () => {
     await m.systemDb.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role, display_name) values
         (${clientLogin}, ${`${tag}-c@example.invalid`}, 'x', 'client', 'Client Person')`);
-    const data = JSON.stringify({
-      filename: 'p.png',
-      mime_type: 'image/png',
-      sha256: sha,
-      size_bytes: 3,
-    });
+    const data = (name: string) =>
+      JSON.stringify({
+        filename: `${tag}-${name}.png`,
+        mime_type: 'image/png',
+        sha256: sha,
+        size_bytes: 3,
+      });
     await m.systemDb.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path, audience, data) values
-        (${clientImage}, ${brain}, 'file', ${`${tag} client image`}, 'files', 'client', ${data}::jsonb),
-        (${teamImage}, ${brain}, 'file', ${`${tag} team image`}, 'files', 'team', ${data}::jsonb)`);
+        (${clientImage}, ${brain}, 'file', ${`${tag} client image`}, 'files', 'client', ${data('client')}::jsonb),
+        (${teamImage}, ${brain}, 'file', ${`${tag} team image`}, 'files', 'team', ${data('team')}::jsonb)`);
     mkdirSync(thumbsRoot(), { recursive: true });
     writeFileSync(path.join(thumbsRoot(), `${sha}.${THUMB_MAX_DIM}.jpg`), 'CACHEDTHUMB');
     at = tokens.buildAssetToken(brain, clientLogin, 0);

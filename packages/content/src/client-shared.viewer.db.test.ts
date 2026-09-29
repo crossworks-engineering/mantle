@@ -320,7 +320,7 @@ describe.skipIf(!URL)('what a client reads', () => {
       expect(table?.data.rows.map((r) => r.cells)).toEqual([
         { c1: 'plain value', c2: 'Private item' },
         { c1: 'Private item', c2: `/n/${b.clientPage2}` },
-        { c1: 'Private item', c2: null },
+        { c1: 'Private item' },
       ]);
       expect(table?.rowCount).toBe(3);
     } finally {

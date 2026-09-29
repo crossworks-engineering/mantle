@@ -90,7 +90,7 @@ describe.skipIf(!URL)('page text at its level', () => {
         doc_text: string;
         version: number;
         summary: string | null;
-        updated_at: Date;
+        updated_at: unknown;
       }[]
     )[0]!;
   const settle = async () => {
@@ -220,7 +220,7 @@ describe.skipIf(!URL)('page text at its level', () => {
     // the extractor heard nothing.
     expect(after.summary).toBe('SUMMARYKEEP');
     expect(after.version).toBe(before.version);
-    expect(after.updated_at.getTime()).toBe(before.updated_at.getTime());
+    expect(String(after.updated_at)).toBe(String(before.updated_at));
     await settle();
     expect(announced).not.toContain(id.clientPage);
     // The team page is not filtered, so raising changed nothing there.
