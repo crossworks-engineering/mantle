@@ -37,6 +37,8 @@ describe.skipIf(!URL)('page text at its level', () => {
     teamDraw: randomUUID(),
     adminPage: randomUUID(),
     publicNote: randomUUID(),
+    mentioner: randomUUID(),
+    shareMe: randomUUID(),
   };
   const para = (...content: unknown[]) => ({ type: 'paragraph', content });
   const mention = (to: string, label: string) => ({
@@ -122,6 +124,8 @@ describe.skipIf(!URL)('page text at its level', () => {
       [id.teamDraw, 'draw', 'Team sketch', 'draw', 'team', {}],
       [id.adminPage, 'page', 'ADMINTITLE', 'pages', 'admin', {}],
       [id.publicNote, 'note', 'Public note today', 'notes', 'public', {}],
+      [id.mentioner, 'page', 'Mentions the team title', 'pages', 'client', {}],
+      [id.shareMe, 'page', 'Gets an open link', 'pages', 'admin', {}],
     ];
     for (const [nid, type, title, path, level, data] of rows) {
       await m.db.execute(sqlTag`
@@ -139,6 +143,13 @@ describe.skipIf(!URL)('page text at its level', () => {
       await m.db.execute(sqlTag`
         insert into pages (node_id, doc, doc_text) values (${p}, ${empty}::jsonb, '')`);
     }
+    // Texts as a commit before the level-filtered text wrote them.
+    const named = (label: string) =>
+      JSON.stringify({ type: 'doc', content: [para(mention(id.teamTitle, label))] });
+    await m.db.execute(sqlTag`
+      insert into pages (node_id, doc, doc_text) values
+        (${id.mentioner}, ${named('XLABEL')}::jsonb, 'XLABEL'),
+        (${id.shareMe}, ${named('SHARETEAM')}::jsonb, 'SHARETEAM')`);
     await m.db.execute(sqlTag`
       insert into draws (node_id, scene, scene_text) values
         (${id.teamDraw}, '{"elements":[]}'::jsonb, 'TEAMDRAWTEXT')`);
@@ -233,6 +244,34 @@ describe.skipIf(!URL)('page text at its level', () => {
     expect(text).toContain('TEAMFILETEXT');
     expect(text).toContain('TEAMALT');
     expect(text).not.toContain('TEAMLABEL');
+  });
+
+  it('an item lowered with the page that embeds it re-folds the pages that name it', async () => {
+    await m.db.execute(sqlTag`
+      update pages set doc_text = 'XLABEL' where node_id = ${id.mentioner}`);
+    // teamSame embeds teamTitle as a child page: lowering teamSame to client
+    // takes teamTitle down with it, and the client page that mentions
+    // teamTitle now reads its title.
+    await a.setItemLevel(owner, id.teamSame, 'client');
+    expect(
+      (
+        (await m.db.execute(
+          sqlTag`select audience from nodes where id = ${id.teamTitle}`,
+        )) as unknown as { audience: string }[]
+      )[0]!.audience,
+    ).toBe('client');
+    const text = (await row(id.mentioner)).doc_text;
+    expect(text).not.toContain('XLABEL');
+    expect(text).toContain('Price floor TEAMTITLE');
+  });
+
+  it('an open link makes a page public: its text is re-folded to public', async () => {
+    const s = await import('../shares');
+    await s.createShare(owner, id.shareMe);
+    const text = (await row(id.shareMe)).doc_text;
+    expect(text).not.toContain('SHARETEAM');
+    expect(text).not.toContain('TEAMTITLE');
+    expect(text).toContain('Private item');
   });
 
   it("the page's own level: raised to team, its text is the whole doc again", async () => {
