@@ -42,6 +42,7 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
   let sc: typeof import('./member-space-comments');
   let rv: typeof import('./member-review');
   let ma: typeof import('./member-accepted');
+  let tk: typeof import('./member-takeover');
   let lim: typeof import('./space-limits');
   let fp: typeof import('@mantle/files');
   let sqlTag: typeof import('drizzle-orm').sql;
@@ -131,6 +132,7 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
     sc = await import('./member-space-comments');
     rv = await import('./member-review');
     ma = await import('./member-accepted');
+    tk = await import('./member-takeover');
     lim = await import('./space-limits');
     fp = await import('@mantle/files');
     sqlTag = (await import('drizzle-orm')).sql;
@@ -299,7 +301,7 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
       message: expect.stringMatching(/50 items waiting/),
     });
     // The item goes back to the author: one place is free again.
-    await rv.returnReviewItem(taken, { loginId: adminA }, 'Back to you.', anchor);
+    await tk.giveBackTakenItem(anchor, actor, taken, 'Back to you.');
     expect((await submit(c.open, fiftyFirst)).reviewState).toBe('submitted');
   });
 
@@ -356,6 +358,7 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
   });
 
   it('a client writes only as itself, review scope only (row security)', async () => {
+    /** The insert's SQLSTATE: 42501 = refused by row security. */
     const insert = (kind: string, scope: string, login = c.talk) =>
       as(c.talk, () =>
         m.db.insert(m.nodeComments).values({
@@ -367,13 +370,16 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
           body: 'x',
           threadScope: scope as 'review',
         }),
+      ).then(
+        () => 'ok',
+        (err: { cause?: { code?: string } }) => err.cause?.code ?? String(err),
       );
-    await expect(insert('member', 'review')).rejects.toThrow(/row-level security/);
-    await expect(insert('client', 'team')).rejects.toThrow(/row-level security/);
-    await expect(insert('owner', 'review')).rejects.toThrow(/row-level security/);
-    await expect(insert('client', 'review', c.otherTalk)).rejects.toThrow(/row-level security/);
+    expect(await insert('member', 'review')).toBe('42501');
+    expect(await insert('client', 'team')).toBe('42501');
+    expect(await insert('owner', 'review')).toBe('42501');
+    expect(await insert('client', 'review', c.otherTalk)).toBe('42501');
     // The control: as itself, review scope.
-    await expect(insert('client', 'review')).resolves.toBeDefined();
+    expect(await insert('client', 'review')).toBe('ok');
   });
 
   it('a reviewer’s Return reaches the client’s own row, with the note; the talk closes', async () => {
