@@ -1,7 +1,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { loadPreferencesFor, logoVersion } from '@mantle/content';
 import type { ClientShell } from '@mantle/client-types';
-import { CLIENT_ASSET_TOKEN_TTL_SECONDS, getClientOr401, mintAssetToken } from '@/lib/auth';
+import { getClientOr401, mintAssetToken } from '@/lib/auth';
+import { CLIENT_ASSET_TOKEN_TTL_SECONDS } from '@/lib/auth/tokens';
 import { shellPart } from '@/lib/shell-part';
 
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
