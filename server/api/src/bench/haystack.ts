@@ -16,6 +16,7 @@
  * stops answering once it passes its cap.
  */
 import { randomUUID } from 'node:crypto';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { eq, sql } from 'drizzle-orm';
 import { agents, aiWorkers, db, embeddingConfig, nodes, type Agent } from '@mantle/db';
 import { setApiKey } from '@mantle/api-keys';
@@ -62,6 +63,9 @@ export type HaystackResult = {
   extracted: number;
   extract_failed: number;
   ingest_ms: number;
+  /** Event-loop delay during ingest, ms (p50 / p99 / max). A high value means
+   *  the process itself, not the provider, held calls up. */
+  ingest_loop_delay_ms: { p50: number; p99: number; max: number };
   extract_usd: number;
   questions: QuestionResult[];
   stopped_for_budget: boolean;
@@ -250,7 +254,16 @@ export async function runHaystack(opts: {
   const { dataset, haystack, models } = opts;
   const { ownerId, agent } = await seedBrain(models, opts.apiKey);
   const t0 = performance.now();
+  const loop = monitorEventLoopDelay({ resolution: 20 });
+  loop.enable();
   const ingested = await ingest(ownerId, haystack, opts.extractConcurrency, opts.maxUsd);
+  loop.disable();
+  const ms = (ns: number) => Math.round(ns / 1e6);
+  const loopDelay = {
+    p50: ms(loop.percentile(50)),
+    p99: ms(loop.percentile(99)),
+    max: ms(loop.max),
+  };
   const { extracted, failed } = ingested;
   const ingestMs = Math.round(performance.now() - t0);
   const extractUsd = await tracedSpendUsd(ownerId);
@@ -290,6 +303,7 @@ export async function runHaystack(opts: {
     extracted,
     extract_failed: failed,
     ingest_ms: ingestMs,
+    ingest_loop_delay_ms: loopDelay,
     extract_usd: extractUsd,
     questions,
     stopped_for_budget: stopped,
