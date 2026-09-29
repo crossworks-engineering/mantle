@@ -89,7 +89,7 @@ function brainFileAbs(node: { path: unknown; title: string; data: unknown }): st
  * authored (its `space_items` row says `accepted`), read on `tx` after the
  * move: the version the brain just got. A table's workbook is copied now
  * (`onRollback` removes the copy again). A file keeps the name in
- * `fileNames` when Accept passes one: the name it had before the brain
+ * `fileNames` when Accept passes one: its name as filed, before the brain
  * folder made it unique (audit L7), else its name now. Replaces an earlier
  * snapshot of the same item, keeping its accept time.
  */
