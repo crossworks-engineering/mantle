@@ -523,6 +523,18 @@ describe('synthesize_speech', () => {
     expect(getDefaultWorker).not.toHaveBeenCalled();
   });
 
+  // Client logins C4: MCP, runs and approved pending calls now name the owner
+  // surface. It says who asked, not where to deliver: still no audio.
+  it('refuses an owner surface that is not a chat channel', async () => {
+    for (const via of ['mcp', 'run', 'pending', 'delegate'] as const) {
+      const owner: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'owner', via } };
+      expect(errorOf(await synthesizeSpeech.handler({ text: 'hi' }, owner))).toMatch(
+        /needs a delivery surface/,
+      );
+    }
+    expect(getDefaultWorker).not.toHaveBeenCalled();
+  });
+
   it('reports a missing worker or unwired provider without synthesising', async () => {
     vi.mocked(getDefaultWorker).mockResolvedValue(null);
     expect(errorOf(await synthesizeSpeech.handler({ text: 'hi' }, WEB_CTX))).toMatch(
