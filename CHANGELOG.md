@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.340: memory benchmark fixes
+
+- **Big benchmark results no longer crash the run.** With every answer's
+  context saved, a conversation's result runs to megabytes; handed over on
+  stdout it was cut off when the child exited. It is now written to a file,
+  and one failed conversation is logged and skipped instead of ending the run.
+- **The evidence check counts only what retrieval brought.** The corpus map
+  lists every note title, and a benchmark brain has only a few dozen notes,
+  so every answer-holding session always looked "found". The check now reads
+  the retrieved blocks only.
+
 ## 0.232.339: the memory benchmark says why an answer was wrong
 
 - **Each benchmark answer keeps its evidence.** `bench:memory` now saves
