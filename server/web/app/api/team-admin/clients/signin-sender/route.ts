@@ -17,11 +17,7 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import {
-  CLIENT_CODE_DAILY_CAP,
-  clientCodesSentLast24h,
-  savePreferencesFor,
-} from '@mantle/content';
+import { CLIENT_CODE_DAILY_CAP, clientCodesSentLast24h, savePreferencesFor } from '@mantle/content';
 import { excludeSentFolders, sentFolderNames } from '@mantle/email';
 import { db, emailAccounts, eq, resolveSingleOwnerId } from '@mantle/db';
 import type { ClientSigninSender } from '@mantle/client-types';

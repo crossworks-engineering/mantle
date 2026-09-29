@@ -14,12 +14,7 @@ import { PgBoss } from 'pg-boss';
 import { and, eq } from 'drizzle-orm';
 import { db, emailAccounts, resolveSingleOwnerId, type EmailAccount } from '@mantle/db';
 import { env } from '@mantle/config';
-import {
-  CLIENT_CODE_HEADER,
-  accountCanSend,
-  clientCodeMessageId,
-  sendEmail,
-} from '@mantle/email';
+import { CLIENT_CODE_HEADER, accountCanSend, clientCodeMessageId, sendEmail } from '@mantle/email';
 import {
   createClientEmailCode,
   loadPreferencesFor,

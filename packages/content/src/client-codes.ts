@@ -132,7 +132,10 @@ export async function createClientEmailCode(
     const counted = async (where: SQL | undefined) =>
       (await tx.select({ n: count() }).from(clientSigninCodes).where(where))[0]?.n ?? 0;
     const since = (ms: number) => gt(clientSigninCodes.createdAt, new Date(now.getTime() - ms));
-    const ofLogin = and(eq(clientSigninCodes.loginId, login.id), eq(clientSigninCodes.kind, 'email'));
+    const ofLogin = and(
+      eq(clientSigninCodes.loginId, login.id),
+      eq(clientSigninCodes.kind, 'email'),
+    );
     const fromHere = and(ofLogin, eq(clientSigninCodes.requestIp, ip));
 
     // A retried job: this request already has its code.
@@ -275,10 +278,7 @@ export async function redeemClientEmailCode(
         .where(eq(clientSigninCodes.id, row.id));
       return null;
     }
-    await tx
-      .update(clientSigninCodes)
-      .set({ usedAt: now })
-      .where(eq(clientSigninCodes.id, row.id));
+    await tx.update(clientSigninCodes).set({ usedAt: now }).where(eq(clientSigninCodes.id, row.id));
     await tx.update(authUsers).set({ lastLoginAt: now }).where(eq(authUsers.id, login.id));
     return {
       loginId: login.id,
