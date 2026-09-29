@@ -150,42 +150,40 @@ async function reconcileEntity(
   } catch {
     // OK to create without embedding; can be backfilled later.
   }
-  try {
-    const [inserted] = await db
-      .insert(entities)
-      .values({
-        ownerId,
-        kind: mention.kind,
-        name: trimmed,
-        aliases: [],
-        embedding,
-      })
-      .returning();
-    if (!inserted) throw new Error('extractor: failed to insert entity');
-    return { entity: inserted, created: true };
-  } catch (err) {
-    // Unique-violation on entities_owner_lname_kind_uq (migration 0055): a
-    // concurrent extraction inserted this same (owner, name, kind) between our
-    // step-1 check and here. That's the race that used to spawn duplicate
-    // entities; now it's inert — re-select the winner and use it. Re-throw any
-    // other error.
-    if ((err as { code?: string }).code !== '23505') throw err;
-    const [winner] = await db
-      .select()
-      .from(entities)
-      .where(
-        and(
-          eq(entities.ownerId, ownerId),
-          eq(entities.kind, mention.kind),
-          sql`lower(${entities.name}) = lower(${trimmed})`,
-        ),
-      )
-      .limit(1);
-    if (!winner) throw err;
-    // A concurrent extraction inserted it between our step-1 probe and here —
-    // from this call's view it already existed, so count it as matched.
-    return { entity: winner, created: false };
-  }
+  // entities_owner_lname_kind_uq (migration 0055) is the arbiter when a
+  // concurrent extraction inserts the same (owner, name, kind) between our
+  // step-1 check and here: the loser's insert does nothing, and it re-selects
+  // the winner. It used to catch the unique violation by `err.code`, but
+  // drizzle wraps driver errors (the code sits on `err.cause`), so the catch
+  // never matched and the loser dropped the mention (the LoCoMo benchmark
+  // dropped 5 speaker mentions across 19 notes this way).
+  const [inserted] = await db
+    .insert(entities)
+    .values({
+      ownerId,
+      kind: mention.kind,
+      name: trimmed,
+      aliases: [],
+      embedding,
+    })
+    .onConflictDoNothing()
+    .returning();
+  if (inserted) return { entity: inserted, created: true };
+  const [winner] = await db
+    .select()
+    .from(entities)
+    .where(
+      and(
+        eq(entities.ownerId, ownerId),
+        eq(entities.kind, mention.kind),
+        sql`lower(${entities.name}) = lower(${trimmed})`,
+      ),
+    )
+    .limit(1);
+  if (!winner) throw new Error('extractor: failed to insert entity');
+  // A concurrent extraction inserted it between our step-1 probe and here;
+  // from this call's view it already existed, so count it as matched.
+  return { entity: winner, created: false };
 }
 
 // ─── Fact classification ────────────────────────────────────────────────────
