@@ -65,7 +65,7 @@ describe.skipIf(!URL)('the share tools on client items, on Postgres', () => {
       content: [{ type: 'image', attrs: { nodeId: ids.file, src: 'x' } }],
     });
     await m.db.execute(sqlTag`
-      insert into auth.users (id, email, password_hash) values (${owner}, ${`${tag}@example.invalid`}, 'x')`);
+      insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
     await m.db.execute(sqlTag`
