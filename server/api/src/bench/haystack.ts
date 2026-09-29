@@ -226,6 +226,8 @@ async function askOne(
   const t0 = performance.now();
   const ctx = await loadConversationContext({ ownerId, agent, inboundText: q.question });
   const context = renderContext(ctx, models.answer);
+  // Evidence is checked on the retrieved blocks only, never the corpus map.
+  const retrieved = renderContext(ctx, models.answer, { withCorpusMap: false });
   const retrieveMs = Math.round(performance.now() - t0);
   const prompt = answerPrompt(q, context);
   const answered = await callModel(ownerId, models.answer, prompt.system, prompt.user, 8000);
@@ -247,7 +249,7 @@ async function askOne(
     context_chars: context.length,
     context,
     evidence_sessions: q.evidence,
-    evidence_found: evidenceFound(context, q.evidence),
+    evidence_found: evidenceFound(retrieved, q.evidence),
     said_missing: saidMissing(answer),
     retrieve_ms: retrieveMs,
     answer_usd: answered.usd,

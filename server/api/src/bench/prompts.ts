@@ -64,8 +64,9 @@ export function sessionTitleMarker(index: number): string {
 /**
  * How many of the evidence sessions reached the context (pure): a session
  * counts when its note's title appears, which happens for content hits and
- * passages. Facts carry no title, so a session that arrived only as facts is
- * not counted: this is a lower bound on what the model saw.
+ * passages. Pass the context WITHOUT the corpus map, which lists every title.
+ * Facts carry no title, so a session that arrived only as facts is not
+ * counted: this is a lower bound on what the model saw.
  */
 export function evidenceFound(context: string, evidence: readonly number[]): number {
   return evidence.filter((i) => context.includes(sessionTitleMarker(i))).length;

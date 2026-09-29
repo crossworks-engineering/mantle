@@ -16,7 +16,17 @@ const textOf = (m: Rendered): string =>
       ? m.content
       : m.content.map((p) => ('text' in p && typeof p.text === 'string' ? p.text : '')).join('');
 
-export function renderContext(ctx: ConversationContext, model: string): string {
+/**
+ * `withCorpusMap: false` leaves out the corpus map (the list of every
+ * item's title). The evidence check needs that: in a benchmark brain of a few
+ * dozen notes the map names every session, so any title would "reach" the
+ * context whether retrieval found it or not.
+ */
+export function renderContext(
+  ctx: ConversationContext,
+  model: string,
+  opts: { withCorpusMap?: boolean } = {},
+): string {
   const messages = buildChatMessages({
     model,
     systemPrompt: '',
@@ -24,7 +34,7 @@ export function renderContext(ctx: ConversationContext, model: string): string {
     journalRelevant: ctx.journalRelevant,
     facts: ctx.facts,
     digests: ctx.digests,
-    corpusMap: ctx.corpusMap,
+    corpusMap: opts.withCorpusMap === false ? undefined : ctx.corpusMap,
     contentHits: ctx.contentHits,
     chunkHits: ctx.chunkHits,
     relations: ctx.relations,
