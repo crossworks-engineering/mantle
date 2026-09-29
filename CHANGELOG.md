@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.337: client v0.6.176
+
+- Pairs the client at jackdaw v0.6.176, the client half of 0.232.336
+  (client logins C4). A client opens a chat dock from "Shared with you" and
+  talks with the client-responder: the thread polls every 3 seconds while a
+  reply is on its way and every 30 seconds while open, never while closed;
+  a refused send says why in plain words (chat not open, too fast, today's
+  limit). Team admin > Member chats filters All, Members or Clients and
+  marks client rows; Requests marks a request from a client; Team admin >
+  Clients shows each client's chat use today against the caps.
+
 ## 0.232.336: client logins C4, client chat
 
 A client chats with the brain's client-responder in the client portal. Pair
