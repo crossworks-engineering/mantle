@@ -290,6 +290,8 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.member_invites'),
   // "What clients see" acknowledgements (0187): an admin's record.
   none('public.client_report_acks'),
+  // Client sign-in codes and links (0188): hashes of live secrets.
+  none('public.client_signin_codes'),
   none('public.mantle_peers'),
   none('public.peer_shares'),
   none('public.peer_share_scopes'),

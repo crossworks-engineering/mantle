@@ -11,6 +11,7 @@ export * from './team-notifications';
 export * from './team-access-log';
 export * from './member-turn-ledger';
 export * from './client-report-acks';
+export * from './client-signin-codes';
 export * from './team-read-cursors';
 export * from './oauth';
 export * from './assistant-read-cursors';

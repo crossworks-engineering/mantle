@@ -295,3 +295,16 @@ export {
   clientReport,
   clientReportAcknowledged,
 } from './client-report';
+// Client logins (C2): Team admin > Clients and the sign-in link.
+export {
+  CLIENT_SIGNIN_LINK_TTL_MS,
+  ClientLoginError,
+  clientSigninLinkPath,
+  createClientLogin,
+  issueClientSigninLink,
+  listClientLogins,
+  redeemClientSigninLink,
+  revokeClientSigninLink,
+  type CreateClientLoginInput,
+  type RedeemedClientSigninLink,
+} from './client-logins';

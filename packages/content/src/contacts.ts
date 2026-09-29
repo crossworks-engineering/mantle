@@ -15,7 +15,7 @@
  * `email_send`/`email_page` enforce "recipient ∈ own_accounts ∪ contact_emails"
  * once the contacts list is non-empty. See docs/contacts.md.
  */
-import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import { authUsers, db, nodes, type Node } from '@mantle/db';
 import {
   deriveContactTitle,
@@ -219,16 +219,23 @@ export async function contactEmails(ownerId: string): Promise<string[]> {
 }
 
 /**
- * Every active login's email address, lower-cased: users are contacts in user
- * form (Jason, 2026-09-26). Both email gates allow them, inbound and
- * outbound, next to the contact list. A disabled login's address does not
- * count. Logins all belong to this one brain, so there is no owner filter.
+ * Every active ADMIN and MEMBER login's email address, lower-cased: staff are
+ * contacts in user form (Jason, 2026-09-26). Both email gates allow them,
+ * inbound and outbound, next to the contact list. A disabled login's address
+ * does not count. Logins all belong to this one brain, so there is no owner
+ * filter.
+ *
+ * A CLIENT login is left out (client logins C2, decision 10): its email
+ * passes a gate only when the client is also a contact, so a client's mail
+ * is not ingested and the agent does not write to a client just because a
+ * login exists. Roles are named, so a role this code does not know is left
+ * out too (fail closed).
  */
 export async function loginEmails(): Promise<string[]> {
   const rows = await db
     .select({ email: authUsers.email })
     .from(authUsers)
-    .where(isNull(authUsers.disabledAt));
+    .where(and(isNull(authUsers.disabledAt), inArray(authUsers.role, ['admin', 'member'])));
   return [...new Set(rows.map((r) => r.email.trim().toLowerCase()).filter(Boolean))];
 }
 

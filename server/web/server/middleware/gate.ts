@@ -60,7 +60,12 @@ function isAssetPath(path: string): boolean {
     // An admin's own private file (member logins Phase 7). The route calls
     // getOwnerForAsset and reads the space of the login the token's `act`
     // names, so the token opens only that admin's own items.
-    /^\/api\/admin\/space\/[^/]+\/bytes$/.test(path)
+    /^\/api\/admin\/space\/[^/]+\/bytes$/.test(path) ||
+    // Client bytes (client logins C2): file bytes and drawing SVGs of items
+    // at client level. The routes call getClientForAsset and read at the
+    // client level; the client shell mints the token with `act` = the login.
+    path.startsWith('/api/client/files/') ||
+    /^\/api\/client\/draws\/[^/]+\/svg$/.test(path)
   );
 }
 

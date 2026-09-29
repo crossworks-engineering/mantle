@@ -59,6 +59,7 @@ describe('access matrix', () => {
       'public.oauth_access_tokens',
       'public.mobile_tokens',
       'public.member_invites',
+      'public.client_signin_codes',
     ];
     for (const table of adminForever) {
       expect(ACCESS_MATRIX.find((t) => t.table === table)?.read, table).toBe('none');

@@ -63,8 +63,9 @@ export async function loadContactGate(ownerId: string): Promise<ContactGate> {
 
   const ownAccounts = new Set<string>();
   for (const a of accountRows) ownAccounts.add(a.address.toLowerCase());
-  // The brain's users, admins and members: allowed like own accounts (they
-  // do not make the contact list "non-empty" either).
+  // The brain's staff, admins and members (never a client login: decision
+  // 10): allowed like own accounts (they do not make the contact list
+  // "non-empty" either).
   for (const e of logins) ownAccounts.add(e);
 
   const isEmpty = exact.size === 0 && domains.size === 0;
