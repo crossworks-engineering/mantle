@@ -4,6 +4,14 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.338: client v0.6.177
+
+- Pairs the client at jackdaw v0.6.177, the client half of 0.232.334 (one
+  item list for members and admins). Every list screen uses one list kit
+  with the state as a pill: the admin lists show private items beside the
+  brain's (no Brain / Private switch), the member workspace is one list,
+  and a client's "Shared with you" is the same list as every other screen.
+
 ## 0.232.337: client v0.6.176
 
 - Pairs the client at jackdaw v0.6.176, the client half of 0.232.336
