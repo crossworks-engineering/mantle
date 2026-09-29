@@ -20,6 +20,13 @@
 -- (admin devices only). Notify-only: these functions write nothing and no
 -- listener starts LLM work (cost-safety).
 
+-- Short locks only: every trigger below is created under an exclusive lock
+-- on its table (space_items, auth.users, nodes). A busy box waits at most
+-- 30 s for one, then this migration fails and the roll stops, rather than
+-- queueing every reader behind it.
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+
 -- SECURITY DEFINER: the space_items triggers run as the writer (the space
 -- role for a member), which may not read spaces. The function reads the brain
 -- id and notifies; nothing else. On a box there is one brain space (its id is

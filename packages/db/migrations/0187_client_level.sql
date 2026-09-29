@@ -27,6 +27,13 @@
 -- back). The previous code runs on these rules unchanged: it never makes a
 -- client row and never runs a client viewer.
 
+-- Short locks only: the role CHECK, the policies and ENABLE ROW LEVEL
+-- SECURITY take exclusive locks on auth.users, nodes, agents and
+-- tool_groups. A busy box waits at most 30 s for one, then this migration
+-- fails and the roll stops, rather than queueing every reader behind it.
+SET LOCAL lock_timeout = '30s';
+--> statement-breakpoint
+
 -- ── 1. The role ─────────────────────────────────────────────────────────────
 ALTER TABLE "auth"."users" DROP CONSTRAINT IF EXISTS "users_role_ck";
 --> statement-breakpoint
