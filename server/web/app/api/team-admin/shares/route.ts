@@ -35,19 +35,17 @@ export async function GET() {
       lastViewedAt: s.lastViewedAt,
       level: s.level,
     })),
-    retired: retired.map(
-      (r): RetiredClientLinkRow => ({
-        id: r.id,
-        nodeId: r.nodeId,
-        nodeType: r.nodeType,
-        title: r.title,
-        icon: r.nodeIcon,
-        level: r.level,
-        createdAt: r.createdAt,
-        retiredAt: r.retiredAt,
-        viewCount: r.viewCount,
-        lastViewedAt: r.lastViewedAt,
-      }),
-    ),
+    retired: retired.map((r): RetiredClientLinkRow => ({
+      id: r.id,
+      nodeId: r.nodeId,
+      nodeType: r.nodeType,
+      title: r.title,
+      icon: r.nodeIcon,
+      level: r.level,
+      createdAt: r.createdAt,
+      retiredAt: r.retiredAt,
+      viewCount: r.viewCount,
+      lastViewedAt: r.lastViewedAt,
+    })),
   });
 }

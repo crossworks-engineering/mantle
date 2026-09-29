@@ -580,9 +580,7 @@ export type RetiredClientLinkListing = {
 
 /** Every link marked `retired: 'client'`, newest retirement first. The
  *  token is never listed: the link is dead, and a client signs in. */
-export async function listRetiredClientLinks(
-  ownerId: string,
-): Promise<RetiredClientLinkListing[]> {
+export async function listRetiredClientLinks(ownerId: string): Promise<RetiredClientLinkListing[]> {
   const rows = await db
     .select({ share: shares, title: nodes.title, data: nodes.data, audience: nodes.audience })
     .from(shares)
