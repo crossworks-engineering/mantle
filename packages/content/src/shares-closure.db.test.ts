@@ -199,7 +199,7 @@ describe.skipIf(!URL)('levels and links at the edges on Postgres', () => {
     let written: string[];
     try {
       const res = await s.setShareCascade(owner, ids.parent, true);
-      expect(res).toEqual({ ok: true, count: 2 });
+      expect(res).toEqual({ ok: true, count: 2, skipped: [] });
     } finally {
       written = h.audiences;
       h.audiences = null;
