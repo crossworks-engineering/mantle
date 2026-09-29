@@ -182,12 +182,31 @@ export async function withSpace<T>(
  * agent path sets the flag). One short transaction on the team pool.
  */
 export async function withTeamDrafts<T>(fn: () => Promise<T>): Promise<T> {
-  return withViewer('team', () =>
-    getViewerDb('team').transaction(async (tx) => {
+  return withHumanViewer('team', fn);
+}
+
+/**
+ * Run `fn` at `level` (team or client) with the human flag on: a login's own
+ * request, never an agent (no agent path calls this). For team: Team drafts
+ * and a client's submitted items (client requests, 0194); for both: the
+ * client thread on a client-level brain item (0194, decision 8). One short
+ * transaction on that level's pool. Inside a lower scope the level only goes
+ * down (withViewer), and the flag is set on the transaction this opens.
+ */
+export async function withHumanViewer<T>(
+  level: 'team' | 'client',
+  fn: () => Promise<T>,
+): Promise<T> {
+  return withViewer(level, () => {
+    const effective = currentViewerLevel();
+    if (effective !== 'team' && effective !== 'client') {
+      throw new Error(`withHumanViewer: no human scope at ${effective}`);
+    }
+    return getViewerDb(effective).transaction(async (tx) => {
       await tx.execute(sqlTag`select set_config('mantle.human', 'on', true)`);
-      return runInTxScope({ level: 'team', tx }, fn);
-    }),
-  );
+      return runInTxScope({ level: effective, tx }, fn);
+    });
+  });
 }
 
 /**

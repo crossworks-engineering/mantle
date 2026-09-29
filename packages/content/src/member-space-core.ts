@@ -6,6 +6,7 @@
  */
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { currentSpaceScope, db, nodes } from '@mantle/db';
+import { spaceLimits } from './space-limits';
 
 /** Thrown when an item may not change now: it is submitted (frozen), or the
  *  requested move is not allowed from its state (routes answer 409), or it is
@@ -68,21 +69,23 @@ export async function lockSpaceQuota(spaceId: string): Promise<void> {
   );
 }
 
-/** Items one personal space may hold (plan section 8, quotas). Folders a
- *  space makes for itself (the per-kind roots) do not count. */
+/** Items one member's personal space may hold (plan section 8, quotas).
+ *  Folders a space makes for itself (the per-kind roots) do not count. A
+ *  client's space holds fewer (space-limits.ts). */
 export const SPACE_ITEM_LIMIT = 2000;
 
-/** Refuse a new item when the space already holds SPACE_ITEM_LIMIT. */
+/** Refuse a new item when the space already holds its role's item limit. */
 export async function assertItemRoom(spaceId: string): Promise<void> {
   requireSpace(spaceId);
+  const limit = spaceLimits().itemLimit;
   const [held] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(nodes)
     .where(and(eq(nodes.ownerId, spaceId), ne(nodes.type, 'branch')));
-  if ((held?.n ?? 0) >= SPACE_ITEM_LIMIT) {
+  if ((held?.n ?? 0) >= limit) {
     throw new SpaceItemStateError(
       'quota',
-      `Your space is full (${SPACE_ITEM_LIMIT} items). Delete something first.`,
+      `Your space is full (${limit} items). Delete something first.`,
     );
   }
 }

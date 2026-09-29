@@ -204,6 +204,15 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   // The upload ledger (0169): the space role inserts and reads its own
   // space's rows; the level roles never see it.
   { table: 'public.space_uploads', read: 'none', rule: 'none', writer: 'content', space: 'write' },
+  // The submission ledger (0194): the client caps count it, Recall cannot
+  // reset it. The space role inserts and reads its own space's rows.
+  {
+    table: 'public.space_submissions',
+    read: 'none',
+    rule: 'none',
+    writer: 'content',
+    space: 'write',
+  },
 
   // ── Configuration the turn loop reads (no per-row secrecy) ────────────────
   // The client role reads agents and tool groups at client level only

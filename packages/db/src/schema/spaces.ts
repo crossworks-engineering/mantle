@@ -80,6 +80,11 @@ export const spaceItems = pgTable(
     authorLoginId: uuid('author_login_id').references(() => authUsers.id, {
       onDelete: 'set null',
     }),
+    /** The author's role when the row was made (0194): stamped by a trigger
+     *  from auth.users, never changed, kept after the login is deleted. The
+     *  lowering guard reads it: an item accepted from a client's space is
+     *  client-sourced text. Never written by the app. */
+    authorRole: text('author_role'),
     sharing: text('sharing').$type<SpaceSharing>().notNull().default('private'),
     reviewState: text('review_state').$type<ReviewState>().notNull().default('draft'),
     submittedAt: timestamp('submitted_at', { withTimezone: true }),
@@ -110,6 +115,26 @@ export const spaceItems = pgTable(
       .on(t.takenRoot)
       .where(sql`${t.takenRoot} is not null`),
   ],
+);
+
+/**
+ * One row per Submit, per personal space (migration 0194): the client caps
+ * (submissions a day) count it, so Recall and Submit again cannot reset them.
+ * The space role inserts and reads its own space's rows only.
+ */
+export const spaceSubmissions = pgTable(
+  'space_submissions',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    spaceId: uuid('space_id')
+      .notNull()
+      .references(() => spaces.id, { onDelete: 'cascade' }),
+    nodeId: uuid('node_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('space_submissions_space_time_idx').on(t.spaceId, t.createdAt)],
 );
 
 /**

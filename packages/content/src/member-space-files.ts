@@ -34,6 +34,12 @@ import {
 import { existsSync, promises as fs, statSync, type ReadStream } from 'node:fs';
 import { draftAbsFor } from './table-storage';
 import {
+  CLIENT_SPACES_TOTAL_BYTES,
+  MEMBER_SPACE_LIMITS,
+  inClientSpace,
+  spaceLimits,
+} from './space-limits';
+import {
   SpaceItemStateError,
   assertItemRoom,
   lockSpaceQuota,
@@ -46,12 +52,14 @@ import { dedupeFilename } from './dedupe-filename';
 /** The ltree path every personal file node carries (not under `files`). */
 export const SPACE_FILES_PATH = 'space_files';
 
-/** One upload's ceiling for a member (the admin's streamed cap is 512 MB). */
-export const SPACE_FILE_MAX_BYTES = 100 * 1024 * 1024;
-/** Everything a space holds on disk: file bytes plus table workbooks. */
-export const SPACE_STORAGE_LIMIT_BYTES = 2 * 1024 * 1024 * 1024;
-/** New file bytes a space may take in 24 hours. */
-export const SPACE_DAILY_UPLOAD_BYTES = 500 * 1024 * 1024;
+/** One upload's ceiling for a member (the admin's streamed cap is 512 MB).
+ *  A client's space has its own, lower limits (space-limits.ts): code that
+ *  enforces a limit reads `spaceLimits()`, never these. */
+export const SPACE_FILE_MAX_BYTES = MEMBER_SPACE_LIMITS.fileMaxBytes;
+/** Everything a member's space holds on disk: file bytes plus table workbooks. */
+export const SPACE_STORAGE_LIMIT_BYTES = MEMBER_SPACE_LIMITS.storageBytes;
+/** New file bytes a member's space may take in 24 hours. */
+export const SPACE_DAILY_UPLOAD_BYTES = MEMBER_SPACE_LIMITS.dailyUploadBytes;
 
 export type SpaceFile = {
   id: string;
@@ -149,15 +157,37 @@ async function uploadedToday(spaceId: string): Promise<number> {
  */
 export async function spaceUploadHeadroom(spaceId: string): Promise<number> {
   requireSpace(spaceId);
+  const limits = spaceLimits();
   const [used, today] = [await spaceStorageUsed(spaceId), await uploadedToday(spaceId)];
+  // A client's space also shares the brain-wide client total (N12).
+  const clientsLeft = inClientSpace()
+    ? CLIENT_SPACES_TOTAL_BYTES - (await clientSpacesUsed())
+    : Number.POSITIVE_INFINITY;
   return Math.max(
     0,
     Math.min(
-      SPACE_FILE_MAX_BYTES,
-      SPACE_STORAGE_LIMIT_BYTES - used,
-      SPACE_DAILY_UPLOAD_BYTES - today,
+      limits.fileMaxBytes,
+      limits.storageBytes - used,
+      limits.dailyUploadBytes - today,
+      clientsLeft,
     ),
   );
+}
+
+/** Bytes every client space of the brain holds together (files and table
+ *  workbooks). A security-definer function: a client's space role reads no
+ *  other space, and it answers one number. */
+export async function clientSpacesUsed(): Promise<number> {
+  const rows = (await db.execute(
+    sql`select mantle_client_space_bytes()::text as n`,
+  )) as unknown as { n: string | null }[];
+  return Number(rows[0]?.n ?? 0);
+}
+
+/** Serialize the client total across ALL client spaces (like the space's own
+ *  quota lock): two clients' uploads must not both pass the last headroom. */
+async function lockClientTotal(): Promise<void> {
+  await db.execute(sql`select pg_advisory_xact_lock(hashtextextended('client-spaces-total', 0))`);
 }
 
 /**
@@ -168,12 +198,22 @@ export async function spaceUploadHeadroom(spaceId: string): Promise<number> {
  */
 export async function assertSpaceStorage(spaceId: string, incoming = 0): Promise<void> {
   requireSpace(spaceId);
+  const limits = spaceLimits();
   await lockSpaceQuota(spaceId);
-  if ((await spaceStorageUsed(spaceId)) + incoming > SPACE_STORAGE_LIMIT_BYTES) {
+  if ((await spaceStorageUsed(spaceId)) + incoming > limits.storageBytes) {
     throw new SpaceItemStateError(
       'quota',
-      `Your space is full (${mb(SPACE_STORAGE_LIMIT_BYTES)}). Delete something first.`,
+      `Your space is full (${mb(limits.storageBytes)}). Delete something first.`,
     );
+  }
+  if (inClientSpace()) {
+    await lockClientTotal();
+    if ((await clientSpacesUsed()) + incoming > CLIENT_SPACES_TOTAL_BYTES) {
+      throw new SpaceItemStateError(
+        'quota',
+        'The storage for client uploads is full. Ask your contact to make room.',
+      );
+    }
   }
 }
 
@@ -212,16 +252,17 @@ export async function createMineFile(
   try {
     const cleaned = cleanSpaceFilename(input.filename);
     if (!cleaned) throw new Error('invalid filename');
-    if (spooled.size > SPACE_FILE_MAX_BYTES) {
-      throw new SpaceItemStateError('quota', `Files can be at most ${mb(SPACE_FILE_MAX_BYTES)}.`);
+    const limits = spaceLimits();
+    if (spooled.size > limits.fileMaxBytes) {
+      throw new SpaceItemStateError('quota', `Files can be at most ${mb(limits.fileMaxBytes)}.`);
     }
     await assertItemRoom(spaceId);
     // Locked: a parallel upload waits here until this transaction ends.
     await assertSpaceStorage(spaceId, spooled.size);
-    if ((await uploadedToday(spaceId)) + spooled.size > SPACE_DAILY_UPLOAD_BYTES) {
+    if ((await uploadedToday(spaceId)) + spooled.size > limits.dailyUploadBytes) {
       throw new SpaceItemStateError(
         'quota',
-        `You can upload ${mb(SPACE_DAILY_UPLOAD_BYTES)} a day. Try again tomorrow.`,
+        `You can upload ${mb(limits.dailyUploadBytes)} a day. Try again tomorrow.`,
       );
     }
     // A second upload with a name the space already holds files as

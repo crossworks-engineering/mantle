@@ -32,6 +32,7 @@ import {
   nodes,
   pages,
   spaceItems,
+  spaceSubmissions,
   tables,
   type ReviewState,
   type SpaceSharing,
@@ -72,6 +73,7 @@ import {
   type SpaceFile,
 } from './member-space-files';
 import { openSpaceFile } from '@mantle/files';
+import { spaceLimits } from './space-limits';
 import {
   SpaceItemStateError,
   assertItemRoom,
@@ -583,6 +585,7 @@ export async function submitItem(spaceId: string, id: string): Promise<SpaceItem
   if (state?.reviewState !== 'draft' && state?.reviewState !== 'returned') {
     throw new SpaceItemStateError('not-draft', 'This item is already submitted.');
   }
+  await assertSubmitRoom(spaceId);
 
   // Lock, walk, lock what joined, until the bundle stops growing: a Save
   // version can add an embed until its row is locked.
@@ -638,8 +641,69 @@ export async function submitItem(spaceId: string, id: string): Promise<SpaceItem
   // Submitted (or accepted) by a request that committed first.
   if (!changed.length)
     throw new SpaceItemStateError('not-draft', 'This item is already submitted.');
+  // The ledger the daily cap counts: Recall does not take a row back.
+  await db.insert(spaceSubmissions).values({ spaceId, nodeId: id });
   await notifySpaceItemChanged(id, 'state', { spaceId, team: row.sharing === 'team' });
   return (await getMineRow(spaceId, id))!;
+}
+
+/**
+ * The submission caps of the space's role (client logins C5, plan section
+ * 9): a client submits at most `submitsPerDay` times in 24 hours (counted in
+ * the ledger, so Recall and Submit again cannot reset it) and holds at most
+ * `openSubmissions` items submitted and not yet accepted or returned (an
+ * item an admin took over counts until it is accepted or given back). A
+ * member's space has no caps. The login's submits are serialized by a lock
+ * held until the space transaction ends, so two tabs cannot both pass the
+ * last place.
+ */
+async function assertSubmitRoom(spaceId: string): Promise<void> {
+  const { loginId } = requireSpace(spaceId);
+  const limits = spaceLimits();
+  if (limits.submitsPerDay === null && limits.openSubmissions === null) return;
+  await db.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`space-submit:${spaceId}`}, 0))`,
+  );
+  if (limits.submitsPerDay !== null) {
+    const [r] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(spaceSubmissions)
+      .where(
+        and(
+          eq(spaceSubmissions.spaceId, spaceId),
+          sql`${spaceSubmissions.createdAt} > now() - interval '24 hours'`,
+        ),
+      );
+    if ((r?.n ?? 0) >= limits.submitsPerDay) {
+      throw new SpaceItemStateError(
+        'quota',
+        `You can submit ${limits.submitsPerDay} items a day. Try again tomorrow.`,
+      );
+    }
+  }
+  if (limits.openSubmissions !== null) {
+    // An item taken over sits in the admin's space, out of this space's
+    // sight: counted on the admin pool by author, a number and nothing else.
+    const [r] = await asSystem(() =>
+      db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(spaceItems)
+        .where(
+          and(
+            eq(spaceItems.authorLoginId, loginId),
+            inArray(spaceItems.reviewState, ['submitted', 'taken']),
+            // A bundle item of a taken root is not an open submission.
+            isNull(spaceItems.takenRoot),
+          ),
+        ),
+    );
+    if ((r?.n ?? 0) >= limits.openSubmissions) {
+      throw new SpaceItemStateError(
+        'quota',
+        `You have ${limits.openSubmissions} items waiting for review. Recall one, or wait for a reply.`,
+      );
+    }
+  }
 }
 
 /** Recall for correction: submitted -> draft, any time before Accept. The

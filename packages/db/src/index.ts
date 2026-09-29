@@ -1,5 +1,13 @@
 export * from './schema/index';
-export { db, systemDb, closeDb, withSpace, withTeamDrafts, type Db } from './client';
+export {
+  db,
+  systemDb,
+  closeDb,
+  withSpace,
+  withTeamDrafts,
+  withHumanViewer,
+  type Db,
+} from './client';
 export {
   VIEWER_LEVELS,
   currentViewerLevel,

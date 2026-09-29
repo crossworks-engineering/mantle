@@ -40,8 +40,13 @@ export const nodeComments = pgTable(
     body: text('body').notNull(),
     /** On a personal item (0171, audit S6): 'team' = written while the item
      *  was shared with the team (teammates read it); 'review' = the author's
-     *  review talk while it was private and submitted (never teammates). */
-    threadScope: text('thread_scope').$type<'team' | 'review'>().default('team').notNull(),
+     *  review talk while it was private and submitted (never teammates).
+     *  'client' (0194, decision 8) = the thread on a client-level brain item:
+     *  the team, admins and every client login read and write it. */
+    threadScope: text('thread_scope')
+      .$type<'team' | 'review' | 'client'>()
+      .default('team')
+      .notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     editedAt: timestamp('edited_at', { withTimezone: true }),
   },
