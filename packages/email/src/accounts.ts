@@ -556,7 +556,11 @@ export async function excludeSentFolders(
       .limit(1)
       .for('update');
     if (!account) {
-      return { ok: false as const, reason: 'account-not-found' as const, error: 'Account not found.' };
+      return {
+        ok: false as const,
+        reason: 'account-not-found' as const,
+        error: 'Account not found.',
+      };
     }
     const [held] = await tx
       .select({ folders: clientSigninSenderFolders.folders })

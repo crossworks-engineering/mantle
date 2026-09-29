@@ -143,7 +143,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'client-codes-reap',
     title: 'Reap old client sign-in codes',
     description:
-      "Deletes client sign-in code rows older than 30 days that are finished (used, revoked or expired; a used sign-in link is kept as the admin's \"last used\" record), blanks the request address on code rows older than 7 days, and deletes skipped-request rows older than 30 days (client logins audit B21). Only hashes and addresses are removed: nothing a client or an admin reads.",
+      'Deletes client sign-in code rows older than 30 days that are finished (used, revoked or expired; a used sign-in link is kept as the admin\'s "last used" record), blanks the request address on code rows older than 7 days, and deletes skipped-request rows older than 30 days (client logins audit B21). Only hashes and addresses are removed: nothing a client or an admin reads.',
     kind: 'recurring',
     status: 'live',
     cost: 'sql',

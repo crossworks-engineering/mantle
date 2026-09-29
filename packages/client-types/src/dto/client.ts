@@ -183,7 +183,4 @@ export type ClientSigninSenderPreview = {
 
 /** Why an admin's sender choice was refused (the 4xx `reason`). */
 export type ClientSenderRefusedReason =
-  | 'account-not-found'
-  | 'account-cannot-send'
-  | 'no-sent-folder'
-  | 'folders-unreadable';
+  'account-not-found' | 'account-cannot-send' | 'no-sent-folder' | 'folders-unreadable';

@@ -48,6 +48,10 @@ export async function GET(req: Request) {
   }
   const body: ClientSigninSenderPreview = plan.ok
     ? { sentFolders: plan.sentFolders, canUse: true }
-    : { sentFolders: [], canUse: false, reason: plan.reason as 'no-sent-folder' | 'folders-unreadable' };
+    : {
+        sentFolders: [],
+        canUse: false,
+        reason: plan.reason as 'no-sent-folder' | 'folders-unreadable',
+      };
   return NextResponse.json(body);
 }

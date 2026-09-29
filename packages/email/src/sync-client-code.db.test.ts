@@ -4,7 +4,10 @@
  * gate would let its copy in (own accounts are allowed), in Sent, in All
  * Mail, anywhere. The sync skips it by its Message-ID marker before any
  * fetch; a normal sent mail next to it is ingested as before. The same on
- * the backfill path. The provider is a stand-in; the brain is this file's
+ * the backfill path. A reply or forward of a code mail (the marker in
+ * In-Reply-To or References, or the X-Mantle-Client-Code header, on the
+ * listing or on the full message) is skipped too, and a sign-in link's code
+ * in any ingested mail is blanked (audit B19, K6). The provider is a stand-in; the brain is this file's
  * own and is removed after.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/email/src/sync-client-code.db.test.ts
  */
@@ -40,8 +43,15 @@ describe.skipIf(!URL)('mail sync skips client sign-in code mails', () => {
     attachments: [],
   });
 
-  const providerOf = (messages: RawMessage[]) => {
-    const fetchFull = vi.fn(async () => ({ bodyText: 'body', attachments: [] }));
+  const providerOf = (
+    messages: RawMessage[],
+    full: (id: string) => Record<string, unknown> = () => ({}),
+  ) => {
+    const fetchFull = vi.fn(async (_a: unknown, id: string) => ({
+      bodyText: 'body',
+      attachments: [],
+      ...full(id),
+    }));
     const provider: EmailProvider = {
       async *listSince() {
         for (const msg of messages) yield { message: msg, nextCursor: { raw: {} } };
@@ -111,5 +121,59 @@ describe.skipIf(!URL)('mail sync skips client sign-in code mails', () => {
     await sync.backfillMatch(account, provider, address);
     expect(fetchFull).not.toHaveBeenCalled();
     expect(await stored()).toEqual(['Mail 3']);
+  });
+
+  it('skips a reply or forward of a code mail, and a mail with the code header (B19)', async () => {
+    const codeId = marker.clientCodeMessageId(address);
+    const { provider, fetchFull } = providerOf([
+      { ...message('5', `reply-${tag}@example.invalid`, 'INBOX'), inReplyTo: codeId },
+      {
+        ...message('6', `fwd-${tag}@example.invalid`, 'INBOX'),
+        references: `<a@example.invalid> ${codeId}`,
+      },
+      { ...message('7', `hdr-${tag}@example.invalid`, 'Sent'), clientCodeHeader: true },
+    ]);
+    await sync.syncAccount(account, provider);
+    expect(fetchFull).not.toHaveBeenCalled();
+    expect(await stored()).toEqual(['Mail 3']);
+  });
+
+  it('skips it when only the full message shows it (a provider without the headers)', async () => {
+    const { provider, fetchFull } = providerOf(
+      [message('8', `late-${tag}@example.invalid`, 'INBOX')],
+      () => ({ clientCodeMail: true }),
+    );
+    await sync.syncAccount(account, provider);
+    expect(fetchFull).toHaveBeenCalledTimes(1);
+    expect(await stored()).toEqual(['Mail 3']);
+  });
+
+  it('blanks a sign-in link code in the mail it stores (K6)', async () => {
+    const link = 'https://brain.example.invalid/client-signin?code=Live7Code9Here';
+    const invite = 'https://brain.example.invalid/invite#code=Invite7Code';
+    const { provider } = providerOf(
+      [
+        {
+          ...message('9', `link-${tag}@example.invalid`, 'Sent'),
+          subject: `Mail 9 ${link}`,
+          snippet: `Your link ${link}`,
+        },
+      ],
+      () => ({
+        bodyText: `Sign in here: ${link}\nor join: ${invite}`,
+        bodyHtml: `<a href="${link}">Sign in</a>`,
+      }),
+    );
+    await sync.syncAccount(account, provider);
+    const [row] = await sql<Row[]>`
+      select e.subject, e.snippet, e.body_text, e.body_html, n.title
+        from emails e join nodes n on n.id = e.node_id
+       where e.account_id = ${accountId} and e.subject like 'Mail 9%'`;
+    expect(row).toBeDefined();
+    const all = JSON.stringify(row);
+    expect(all).not.toContain('Live7Code9Here');
+    expect(all).not.toContain('Invite7Code');
+    expect(row!.body_text).toContain('client-signin?code=[redacted]');
+    expect(row!.body_text).toContain('invite#code=[redacted]');
   });
 });

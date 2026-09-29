@@ -30,7 +30,20 @@
  * skipped requests in client_signin_code_skips (0193).
  */
 import { createHmac, hkdfSync, randomInt, timingSafeEqual } from 'node:crypto';
-import { and, count, desc, eq, gt, isNotNull, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gt,
+  isNotNull,
+  isNull,
+  lt,
+  not,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import {
   authUsers,
   clientSigninCodeSkips,
@@ -136,12 +149,7 @@ export const CLIENT_CODE_CAP_REASONS = [
 export type ClientCodeCapReason = (typeof CLIENT_CODE_CAP_REASONS)[number];
 
 export type ClientCodeSkipReason =
-  | 'invalid'
-  | 'stale'
-  | 'not-a-client'
-  | 'duplicate'
-  | 'code-open'
-  | ClientCodeCapReason;
+  'invalid' | 'stale' | 'not-a-client' | 'duplicate' | 'code-open' | ClientCodeCapReason;
 
 export type ClientCodeDecision =
   | {
@@ -273,10 +281,7 @@ export async function createClientEmailCode(
 
 /** Short, code-free text of a send failure, for the admin card. */
 export function clientCodeFailureReason(reason: string): string {
-  const clean = reason
-    .replace(/\d{8}/g, '########')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const clean = reason.replace(/\d{8}/g, '########').replace(/\s+/g, ' ').trim();
   return (clean || 'unknown error').slice(0, 300);
 }
 
@@ -398,7 +403,11 @@ export async function reapClientSigninCodes(
   const skipsOld = lt(clientSigninCodeSkips.createdAt, rowCutoff);
   if (opts.dryRun) {
     const [a] = await db.select({ n: count() }).from(clientSigninCodes).where(finishedOld);
-    const [b] = await db.select({ n: count() }).from(clientSigninCodes).where(ipOld);
+    // Rows the delete takes are not also counted as blanked.
+    const [b] = await db
+      .select({ n: count() })
+      .from(clientSigninCodes)
+      .where(and(ipOld, not(finishedOld!)));
     const [c] = await db.select({ n: count() }).from(clientSigninCodeSkips).where(skipsOld);
     return { deleted: a?.n ?? 0, ipsCleared: b?.n ?? 0, skipsDeleted: c?.n ?? 0 };
   }

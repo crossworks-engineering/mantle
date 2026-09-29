@@ -38,4 +38,3 @@ export const SENT_FOLDER_REFUSALS = {
   'folders-unreadable':
     'The folders of that mailbox could not be listed, so its sent mail could not be kept out of the brain. Check the account and try again.',
 } as const;
-
