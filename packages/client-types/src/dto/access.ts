@@ -210,3 +210,19 @@ export type SharedLinkRow = {
    *  when client meant an open link. Absent from brains before C1. */
   level?: AccessLevel;
 };
+
+/** An old client link the brain retired (client logins C3, migration 0192):
+ *  it answers "Sign in as a client" now. No token: the link is dead. */
+export type RetiredClientLinkRow = {
+  id: string;
+  nodeId: string;
+  nodeType: string;
+  title: string;
+  icon: string | null;
+  /** The item's level now (client, unless an admin changed it since). */
+  level: AccessLevel;
+  createdAt: string;
+  retiredAt: string | null;
+  viewCount: number;
+  lastViewedAt: string | null;
+};

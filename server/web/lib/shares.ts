@@ -135,20 +135,19 @@ export type ShareView =
   | { kind: 'draw'; title: string; hasSvg: boolean; hasImage?: boolean };
 
 /**
- * The item levels an open link shows beyond the item itself (audit F19): a
- * folder link's contents, a page link's embedded files and drawings, a
- * drawing link's images. A link opens at its item's own level, and shows
- * only what sits at or below it: a public link shows public items, a client
- * link client and public ones. A file uploaded later into a folder lands at
- * admin (no inheritance), so it stays out until someone lowers it; an embed
- * follows its page down when the page is lowered (embedding means sharing),
- * so it is served unless an admin raised it again on purpose. The level rule
- * never leaves an open link on an item at team or admin; if one survives, it
- * fails closed to public. The shared item itself is not filtered: the item
- * IS the link.
+ * The item levels a folder's or a page's open link shows: its contents, a
+ * page's embeds, a drawing link's images. Every link is public (client
+ * logins C3: the old client links are retired, migration 0192, and the
+ * public read path never serves a link on a client item), so a link shows
+ * public items only. A file uploaded later into a folder lands at admin (no
+ * inheritance), so it stays out until someone lowers it; an embed follows
+ * its page down when the page is lowered (embedding means sharing), so it
+ * is served unless an admin raised it again on purpose. The shared item
+ * itself is not filtered: the item IS the link. The parameter stays so the
+ * callers keep their shape.
  */
-export function linkLevels(folderAudience: string): ViewerLevel[] {
-  return asViewerLevel(folderAudience) === 'client' ? ['client', 'public'] : ['public'];
+export function linkLevels(_folderAudience: string): ViewerLevel[] {
+  return ['public'];
 }
 
 /** Whether every one of `ids` (the owner's items that still exist) sits at

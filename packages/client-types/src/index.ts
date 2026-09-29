@@ -48,6 +48,7 @@ export type {
   ClientReportRef,
   MemberItemAuthor,
   SharedLinkRow,
+  RetiredClientLinkRow,
 } from './dto/access';
 export type {
   AcceptConfirmLevelRefusal,

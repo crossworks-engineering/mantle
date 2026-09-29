@@ -1,6 +1,6 @@
 import type { Context, Hono } from 'hono';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { isRetiredTeamLinkToken } from '@mantle/content';
+import { isRetiredClientLinkToken, isRetiredTeamLinkToken } from '@mantle/content';
 import { loadShareAppearance } from './appearance';
 import { resolveActiveShareByToken, recordShareView, loadShareView } from '@/lib/shares';
 import { PagePresenter } from '@/components/share/page-presenter';
@@ -25,6 +25,8 @@ import { env } from '@mantle/config';
  * Every link here is open: team links were retired in member logins Phase 6
  * stage 6 (migration 0176 revoked them). An old team link answers a plain
  * "sign in as a member" page instead of the not-found, pointing at /login.
+ * Old client links were retired in client logins C3 (migration 0192): one
+ * answers "sign in as a client", pointing at /client-signin.
  */
 
 /** The page an old team link shows (410): members sign in with their own
@@ -46,17 +48,38 @@ function retiredTeamLinkPage(): string {
   );
 }
 
+/** The page an old client link shows (410, client logins C3): clients sign
+ *  in now, and the item, if it is still at client, is in "Shared with you".
+ *  No item title: the token says nothing about what it named. */
+function retiredClientLinkPage(): string {
+  const heading = 'Sign in as a client';
+  const body =
+    'This link no longer opens the item. Clients of this brain sign in and find ' +
+    'what is shared with them there. No sign-in yet? Ask the brain admin.';
+  return htmlPage(
+    { title: heading, noindex: true },
+    `<div class="flex h-dvh items-center justify-center bg-background p-6 text-foreground">
+<div class="w-full max-w-sm rounded-lg border border-border bg-card p-6 text-card-foreground shadow-sm">
+<h1 class="text-base font-semibold">${escapeHtml(heading)}</h1>
+<p class="mt-2 text-sm text-muted-foreground">${escapeHtml(body)}</p>
+<p class="mt-4"><a href="/client-signin" class="text-sm font-medium text-primary underline underline-offset-4">Sign in</a></p>
+</div>
+</div>`,
+  );
+}
+
 async function renderShare(c: Context): Promise<Response> {
   const token = c.req.param('token') ?? '';
   const url = new URL(c.req.url);
   const p = url.searchParams.get('p') ?? '';
 
   // Invalid / revoked / expired all 404 — never reveal that a token existed.
-  // The one exception is a retired team link: its visitor was a team member,
-  // and is told where to go now.
+  // The exceptions are retired team and client links: their visitors were
+  // members or clients, and are told where to go now (no item title).
   const share = await resolveActiveShareByToken(token);
   if (!share) {
     if (await isRetiredTeamLinkToken(token)) return c.html(retiredTeamLinkPage(), 410);
+    if (await isRetiredClientLinkToken(token)) return c.html(retiredClientLinkPage(), 410);
     return c.notFound();
   }
   const view = await loadShareView(share);

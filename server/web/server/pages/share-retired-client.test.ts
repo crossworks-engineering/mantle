@@ -1,9 +1,9 @@
 /**
- * /s/<token> after team links were retired (member logins Phase 6 stage 6),
- * without a database. An old team link (revoked by migration 0176) answers a
- * plain "sign in as a member" page (410) pointing at /login, never the
- * content and never the old token prompt; any other dead token keeps the
- * uniform 404; a live link renders with no team gate in front of it.
+ * /s/<token> after the old client links were retired (client logins C3),
+ * without a database. An old client link answers "Sign in as a client"
+ * (410) pointing at /client-signin, with no item title and never the
+ * content; a retired team link keeps its own page; any other dead token
+ * keeps the uniform 404; a live link renders.
  */
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   live: new Set<string>(),
   team: new Set<string>(),
+  client: new Set<string>(),
 }));
 
 vi.mock('@/lib/shares', () => ({
@@ -26,7 +27,7 @@ vi.mock('@/lib/shares', () => ({
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@mantle/content')>()),
   isRetiredTeamLinkToken: vi.fn(async (token: string) => h.team.has(token)),
-  isRetiredClientLinkToken: vi.fn(async () => false),
+  isRetiredClientLinkToken: vi.fn(async (token: string) => h.client.has(token)),
 }));
 
 vi.mock('./appearance', () => ({
@@ -40,6 +41,7 @@ vi.mock('./appearance', () => ({
 beforeEach(() => {
   h.live = new Set(['live-tok']);
   h.team = new Set(['old-team-tok']);
+  h.client = new Set(['old-client-tok']);
 });
 
 const app = async () => {
@@ -49,29 +51,35 @@ const app = async () => {
   return a;
 };
 
-describe('/s/<token> with team links retired', () => {
-  it('tells an old team link to sign in as a member (410, a link to /login)', async () => {
+describe('/s/<token> with client links retired', () => {
+  it('tells an old client link to sign in as a client (410, /client-signin, no title)', async () => {
+    const res = await (await app()).request('/s/old-client-tok');
+    expect(res.status).toBe(410);
+    const html = await res.text();
+    expect(html).toContain('Sign in as a client');
+    expect(html).toContain('href="/client-signin"');
+    expect(html).toContain('noindex');
+    expect(html).not.toContain('Minutes');
+    expect(html).not.toContain('Sign in as a member');
+  });
+
+  it('keeps the team page for a retired team link', async () => {
     const res = await (await app()).request('/s/old-team-tok');
     expect(res.status).toBe(410);
     const html = await res.text();
     expect(html).toContain('Sign in as a member');
-    expect(html).toContain('href="/login"');
-    expect(html).not.toContain('team-token-prompt');
-    expect(html).toContain('noindex');
+    expect(html).not.toContain('Sign in as a client');
   });
 
   it('keeps the plain 404 for any other dead token', async () => {
     const res = await (await app()).request('/s/unknown-tok');
     expect(res.status).toBe(404);
-    expect(await res.text()).not.toContain('Sign in as a member');
+    expect(await res.text()).not.toContain('Sign in as a client');
   });
 
-  it('renders a live link with no team gate', async () => {
+  it('renders a live link', async () => {
     const res = await (await app()).request('/s/live-tok');
     expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain('Minutes');
-    expect(html).not.toContain('team-token-prompt');
-    expect(html).not.toContain('Sign in as a member');
+    expect(await res.text()).toContain('Minutes');
   });
 });

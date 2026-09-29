@@ -350,10 +350,10 @@ function activePredicate() {
 
 /** The `settings` a revoke writes: unchanged, except that a link on an item
  *  at CLIENT is marked `retired: 'client'` (client logins C1: client is
- *  signed-in clients, so its old open link retires with the revoke; C3 can
- *  answer such a token with its own page). Read at the moment of the revoke:
- *  `setItemLevel` writes the level before the link follows it. Nothing reads
- *  the mark today: a revoked link is a plain 404 on /s either way. */
+ *  signed-in clients, so its old open link retires with the revoke). Read at
+ *  the moment of the revoke: `setItemLevel` writes the level before the link
+ *  follows it. /s reads the mark (isRetiredClientLinkToken, C3) and answers
+ *  "sign in as a client"; Shared links lists these (listRetiredClientLinks). */
 function retireSettings() {
   // Qualified by hand: drizzle renders a column unqualified inside raw sql,
   // and inside the subquery it must name the row being updated.
@@ -465,9 +465,39 @@ export async function resolveActiveShareByToken(token: string): Promise<Share | 
   const [row] = await db
     .select()
     .from(shares)
-    .where(and(eq(shares.token, token), activePredicate()))
+    .where(and(eq(shares.token, token), activePredicate(), notOnClientItem()))
     .limit(1);
   return row ?? null;
+}
+
+/** SQL predicate: the share's item is not at CLIENT level. The public read
+ *  path never serves a link on a client item (client logins C3: migration
+ *  0192 revoked them all; one that somehow stayed live answers "sign in as
+ *  a client" like the rest). Qualified by hand, as in retireSettings. */
+function notOnClientItem() {
+  return sql`not exists (select 1 from ${nodes} cn
+      where cn.id = "shares"."node_id" and cn.audience = 'client')`;
+}
+
+/** Whether a token that no longer resolves was an old client link (client
+ *  logins C3): marked `retired: 'client'` (0192 and every later revoke of a
+ *  client item's link), or a link on an item that is at client now. The /s
+ *  page tells its visitor to sign in as a client instead of the plain
+ *  not-found; any other dead token keeps the uniform 404. */
+export async function isRetiredClientLinkToken(token: string): Promise<boolean> {
+  if (!token) return false;
+  const [row] = await db
+    .select({ id: shares.id })
+    .from(shares)
+    .innerJoin(nodes, eq(nodes.id, shares.nodeId))
+    .where(
+      and(
+        eq(shares.token, token),
+        or(sql`${shares.settings}->>'retired' = 'client'`, eq(nodes.audience, 'client')),
+      ),
+    )
+    .limit(1);
+  return !!row;
 }
 
 /** Whether a token that no longer resolves was a team link (revoked by 0176,
@@ -527,6 +557,50 @@ export async function listActiveShares(ownerId: string): Promise<ActiveShareList
       level: r.audience as ViewerLevel,
       nodeIcon: typeof d.icon === 'string' ? d.icon : null,
       nodePath: r.path ?? null,
+      lastViewedAt: r.share.lastViewedAt ? r.share.lastViewedAt.toISOString() : null,
+    };
+  });
+}
+
+/** An old client link the brain retired (client logins C3), for Shared
+ *  links: which customer URLs stopped, and how much they were used. */
+export type RetiredClientLinkListing = {
+  id: string;
+  nodeId: string;
+  nodeType: string;
+  title: string;
+  nodeIcon: string | null;
+  /** The item's level now (client, unless an admin changed it since). */
+  level: ViewerLevel;
+  createdAt: string;
+  retiredAt: string | null;
+  viewCount: number;
+  lastViewedAt: string | null;
+};
+
+/** Every link marked `retired: 'client'`, newest retirement first. The
+ *  token is never listed: the link is dead, and a client signs in. */
+export async function listRetiredClientLinks(
+  ownerId: string,
+): Promise<RetiredClientLinkListing[]> {
+  const rows = await db
+    .select({ share: shares, title: nodes.title, data: nodes.data, audience: nodes.audience })
+    .from(shares)
+    .innerJoin(nodes, eq(nodes.id, shares.nodeId))
+    .where(and(eq(shares.ownerId, ownerId), sql`${shares.settings}->>'retired' = 'client'`))
+    .orderBy(sql`${shares.revokedAt} DESC NULLS LAST`, sql`${shares.createdAt} DESC`);
+  return rows.map((r) => {
+    const d = (r.data ?? {}) as Record<string, unknown>;
+    return {
+      id: r.share.id,
+      nodeId: r.share.nodeId,
+      nodeType: r.share.nodeType,
+      title: r.title,
+      nodeIcon: typeof d.icon === 'string' ? d.icon : null,
+      level: r.audience as ViewerLevel,
+      createdAt: r.share.createdAt.toISOString(),
+      retiredAt: r.share.revokedAt ? r.share.revokedAt.toISOString() : null,
+      viewCount: r.share.viewCount,
       lastViewedAt: r.share.lastViewedAt ? r.share.lastViewedAt.toISOString() : null,
     };
   });

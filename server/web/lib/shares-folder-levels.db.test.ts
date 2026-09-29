@@ -16,9 +16,10 @@ import { linkLevels } from './shares';
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 
 describe('linkLevels', () => {
-  it('a public link shows public, a client link client and public, anything else fails closed', () => {
+  it('every link shows public items only (client links retired in C3); anything else fails closed', () => {
     expect(linkLevels('public')).toEqual(['public']);
-    expect(linkLevels('client')).toEqual(['client', 'public']);
+    // Client logins C3: the old client links are retired; a link shows public only.
+    expect(linkLevels('client')).toEqual(['public']);
     expect(linkLevels('team')).toEqual(['public']);
     expect(linkLevels('admin')).toEqual(['public']);
     expect(linkLevels('bogus')).toEqual(['public']);

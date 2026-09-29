@@ -1,19 +1,24 @@
 /**
  * GET /api/team-admin/shares — the Shared-links tab: every active share,
  * shaped exactly as SharedLinksPanel expects (the old SSR page's mapping),
- * with each item's `level` (SharedLinkRow.level: `client` marks an old link,
- * from when client meant an open link; audit A18).
+ * with each item's `level` (SharedLinkRow.level; audit A18), and `retired`:
+ * the old client links C3 retired (RetiredClientLinkRow; they answer "Sign
+ * in as a client" now), so the admin sees which customer URLs stopped.
  */
-import type { SharedLinkRow } from '@mantle/client-types';
+import type { RetiredClientLinkRow, SharedLinkRow } from '@mantle/client-types';
 import { NextResponse } from '@/server/http-compat';
 import { getOwnerOr401 } from '@/lib/auth';
-import { listActiveShares } from '@mantle/content';
+import { listActiveShares, listRetiredClientLinks } from '@mantle/content';
 import { teamAdminBadges } from '@/lib/team-admin-overview';
 
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const [badges, active] = await Promise.all([teamAdminBadges(user.id), listActiveShares(user.id)]);
+  const [badges, active, retired] = await Promise.all([
+    teamAdminBadges(user.id),
+    listActiveShares(user.id),
+    listRetiredClientLinks(user.id),
+  ]);
   return NextResponse.json({
     badges,
     shares: active.map((s): SharedLinkRow => ({
@@ -30,5 +35,19 @@ export async function GET() {
       lastViewedAt: s.lastViewedAt,
       level: s.level,
     })),
+    retired: retired.map(
+      (r): RetiredClientLinkRow => ({
+        id: r.id,
+        nodeId: r.nodeId,
+        nodeType: r.nodeType,
+        title: r.title,
+        icon: r.nodeIcon,
+        level: r.level,
+        createdAt: r.createdAt,
+        retiredAt: r.retiredAt,
+        viewCount: r.viewCount,
+        lastViewedAt: r.lastViewedAt,
+      }),
+    ),
   });
 }
