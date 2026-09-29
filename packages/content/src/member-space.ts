@@ -463,8 +463,9 @@ export async function createMineItem(
     async (): Promise<string> => {
       switch (input.type) {
         case 'page':
-          return (await createPage(spaceId, { title: input.title, doc: input.doc, icon: input.icon }))
-            .id;
+          return (
+            await createPage(spaceId, { title: input.title, doc: input.doc, icon: input.icon })
+          ).id;
         case 'note':
           return (await createNote(spaceId, { title: input.title, content: input.content ?? '' }))
             .id;

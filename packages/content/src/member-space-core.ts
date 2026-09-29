@@ -109,6 +109,9 @@ export async function assertItemRoom(spaceId: string): Promise<void> {
     .from(nodes)
     .where(and(eq(nodes.ownerId, spaceId), ne(nodes.type, 'branch')));
   if ((held?.n ?? 0) >= limit) {
-    throw await quotaRefusal('items', `Your space is full (${limit} items). Delete something first.`);
+    throw await quotaRefusal(
+      'items',
+      `Your space is full (${limit} items). Delete something first.`,
+    );
   }
 }
