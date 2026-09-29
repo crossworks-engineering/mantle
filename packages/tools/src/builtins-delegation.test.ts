@@ -256,3 +256,28 @@ describe('invoke_agent hand-off', () => {
     );
   });
 });
+
+// Client logins C4 (plan section 8): the child works for the parent's caller.
+// A team or client turn must not reach owner-only tools by delegating, and an
+// owner parent's child is the owner (as owner/delegate, not the chat channel).
+describe('invoke_agent passes the caller down to the child', () => {
+  const CLIENT = { kind: 'client' as const, loginId: '00000000-0000-4000-8000-000000000001' };
+  const TEAM = { kind: 'team' as const, loginId: '00000000-0000-4000-8000-000000000002' };
+  const cases: Array<[string, ToolHandlerContext['surface'], ToolHandlerContext['surface']]> = [
+    ['web owner', { kind: 'web' }, { kind: 'owner', via: 'delegate' }],
+    [
+      'telegram owner',
+      { kind: 'telegram', telegramChatId: '42' },
+      { kind: 'owner', via: 'delegate' },
+    ],
+    ['mcp owner', { kind: 'owner', via: 'mcp' }, { kind: 'owner', via: 'delegate' }],
+    ['team member', TEAM, TEAM],
+    ['client', CLIENT, CLIENT],
+    ['missing surface', undefined, undefined],
+  ];
+  it.each(cases)('%s', async (_name, surface, expected) => {
+    outputOf(await invoke_agent.handler(ARGS, { ...parent(), ...(surface ? { surface } : {}) }));
+    const input = invoker.mock.calls[0]![0];
+    expect(input.surface).toEqual(expected);
+  });
+});
