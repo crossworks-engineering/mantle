@@ -506,7 +506,13 @@ export async function giveBackTaken(
     await moveBetweenSpaces(tx, own.spaceId, memberSpace, group, hooks);
     const ids = group.map((g) => g.id);
     const now = new Date();
-    const cleared = { takenBy: null, takenAt: null, takenRoot: null, updatedAt: now };
+    const cleared = {
+      takenBy: null,
+      takenAt: null,
+      takenRoot: null,
+      takenTitle: null,
+      updatedAt: now,
+    };
     await tx
       .update(spaceItems)
       .set({ ...cleared, reviewState: 'draft', submittedAt: null, sharing: 'private' })

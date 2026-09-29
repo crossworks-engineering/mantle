@@ -27,9 +27,10 @@ const ACCEPTED = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const h = vi.hoisted(() => ({
   reads: [] as Array<[string, string]>,
   item: null as unknown,
-  /** What acceptedFileReadable answers (the author rule, on Postgres in
-   *  member-accepted.viewer.db.test.ts). */
-  acceptedReadable: false,
+  /** What acceptedFileMeta answers (the author rule, on Postgres in
+   *  member-accepted.viewer.db.test.ts): the name and type the file was
+   *  accepted with, or null. */
+  acceptedMeta: null as { filename: string; mimeType: string | null } | null,
 }));
 
 const row = (id: string, role: string, email: string) => ({
@@ -71,7 +72,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
     getClientSharedItem: read('getClientSharedItem', () => h.item),
     getDrawSvg: read('getDrawSvg', () => '<svg/>'),
     clientDrawSvg: read('clientDrawSvg', () => '<svg id="client"/>'),
-    acceptedFileReadable: read('acceptedFileReadable', () => h.acceptedReadable),
+    acceptedFileMeta: read('acceptedFileMeta', () => h.acceptedMeta),
   };
 });
 
@@ -125,7 +126,7 @@ afterAll(() => {
 beforeEach(() => {
   h.reads.length = 0;
   h.item = null;
-  h.acceptedReadable = false;
+  h.acceptedMeta = null;
 });
 
 /** Call a handler as `login` (a session cookie signed at the row's epoch). */
@@ -322,14 +323,18 @@ describe('client read routes: a client', () => {
 describe('client files route: the author’s accepted file (client logins C5)', () => {
   it('serves a file the client wrote and an admin accepted, read on the admin pool', async () => {
     const files = await import('./files/[id]/route');
-    h.acceptedReadable = true;
+    h.acceptedMeta = { filename: 'quote.txt', mimeType: 'text/plain' };
     const res = await call(CLIENT, `/api/client/files/${ACCEPTED}`, byId(files, ACCEPTED));
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('BYTES');
+    // Under the name and type it was ACCEPTED with, never the brain file's
+    // current name (an admin's rename, audit L7).
+    expect(res.headers.get('content-disposition')).toBe("inline; filename*=UTF-8''quote.txt");
+    expect(res.headers.get('content-type')).toBe('text/plain');
     // The client level first; the author rule and the read only after it.
     expect(h.reads).toEqual([
       ['openFileById', 'client'],
-      ['acceptedFileReadable', 'admin'],
+      ['acceptedFileMeta', 'admin'],
       ['openFileById', 'admin'],
     ]);
   });
@@ -340,7 +345,7 @@ describe('client files route: the author’s accepted file (client logins C5)', 
     expect(res.status).toBe(404);
     expect(h.reads).toEqual([
       ['openFileById', 'client'],
-      ['acceptedFileReadable', 'admin'],
+      ['acceptedFileMeta', 'admin'],
     ]);
   });
 });

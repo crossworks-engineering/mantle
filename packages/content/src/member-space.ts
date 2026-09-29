@@ -19,7 +19,7 @@
  * rule (a submitted item is edited by nobody until Accept, Return or Recall;
  * the row rules hold it too).
  */
-import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import {
   asSystem,
   authUsers,
@@ -149,9 +149,9 @@ function rowOf({ node, item }: Joined): SpaceItemRow {
   };
 }
 
-function titleFilter(q: string | undefined) {
+function titleFilter(q: string | undefined, title: SQL | typeof nodes.title = nodes.title) {
   const t = q?.trim();
-  return t ? ilike(nodes.title, `%${t.replace(/[\\%_]/g, (c) => `\\${c}`)}%`) : undefined;
+  return t ? ilike(title, `%${t.replace(/[\\%_]/g, (c) => `\\${c}`)}%`) : undefined;
 }
 
 export type ListSpaceOpts = {
@@ -267,21 +267,23 @@ export async function listMine(
 
 /**
  * A member's items an admin has taken over (audit F07): title and kind
- * only, no content and no bytes, as `with-admin` rows. The item sits in the
- * admin's space, which the member's space role never reads, so this is read
- * on the admin pool with the rule in the query: written by this login, and
- * taken.
+ * only, no content and no bytes, as `with-admin` rows. The title is the one
+ * it had when it was taken (`taken_title`, audit L6), never the admin's
+ * working title, and `q` matches that one. The item sits in the admin's
+ * space, which the member's space role never reads, so this is read on the
+ * admin pool with the rule in the query: written by this login, and taken.
  */
 export async function listWithAdmin(
   loginId: string,
   opts: Pick<ListSpaceOpts, 'kind' | 'kinds' | 'q'> = {},
 ): Promise<SpaceItemRow[]> {
+  const title = sql<string>`coalesce(${spaceItems.takenTitle}, ${nodes.title})`;
   const rows = await asSystem(() =>
     db
       .select({
         id: nodes.id,
         type: nodes.type,
-        title: nodes.title,
+        title,
         takenAt: spaceItems.takenAt,
         submittedAt: spaceItems.submittedAt,
       })
@@ -294,7 +296,7 @@ export async function listWithAdmin(
           eq(spaceItems.reviewState, 'taken'),
           eq(spaces.kind, 'personal'),
           kindFilter(opts),
-          titleFilter(opts.q),
+          titleFilter(opts.q, title),
         ),
       )
       .orderBy(desc(spaceItems.takenAt))
