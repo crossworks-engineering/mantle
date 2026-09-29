@@ -47,6 +47,26 @@ describe('db-restore.sh', () => {
     expect(script).toMatch(/SELECT count\(\*\) FROM auth\.users/);
   });
 
+  it('revokes open client sign-in links and codes and lists the client logins, once the dump has 0188 (audit B22)', () => {
+    // Gated on the dump's own ledger: an older dump has no such table.
+    const gate = script.indexOf('if [ "$LEDGER" -ge "$WHEN_0188" ]; then');
+    expect(gate).toBeGreaterThan(0);
+    const block = script.slice(gate, script.indexOf('\nfi\n', gate));
+    // Every open code, links and emailed codes alike (no kind filter).
+    expect(block).toMatch(
+      /UPDATE public\.client_signin_codes SET revoked_at = now\(\)\s+WHERE used_at IS NULL AND revoked_at IS NULL/,
+    );
+    expect(block).not.toMatch(/kind\s*=/);
+    expect(block).toMatch(/FROM auth\.users WHERE role = 'client' ORDER BY email/);
+    // After the restore has passed its checks (never on a failed restore).
+    expect(gate).toBeGreaterThan(script.search(/Restore FAILED[\s\S]*?exit 2/));
+    // The table and the columns it touches are the ones 0188 made.
+    const tag = journal.entries.find((e) => e.tag.startsWith('0188'))!.tag;
+    const sql = read(`packages/db/migrations/${tag}.sql`);
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "public"\."client_signin_codes"/);
+    for (const col of ['used_at', 'revoked_at']) expect(sql).toContain(`"${col}"`);
+  });
+
   it('restores into a pristine database, and a failed check exits non-zero before "Restore complete"', () => {
     const drop = script.indexOf('DROP DATABASE IF EXISTS postgres WITH (FORCE)');
     const create = script.indexOf('CREATE DATABASE postgres');

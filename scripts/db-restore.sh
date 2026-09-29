@@ -109,6 +109,7 @@ q() { docker exec "$CONTAINER" psql -U postgres -d postgres -tA -v ON_ERROR_STOP
 WHEN_0159=1789843200000   # 0159_viewer_access: nodes_viewer_read
 WHEN_0162=1790016000000   # 0162_member_logins: users_role_ck
 WHEN_0187=1790017500000   # 0187_client_level: agents and tool_groups rules
+WHEN_0188=1790017560000   # 0188_client_signin_codes: client sign-in links and codes
 FAILED=""
 fail() { FAILED="${FAILED}  - $1"$'\n'; }
 
@@ -147,6 +148,32 @@ if [ "$RESTORE_ERRORS" -gt 0 ] || [ "$RESTORE_RC" -ne 0 ]; then
   echo "✔ Restore complete, WITH $RESTORE_ERRORS pg_restore error(s) listed above: read them. public.nodes has $N rows, auth.users $USERS."
 else
   echo "✔ Restore complete: public.nodes has $N rows, auth.users $USERS."
+fi
+
+# Client sign-in (client logins audit B22). A dump from before a roll brings
+# back sign-in links and emailed codes that were used or revoked after it was
+# taken, and each client login's session epoch as it was then, so a session
+# an admin ended since works again. Every open link and code is revoked (an
+# admin issues new links), and the client logins are listed for review.
+if [ "$LEDGER" -ge "$WHEN_0188" ]; then
+  REVOKED=$(q "WITH r AS (UPDATE public.client_signin_codes SET revoked_at = now()
+                          WHERE used_at IS NULL AND revoked_at IS NULL RETURNING 1)
+               SELECT count(*) FROM r" || echo "")
+  if [ -z "$REVOKED" ]; then
+    echo "⚠ could not revoke the open client sign-in links and codes: run by hand before the app starts:" >&2
+    echo "    UPDATE client_signin_codes SET revoked_at = now() WHERE used_at IS NULL AND revoked_at IS NULL;" >&2
+  else
+    echo "▷ Client sign-in: revoked $REVOKED open sign-in link(s) and emailed code(s) from the dump. Issue new links where needed."
+  fi
+  CLIENTS=$(q "SELECT email || '  (' || CASE WHEN disabled_at IS NULL THEN 'active' ELSE 'disabled' END
+                      || ', last sign-in ' || coalesce(to_char(last_login_at, 'YYYY-MM-DD HH24:MI'), 'never') || ')'
+               FROM auth.users WHERE role = 'client' ORDER BY email" || echo "")
+  if [ -n "$CLIENTS" ]; then
+    echo "⚠ Review the client logins below: this dump restores their sessions as they were when it was taken."
+    echo "  Any client whose sessions were ended, or who was disabled, after that: End sessions or Disable"
+    echo "  again in Team admin > Clients as soon as the app is up."
+    printf '%s\n' "$CLIENTS" | sed 's/^/    /'
+  fi
 fi
 
 # Personal-space file bytes (member logins). The rows restored above point at
