@@ -326,8 +326,9 @@ What admins see change:
   to client removes its open link. Lowering a page, drawing or note lists
   the embedded items that go down with it; a client item embedded in
   something set to public goes to public with it.
-- **Shared links** (Team admin) show each link's level and mark the old
-  client links: they still open until client logins C3 retires them.
+- **Shared links** (Team admin) show each link's level. The old client
+  links retired in client logins C3 (v0.232.328): they answer "Sign in as
+  a client" now, and Shared links lists them under Retired client links.
 - **What clients see** (Team admin): every client-level item, its old link,
   the addresses a page was emailed to and the team or admin items it names.
   Acknowledge it before the first client login: Add client and Issue sign-in

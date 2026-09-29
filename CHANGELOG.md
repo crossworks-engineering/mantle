@@ -4,6 +4,27 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.328: client logins, phase C3 (old client links retire)
+
+Before client logins, "client" meant "anyone with the link". Clients sign in
+now (C2, C2b), so the old links retire (decision 4 A).
+
+- **Migration 0192** revokes every link on an item at client level, an
+  expired one included, and marks it `settings.retired = 'client'` (a link
+  revoked earlier without the mark gets it too, keeping its revoked date).
+  Every item keeps its level; links on items at other levels are untouched.
+  On every box counted before the roll to 323 there were no such links.
+- **/s answers an old client link with 410 "Sign in as a client"**: no item
+  title, a Sign in button to `/client-signin`. The public link routes never
+  serve a link on a client item, even one the migration did not reach, and
+  a retired link stays retired if its item later leaves client.
+- **Every link is public**: a folder or page link shows public items only
+  (`linkLevels`).
+- **Shared links** (Team admin) lists the retired client links, without a
+  token: title, level now, views, last view, retired date.
+- From C2b: `GET /api/auth/client-code` fails closed (codes off, never a
+  500) when the sender cannot be read; the code routes join the public
+  session sweep.
 ## 0.232.327: keyword search finds the rare words in a chat question
 
 - **The keyword half of hybrid search works on real questions.** It used to

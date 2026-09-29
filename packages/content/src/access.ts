@@ -287,7 +287,8 @@ export async function setItemAudience(
 export type SetItemLevelResult = SetItemAudienceResult & {
   /** The item's link after the change: an open link at public, null at
    *  admin and team (revoked) and at client, except an item already at
-   *  client keeps its old link (client logins C1: it lives until C3). */
+   *  client keeps its old link row (client logins C1; since C3 the public
+   *  read path never serves it). */
   share: ShareSummary | null;
 };
 

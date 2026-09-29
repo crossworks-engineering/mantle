@@ -39,9 +39,8 @@ Two of these carry extra semantics:
   they don't appear on the public surface.
 - **Folder** (`branch`): shares **the files under the folder, subfolders
   included, that sit at the link's level, evaluated per request**. The link
-  opens at the folder's own level: a public link shows public items, an old
-  client link client and public ones (`linkLevels`, lib/shares.ts; no client
-  link is made since client logins C1, and the old ones serve until C3). A file added
+  shows public items (`linkLevels`, lib/shares.ts; no client link is made
+  since client logins C1, and the old ones retired in C3). A file added
   later lands at admin like every new item (levels are never inherited), so
   it is neither listed nor served until someone lowers it (the Access
   control's "Lower them too" does that for a folder's contents: a folder's

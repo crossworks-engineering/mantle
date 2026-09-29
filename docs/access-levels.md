@@ -288,12 +288,15 @@ outside a login reaches a team item.
   (public puts the item on an open link and takes it out of client logins'
   view). `email_page` with `includeLink` on a client page is refused before
   anything is sent. Old links on client items, made when client meant an
-  open link, stay live until they are retired (client logins C3), and no
-  link of its OWN moves a client item: `levelForShareMode` keeps a client
-  item at client whatever its own link says, and turning an old client
-  link off (`unshareItem`) keeps the item at client. A revoked link on a
-  client item is marked `settings.retired = 'client'`; nothing reads the
-  mark yet, and the token is a plain 404 on `/s/` until C3.
+  open link, are retired (client logins C3, migration 0192: revoked and
+  marked `settings.retired = 'client'`, every level kept), and no link of
+  its OWN moves a client item: `levelForShareMode` keeps a client item at
+  client whatever its own link says, and turning an old client link off
+  (`unshareItem`) keeps the item at client. The public read path never
+  serves a link on a client item (`resolveActiveShareByToken`), and such a
+  token, or any link marked retired, answers `/s/` with a 410 "Sign in as a
+  client" page (no item title) pointing at `/client-signin`. Shared links
+  lists the retired ones, without a token.
 - **What clients see** (`GET /api/access/client-report`). Before the first
   client login an admin reads every item at client and acknowledges it
   (`POST /api/access/client-report/ack`); adding a client login stays
@@ -373,9 +376,9 @@ outside a login reaches a team item.
   corrective one).
 - **Links show only their level** (audit F19). A link opens at its item's
   own level and lists and serves only what sits at or below it beyond the
-  item itself: a public link public items, an old client link (made before
-  client logins C1; none is made now, and they serve until C3) client and
-  public ones (`linkLevels` in server/web/lib/shares.ts).
+  item itself: public items (`linkLevels` in server/web/lib/shares.ts;
+  every link is public since the old client links retired in client
+  logins C3).
   - A **folder** link: the listing (components/share/folder-presenter.tsx)
     and the asset check `isAssetAllowed`. A file uploaded into a shared
     folder later lands at admin, so it stays out of the link until someone
