@@ -5,8 +5,9 @@
  * (reconcileOwner), each with the agent AT CLIENT LEVEL holding the
  * client-read group AT CLIENT LEVEL, so no admin has to do anything before a
  * client can chat. Also: the reconcile converges a raised client-read back to
- * client, never touches an agent level an admin chose, and leaves
- * team-responder at admin as it ships.
+ * client and a widened one back to the manifest's tools (audit L3), never
+ * touches an agent level an admin chose, and leaves team-responder at admin
+ * as it ships.
  * Seeds its own brains (random owners, own api key rows); removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/system-manifest/client-responder.db.test.ts
  */
@@ -57,11 +58,13 @@ describe.skipIf(!URL)('client-responder on every brain', () => {
       await admin`insert into agents (owner_id, slug, name, model, system_prompt, audience)
                   values (${owner}, 'team-responder', 'Team Responder', 'test/model', 'x', 'team')`;
     }
-    // One whose client-read an admin raised to admin, and whose
-    // client-responder an admin set to team: the group is product-owned (it
-    // converges); the agent's level is the admin's choice (kept).
+    // One whose client-read an admin raised to admin and widened (a
+    // brain-wide read and a recipe added by hand), and whose client-responder
+    // an admin set to team: the group is product-owned (it converges); the
+    // agent's level is the admin's choice (kept).
     await admin`insert into tool_groups (owner_id, slug, name, tool_slugs, audience)
-                values (${brains.raised}, 'client-read', 'Client reads', ${['client_shared_list']}, 'admin')`;
+                values (${brains.raised}, 'client-read', 'Client reads',
+                        ${['client_shared_list', 'page_get', 'recipe_read_page']}, 'admin')`;
     await admin`insert into agents (owner_id, slug, name, model, system_prompt, audience)
                 values (${brains.raised}, 'client-responder', 'Client Responder', 'test/model', 'x', 'team')`;
   }, 120_000);
@@ -144,9 +147,18 @@ describe.skipIf(!URL)('client-responder on every brain', () => {
     );
   }, 120_000);
 
-  it('the reconcile converges a raised client-read to client and keeps an admin-set agent level', async () => {
+  it('the reconcile converges a raised, widened client-read and keeps an admin-set agent level', async () => {
     await rec.reconcileOwner(brains.raised);
     expect((await group(brains.raised, 'client-read'))!.audience).toBe('client');
+    // Its tools are the manifest's again: page_get and the recipe are gone.
+    expect((await group(brains.raised, 'client-read'))!.tool_slugs).toEqual([
+      'client_shared_list',
+      'client_shared_search',
+      'client_shared_open',
+      'my_items_list',
+      'my_item_open',
+      'client_request_create',
+    ]);
     expect((await agent(brains.raised, 'client-responder'))!.audience).toBe('team');
   }, 120_000);
 });

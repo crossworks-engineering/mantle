@@ -74,7 +74,7 @@ import {
   withTracePrelude,
 } from '@mantle/tracing';
 import { errorMessage } from '@mantle/std';
-import { PRIVATE_OUTPUT_TOOL_SLUGS } from '@mantle/tools';
+import { CLIENT_TURN_TOOL_SLUGS, PRIVATE_OUTPUT_TOOL_SLUGS } from '@mantle/tools';
 import { agentLevel, withAgentViewer } from '../agent/agent-viewer';
 
 /** The one agent that serves the team surface. Provisioned by the manifest;
@@ -161,6 +161,13 @@ export function assertAgentForRole(
       `Agent '${agent.slug}' is at the ${level} level: a ${role} login may only chat with a ${want}-level agent.`,
     );
   }
+}
+
+/** The client turn's tools: the assembled ones that are client tools
+ *  (CLIENT_TURN_TOOL_SLUGS), the rest dropped. */
+function clientToolsOnly<T extends { allowedTools: Array<{ slug: string }> }>(assembled: T): T {
+  const allowed = new Set(CLIENT_TURN_TOOL_SLUGS);
+  return { ...assembled, allowedTools: assembled.allowedTools.filter((t) => allowed.has(t.slug)) };
 }
 
 /** A client turn's retrieval context: none at all. Facts, summaries, chunks
@@ -440,7 +447,7 @@ async function runTeamTurnSteps(
     // switch (default OFF) is enforced HERE, at tool resolution — independent
     // of the `team-read` group grant, so it can't be bypassed by a manifest
     // change that re-adds the slugs.
-    const assembled = await withTracePrelude(prelude, () =>
+    const assembledForAgent = await withTracePrelude(prelude, () =>
       assembleResponderTurn({
         ownerId,
         agent,
@@ -453,6 +460,11 @@ async function runTeamTurnSteps(
         excludeToolSlugs: privateReads ? [] : TEAM_PRIVATE_READ_SLUGS,
       }),
     );
+    // A client turn gets the client tools and nothing else, whatever the
+    // agent's groups hold (client logins C5 audit, L3): a group is config,
+    // and a brain-wide read tool at client level still shows what the portal
+    // never does. Applied last, to everything the assembly offers.
+    const assembled = role === 'client' ? clientToolsOnly(assembledForAgent) : assembledForAgent;
     const { volatileContext, allowedTools } = assembled;
 
     const adapter = getChatAdapter(agent.provider);

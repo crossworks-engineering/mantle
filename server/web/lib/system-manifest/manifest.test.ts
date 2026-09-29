@@ -18,6 +18,7 @@ import {
 import {
   BANNED_ITEM_TOOLS,
   BUILTIN_TOOLS,
+  CLIENT_TURN_TOOL_SLUGS,
   buildHttpRequest,
   collectParamNames,
   collectSecretRefs,
@@ -276,6 +277,21 @@ describe('system manifest integrity', () => {
     for (const read of ['search_chunks', 'read_section', 'file_read', 'page_get', 'table_query']) {
       expect(grant.has(read), `team member keeps ${read}`).toBe(true);
     }
+  });
+
+  it('the client responder holds only the client tools the client turn allows in code (audit L3)', () => {
+    // The client turn intersects its tools with CLIENT_TURN_TOOL_SLUGS
+    // (run-team-turn.ts). A client tool shipped in client-read but missing
+    // there would be silently dropped at runtime; this fails first.
+    const client = MANIFEST_AGENTS.find((a) => a.slug === 'client-responder')!;
+    const grant = effectiveTools(client);
+    expect(grant.size).toBeGreaterThan(0);
+    for (const slug of grant) {
+      expect(CLIENT_TURN_TOOL_SLUGS, `${slug} is not a client turn tool`).toContain(slug);
+    }
+    // Every allowed slug is a real builtin.
+    const builtins = new Set(BUILTIN_TOOLS.map((t) => t.slug));
+    for (const slug of CLIENT_TURN_TOOL_SLUGS) expect(builtins.has(slug), slug).toBe(true);
   });
 
   it('seeded HTTP tools are well-formed, declare every placeholder, and use a vault ref', () => {

@@ -17,6 +17,10 @@ const h = vi.hoisted(() => ({
   audience: 'team',
   mayRun: true,
   appended: 0,
+  /** What the agent's groups resolve to (the assembly's allowedTools). */
+  groupTools: [] as string[],
+  /** The tools the loop was given. */
+  loopTools: [] as string[],
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => {
@@ -111,7 +115,7 @@ vi.mock('./assemble-turn', async () => {
       return {
         effectiveSystemPrompt: 'SYSTEM',
         volatileContext: '',
-        allowedTools: [],
+        allowedTools: h.groupTools.map((slug) => ({ slug })),
         delegateTo: [],
         loopOverrides: {},
       };
@@ -124,8 +128,9 @@ vi.mock('./responder-loop', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./responder-loop')>();
   return {
     ...actual,
-    runResponderLoop: vi.fn(async () => {
+    runResponderLoop: vi.fn(async (args: { assembled: { allowedTools: { slug: string }[] } }) => {
       h.levels.push(`loop:${level()}`);
+      h.loopTools = args.assembled.allowedTools.map((t) => t.slug);
       return {
         loop: { ...actual.emptyLoopResult(), reply: 'ok, done' },
         reply: 'ok, done',
@@ -155,6 +160,8 @@ beforeEach(() => {
   h.audience = 'team';
   h.mayRun = true;
   h.appended = 0;
+  h.groupTools = [];
+  h.loopTools = [];
 });
 
 describe('runTeamTurn runs at the agent level', () => {
@@ -223,5 +230,43 @@ describe('runClientTurn runs at client level twice over (client logins C4)', () 
       /only chat with a client-level agent/,
     );
     expect(h.levels).toEqual(['may-run:admin', 'agent:client']);
+  });
+});
+
+describe('a client turn gets the client tools only, whatever its groups say (audit L3)', () => {
+  const opts = { loginId: 'login-c', sessionEpoch: 3 };
+  // client-read as the manifest ships it, plus what an admin or an agent
+  // added to the group: a brain-wide read and a recipe wrapping one.
+  const widened = [
+    'client_shared_list',
+    'client_shared_search',
+    'client_shared_open',
+    'my_items_list',
+    'my_item_open',
+    'client_request_create',
+    'page_get',
+    'recipe_read_page',
+    'read_result',
+  ];
+
+  it('page_get and a recipe added to client-read never reach the client turn', async () => {
+    h.audience = 'client';
+    h.groupTools = widened;
+    await runClientTurn('owner-1', 'what is shared with me?', opts);
+    expect(h.loopTools).toEqual([
+      'client_shared_list',
+      'client_shared_search',
+      'client_shared_open',
+      'my_items_list',
+      'my_item_open',
+      'client_request_create',
+      'read_result',
+    ]);
+  });
+
+  it('control: a member turn keeps what its groups grant', async () => {
+    h.groupTools = ['page_get', 'recipe_read_page'];
+    await runTeamTurn('owner-1', 'hello', { loginId: 'login-1' });
+    expect(h.loopTools).toEqual(['page_get', 'recipe_read_page']);
   });
 });
