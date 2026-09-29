@@ -320,3 +320,22 @@ export {
 export { clientReadableIds, getClientSharedItem, listClientShared } from './client-shared';
 export { docRefIds, noteRefIds, redactClientDoc, redactClientNote } from './client-redact';
 export { clientDrawSvg, clientVisibleDrawFileIds } from './client-draw-images';
+// Client logins (C2b): email sign-in codes.
+export {
+  CLIENT_CODE_DAILY_CAP,
+  CLIENT_CODE_MAX_ATTEMPTS,
+  CLIENT_CODE_PER_EMAIL_HOURLY,
+  CLIENT_CODE_PER_EMAIL_IP_DAILY,
+  CLIENT_CODE_REQUEST_MAX_AGE_MS,
+  CLIENT_CODE_TTL_MS,
+  clientCodesSentLast24h,
+  createClientEmailCode,
+  generateClientCode,
+  hashClientCode,
+  redeemClientEmailCode,
+  revokeClientEmailCode,
+  type ClientCodeDecision,
+  type ClientCodeRequest,
+  type ClientCodeSkipReason,
+  type RedeemedClientEmailCode,
+} from './client-codes';

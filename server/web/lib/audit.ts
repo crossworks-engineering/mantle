@@ -34,6 +34,10 @@ export type AuditEntry = {
     // C2), or a failed try; an admin issued or revoked a link.
     | 'auth.client_link_signin'
     | 'auth.client_link_failed'
+    // The same for an emailed code (C2b); an admin chose the sign-in sender.
+    | 'auth.client_code_signin'
+    | 'auth.client_code_failed'
+    | 'client.signin_sender_set'
     | 'client.signin_link_issued'
     | 'client.signin_link_revoked'
     | 'user.create'
