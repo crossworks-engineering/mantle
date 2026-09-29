@@ -74,6 +74,9 @@ type Tally = { n: number; correct: number; accuracy: number };
 export type BenchSummary = {
   dataset: DatasetName;
   models: BenchModels;
+  /** The responder's memory_config for the run ({} = code defaults). */
+  memory_config: Record<string, unknown>;
+  answer_style: string;
   haystacks: { requested: number; completed: number };
   stopped_for_budget: boolean;
   total_queries: number;
@@ -117,7 +120,12 @@ export function summarize(
   dataset: DatasetName,
   models: BenchModels,
   results: readonly HaystackResult[],
-  meta: { requested: number; stoppedForBudget: boolean },
+  meta: {
+    requested: number;
+    stoppedForBudget: boolean;
+    memoryConfig?: Record<string, unknown>;
+    answerStyle?: string;
+  },
 ): BenchSummary {
   const qs = results.flatMap((r) => r.questions);
   const byCat = new Map<string, { n: number; correct: number }>();
@@ -146,6 +154,8 @@ export function summarize(
   return {
     dataset,
     models,
+    memory_config: meta.memoryConfig ?? {},
+    answer_style: meta.answerStyle ?? 'infer',
     haystacks: { requested: meta.requested, completed: results.length },
     stopped_for_budget: meta.stoppedForBudget || results.some((r) => r.stopped_for_budget),
     total_queries: qs.length,
@@ -234,6 +244,8 @@ export function renderReport(s: BenchSummary): string {
     '',
     `Models: answer ${s.models.answer}, judge ${s.models.judge}, extractor ${s.models.extractor}, ` +
       `embedding ${s.models.embedding}.`,
+    `Settings: memory_config ${JSON.stringify(s.memory_config)} (empty = the defaults), ` +
+      `answer prompt ${s.answer_style}.`,
     '',
     '## Published references (AMB, full runs)',
     '',

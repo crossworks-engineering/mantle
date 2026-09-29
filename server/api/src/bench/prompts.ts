@@ -84,7 +84,30 @@ export function saidMissing(answer: string): boolean {
  * The answer prompt around the brain's retrieved context. `context` is the
  * exact text the responder would get for this question (see context.ts).
  */
-export function answerPrompt(q: BenchQuestion, context: string): { system: string; user: string } {
+/**
+ * `strict` (runs A and A2): the model must say so when the memory does not
+ * state the answer. It refused most inference questions ("would she...?"):
+ * 76% of the wrong open-domain answers in run A. `infer` (the default since
+ * then) lets it reason from what the memory does say, and keeps "not in the
+ * memory" for when nothing bears on the question at all.
+ */
+export type AnswerStyle = 'strict' | 'infer';
+
+const MISSING_RULE: Record<AnswerStyle, string[]> = {
+  strict: ['If the memory does not contain the answer, say so plainly instead of guessing.'],
+  infer: [
+    'If the memory does not state the answer outright, reason from what it does say (what',
+    'someone did, planned, liked or said about themselves) and give the best supported answer,',
+    'noting that it is inferred. Say the memory lacks the answer only when nothing in it bears',
+    'on the question.',
+  ],
+};
+
+export function answerPrompt(
+  q: BenchQuestion,
+  context: string,
+  style: AnswerStyle = 'infer',
+): { system: string; user: string } {
   const system = [
     'You answer questions about past conversations, using only the memory context below.',
     `The question is being asked on ${formatBenchDate(q.askedAt)}.`,
@@ -92,7 +115,7 @@ export function answerPrompt(q: BenchQuestion, context: string): { system: strin
     '"last week") into dates using that date, and answer time questions with a date or period.',
     'When the memory holds an older and a newer value, the newer one is current.',
     'For "how many" questions, list each item you count before giving the total.',
-    'If the memory does not contain the answer, say so plainly instead of guessing.',
+    ...MISSING_RULE[style],
     'End with one line that starts with "Answer:" and gives the short final answer.',
     '',
     '# Memory context',
