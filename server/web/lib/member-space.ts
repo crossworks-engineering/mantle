@@ -45,7 +45,16 @@ export const SpaceIdParams = z.object({ id: z.string().uuid() });
  *  can read, not-found as a 404; anything else rethrows to the opaque 500. */
 export function spaceStateResponse(err: unknown): Response {
   if (err instanceof SpaceItemStateError) {
-    const status = err.reason === 'not-found' ? 404 : err.reason === 'invalid' ? 400 : 409;
+    // A client's comment cap is a rate (429); a full thread, like every
+    // other state refusal, a 409.
+    const status =
+      err.reason === 'not-found'
+        ? 404
+        : err.reason === 'invalid'
+          ? 400
+          : err.reason === 'comment-cap'
+            ? 429
+            : 409;
     return NextResponse.json(
       { error: err.message, reason: err.reason, ...(err.ids.length ? { ids: err.ids } : {}) },
       { status },

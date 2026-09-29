@@ -6,6 +6,7 @@ import { errorMessage } from '@mantle/std';
 import { getMemberOr401 } from '@/lib/auth';
 import { AppDbBody, appDbBodyError } from '@/lib/app-db-broker-body';
 import { memberAppOr404 } from '@/lib/member-apps';
+import { readJsonCapped } from '@/lib/body-limit';
 import { rateLimit } from '@/lib/rate-limit';
 
 /**
@@ -32,7 +33,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       { status: 429, headers: { 'retry-after': String(gate.retryAfterSec) } },
     );
   }
-  const parsed = AppDbBody.safeParse(await req.json().catch(() => ({})));
+  const parsed = AppDbBody.safeParse((await readJsonCapped(req)) ?? {});
   if (!parsed.success) {
     return NextResponse.json({ ok: false, error: appDbBodyError(parsed.error) }, { status: 400 });
   }

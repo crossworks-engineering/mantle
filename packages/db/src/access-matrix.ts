@@ -218,6 +218,19 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
     space: 'write',
   },
 
+  // The client comment ledger (0195): the daily comment cap counts it,
+  // deleting a comment never refunds. The space role inserts and reads its
+  // own login's rows; the level roles never see it.
+  {
+    table: 'public.client_comment_ledger',
+    read: 'none',
+    rule: 'none',
+    writer: 'content',
+    space: 'write',
+  },
+  // Client quota refusals (0195): what Team admin > Clients lists. Admin only.
+  none('public.client_quota_refusals'),
+
   // ── Configuration the turn loop reads (no per-row secrecy) ────────────────
   // The client role reads agents and tool groups at client level only
   // (migration 0187, narrowed by 0189: client and public are siblings, not

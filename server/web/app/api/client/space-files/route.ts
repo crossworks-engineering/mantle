@@ -4,6 +4,7 @@ import {
   SpaceItemStateError,
   createMineFile,
   getMineItem,
+  recordClientQuotaRefusal,
   spaceUploadHeadroom,
 } from '@mantle/content';
 import {
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
     if (declared > CLIENT_FILE_MAX_BYTES + MULTIPART_OVERHEAD_BYTES && headroom > 0) {
       return tooLarge();
     }
-    return spaceStateResponse(new SpaceItemStateError('quota', NO_ROOM));
+    return noRoom(client.loginId);
   }
   const spoolDir = spaceSpoolDir();
   void sweepSpool(undefined, spoolDir);
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
     parsed = await readMultipartUpload(req, { maxBytes: headroom, spoolDir });
   } catch (err) {
     if (err instanceof UploadTooLargeError && headroom < CLIENT_FILE_MAX_BYTES) {
-      return spaceStateResponse(new SpaceItemStateError('quota', NO_ROOM));
+      return noRoom(client.loginId);
     }
     if (err instanceof UploadTooLargeError) return tooLarge();
     return NextResponse.json({ error: 'Malformed upload.' }, { status: 400 });
@@ -95,6 +96,13 @@ export async function POST(req: Request) {
     // No-op once adopted; the safety net for every failure before it.
     await discardSpooled(upload.spooled);
   }
+}
+
+/** The 409 `quota` for an upload with no room, recorded for Team admin >
+ *  Clients (audit I5). */
+async function noRoom(loginId: string): Promise<Response> {
+  await recordClientQuotaRefusal(loginId, 'upload-no-room');
+  return spaceStateResponse(new SpaceItemStateError('quota', NO_ROOM));
 }
 
 /** The 413 naming the CLIENT's ceiling (never the member's). */

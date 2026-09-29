@@ -83,7 +83,12 @@ import {
   resolveStoragePath,
   snapshotFile,
 } from '@mantle/tabledb';
-import { COMMENT_BODY_MAX } from './node-comments';
+import {
+  COMMENT_BODY_MAX,
+  commentPage,
+  type CommentPage,
+  type CommentPageQuery,
+} from './node-comments';
 import { notifySpaceItemChanged } from './member-space-events';
 import {
   SPACE_ITEM_KINDS,
@@ -425,19 +430,24 @@ export async function getReviewItem(
  * comments while the item is shared with the team (every admin can read
  * what the team reads). Null when the item is not reviewable.
  */
-export async function listReviewComments(id: string): Promise<NodeCommentDbRow[] | null> {
+export async function listReviewComments(id: string): Promise<NodeCommentDbRow[] | null>;
+export async function listReviewComments(
+  id: string,
+  page: CommentPageQuery,
+): Promise<CommentPage | null>;
+export async function listReviewComments(
+  id: string,
+  page?: CommentPageQuery,
+): Promise<NodeCommentDbRow[] | CommentPage | null> {
   const found = await reviewRow(id);
   if (!found) return null;
-  return db
-    .select()
-    .from(nodeComments)
-    .where(
-      and(
-        eq(nodeComments.nodeId, id),
-        found.row.sharing === 'team' ? undefined : eq(nodeComments.threadScope, 'review'),
-      ),
-    )
-    .orderBy(asc(nodeComments.createdAt));
+  const where = and(
+    eq(nodeComments.nodeId, id),
+    found.row.sharing === 'team' ? undefined : eq(nodeComments.threadScope, 'review'),
+  );
+  // With `page`: one page of it (the thread route pages every read, I2).
+  if (page) return commentPage(where, page);
+  return db.select().from(nodeComments).where(where).orderBy(asc(nodeComments.createdAt));
 }
 
 /** The reviewer's side of the review talk: open while the item is submitted

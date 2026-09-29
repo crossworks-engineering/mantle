@@ -22,7 +22,7 @@ import type { MemberChatThread } from '@mantle/client-types';
 import { getMemberOr401, type MemberCaller } from '@/lib/auth';
 import { getDbosClient } from '@/lib/dbos-client';
 import { MEMBER_DAILY_CAP, MEMBER_DAILY_TOKENS, startOfTodayUtc } from '@/lib/member-daily-cap';
-import { stripNul } from '@/lib/strip-nul';
+import { readJsonNoNul } from '@/lib/strip-nul';
 import { rateLimit } from '@/lib/rate-limit';
 import { firstIssue } from '@/lib/zod-issue';
 
@@ -134,7 +134,7 @@ export async function POST(req: Request) {
   }
   // NUL cannot be stored in Postgres text; strip it here rather than fail the
   // turn after the 202 (audit F14).
-  const parsed = Body.safeParse(stripNul(await req.json().catch(() => ({}))));
+  const parsed = Body.safeParse((await readJsonNoNul(req)) ?? {});
   if (!parsed.success) {
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   }

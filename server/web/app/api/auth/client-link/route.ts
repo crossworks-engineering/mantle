@@ -20,6 +20,7 @@ import { setClientSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { clientLinkRateLimited } from '@/lib/client-logins';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
+import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 
 const Body = z.object({
   code: z.string().min(1).max(64),
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
   const limited = clientLinkRateLimited(req);
   if (limited) return limited;
 
-  const parsed = Body.safeParse(await req.json().catch(() => null));
+  const parsed = Body.safeParse(await readJsonCapped(req, AUTH_BODY_CEILING_BYTES));
   const redeemed = parsed.success ? await redeemClientSigninLink(parsed.data) : null;
   if (!redeemed) {
     auditFireAndForget({

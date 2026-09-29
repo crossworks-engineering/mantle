@@ -1,3 +1,5 @@
+import { JSON_BODY_CEILING_BYTES, readJsonCapped } from './body-limit';
+
 /**
  * Remove NUL (U+0000) from every string in a parsed JSON body: values and
  * object keys, however deep (audit F14). Postgres stores neither a text value
@@ -42,7 +44,14 @@ function strip(value: unknown): unknown {
   return value;
 }
 
-/** A request's JSON body with NUL stripped, or null when it is not JSON. */
-export async function readJsonNoNul(req: Request): Promise<unknown> {
-  return stripNul(await req.json().catch(() => null));
+/**
+ * A request's JSON body with NUL stripped, or null when it is not JSON. At
+ * most `maxBytes` are read (the route's ceiling, lib/body-limit.ts): a
+ * longer body throws BodyTooLargeError, which the app answers 413.
+ */
+export async function readJsonNoNul(
+  req: Request,
+  maxBytes: number = JSON_BODY_CEILING_BYTES,
+): Promise<unknown> {
+  return stripNul(await readJsonCapped(req, maxBytes));
 }

@@ -312,7 +312,12 @@ export type ClientItemsPage = {
  * reviewers (and members read it as a client request). Refusals (the 409
  * `reason`): the member ones, plus `quota` for the client caps: 20 MB a file,
  * 200 MB a client, 50 MB uploaded a day, 500 items, 10 submissions a day, 50
- * waiting for review, and one total for all client uploads of the brain.
+ * waiting for review, and one total for all client spaces of the brain. The
+ * 200 MB and the total count page and note text too (C5 audit). A page
+ * document over 500 KB serialized (draft or Save version), or a note over
+ * 50,000 characters, is a 400 `too-large`. The comment caps:
+ * ClientCommentRefusedReason. Any JSON body over the route's ceiling (8 MB)
+ * is a 413 `body-too-large`.
  */
 export type ClientSpaceRefusedReason =
   | 'not-found'
@@ -363,4 +368,81 @@ export type ClientAcceptedBase = {
  * item: the review talk with the reviewers, open while it is submitted. A
  * reviewer's comment shows the brand name, never a staff name.
  */
-export type ClientCommentThread = { comments: NodeComment[] };
+export type ClientCommentThread = {
+  comments: NodeComment[];
+  /**
+   * Older comments exist (client logins C5 audit): a thread answers its
+   * NEWEST 100 comments, oldest first; `?before=<createdAt of the oldest
+   * shown>` answers the 100 before them. The same paging and `hasMore` on
+   * GET /api/member/library/:id/comments, /api/member/space/:id/comments,
+   * /api/team-admin/submissions/:id/comments and /api/nodes/:id/comments.
+   * Absent on an older brain (the whole thread).
+   */
+  hasMore?: boolean;
+};
+
+/**
+ * Why a comment was refused (the 4xx `reason`, client logins C5 audit): 429
+ * `comment-cap` (a client login writes at most 100 comments a day across
+ * every thread, the review talk and client threads; deleting one does not
+ * give it back), 409 `thread-full` (one thread holds at most 1000
+ * comments).
+ */
+export type ClientCommentRefusedReason = 'comment-cap' | 'thread-full';
+
+// ── Team admin > Clients: storage and client threads (C5 audit) ────────────
+
+/**
+ * GET /api/team-admin/clients/storage (admin only): what the client spaces
+ * hold against the client limits. A client space counts files, page
+ * documents (saved, draft and plain text) and note text, as stored.
+ * `limits.totalBytes` is the brain-wide total for ALL client spaces (5 GB
+ * unless the box sets MANTLE_CLIENT_SPACES_TOTAL_BYTES). A `former` row is a
+ * deleted client's space: it still counts until its 30-day purge, and its
+ * `loginId` is the space's id (the login row is gone).
+ */
+export type ClientStorageUsage = {
+  limits: {
+    fileMaxBytes: number;
+    perClientBytes: number;
+    dailyUploadBytes: number;
+    itemLimit: number;
+    totalBytes: number;
+    submitsPerDay: number;
+    openSubmissions: number;
+  };
+  totalUsedBytes: number;
+  rows: {
+    loginId: string;
+    name: string;
+    usedBytes: number;
+    uploadedTodayBytes: number;
+    items: number;
+    openSubmissions: number;
+    former: boolean;
+  }[];
+  /** Quota refusals in the last 7 days, newest first, at most 50. */
+  refusals: { at: string; loginId: string | null; reason: string }[];
+};
+
+/**
+ * GET /api/team-admin/clients/comments?days=7 (admin only, 1 to 90 days):
+ * the client-level items whose client thread had a comment by a CLIENT in
+ * the window, newest first, at most 100. `clientComments` counts the
+ * clients' comments in the window; `lastClientName` is the newest one's
+ * author. Open the thread on /api/nodes/:id/comments.
+ */
+export type ClientThreadActivity = {
+  rows: {
+    nodeId: string;
+    title: string;
+    type: string;
+    lastCommentAt: string;
+    clientComments: number;
+    lastClientName: string;
+  }[];
+};
+
+/** DELETE /api/team-admin/clients/:id/comments (admin only): every comment
+ *  that client login wrote (client threads and review talk) is removed. */
+export type ClientCommentsDeleted = { deleted: number };

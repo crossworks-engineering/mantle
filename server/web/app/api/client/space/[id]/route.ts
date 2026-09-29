@@ -5,6 +5,7 @@ import { getClientOr401 } from '@/lib/auth';
 import { readJsonNoNul } from '@/lib/strip-nul';
 import {
   assertClientItem,
+  clientNoteTooLarge,
   clientWithAdminGuard,
   clientWriteGate,
   inMyClientSpace,
@@ -28,6 +29,8 @@ const Patch = z
  * /api/client/space/:id/bytes). Only a page, note or file: any other kind,
  * and another login's item, is a 404.
  * PATCH { title?, icon?, content? } : rename, re-icon, or a note's text.
+ * A note over 50,000 characters is a 400 `too-large`; text that takes the
+ * space past its storage is a 409 `quota`.
  * DELETE : remove it. A submitted item is frozen: PATCH and DELETE answer
  * 409 `frozen` until the client recalls it. An item a reviewer took over
  * answers 409 `with-admin`.
@@ -61,6 +64,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
   if (held) return held;
   const body = Patch.safeParse(await readJsonNoNul(req));
   if (!body.success) return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
+  const big = clientNoteTooLarge(body.data.content);
+  if (big) return big;
   try {
     const got = await inMyClientSpace(client, async () => {
       await assertClientItem(client.spaceId, params.data.id);

@@ -18,6 +18,8 @@ import type { NodeComment } from '@mantle/client-types';
 import { withSpace, type NodeCommentDbRow } from '@mantle/db';
 import { errorMessage } from '@mantle/std';
 import {
+  CLIENT_DOC_MAX_BYTES,
+  CLIENT_NOTE_MAX_CHARS,
   SpaceItemStateError,
   getMineRow,
   loadPreferencesFor,
@@ -54,8 +56,35 @@ export function clientWithAdminGuard(client: ClientCaller, id: string): Promise<
 }
 
 /** Writes a client may make to their space per login per minute: the same
- *  budget as a member's (autosave every second or two). */
+ *  count as a member's (the editor autosaves 800 ms after a pause, up to
+ *  about 75 a minute while typing, so a lower count would refuse ordinary
+ *  typing). What a write may carry is smaller (audit I3): a page document
+ *  of at most 500 KB instead of 2 MB, so the worst case is a quarter of a
+ *  member's. */
 export const CLIENT_WRITES_PER_MIN = MEMBER_WRITES_PER_MIN;
+
+/** A 400 `too-large` for a client's page or note over its size (C5 audit,
+ *  I3). */
+function tooLarge(error: string): Response {
+  return NextResponse.json({ error, reason: 'too-large' }, { status: 400 });
+}
+
+/** A client's page document over 500 KB serialized: the 400, else null. */
+export function clientDocTooLarge(doc: unknown): Response | null {
+  if (doc === undefined) return null;
+  return Buffer.byteLength(JSON.stringify(doc), 'utf8') > CLIENT_DOC_MAX_BYTES
+    ? tooLarge(`A page can be at most ${CLIENT_DOC_MAX_BYTES / 1000} KB. Split it into two.`)
+    : null;
+}
+
+/** A client's note over 50,000 characters: the 400, else null. */
+export function clientNoteTooLarge(content: string | undefined): Response | null {
+  return content !== undefined && content.length > CLIENT_NOTE_MAX_CHARS
+    ? tooLarge(
+        `A note can be at most ${CLIENT_NOTE_MAX_CHARS.toLocaleString('en-US')} characters. Split it into two.`,
+      )
+    : null;
+}
 
 /**
  * The per-login rate limit on every client write route: a 429 with

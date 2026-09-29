@@ -19,6 +19,7 @@ import {
   afterRollback,
   db,
   nodes,
+  pages,
   spaceItems,
   spaceUploads,
   tables,
@@ -34,15 +35,15 @@ import {
 import { existsSync, promises as fs, statSync, type ReadStream } from 'node:fs';
 import { draftAbsFor } from './table-storage';
 import {
-  CLIENT_SPACES_TOTAL_BYTES,
   MEMBER_SPACE_LIMITS,
+  clientSpacesTotalBytes,
   inClientSpace,
   spaceLimits,
 } from './space-limits';
 import {
-  SpaceItemStateError,
   assertItemRoom,
   lockSpaceQuota,
+  quotaRefusal,
   requireSpace,
   spaceNotFound,
 } from './member-space-core';
@@ -110,16 +111,39 @@ export async function spaceFileOf(ownerId: string, id: string): Promise<SpaceFil
   return n ? fileOf(n) : null;
 }
 
-/** Bytes a space holds on disk: its files plus its table workbooks, their
- *  unsaved drafts included (a draft grows by op batches until Save). */
-export async function spaceStorageUsed(spaceId: string): Promise<number> {
-  const [f] = await db
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+/** Where a quota read runs: the caller's scope (`db`), or an explicit
+ *  transaction (give back, on the admin pool, sees its own moves). */
+type Via = Pick<Tx, 'select' | 'execute'>;
+
+/**
+ * Bytes a space holds: its files, its table workbooks (their unsaved drafts
+ * included: a draft grows by op batches until Save), and the text of its
+ * pages (saved doc, draft and plain text) and notes, as stored (client
+ * logins C5 audit, I3: text is not free). The same sums as
+ * mantle_client_space_usage() (migration 0195), plus the table drafts on
+ * disk.
+ */
+export async function spaceStorageUsed(spaceId: string, via: Via = db): Promise<number> {
+  const [f] = await via
     .select({
-      n: sql<string>`coalesce(sum((${nodes.data}->>'size_bytes')::bigint), 0)`,
+      n: sql<string>`coalesce(sum(case ${nodes.type}
+             when 'file' then coalesce((${nodes.data}->>'size_bytes')::bigint, 0)
+             when 'note' then pg_column_size(${nodes.data})::bigint
+             else 0 end), 0)`,
     })
     .from(nodes)
-    .where(and(eq(nodes.ownerId, spaceId), eq(nodes.type, 'file')));
-  const workbooks = await db
+    .where(eq(nodes.ownerId, spaceId));
+  const [p] = await via
+    .select({
+      n: sql<string>`coalesce(sum(pg_column_size(${pages.doc})::bigint
+             + coalesce(pg_column_size(${pages.draftDoc}), 0)
+             + pg_column_size(${pages.docText})), 0)`,
+    })
+    .from(pages)
+    .innerJoin(nodes, eq(nodes.id, pages.nodeId))
+    .where(eq(nodes.ownerId, spaceId));
+  const workbooks = await via
     .select({ size: tables.sizeBytes, storagePath: tables.storagePath })
     .from(tables)
     .innerJoin(nodes, eq(nodes.id, tables.nodeId))
@@ -131,7 +155,49 @@ export async function spaceStorageUsed(spaceId: string): Promise<number> {
     const draft = draftAbsFor(w.storagePath);
     if (existsSync(draft)) t += statSync(draft).size;
   }
-  return Number(f?.n ?? 0) + t;
+  return Number(f?.n ?? 0) + Number(p?.n ?? 0) + t;
+}
+
+/** The stored bytes of one item's text: a page's doc, draft and plain text,
+ *  or a note's data. Zero for any other kind. */
+async function itemTextBytes(id: string): Promise<number> {
+  const rows = (await db.execute(sql`
+    select coalesce((select pg_column_size(p.doc)::bigint
+                            + coalesce(pg_column_size(p.draft_doc), 0)
+                            + pg_column_size(p.doc_text)
+                       from pages p where p.node_id = ${id}), 0)
+         + coalesce((select pg_column_size(n.data)::bigint
+                       from nodes n where n.id = ${id} and n.type = 'note'), 0) as n`)) as unknown as {
+    n: string | number | null;
+  }[];
+  return Number(rows[0]?.n ?? 0);
+}
+
+/**
+ * Run a text write (a page's draft, Save version or create, a note's text)
+ * under the CLIENT's storage limits (audit I3): page and note text count
+ * toward the 200 MB of the space and the brain-wide client total. The write
+ * runs first; when it made the item's stored text larger, the limits are
+ * checked under the quota locks with the write in place, and a space (or
+ * total) now over its limit is refused (409 `quota`), rolling the write back
+ * with the space transaction. A write that shrinks or keeps the text always
+ * passes, so a client over the limit can still cut a page down. A member's
+ * space runs `write` unchecked. `id` null: a new item (`write` answers its
+ * id).
+ */
+export async function withClientTextRoom<T>(
+  spaceId: string,
+  id: string | null,
+  write: () => Promise<T>,
+  idOf?: (res: T) => string | null,
+): Promise<T> {
+  requireSpace(spaceId);
+  if (!inClientSpace()) return write();
+  const before = id ? await itemTextBytes(id) : 0;
+  const res = await write();
+  const target = id ?? idOf?.(res) ?? null;
+  if (target && (await itemTextBytes(target)) > before) await assertSpaceStorage(spaceId);
+  return res;
 }
 
 /** Bytes uploaded to a space in the last 24 hours, from the upload ledger:
@@ -161,7 +227,7 @@ export async function spaceUploadHeadroom(spaceId: string): Promise<number> {
   const [used, today] = [await spaceStorageUsed(spaceId), await uploadedToday(spaceId)];
   // A client's space also shares the brain-wide client total (N12).
   const clientsLeft = inClientSpace()
-    ? CLIENT_SPACES_TOTAL_BYTES - (await clientSpacesUsed())
+    ? clientSpacesTotalBytes() - (await clientSpacesUsed())
     : Number.POSITIVE_INFINITY;
   return Math.max(
     0,
@@ -174,11 +240,12 @@ export async function spaceUploadHeadroom(spaceId: string): Promise<number> {
   );
 }
 
-/** Bytes every client space of the brain holds together (files and table
- *  workbooks). A security-definer function: a client's space role reads no
- *  other space, and it answers one number. */
-export async function clientSpacesUsed(): Promise<number> {
-  const rows = (await db.execute(
+/** Bytes every client space of the brain holds together (files, table
+ *  workbooks, page and note text), a former client's until its purge
+ *  (migration 0195). A security-definer function: a client's space role
+ *  reads no other space, and it answers one number. */
+export async function clientSpacesUsed(via: Via = db): Promise<number> {
+  const rows = (await via.execute(
     sql`select mantle_client_space_bytes()::text as n`,
   )) as unknown as { n: string | null }[];
   return Number(rows[0]?.n ?? 0);
@@ -186,8 +253,8 @@ export async function clientSpacesUsed(): Promise<number> {
 
 /** Serialize the client total across ALL client spaces (like the space's own
  *  quota lock): two clients' uploads must not both pass the last headroom. */
-async function lockClientTotal(): Promise<void> {
-  await db.execute(sql`select pg_advisory_xact_lock(hashtextextended('client-spaces-total', 0))`);
+export async function lockClientTotal(via: Via = db): Promise<void> {
+  await via.execute(sql`select pg_advisory_xact_lock(hashtextextended('client-spaces-total', 0))`);
 }
 
 /**
@@ -201,16 +268,16 @@ export async function assertSpaceStorage(spaceId: string, incoming = 0): Promise
   const limits = spaceLimits();
   await lockSpaceQuota(spaceId);
   if ((await spaceStorageUsed(spaceId)) + incoming > limits.storageBytes) {
-    throw new SpaceItemStateError(
-      'quota',
+    throw await quotaRefusal(
+      'storage',
       `Your space is full (${mb(limits.storageBytes)}). Delete something first.`,
     );
   }
   if (inClientSpace()) {
     await lockClientTotal();
-    if ((await clientSpacesUsed()) + incoming > CLIENT_SPACES_TOTAL_BYTES) {
-      throw new SpaceItemStateError(
-        'quota',
+    if ((await clientSpacesUsed()) + incoming > clientSpacesTotalBytes()) {
+      throw await quotaRefusal(
+        'total',
         'The storage for client uploads is full. Ask your contact to make room.',
       );
     }
@@ -254,14 +321,16 @@ export async function createMineFile(
     if (!cleaned) throw new Error('invalid filename');
     const limits = spaceLimits();
     if (spooled.size > limits.fileMaxBytes) {
-      throw new SpaceItemStateError('quota', `Files can be at most ${mb(limits.fileMaxBytes)}.`);
+      throw await quotaRefusal('file-size', `Files can be at most ${mb(limits.fileMaxBytes)}.`);
     }
+    // Locked (the space's quota lock, held to the end of the transaction):
+    // a parallel create or upload at the last place waits here.
     await assertItemRoom(spaceId);
     // Locked: a parallel upload waits here until this transaction ends.
     await assertSpaceStorage(spaceId, spooled.size);
     if ((await uploadedToday(spaceId)) + spooled.size > limits.dailyUploadBytes) {
-      throw new SpaceItemStateError(
-        'quota',
+      throw await quotaRefusal(
+        'daily-upload',
         `You can upload ${mb(limits.dailyUploadBytes)} a day. Try again tomorrow.`,
       );
     }

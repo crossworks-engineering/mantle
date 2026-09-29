@@ -109,7 +109,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
     listMine: rec('listMine', () => h.mine),
     listWithAdmin: rec('listWithAdmin', () => h.held),
     listAccepted: rec('listAccepted', () => h.accepted),
-    listMineComments: rec('listMineComments', () => h.comments),
+    listMineComments: rec('listMineComments', () => ({ rows: h.comments, hasMore: false })),
     loadPreferencesFor: rec('loadPreferencesFor', () => ({ siteName: 'Brand Co' })),
     spaceUploadHeadroom: rec('spaceUploadHeadroom', () => h.headroom),
   };

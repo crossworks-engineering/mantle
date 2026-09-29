@@ -32,6 +32,7 @@ import {
   setClientCodeCookie,
 } from '@/lib/client-logins';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
+import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 
 export async function GET() {
   // Fail closed: when the sender cannot be read, codes are off (never a 500
@@ -50,7 +51,7 @@ export async function POST(req: Request) {
   const limited = clientCodeRequestLimited(req);
   if (limited) return limited;
 
-  const raw = (await req.json().catch(() => null)) as { email?: unknown } | null;
+  const raw = (await readJsonCapped(req, AUTH_BODY_CEILING_BYTES)) as { email?: unknown } | null;
   const email = typeof raw?.email === 'string' ? raw.email.trim().slice(0, 320) : '';
   const requestId = existingRequestId(req) ?? randomUUID();
   try {

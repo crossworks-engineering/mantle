@@ -21,6 +21,7 @@ import { hashLoginPassword, setSessionCookie } from '@/lib/auth';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { inviteFailed, inviteRateLimited } from '@/lib/member-invites';
 import { refuseCrossSiteAuthPost } from '@/lib/auth/preflight';
+import { AUTH_BODY_CEILING_BYTES, readJsonCapped } from '@/lib/body-limit';
 
 const AcceptBody = z.object({
   code: z.string().min(1).max(64),
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
   const limited = inviteRateLimited(req, 'accept');
   if (limited) return limited;
 
-  const parsed = AcceptBody.safeParse(await req.json().catch(() => null));
+  const parsed = AcceptBody.safeParse(await readJsonCapped(req, AUTH_BODY_CEILING_BYTES));
   if (!parsed.success) {
     inviteFailed('accept');
     return NextResponse.json({ error: INVITE_FAILED_MESSAGE }, { status: 401 });

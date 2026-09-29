@@ -52,7 +52,13 @@ import {
 import { createDraw, deleteDraw, getDraw, getDrawSvg, updateDraw, type DrawDetail } from './draws';
 import { createNote, deleteNote, getNote, updateNote, type NoteRow } from './notes';
 import { getPage } from './pages/read';
-import { commitPage, updatePage, type CommitPageResult } from './pages/draft';
+import {
+  commitPage,
+  saveDraft,
+  updatePage,
+  type CommitPageResult,
+  type SaveDraftResult,
+} from './pages/draft';
 import { cellRefs, noteRefs, pageRefs, sceneRefs, type EmbedRefs } from './embed-refs';
 import { commitDraw, type CommitDrawResult } from './draws';
 import { notifySpaceItemChanged } from './member-space-events';
@@ -69,6 +75,7 @@ import {
   deleteMineFile,
   renameMineFile,
   spaceFileOf,
+  withClientTextRoom,
   type OpenedSpaceFile,
   type SpaceFile,
 } from './member-space-files';
@@ -77,6 +84,7 @@ import { spaceLimits } from './space-limits';
 import {
   SpaceItemStateError,
   assertItemRoom,
+  quotaRefusal,
   requireSpace,
   spaceNotFound as notFound,
 } from './member-space-core';
@@ -448,21 +456,26 @@ export async function createMineItem(
     await assertEmbeds(spaceId, noteRefs(input.content), 'note', writer);
   if (input.type === 'draw' && input.scene)
     await assertEmbeds(spaceId, sceneRefs(input.scene), 'drawing', writer);
-  let id: string;
-  switch (input.type) {
-    case 'page':
-      id = (await createPage(spaceId, { title: input.title, doc: input.doc, icon: input.icon })).id;
-      break;
-    case 'note':
-      id = (await createNote(spaceId, { title: input.title, content: input.content ?? '' })).id;
-      break;
-    case 'draw':
-      id = (await createDraw(spaceId, { title: input.title, scene: input.scene })).id;
-      break;
-    case 'table':
-      id = (await createTable(spaceId, { title: input.title })).id;
-      break;
-  }
+  // A client's page and note text counts toward its storage (audit I3).
+  const id = await withClientTextRoom(
+    spaceId,
+    null,
+    async (): Promise<string> => {
+      switch (input.type) {
+        case 'page':
+          return (await createPage(spaceId, { title: input.title, doc: input.doc, icon: input.icon }))
+            .id;
+        case 'note':
+          return (await createNote(spaceId, { title: input.title, content: input.content ?? '' }))
+            .id;
+        case 'draw':
+          return (await createDraw(spaceId, { title: input.title, scene: input.scene })).id;
+        case 'table':
+          return (await createTable(spaceId, { title: input.title })).id;
+      }
+    },
+    (created) => created,
+  );
   await db.insert(spaceItems).values({ nodeId: id, authorLoginId: loginId });
   const row = await getMineRow(spaceId, id);
   if (!row) throw new Error('createMineItem: the new item is not readable');
@@ -693,8 +706,8 @@ async function assertSubmitRoom(spaceId: string): Promise<void> {
         ),
       );
     if ((r?.n ?? 0) >= limits.submitsPerDay) {
-      throw new SpaceItemStateError(
-        'quota',
+      throw await quotaRefusal(
+        'submits-per-day',
         `You can submit ${limits.submitsPerDay} items a day. Try again tomorrow.`,
       );
     }
@@ -716,8 +729,8 @@ async function assertSubmitRoom(spaceId: string): Promise<void> {
         ),
     );
     if ((r?.n ?? 0) >= limits.openSubmissions) {
-      throw new SpaceItemStateError(
-        'quota',
+      throw await quotaRefusal(
+        'open-submissions',
         `You have ${limits.openSubmissions} items waiting for review. Recall one, or wait for a reply.`,
       );
     }
@@ -960,9 +973,25 @@ export async function saveMinePage(
 ): Promise<CommitPageResult> {
   const { adminOfBrain, ...commit } = opts;
   await assertEmbeds(spaceId, pageRefs(doc), 'page', { adminOfBrain });
-  const res = await commitPage(spaceId, id, doc, commit);
+  const res = await withClientTextRoom(spaceId, id, () => commitPage(spaceId, id, doc, commit));
   if (res.ok) await notifySpaceItemChanged(id, 'saved');
   return res;
+}
+
+/**
+ * Autosave an own page's working copy (the draft etag contract of
+ * saveDraft). In a client's space the draft counts toward its storage (audit
+ * I3): a draft that grows the page past the space's or the brain-wide
+ * client limit is refused (409 `quota`). The caller checks the item is
+ * editable first.
+ */
+export async function saveMineDraft(
+  spaceId: string,
+  id: string,
+  doc: Record<string, unknown>,
+  opts: { baseRev?: number } = {},
+): Promise<SaveDraftResult> {
+  return withClientTextRoom(spaceId, id, () => saveDraft(spaceId, id, doc, opts));
 }
 
 /** "Save version" for an own drawing (its SVG snapshot is what teammates see). */
@@ -998,9 +1027,10 @@ export async function updateMineItem(
       break;
     case 'note':
       // A note has no draft: its text is what teammates and a reviewer read,
-      // so the embed rule holds on every change.
+      // so the embed rule holds on every change. A client's note text counts
+      // toward its storage (audit I3).
       if (content !== undefined) await assertEmbeds(spaceId, noteRefs(content), 'note', writer);
-      await updateNote(spaceId, id, { title, content });
+      await withClientTextRoom(spaceId, id, () => updateNote(spaceId, id, { title, content }));
       break;
     case 'draw':
       await updateDraw(spaceId, id, { title, icon });

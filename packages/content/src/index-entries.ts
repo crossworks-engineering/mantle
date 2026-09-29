@@ -53,6 +53,7 @@ export { isValidRank, rankBetween, ranksAfter, RANK_RE } from './rank';
 
 export {
   COMMENT_BODY_MAX,
+  COMMENT_PAGE_SIZE,
   COMMENTS_CHANGED_CHANNEL,
   addNodeComment,
   deleteNodeComment,
@@ -63,6 +64,8 @@ export {
   toNodeCommentDto,
   updateNodeComment,
   type CommentAuthor,
+  type CommentPage,
+  type CommentPageQuery,
   type CommentViewer,
   type NodeComment,
   type NodeCommentAuthorKind,

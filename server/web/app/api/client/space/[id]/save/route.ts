@@ -1,24 +1,24 @@
 import { NextResponse } from '@/server/http-compat';
+import { z } from 'zod';
 import { assertEditable, getMineItem, saveMinePage } from '@mantle/content';
 import { getClientOr401 } from '@/lib/auth';
 import { readJsonNoNul } from '@/lib/strip-nul';
 import {
   assertClientItem,
+  clientDocTooLarge,
   clientWithAdminGuard,
   clientWriteGate,
   inMyClientSpace,
 } from '@/lib/client-space';
-import {
-  conflict,
-  notFound,
-  SaveBody,
-  SpaceIdParams,
-  spaceStateResponse,
-} from '@/lib/member-space';
+import { conflict, notFound, SpaceIdParams, spaceStateResponse } from '@/lib/member-space';
 import { firstIssue } from '@/lib/zod-issue';
 
-/** A client's Save version body: a page's `doc` and the etag. */
-const ClientSaveBody = SaveBody.pick({ doc: true, if_rev: true });
+/** A client's Save version body: a page's `doc` and the etag. The doc's
+ *  size is the client's own (500 KB, `clientDocTooLarge`). */
+const ClientSaveBody = z.object({
+  doc: z.record(z.string(), z.unknown()).optional(),
+  if_rev: z.number().int().nonnegative().optional(),
+});
 
 /**
  * POST /api/client/space/:id/save { doc, if_rev? } : "Save version" of a
@@ -27,7 +27,8 @@ const ClientSaveBody = SaveBody.pick({ doc: true, if_rev: true });
  * The embed rule reads at the client's level: a page may name only the
  * client's own items and client-level items (409 `embed` with the refused
  * `ids`). Never indexed. Notes and files save as they go (400); a submitted
- * item is frozen (409 `frozen`).
+ * item is frozen (409 `frozen`). A doc over 500 KB is a 400 `too-large`; a
+ * version that takes the space past its storage is a 409 `quota`.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const client = await getClientOr401();
@@ -40,6 +41,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (held) return held;
   const body = ClientSaveBody.safeParse(await readJsonNoNul(req));
   if (!body.success) return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
+  const big = clientDocTooLarge(body.data.doc);
+  if (big) return big;
   const { spaceId } = client;
   const id = params.data.id;
   const { doc, if_rev: baseRev } = body.data;

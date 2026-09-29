@@ -25,7 +25,7 @@
  */
 import { copyFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import {
   asSystem,
   authUsers,
@@ -55,7 +55,14 @@ import {
 import { lockBundleRows, refsOf, type BundleItem } from './member-bundle';
 import { SpaceItemStateError, spaceNotFound } from './member-space-core';
 import { notifySpaceItemChanged } from './member-space-events';
-import { SPACE_FILES_PATH } from './member-space-files';
+import {
+  SPACE_FILES_PATH,
+  clientSpacesUsed,
+  lockClientTotal,
+  spaceStorageUsed,
+} from './member-space-files';
+import { CLIENT_SPACE_LIMITS, clientSpacesTotalBytes } from './space-limits';
+import { recordClientQuotaRefusal } from './client-quota-log';
 import { savedState } from './member-space';
 import { draftAbsFor, removeTableFile } from './table-storage';
 import { dedupeFilename } from './dedupe-filename';
@@ -504,6 +511,7 @@ export async function giveBackTaken(
     }
 
     await moveBetweenSpaces(tx, own.spaceId, memberSpace, group, hooks);
+    if (author.level === 'client') await assertClientRoomAfterGiveBack(tx, memberSpace, row.author);
     const ids = group.map((g) => g.id);
     const now = new Date();
     const cleared = { takenBy: null, takenAt: null, takenRoot: null, updatedAt: now };
@@ -527,6 +535,40 @@ export async function giveBackTaken(
     return { id, returned: group };
   });
   return result;
+}
+
+/**
+ * A give back into a CLIENT's space holds the client limits (audit I7): the
+ * items and bytes it brings back count like the client's own. Checked with
+ * the move in place, under the space's quota lock and the client total's
+ * (the order an upload takes them), so an upload cannot pass the same last
+ * room. Over any limit: 409 `quota` (the move rolls back with the
+ * transaction), and the refusal is recorded. Accept it or delete it instead.
+ */
+async function assertClientRoomAfterGiveBack(
+  tx: Tx,
+  spaceId: string,
+  authorLoginId: string | null,
+): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${`space-quota:${spaceId}`}, 0))`,
+  );
+  await lockClientTotal(tx);
+  const lim = CLIENT_SPACE_LIMITS;
+  const [held] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(nodes)
+    .where(and(eq(nodes.ownerId, spaceId), ne(nodes.type, 'branch')));
+  const over =
+    (held?.n ?? 0) > lim.itemLimit ||
+    (await spaceStorageUsed(spaceId, tx)) > lim.storageBytes ||
+    (await clientSpacesUsed(tx)) > clientSpacesTotalBytes();
+  if (!over) return;
+  await recordClientQuotaRefusal(authorLoginId, 'give-back');
+  throw new SpaceItemStateError(
+    'quota',
+    'The client’s space has no room for this (its item or storage limit, or the storage for all clients). Accept it into the brain or delete it instead.',
+  );
 }
 
 // ── Whom the admin took it from ────────────────────────────────────────────
