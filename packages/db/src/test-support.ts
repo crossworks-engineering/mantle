@@ -38,15 +38,16 @@ export const TEST_ANCHOR_EMAIL = 'test-anchor@example.invalid';
 
 /**
  * The brain's anchor (`mantle_brain_id()`), created if there is none. Safe
- * when many test files ask at once: `auth.users` allows one owner, so a
- * losing insert does nothing and every caller reads the same id. Never
+ * when many test files ask at once: `auth.users` allows one owner and one
+ * row per email, so a losing insert does nothing (whichever unique rule it
+ * meets first) and every caller reads the same id. Never
  * delete the anchor or its brain space in a test.
  */
 export async function ensureTestAnchor(sql: Sql): Promise<string> {
   await sql`
     insert into auth.users (id, email, password_hash, is_owner, role)
     values (${randomUUID()}, ${TEST_ANCHOR_EMAIL}, 'x', true, 'admin')
-    on conflict (is_owner) where is_owner do nothing`;
+    on conflict do nothing`;
   const [row] = await sql<{ id: string | null }[]>`select mantle_brain_id() as id`;
   if (!row?.id) throw new Error('ensureTestAnchor: no anchor after the insert');
   return row.id;
