@@ -17,6 +17,9 @@ const h = vi.hoisted(() => ({
   loopCalls: [] as any[],
   steps: [] as Array<{ name: string; input?: unknown; output?: unknown }>,
   thoughtsOn: false,
+  /** Conversations marked by an earlier turn (the conversation_taints rows). */
+  marked: new Set<string>(),
+  loadedKeys: [] as string[],
 }));
 
 vi.mock('../agent', () => ({
@@ -58,11 +61,18 @@ vi.mock('@mantle/tracing', () => ({
 }));
 
 // The taint scan (client logins C4): a stand-in that marks the turn when the
-// scanned text names the client request below. Its real query is covered by
-// packages/tools/src/client-sourced.db.test.ts.
+// scanned text names the client request below, and a conversation store
+// (C5 audit fix I9) keyed like the real one (conversationTaintKey stays
+// real). The real queries: packages/tools/src/client-sourced.db.test.ts.
 const CLIENT_TASK = '99999999-9999-4999-8999-999999999999';
 vi.mock('@mantle/tools/client-sourced', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
+  loadConversationTaint: vi.fn(async (ownerId: string, key: string) => {
+    h.loadedKeys.push(key);
+    return h.marked.has(key)
+      ? { clientSourced: true, via: 'an earlier turn', carried: true, conversation: { ownerId, key } }
+      : { clientSourced: false, conversation: { ownerId, key } };
+  }),
   taintFromText: vi.fn(
     async (
       taint: { clientSourced: boolean; via?: string },
@@ -73,6 +83,9 @@ vi.mock('@mantle/tools/client-sourced', async (importOriginal) => ({
       if (text.includes(CLIENT_TASK)) {
         taint.clientSourced = true;
         taint.via = via;
+        const t = taint as { carried?: true; conversation?: { key: string } };
+        delete t.carried;
+        if (t.conversation) h.marked.add(t.conversation.key);
       }
     },
   ),
@@ -316,25 +329,66 @@ describe('emptyLoopResult', () => {
 });
 
 describe('runResponderLoop: client-written text in the retrieval context (plan N18)', () => {
+  beforeEach(() => {
+    h.marked.clear();
+    h.loadedKeys = [];
+  });
+  const conv = { ownerId: 'owner-1', key: 'agent:agent-1' };
+
   it('a client request among the content hits taints the turn before any tool runs', async () => {
     const ctx = { ...ctxFixture(), contentHits: [{ nodeId: CLIENT_TASK }] } as never;
     await runResponderLoop(baseOpts({ loadContext: async () => ctx }) as never);
-    expect(h.loopCalls[0].taint).toEqual({ clientSourced: true, via: 'context' });
+    expect(h.loopCalls[0].taint).toEqual({
+      clientSourced: true,
+      via: 'context',
+      conversation: conv,
+    });
+  });
+
+  it('the NEXT turn of the conversation starts marked, with nothing client-written in it (I9)', async () => {
+    const ctx = { ...ctxFixture(), contentHits: [{ nodeId: CLIENT_TASK }] } as never;
+    await runResponderLoop(baseOpts({ loadContext: async () => ctx }) as never);
+    // Turn 2: "ok, do what they asked": an ordinary context.
+    await runResponderLoop(baseOpts() as never);
+    expect(h.loopCalls[1].taint).toMatchObject({ clientSourced: true, carried: true });
+    // The owner's conversation with the agent: one key across web and
+    // Telegram; a login's conversation with the agent is its own.
+    await runResponderLoop(baseOpts({ surface: { kind: 'telegram', telegramChatId: '1' } }) as never);
+    expect(h.loopCalls[2].taint.clientSourced).toBe(true);
+    await runResponderLoop(
+      baseOpts({ surface: { kind: 'team', loginId: 'login-1' } }) as never,
+    );
+    expect(h.loopCalls[3].taint.clientSourced).toBe(false);
+    expect(h.loadedKeys).toEqual([
+      'agent:agent-1',
+      'agent:agent-1',
+      'agent:agent-1',
+      'login:login-1:agent:agent-1',
+    ]);
+  });
+
+  it('a simulation neither starts from nor keeps the mark', async () => {
+    h.marked.add('agent:agent-1');
+    await runResponderLoop(baseOpts({ conversationTaint: false }) as never);
+    expect(h.loopCalls[0].taint).toEqual({ clientSourced: false });
+    expect(h.loadedKeys).toEqual([]);
   });
 
   it('a chunk or a fact from one taints it too', async () => {
     const byChunk = { ...ctxFixture(), chunkHits: [{ nodeId: CLIENT_TASK }] } as never;
     await runResponderLoop(baseOpts({ loadContext: async () => byChunk }) as never);
+    h.marked.clear(); // each on its own, not carried from the first
     const byFact = {
       ...ctxFixture(),
       facts: [{ fact: 'x', sourceNodeId: CLIENT_TASK }],
     } as never;
     await runResponderLoop(baseOpts({ loadContext: async () => byFact }) as never);
     expect(h.loopCalls.map((c) => c.taint.clientSourced)).toEqual([true, true]);
+    expect(h.loopCalls.map((c) => c.taint.carried)).toEqual([undefined, undefined]);
   });
 
   it('an ordinary context leaves the turn untainted', async () => {
     await runResponderLoop(baseOpts() as never);
-    expect(h.loopCalls[0].taint).toEqual({ clientSourced: false });
+    expect(h.loopCalls[0].taint).toEqual({ clientSourced: false, conversation: conv });
   });
 });

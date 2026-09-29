@@ -87,6 +87,8 @@ vi.mock('@mantle/tools', async () => ({
     spillMaxBytes: 10_000_000,
   })),
   notifyPendingCreated: vi.fn(async () => {}),
+  // The registry's read flag, for the lowering guard: the fixture's reads.
+  isBuiltinReadOnly: vi.fn((slug: string) => ['task_get', 'page_get'].includes(slug)),
 }));
 
 vi.mock('@mantle/db', () => ({
@@ -108,11 +110,18 @@ vi.mock('@mantle/db', () => ({
 }));
 
 // The client-sourced scan (client logins C4): a stand-in that marks the turn
-// when the scanned text names CLIENT_TASK. isLoweringCall and newTurnTaint
-// stay real. The real query: packages/tools/src/client-sourced.db.test.ts.
+// when the scanned text names CLIENT_TASK. isLoweringCall, newTurnTaint and
+// the gate by target (client-sourced-rules.ts) stay real; marking a created
+// node is recorded. The real queries: packages/runtime/src/agent/
+// client-sourced-gate.db.test.ts.
 const CLIENT_TASK = '99999999-9999-4999-8999-999999999999';
+const markedCreated: Array<{ text: string; via: string }> = [];
 vi.mock('@mantle/tools/client-sourced', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
+  markCreatedClientSourced: vi.fn(async (_o: string, text: string, _ms: number, via: string) => {
+    markedCreated.push({ text, via });
+    return 1;
+  }),
   taintFromText: vi.fn(
     async (
       taint: { clientSourced: boolean; via?: string },
@@ -231,6 +240,7 @@ function makeThrowingAdapter(status: number): { adapter: ChatDispatcher; calls: 
 beforeEach(() => {
   dispatchToolCalls.length = 0;
   insertedPendingArgs.length = 0;
+  markedCreated.length = 0;
   // Default dispatcher returns success with a small payload.
   dispatchToolImpl = () => ({ ok: true, output: { ok: 1 } });
 });
@@ -938,6 +948,118 @@ describe('runToolLoop: the client-sourced lowering guard (client logins C4, plan
     ]);
     expect(insertedPendingArgs).toHaveLength(0);
     expect(dispatchToolCalls.map((c) => c.slug)).toEqual(['access_set']);
+  });
+
+  it('a marked turn: a call whose target its input cannot name waits; reads run (L2)', async () => {
+    const tainted = { clientSourced: true };
+    const tools = [
+      fakeTool({ slug: 'run_plan', handler: { kind: 'builtin', ref: 'run_plan' } as never }),
+      // A builtin write the guard does not know waits (fail closed).
+      fakeTool({ slug: 'fake_tool' }),
+      // A recipe of reads runs; one with a write step waits.
+      fakeTool({
+        slug: 'reads_recipe',
+        handler: { kind: 'recipe', steps: [{ tool: 'page_get' }, { tool: 'task_get' }] } as never,
+      }),
+      fakeTool({
+        slug: 'writes_recipe',
+        handler: { kind: 'recipe', steps: [{ tool: 'page_get' }, { tool: 'page_update' }] } as never,
+      }),
+      // An HTTP GET reads; a POST may write anywhere.
+      fakeTool({ slug: 'http_get', handler: { kind: 'http', url: 'x', method: 'GET' } as never }),
+      fakeTool({ slug: 'http_post', handler: { kind: 'http', url: 'x', method: 'POST' } as never }),
+      fakeTool({ slug: 'task_get', handler: { kind: 'builtin', ref: 'task_get' } as never }),
+    ];
+    await runToolLoop({
+      adapter: makeFakeAdapter([
+        {
+          type: 'toolCalls',
+          toolCalls: [
+            call('c1', 'run_plan', { title: 't', plan: {} }),
+            call('c2', 'fake_tool', {}),
+            call('c3', 'reads_recipe', {}),
+            call('c4', 'writes_recipe', {}),
+            call('c5', 'http_get', {}),
+            call('c6', 'http_post', {}),
+            call('c7', 'task_get', { id: 'x' }),
+          ],
+        },
+        { type: 'text', text: 'done' },
+      ]).adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      agentId: 'agent-1',
+      agentLevel: 'admin',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools,
+      taint: tainted,
+    });
+    expect(insertedPendingArgs.map((r) => r.toolSlug)).toEqual([
+      'run_plan',
+      'fake_tool',
+      'writes_recipe',
+      'http_post',
+    ]);
+    expect(dispatchToolCalls.map((c) => c.slug)).toEqual(['reads_recipe', 'http_get', 'task_get']);
+  });
+
+  it('the same calls in an unmarked turn all run (control)', async () => {
+    const tools = [
+      fakeTool({ slug: 'run_plan', handler: { kind: 'builtin', ref: 'run_plan' } as never }),
+      fakeTool({ slug: 'http_post', handler: { kind: 'http', url: 'x', method: 'POST' } as never }),
+    ];
+    await runToolLoop({
+      adapter: makeFakeAdapter([
+        {
+          type: 'toolCalls',
+          toolCalls: [call('c1', 'run_plan', { title: 't', plan: {} }), call('c2', 'http_post', {})],
+        },
+        { type: 'text', text: 'done' },
+      ]).adapter,
+      apiKey: 'k',
+      model: 'm',
+      params: {},
+      ownerId: 'owner-1',
+      agentId: 'agent-1',
+      agentLevel: 'admin',
+      initialMessages: [{ role: 'user', content: 'go' }],
+      tools,
+    });
+    expect(insertedPendingArgs).toHaveLength(0);
+    expect(dispatchToolCalls.map((c) => c.slug)).toEqual(['run_plan', 'http_post']);
+  });
+
+  it('a node a marked turn creates is marked; an unmarked turn marks nothing (L10)', async () => {
+    const NEW = '12121212-1212-4121-8121-121212121212';
+    dispatchToolImpl = () => ({ ok: true, output: { id: NEW, title: 'copy' } });
+    const noteCreate = fakeTool({
+      slug: 'note_create',
+      handler: { kind: 'builtin', ref: 'note_create' } as never,
+    });
+    const once = (taint?: { clientSourced: boolean }) =>
+      runToolLoop({
+        adapter: makeFakeAdapter([
+          { type: 'toolCalls', toolCalls: [call('c1', 'note_create', { title: 'copy' })] },
+          { type: 'text', text: 'done' },
+        ]).adapter,
+        apiKey: 'k',
+        model: 'm',
+        params: {},
+        ownerId: 'owner-1',
+        agentId: 'agent-1',
+        agentLevel: 'admin',
+        initialMessages: [{ role: 'user', content: 'go' }],
+        tools: [noteCreate],
+        ...(taint ? { taint } : {}),
+      });
+    await once();
+    expect(markedCreated).toEqual([]);
+    await once({ clientSourced: true });
+    expect(markedCreated).toHaveLength(1);
+    expect(markedCreated[0]!.via).toBe('note_create');
+    expect(markedCreated[0]!.text).toContain(NEW);
   });
 
   it("reading a client login's thread (its id in the INPUT) taints the turn", async () => {

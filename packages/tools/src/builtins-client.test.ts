@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   filed: [] as Record<string, unknown>[],
   counts: { turn: 0, day: 0 },
   systemCalls: 0,
+  ledger: [] as Record<string, unknown>[],
 }));
 
 vi.mock('@mantle/db', async (importOriginal) => ({
@@ -79,9 +80,16 @@ vi.mock('@mantle/content', async (importOriginal) => ({
     }
     return null;
   }),
-  countTeamRequestsFiled: vi.fn(async (_o: string, by: Record<string, unknown>) =>
+  // The caps count the filing ledger (C5 audit fix I12), not the live tasks.
+  countClientRequestFilings: vi.fn(async (_o: string, by: Record<string, unknown>) =>
     'threadMessageId' in by ? h.counts.turn : h.counts.day,
   ),
+  countTeamRequestsFiled: vi.fn(async () => {
+    throw new Error('client caps must not count the live tasks');
+  }),
+  recordClientRequestFiling: vi.fn(async (_o: string, row: Record<string, unknown>) => {
+    h.ledger.push(row);
+  }),
   createTask: vi.fn(async (_o: string, input: Record<string, unknown>) => {
     h.filed.push(input);
     return { id: '77777777-7777-4777-8777-777777777777', title: input.title };
@@ -98,6 +106,7 @@ beforeEach(() => {
   h.filed = [];
   h.counts = { turn: 0, day: 0 };
   h.systemCalls = 0;
+  h.ledger = [];
 });
 
 describe('client tools serve a client surface only', () => {
@@ -207,6 +216,10 @@ describe('client_request_create', () => {
     });
     // Written and counted on the admin pool (the client role never writes).
     expect(h.systemCalls).toBeGreaterThanOrEqual(2);
+    // And recorded in the ledger the caps count.
+    expect(h.ledger).toEqual([
+      { loginId: LOGIN, threadMessageId: 'msg-1', taskId: '77777777-7777-4777-8777-777777777777' },
+    ]);
   });
 
   it('3 per message and 10 a day', async () => {
@@ -225,5 +238,6 @@ describe('client_request_create', () => {
     );
     expect((perDay as { error: string }).error).toMatch(/10 requests in 24 hours/);
     expect(h.filed).toEqual([]);
+    expect(h.ledger).toEqual([]);
   });
 });

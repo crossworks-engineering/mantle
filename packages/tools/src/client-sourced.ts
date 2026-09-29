@@ -231,14 +231,14 @@ export const CONVERSATION_TAINT_HOURS = 24;
 /**
  * The conversation a turn belongs to, for its mark: the owner's conversation
  * with an agent is one across channels (web, Telegram, voice share one
- * history), a login's conversation with an agent is its own.
+ * history), a login's conversation with an agent (a member's or a client's
+ * surface names the login) is its own.
  */
 export function conversationTaintKey(
   agentId: string,
   surface?: { kind: string; loginId?: string } | null,
 ): string {
-  const loginId =
-    surface && (surface.kind === 'team' || surface.kind === 'client') ? surface.loginId : undefined;
+  const loginId = surface?.loginId;
   return loginId ? `login:${loginId}:agent:${agentId}` : `agent:${agentId}`;
 }
 
