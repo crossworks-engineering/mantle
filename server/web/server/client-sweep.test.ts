@@ -210,10 +210,39 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
       expect((await fileWith(ANCHOR_ID, BUMPED_CLIENT_ID, 2)).status).toBe(400);
     });
 
+    // Audit B8: these are the REAL byte routes, driven with a well-formed id,
+    // so the gate lets an asset token through and the route's own check
+    // (getOwnerForAsset, getMemberForAsset) is what answers. An admin-act
+    // token gets past it (the positive control): if a client-act one ever
+    // did too, the token every client holds would open every file by id.
+    const ID = '11111111-1111-4111-8111-111111111111';
+    const ADMIN_BYTES = [
+      `/api/files/files/${ID}?raw=1`,
+      `/api/draws/${ID}/svg`,
+      `/api/attachments/${ID}`,
+      `/api/export/${ID}`,
+      '/api/profile/photo',
+      `/api/admin/space/${ID}/bytes`,
+    ];
+    const MEMBER_BYTES = [`/api/member/files/${ID}`, `/api/member/draws/${ID}/svg`];
+    const withAt = (path: string, at: string) =>
+      `${path}${path.includes('?') ? '&' : '?'}at=${encodeURIComponent(at)}`;
+
     it('opens no admin bytes and no member bytes', async () => {
-      const at = encodeURIComponent(tokens.buildAssetToken(ANCHOR_ID, CLIENT_ID));
-      for (const path of ['/api/files/not-a-uuid', '/api/member/files/not-a-uuid']) {
-        expect((await app.request(`${path}?at=${at}`)).status, path).toBe(401);
+      const at = tokens.buildAssetToken(ANCHOR_ID, CLIENT_ID);
+      for (const path of [...ADMIN_BYTES, ...MEMBER_BYTES]) {
+        const res = await app.request(withAt(path, at));
+        expect(res.status, path).toBe(401);
+      }
+    });
+
+    it('an admin-act token on the same routes gets past the gate (the control)', async () => {
+      const at = tokens.buildAssetToken(ANCHOR_ID, ADMIN_ID);
+      for (const path of ADMIN_BYTES) {
+        const res = await app.request(withAt(path, at));
+        // Past the gate: the route reads (a missing item, or no database
+        // here), never the gate's 401.
+        expect(res.status, path).not.toBe(401);
       }
     });
   });

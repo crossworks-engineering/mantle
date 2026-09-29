@@ -339,11 +339,25 @@ describe.skipIf(!hasManifest)('role sweep: three roles, fail closed', () => {
   });
 
   describe('asset tokens (?at=) minted for a client login', () => {
+    // The REAL byte routes with a well-formed id (audit B8): the gate lets
+    // the token through, so the route's own asset check answers. The
+    // positive control (an admin-act token gets past it) is in
+    // client-sweep.test.ts, which stands in an admin login.
     it('open no admin bytes and no member bytes', async () => {
       const { buildAssetToken } = await import('../lib/auth/tokens');
       const at = encodeURIComponent(buildAssetToken(ANCHOR_ID, CLIENT_ID));
-      for (const path of ['/api/files/not-a-uuid', '/api/member/files/not-a-uuid']) {
-        const res = await app.request(`${path}?at=${at}`);
+      const ID = '11111111-1111-4111-8111-111111111111';
+      for (const path of [
+        `/api/files/files/${ID}?raw=1`,
+        `/api/draws/${ID}/svg`,
+        `/api/attachments/${ID}`,
+        `/api/export/${ID}`,
+        '/api/profile/photo',
+        `/api/admin/space/${ID}/bytes`,
+        `/api/member/files/${ID}`,
+        `/api/member/draws/${ID}/svg`,
+      ]) {
+        const res = await app.request(`${path}${path.includes('?') ? '&' : '?'}at=${at}`);
         expect(res.status, path).toBe(401);
       }
     });
