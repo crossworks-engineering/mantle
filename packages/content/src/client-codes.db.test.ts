@@ -234,7 +234,7 @@ describe.skipIf(!URL)('client email sign-in codes', () => {
     const cap = c.CLIENT_CODE_DAILY_CAP;
     await exec(sqlTag`
       insert into client_signin_codes (owner_id, login_id, kind, code_hash, expires_at, created_at)
-      select ${login.fill}, ${login.fill}, 'email', ${tag} || '-' || g, ${at(t)}, ${at(t - 60 * MIN)}
+      select ${login.fill}, ${login.fill}, 'email', ${tag} || '-' || g, ${at(t).toISOString()}::timestamptz, ${at(t - 60 * MIN).toISOString()}::timestamptz
         from generate_series(1, ${cap - 1}) g`);
     expect(await c.clientCodesSentLast24h(at(t))).toBe(cap - 1);
     expect((await ask('ada', { ip: '198.51.100.6', t })).kind).toBe('send');

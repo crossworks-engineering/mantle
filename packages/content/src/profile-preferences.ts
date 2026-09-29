@@ -165,6 +165,7 @@ export async function loadProfilePreferences(userId: string): Promise<ProfilePre
     // explicitly opted in.
     teamPrivateReads: prefs.teamPrivateReads === true,
     teamHubAppId: projectTeamHubAppId(prefs.teamHubAppId),
+    clientSigninSenderId: projectTeamHubAppId(prefs.clientSigninSenderId),
     teamHubTags: projectTeamHubTags(prefs.teamHubTags),
     appNav: projectAppNav(prefs.appNav),
     appPins: projectAppPins(prefs.appPins),
@@ -251,6 +252,16 @@ export async function updateProfilePreferences(
     projectTeamHubAppId(patch.teamHubAppId) === undefined
   ) {
     throw new Error(`'${patch.teamHubAppId}' is not a valid app id (expected a UUID).`);
+  }
+  // The client sign-in sender (C2b): an email account id, or '' for none.
+  if (
+    patch.clientSigninSenderId != null &&
+    patch.clientSigninSenderId !== '' &&
+    projectTeamHubAppId(patch.clientSigninSenderId) === undefined
+  ) {
+    throw new Error(
+      `'${patch.clientSigninSenderId}' is not a valid email account id (expected a UUID).`,
+    );
   }
   if (patch.teamHubTags != null) {
     if (!Array.isArray(patch.teamHubTags) || patch.teamHubTags.some((t) => typeof t !== 'string')) {
@@ -339,6 +350,7 @@ export async function updateProfilePreferences(
     remoteMcpEnabled: merged.remoteMcpEnabled === true,
     teamPrivateReads: merged.teamPrivateReads === true,
     teamHubAppId: projectTeamHubAppId(merged.teamHubAppId),
+    clientSigninSenderId: projectTeamHubAppId(merged.clientSigninSenderId),
     teamHubTags: projectTeamHubTags(merged.teamHubTags),
     appNav: projectAppNav(merged.appNav),
     appPins: projectAppPins(merged.appPins),
