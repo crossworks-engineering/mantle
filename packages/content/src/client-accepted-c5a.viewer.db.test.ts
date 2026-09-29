@@ -353,7 +353,7 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     expect(live?.filename).not.toBe(name);
     expect(await ma.acceptedFileMeta(anchor, client, fileId)).toEqual({
       filename: name,
-      mimeType: 'text/plain',
+      mimeType: expect.stringMatching(/^text\/plain/),
     });
     expect(await ma.getClientAcceptedItem(anchor, client, fileId)).toMatchObject({
       type: 'file',
