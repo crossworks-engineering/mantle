@@ -42,6 +42,7 @@ import {
   type EmbedItem,
   type LoweredItem,
 } from './embed-closure';
+import { refoldPageTexts } from './pages/level-text';
 import {
   applyLevelToShare,
   getActiveShareForNode,
@@ -256,6 +257,14 @@ async function applyItemAudience(
         );
       raised = below.map((b) => ({ ...b, audience }));
     }
+    // The indexed text follows the levels (pages/level-text.ts, SQL only):
+    // the item's own, and of every client or public page naming an item that
+    // moved here. The embeds that followed it were re-folded as they went.
+    await refoldPageTexts(
+      ownerId,
+      [item.id, ...(embeds ? [] : lowered.map((l) => l.id)), ...raised.map((r) => r.id)],
+      tx,
+    );
     return {
       item,
       lowered,

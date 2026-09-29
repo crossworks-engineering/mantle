@@ -17,7 +17,6 @@
  * item". A table is its committed grid only (audit B13, ClientSharedTable).
  */
 import { and, eq, inArray } from 'drizzle-orm';
-import { env } from '@mantle/config';
 import { currentSpaceScope, currentViewerLevel, db, nodes } from '@mantle/db';
 import type { TableDetail } from '@mantle/content-core/table-model';
 import type { ClientSharedItem, ClientSharedRow, ClientSharedTable } from '@mantle/client-types';
@@ -31,6 +30,7 @@ import {
   redactClientNote,
   type ClientRedactOptions,
 } from './client-redact';
+import { clientRedactOrigins } from './client-origins';
 import { getLibraryItem, listLibrary, type LibraryKind, type LibraryRow } from './member-library';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -68,16 +68,6 @@ export async function clientReadableIds(
   ids: readonly string[],
 ): Promise<Set<string>> {
   return new Set((await clientReadable(anchorId, ids)).keys());
-}
-
-/** The hosts this brain answers on, whose absolute URLs in a body are read
- *  as its own paths (client-redact.ts `clientOwnUrl`). The localhost origin
- *  is what an agent wrote into stored content on a brain without a public
- *  URL (shares.ts `publicBaseUrl`). */
-export function clientRedactOrigins(): string[] {
-  return [env('MANTLE_PUBLIC_URL'), env('MANTLE_CLIENT_ORIGIN'), 'http://localhost:3000'].filter(
-    (o): o is string => !!o,
-  );
 }
 
 /** The redaction a client read uses, with the readable items' titles. */

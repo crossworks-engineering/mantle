@@ -117,6 +117,7 @@ import {
   type EmbedItem,
   type LoweredItem,
 } from './embed-closure';
+import { refoldPageTexts } from './pages/level-text';
 import {
   detachFromGroups,
   giveBackTaken,
@@ -1325,6 +1326,9 @@ async function moveIntoBrain(
       //     embeds that is already the brain's (a Library item) goes down
       //     with it. The bundle itself took the level above.
       const { lowered: alsoLowered } = await lowerEmbedClosure(brainId, id, audience, tx);
+      // What the moved pages index is their new level's (pages/level-text.ts,
+      // SQL only); the extractor hears of them once, below, as before.
+      await refoldPageTexts(brainId, ids, tx);
 
       // 5. The state rows, settled by the caller's rule; the recorded
       //    bundles of what moved are done with. Every item now accepted

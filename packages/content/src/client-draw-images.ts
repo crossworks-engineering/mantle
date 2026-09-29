@@ -19,7 +19,8 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { currentSpaceScope, currentViewerLevel, db, draws, nodes } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
 import { clientLinkHidden, clientOwnUrl, linkRefIds } from './client-redact';
-import { clientReadableIds, clientRedactOrigins } from './client-shared';
+import { clientRedactOrigins } from './client-origins';
+import { clientReadableIds } from './client-shared';
 import { dropSvgLinks, keepSvgImages, svgHasImages, svgLinkHrefs } from './scene-svg';
 
 /** The scene file ids (Excalidraw BinaryFile ids) of this drawing's images a
