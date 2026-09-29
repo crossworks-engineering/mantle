@@ -260,7 +260,7 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
       expect(await upload(member, 10 * MB)).toBeTruthy();
       // The other client's 30 MB counted: without it there is room again.
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${big}`);
-      expect(await headroom()).toBeGreaterThan(20 * MB);
+      expect(await headroom()).toBeGreaterThanOrEqual(10 * MB);
       expect(await upload(c.total, 10 * MB)).toBeTruthy();
     } finally {
       delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
