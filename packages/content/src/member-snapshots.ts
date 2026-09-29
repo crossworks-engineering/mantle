@@ -88,14 +88,19 @@ function brainFileAbs(node: { path: unknown; title: string; data: unknown }): st
  * Record the snapshot of every item in `ids` that is accepted and member
  * authored (its `space_items` row says `accepted`), read on `tx` after the
  * move: the version the brain just got. A table's workbook is copied now
- * (`onRollback` removes the copy again). Replaces an earlier snapshot of the
- * same item, keeping its accept time.
+ * (`onRollback` removes the copy again). A file keeps the name in
+ * `fileNames` when Accept passes one: the name it had before the brain
+ * folder made it unique (audit L7), else its name now. Replaces an earlier
+ * snapshot of the same item, keeping its accept time.
  */
 export async function writeAcceptedSnapshots(
   tx: Pick<Tx, 'select' | 'insert'>,
   brainId: string,
   ids: string[],
-  hooks: { onRollback?: (() => Promise<unknown>)[] } = {},
+  hooks: {
+    onRollback?: (() => Promise<unknown>)[];
+    fileNames?: ReadonlyMap<string, string>;
+  } = {},
 ): Promise<number> {
   if (!ids.length) return 0;
   const rows = await tx
@@ -176,7 +181,9 @@ export async function writeAcceptedSnapshots(
         break;
       }
       case 'file': {
-        base.fileName = typeof d.filename === 'string' && d.filename ? d.filename : node.title;
+        base.fileName =
+          hooks.fileNames?.get(node.id) ||
+          (typeof d.filename === 'string' && d.filename ? d.filename : node.title);
         base.fileMime = typeof d.mime_type === 'string' ? d.mime_type : null;
         base.fileSize = Number(d.size_bytes ?? 0) || null;
         // Recorded at upload (a personal file's bytes never change in its

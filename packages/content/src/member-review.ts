@@ -1239,6 +1239,9 @@ async function moveIntoBrain(
       // 4. Re-own, kind by kind. Pages first in bundle order: a child's new
       //    path extends its parent's, which is set by then.
       const newPagePath = new Map<string, string>();
+      // A file's name as its author sees it, before the brain folder made it
+      // unique: the name its snapshot keeps (audit L7).
+      const authorNames = new Map<string, string>();
       const now = new Date();
       for (const b of items) {
         const [n] = await tx.select().from(nodes).where(eq(nodes.id, b.id)).limit(1);
@@ -1308,6 +1311,7 @@ async function moveIntoBrain(
             const display =
               typeof data.filename === 'string' && data.filename ? data.filename : n.title;
             const wanted = sanitizeFilename(display) || `file-${b.id.slice(0, 8)}`;
+            authorNames.set(b.id, display);
             const name = await freeFileName(tx, brainId, folder, wanted);
             const dest = diskPathForFile(folder, name);
             if (!dest) throw new ReviewError('invalid', `Cannot file '${display}' in that folder.`);
@@ -1362,7 +1366,7 @@ async function moveIntoBrain(
       //    version accepted, which is all the author reads from now on.
       await steps.settle(tx, ids, now);
       await clearBundles(tx, ids);
-      await writeAcceptedSnapshots(tx, brainId, ids, { onRollback });
+      await writeAcceptedSnapshots(tx, brainId, ids, { onRollback, fileNames: authorNames });
 
       // 6. The change events commit with the move: to the space it left,
       //    and to its author's own space when that is another one (an item
