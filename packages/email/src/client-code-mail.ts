@@ -37,3 +37,48 @@ export function sentFolderNames(folders: readonly string[]): string[] {
     return /^sent( (items|mail|messages))?$/i.test(leaf.trim());
   });
 }
+
+/** The sent-mail folders of an account: the ones the server flags `\Sent`
+ *  (special use, any language) when it flags any; else by the usual English
+ *  names ({@link sentFolderNames}). */
+export function pickSentFolders(
+  folders: readonly string[],
+  flaggedSent: readonly string[] = [],
+): string[] {
+  const flagged = flaggedSent.filter((f) => folders.includes(f));
+  return flagged.length > 0 ? [...new Set(flagged)] : sentFolderNames(folders);
+}
+
+/** The marker text a reply or forward of a code mail carries in its
+ *  In-Reply-To or References header (the code mail's Message-ID). */
+const MARKER_IN_HEADER = /(?:^|[<\s,])mantle-client-code\./i;
+
+/** True for a message that IS a code mail or answers one: the Message-ID
+ *  marker, the X-Mantle-Client-Code header, or the marker in In-Reply-To or
+ *  References (a reply or forward quotes the code). */
+export function touchesClientCodeMail(message: {
+  rfcMessageId?: string | null;
+  clientCodeHeader?: boolean;
+  inReplyTo?: string | null;
+  references?: string | null;
+}): boolean {
+  return (
+    isClientCodeMail(message) ||
+    message.clientCodeHeader === true ||
+    MARKER_IN_HEADER.test(message.inReplyTo ?? '') ||
+    MARKER_IN_HEADER.test(message.references ?? '')
+  );
+}
+
+/** A sign-in code in a link (`/client-signin?code=…`, `/client-signin#code=…`,
+ *  `/invite?code=…`, also after other parameters): the code is replaced. */
+const SIGNIN_CODE_IN_LINK =
+  /((?:client-signin|invite)(?:\?|#)(?:[^\s"'<>#]*?[&;])?code=)[^\s"'<>&#;]+/gi;
+
+/** Ingested mail text with sign-in link codes blanked (client logins audit
+ *  K6): a link an admin mailed from a synced mailbox must not bring a live
+ *  code into the brain. */
+export function redactSigninCodes<T extends string | null | undefined>(text: T): T {
+  if (!text) return text;
+  return text.replace(SIGNIN_CODE_IN_LINK, '$1[redacted]') as T;
+}

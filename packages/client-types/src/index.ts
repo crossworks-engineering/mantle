@@ -118,6 +118,7 @@ export type {
   ClientCodeSignIn,
   ClientSigninSenderCandidate,
   ClientSigninSender,
+  ClientSigninSenderPreview,
   ClientSenderRefusedReason,
   ClientLoginCreated,
   ClientLoginList,

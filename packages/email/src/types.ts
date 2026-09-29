@@ -39,6 +39,13 @@ export interface RawMessage {
    *  `classifyDelivery`. Providers without enough signal (e.g. minimal Graph
    *  envelopes) MAY omit this; the orchestrator persists `unknown`. */
   deliveryKind?: DeliveryKind;
+  /** The In-Reply-To header (the envelope's), when present. */
+  inReplyTo?: string;
+  /** The References header, when the provider fetched it. */
+  references?: string;
+  /** True when the message carries the X-Mantle-Client-Code header (a
+   *  client sign-in code mail, client-code-mail.ts). */
+  clientCodeHeader?: boolean;
 }
 
 export interface RawAttachmentRef {
@@ -59,6 +66,10 @@ export interface FullMessage {
   bodyText?: string;
   bodyHtml?: string;
   attachments: RawAttachment[];
+  /** The full message's headers show a client sign-in code mail, or a reply
+   *  or forward of one (the header, or the marker in In-Reply-To or
+   *  References): the sync stores nothing of it. */
+  clientCodeMail?: boolean;
 }
 
 export interface SyncCursor {
