@@ -159,6 +159,13 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
     '/api/client/shared/not-a-uuid',
     '/api/client/files/not-a-uuid',
     '/api/client/draws/not-a-uuid/svg',
+    // The client's own space (C5): a bad id, or a kind a client never lists.
+    '/api/client/space/not-a-uuid',
+    '/api/client/space/not-a-uuid/bytes',
+    '/api/client/space/not-a-uuid/comments',
+    '/api/client/space?kind=draw',
+    '/api/client/items?kind=table',
+    '/api/client/accepted/not-a-uuid',
   ];
 
   it('lets a client session through to client routes', async () => {
@@ -184,15 +191,22 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
       app.request(
         `/api/client/draws/not-a-uuid/svg?at=${encodeURIComponent(tokens.buildAssetToken(anchor, login))}`,
       );
+    // The client's own file bytes (C5): listed in the gate's asset paths.
+    const ownWith = (anchor: string, login: string) =>
+      app.request(
+        `/api/client/space/not-a-uuid/bytes?at=${encodeURIComponent(tokens.buildAssetToken(anchor, login))}`,
+      );
 
     it("is accepted for a live client of this brain's anchor", async () => {
       expect((await fileWith(ANCHOR_ID, CLIENT_ID)).status).toBe(400);
       expect((await svgWith(ANCHOR_ID, CLIENT_ID)).status).toBe(400);
+      expect((await ownWith(ANCHOR_ID, CLIENT_ID)).status).toBe(400);
     });
 
     it('is refused when minted under another anchor', async () => {
       expect((await fileWith(OTHER_ANCHOR_ID, CLIENT_ID)).status).toBe(401);
       expect((await svgWith(OTHER_ANCHOR_ID, CLIENT_ID)).status).toBe(401);
+      expect((await ownWith(OTHER_ANCHOR_ID, CLIENT_ID)).status).toBe(401);
     });
 
     it('is refused for a disabled client login', async () => {
@@ -202,6 +216,8 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
     it('is refused for an admin or a member login', async () => {
       expect((await fileWith(ANCHOR_ID, ADMIN_ID)).status).toBe(401);
       expect((await fileWith(ANCHOR_ID, MEMBER_ID)).status).toBe(401);
+      expect((await ownWith(ANCHOR_ID, ADMIN_ID)).status).toBe(401);
+      expect((await ownWith(ANCHOR_ID, MEMBER_ID)).status).toBe(401);
     });
 
     it('is refused when minted before the last epoch bump', async () => {
@@ -224,7 +240,12 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
       '/api/profile/photo',
       `/api/admin/space/${ID}/bytes`,
     ];
-    const MEMBER_BYTES = [`/api/member/files/${ID}`, `/api/member/draws/${ID}/svg`];
+    const MEMBER_BYTES = [
+      `/api/member/files/${ID}`,
+      `/api/member/draws/${ID}/svg`,
+      `/api/member/space/${ID}/bytes`,
+      `/api/member/team-drafts/${ID}/bytes`,
+    ];
     const withAt = (path: string, at: string) =>
       `${path}${path.includes('?') ? '&' : '?'}at=${encodeURIComponent(at)}`;
 

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { withViewer } from '@mantle/db';
 import { thumbnailFor } from '@mantle/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
+import { acceptedFileReadable } from '@mantle/content';
 import { getClientForAsset } from '@/lib/auth';
 import { clientBytesGate } from '@/lib/client-bytes';
 import { fileById, openFileById, readFileById } from '@/lib/files';
@@ -15,9 +16,14 @@ const IdParams = z.object({ id: z.string().uuid() });
  * GET /api/client/files/:id : a file's bytes for a CLIENT (client logins,
  * Phase C2). `?thumb=1` = a JPEG thumbnail. Auth: a client session or a
  * client `?at=` token (an <img> src cannot carry a bearer). Every lookup runs
- * at the client level, so a file above it is a 404, with no exception (a
- * client writes nothing into the brain). The bytes are streamed, and the
- * route is rate limited per login (429) like the member bytes routes.
+ * at the client level, so a file above it is a 404, with one exception
+ * (client logins C5, the member rule of plan 6.2): a file this client wrote
+ * and an admin accepted is read from the brain whatever its level (Accept
+ * of a client's item defaults to team), but only while the brain file holds
+ * exactly the bytes accepted; once an admin changed it, it is a 404 here and
+ * /api/client/accepted/:id says `changedByAdmin`. The bytes are streamed,
+ * and the route is rate limited per login (429) like the member bytes
+ * routes.
  */
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const client = await getClientForAsset(req);
@@ -27,7 +33,13 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const idParsed = IdParams.safeParse(await ctx.params);
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const scope = { ownerId: client.anchorId, fileId: idParsed.data.id };
-  const lookup = <T>(fn: () => Promise<T | null>): Promise<T | null> => withViewer('client', fn);
+  // Client level first; the author's accepted file (any level) second, on
+  // the admin pool, only after member-accepted.ts proved the author rule.
+  const lookup = async <T>(fn: () => Promise<T | null>): Promise<T | null> =>
+    (await withViewer('client', fn)) ??
+    ((await acceptedFileReadable(client.anchorId, client.loginId, scope.fileId))
+      ? await fn()
+      : null);
 
   if (new URL(req.url).searchParams.get('thumb') === '1') {
     const meta = await lookup(() => fileById(scope));

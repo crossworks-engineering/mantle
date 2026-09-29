@@ -14,6 +14,9 @@
  * Nothing here reads the database; the route supplies the sources.
  */
 import type {
+  ClientItemFilter,
+  ClientItemKind,
+  ClientItemRow,
   MemberItemFilter,
   MemberItemPill,
   MemberItemRow,
@@ -159,6 +162,65 @@ export function acceptedItemRow(
     author: null,
     byMe: true,
     space: null,
+  };
+}
+
+// ── A client's one list, My requests (client logins C5) ───────────────────
+
+/** Which sources a client's State filter reads: their own items (pills
+ *  `private`, `submitted`, `returned`), the ones a reviewer took over
+ *  (`with-admin`), and what they wrote that an admin accepted. There is no
+ *  team, Library or client-request source: a client reads none of those
+ *  here. */
+export type ClientItemsPlan = Pick<ItemsPlan, 'own' | 'withAdmin'> & { accepted: boolean };
+
+const CLIENT_NONE: ClientItemsPlan = { own: null, withAdmin: false, accepted: false };
+
+export function clientItemsPlan(filter: ClientItemFilter): ClientItemsPlan {
+  switch (filter) {
+    case 'all':
+      return { own: {}, withAdmin: true, accepted: true };
+    case 'private':
+      return { ...CLIENT_NONE, own: { reviewStates: ['draft'], sharing: 'private' } };
+    case 'submitted':
+    case 'returned':
+      return { ...CLIENT_NONE, own: { reviewStates: [filter] } };
+    case 'with-admin':
+      return { ...CLIENT_NONE, withAdmin: true };
+    case 'accepted':
+      return { ...CLIENT_NONE, accepted: true };
+  }
+}
+
+/** An own row of My requests (a draft, submitted, returned, or with a
+ *  reviewer). Its kind is a client kind: the client's lists read only
+ *  those. No level, no staff name. */
+export function clientOwnItemRow(row: MemberSpaceItemRow): ClientItemRow {
+  return {
+    id: row.id,
+    type: row.type as ClientItemKind,
+    title: row.title,
+    icon: row.icon,
+    updatedAt: row.updatedAt,
+    source: 'own',
+    pill: pillOf(row),
+    space: row,
+    acceptedAt: null,
+  };
+}
+
+/** An accepted row of My requests: the version accepted, never its level. */
+export function clientAcceptedItemRow(row: AcceptedRow): ClientItemRow {
+  return {
+    id: row.id,
+    type: row.type as ClientItemKind,
+    title: row.title,
+    icon: row.icon,
+    updatedAt: row.updatedAt,
+    source: 'accepted',
+    pill: null,
+    space: null,
+    acceptedAt: row.acceptedAt,
   };
 }
 

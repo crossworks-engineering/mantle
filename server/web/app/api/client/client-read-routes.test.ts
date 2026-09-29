@@ -20,10 +20,16 @@ const ITEM = '77777777-7777-4777-8777-777777777777';
 const CLIENT2 = '88888888-8888-4888-8888-888888888888';
 const CLIENT3 = '99999999-9999-4999-8999-999999999999';
 const PICTURE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+/** A file the client wrote and an admin accepted at team (client logins C5):
+ *  above the client level, so only the author's fallback reads it. */
+const ACCEPTED = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 const h = vi.hoisted(() => ({
   reads: [] as Array<[string, string]>,
   item: null as unknown,
+  /** What acceptedFileReadable answers (the author rule, on Postgres in
+   *  member-accepted.viewer.db.test.ts). */
+  acceptedReadable: false,
 }));
 
 const row = (id: string, role: string, email: string) => ({
@@ -65,6 +71,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
     getClientSharedItem: read('getClientSharedItem', () => h.item),
     getDrawSvg: read('getDrawSvg', () => '<svg/>'),
     clientDrawSvg: read('clientDrawSvg', () => '<svg id="client"/>'),
+    acceptedFileReadable: read('acceptedFileReadable', () => h.acceptedReadable),
   };
 });
 
@@ -89,8 +96,10 @@ vi.mock('@/lib/files', async () => {
       h.reads.push(['readFileById', currentViewerLevel()]);
       return { bytes: Buffer.from('PNG') };
     }),
-    openFileById: vi.fn(async () => {
+    openFileById: vi.fn(async (scope: { fileId: string }) => {
       h.reads.push(['openFileById', currentViewerLevel()]);
+      // The accepted file sits at team: the client level does not see it.
+      if (scope.fileId === ACCEPTED && currentViewerLevel() === 'client') return null;
       return {
         stream: Readable.from([Buffer.from('BYTES')]),
         size: 5,
@@ -116,6 +125,7 @@ afterAll(() => {
 beforeEach(() => {
   h.reads.length = 0;
   h.item = null;
+  h.acceptedReadable = false;
 });
 
 /** Call a handler as `login` (a session cookie signed at the row's epoch). */
@@ -306,5 +316,31 @@ describe('client read routes: a client', () => {
     const at = tokens.buildAssetToken(ANCHOR, CLIENT, 3);
     const res = await call(null, `/api/client/files/${ITEM}?at=${at}`, byId(files, ITEM));
     expect(res.status).toBe(200);
+  });
+});
+
+describe('client files route: the author’s accepted file (client logins C5)', () => {
+  it('serves a file the client wrote and an admin accepted, read on the admin pool', async () => {
+    const files = await import('./files/[id]/route');
+    h.acceptedReadable = true;
+    const res = await call(CLIENT, `/api/client/files/${ACCEPTED}`, byId(files, ACCEPTED));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('BYTES');
+    // The client level first; the author rule and the read only after it.
+    expect(h.reads).toEqual([
+      ['openFileById', 'client'],
+      ['acceptedFileReadable', 'admin'],
+      ['openFileById', 'admin'],
+    ]);
+  });
+
+  it('is a 404 when the author rule does not hold (someone else’s, or changed)', async () => {
+    const files = await import('./files/[id]/route');
+    const res = await call(CLIENT, `/api/client/files/${ACCEPTED}`, byId(files, ACCEPTED));
+    expect(res.status).toBe(404);
+    expect(h.reads).toEqual([
+      ['openFileById', 'client'],
+      ['acceptedFileReadable', 'admin'],
+    ]);
   });
 });

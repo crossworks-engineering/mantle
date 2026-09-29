@@ -34,7 +34,12 @@ import {
   spaceItems,
   type ViewerLevel,
 } from '@mantle/db';
-import type { MemberAcceptedItem, MemberAcceptedRow, MemberItemAuthor } from '@mantle/client-types';
+import type {
+  ClientAcceptedItem,
+  MemberAcceptedItem,
+  MemberAcceptedRow,
+  MemberItemAuthor,
+} from '@mantle/client-types';
 import { MEMBER_ITEM_KINDS, type MemberItemKind } from '@mantle/client-types/member-kinds';
 import { getDrawSvg } from './draws';
 import { tableFromSnapshot, type getTable } from './tables/read';
@@ -128,6 +133,8 @@ export async function listAccepted(
   loginId: string,
   opts: {
     kind?: MemberItemKind;
+    /** Without `kind`: only these kinds (a client's list, client logins C5). */
+    kinds?: readonly MemberItemKind[];
     q?: string;
     audiences?: readonly ViewerLevel[];
     order?: 'accepted' | 'updated';
@@ -141,7 +148,11 @@ export async function listAccepted(
   const q = opts.q?.trim();
   const where = and(
     authoredWhere(anchorId, loginId),
-    opts.kind ? eq(nodes.type, opts.kind) : undefined,
+    opts.kind
+      ? eq(nodes.type, opts.kind)
+      : opts.kinds
+        ? inArray(nodes.type, [...opts.kinds])
+        : undefined,
     q ? ilike(nodes.title, `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`) : undefined,
     opts.audiences ? inArray(nodes.audience, [...opts.audiences]) : undefined,
   );
@@ -250,6 +261,45 @@ export async function getAcceptedItem(
         ...(changed ? { changedByAdmin: true } : {}),
       };
     }
+  }
+}
+
+/**
+ * One accepted item for its CLIENT author (client logins C5): the version
+ * accepted, as getAcceptedItem reads it, of a kind a client writes (page,
+ * note, file), without its level: a client never learns where an admin put
+ * it. Null for anything else, the same answer as an id that does not exist.
+ */
+export async function getClientAcceptedItem(
+  anchorId: string,
+  loginId: string,
+  id: string,
+): Promise<ClientAcceptedItem | null> {
+  const item = await getAcceptedItem(anchorId, loginId, id);
+  if (!item) return null;
+  const base = {
+    id: item.id,
+    title: item.title,
+    icon: item.icon,
+    acceptedAt: item.acceptedAt,
+    updatedAt: item.updatedAt,
+  };
+  switch (item.type) {
+    case 'page':
+      return { ...base, type: 'page', doc: item.doc };
+    case 'note':
+      return { ...base, type: 'note', content: item.content };
+    case 'file':
+      return {
+        ...base,
+        type: 'file',
+        filename: item.filename,
+        mimeType: item.mimeType,
+        sizeBytes: item.sizeBytes,
+        ...(item.changedByAdmin ? { changedByAdmin: true } : {}),
+      };
+    default:
+      return null;
   }
 }
 

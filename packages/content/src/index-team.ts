@@ -274,6 +274,7 @@ export {
   acceptedFileReadable,
   acceptedRow,
   getAcceptedItem,
+  getClientAcceptedItem,
   isAuthorOfAcceptedFile,
   listAccepted,
   type AcceptedAuthor,
@@ -282,6 +283,9 @@ export {
 } from './member-accepted';
 export {
   acceptedItemRow,
+  clientAcceptedItemRow,
+  clientItemsPlan,
+  clientOwnItemRow,
   itemsPlan,
   libraryItemRow,
   mergeNewestFirst,
@@ -290,9 +294,18 @@ export {
   pillOf,
   spaceItemRow,
   MEMBER_ITEMS_MAX_PAGE,
+  type ClientItemsPlan,
   type ItemsPlan,
   type PagedSource,
 } from './member-items';
+export {
+  CLIENT_SPACES_TOTAL_BYTES,
+  CLIENT_SPACE_LIMITS,
+  MEMBER_SPACE_LIMITS,
+  inClientSpace,
+  spaceLimits,
+  type SpaceLimits,
+} from './space-limits';
 export { memberDrawSvg, memberVisibleDrawFileIds } from './member-draw-images';
 export { giveBackTakenItem, takenFromOf, type GiveBackResult } from './member-takeover';
 export {
