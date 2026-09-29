@@ -8,7 +8,7 @@
  * Rows keyed by a contact (`contact_id`, no login) are the retired team-code
  * portal chat: history only, read by the admin archive and `team_chat_read`.
  */
-import { and, desc, eq, isNull, lt, or, sql as dsql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, or, sql as dsql } from 'drizzle-orm';
 import {
   authUsers,
   db,
@@ -278,10 +278,13 @@ export type MemberChatActivity = MemberChatRow;
 
 /**
  * The owner's index of member chats (users are the team): every member login,
- * plus any other login that still has a thread, annotated with its thread's
- * last message and size. Newest activity first, NULLS LAST so a new member
- * with no thread still shows. The retired team-code portal threads are not
- * here; `listTeamMemberActivity` indexes those as history.
+ * plus, by NAMED role, a client or admin login that still has a thread,
+ * annotated with its thread's last message and size. Each row names its role
+ * (`role`): a client is listed as a client, never as a team member, and is
+ * never `active` here (client logins audit B26). Newest activity first,
+ * NULLS LAST so a new member with no thread still shows. The retired
+ * team-code portal threads are not here; `listTeamMemberActivity` indexes
+ * those as history.
  */
 export async function listMemberChatActivity(ownerId: string): Promise<MemberChatActivity[]> {
   const rows = await systemDb
@@ -316,14 +319,23 @@ export async function listMemberChatActivity(ownerId: string): Promise<MemberCha
       ) msg_counts`,
       dsql`true`,
     )
-    .where(or(eq(authUsers.role, 'member'), dsql`coalesce(msg_counts.n, 0) > 0`))
+    .where(
+      or(
+        eq(authUsers.role, 'member'),
+        and(inArray(authUsers.role, ['client', 'admin']), dsql`coalesce(msg_counts.n, 0) > 0`),
+      ),
+    )
     .orderBy(dsql`last_msg.created_at desc nulls last`, authUsers.email);
 
   return rows.map((r) => ({
     loginId: r.loginId,
-    name: r.displayName?.trim() || r.email.split('@')[0] || 'team member',
+    name:
+      r.displayName?.trim() ||
+      r.email.split('@')[0] ||
+      (r.role === 'client' ? 'client' : 'team member'),
     email: r.email,
     active: r.role === 'member' && !r.disabledAt,
+    ...(r.role === 'member' || r.role === 'client' ? { role: r.role } : {}),
     lastMessageAt: r.lastMessageAt ? new Date(r.lastMessageAt).toISOString() : null,
     // An admin view (the Member chats list, team_chat_list): a private reply
     // shows the placeholder (audit S3).

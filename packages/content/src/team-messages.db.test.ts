@@ -83,4 +83,48 @@ describe.skipIf(!URL)('listMemberChatActivity', () => {
     expect(c?.lastMessageText).toBe(tm.PRIVATE_REPLY_PLACEHOLDER);
     expect(JSON.stringify(await tm.listMemberChatActivity(ownerId))).not.toContain('secret plan');
   });
+
+  it('names each row by role: a client with a thread is a client, never a team member (audit B26)', async () => {
+    const client = randomUUID();
+    const quietClient = randomUUID();
+    const formerMember = randomUUID();
+    const ids = [client, quietClient, formerMember];
+    await m.systemDb.execute(sqlTag`
+      insert into auth.users (id, email, password_hash, role, display_name) values
+        (${client}, ${`client-${tag}@example.invalid`}, 'x', 'client', null),
+        (${quietClient}, ${`qclient-${tag}@example.invalid`}, 'x', 'client', null),
+        (${formerMember}, ${`former-${tag}@example.invalid`}, 'x', 'admin', 'Former')`);
+    try {
+      await m.systemDb.execute(sqlTag`
+        insert into team_messages (owner_id, contact_id, login_id, direction, text, created_at) values
+          (${ownerId}, null, ${client}, 'inbound', 'hello from a client', now()),
+          (${ownerId}, null, ${formerMember}, 'inbound', 'old thread', now() - interval '1 hour')`);
+      const { listMemberChatActivity } = await import('./team-messages');
+      const all = await listMemberChatActivity(ownerId);
+      const byId = new Map(all.map((r) => [r.loginId, r]));
+      // Members: role member. A client with a thread: role client, inactive.
+      expect(byId.get(chatty)).toMatchObject({ role: 'member', active: true });
+      expect(byId.get(quiet)).toMatchObject({ role: 'member' });
+      expect(byId.get(client)).toMatchObject({
+        role: 'client',
+        active: false,
+        name: `client-${tag}`,
+        messageCount: 1,
+      });
+      // A client without a thread is not on the roster at all.
+      expect(byId.has(quietClient)).toBe(false);
+      // A former member (an admin now) keeps its old thread, with no role.
+      const former = byId.get(formerMember)!;
+      expect(former).toMatchObject({ name: 'Former', active: false, messageCount: 1 });
+      expect(former.role).toBeUndefined();
+      // No row claims a role outside the two it may name.
+      for (const r of all) expect([undefined, 'member', 'client']).toContain(r.role);
+    } finally {
+      for (const id of ids) {
+        await m.systemDb.execute(sqlTag`delete from team_messages where login_id = ${id}`);
+        await m.systemDb.execute(sqlTag`delete from spaces where login_id = ${id}`);
+        await m.systemDb.execute(sqlTag`delete from auth.users where id = ${id}`);
+      }
+    }
+  });
 });

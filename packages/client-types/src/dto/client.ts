@@ -120,7 +120,10 @@ export type ClientAdminRefusedReason =
   | 'contact-not-found'
   | 'contact-has-login'
   | 'no-email'
-  | 'not-a-client';
+  | 'not-a-client'
+  /** A contact-linked client's email must be one of the contact's addresses
+   *  (the mail gates know the client by its contact; audit B26). */
+  | 'email-not-on-contact';
 
 /** POST /api/auth/client-link { code, email } -> 200 { ok: true } and the
  *  session cookie (30 days), or one uniform 401 for every failure. */

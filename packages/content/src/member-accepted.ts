@@ -319,6 +319,7 @@ export async function acceptedAuthors(
       acceptedAt: spaceItems.acceptedAt,
       loginId: spaceItems.authorLoginId,
       name: authUsers.displayName,
+      role: authUsers.role,
     })
     .from(spaceItems)
     .innerJoin(nodes, eq(nodes.id, spaceItems.nodeId))
@@ -332,8 +333,13 @@ export async function acceptedAuthors(
     );
   for (const r of rows) {
     // A deleted login keeps the badge without a name; never an email here.
-    const name = r.loginId ? r.name?.trim() || 'A member' : 'Removed member';
-    out.set(r.id, { name, acceptedAt: r.acceptedAt?.toISOString() ?? null });
+    // The author's role is named: a client author is a client, never "A
+    // member" (client logins audit B26).
+    const role = !r.loginId ? null : r.role === 'client' ? 'client' : 'member';
+    const name = r.loginId
+      ? r.name?.trim() || (role === 'client' ? 'A client' : 'A member')
+      : 'Removed member';
+    out.set(r.id, { name, acceptedAt: r.acceptedAt?.toISOString() ?? null, role });
   }
   return out;
 }
