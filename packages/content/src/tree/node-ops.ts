@@ -10,7 +10,7 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { carrySpaceRows, db, nodes, takeShareWriteLock } from '@mantle/db';
-import { dashToLtree, slugifyFolder } from '@mantle/files';
+import { dashToLtree, folderSlugOf } from '@mantle/files';
 import {
   TREE_KIND_SPECS,
   TREE_MAX_DEPTH,
@@ -67,7 +67,7 @@ export async function ensureKindRoot(ownerId: string, kind: TreeKind): Promise<v
 }
 
 function slugOf(name: string): string {
-  const slug = slugifyFolder(name);
+  const slug = folderSlugOf(name);
   if (!slug) throw new NodeOpRefusal('invalid', `'${name}' has no letters or digits to name it by`);
   return slug;
 }

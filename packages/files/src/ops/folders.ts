@@ -15,7 +15,7 @@ import {
   notAFilesFolder,
   removeFolder as removeFolderOnDisk,
   renameFolder as renameFolderOnDisk,
-  slugifyFolder,
+  folderSlugOf,
   untrackedFilesOnDisk,
 } from '../index';
 import { carrySpaceRows, isUniqueViolation, db, nodes, takeShareWriteLock } from '@mantle/db';
@@ -51,7 +51,7 @@ export async function createFolder(args: {
   if (!isFilesPath(args.parentPath)) {
     throw new Error(`createFolder: parent '${args.parentPath}' is outside the files root`);
   }
-  const slug = slugifyFolder(args.slug);
+  const slug = folderSlugOf(args.slug);
   if (!slug) {
     throw new Error(`createFolder: invalid slug '${args.slug}'`);
   }
@@ -358,7 +358,7 @@ export async function renameFolderById(args: {
   if ((node.data as Record<string, unknown> | null)?.system === true) {
     throw new Error('renameFolderById: this folder is made by Mantle; its name is fixed');
   }
-  const slug = slugifyFolder(args.newSlug);
+  const slug = folderSlugOf(args.newSlug);
   const name = folderDisplayName(args.newSlug);
   if (!slug || !name) throw new Error(`renameFolderById: invalid name '${args.newSlug}'`);
   const newLabel = dashToLtree(slug);

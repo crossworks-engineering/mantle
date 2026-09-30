@@ -17,7 +17,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { db, takeShareWriteLock } from '@mantle/db';
-import { dashToLtree, slugifyFolder } from '@mantle/files';
+import { dashToLtree, folderSlugOf } from '@mantle/files';
 import type { AppTint } from '@mantle/client-types/app-nav';
 import {
   TREE_FOLDER_NAME_MAX,
@@ -44,7 +44,7 @@ function cleanName(name: string): string {
 }
 
 function labelOf(name: string): { slug: string; label: string } {
-  const slug = slugifyFolder(name);
+  const slug = folderSlugOf(name);
   if (!slug) throw new TreeError('invalid', `'${name}' has no letters or digits to name it by`);
   return { slug, label: dashToLtree(slug) };
 }

@@ -1,4 +1,5 @@
 export {
+  folderSlugOf,
   slugifyFolder,
   sanitizeFilename,
   dashToLtree,
