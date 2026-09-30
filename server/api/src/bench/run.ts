@@ -274,10 +274,19 @@ async function parent(args: Args): Promise<void> {
   // refuses while another session is using the template.
   // A snapshot is copied the same way, under the same lock.
   let createLock: Promise<void> = Promise.resolve();
+  // Another run copying the same snapshot holds it for a moment: retry.
   const createDb = (name: string, from: string = template.name) => {
-    const next = createLock.then(() =>
-      adminExec(adminUrl, `create database "${name}" template "${from}"`),
-    );
+    const next = createLock.then(async () => {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return await adminExec(adminUrl, `create database "${name}" template "${from}"`);
+        } catch (err) {
+          if (attempt >= 10 || !/being accessed by other users/.test((err as Error).message))
+            throw err;
+          await new Promise((r) => setTimeout(r, 1000 * attempt));
+        }
+      }
+    });
     createLock = next.catch(() => {});
     return next;
   };
