@@ -2,6 +2,14 @@
  * Recall — the four serving tools over the memory-map system (S2 of the
  * Recall plan; docs/recall.md, roadmap task 97cf7850).
  *
+ * v2 (task 5d6ce06a) makes the rows below the SOURCE rather than a compiled
+ * artifact, and a map an item in the Recall tree. These four tools keep their
+ * names and their payload shapes; the changes are additive fields (`folder` on
+ * a catalog entry, `map` on a cross-map option) plus filters that hide what an
+ * owner has not published. Two were bugs rather than additions: recall_open
+ * looked for its entry card by id, which is only true of a page-built map, and
+ * recall_match promised a score floor it never applied.
+ *
  *   recall_index()             → the catalog: which maps exist, enter when
  *   recall_open(map)           → a map's index node: content + options
  *   recall_go(map, target)     → any node by slug: content + its options
@@ -22,14 +30,33 @@
  * the map's signposts, the caller decides. All four are read-only.
  */
 
-import { and, eq, isNotNull, sql } from 'drizzle-orm';
-import { db, recallMaps, recallNodes } from '@mantle/db';
+import { and, arrayContains, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { db, nodes, recallMaps, recallNodes } from '@mantle/db';
+import { RECALL_ROOT_LABEL } from '@mantle/content';
 import { embed } from '@mantle/embeddings';
 import type { BuiltinToolDef } from './types';
 import { str } from './coerce';
 import { errorMessage } from '@mantle/std';
 
 const MATCH_LIMIT = 3;
+
+/**
+ * The floor `recall_match`'s own description has always promised ("no hits
+ * above the floor means no prompt covers this"). It had none: the query was
+ * an ordered ANN probe with a limit and no threshold, so three unrelated
+ * prompts came back looking like answers and the caller was told to judge a
+ * gate that did not exist.
+ *
+ * Cosine similarity on the one embedder config. 0.35 is deliberately low: a
+ * prompt the owner wrote for a task is usually well above it, and the cost of
+ * a false negative (an agent works without a prompt that existed) is higher
+ * than a weak hit the caller can still reject by reading `use_when`.
+ */
+const MATCH_FLOOR = 0.35;
+
+/** Folder crumbs are cut off the front of a map's ltree path, so the root
+ *  label has to be the same string the content layer plants. */
+const CRUMB_ROOT = RECALL_ROOT_LABEL;
 
 /** Shared arg — see the header: accepted for S3's recorder, unused today. */
 const INTENT_PROP = {
@@ -42,28 +69,109 @@ const INTENT_PROP = {
 
 type MapRow = typeof recallMaps.$inferSelect;
 
+/**
+ * Resolve a map reference the way an agent might hold one: its slug, a slug it
+ * answered to before a rename (`former_slugs`), or its id.
+ *
+ * Unpublished maps never resolve here. A map an agent created waits for the
+ * owner to publish it, and until then it must be invisible to every serving
+ * tool rather than merely absent from the catalog.
+ */
 async function mapBySlugOrId(ownerId: string, ref: string): Promise<MapRow | null> {
+  const mine = and(eq(recallMaps.ownerId, ownerId), eq(recallMaps.published, true));
   const [bySlug] = await db
     .select()
     .from(recallMaps)
-    .where(and(eq(recallMaps.ownerId, ownerId), eq(recallMaps.slug, ref)))
+    .where(and(mine, eq(recallMaps.slug, ref)))
     .limit(1);
   if (bySlug) return bySlug;
+  // A remembered slug still lands: renames are cheap for the owner and
+  // expensive for every agent and skill that hard-coded the old one.
+  const [byFormer] = await db
+    .select()
+    .from(recallMaps)
+    .where(and(mine, arrayContains(recallMaps.formerSlugs, [ref])))
+    .limit(1);
+  if (byFormer) return byFormer;
   if (!/^[0-9a-f-]{36}$/i.test(ref)) return null;
   const [byId] = await db
     .select()
     .from(recallMaps)
-    .where(and(eq(recallMaps.ownerId, ownerId), eq(recallMaps.id, ref)))
+    .where(and(mine, eq(recallMaps.id, ref)))
     .limit(1);
   return byId ?? null;
+}
+
+/**
+ * The display crumbs for each map's folder, keyed by map id.
+ *
+ * A map's ltree `path` is the Recall root plus the labels of the folders it
+ * sits in ("recall.mantle.fleet"); the crumbs are those folders' TITLES, which
+ * is what a person recognises ("Mantle / Fleet"). Resolved in one query over
+ * the branch nodes on those paths, so the catalog stays two round-trips no
+ * matter how many maps there are.
+ *
+ * A map at the root is unsorted and gets null. Every map gets null until the
+ * item tree ships folders, which is correct rather than a placeholder.
+ */
+async function folderCrumbs(
+  ownerId: string,
+  maps: { id: string; path: string | null }[],
+): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  const prefixes = new Set<string>();
+  for (const m of maps) {
+    const labels = (m.path ?? '').split('.').filter(Boolean);
+    // Drop the root label; what remains is the folder chain.
+    const chain = labels[0] === CRUMB_ROOT ? labels.slice(1) : labels;
+    if (chain.length === 0) {
+      out.set(m.id, null);
+      continue;
+    }
+    for (let i = 1; i <= chain.length; i += 1) {
+      prefixes.add([CRUMB_ROOT, ...chain.slice(0, i)].join('.'));
+    }
+  }
+  if (prefixes.size === 0) return out;
+  const branches = await db
+    .select({ path: nodes.path, title: nodes.title })
+    .from(nodes)
+    .where(
+      and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'branch'), inArray(nodes.path, [...prefixes])),
+    );
+  const titleOf = new Map(branches.map((b) => [String(b.path), b.title]));
+  for (const m of maps) {
+    if (out.has(m.id)) continue;
+    const labels = (m.path ?? '').split('.').filter(Boolean);
+    const chain = labels[0] === CRUMB_ROOT ? labels.slice(1) : labels;
+    const crumbs = chain.map((_, i) => {
+      const p = [CRUMB_ROOT, ...chain.slice(0, i + 1)].join('.');
+      // Fall back to the label when a folder row is missing: a crumb that
+      // reads "mantle" is still an orientation, an empty string is not.
+      return titleOf.get(p) ?? chain[i];
+    });
+    out.set(m.id, crumbs.join(' / '));
+  }
+  return out;
 }
 
 /** The stale note a served node carries when the pages ahead of it failed
  *  lint — honest about serving the last GOOD rev, without failing the read. */
 function staleNote(map: MapRow): string | undefined {
+  // A native map cannot be stale: its rows ARE the source, and a write that
+  // fails its checks is refused rather than served one rev behind. Guarded on
+  // the linkage rather than on `last_compile_ok`, so a leftover false from the
+  // map's v1 life can never attach the note to content it does not describe.
+  if (nativeMap(map)) return undefined;
   return map.lastCompileOk
     ? undefined
     : 'Note: newer edits to this map failed its lint, so you are reading the last good version. The owner can see the report in the editor.';
+}
+
+/** A map whose rows are written directly (v2) rather than compiled from a
+ *  page tree (v1). The node linkage is the discriminator. */
+function nativeMap(map: MapRow): boolean {
+  return map.nodeId !== null;
 }
 
 function nodePayload(map: MapRow, row: typeof recallNodes.$inferSelect) {
@@ -78,6 +186,10 @@ function nodePayload(map: MapRow, row: typeof recallNodes.$inferSelect) {
       label: o.label,
       use_when: o.useWhen,
       target: o.targetSlug,
+      // Cross-map option: the target is another map's entry card. Additive —
+      // an older caller ignores the extra key and `recall_go(map, target)`
+      // still lands, because `target` resolves across maps too (see below).
+      ...(o.targetMap ? { map: o.targetMap } : {}),
     })),
     updated_at: row.updatedAt.toISOString(),
     ...(staleNote(map) ? { note: staleNote(map) } : {}),
@@ -94,17 +206,44 @@ const recall_index: BuiltinToolDef = {
     "The catalog of this brain's Recall maps — owner-authored memory maps for agents. Each entry says WHEN to enter it ('enter_when'). Call this before working in a domain a map covers, then recall_open the relevant map and follow its options. For prompts (reusable procedures/styles), recall_match finds them by meaning instead.",
   inputSchema: { type: 'object', properties: { ...INTENT_PROP } },
   handler: async (_input, ctx) => {
-    const maps = await db
+    const rows = await db
       .select({
+        id: recallMaps.id,
         slug: recallMaps.slug,
         title: recallMaps.title,
         enterWhen: recallMaps.enterWhen,
         nodeCount: recallMaps.nodeCount,
         updatedAt: recallMaps.updatedAt,
+        path: nodes.path,
       })
       .from(recallMaps)
-      .where(and(eq(recallMaps.ownerId, ctx.ownerId), sql`${recallMaps.nodeCount} > 0`))
-      .orderBy(recallMaps.slug);
+      // The map's item, for its folder. A left join: a v1 map has no node,
+      // and an inner join would have quietly emptied the catalog.
+      .leftJoin(nodes, eq(nodes.id, recallMaps.nodeId))
+      .where(
+        and(
+          eq(recallMaps.ownerId, ctx.ownerId),
+          eq(recallMaps.published, true),
+          sql`${recallMaps.nodeCount} > 0`,
+        ),
+      )
+      .orderBy(asc(recallMaps.title));
+    const crumbs = await folderCrumbs(
+      ctx.ownerId,
+      rows.map((r) => ({ id: r.id, path: r.path === null ? null : String(r.path) })),
+    );
+    // Folder first, then title: the catalog reads as the tree looks. Unsorted
+    // maps (no folder) come last — they are the ones the owner has not filed.
+    const maps = [...rows].sort((a, b) => {
+      const fa = crumbs.get(a.id) ?? null;
+      const fb = crumbs.get(b.id) ?? null;
+      if (fa !== fb) {
+        if (fa === null) return 1;
+        if (fb === null) return -1;
+        return fa.localeCompare(fb);
+      }
+      return a.title.localeCompare(b.title);
+    });
     if (maps.length === 0) {
       return {
         ok: true,
@@ -122,6 +261,10 @@ const recall_index: BuiltinToolDef = {
           title: m.title,
           enter_when: m.enterWhen,
           nodes: m.nodeCount,
+          // Where the owner filed it ("Mantle", "Mantle / Fleet"); null when
+          // unsorted. The catalog IS the index in v2 — there is no authored
+          // "start here" map — so the grouping has to travel with it.
+          folder: crumbs.get(m.id) ?? null,
           updated_at: m.updatedAt.toISOString(),
         })),
         note: 'Enter a map with recall_open(map) and walk it via each node’s options with recall_go(map, target).',
@@ -151,15 +294,26 @@ const recall_open: BuiltinToolDef = {
     if (!ref) return { ok: false, error: 'map is required' };
     const map = await mapBySlugOrId(ctx.ownerId, ref);
     if (!map) return { ok: false, error: `No Recall map '${ref}' — recall_index lists them.` };
+    // The entry card is the one of kind 'index'.
+    //
+    // This used to select `recallNodes.id = map.id`, which is only ever true
+    // for a v1 map: there the entry card IS the root page, so card id and map
+    // id are the same uuid. A native map's entry card is an ordinary row with
+    // its own id, so that query found nothing and every natively created map
+    // answered "has no compiled index yet, its pages likely failed lint" —
+    // a lint failure that had not happened, on pages that do not exist.
+    // `kind` is the honest key and is correct for both.
     const [row] = await db
       .select()
       .from(recallNodes)
-      .where(and(eq(recallNodes.mapId, map.id), eq(recallNodes.id, map.id)))
+      .where(and(eq(recallNodes.mapId, map.id), eq(recallNodes.kind, 'index')))
       .limit(1);
     if (!row) {
       return {
         ok: false,
-        error: `Map '${map.slug}' has no compiled index yet — its pages likely failed lint. The owner can check the report in the editor.`,
+        error: nativeMap(map)
+          ? `Map '${map.slug}' has no entry card. The owner can add one in the Recall editor.`
+          : `Map '${map.slug}' has no compiled index yet — its pages likely failed lint. The owner can check the report in the editor.`,
       };
     }
     return { ok: true, output: nodePayload(map, row) };
@@ -189,11 +343,34 @@ const recall_go: BuiltinToolDef = {
     if (!ref || !target) return { ok: false, error: 'map and target are required' };
     const map = await mapBySlugOrId(ctx.ownerId, ref);
     if (!map) return { ok: false, error: `No Recall map '${ref}' — recall_index lists them.` };
-    const [row] = await db
+    // Resolution order: a card in this map, a slug a card in this map used to
+    // answer to, then another published map (serving ITS entry card, with the
+    // payload's `map` naming that one). The last step is what makes a
+    // cross-map option work for a caller that only knows recall_go's old two
+    // arguments, and what keeps an older agent's remembered target landing.
+    let [row] = await db
       .select()
       .from(recallNodes)
       .where(and(eq(recallNodes.mapId, map.id), eq(recallNodes.slug, target)))
       .limit(1);
+    if (!row) {
+      [row] = await db
+        .select()
+        .from(recallNodes)
+        .where(and(eq(recallNodes.mapId, map.id), arrayContains(recallNodes.formerSlugs, [target])))
+        .limit(1);
+    }
+    if (!row) {
+      const other = await mapBySlugOrId(ctx.ownerId, target);
+      if (other && other.id !== map.id) {
+        const [entry] = await db
+          .select()
+          .from(recallNodes)
+          .where(and(eq(recallNodes.mapId, other.id), eq(recallNodes.kind, 'index')))
+          .limit(1);
+        if (entry) return { ok: true, output: nodePayload(other, entry) };
+      }
+    }
     if (!row) {
       // A map is small by construction, so the miss can afford to be helpful.
       const siblings = await db
@@ -245,6 +422,11 @@ const recall_match: BuiltinToolDef = {
       };
     }
 
+    // Every filter belongs INSIDE this query, never on its result: the probe
+    // is ordered-by-distance with a limit, so dropping rows afterwards would
+    // silently lose a prompt that ranked just outside the limit and report it
+    // as "no prompt covers this". The same holds for the reader filter when
+    // team sharing lands (R6) — it joins here, it does not post-filter.
     const rows = (await db.execute(sql`
       select ${recallNodes.slug}, ${recallNodes.title}, ${recallNodes.useWhen},
              ${recallMaps.slug} as map_slug,
@@ -255,7 +437,12 @@ const recall_match: BuiltinToolDef = {
          eq(recallNodes.ownerId, ctx.ownerId),
          eq(recallNodes.kind, 'prompt'),
          isNotNull(recallNodes.embedding),
+         // A prompt an agent asked for and the owner has not confirmed.
+         eq(recallNodes.promptPending, false),
+         // A map an agent created and the owner has not published.
+         eq(recallMaps.published, true),
        )}
+         and 1 - (${recallNodes.embedding} <=> ${vec}::vector) >= ${MATCH_FLOOR}
        order by ${recallNodes.embedding} <=> ${vec}::vector
        limit ${MATCH_LIMIT}
     `)) as unknown as
@@ -276,7 +463,7 @@ const recall_match: BuiltinToolDef = {
         ok: true,
         output: {
           prompts: [],
-          note: 'No prompts in Recall yet (or none embedded). The owner authors one by tagging a page `recall` + `prompt` — see docs/recall.md.',
+          note: 'No prompt fits this closely enough to be worth reading, or none is embedded yet. Proceed without one.',
         },
       };
     }
