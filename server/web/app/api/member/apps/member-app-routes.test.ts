@@ -19,6 +19,7 @@ const PUBLISHED = { storageKey: 'apps/published.js', ok: true };
 const h = vi.hoisted(() => ({
   runnable: true,
   audience: 'team',
+  dataReadOnly: false,
   displayName: 'Pat' as string | null,
   lookups: [] as string[],
   reads: [] as Array<{ fn: string; level: string }>,
@@ -73,6 +74,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
             audience: h.audience,
             manifest: { toolSlugs: ['note_list'] },
             publishedBuild: PUBLISHED,
+            dataReadOnly: h.dataReadOnly,
           }
         : null;
     }),
@@ -177,6 +179,7 @@ beforeAll(async () => {
 beforeEach(() => {
   h.runnable = true;
   h.audience = 'team';
+  h.dataReadOnly = false;
   h.displayName = 'Pat';
   h.lookups.length = 0;
   h.reads.length = 0;
@@ -264,12 +267,28 @@ describe('member db broker', () => {
     expect(h.logged[0]).toMatchObject({ actorId: LOGIN, kind: 'db' });
   });
 
-  it('refuses a write to a client- or public-level app, and logs it', async () => {
-    for (const level of ['client', 'public']) {
+  // Jason's rule (client logins C6): an app at team or client level is a
+  // shared workspace every member who runs it writes.
+  it('writes to a client-level app as to a team one', async () => {
+    h.audience = 'client';
+    const res = await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
+    expect(res.status).toBe(200);
+    expect(h.dbCalls).toEqual([`exec:${ANCHOR}:${APP}:admin`]);
+    expect(h.synced).toBe(1);
+  });
+
+  it('refuses a write to a public app, and to an informational team or client app', async () => {
+    for (const [level, readOnly] of [
+      ['public', false],
+      ['team', true],
+      ['client', true],
+    ] as const) {
       h.audience = level;
+      h.dataReadOnly = readOnly;
       h.logged.length = 0;
       const res = await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
       expect(res.status, level).toBe(403);
+      expect(await res.json(), level).toMatchObject({ ok: false, reason: 'read-only' });
       expect(h.logged[0]).toMatchObject({ detail: { op: 'exec', refused: 'read-only' } });
     }
     expect(h.dbCalls).toEqual([]);
@@ -358,7 +377,29 @@ describe('member frame', () => {
     expect((await frame(frameReq(t), params())).status).toBe(404);
   });
 
-  it('the owner frame, which serves drafts, refuses a member ticket', async () => {
+  it("refuses a client's ticket (client logins C6), whatever its login", async () => {
+    const t = tokens.buildAppFrameTicket({
+      ownerId: ANCHOR,
+      appId: APP,
+      loginId: LOGIN,
+      clientEpoch: 0,
+    });
+    expect((await frame(frameReq(t), params())).status).toBe(401);
+    expect(h.rendered).toEqual([]);
+  });
+
+  it('the owner frame, which serves drafts, refuses a member ticket and a client ticket', async () => {
+    const client = tokens.buildAppFrameTicket({
+      ownerId: ANCHOR,
+      appId: APP,
+      loginId: LOGIN,
+      clientEpoch: 0,
+    });
+    const refused = await ownerFrame(
+      new Request(`http://x/api/apps/${APP}/frame?t=${encodeURIComponent(client)}`),
+      params(),
+    );
+    expect(refused.status).toBe(401);
     const t = tokens.buildAppFrameTicket({ ownerId: ANCHOR, appId: APP, loginId: LOGIN });
     const res = await ownerFrame(
       new Request(`http://x/api/apps/${APP}/frame?t=${encodeURIComponent(t)}`),

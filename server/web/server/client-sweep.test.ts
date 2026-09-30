@@ -183,6 +183,70 @@ describe.skipIf(!hasManifest)('client sweep: client routes serve clients only', 
     }
   });
 
+  // The client app routes (C6): a client session gets past the gate on the
+  // POST routes (a malformed id is the same 404 as a team app; an empty body
+  // is the brokers' own 400, before any read).
+  it('lets a client session through to the client app routes', async () => {
+    const cookie = cookieFor(CLIENT_ID);
+    const postTo = (path: string, body: unknown) =>
+      app.request(path, {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    expect((await postTo('/api/client/apps/not-a-uuid/frame-ticket', {})).status).toBe(404);
+    expect((await postTo('/api/client/apps/not-a-uuid/tool-broker', {})).status).toBe(400);
+    expect((await postTo('/api/client/apps/not-a-uuid/db-broker', {})).status).toBe(400);
+  });
+
+  describe('the client app frame: a ticket with the client session epoch', () => {
+    // A malformed app id: past the ticket and liveness checks, the route's
+    // lookup answers its 404 before any read. A refusal is a 401.
+    const frameWith = (ticket: string | null) =>
+      app.request(
+        `/api/client/apps/not-a-uuid/frame${ticket ? `?t=${encodeURIComponent(ticket)}` : ''}`,
+      );
+    const clientTicket = (loginId: string, clientEpoch?: number) =>
+      tokens.buildAppFrameTicket({
+        ownerId: ANCHOR_ID,
+        appId: 'not-a-uuid',
+        loginId,
+        ...(clientEpoch === undefined ? {} : { clientEpoch }),
+      });
+
+    it("opens for a live client at the login's current epoch", async () => {
+      expect((await frameWith(clientTicket(CLIENT_ID, 0))).status).toBe(404);
+      expect((await frameWith(clientTicket(BUMPED_CLIENT_ID, 2))).status).toBe(404);
+    });
+
+    it('is refused after End sessions or sign out (an older epoch)', async () => {
+      for (const epoch of [0, 1, 3]) {
+        const res = await frameWith(clientTicket(BUMPED_CLIENT_ID, epoch));
+        expect(res.status, `epoch ${epoch}`).toBe(401);
+      }
+    });
+
+    it('is refused for a disabled client, a member or an admin login', async () => {
+      expect((await frameWith(clientTicket(DISABLED_CLIENT_ID, 0))).status).toBe(401);
+      expect((await frameWith(clientTicket(MEMBER_ID, 0))).status).toBe(401);
+      expect((await frameWith(clientTicket(ADMIN_ID, 0))).status).toBe(401);
+    });
+
+    it('is refused without a ticket, and with a member ticket (no epoch)', async () => {
+      expect((await frameWith(null)).status).toBe(401);
+      expect((await frameWith(clientTicket(CLIENT_ID))).status).toBe(401);
+      const owner = tokens.buildAppFrameTicket({ ownerId: ANCHOR_ID, appId: 'not-a-uuid' });
+      expect((await frameWith(owner)).status).toBe(401);
+    });
+
+    it('a client session cookie alone is no ticket', async () => {
+      const res = await app.request('/api/client/apps/not-a-uuid/frame', {
+        headers: { cookie: cookieFor(CLIENT_ID) },
+      });
+      expect(res.status).toBe(401);
+    });
+  });
+
   describe('getClientForAsset: a client ?at= token (no session)', () => {
     const fileWith = (anchor: string, login: string, epoch?: number) =>
       app.request(
