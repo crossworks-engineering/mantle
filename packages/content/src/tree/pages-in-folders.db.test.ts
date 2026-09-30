@@ -39,8 +39,9 @@ describe.skipIf(!URL)('migration 0210: pages in folders', () => {
   const sql = async <T>(q: ReturnType<typeof import('drizzle-orm').sql>): Promise<T[]> =>
     (await m.systemDb.execute(q)) as unknown as T[];
   const brain = randomUUID();
-  const space = randomUUID();
   const member = randomUUID();
+  /** The member's personal space, made by the login trigger; read in setup. */
+  let space = '';
   const tag = `pages-folders-${brain.slice(0, 8)}`;
   const id = {
     a: randomUUID(),
@@ -95,11 +96,15 @@ describe.skipIf(!URL)('migration 0210: pages in folders', () => {
               values (${brain}, ${`${tag}@example.invalid`}, 'x', true, 'admin')`);
     await x(sqlTag`insert into auth.users (id, email, password_hash, role)
               values (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member')`);
-    // The owner login's brain space is made by a trigger on auth.users: keep it.
+    // Spaces are made by the login trigger on auth.users: the owner's brain
+    // space (its id is the login's) and the member's personal space.
     await x(sqlTag`insert into spaces (id, kind, login_id) values (${brain}, 'brain', ${brain})
                    on conflict (id) do nothing`);
-    await x(sqlTag`insert into spaces (id, kind, login_id) values (${space}, 'personal', ${member})
-                   on conflict (id) do nothing`);
+    const [personal] = await sql<{ id: string }>(
+      sqlTag`select id from spaces where login_id = ${member} and kind = 'personal'`,
+    );
+    if (!personal) throw new Error('the member login has no personal space');
+    space = personal.id;
 
     // The old shape (no root row for the brain yet, as an old brain may
     // have): A > B > D > E > F (E's folder would be a fourth level), A > C,
