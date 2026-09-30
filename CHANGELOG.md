@@ -4,6 +4,13 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.345: the benchmark judge always gets its verdict out
+
+- **No more cut-off verdicts.** The benchmark's judge sometimes stopped
+  before writing its CORRECT/WRONG label, which counted a right answer as
+  wrong (7 of 762 in one run). It now has room for a long reply and asks once
+  more when no verdict can be read.
+
 ## 0.232.344: client v0.6.178 (client logins C5)
 
 - Pairs the client at jackdaw v0.6.178, the client half of 0.232.342 and
