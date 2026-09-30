@@ -125,16 +125,16 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
 
 // The first import of each route compiles its graph; under a loaded run
-// that alone can pass a test's timeout, so it happens here, once.
+// that alone can pass a test's timeout, so it happens here, once. One at a
+// time: parallel first imports raced the async `@/lib/auth` mock factory in
+// CI, and a route got the real module (v0.232.346's failed release run).
 beforeAll(async () => {
-  await Promise.all([
-    import('../files/[id]/route'),
-    import('../draws/[id]/svg/route'),
-    import('./route'),
-    import('./[id]/route'),
-    import('../library/route'),
-    import('../library/[id]/route'),
-  ]);
+  await import('../files/[id]/route');
+  await import('../draws/[id]/svg/route');
+  await import('./route');
+  await import('./[id]/route');
+  await import('../library/route');
+  await import('../library/[id]/route');
 }, 60_000);
 
 beforeEach(() => {
