@@ -85,9 +85,11 @@ vi.mock('@/lib/files', async () => {
 
 vi.mock('@mantle/content', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  acceptedFileReadable: vi.fn(async (anchor: string, login: string, id: string) => {
+  // The author rule (on Postgres in member-accepted.viewer.db.test.ts): the
+  // name and type the file was ACCEPTED with, or null.
+  acceptedFileMeta: vi.fn(async (anchor: string, login: string, id: string) => {
     h.authorChecks.push({ anchor, login, id });
-    return h.isAuthor;
+    return h.isAuthor ? { filename: 'as-accepted.pdf', mimeType: 'application/pdf' } : null;
   }),
   getDrawSvg: vi.fn(async () => (h.drawSteps.push('team'), null)),
   getTeamDraftDrawSvg: vi.fn(async () => (h.drawSteps.push('team-drafts'), null)),
@@ -152,6 +154,25 @@ describe('GET /api/member/files/:id', () => {
     expect(await res.text()).toBe('BYTES');
     expect(h.authorChecks).toEqual([{ anchor: ANCHOR, login: LOGIN, id: FILE }]);
     expect(h.reads).toEqual(['team', 'admin']);
+  });
+
+  it('serves an accepted file under the name and type it was accepted with (audit L7)', async () => {
+    h.isAuthor = true;
+    const { GET } = await import('../files/[id]/route');
+    const res = await GET(new Request(`http://x/api/member/files/${FILE}`), ctx(FILE));
+    expect(res.status).toBe(200);
+    // The brain file's live name is a.txt (an admin's rename): never sent.
+    const disposition = res.headers.get('content-disposition') ?? '';
+    expect(disposition).toContain('as-accepted.pdf');
+    expect(disposition).not.toContain('a.txt');
+    expect(res.headers.get('content-type')).toContain('application/pdf');
+    // A team-level file keeps its own name: no snapshot is asked for.
+    h.isAuthor = false;
+    h.teamHit = true;
+    h.authorChecks = [];
+    const team = await GET(new Request(`http://x/api/member/files/${FILE}`), ctx(FILE));
+    expect(team.headers.get('content-disposition')).toContain('a.txt');
+    expect(h.authorChecks).toEqual([]);
   });
 
   it('streams the bytes (never buffers the whole file) with the same headers', async () => {
