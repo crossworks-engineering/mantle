@@ -309,23 +309,54 @@ export async function moveNodeItem(
   if (!moved.length) throw new NodeOpRefusal('not-found', 'not found');
 }
 
-export async function removeEmptyNodeFolder(ownerId: string, folderId: string): Promise<void> {
+/**
+ * Delete a folder and lift everything it holds one level up, in one
+ * transaction (rows-only kinds; Files go through the disk, write.ts). A row
+ * at `P.rest` lands at `Q.rest`, `Q` being the parent: so a subfolder whose
+ * landing path is already a folder merges into it (that folder keeps its
+ * name, look and share; the subfolder's row goes and what it held lands
+ * there, recursively), and every other subfolder moves up whole. Items can
+ * share titles: nothing is renamed. Members' drafts and folders follow the
+ * same mapping (carrySpaceRows, lift).
+ */
+export async function deleteNodeFolderMerging(ownerId: string, folderId: string): Promise<void> {
   const folder = await branchById(ownerId, folderId);
-  // Members' drafts and folders in it move up to the parent (never deleted).
-  // Emptiness is checked on the locked row, in the delete's transaction.
+  const p = folder.path;
+  const q = treeParentPath(p);
+  const landing = sql`(case when n.path = ${p}::ltree then ${q}::ltree
+                            else ${q}::ltree || subpath(n.path, nlevel(${p}::ltree)) end)`;
   await db.transaction(async (tx) => {
     await takeShareWriteLock(tx, ownerId);
+    const [self] = (await tx.execute(sql`
+      select path::text as path from nodes
+       where id = ${folderId} and owner_id = ${ownerId} and type = 'branch'
+       for update`)) as unknown as Array<{ path: string }>;
+    if (!self || self.path !== p) {
+      throw new NodeOpRefusal('conflict', `'${folder.title}' changed meanwhile; try again`);
+    }
+    // 1. Subfolders that merge: a folder is already at their landing path,
+    //    outside the deleted one. Their contents land in it below.
     await tx.execute(sql`
-      select 1 from nodes where id = ${folderId} and owner_id = ${ownerId} for update`);
-    const inside = (await tx.execute(sql`
-      select 1 from nodes
-       where owner_id = ${ownerId} and path <@ ${folder.path}::ltree and id <> ${folderId}
-       limit 1`)) as unknown as unknown[];
-    if (inside.length) throw new NodeOpRefusal('conflict', 'the folder is not empty');
-    await carrySpaceRows(tx, ownerId, folder.path, treeParentPath(folder.path), { lift: true });
-    await tx.delete(nodes).where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
+      delete from nodes n
+       where n.owner_id = ${ownerId} and n.type = 'branch'
+         and n.path <@ ${p}::ltree and n.id <> ${folderId}
+         and exists (select 1 from nodes b
+                      where b.owner_id = ${ownerId} and b.type = 'branch'
+                        and b.path = ${landing} and not (b.path <@ ${p}::ltree))`);
+    // 2. The folder itself (a shared one refreshes what sat below: 0207).
+    await tx.execute(sql`delete from nodes where id = ${folderId} and owner_id = ${ownerId}`);
+    // 3. The rest moves up one level, shallowest first: a row's landing path
+    //    can be the old path of a row one level up (a subfolder named like
+    //    the deleted folder), and that row has moved by then. Items keep
+    //    their updated_at: filing is not editing.
+    const [deepest] = (await tx.execute(sql`
+      select coalesce(max(nlevel(path)), 0)::int as n from nodes
+       where owner_id = ${ownerId} and path <@ ${p}::ltree`)) as unknown as Array<{ n: number }>;
+    for (let level = folderDepth(p) + 1; level <= Number(deepest?.n ?? 0); level++) {
+      await tx.execute(sql`
+        update nodes n set path = ${landing}
+         where n.owner_id = ${ownerId} and n.path <@ ${p}::ltree and nlevel(n.path) = ${level}`);
+    }
+    await carrySpaceRows(tx, ownerId, p, q, { lift: true });
   });
-  // Anything filed into it while it went (an upload racing the delete) took
-  // its share on the way in: settle what sits at its path now.
-  await db.execute(sql`select mantle_refresh_inherited(${ownerId}::uuid, ${folder.path}::ltree)`);
 }

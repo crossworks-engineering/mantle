@@ -12,11 +12,9 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db, isCheckViolation, nodes, takeShareWriteLock, isBusy, BUSY_MESSAGE } from '@mantle/db';
 import {
   createFolder as createFilesFolder,
-  deleteFolder as deleteFilesFolder,
   moveFileById,
   moveFolderById,
   renameFolderById,
-  strayFilesIn,
 } from '@mantle/files';
 import type { AppTint } from '@mantle/client-types/app-nav';
 import {
@@ -45,12 +43,13 @@ import { refoldPageTexts } from '../pages/level-text';
 import {
   NodeOpRefusal,
   createNodeFolder,
+  deleteNodeFolderMerging,
   moveNodeFolder,
   moveNodeItem,
-  removeEmptyNodeFolder,
   renameNodeFolder,
 } from './node-ops';
 import { treeFolderById } from './read';
+import { FilesMergeRefusal, deleteFilesFolderMerging } from './files-merge';
 
 /** NOTIFY channel for a tree write (payload: JSON {ownerId, kind}). Consumed
  *  by server/web/lib/realtime.ts, which broadcasts it as type 'tree'. */
@@ -93,8 +92,6 @@ type TreeKindOps = {
   renameFolder(ownerId: string, folderId: string, name: string): Promise<void>;
   moveFolder(ownerId: string, folderId: string, destParentPath: string): Promise<void>;
   moveItem(ownerId: string, itemId: string, destPath: string): Promise<void>;
-  /** Remove a folder that no longer holds anything. */
-  removeEmptyFolder(ownerId: string, folderId: string): Promise<void>;
 };
 
 const FILES_OPS: TreeKindOps = {
@@ -110,10 +107,6 @@ const FILES_OPS: TreeKindOps = {
   async moveItem(ownerId, itemId, destPath) {
     await moveFileById({ ownerId, fileId: itemId, destPath });
   },
-  async removeEmptyFolder(ownerId, folderId) {
-    const res = await deleteFilesFolder({ ownerId, folderId });
-    if (!res.ok) throw new TreeError('conflict', res.reason);
-  },
 };
 
 /** Every kind but Files: folders and locations are rows only. */
@@ -123,7 +116,6 @@ function nodeOps(kind: TreeKind): TreeKindOps {
     renameFolder: renameNodeFolder,
     moveFolder: moveNodeFolder,
     moveItem: (ownerId, itemId, destPath) => moveNodeItem(ownerId, kind, itemId, destPath),
-    removeEmptyFolder: removeEmptyNodeFolder,
   };
 }
 
@@ -154,6 +146,7 @@ async function refusing<T>(run: () => Promise<T>): Promise<T> {
 function refusingError(err: unknown): never {
   if (err instanceof TreeError) throw err;
   if (err instanceof NodeOpRefusal) throw new TreeError(err.code, err.message);
+  if (err instanceof FilesMergeRefusal) throw new TreeError('conflict', err.message);
   const message = err instanceof Error ? err.message : String(err);
   throw new TreeError(/already exists|unique/i.test(message) ? 'conflict' : 'invalid', message);
 }
@@ -179,17 +172,6 @@ function cleanName(name: string): string {
   const clean = name.trim().replace(/\s+/g, ' ').slice(0, TREE_FOLDER_NAME_MAX);
   if (!clean) throw new TreeError('invalid', 'a folder needs a name');
   return clean;
-}
-
-async function folderAt(ownerId: string, path: string): Promise<{ id: string } | null> {
-  const [row] = await db
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(
-      and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'branch'), sql`${nodes.path}::text = ${path}`),
-    )
-    .limit(1);
-  return row ?? null;
 }
 
 /** Create a folder under `parentId` (null = the top level). */
@@ -456,9 +438,15 @@ async function placeFolder(
 }
 
 /**
- * Delete a folder; what it holds moves up to its parent first. Refused before
- * anything moves when the parent already has a folder or an item of the same
- * name, so a delete never merges or renames silently.
+ * Delete a folder; everything it holds moves up to its parent first, and
+ * nothing inside is deleted (folder plan section 5). A subfolder whose name
+ * is already taken there MERGES into that folder, recursively: the folder
+ * that was there keeps its name, look and share, and what merged in takes
+ * that share. A file whose name is taken there gets a new one
+ * (`report-2.pdf`); other kinds may share titles. The visibility confirm
+ * compares every row at its real landing place (visibility.ts liftDiff).
+ * Files go through the disk (files-merge.ts, checked read only first);
+ * every other kind is one transaction (node-ops.ts).
  */
 export async function deleteTreeFolder(
   ownerId: string,
@@ -466,7 +454,7 @@ export async function deleteTreeFolder(
   folderId: string,
   opts: TreeWriteOpts = {},
 ): Promise<void> {
-  const ops = opsFor(kind);
+  opsFor(kind);
   const folder = await folderOrThrow(ownerId, kind, folderId);
   if (folder.system) {
     throw new TreeError('invalid', 'this folder is made by Mantle; it cannot be deleted');
@@ -481,59 +469,11 @@ export async function deleteTreeFolder(
         }>
       ).map((r) => r.id)
     : [];
-  const parentPath = treeParentPath(folder.path);
-  const spec = TREE_KIND_SPECS[kind];
-  const [children, items] = await Promise.all([
-    db.execute(sql`
-      select id, path::text as path, title from nodes
-       where owner_id = ${ownerId} and type = 'branch'
-         and path ~ ${`${folder.path}.*{1}`}::lquery`) as unknown as Promise<
-      Array<{ id: string; path: string; title: string }>
-    >,
-    db.execute(sql`
-      select id, title, lower(coalesce(data->>'filename', title)) as name from nodes
-       where owner_id = ${ownerId} and type = ${spec.nodeType}
-         and path = ${folder.path}::ltree`) as unknown as Promise<
-      Array<{ id: string; title: string; name: string }>
-    >,
-  ]);
-  const clashes: string[] = [];
-  for (const c of children) {
-    const label = c.path.split('.').at(-1)!;
-    if (await folderAt(ownerId, `${parentPath}.${label}`)) clashes.push(c.title);
-  }
-  if (kind === 'files' && items.length) {
-    const taken = (await db.execute(sql`
-      select lower(data->>'filename') as name from nodes
-       where owner_id = ${ownerId} and type = 'file' and path = ${parentPath}::ltree`)) as unknown as Array<{
-      name: string;
-    }>;
-    const names = new Set(taken.map((t) => t.name));
-    for (const i of items) if (names.has(i.name)) clashes.push(i.title);
-  }
-  // Files: a file on disk the brain does not track would stop the final
-  // delete after everything else moved up; refuse now, before anything moves.
-  if (kind === 'files') {
-    const stray = await strayFilesIn(folder.path, new Set(items.map((i) => i.name)));
-    if (stray.length) {
-      throw new TreeError(
-        'conflict',
-        `the folder holds file(s) on disk the brain does not track (${stray.join(', ')}); move or delete them first`,
-      );
-    }
-  }
-  if (clashes.length) {
-    throw new TreeError(
-      'conflict',
-      `the folder above already has ${clashes.length === 1 ? 'something' : 'things'} named ${clashes
-        .slice(0, 5)
-        .map((c) => `'${c}'`)
-        .join(', ')}; rename or move ${clashes.length === 1 ? 'it' : 'them'} first`,
-    );
-  }
-  for (const c of children) await refusing(() => ops.moveFolder(ownerId, c.id, parentPath));
-  for (const i of items) await refusing(() => ops.moveItem(ownerId, i.id, parentPath));
-  await refusing(() => ops.removeEmptyFolder(ownerId, folderId));
+  await refusing(() =>
+    kind === 'files'
+      ? deleteFilesFolderMerging(ownerId, folderId)
+      : deleteNodeFolderMerging(ownerId, folderId),
+  );
   if (affected.length) await followShares(ownerId, { ids: affected });
 }
 

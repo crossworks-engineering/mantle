@@ -177,14 +177,54 @@ export function moveFolderDiff(
   return diffOf(subtreeRows(ownerId, folder.path, folder.id, true, replacement));
 }
 
-/** A folder deleted after its contents move up: its own share goes, what
- *  comes from above it stays. */
+/**
+ * A folder deleted after its contents move up (write.ts deleteTreeFolder).
+ * Everything below it lands one level up: `P.rest` goes to `Q.rest`, where
+ * `Q` is the parent. A subfolder whose landing path is already a folder
+ * merges into it, so what it holds takes THAT folder's share; a subfolder
+ * that moves keeps its own share and takes the shares above its new place.
+ * Each row is compared at its real landing path, against the tree as it
+ * will be: the shared folders outside the deleted one, plus the shared
+ * subfolders that move (not the ones that merge away). Merged folder rows
+ * are left out: they go.
+ */
 export function liftDiff(
   ownerId: string,
   folder: { id: string; path: string },
 ): Promise<VisibilityDiff> {
-  const fromAbove = sql`(select inherited_level from nodes where id = ${folder.id})`;
-  return diffOf(subtreeRows(ownerId, folder.path, folder.id, false, fromAbove));
+  const p = sql`${folder.path}::ltree`;
+  const q = sql`${folder.path.split('.').slice(0, -1).join('.')}::ltree`;
+  // subpath() cannot take a path down to nothing: a row at `P` lands at `Q`.
+  const landing = (alias: string) => {
+    const path = sql.raw(`${alias}.path`);
+    return sql`(case when ${path} = ${p} then ${q} else ${q} || subpath(${path}, nlevel(${p})) end)`;
+  };
+  // A folder already at a landing path, outside the deleted subtree.
+  const existingAt = (at: SQL) => sql`exists (
+    select 1 from nodes b
+     where b.owner_id = ${ownerId} and b.type = 'branch' and b.path = ${at}
+       and not (b.path <@ ${p}))`;
+  return diffOf(sql`
+    with post as (
+      select a.path, a.share_level from nodes a
+       where a.owner_id = ${ownerId} and a.share_level is not null and not (a.path <@ ${p})
+      union all
+      select ${landing('s')}, s.share_level from nodes s
+       where s.owner_id = ${ownerId} and s.share_level is not null
+         and s.path <@ ${p} and s.id <> ${folder.id}
+         and not ${existingAt(landing('s'))}
+    )
+    select n.id, n.title, n.audience, n.inherited_level as old_inh,
+      case when not mantle_workspace_kind(n.type) then null else (
+        select post.share_level from post
+         where post.path @> ${landing('n')}
+           and (n.type <> 'branch' or post.path <> ${landing('n')})
+         order by nlevel(post.path) desc
+         limit 1
+      ) end as new_inh
+      from nodes n
+     where n.owner_id = ${ownerId} and n.path <@ ${p} and n.id <> ${folder.id}
+       and not (n.type = 'branch' and ${existingAt(landing('n'))})`);
 }
 
 /** A level's openness for comparing in SQL (public most open). */
