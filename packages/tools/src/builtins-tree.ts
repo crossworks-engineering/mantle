@@ -258,7 +258,7 @@ export const tree_folder_delete: BuiltinToolDef = {
   ownerOnly: true,
   name: 'Delete a folder',
   description:
-    'Delete a folder of one kind. What it holds (items and subfolders) moves up to its parent first; nothing inside is deleted. Refused, before anything moves, when a subfolder name would clash there, and for system folders.',
+    'Delete a folder of one kind. What it holds (items and subfolders) moves up to its parent first; nothing inside is deleted. A subfolder whose name is already taken there merges into that folder (which keeps its name, look and share); items keep their titles. Refused for system folders.',
   preconditions: [
     { kind: 'node_exists', param: 'folder_id', nodeType: 'branch', lookup: 'tree_folders' },
   ],
@@ -278,7 +278,11 @@ export const tree_folder_delete: BuiltinToolDef = {
       await deleteTreeFolder(ctx.ownerId, kind, folderId, { confirm: input.confirm === true });
       await notifyTreeChanged(ctx.ownerId, kind);
       ctx.step?.setOutput({ kind, folderId });
-      return { ok: true, output: 'deleted; what it held moved up to its parent' };
+      return {
+        ok: true,
+        output:
+          'deleted; what it held moved up to its parent, merging into any folder of the same name there',
+      };
     }),
 };
 

@@ -93,7 +93,7 @@ export const folder_delete: BuiltinToolDef = {
   preconditions: FOLDER_ID_PRE,
   name: 'Delete a folder',
   description:
-    'Delete a folder. Refuses unless the folder is empty — clear its children first. Cannot delete the `files` root.',
+    "Delete an EMPTY folder. Refuses unless the folder is empty: clear its children first. Cannot delete the `files` root. (The Files screen's folder delete instead moves what a folder holds up to its parent: a clashing folder merges into the one there, a clashing file gets a new name like report-2.pdf.)",
   inputSchema: {
     type: 'object',
     properties: {

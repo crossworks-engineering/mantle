@@ -4,6 +4,25 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: a folder delete merges (branch feat/folder-audit-fixes-2)
+
+Follow-up to the folder system audit of 2026-09-30 (findings C2 and S5),
+decided by Jason the same day.
+
+- **A folder delete always merges** (plan section 5, option B; it used to
+  refuse on any clash). What the folder holds lands one level up; a
+  subfolder whose name is taken there merges into that folder,
+  recursively, and the folder that was there keeps its name, look and
+  share. A file whose name is taken gets `-2` (`report-2.pdf`, as
+  Auto-filed does); other kinds may share titles and keep theirs. A
+  subfolder named like the deleted folder takes its place. Rows-only kinds
+  do it in one transaction; Files check everything read only first
+  (untracked files in every directory that goes, a name already on disk
+  where a folder moves up) and then move child by child, disk first.
+  Members' drafts follow by path. The visibility confirm compares each row
+  at its real landing place: what merges into a shared folder takes its
+  share and is listed.
+
 ## 0.232.360: folder system audit fixes
 
 From the folder system audit of 2026-09-30 (dev brain, "AUDIT: Universal

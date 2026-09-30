@@ -92,11 +92,26 @@ of one brain keep their own.
 - `PATCH /api/tree/:kind/folders/:id` renames, restyles (`icon`, `color`),
   moves (`parentId`) or reorders (`after`: the sibling to follow, null = first).
 - `DELETE /api/tree/:kind/folders/:id` deletes a folder after moving what it
-  holds up to its parent. It is refused, before anything moves, when a name
-  would clash there, or (Files) when the directory holds a file the brain
-  does not track. A folder rename or move checks again on the locked rows
-  inside its transaction, so two writes racing cannot both pass a stale
-  check.
+  holds up to its parent; nothing inside is deleted. Everything lands one
+  level up (`P.rest` goes to `Q.rest`, `Q` the parent), so a clash is a
+  merge: a subfolder whose name is already taken there merges into that
+  folder, recursively (its subfolders merge the same way one level down, its
+  items move in), and the folder that was there keeps its name, look and
+  share. A file whose name is taken where it lands gets the repo's de-dup
+  name first (`report.pdf` becomes `report-2.pdf`, `dedupeFilename`, the
+  same `-2` style Auto-filed uses; file names are sanitised lower-case with
+  dashes, so " (2)" could not survive); other kinds may share titles, so
+  nothing else is renamed. A subfolder named like the deleted folder takes
+  its place. Rows-only kinds do it in one transaction
+  (`deleteNodeFolderMerging`, `packages/content/src/tree/node-ops.ts`).
+  Files go through the disk one child at a time, disk first
+  (`packages/content/src/tree/files-merge.ts`), after checking everything
+  read only: a file on disk the brain does not track, in the folder or in a
+  subfolder that merges, or a name already on disk where a subfolder would
+  move up, refuses the delete before anything moves. Members' drafts and
+  folders follow by the same mapping (`carrySpaceRows`). A folder rename or
+  move checks again on the locked rows inside its transaction, so two
+  writes racing cannot both pass a stale check.
 - `POST /api/tree/:kind/move` moves items into a folder (null = the root). Each
   item moves on its own; the answer lists any that could not.
 
@@ -174,7 +189,10 @@ contacts, secrets) cannot be shared.
   (`packages/content/src/tree/visibility.ts`). If who can see anything would
   change, the write is refused with 409 `{ error: 'visibility', changes,
 total }` and nothing is written; the same call with `confirm: true` goes
-  ahead (`?confirm=true` on DELETE). A caller that sends `seen` (the
+  ahead (`?confirm=true` on DELETE). A delete compares every row at its
+  real landing place: what merges into a folder takes that folder's share,
+  a subfolder that moves up keeps its own and takes the shares above its
+  new place. A caller that sends `seen` (the
   `total` it showed; `&seen=` on DELETE) is refused again with the new list
   when the change differs by then, so a confirm never covers items filed or
   shared while the dialog was open. A rename never asks. The same check
@@ -273,8 +291,9 @@ A member files its drafts in the brain's tree and keeps private folders there.
   every member's rows under it in the same transaction
   (`carrySpaceRows`, `packages/db/src/space-carry.ts`): a member's folder
   whose new path the member already has merges into it, a delete lifts the
-  drafts to the parent, and anything past three levels is cut to fit, so a
-  member's private folders never block the admin.
+  drafts one level up with everything else (into the folder a subfolder
+  merged into, when it merged), and anything past three levels is cut to
+  fit, so a member's private folders never block the admin.
 - **Accept claims in place** (`packages/content/src/accept-place.ts`). An
   accepted draft lands in the brain folder it was filed in; the author's own
   folders below it become brain folders (merging by name, keeping name and
@@ -307,7 +326,7 @@ included, shares one set, told apart by `kind`
 - `tree_folder_create`, `tree_folder_update` (rename, move, or both).
 - `tree_item_move`: file items into a folder, or to the top level.
 - `tree_folder_delete` (MCP only, like Files' `folder_delete`): what the folder
-  held moves up first.
+  held moves up first; a clashing subfolder merges into the one there.
 
 They sit in each kind's tool group (`tree_folders` alone in Draw's read-only
 group), so an agent that can work with a kind can organise it. The brain is
@@ -361,6 +380,5 @@ never by path.
 Pages stop nesting once Recall v2 has retired v1 (phase 7): each page with
 children becomes a folder, and a "Folder index" block lists a folder's
 pages. Still open from the plan, each waiting on a decision: the phone's
-read-only tree, pins and Recent / Most used for members and clients, the
-task board filtered by folder, and resolving embeds at the reader's level
-(today a confirmed share lowers embeds for good, and says so).
+read-only tree, pins and Recent / Most used for members and clients, and
+the task board filtered by folder.
