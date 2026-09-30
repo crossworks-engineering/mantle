@@ -355,6 +355,10 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
 
   // ── A member's table and drawing, taken over, accepted (C6) ─────────────
 
+  // An admin page no accept has taken down a level (the child page card
+  // above went to team with the client's page).
+  let adminPage2: string;
+
   it('a member reads a table cell that links an admin item as "Private item"', async () => {
     const M = spaceOf[member]!;
     const A = spaceOf[adminA]!;
@@ -370,11 +374,12 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     await as(member, () => sp.saveMineTable(M, t.id));
     await submit(member, t.id);
     await rv.takeOverReviewItem(t.id, actorA());
+    adminPage2 = await brainItem('page', `${tag} ADMINSECRET page two`, 'admin');
     // The admin links admin items (a path, an app scheme, an absolute URL)
     // and a team item the member reads, then saves.
     const cells = [
       `/n/${adminNote}`,
-      `page:${adminPage}`,
+      `page:${adminPage2}`,
       `https://brain.example.invalid/n/${adminNote}`,
       `/n/${teamNote}`,
     ];
@@ -397,16 +402,19 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     const raw = JSON.stringify(
       tableFromSnapshot(node!, { storagePath: snap!.tablePath, doc: snap!.tableDoc }).data,
     );
-    for (const s of [adminNote, adminPage, teamNote]) expect(raw).toContain(s);
+    for (const s of [adminNote, adminPage2, teamNote]) expect(raw).toContain(s);
 
     const item = await ma.getAcceptedItem(anchor, member, t.id);
     expect(item?.type).toBe('table');
+    // (A new table starts with empty rows.)
     const values =
-      item?.type === 'table' ? item.table.data.rows.map((r) => r.cells[col] ?? null) : [];
+      item?.type === 'table'
+        ? item.table.data.rows.map((r) => r.cells[col] ?? null).filter((v) => v !== null)
+        : [];
     expect(values).toEqual(['member cell', PRIVATE, PRIVATE, PRIVATE, `/n/${teamNote}`]);
     const read = JSON.stringify(item);
     expect(read).not.toContain(adminNote);
-    expect(read).not.toContain(adminPage);
+    expect(read).not.toContain(adminPage2);
   });
 
   it('a member’s drawing: a link to an admin item loses its href, others stay', async () => {
@@ -427,7 +435,7 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     await rv.takeOverReviewItem(id, actorA());
     const links = [
       `/n/${adminNote}`,
-      `https://brain.example.invalid/n/${adminPage}`,
+      `https://brain.example.invalid/n/${adminPage2}`,
       `/n/${teamNote}`,
       'https://example.invalid/',
     ];
@@ -445,11 +453,11 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     const [snap] = await exec<{ scene_svg: string | null }>(
       sqlTag`select scene_svg from accepted_snapshots where node_id = ${id}`,
     );
-    for (const s of [adminNote, adminPage, teamNote]) expect(snap?.scene_svg).toContain(s);
+    for (const s of [adminNote, adminPage2, teamNote]) expect(snap?.scene_svg).toContain(s);
 
     const got = (await ma.acceptedDrawSvg(anchor, member, id)) ?? '';
     expect(got).not.toContain(adminNote);
-    expect(got).not.toContain(adminPage);
+    expect(got).not.toContain(adminPage2);
     // The elements stay, drawn as before; readable and external links stay.
     for (let i = 1; i <= links.length; i += 1) expect(got).toContain(`d="M${i}"`);
     expect(got).toContain(`<a href="/n/${teamNote}">`);
