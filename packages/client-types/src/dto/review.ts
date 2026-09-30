@@ -80,6 +80,10 @@ export type AcceptVisibilityRefusal = {
    *  chosen level, `to` the level it would be read at. */
   changes: TreeVisibilityChange[];
   total: number;
+  /** Brain items the bundle embeds that would be read through it at the
+   *  folder's share (migration 0208), `from` now, `to` then. Absent when
+   *  there are none, and from brains before it was listed. */
+  alsoEmbeds?: TreeVisibilityChange[];
 };
 
 /** 409 from either Accept: a client's item at client or public without the

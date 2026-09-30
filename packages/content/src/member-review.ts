@@ -179,7 +179,12 @@ export class ReviewError extends Error {
      *  with the item (its embed closure above the chosen level). */
     readonly goingDown?: EmbedItem[],
     /** `visibility` only: what would be read above the chosen level. */
-    readonly visibility?: { changes: TreeVisibilityChange[]; total: number },
+    readonly visibility?: {
+      changes: TreeVisibilityChange[];
+      total: number;
+      /** What the bundle embeds that would be read through it (0208). */
+      alsoEmbeds?: TreeVisibilityChange[];
+    },
   ) {
     super(message);
     this.name = 'ReviewError';
@@ -812,7 +817,10 @@ function confirmLevelError(level: ViewerLevel, goingDown: EmbedItem[]): ReviewEr
 }
 
 /** Items that would be read above the chosen level where they land. */
-function visibilityError(changes: TreeVisibilityChange[]): ReviewError {
+function visibilityError(
+  changes: TreeVisibilityChange[],
+  alsoEmbeds: TreeVisibilityChange[] = [],
+): ReviewError {
   const n = changes.length;
   const what = n === 1 ? 'It lands' : `${n} items land`;
   return new ReviewError(
@@ -820,8 +828,55 @@ function visibilityError(changes: TreeVisibilityChange[]): ReviewError {
     `${what} in a shared folder and would be read above the level you chose. ` +
       'Confirm that, or pick another folder.',
     undefined,
-    { changes: changes.slice(0, TREE_VISIBILITY_LIST_MAX), total: n },
+    {
+      changes: changes.slice(0, TREE_VISIBILITY_LIST_MAX),
+      total: n,
+      ...(alsoEmbeds.length ? { alsoEmbeds: alsoEmbeds.slice(0, TREE_VISIBILITY_LIST_MAX) } : {}),
+    },
   );
+}
+
+/**
+ * The brain's items the bundle embeds (through the edges its drafts carry,
+ * migration 0208) that would be read more openly once it lands: each item
+ * landing under a folder share passes that share on to what it reaches
+ * through embeds, as nodes.embedded_level will. Dry, for the refusal's
+ * list; the most open level wins when two items reach the same embed.
+ */
+async function embedsReadThrough(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  brainId: string,
+  items: readonly { id: string }[],
+  shares: ReadonlyMap<string, string | null>,
+): Promise<TreeVisibilityChange[]> {
+  const found = new Map<string, TreeVisibilityChange>();
+  for (const b of items) {
+    const share = shares.get(b.id);
+    if (share !== 'team' && share !== 'client') continue;
+    const rows = (await tx.execute(sql`
+      select r.id::text as id, r.title, r."from", r."to", r.type from (
+        select n.id, n.title, n.type::text as type,
+               ${embedLevelSql(sql`n.embedded_level`)} as "from",
+               ${embedLevelSql(sql`mantle_share_max(n.embedded_level, ${share}::text)`)} as "to"
+          from nodes n
+         where n.owner_id = ${brainId} and mantle_workspace_kind(n.type)
+           and n.id in (select x.id from mantle_embeds_reached(${brainId}::uuid, array(
+                 select e.to_id from node_embeds e where e.from_id = ${b.id}::uuid)) x)) r
+       where r."from" is distinct from r."to"`)) as unknown as TreeVisibilityChange[];
+    for (const r of rows) {
+      const seen = found.get(r.id);
+      if (!seen || levelAbove(seen.to as ViewerLevel, r.to as ViewerLevel)) found.set(r.id, r);
+    }
+  }
+  return [...found.values()];
+}
+
+/** effectiveLevel in SQL over `n`'s own level and folder share and `embedded`. */
+function embedLevelSql(embedded: SQL): SQL {
+  return sql`(case
+      when 'client' in (n.inherited_level, ${embedded}) and n.audience in ('admin', 'team') then 'client'
+      when 'team' in (n.inherited_level, ${embedded}) and n.audience = 'admin' then 'team'
+      else n.audience end)`;
 }
 
 /**
@@ -1346,7 +1401,9 @@ async function moveIntoBrain(
         .filter((b) => readAtOf(b.id) !== audience)
         .map((b) => ({ id: b.id, title: b.title, from: audience, to: readAtOf(b.id) }));
       if (exposed.length && opts.visibilityConfirmed !== true) {
-        throw visibilityError(exposed);
+        // What the bundle embeds is read through it at the folder's share
+        // (0208) too, whoever wrote it: listed with it, before anything moves.
+        throw visibilityError(exposed, await embedsReadThrough(tx, brainId, items, shares));
       }
 
       // 3b. A client's item read at client or public (audit A28), by its

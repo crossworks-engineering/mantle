@@ -306,6 +306,10 @@ export type TreeVisibilityChange = {
   title: string;
   from: AccessLevel;
   to: AccessLevel;
+  /** The item's node type ('file', 'table', 'note', 'branch', ...), sent in
+   *  `alsoEmbeds`: an embed may open any workspace item, and a table
+   *  opening is more than an image. Absent elsewhere. */
+  type?: string;
 };
 export type TreeVisibilityRefusal = {
   error: 'visibility';

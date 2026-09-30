@@ -76,7 +76,7 @@ export async function withEmbedChanges(
         join nodes x on x.id = down.id and x.owner_id = ${ownerId}
     ),
     tg as (
-      select n.id, n.title, n.audience, n.inherited_level, n.embedded_level
+      select n.id, n.title, n.type, n.audience, n.inherited_level, n.embedded_level
         from nodes n join down on n.id = down.id
        where n.owner_id = ${ownerId} and mantle_workspace_kind(n.type)
          and not exists (select 1 from ov where ov.id = n.id)
@@ -100,8 +100,8 @@ export async function withEmbedChanges(
        where m.id <> up.t
        group by up.t
     )
-    select r.id::text as id, r.title, r."from", r."to" from (
-      select tg.id, tg.title,
+    select r.id::text as id, r.title, r."from", r."to", r.type from (
+      select tg.id, tg.title, tg.type::text as type,
              ${eff(sql`tg.audience`, sql`tg.inherited_level`, sql`tg.embedded_level`)} as "from",
              ${eff(sql`tg.audience`, sql`tg.inherited_level`, sql`lv.emb`)} as "to"
         from tg left join lv on lv.t = tg.id) r
