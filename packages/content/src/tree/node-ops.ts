@@ -9,7 +9,7 @@
  * slug, and nothing nests deeper than TREE_MAX_DEPTH folders.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
+import { carrySpaceRows, db, nodes } from '@mantle/db';
 import { dashToLtree, slugifyFolder } from '@mantle/files';
 import {
   TREE_KIND_SPECS,
@@ -119,7 +119,8 @@ async function subtreeLevels(ownerId: string, path: string): Promise<number> {
  * Rewrite the path of a folder and everything below it (folders and items:
  * an item's path IS its folder's). The folder's own row maps straight to the
  * new path (subpath at its own depth would throw). Items keep their
- * `updated_at`: filing something is not editing it.
+ * `updated_at`: filing something is not editing it. Members' drafts and
+ * folders under a brain folder follow it (carrySpaceRows).
  */
 async function rewriteSubtree(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
@@ -134,6 +135,7 @@ async function rewriteSubtree(
              else (text2ltree(${newPath}) || subpath(path, nlevel(${oldPath}::ltree)))::ltree
            end
      where owner_id = ${ownerId} and path <@ ${oldPath}::ltree`);
+  await carrySpaceRows(tx, ownerId, oldPath, newPath);
 }
 
 export async function createNodeFolder(
@@ -264,5 +266,9 @@ export async function removeEmptyNodeFolder(ownerId: string, folderId: string): 
      where owner_id = ${ownerId} and path <@ ${folder.path}::ltree and id <> ${folderId}
      limit 1`)) as unknown as unknown[];
   if (inside.length) throw new NodeOpRefusal('conflict', 'the folder is not empty');
-  await db.delete(nodes).where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
+  // Members' drafts and folders in it move up to the parent (never deleted).
+  await db.transaction(async (tx) => {
+    await carrySpaceRows(tx, ownerId, folder.path, treeParentPath(folder.path), { lift: true });
+    await tx.delete(nodes).where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
+  });
 }

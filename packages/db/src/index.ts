@@ -93,3 +93,4 @@ export {
   desc,
   asc,
 } from 'drizzle-orm';
+export { carrySpaceRows } from './space-carry';
