@@ -4,10 +4,10 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ setItem: vi.fn() }));
+const h = vi.hoisted(() => ({ setItem: vi.fn(), sharedVia: vi.fn() }));
 vi.mock('@mantle/content', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content')>();
-  return { ...actual, setItemLevel: h.setItem };
+  return { ...actual, setItemLevel: h.setItem, sharedViaFolder: h.sharedVia };
 });
 
 import { AccessError } from '@mantle/content';
@@ -69,6 +69,29 @@ describe('access tools', () => {
       raiseClosure: true,
     });
     expect(res.ok).toBe(true);
+  });
+
+  it('warn that a raise above a shared folder’s share leaves it read there', async () => {
+    const done = {
+      item: { id: 'n1', type: 'note' },
+      lowered: [],
+      alsoLowered: [],
+      stillAbove: [],
+      raised: [],
+      stillBelow: [],
+    };
+    const via = { folderId: 'f1', trail: ['Clients', 'Acme'], level: 'client' };
+    h.setItem.mockResolvedValueOnce(done);
+    h.sharedVia.mockResolvedValueOnce(via);
+    const up = await access_set.handler({ node_id: 'n1', level: 'admin' }, OWNER);
+    expect(up.ok && (up.output as { warnings?: string[] }).warnings).toEqual([
+      'It is still read at client: it sits in "Clients / Acme", a folder shared with clients. Move it out of that folder to hide it.',
+    ]);
+    // At or below the folder's share there is nothing to say.
+    h.setItem.mockResolvedValueOnce(done);
+    h.sharedVia.mockResolvedValueOnce(via);
+    const same = await access_set.handler({ node_id: 'n1', level: 'client' }, OWNER);
+    expect(same.ok && (same.output as { warnings?: string[] }).warnings).toBeUndefined();
   });
 
   it('turn the type ceiling into a readable tool error', async () => {

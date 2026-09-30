@@ -40,6 +40,7 @@ export type {
   AccessLoweredView,
   AccessNodeUpdate,
   AccessNodeView,
+  AccessSharedVia,
   ClientOldLinkAbove,
   ClientReport,
   ClientReportAck,
