@@ -95,10 +95,11 @@ describe.skipIf(!URL)('migration 0210: pages in folders', () => {
               values (${brain}, ${`${tag}@example.invalid`}, 'x', true, 'admin')`);
     await x(sqlTag`insert into auth.users (id, email, password_hash, role)
               values (${member}, ${`${tag}-m@example.invalid`}, 'x', 'member')`);
-    await x(sqlTag`insert into spaces (id, kind, login_id) values (${brain}, 'brain', ${brain})`);
-    await x(
-      sqlTag`insert into spaces (id, kind, login_id) values (${space}, 'personal', ${member})`,
-    );
+    // The owner login's brain space is made by a trigger on auth.users: keep it.
+    await x(sqlTag`insert into spaces (id, kind, login_id) values (${brain}, 'brain', ${brain})
+                   on conflict (id) do nothing`);
+    await x(sqlTag`insert into spaces (id, kind, login_id) values (${space}, 'personal', ${member})
+                   on conflict (id) do nothing`);
 
     // The old shape (no root row for the brain yet, as an old brain may
     // have): A > B > D > E > F (E's folder would be a fourth level), A > C,

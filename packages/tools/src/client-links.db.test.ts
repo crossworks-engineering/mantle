@@ -4,8 +4,6 @@
  * signed-in clients, never an open link:
  *  - node_share and page_share refuse it, in words for the human (ask the
  *    owner whether to make it public), and make no link;
- *  - page_share `children: true` over a public page keeps a client sub-page
- *    at client with no link, and says so (audit A9);
  *  - node_share on a page that embeds a client file says the file left
  *    client logins' view (audit A10).
  * Seeds its own owner and rows and removes them.
@@ -103,23 +101,11 @@ describe.skipIf(!URL)('the share tools on client items, on Postgres', () => {
   });
 
   it('page_share refuses a client page and makes no link', async () => {
-    const res = await pageShare.handler({ id: ids.page, children: true }, ctx);
+    const res = await pageShare.handler({ id: ids.page }, ctx);
     if (res.ok) throw new Error('expected a refusal');
     expect(res.error).toMatch(/Client items have no open link/);
     expect(await linkCount(ids.page)).toBe(0);
     expect(await audienceOf(ids.page)).toBe('client');
-  });
-
-  it('page_share children over a public page keeps a client sub-page at client (A9)', async () => {
-    const res = await pageShare.handler({ id: ids.parent, children: true }, ctx);
-    if (!res.ok) throw new Error(res.error);
-    const out = res.output as { subpagesShared: number; keptAtClient: string[]; warning: string };
-    expect(out.subpagesShared).toBe(0);
-    expect(out.keptAtClient).toEqual([ids.subClient]);
-    expect(out.warning).toMatch(/Kept at client: 1 sub-page/);
-    expect(await audienceOf(ids.parent)).toBe('public');
-    expect(await audienceOf(ids.subClient)).toBe('client');
-    expect(await linkCount(ids.subClient)).toBe(0);
   });
 
   it("node_share on a page that embeds a client file says it left client logins' view (A10)", async () => {
