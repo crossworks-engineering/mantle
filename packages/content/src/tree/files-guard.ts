@@ -9,8 +9,8 @@
  *
  * Each guard computes the change DRY (./visibility), before the write, and
  * throws TreeVisibilityError when something would be read at another level
- * and the caller did not confirm. A copy is judged like a move: the content
- * is what becomes readable where it lands.
+ * and the caller did not confirm. A copy is judged by where its NEW rows
+ * land (copyDiff): copies take the destination's share, never the source's.
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
@@ -18,6 +18,7 @@ import { TREE_KIND_SPECS, type TreeShareLevel } from '@mantle/client-types/tree'
 import { effectiveLevel } from '@mantle/content-core/tree';
 import type { AccessLevel } from '@mantle/client-types';
 import {
+  copyDiff,
   moveFolderDiff,
   moveItemsDiff,
   NO_CHANGE,
@@ -37,7 +38,7 @@ function check(diff: VisibilityDiff, opts: ConfirmOpts): VisibilityDiff {
   return diff;
 }
 
-/** A file moving (or copied) into the folder at `destPath`. */
+/** A file moving into the folder at `destPath`. */
 export async function guardFileTo(
   ownerId: string,
   fileId: string,
@@ -47,8 +48,8 @@ export async function guardFileTo(
   return check(await moveItemsDiff(ownerId, 'files', [fileId], destPath), opts);
 }
 
-/** A Files folder moving (or copied) under `destParentPath`. An id that is
- *  not the owner's folder passes: the operation itself refuses it. */
+/** A Files folder moving under `destParentPath`. An id that is not the
+ *  owner's folder passes: the operation itself refuses it. */
 export async function guardFolderTo(
   ownerId: string,
   folderId: string,
@@ -63,6 +64,35 @@ export async function guardFolderTo(
   }>;
   if (!folder) return NO_CHANGE;
   return check(await moveFolderDiff(ownerId, folder, destParentPath), opts);
+}
+
+/** A file COPIED into the folder at `destPath`: the copy is a new row that
+ *  takes the destination's share (copyDiff). */
+export async function guardFileCopyTo(
+  ownerId: string,
+  fileId: string,
+  destPath: string,
+  opts: ConfirmOpts,
+): Promise<VisibilityDiff> {
+  return check(await copyDiff(ownerId, { fileId }, destPath), opts);
+}
+
+/** A Files folder COPIED under `destParentPath`: every file's copy takes the
+ *  share where it lands, never the shares inside the source (review F1). */
+export async function guardFolderCopyTo(
+  ownerId: string,
+  folderId: string,
+  destParentPath: string,
+  opts: ConfirmOpts,
+): Promise<VisibilityDiff> {
+  const [folder] = (await db.execute(sql`
+    select id, path::text as path from nodes
+     where id = ${folderId} and owner_id = ${ownerId} and type = 'branch'`)) as unknown as Array<{
+    id: string;
+    path: string;
+  }>;
+  if (!folder) return NO_CHANGE;
+  return check(await copyDiff(ownerId, { folder }, destParentPath), opts);
 }
 
 /** A NEW file (created or uploaded, at the admin level) in the folder at

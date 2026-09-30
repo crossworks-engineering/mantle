@@ -142,7 +142,8 @@ export async function reapDerivedFromFile(
   for (const path of imageFolderPaths) {
     try {
       const folder = await folderByPath({ ownerId, path });
-      if (folder) await deleteFolder({ ownerId, folderId: folder.id });
+      // Its own system folder (Auto-filed / Extracted images / <document>).
+      if (folder) await deleteFolder({ ownerId, folderId: folder.id, allowSystem: true });
     } catch {
       // Best-effort: a leftover empty folder is cosmetic, never data loss.
     }

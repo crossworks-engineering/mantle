@@ -65,6 +65,8 @@ import {
   type SpaceSharing,
   type ViewerLevel,
   takeShareReadLock,
+  isBusy,
+  BUSY_MESSAGE,
 } from '@mantle/db';
 import {
   TEXT_EXTS,
@@ -168,7 +170,10 @@ export class ReviewError extends Error {
       | 'confirm-level'
       // It lands in a shared folder and would be read above the chosen
       // level (folder plan phase 5): repeat with visibilityConfirmed.
-      | 'visibility',
+      | 'visibility'
+      // Another write held the same rows (a deadlock broken, or the share
+      // lock's timeout): nothing moved; try again (review F7).
+      | 'busy',
     message: string,
     /** `confirm-level` only: the brain items the Accept would take down
      *  with the item (its embed closure above the chosen level). */
@@ -1225,6 +1230,13 @@ async function moveIntoBrain(
   let result: AcceptResult;
   try {
     result = await db.transaction(async (tx) => {
+      // 0. The brain's share lock (shared), before any row lock: a folder
+      //    rename, move or delete holds it exclusive and then updates the
+      //    drafts under the folder (carrySpaceRows), so taking a draft's row
+      //    first and this lock after would deadlock (review F3). Held to the
+      //    end, it also keeps the folders planned below from moving.
+      await takeShareReadLock(tx, brainId);
+
       // 1. The item, located and locked by the caller's own rule, and its
       //    level by its author's role (client logins C1).
       const { spaceId, root, authorRole, bundle: bundleOf } = await steps.locate(tx);
@@ -1310,10 +1322,7 @@ async function moveIntoBrain(
       }
       // The brain folders at and above every landing, locked against a share
       // change until the Accept commits: the share read here is the share
-      // it lands under. The brain's share lock first (shared), so a writer
-      // changing a share (which takes it exclusive, then the folder row)
-      // never waits on these row locks in the other order.
-      await takeShareReadLock(tx, brainId);
+      // it lands under (the share lock is held since step 0).
       const landings = [...new Set(landingOf.values())];
       if (landings.length) {
         await tx.execute(sql`
@@ -1579,6 +1588,7 @@ async function moveIntoBrain(
     });
   } catch (err) {
     for (const fn of onRollback) await fn().catch(() => {});
+    if (isBusy(err)) throw new ReviewError('busy', BUSY_MESSAGE);
     throw err;
   }
 

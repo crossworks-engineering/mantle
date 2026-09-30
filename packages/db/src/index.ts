@@ -56,7 +56,14 @@ export {
   unextractedNodeConds,
 } from './extract-exempt';
 export { isWriteRefused } from './write-refused';
-export { isCheckViolation, isUniqueViolation, pgConstraint, pgErrorCode } from './pg-error';
+export {
+  BUSY_MESSAGE,
+  isBusy,
+  isCheckViolation,
+  isUniqueViolation,
+  pgConstraint,
+  pgErrorCode,
+} from './pg-error';
 export {
   countUsers,
   resolveSingleOwnerId,

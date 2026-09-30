@@ -233,6 +233,10 @@ export async function updateFolderLook(args: {
 export async function deleteFolder(args: {
   ownerId: string;
   folderId: string;
+  /** Mantle's own housekeeping only (the extracted-images reaper, the
+   *  Auto-filed reconcile): a system folder it made and emptied may go.
+   *  Never from a route or a tool. */
+  allowSystem?: boolean;
 }): Promise<{ ok: true } | { ok: false; reason: string }> {
   const [folder] = await db
     .select()
@@ -248,7 +252,7 @@ export async function deleteFolder(args: {
   if (!isFilesPath(folder.path)) {
     return { ok: false, reason: notAFilesFolder('folder_delete', folder.path).message };
   }
-  if ((folder.data as Record<string, unknown> | null)?.system === true) {
+  if ((folder.data as Record<string, unknown> | null)?.system === true && !args.allowSystem) {
     return { ok: false, reason: 'this folder is made by Mantle and found by its path; it stays' };
   }
   const counts = await folderCounts(args.ownerId, folder.path);
@@ -266,12 +270,25 @@ export async function deleteFolder(args: {
     };
   }
   // Members' drafts and folders in it move up to the parent (never deleted).
-  await db.transaction(async (tx) => {
+  // Checked again under the lock: an upload filing into it meanwhile (the
+  // insert takes the same lock, shared) is committed by then and seen here,
+  // so its bytes are never removed with the directory (review F9).
+  const refused = await db.transaction(async (tx) => {
     await takeShareWriteLock(tx, args.ownerId);
+    const again = await folderCounts(args.ownerId, folder.path);
+    if (again.childFolderCount > 0 || again.fileCount > 0) {
+      return 'folder is not empty — delete its contents first';
+    }
+    const stray = await untrackedFilesOnDisk(folder.path);
+    if (stray.length > 0) {
+      return `folder still holds file(s) on disk that the brain does not track (${stray.join(', ')}) — move or delete them first`;
+    }
     const parent = folder.path.slice(0, folder.path.lastIndexOf('.'));
     await carrySpaceRows(tx, args.ownerId, folder.path, parent, { lift: true });
     await tx.delete(nodes).where(eq(nodes.id, args.folderId));
+    return null;
   });
+  if (refused) return { ok: false, reason: refused };
   await removeFolderOnDisk(folder.path);
   return { ok: true };
 }

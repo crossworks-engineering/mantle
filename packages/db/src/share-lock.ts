@@ -11,16 +11,28 @@ import { sql } from 'drizzle-orm';
 
 type Exec = { execute: (q: ReturnType<typeof sql>) => Promise<unknown> };
 
+/** How long a writer waits for the share lock (and, for the rest of its
+ *  transaction, any row lock) before it gives up with 55P03, which callers
+ *  answer as "busy, try again" (isBusy). A queued exclusive request holds up
+ *  every later insert for the owner, so the wait is bounded. */
+const WAIT = '10s';
+
 /** Exclusive: before a folder's share or path changes (or a shared folder
- *  goes). Held until the transaction ends. */
+ *  goes). Held until the transaction ends. The FIRST statement of the
+ *  transaction, before any row lock. */
 export async function takeShareWriteLock(tx: Exec, ownerId: string): Promise<void> {
+  await tx.execute(sql`select set_config('lock_timeout', ${WAIT}, true)`);
   await tx.execute(sql`select mantle_share_write_lock(${ownerId}::uuid)`);
 }
 
-/** Shared: before a transaction reads the shares its rows will land under
- *  and then locks folder rows (Accept), so a share change cannot slip in
- *  between, and the order never inverts against a writer. */
+/** Shared: the FIRST statement of a transaction that moves existing rows
+ *  (an item move updates its row, and Postgres locks the row before the
+ *  inherit trigger asks for this lock; a folder writer holding the lock
+ *  exclusive then waiting on that row would deadlock: review F2), or that
+ *  reads the shares its rows will land under (Accept). Advisory first, then
+ *  rows, always. */
 export async function takeShareReadLock(tx: Exec, ownerId: string): Promise<void> {
+  await tx.execute(sql`select set_config('lock_timeout', ${WAIT}, true)`);
   await tx.execute(
     sql`select pg_advisory_xact_lock_shared(mantle_share_lock_key(${ownerId}::uuid))`,
   );

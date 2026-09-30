@@ -30,7 +30,14 @@ vi.mock('@mantle/content/tree', async (importOriginal) => {
     if (h.refuse) throw refusal();
     return { changes: [], total: 0 };
   });
-  return { ...actual, guardFileTo: guard, guardFolderTo: guard, guardNewFileIn: guard };
+  return {
+    ...actual,
+    guardFileTo: guard,
+    guardFileCopyTo: guard,
+    guardFolderTo: guard,
+    guardFolderCopyTo: guard,
+    guardNewFileIn: guard,
+  };
 });
 
 vi.mock('@mantle/files', async (importOriginal) => ({

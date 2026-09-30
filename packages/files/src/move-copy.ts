@@ -23,7 +23,14 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { carrySpaceRows, db, nodes, takeShareWriteLock, type Node } from '@mantle/db';
+import {
+  carrySpaceRows,
+  db,
+  nodes,
+  takeShareWriteLock,
+  type Node,
+  takeShareReadLock,
+} from '@mantle/db';
 import { moveFile as moveFileOnDisk, renameFolder as renameFolderOnDisk } from './disk';
 import {
   FILES_MAX_FOLDER_DEPTH,
@@ -121,11 +128,15 @@ export async function moveFileById(args: {
   const oldPath = node.path;
   await moveFileOnDisk(oldPath, filename, args.destPath);
   try {
-    await db
-      .update(nodes)
-      // Filing is not editing: the file keeps its updated_at (node-ops.ts).
-      .set({ path: args.destPath })
-      .where(eq(nodes.id, node.id));
+    // The share lock (shared) before the row: see takeShareReadLock.
+    await db.transaction(async (tx) => {
+      await takeShareReadLock(tx, args.ownerId);
+      await tx
+        .update(nodes)
+        // Filing is not editing: the file keeps its updated_at (node-ops.ts).
+        .set({ path: args.destPath })
+        .where(eq(nodes.id, node.id));
+    });
   } catch (err) {
     await moveFileOnDisk(args.destPath, filename, oldPath).catch(() => {});
     throw err;

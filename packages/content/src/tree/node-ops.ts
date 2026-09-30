@@ -9,7 +9,7 @@
  * slug, and nothing nests deeper than TREE_MAX_DEPTH folders.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { carrySpaceRows, db, nodes, takeShareWriteLock } from '@mantle/db';
+import { carrySpaceRows, db, nodes, takeShareWriteLock, takeShareReadLock } from '@mantle/db';
 import { dashToLtree, folderSlugOf } from '@mantle/files';
 import {
   TREE_KIND_SPECS,
@@ -291,17 +291,21 @@ export async function moveNodeItem(
   itemId: string,
   destPath: string,
 ): Promise<void> {
-  const moved = await db
-    .update(nodes)
-    .set({ path: destPath })
-    .where(
-      and(
-        eq(nodes.id, itemId),
-        eq(nodes.ownerId, ownerId),
-        sql`${nodes.type} = ${TREE_KIND_SPECS[kind].nodeType}`,
-      ),
-    )
-    .returning({ id: nodes.id });
+  // The share lock (shared) before the row: see takeShareReadLock.
+  const moved = await db.transaction(async (tx) => {
+    await takeShareReadLock(tx, ownerId);
+    return tx
+      .update(nodes)
+      .set({ path: destPath })
+      .where(
+        and(
+          eq(nodes.id, itemId),
+          eq(nodes.ownerId, ownerId),
+          sql`${nodes.type} = ${TREE_KIND_SPECS[kind].nodeType}`,
+        ),
+      )
+      .returning({ id: nodes.id });
+  });
   if (!moved.length) throw new NodeOpRefusal('not-found', 'not found');
 }
 

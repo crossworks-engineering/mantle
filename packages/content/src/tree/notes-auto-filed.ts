@@ -11,7 +11,7 @@
  * it costs one indexed lookup after that. Path only, so it is reversible.
  */
 import { sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
+import { db, nodes, takeShareReadLock } from '@mantle/db';
 import { ensureKindRoot } from './node-ops';
 
 export const NOTES_AUTO_FILED_PATH = 'notes.auto_filed';
@@ -66,9 +66,13 @@ export async function reconcileNotesAutoFiled(ownerId: string): Promise<number> 
      limit 1`)) as unknown as unknown[];
   if (!waiting.length) return 0;
   await ensureNotesAssistantFolder(ownerId);
-  const moved = (await db.execute(sql`
-    update nodes set path = ${NOTES_ASSISTANT_PATH}::ltree
-     where owner_id = ${ownerId} and type = 'note' and path <@ ${LEGACY_DIGEST_PATH}::ltree
-     returning id`)) as unknown as unknown[];
+  // The share lock (shared) before the rows: see takeShareReadLock.
+  const moved = await db.transaction(async (tx) => {
+    await takeShareReadLock(tx, ownerId);
+    return (await tx.execute(sql`
+      update nodes set path = ${NOTES_ASSISTANT_PATH}::ltree
+       where owner_id = ${ownerId} and type = 'note' and path <@ ${LEGACY_DIGEST_PATH}::ltree
+       returning id`)) as unknown as unknown[];
+  });
   return moved.length;
 }

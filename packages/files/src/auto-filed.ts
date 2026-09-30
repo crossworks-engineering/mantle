@@ -248,7 +248,7 @@ async function mergeFolderInto(ownerId: string, from: Row, into: string): Promis
   }
   for (const file of await filesIn(ownerId, from.path))
     await moveFileKeepingBoth(ownerId, file, into);
-  const res = await deleteFolder({ ownerId, folderId: from.id });
+  const res = await deleteFolder({ ownerId, folderId: from.id, allowSystem: true });
   if (!res.ok) throw new Error(`auto-filed: could not remove '${from.path}': ${res.reason}`);
 }
 

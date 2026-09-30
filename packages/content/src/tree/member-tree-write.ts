@@ -16,7 +16,7 @@
  * so the place the admin reviewed is the place Accept uses.
  */
 import { sql } from 'drizzle-orm';
-import { db, takeShareWriteLock } from '@mantle/db';
+import { db, takeShareWriteLock, takeShareReadLock } from '@mantle/db';
 import { dashToLtree, folderSlugOf } from '@mantle/files';
 import type { AppTint } from '@mantle/client-types/app-nav';
 import {
@@ -291,12 +291,16 @@ export async function moveMemberItems(
   const result: TreeMoveResult = { moved: 0, failed: [] };
   for (const id of new Set(itemIds)) {
     try {
-      const rows = (await db.execute(sql`
-        update nodes set path = ${dest}::ltree
-         where id = ${id} and owner_id = ${scope.spaceId}
-           and type = ${TREE_KIND_SPECS[kind].nodeType}
-           and not mantle_space_item_frozen(id)
-        returning id`)) as unknown as unknown[];
+      // The space's share lock (shared) before the row: takeShareReadLock.
+      const rows = await db.transaction(async (tx) => {
+        await takeShareReadLock(tx, scope.spaceId);
+        return (await tx.execute(sql`
+          update nodes set path = ${dest}::ltree
+           where id = ${id} and owner_id = ${scope.spaceId}
+             and type = ${TREE_KIND_SPECS[kind].nodeType}
+             and not mantle_space_item_frozen(id)
+          returning id`)) as unknown as unknown[];
+      });
       if (rows.length) result.moved += 1;
       else result.failed.push({ id, error: 'not one of your drafts that can move now' });
     } catch (err) {

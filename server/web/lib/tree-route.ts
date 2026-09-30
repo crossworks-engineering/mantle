@@ -23,6 +23,7 @@ import {
   TreeVisibilityError,
 } from '@mantle/content/tree';
 import { ensureFilesRootBranch } from '@/lib/files';
+import { BUSY_MESSAGE, isBusy } from '@mantle/db';
 import { allPrivateRows } from '@/lib/admin-private-rows';
 import type { MemberCaller, SessionUser } from '@/lib/auth';
 import type { MemberTreeScope } from '@mantle/content/tree';
@@ -97,6 +98,8 @@ export function treeErrorResponse(err: unknown): NextResponse {
     const status = err.code === 'not-found' ? 404 : err.code === 'conflict' ? 409 : 400;
     return NextResponse.json({ error: err.message }, { status });
   }
+  // Another write held the rows (review F7): a plain "busy", never SQL.
+  if (isBusy(err)) return NextResponse.json({ error: BUSY_MESSAGE }, { status: 409 });
   throw err;
 }
 

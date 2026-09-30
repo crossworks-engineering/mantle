@@ -7,7 +7,12 @@
  */
 
 import { moveFileById, moveFolderById, copyFileById, copyFolderById } from '@mantle/files';
-import { guardFileTo, guardFolderTo } from '@mantle/content/tree';
+import {
+  guardFileCopyTo,
+  guardFileTo,
+  guardFolderCopyTo,
+  guardFolderTo,
+} from '@mantle/content/tree';
 import { type BuiltinToolDef } from '../types';
 import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import { str } from '../coerce';
@@ -83,7 +88,7 @@ export const file_copy: BuiltinToolDef = {
     const newFilename = str(input.new_filename) || undefined;
     if (!fileId || !destPath) return { ok: false, error: 'file_id and dest_path required' };
     try {
-      await guardFileTo(ctx.ownerId, fileId, destPath, { confirm: input.confirm === true });
+      await guardFileCopyTo(ctx.ownerId, fileId, destPath, { confirm: input.confirm === true });
       const row = await copyFileById({ ownerId: ctx.ownerId, fileId, destPath, newFilename });
       ctx.step?.setOutput({ sourceId: fileId, newId: row.id });
       return { ok: true, output: row };
@@ -165,7 +170,7 @@ export const folder_copy: BuiltinToolDef = {
     if (!folderId || !destParentPath)
       return { ok: false, error: 'folder_id and dest_parent_path required' };
     try {
-      await guardFolderTo(ctx.ownerId, folderId, destParentPath, {
+      await guardFolderCopyTo(ctx.ownerId, folderId, destParentPath, {
         confirm: input.confirm === true,
       });
       const result = await copyFolderById({ ownerId: ctx.ownerId, folderId, destParentPath });

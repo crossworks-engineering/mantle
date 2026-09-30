@@ -187,6 +187,55 @@ export function liftDiff(
   return diffOf(subtreeRows(ownerId, folder.path, folder.id, false, fromAbove));
 }
 
+/** A level's openness for comparing in SQL (public most open). */
+function openness(level: SQL): SQL {
+  return sql`(case ${level} when 'public' then 0 when 'client' then 1 when 'team' then 2 else 3 end)`;
+}
+
+/**
+ * A COPY of Files content landing under `destPath` (review F1): one file, or
+ * every file of a folder's subtree. Copies are new rows at the admin level in
+ * NEW, unshared folders, so they take whatever share covers where they land;
+ * shares inside the source do not come along (unlike a move). Listed: each
+ * source file whose copy would be read more openly than the source is now.
+ */
+export function copyDiff(
+  ownerId: string,
+  source: { fileId: string } | { folder: { id: string; path: string } },
+  destPath: string,
+): Promise<VisibilityDiff> {
+  const newPath =
+    'fileId' in source
+      ? sql`${destPath}::ltree`
+      : sql`(text2ltree(${destPath}) || subpath(n.path, nlevel(${source.folder.path}::ltree) - 1))`;
+  const which =
+    'fileId' in source
+      ? sql`n.id = ${source.fileId}::uuid`
+      : sql`n.path <@ ${source.folder.path}::ltree`;
+  const from = eff(sql`n.audience`, sql`n.inherited_level`);
+  const to = eff(sql`'admin'`, sql`mantle_inherited_level(n.owner_id, ${newPath}, 'file')`);
+  return (async () => {
+    const found = (await db.execute(sql`
+      select r.id, r.title, r."from", r."to", count(*) over () as total
+        from (select n.id::text as id, n.title, ${from} as "from", ${to} as "to"
+                from nodes n
+               where n.owner_id = ${ownerId} and n.type = 'file' and ${which}) r
+       where ${openness(sql`r."to"`)} < ${openness(sql`r."from"`)}
+       order by lower(r.title), r.id
+       limit ${TREE_VISIBILITY_LIST_MAX}`)) as unknown as Array<{
+      id: string;
+      title: string;
+      from: AccessLevel;
+      to: AccessLevel;
+      total: number | string;
+    }>;
+    return {
+      changes: found.map(({ id, title, from: f, to: t }) => ({ id, title, from: f, to: t })),
+      total: Number(found[0]?.total ?? 0),
+    };
+  })();
+}
+
 /** Items of one kind moving into the folder at `destPath`. */
 export function moveItemsDiff(
   ownerId: string,

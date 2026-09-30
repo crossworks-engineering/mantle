@@ -15,8 +15,9 @@ import { recordIngest } from '@mantle/tracing';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
-import { TreeVisibilityError, guardFileTo } from '@mantle/content/tree';
+import { TreeVisibilityError, guardFileCopyTo, guardFileTo } from '@mantle/content/tree';
 import { treeErrorResponse } from '@/lib/tree-route';
+import { isBusy } from '@mantle/db';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([
@@ -188,7 +189,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     });
     return NextResponse.json({ file });
   } catch (err) {
-    if (err instanceof TreeVisibilityError) return treeErrorResponse(err);
+    if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
     const msg = errorMessage(err);
     if (msg.includes('already exists')) {
       return NextResponse.json({ error: msg }, { status: 409 });
@@ -218,7 +219,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   }
   try {
-    await guardFileTo(user.id, idParsed.data.id, body.data.copy_to, {
+    await guardFileCopyTo(user.id, idParsed.data.id, body.data.copy_to, {
       confirm: body.data.confirm === true,
       seen: body.data.seen,
     });
@@ -230,7 +231,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     });
     return NextResponse.json({ file }, { status: 201 });
   } catch (err) {
-    if (err instanceof TreeVisibilityError) return treeErrorResponse(err);
+    if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'copy failed' },
       { status: 400 },

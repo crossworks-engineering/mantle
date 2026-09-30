@@ -43,13 +43,21 @@ export {
 } from './write';
 export {
   TreeVisibilityError,
+  copyDiff,
   liftDiff,
   moveFolderDiff,
   moveItemsDiff,
   shareDiff,
   type VisibilityDiff,
 } from './visibility';
-export { guardFileTo, guardFolderTo, guardNewFileIn, type ConfirmOpts } from './files-guard';
+export {
+  guardFileCopyTo,
+  guardFileTo,
+  guardFolderCopyTo,
+  guardFolderTo,
+  guardNewFileIn,
+  type ConfirmOpts,
+} from './files-guard';
 export { repairShareDrift, type ShareDriftResult } from './share-drift';
 export {
   clientTreeFolderPage,

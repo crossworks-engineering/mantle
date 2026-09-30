@@ -341,6 +341,40 @@ describe.skipIf(!URL)('sharing a folder', () => {
       await tree.deleteTreeFolder(brain, 'notes', f.id, { confirm: true });
     });
 
+    it('an item move and a folder writer on the same row never deadlock (review F2)', async () => {
+      const dest = await tree.createTreeFolder(brain, 'notes', {
+        parentId: null,
+        name: `${label}_dest`,
+      });
+      const note = randomUUID();
+      await m.systemDb.execute(sqlTag`
+        insert into nodes (id, owner_id, type, title, path, data, tags)
+        values (${note}, ${brain}, 'note', 'contended', 'notes',
+                ${JSON.stringify({ content: 'x' })}::jsonb, '{}')`);
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      let locked!: () => void;
+      const didLock = new Promise<void>((r) => (locked = r));
+      // A folder writer: the share lock exclusive first, then (later) the
+      // same row, as a subtree rewrite or a refresh would.
+      const writer = m.systemDb.transaction(async (tx) => {
+        await tx.execute(sqlTag`select mantle_share_write_lock(${brain}::uuid)`);
+        locked();
+        await held;
+        await tx.execute(sqlTag`update nodes set title = 'contended' where id = ${note}`);
+      });
+      await didLock;
+      // The move must wait at the share lock holding NO row lock; had it
+      // locked the row first, the writer's update would deadlock (40P01).
+      const mover = tree.moveTreeItems(brain, 'notes', [note], dest.id, { confirm: true });
+      await new Promise((r) => setTimeout(r, 300));
+      release();
+      await writer;
+      expect(await mover).toEqual({ moved: 1, failed: [] });
+      await m.systemDb.execute(sqlTag`delete from nodes where id = ${note}`);
+      await tree.deleteTreeFolder(brain, 'notes', dest.id, { confirm: true });
+    });
+
     it('repairs a row left at a share its folders no longer give (share drift)', async () => {
       const stray = randomUUID();
       await m.systemDb.execute(sqlTag`

@@ -12,8 +12,9 @@ import {
 import { copyFolderById, moveFolderById } from '@mantle/files';
 import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
 import { firstIssue } from '@/lib/zod-issue';
-import { TreeVisibilityError, guardFolderTo } from '@mantle/content/tree';
+import { TreeVisibilityError, guardFolderCopyTo, guardFolderTo } from '@mantle/content/tree';
 import { treeErrorResponse } from '@/lib/tree-route';
+import { isBusy } from '@mantle/db';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([
@@ -115,7 +116,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if (!folder) return NextResponse.json({ error: 'not found' }, { status: 404 });
     return NextResponse.json({ folder });
   } catch (err) {
-    if (err instanceof TreeVisibilityError) return treeErrorResponse(err);
+    if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'rename failed' },
       { status: 400 },
@@ -142,7 +143,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   }
   try {
-    await guardFolderTo(user.id, idParsed.data.id, body.data.copy_to, {
+    await guardFolderCopyTo(user.id, idParsed.data.id, body.data.copy_to, {
       confirm: body.data.confirm === true,
       seen: body.data.seen,
     });
@@ -153,7 +154,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     });
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
-    if (err instanceof TreeVisibilityError) return treeErrorResponse(err);
+    if (err instanceof TreeVisibilityError || isBusy(err)) return treeErrorResponse(err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'copy failed' },
       { status: 400 },

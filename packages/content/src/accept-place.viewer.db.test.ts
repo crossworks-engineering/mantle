@@ -291,6 +291,30 @@ describe.skipIf(!URL)('Accept claims in place', () => {
     expect(await row(held)).toMatchObject({ path: 'notes.room.held', data: { icon: '🗂️' } });
   });
 
+  it('an Accept and a folder writer on the same draft never deadlock (review F3)', async () => {
+    const id = await submittedNote('contended accept', 'notes.clients');
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let locked!: () => void;
+    const didLock = new Promise<void>((r) => (locked = r));
+    // A brain folder rename: the share lock exclusive first, then the drafts
+    // under the folder (carrySpaceRows updates them).
+    const writer = m.systemDb.transaction(async (tx) => {
+      await tx.execute(sqlTag`select mantle_share_write_lock(${anchor}::uuid)`);
+      locked();
+      await held;
+      await tx.execute(sqlTag`update nodes set title = title where id = ${id}`);
+    });
+    await didLock;
+    // Accept must wait at the share lock before it locks the draft's rows.
+    const accepting = rv.acceptReviewItem(anchor, id, reviewer());
+    await new Promise((r) => setTimeout(r, 300));
+    release();
+    await writer;
+    await expect(accepting).resolves.toMatchObject({ id });
+    expect(await row(id)).toMatchObject({ owner_id: anchor });
+  });
+
   it('a client from before the tree still files every file in its folderPath', async () => {
     const spooled = await fp.spoolUpload(Readable.from([Buffer.from('OLD')]), {
       maxBytes: sf.SPACE_FILE_MAX_BYTES,

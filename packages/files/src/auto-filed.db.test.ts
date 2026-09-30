@@ -139,4 +139,22 @@ describe.skipIf(!URL)('auto-filed', () => {
       files.moveFolderById({ ownerId: owner, folderId: top!.id, destParentPath: 'files' }),
     ).rejects.toThrow(/made by Mantle/);
   });
+
+  it('a system folder refuses a delete, but Mantle removes one it emptied (review F8)', async () => {
+    const doc = await files.ensureExtractedImagesFolder({
+      ownerId: owner,
+      sourceSlug: 'reaped-doc',
+      sourceTitle: 'Reaped doc',
+    });
+    const folder = await branch(doc);
+    expect(await files.deleteFolder({ ownerId: owner, folderId: folder!.id })).toMatchObject({
+      ok: false,
+      reason: expect.stringMatching(/made by Mantle/),
+    });
+    // The extracted-images reaper's call (derived.ts) passes allowSystem.
+    expect(
+      await files.deleteFolder({ ownerId: owner, folderId: folder!.id, allowSystem: true }),
+    ).toEqual({ ok: true });
+    expect(await branch(doc)).toBeNull();
+  });
 });

@@ -95,6 +95,37 @@ async function carry(
                         where b.owner_id = n.owner_id and b.type = 'branch'
                           and b.path = ${mapped}
                           and not (b.path <@ ${oldPath}::ltree)))`);
+  // A member's FILE landing where the member already has one of that name
+  // (a lift, a merge, or a clamp of deeper folders) takes a "-2" name (then
+  // "-3"...), as Accept does: file names are unique per owner and folder
+  // (file_filename_in_parent_uq, and the slug index), and a clash here
+  // failed the admin's rename, move or delete half done (review F6).
+  const finalPath = sql`subpath(${mapped}, 0, least(nlevel(${mapped}), ${MAX_TREE_NLEVEL}))`;
+  const renamed = sql`(case when r.fname ~ '^.+[.][^.]+$'
+                        then regexp_replace(r.fname, '^(.*)([.][^.]+)$', '\\1-' || (r.dup + 1)::text || '\\2')
+                        else r.fname || '-' || (r.dup + 1)::text end)`;
+  await tx.execute(sql`
+    with moving as (
+      select n.id, n.owner_id, ${finalPath} as fp, n.data->>'filename' as fname
+        from nodes n
+       where ${inSpaces} and n.type = 'file' and n.data ? 'filename'
+    ), ranked as (
+      select m.id, m.fname,
+             row_number() over (partition by m.owner_id, m.fp, lower(m.fname) order by m.id)
+             + (case when exists (
+                  select 1 from nodes b
+                   where b.owner_id = m.owner_id and b.type = 'file'
+                     and b.path = m.fp and lower(b.data->>'filename') = lower(m.fname)
+                     and not (b.path <@ ${oldPath}::ltree)) then 1 else 0 end)
+             - 1 as dup
+        from moving m
+    )
+    update nodes n
+       set data = jsonb_set(n.data, '{filename}', to_jsonb(${renamed})),
+           slug = case when n.slug is null then null else lower(${renamed}) end,
+           title = case when n.title = r.fname then ${renamed} else n.title end
+      from ranked r
+     where n.id = r.id and r.dup > 0`);
   // Two passes through a temporary prefix: in one UPDATE a row's new path
   // can be another moving row's old one (a lift maps `a.o.o.y` onto `a.o.y`,
   // which itself moves on to `a.y`), and the unique index is checked row by

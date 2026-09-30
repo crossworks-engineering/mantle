@@ -119,4 +119,31 @@ describe.skipIf(!URL)('the Files visibility guards', () => {
       diff: { changes: [{ id: shared.id, from: 'client', to: 'admin' }] },
     });
   });
+
+  it('a copy takes the share where it lands, never the source’s (review F1)', async () => {
+    // Internal is shared with the team; copying it into the client-shared
+    // portal makes NEW unshared folders there, so its files would be read by
+    // clients. A move keeps Internal's own share (no change); a copy does not.
+    const internal = await tree.createTreeFolder(owner, 'files', {
+      parentId: null,
+      name: 'Internal',
+    });
+    await tree.updateTreeFolder(owner, 'files', internal.id, { share: 'team' }, { confirm: true });
+    const memo = await files.upsertFile({
+      ownerId: owner,
+      parentPath: internal.path,
+      filename: 'memo.txt',
+      bytes: Buffer.from('m'),
+    });
+    await expect(tree.guardFolderCopyTo(owner, internal.id, portal.path, {})).rejects.toMatchObject(
+      { diff: { total: 1, changes: [{ id: memo.id, from: 'team', to: 'client' }] } },
+    );
+    await expect(tree.guardFileCopyTo(owner, memo.id, portal.path, {})).rejects.toMatchObject({
+      diff: { total: 1 },
+    });
+    // A copy that lands LESS open asks nothing.
+    await expect(tree.guardFileCopyTo(owner, memo.id, plain.path, {})).resolves.toMatchObject({
+      total: 0,
+    });
+  });
 });

@@ -24,8 +24,9 @@ folder system, phases 1 to 5") and a second audit's review.
   (`alsoLowered`).
 - **Migration 0207**: a shared folder deleted by any writer leaves no share
   behind; an unshare can no longer race an insert into the folder (a share
-  lock in the triggers); the share refresh skips brains with no shared
-  folder. A nightly `share-drift` sweep repairs and reports any row read at
+  lock in the triggers for rows under shareable roots, always taken before
+  row locks, with a 10 second wait; a conflict answers "busy, try again");
+  the share refresh skips brains with no shared folder. A nightly `share-drift` sweep repairs and reports any row read at
   a share its folders no longer give.
 - **Files folder tools and operations refuse another kind's folder** (a
   notes folder deleted through them left its notes behind with their
@@ -35,6 +36,8 @@ folder system, phases 1 to 5") and a second audit's review.
   keeps at most 500 folders per kind; the tree counts children in one pass
   (it was quadratic) and pages drafts like items. A member's folder holding
   a submitted draft stays put until the review is done.
+- A copy into a shared folder asks too (copies take the destination's
+  share, never the shares inside the source).
 - Agents can make and move Recall folders (`tree_*` with kind `recall`).
 - Notes, drawings, files and Files folders report the share they inherit
   (`inherited`; folders also `share`), so screens show the level an item is

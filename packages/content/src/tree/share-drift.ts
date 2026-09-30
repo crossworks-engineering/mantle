@@ -20,12 +20,20 @@ export type ShareDriftResult = {
   openedTooFar: number;
 };
 
+/** The only rows that can drift: those that hold a share, or could take one
+ *  (workspace kinds under a shareable root). Email, tasks and the rest are
+ *  never read, so the nightly scan stays small (review F13). */
+const candidates = sql`(n.inherited_level is not null
+  or (mantle_workspace_kind(n.type) and nlevel(n.path) > 1
+      and subpath(n.path, 0, 1)::text in ('files', 'notes', 'pages', 'draw', 'tables', 'formulas', 'apps')))`;
+
 export async function repairShareDrift(opts: { dryRun?: boolean } = {}): Promise<ShareDriftResult> {
   const drift = sql`
     select n.id, n.inherited_level as stored,
            mantle_inherited_level(n.owner_id, n.path, n.type) as rule
       from nodes n
-     where n.inherited_level is distinct from mantle_inherited_level(n.owner_id, n.path, n.type)`;
+     where ${candidates}
+       and n.inherited_level is distinct from mantle_inherited_level(n.owner_id, n.path, n.type)`;
   const [count] = (await db.execute(sql`
     select count(*)::int as drifted,
            count(*) filter (where d.stored is not null
@@ -38,7 +46,8 @@ export async function repairShareDrift(opts: { dryRun?: boolean } = {}): Promise
   const done = (await db.execute(sql`
     update nodes n
        set inherited_level = mantle_inherited_level(n.owner_id, n.path, n.type)
-     where n.inherited_level is distinct from mantle_inherited_level(n.owner_id, n.path, n.type)
+     where ${candidates}
+       and n.inherited_level is distinct from mantle_inherited_level(n.owner_id, n.path, n.type)
     returning n.id`)) as unknown as unknown[];
   return { drifted, repaired: done.length, openedTooFar };
 }

@@ -151,6 +151,15 @@ contacts, secrets) cannot be shared.
   its subtree. Every writer that files an item (the UI, agents, uploads, the
   disk watcher) gets it for free. Only workspace kinds ever inherit (the type
   ceiling); a member's draft (another owner) never does.
+- **Races** (migration 0207). A share change and a write filing into the
+  folder wait for each other on the owner's share lock (the inherit trigger
+  takes it shared, a refresh takes it exclusive), so neither misses the
+  other's work. The order is always the lock first, then rows: a writer that
+  changes shares or folder paths takes it exclusive as the first statement
+  of its transaction, and one that moves existing rows (an item move,
+  Accept) takes it shared first. Both wait at most 10 seconds; a write that
+  meets another on the same rows answers "busy, try again" (409), never SQL.
+  A nightly `share-drift` sweep repairs anything that slips through.
 - **Who reads it.** `nodes_viewer_read` reads a brain row at its own level
   OR its inherited share; still a same-row check. Chunks, facts, pages and
   the rest follow their node as before.
@@ -176,7 +185,9 @@ total }` and nothing is written; the same call with `confirm: true` goes
   upload into a shared folder (`POST /api/files/files`, `confirm` in the JSON
   body or as a form field before the file), and the agent tools `file_move`,
   `file_copy`, `folder_move`, `folder_copy`, `file_create` and
-  `file_upload`. Every agent tool that can change who sees something takes
+  `file_upload`. A copy is judged by where its NEW rows land: copies take
+  the destination's share, never the shares inside the source. Every agent
+  tool that can change who sees something takes
   `confirm` and tells the model to ask the user first; a test pins that each
   such tool declares it (`packages/tools/src/confirm-schema.test.ts`).
 - **Shared via.** `GET /api/access/nodes/:id` names the shared folder an

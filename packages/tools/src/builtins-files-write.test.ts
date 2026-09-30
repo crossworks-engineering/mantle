@@ -49,6 +49,8 @@ vi.mock('@mantle/content/tree', () => {
     TreeVisibilityError,
     guardFileTo: vi.fn(async () => ({ changes: [], total: 0 })),
     guardFolderTo: vi.fn(async () => ({ changes: [], total: 0 })),
+    guardFileCopyTo: vi.fn(async () => ({ changes: [], total: 0 })),
+    guardFolderCopyTo: vi.fn(async () => ({ changes: [], total: 0 })),
     guardNewFileIn: vi.fn(async () => ({ changes: [], total: 0 })),
   };
 });
@@ -68,7 +70,12 @@ import {
   upsertFile,
 } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
-import { TreeVisibilityError, guardFileTo, guardNewFileIn } from '@mantle/content/tree';
+import {
+  TreeVisibilityError,
+  guardFileCopyTo,
+  guardFileTo,
+  guardNewFileIn,
+} from '@mantle/content/tree';
 import {
   FILE_CREATE_TOOLS,
   FILE_MANAGE_TOOLS,
@@ -544,7 +551,7 @@ describe('the visibility confirm: into or out of a shared folder', () => {
     expect(err).toMatch(/confirm: true/);
     expect(moveFileById).not.toHaveBeenCalled();
 
-    vi.mocked(guardFileTo).mockRejectedValueOnce(refused());
+    vi.mocked(guardFileCopyTo).mockRejectedValueOnce(refused());
     expect(
       errorOf(await fileCopy.handler({ file_id: FILE_ID, dest_path: 'files.clients' }, ctx)),
     ).toMatch(/confirm: true/);

@@ -9,7 +9,7 @@
  * order are plain row data for every kind.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { db, isCheckViolation, nodes, takeShareWriteLock } from '@mantle/db';
+import { db, isCheckViolation, nodes, takeShareWriteLock, isBusy, BUSY_MESSAGE } from '@mantle/db';
 import {
   createFolder as createFilesFolder,
   deleteFolder as deleteFilesFolder,
@@ -137,12 +137,25 @@ function opsFor(kind: TreeKind): TreeKindOps {
 async function refusing<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();
-  } catch (err) {
-    if (err instanceof TreeError) throw err;
-    if (err instanceof NodeOpRefusal) throw new TreeError(err.code, err.message);
-    const message = err instanceof Error ? err.message : String(err);
-    throw new TreeError(/already exists|unique/i.test(message) ? 'conflict' : 'invalid', message);
+  } catch (first) {
+    // Another write held these rows (a deadlock broken, or the share lock's
+    // timeout): its transaction rolled back, so once more, then a plain
+    // "busy" (review F7). Never the SQL text.
+    if (!isBusy(first)) return refusingError(first);
+    try {
+      return await run();
+    } catch (err) {
+      if (isBusy(err)) throw new TreeError('conflict', BUSY_MESSAGE);
+      return refusingError(err);
+    }
   }
+}
+
+function refusingError(err: unknown): never {
+  if (err instanceof TreeError) throw err;
+  if (err instanceof NodeOpRefusal) throw new TreeError(err.code, err.message);
+  const message = err instanceof Error ? err.message : String(err);
+  throw new TreeError(/already exists|unique/i.test(message) ? 'conflict' : 'invalid', message);
 }
 
 async function folderOrThrow(
@@ -366,6 +379,7 @@ async function setFolderShare(
     if (isCheckViolation(err)) {
       throw new TreeError('invalid', `${kind} folders cannot be shared on this brain yet`);
     }
+    if (isBusy(err)) throw new TreeError('conflict', BUSY_MESSAGE);
     throw err;
   }
   if (diff.total > 0) await followShares(ownerId, { path: folder.path });
@@ -518,7 +532,7 @@ export async function deleteTreeFolder(
   }
   for (const c of children) await refusing(() => ops.moveFolder(ownerId, c.id, parentPath));
   for (const i of items) await refusing(() => ops.moveItem(ownerId, i.id, parentPath));
-  await ops.removeEmptyFolder(ownerId, folderId);
+  await refusing(() => ops.removeEmptyFolder(ownerId, folderId));
   if (affected.length) await followShares(ownerId, { ids: affected });
 }
 
@@ -546,7 +560,10 @@ export async function moveTreeItems(
       await ops.moveItem(ownerId, id, dest);
       result.moved += 1;
     } catch (err) {
-      result.failed.push({ id, error: err instanceof Error ? err.message : String(err) });
+      result.failed.push({
+        id,
+        error: isBusy(err) ? BUSY_MESSAGE : err instanceof Error ? err.message : String(err),
+      });
     }
   }
   if (diff.total > 0 && result.moved) await followShares(ownerId, { ids });

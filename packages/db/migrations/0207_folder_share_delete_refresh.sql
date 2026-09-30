@@ -25,14 +25,21 @@
 --    the other's work under its own snapshot, so the insert computed the
 --    share still set and the refresh could not see the uncommitted row.
 --    Fails OPEN (folder audit Y1). Now every write that files a workspace
---    row takes a SHARED advisory lock on its owner before it reads the
---    shares above it, and every refresh (a folder's path or share changed,
---    a shared folder deleted) takes it EXCLUSIVE first. The two wait for
---    each other, and each reads with a fresh snapshot once it holds the
---    lock (plpgsql statements in READ COMMITTED), so neither misses the
---    other's committed work. Writers that change shares or folder paths
---    take the exclusive lock at the start of their transaction
---    (mantle_share_write_lock), so they never deadlock on their own rows.
+--    row under a SHAREABLE root (files, notes, pages, draw, tables,
+--    formulas, apps: the roots nodes_share_level_ck allows; nothing else
+--    can inherit a share, so email, tasks and the rest never wait) takes a
+--    SHARED advisory lock on its owner before it reads the shares above
+--    it, and every refresh (a folder's path or share changed, a shared
+--    folder deleted) takes it EXCLUSIVE first. The two wait for each
+--    other, and each reads with a fresh snapshot once it holds the lock
+--    (plpgsql statements in READ COMMITTED), so neither misses the other's
+--    committed work. Lock order is always advisory, then rows: writers that
+--    change shares or folder paths take the exclusive lock as the first
+--    statement of their transaction (mantle_share_write_lock), and writers
+--    that MOVE existing rows take the shared lock first too (an UPDATE
+--    locks its row before this trigger runs, so the trigger's own request
+--    would come too late). Both set a lock_timeout; a wait past it is a
+--    "busy, try again" refusal, never a hang.
 --    The nightly share-drift sweep (maintenance registry) repairs and
 --    reports anything that slips through anyway.
 --
@@ -65,7 +72,9 @@ $$;
 CREATE OR REPLACE FUNCTION "public"."mantle_nodes_inherit_trg"()
   RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF "public"."mantle_workspace_kind"(NEW."type") AND nlevel(NEW."path") > 1 THEN
+  IF "public"."mantle_workspace_kind"(NEW."type") AND nlevel(NEW."path") > 1
+     AND subpath(NEW."path", 0, 1)::text IN
+         ('files', 'notes', 'pages', 'draw', 'tables', 'formulas', 'apps') THEN
     PERFORM pg_advisory_xact_lock_shared("public"."mantle_share_lock_key"(NEW."owner_id"));
   END IF;
   NEW."inherited_level" := "public"."mantle_inherited_level"(NEW."owner_id", NEW."path", NEW."type");
@@ -107,35 +116,3 @@ CREATE TRIGGER "nodes_share_deleted_after"
   FOR EACH ROW
   WHEN (OLD."type" = 'branch' AND OLD."share_level" IS NOT NULL)
   EXECUTE FUNCTION "public"."mantle_nodes_unshare_deleted_trg"();
---> statement-breakpoint
-
--- 4. The folder checks were added NOT VALID (0201, 0204) so older rows were
---    left alone; nothing validated them since (folder audit C7). Validate
---    each where the data already satisfies it; a brain that still holds a
---    row the check refuses (a folder deeper than three levels from before
---    the tree) keeps it NOT VALID and says so, rather than failing the
---    roll. VALIDATE takes a SHARE UPDATE EXCLUSIVE lock: reads and writes
---    go on while it scans.
-DO $$
-BEGIN
-  ALTER TABLE "public"."nodes" VALIDATE CONSTRAINT "nodes_tree_folder_depth_ck";
-EXCEPTION WHEN check_violation THEN
-  RAISE NOTICE 'nodes_tree_folder_depth_ck stays NOT VALID: a folder deeper than three levels exists';
-END
-$$;
---> statement-breakpoint
-DO $$
-BEGIN
-  ALTER TABLE "public"."nodes" VALIDATE CONSTRAINT "nodes_share_level_ck";
-EXCEPTION WHEN check_violation THEN
-  RAISE NOTICE 'nodes_share_level_ck stays NOT VALID: a share outside the shareable roots exists';
-END
-$$;
---> statement-breakpoint
-DO $$
-BEGIN
-  ALTER TABLE "public"."nodes" VALIDATE CONSTRAINT "nodes_inherited_level_ck";
-EXCEPTION WHEN check_violation THEN
-  RAISE NOTICE 'nodes_inherited_level_ck stays NOT VALID: an inherited share on a non-workspace row exists';
-END
-$$;

@@ -167,6 +167,32 @@ describe.skipIf(!URL)('members’ drafts follow the brain’s folders', () => {
     expect(left!.n).toBe(0);
   });
 
+  it('a member file whose name the member already has above takes a -2 name (review F6)', async () => {
+    const memberFile = async (p: string, filename: string) => {
+      const id = randomUUID();
+      await m.db.execute(sqlTag`
+        insert into nodes (id, owner_id, type, title, path, data, tags)
+        values (${id}, ${space}, 'file', ${filename}, ${p}::ltree,
+                ${JSON.stringify({ filename, storage: 'space' })}::jsonb, '{}')`);
+      return id;
+    };
+    const nameOf = async (id: string) =>
+      (
+        (await m.db.execute(sqlTag`
+          select path::text as path, data->>'filename' as filename from nodes where id = ${id}`)) as unknown as Array<{
+          path: string;
+          filename: string;
+        }>
+      )[0];
+    const top = await tree.createTreeFolder(brain, 'files', { parentId: null, name: 'Reports' });
+    const sub = await tree.createTreeFolder(brain, 'files', { parentId: top.id, name: 'Q3' });
+    const above = await memberFile('space_files.reports', 'report.pdf');
+    const below = await memberFile('space_files.reports.q3', 'report.pdf');
+    await tree.deleteTreeFolder(brain, 'files', sub.id);
+    expect(await nameOf(above)).toEqual({ path: 'space_files.reports', filename: 'report.pdf' });
+    expect(await nameOf(below)).toEqual({ path: 'space_files.reports', filename: 'report-2.pdf' });
+  });
+
   it('Files folders carry member files, mirrored under space_files (rename, move, delete)', async () => {
     const f = await tree.createTreeFolder(brain, 'files', { parentId: null, name: 'Docs' });
     const to = await tree.createTreeFolder(brain, 'files', { parentId: null, name: 'Archive' });

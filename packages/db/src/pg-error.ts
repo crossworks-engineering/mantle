@@ -51,3 +51,14 @@ export function isUniqueViolation(err: unknown): boolean {
 export function isCheckViolation(err: unknown): boolean {
   return pgErrorCode(err) === '23514';
 }
+
+/** 40P01 deadlock_detected or 55P03 lock_not_available (a lock_timeout):
+ *  another write held what this one needed. Safe to retry once; never to
+ *  show a person as SQL (folder audit review F7). */
+export function isBusy(err: unknown): boolean {
+  const code = pgErrorCode(err);
+  return code === '40P01' || code === '55P03';
+}
+
+/** What a person reads when a write met another write on the same rows. */
+export const BUSY_MESSAGE = 'Another change to these folders is under way; try again in a moment.';

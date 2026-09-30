@@ -18,7 +18,7 @@
  * needed and no migration.
  */
 import { sql } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { db, takeShareReadLock } from '@mantle/db';
 import type { AppNavEntry, AppNavFolder } from '@mantle/client-types';
 import { EMPTY_APP_NAV } from '@mantle/client-types/app-nav';
 import { TREE_MAX_DEPTH } from '@mantle/client-types/tree';
@@ -125,13 +125,17 @@ async function makeFolder(
 
 async function placeApps(ownerId: string, ids: readonly string[], path: string): Promise<void> {
   if (!ids.length) return;
-  await db.execute(sql`
-    update nodes set path = ${path}::ltree
-     where owner_id = ${ownerId} and type = 'app'
-       and id in (${sql.join(
-         ids.map((id) => sql`${id}::uuid`),
-         sql`, `,
-       )})`);
+  // The share lock (shared) before the rows: see takeShareReadLock.
+  await db.transaction(async (tx) => {
+    await takeShareReadLock(tx, ownerId);
+    await tx.execute(sql`
+      update nodes set path = ${path}::ltree
+       where owner_id = ${ownerId} and type = 'app'
+         and id in (${sql.join(
+           ids.map((id) => sql`${id}::uuid`),
+           sql`, `,
+         )})`);
+  });
 }
 
 async function moveEntries(
