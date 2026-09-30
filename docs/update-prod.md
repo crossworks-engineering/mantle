@@ -426,6 +426,62 @@ older client see client requests they cannot open. What to know:
   before v0.232.318 should roll with no long transaction open: a stuck
   migrate there is a lock wait, not an error.
 
+## Rolling to v0.232.349 (client logins C6 and the whole-tier audit fixes)
+
+Boxes on v0.232.338 get C6 (v0.232.346 to 348) and these fixes in one roll,
+through the updater (`scripts/roll.sh`). The release pairs with the jackdaw
+client in `client-pair.tag`. What changes for a box:
+
+- **Who writes apps (C6, migration 0198).** Only admins create, change,
+  build, publish, share or delete apps. A team-level or client-level app is
+  a shared workspace: members write team AND client apps (before C6 they
+  wrote team apps only), and client logins write client apps. An app whose
+  data should stay read only for them needs the **Informational** switch on
+  its app page (`apps.data_read_only`, default off for every existing app).
+  Before the roll, list the apps this affects and decide per app:
+
+  ```sql
+  select n.id, n.title, n.audience from nodes n
+   where n.type = 'app' and n.audience in ('team', 'client') order by 2;
+  ```
+
+- **Client-level apps run the client tool rules for every runner**, an
+  admin's and a member's run included (only `client_shared_list`,
+  `client_shared_search`, `client_shared_open`). A client-level app that
+  declared other tools now gets an error for them; the author warnings on
+  `app_tools_set`, `app_publish` and `access_set` name each one. Team,
+  admin and public apps keep their runner's rules.
+- **App databases are bounded**: one file grows to at most 256 MB
+  (`APP_SQL_MAX_DB_MB` in `.env`; `docker-compose.yml` passes it, so the
+  roll refreshes compose), a reply to at most 8 MB, and one caller runs one
+  statement at a time. A write past the cap fails with "database or disk is
+  full" and rolls back. Check the largest app database before the roll
+  (`du -sh <stack>/data/app-dbs/*/*`) and raise the setting if one is near.
+- **Exports of client apps** (a brain Table mirrored from a client-level
+  app, or one a client wrote) index at retrieval depth only and commit at
+  most once per 10 minutes. Facts extracted from such a Table before the
+  roll stay until it is re-extracted.
+- **The app access log** keeps 90 days (`app-access-log-reap` in the
+  maintenance runner), logs a caller's reads at most once a minute per app,
+  and client broker calls no longer write an `api.write` audit row.
+- **App write tools are owner only**: `app_create`, `app_build`,
+  `app_db_seed` and the other app write tools refuse a team or client
+  surface and MCP callers that are not the owner.
+- **Deleting a client login** also deletes that client's comments; its chat
+  thread goes with the login as before. Disable keeps both.
+- **Migrations**, all re-runnable with a 30 s lock timeout:
+  - 0196 adds `space_items.taken_title` and fills it for taken items (one
+    UPDATE).
+  - 0197 adds three small admin-level tables (`client_sourced_nodes`,
+    `conversation_taints`, `client_request_filings`).
+  - 0198 adds `apps.data_read_only` (a metadata-only default).
+  - 0199 adds `app_databases.client_written_at` (metadata only).
+  - 0200 adds a trigger on `auth.users` that refuses any role change to or
+    from `client` (a short lock on `auth.users`).
+- **Rolling back** to v0.232.338 leaves the new columns, tables and the
+  trigger in place; 338 reads none of them and never changes a client's
+  role. Its members lose write access to client apps again.
+
 ## Rollback
 
 ```bash
