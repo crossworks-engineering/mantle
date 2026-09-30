@@ -353,7 +353,10 @@ async function parent(args: Args): Promise<void> {
           };
         } else {
           await createDb(dbName);
-          const code = await runChild(file, childEnv({ ingestOnly: args.ingestOnly, reuse: false }));
+          const code = await runChild(
+            file,
+            childEnv({ ingestOnly: args.ingestOnly, reuse: false }),
+          );
           if (code !== 0) throw new Error(`the child exited ${code}`);
           r = JSON.parse(readFileSync(resultFileFor(file), 'utf8')) as HaystackResult;
           if (snap) {

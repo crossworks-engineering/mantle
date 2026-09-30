@@ -355,7 +355,11 @@ export async function runHaystack(opts: {
   const loop = monitorEventLoopDelay({ resolution: 20 });
   loop.enable();
   const ingested = reused
-    ? { extracted: reused.extracted, failed: haystack.sessions.length - reused.extracted, stopped: false }
+    ? {
+        extracted: reused.extracted,
+        failed: haystack.sessions.length - reused.extracted,
+        stopped: false,
+      }
     : await ingest(ownerId, haystack, opts.extractConcurrency, opts.maxUsd);
   loop.disable();
   const ms = (ns: number) => Math.round(ns / 1e6);

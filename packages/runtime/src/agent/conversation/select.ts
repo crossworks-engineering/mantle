@@ -239,9 +239,7 @@ export function selectChunkHits(
   const cut = hits
     .filter((h) => h.distance < CHUNK_CUTOFF && h.nodeType !== 'telegram_message')
     .slice(0, chunkLimit);
-  const selected = promote
-    ? promotePassages(cut, promote.sources, promote.best, chunkLimit)
-    : cut;
+  const selected = promote ? promotePassages(cut, promote.sources, promote.best, chunkLimit) : cut;
   const chunkHits = selected.map((h) => ({
     nodeId: h.nodeId,
     title: h.nodeTitle,
@@ -296,8 +294,7 @@ export function promotePassages(
     for (const id of src.nodeIds) {
       if (taken >= src.max || promoted.length >= limit) break;
       const b = byNode.get(id);
-      if (!b || have.has(id) || b.distance >= cutoff || b.nodeType === 'telegram_message')
-        continue;
+      if (!b || have.has(id) || b.distance >= cutoff || b.nodeType === 'telegram_message') continue;
       have.add(id);
       promoted.push(b);
       taken++;

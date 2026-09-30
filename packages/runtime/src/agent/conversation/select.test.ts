@@ -382,7 +382,12 @@ describe('promotePassages', () => {
   });
 
   it('replaces the weakest passages when the cut is full, holding the budget', () => {
-    const out = promotePassages(selected, [{ nodeIds: ['h1', 'h2'], max: 2 }], [hit('h1'), hit('h2')], 3);
+    const out = promotePassages(
+      selected,
+      [{ nodeIds: ['h1', 'h2'], max: 2 }],
+      [hit('h1'), hit('h2')],
+      3,
+    );
     expect(out.map((x) => x.nodeId)).toEqual(['p1', 'h1', 'h2']);
   });
 
@@ -411,7 +416,12 @@ describe('promotePassages', () => {
   });
 
   it('lets a trusted note in looser than the 0.65 passage cutoff, but not open', () => {
-    const out = promotePassages([], [{ nodeIds: ['a', 'b'], max: 2 }], [hit('a', 0.7), hit('b', 0.9)], 8);
+    const out = promotePassages(
+      [],
+      [{ nodeIds: ['a', 'b'], max: 2 }],
+      [hit('a', 0.7), hit('b', 0.9)],
+      8,
+    );
     expect(out.map((x) => x.nodeId)).toEqual(['a']);
   });
 
