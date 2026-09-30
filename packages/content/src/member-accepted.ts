@@ -386,7 +386,9 @@ async function redactedSvgLinks(
 }
 
 /** One accepted item as ACCEPTED (its snapshot, never the brain's current
- *  version), for its author only. `tabId` picks a table's tab. A page's doc,
+ *  version), for its author only: nothing of the live node an admin could
+ *  have changed (a table carries no summary, description, tags or app
+ *  link; the snapshot records none). `tabId` picks a table's tab. A page's doc,
  *  a note's text and a table's cells are redacted at `reader`, the author's
  *  level (team by default, a member; audit L1). A drawing's picture is its
  *  accepted SVG (acceptedDrawSvg, its links redacted the same way); a file's
@@ -422,8 +424,19 @@ export async function getAcceptedItem(
         .where(and(eq(nodes.id, id), eq(nodes.ownerId, anchorId)))
         .limit(1);
       if (!node) return null;
+      // Nothing of the LIVE node an admin could have changed since (C6):
+      // the title, icon and time are the snapshot's; the extractor's
+      // summary (written from the brain's version), the description, the
+      // tags, the app link and the visibility are left out (the snapshot
+      // records none of them). Only the id, the level and createdAt stay.
       const table = tableFromSnapshot(
-        { ...node, title: snap.title },
+        {
+          ...node,
+          title: snap.title,
+          tags: [],
+          data: snap.icon ? { icon: snap.icon } : {},
+          updatedAt: snap.acceptedAt,
+        },
         { storagePath: snap.tablePath, doc: snap.tableDoc },
         { tabId: opts.tabId },
       );

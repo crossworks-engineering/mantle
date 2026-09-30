@@ -7,7 +7,9 @@
  *    team mention and a team link, and no child page card of an admin page;
  *    a member reads "Private item" for an admin mention, for a table cell
  *    that links an admin item, and their drawing's link to an admin item
- *    loses its href (client logins C6). What the author may read stays: a
+ *    loses its href, and an accepted table carries nothing of the live
+ *    node an admin changed since (summary, description, tags, app link;
+ *    client logins C6). What the author may read stays: a
  *    client-level item (by today's title), a team item for a member, their
  *    own image;
  *  - My requests search matches the accepted title, not an admin's later
@@ -403,8 +405,33 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
       tableFromSnapshot(node!, { storagePath: snap!.tablePath, doc: snap!.tableDoc }).data,
     );
     for (const s of [adminNote, adminPage2, teamNote]) expect(raw).toContain(s);
+    // After Accept an admin (and the extractor) change the LIVE table: a
+    // summary, a description, tags, an app link and an icon that name the
+    // admin item. None of it may reach the author (C6).
+    const live = {
+      summary: `ADMINSECRET summary of ${adminNote}`,
+      description: `ADMINSECRET description, see /n/${adminNote}`,
+      icon: 'ADMINSECRET-icon',
+      visibility: 'public',
+      appLink: { appId: adminNote, appName: 'ADMINSECRET app', sqliteTable: 'ADMINSECRET_t' },
+    };
+    await m.systemDb.execute(sqlTag`
+      update nodes set data = coalesce(data, '{}'::jsonb) || ${JSON.stringify(live)}::jsonb,
+                       tags = array['ADMINSECRET-tag', ${adminNote}]
+       where id = ${t.id}`);
 
     const item = await ma.getAcceptedItem(anchor, member, t.id);
+    const detail = item?.type === 'table' ? item.table : null;
+    expect(detail).toMatchObject({
+      summary: null,
+      description: null,
+      tags: [],
+      appLink: null,
+      icon: null,
+      visibility: 'private',
+      title: `${tag} member table`,
+    });
+    expect(JSON.stringify(item)).not.toContain('ADMINSECRET');
     expect(item?.type).toBe('table');
     // (A new table starts with empty rows.)
     const values =

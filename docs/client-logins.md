@@ -409,7 +409,10 @@ A client chats with the brain's **client-responder** in the client portal
   image, a form the rewrite does not know) is left out or cannot draw, so a
   client is never pointed at an owner route or made to load a picture from
   another site (`packages/content/src/chat-images.ts`). The member chat
-  does the same at team level.
+  does the same at team level. The rewritten image is a plain relative
+  link, so it loads with the web session cookie only; a surface without
+  one (a bearer app) does not show it until the app adds the `?at=`
+  asset token.
 - **Admins read client chats** in Team admin > Member chats (Clients
   filter), read-only, with the private placeholder rule for replies that
   quoted the client's own drafts.

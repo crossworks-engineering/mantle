@@ -1261,7 +1261,11 @@ one (a `/n/<id>` link, a `page:` ref, an absolute URL into the brain) reads
 "Private item"; a drawing's element link to one loses its href (the element
 stays). The author may read the brain's items at their level, their own
 items, and the items they wrote that an admin accepted (shown by their
-accepted title). `packages/content/src/member-accepted.ts`. The table backup
+accepted title). Nothing of the live item an admin could change after
+Take over or Accept reaches the author either: an accepted table carries
+no summary (the extractor's, of the brain's version), description, tags or
+app link, and its title, icon and time are the snapshot's.
+`packages/content/src/member-accepted.ts`. The table backup
 (`snapshotAllTableDatabases`, the scheduled backup and `db-dump.sh`) copies
 the snapshot workbooks under the same `accepted-snapshots/` folder, so an
 untar into `TABLE_DB_DIR` restores them. Deleting the brain table removes
