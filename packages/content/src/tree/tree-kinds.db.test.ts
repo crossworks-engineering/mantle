@@ -52,6 +52,26 @@ describe.skipIf(!URL)('the item tree on notes, tasks, events and secrets', () =>
     await m.db.execute(sqlTag`delete from auth.users where id = ${owner}`);
   });
 
+  it('the Files folder operations refuse another kind’s folder (audit X1)', async () => {
+    const files = await import('@mantle/files');
+    const f = await tree.createTreeFolder(owner, 'notes', { parentId: null, name: 'Not files' });
+    const note = await notes.createNote(owner, { title: 'kept', content: 'x' });
+    await tree.moveTreeItems(owner, 'notes', [note.id], f.id);
+    // Its note is not a file, so the Files delete used to call it empty.
+    expect(await files.deleteFolder({ ownerId: owner, folderId: f.id })).toMatchObject({
+      ok: false,
+      reason: expect.stringMatching(/not a Files folder/),
+    });
+    await expect(
+      files.moveFolderById({ ownerId: owner, folderId: f.id, destParentPath: 'files' }),
+    ).rejects.toThrow(/not a Files folder/);
+    await expect(
+      files.renameFolderById({ ownerId: owner, folderId: f.id, newSlug: 'renamed' }),
+    ).rejects.toThrow(/not a Files folder/);
+    expect(await pathOf(note.id)).toBe(f.path);
+    expect(await pathOf(f.id)).toBe(f.path);
+  });
+
   it('files notes into folders, and renames and moves folders with what they hold', async () => {
     const clients = await tree.createTreeFolder(owner, 'notes', {
       parentId: null,

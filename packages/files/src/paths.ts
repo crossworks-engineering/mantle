@@ -148,3 +148,17 @@ export function ltreeForDiskPath(absPath: string): { parentPath: string; filenam
     segments.length === 0 ? FILES_ROOT_LABEL : `${FILES_ROOT_LABEL}.${segments.join('.')}`;
   return { parentPath, filename };
 }
+
+/**
+ * The refusal for a Files folder operation handed a folder (or a
+ * destination) of another kind. Every kind's folders are branch rows, but
+ * only Files folders are directories: the others hold their items by path
+ * alone, so a Files delete would leave them behind (and any share they
+ * inherited through it), and a move would carry them across kinds.
+ */
+export function notAFilesFolder(op: string, path: string): Error {
+  return new Error(
+    `${op}: '${path}' is not a Files folder; organise another kind's folders with ` +
+      'tree_folder_update and tree_folder_delete (or its own screen)',
+  );
+}

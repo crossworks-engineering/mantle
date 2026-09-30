@@ -45,6 +45,7 @@ export { MAX_UPLOAD_BYTES, maxStreamedUploadBytes } from './limits';
 export {
   filesRoot,
   isFilesPath,
+  notAFilesFolder,
   diskPathForLtree,
   diskPathForFile,
   isSafeDiskBasename,

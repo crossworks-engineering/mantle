@@ -25,7 +25,13 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { carrySpaceRows, db, nodes, type Node } from '@mantle/db';
 import { moveFile as moveFileOnDisk, renameFolder as renameFolderOnDisk } from './disk';
-import { FILES_MAX_FOLDER_DEPTH, FILES_ROOT_LABEL, filesFolderDepth } from './paths';
+import {
+  FILES_MAX_FOLDER_DEPTH,
+  FILES_ROOT_LABEL,
+  filesFolderDepth,
+  isFilesPath,
+  notAFilesFolder,
+} from './paths';
 import { reconcileFilesIndexing } from './indexing';
 import {
   createFolder,
@@ -180,6 +186,10 @@ export async function moveFolderById(args: {
   if (node.path === FILES_ROOT_LABEL) {
     throw new Error('moveFolderById: cannot move the files root');
   }
+  if (!isFilesPath(node.path)) throw notAFilesFolder('moveFolderById', node.path);
+  if (!isFilesPath(args.destParentPath)) {
+    throw notAFilesFolder('moveFolderById', args.destParentPath);
+  }
   if ((node.data as Record<string, unknown> | null)?.system === true) {
     throw new Error(
       'moveFolderById: this folder is made by Mantle and found by its path; it cannot be moved',
@@ -324,6 +334,10 @@ export async function copyFolderById(args: {
     throw new Error('copyFolderById: folder not found — find the id with folder_list');
   }
   if (node.path === FILES_ROOT_LABEL) throw new Error('copyFolderById: cannot copy the files root');
+  if (!isFilesPath(node.path)) throw notAFilesFolder('copyFolderById', node.path);
+  if (!isFilesPath(args.destParentPath)) {
+    throw notAFilesFolder('copyFolderById', args.destParentPath);
+  }
   const destParent = await branchAt(args.ownerId, args.destParentPath);
   if (!destParent) {
     throw new Error(

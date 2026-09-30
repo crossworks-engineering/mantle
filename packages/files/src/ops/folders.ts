@@ -12,6 +12,7 @@ import {
   ensureDir,
   FILES_ROOT_LABEL,
   isFilesPath,
+  notAFilesFolder,
   removeFolder as removeFolderOnDisk,
   renameFolder as renameFolderOnDisk,
   slugifyFolder,
@@ -244,6 +245,9 @@ export async function deleteFolder(args: {
   if (folder.path === FILES_ROOT_LABEL) {
     return { ok: false, reason: 'cannot delete the files root' };
   }
+  if (!isFilesPath(folder.path)) {
+    return { ok: false, reason: notAFilesFolder('folder_delete', folder.path).message };
+  }
   const counts = await folderCounts(args.ownerId, folder.path);
   if (counts.childFolderCount > 0 || counts.fileCount > 0) {
     return { ok: false, reason: 'folder is not empty — delete its contents first' };
@@ -346,6 +350,7 @@ export async function renameFolderById(args: {
   if (node.path === FILES_ROOT_LABEL) {
     throw new Error('renameFolderById: cannot rename the files root');
   }
+  if (!isFilesPath(node.path)) throw notAFilesFolder('renameFolderById', node.path);
   if ((node.data as Record<string, unknown> | null)?.system === true) {
     throw new Error('renameFolderById: this folder is made by Mantle; its name is fixed');
   }
