@@ -14,7 +14,9 @@
 --    the stored data, so every writer is covered, like 0204's shares:
 --      - pages.doc: image and pageImage (nodeId, drawId), fileEmbed
 --        (nodeId), childPage (pageId), as referencedEmbedIds walks it;
---      - draws.file_refs: every file id in the map, as drawEmbedIds;
+--      - draws.scene through draws.file_refs: the files of the images the
+--        published scene places, as drawPlacedFileIds (a draft autosave
+--        opens nothing);
 --      - a note's data.content: images (`![..](media:id)`, `![..](draw:id)`)
 --        outside code, and a file link alone in its paragraph
 --        (`[..](media:id)`), as noteEmbedIds reads the markdown. Images are
@@ -81,8 +83,11 @@ BEGIN
 END $$;
 --> statement-breakpoint
 
--- The column is null on every row: VALIDATE scans under a lock that lets
--- reads and writes go on.
+-- The column is null on every row. (VALIDATE alone would let reads and
+-- writes go on, but the ADD COLUMN above holds ACCESS EXCLUSIVE on nodes
+-- until this migration commits: nothing reads or writes nodes meanwhile.
+-- Measured: about 15 s on a 212,000-row brain; live brains are about 100
+-- times smaller.)
 ALTER TABLE "public"."nodes" VALIDATE CONSTRAINT "nodes_embedded_level_ck";
 --> statement-breakpoint
 
@@ -123,13 +128,24 @@ CREATE OR REPLACE FUNCTION "public"."mantle_page_embed_refs"(doc jsonb)
 $$;
 --> statement-breakpoint
 
--- What a drawing embeds (drawEmbedIds): every file in its file map.
-CREATE OR REPLACE FUNCTION "public"."mantle_draw_embed_refs"(refs jsonb)
+-- What a drawing embeds: the files of the images its PUBLISHED scene
+-- places (drawPlacedFileIds), through its file map. A draft autosave
+-- rewrites the file map but not the scene, so a picture pasted and removed
+-- before "Save version" never opens (review F4); only live image elements
+-- count.
+CREATE OR REPLACE FUNCTION "public"."mantle_draw_embed_refs"(scene jsonb, refs jsonb)
   RETURNS text[] LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
-  SELECT coalesce(array_agg(DISTINCT 'file:' || lower(e.value #>> '{}')), '{}'::text[])
-    FROM jsonb_each(CASE WHEN jsonb_typeof(refs) = 'object' THEN refs ELSE '{}'::jsonb END) e
-   WHERE jsonb_typeof(e.value) = 'string'
-     AND (e.value #>> '{}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  SELECT coalesce(array_agg(DISTINCT 'file:' || lower(refs ->> (el->>'fileId'))), '{}'::text[])
+    FROM jsonb_array_elements(CASE WHEN jsonb_typeof(scene) = 'object'
+                                    AND jsonb_typeof(scene->'elements') = 'array'
+                                   THEN scene->'elements' ELSE '[]'::jsonb END) el
+   WHERE jsonb_typeof(refs) = 'object'
+     AND jsonb_typeof(el) = 'object'
+     AND el->>'type' = 'image'
+     AND coalesce(el->'isDeleted' = 'true'::jsonb, false) = false
+     AND jsonb_typeof(el->'fileId') = 'string'
+     AND jsonb_typeof(refs -> (el->>'fileId')) = 'string'
+     AND (refs ->> (el->>'fileId')) ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 $$;
 --> statement-breakpoint
 
@@ -343,7 +359,7 @@ CREATE OR REPLACE FUNCTION "public"."mantle_draws_embeds_trg"()
   SET search_path = public, pg_temp AS $$
 BEGIN
   PERFORM "public"."mantle_sync_embeds"(
-    NEW.node_id, "public"."mantle_embed_targets"(NEW.node_id, "public"."mantle_draw_embed_refs"(NEW.file_refs)));
+    NEW.node_id, "public"."mantle_embed_targets"(NEW.node_id, "public"."mantle_draw_embed_refs"(NEW.scene, NEW.file_refs)));
   RETURN NULL;
 END
 $$;
@@ -423,8 +439,6 @@ CREATE OR REPLACE FUNCTION "public"."mantle_nodes_embed_reach_trg"()
   SET search_path = public, pg_temp AS $$
 DECLARE
   targets uuid[];
-  was text;
-  now_ text;
 BEGIN
   targets := ARRAY(SELECT e.to_id FROM "public"."node_embeds" e WHERE e.from_id = NEW.id);
   IF OLD.owner_id IS DISTINCT FROM NEW.owner_id THEN
@@ -435,15 +449,21 @@ BEGIN
   IF cardinality(targets) = 0 THEN
     RETURN NULL;
   END IF;
-  -- What it passes on is its share or what reaches it, the more open.
-  was := "public"."mantle_share_max"(OLD.inherited_level, NEW.embedded_level);
-  now_ := "public"."mantle_share_max"(NEW.inherited_level, NEW.embedded_level);
-  IF was IS NOT DISTINCT FROM now_ THEN
+  IF OLD.inherited_level IS NOT DISTINCT FROM NEW.inherited_level THEN
     RETURN NULL;
-  ELSIF now_ = 'client' OR (now_ = 'team' AND was IS NULL) THEN
-    PERFORM "public"."mantle_open_embedded"(NEW.owner_id, targets, now_);
+  ELSIF "public"."mantle_share_max"(OLD.inherited_level, NEW.inherited_level)
+          IS NOT DISTINCT FROM NEW.inherited_level THEN
+    -- Its share opened: what it embeds is reached at that share, or at
+    -- what reaches it, the more open.
+    PERFORM "public"."mantle_open_embedded"(
+      NEW.owner_id, targets, "public"."mantle_share_max"(NEW.inherited_level, NEW.embedded_level));
   ELSE
-    PERFORM "public"."mantle_close_embedded"(NEW.owner_id, targets, was);
+    -- Its share closed: every row it reached at the old share is
+    -- recomputed, itself included. Its own embedded level may have come
+    -- back to it through a loop of embeds (a embeds b embeds a), so it can
+    -- never be trusted to say what still reaches the rest (review F3).
+    PERFORM "public"."mantle_close_embedded"(
+      NEW.owner_id, ARRAY[NEW.id] || targets, OLD.inherited_level);
   END IF;
   RETURN NULL;
 END
@@ -460,7 +480,7 @@ CREATE TRIGGER "pages_embeds_after"
 DROP TRIGGER IF EXISTS "draws_embeds_after" ON "public"."draws";
 --> statement-breakpoint
 CREATE TRIGGER "draws_embeds_after"
-  AFTER INSERT OR UPDATE OF "file_refs" ON "public"."draws"
+  AFTER INSERT OR UPDATE OF "scene", "file_refs" ON "public"."draws"
   FOR EACH ROW EXECUTE FUNCTION "public"."mantle_draws_embeds_trg"();
 --> statement-breakpoint
 
@@ -517,7 +537,7 @@ ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 INSERT INTO "public"."node_embeds" (from_id, to_id)
 SELECT d.node_id, t FROM "public"."draws" d
- CROSS JOIN LATERAL unnest("public"."mantle_embed_targets"(d.node_id, "public"."mantle_draw_embed_refs"(d.file_refs))) t
+ CROSS JOIN LATERAL unnest("public"."mantle_embed_targets"(d.node_id, "public"."mantle_draw_embed_refs"(d.scene, d.file_refs))) t
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 INSERT INTO "public"."node_embeds" (from_id, to_id)

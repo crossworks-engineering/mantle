@@ -1,7 +1,7 @@
 /**
  * The embed edges the database keeps (migration 0208) read the stored data
  * the way the TypeScript walkers do: mantle_page_embed_refs is
- * referencedEmbedIds, mantle_draw_embed_refs is drawEmbedIds, and
+ * referencedEmbedIds, mantle_draw_embed_refs is drawPlacedFileIds, and
  * mantle_note_embed_refs is noteEmbedIds, except that a note's image counts
  * wherever the note shows it (a heading, a table cell), a little more than
  * noteEmbedIds lists. Each reference also names the kind it may open (an
@@ -12,7 +12,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { drawEmbedIds, noteEmbedIds } from './embed-closure';
+import { drawPlacedFileIds, noteEmbedIds } from './embed-closure';
 import { referencedEmbedIds } from './doc-assets';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
@@ -36,7 +36,7 @@ describe.skipIf(!URL)('embed edges in SQL match the TypeScript walkers', () => {
         ? sqlTag`mantle_note_embed_refs(${arg as string})`
         : fn === 'page'
           ? sqlTag`mantle_page_embed_refs(${JSON.stringify(arg)}::jsonb)`
-          : sqlTag`mantle_draw_embed_refs(${JSON.stringify(arg)}::jsonb)`;
+          : sqlTag`mantle_draw_embed_refs(${JSON.stringify((arg as { scene?: unknown })?.scene ?? null)}::jsonb, ${JSON.stringify((arg as { refs?: unknown })?.refs ?? null)}::jsonb)`;
     const [row] = (await m.db.execute(sqlTag`select ${call} as refs`)) as unknown as Array<{
       refs: string[];
     }>;
@@ -83,11 +83,23 @@ describe.skipIf(!URL)('embed edges in SQL match the TypeScript walkers', () => {
     expect(await sqlIds('page', { type: 'doc' })).toEqual([]);
   });
 
-  it('drawings: every file in the map', async () => {
-    const [a, b] = [id(), id()];
-    const refs = { x: a, y: b, z: a, n: 3 };
-    expect(await sqlIds('draw', refs)).toEqual(sortLower(drawEmbedIds(refs)));
-    expect(await sqlIds('draw', [])).toEqual([]);
+  it('drawings: the files the published scene places, not the whole map', async () => {
+    const [a, b, c] = [id(), id(), id()];
+    const refs = { x: a, y: b, z: c, n: 3 };
+    const scene = {
+      elements: [
+        { type: 'image', fileId: 'x' },
+        { type: 'image', fileId: 'y', isDeleted: true },
+        { type: 'rectangle', fileId: 'z' },
+        { type: 'image', fileId: 'n' },
+        { type: 'image', fileId: 'missing' },
+      ],
+    };
+    expect(await sqlIds('draw', { scene, refs })).toEqual(
+      sortLower(drawPlacedFileIds(scene, refs)),
+    );
+    expect(await sqlIds('draw', { scene, refs })).toEqual([a.toLowerCase()]);
+    expect(await sqlIds('draw', { scene: null, refs })).toEqual([]);
   });
 
   it('notes: images and lone file links, never code or inline links', async () => {
@@ -151,8 +163,18 @@ describe.skipIf(!URL)('embed edges in SQL match the TypeScript walkers', () => {
     ]) {
       await expect(sqlIds('page', doc)).resolves.toEqual([]);
     }
+    const placing = { elements: [{ type: 'image', fileId: 'a' }] };
     for (const refs of [null, [], 'x', 3, { a: { b: x } }, { a: 7 }, { a: [x] }]) {
-      await expect(sqlIds('draw', refs)).resolves.toEqual([]);
+      await expect(sqlIds('draw', { scene: placing, refs })).resolves.toEqual([]);
+    }
+    for (const scene of [
+      null,
+      [],
+      'x',
+      { elements: 'x' },
+      { elements: [1, null, { fileId: 7 }] },
+    ]) {
+      await expect(sqlIds('draw', { scene, refs: { a: x } })).resolves.toEqual([]);
     }
     for (const md of ['```', '```\n![a](media:' + x + ')', '~~~~\n~~~', '`', '![](media:)']) {
       await expect(sqlIds('note', md)).resolves.toEqual([]);

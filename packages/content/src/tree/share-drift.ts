@@ -40,7 +40,7 @@ const EXPECTED = sql`(
      cross join lateral unnest(mantle_embed_targets(p.node_id, mantle_page_embed_refs(p.doc))) t
     union
     select d.node_id, t from draws d
-     cross join lateral unnest(mantle_embed_targets(d.node_id, mantle_draw_embed_refs(d.file_refs))) t
+     cross join lateral unnest(mantle_embed_targets(d.node_id, mantle_draw_embed_refs(d.scene, d.file_refs))) t
     union
     select n.id, t from nodes n
      cross join lateral unnest(mantle_embed_targets(n.id, mantle_note_embed_refs(n.data->>'content'))) t

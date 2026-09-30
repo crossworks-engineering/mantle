@@ -752,8 +752,10 @@ async function commitDrawOnce(
     // Its own level only: a folder share it is read through is the
     // database's to follow (0208).
     const level = prev ? asViewerLevel(prev.audience) : 'admin';
-    const embedsBefore = prev ? drawEmbedIds(prev.fileRefs) : [];
-    const embedsAfter = prev ? drawEmbedIds(opts.fileRefs ?? prev.fileRefs) : [];
+    // What the published scene places, before and after: the edges the
+    // database keeps for a drawing (0208).
+    const embedsBefore = prev ? drawPlacedFileIds(prev.scene, prev.fileRefs) : [];
+    const embedsAfter = prev ? drawPlacedFileIds(normalized, opts.fileRefs ?? prev.fileRefs) : [];
     if (prev && level !== 'admin') {
       await followNewEmbeds(
         ownerId,
