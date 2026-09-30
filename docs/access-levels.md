@@ -1,12 +1,13 @@
 # Access levels: one level system, enforced by the database
 
-> Member logins, Phase 0b; client logins C1 and C2. What an agent, a member
+> Member logins, Phase 0b; client logins C1 to C5. What an agent, a member
 > or a client may read is decided by Postgres row level security on a
 > limited login role, not by a check in each route or tool. It is live on
 > every box: an agent below admin, every member login (team) and every
 > client login (client) read through it. The owner and admin-level agents
 > read everything. How an admin lets a client in, and what a client reads:
-> [client-logins.md](./client-logins.md).
+> [client-logins.md](./client-logins.md); the database rules the client
+> tier added are section 8.
 
 ## 1. The model
 
@@ -399,3 +400,70 @@ outside a login reaches a team item.
   link's level role (after the share render path reads published columns
   only) is a later release. What they serve beyond the item is already
   filtered by level (above).
+
+## 8. Clients in the database (client logins C1 to C5)
+
+What row security and the schema hold for the client tier, beyond the level
+model of section 1. Each rule is in the migration named; the app writes its
+rule in the query too, but these hold whatever the code asks for.
+
+- **The client role reads client only** (0187, 0189). `mantle_view_client`
+  reads brain items at client level, never team, admin or public ones, and
+  agents and tool groups at client level only (`agents_client_read`,
+  `tool_groups_client_read`). It holds no grant on `auth.users`
+  (`mantle_brain_id()` is SECURITY DEFINER, executable by the viewer and
+  space roles only). A spilled tool result carries the level it was
+  written at (`tool_results.viewer_level`), and `read_result` refuses one
+  above the reader.
+- **A client's own space runs at client level.** A client's personal space
+  is read and written on `mantle_view_space`, and `withSpace` takes the
+  scope's level from the login's row (`spaceLevelForLogin`,
+  `packages/db/src/client.ts`): client for a client, team for a member or
+  an admin. So a brain item a client's page may embed, and a give back's
+  check, read at client level.
+- **Never a team draft** (0189). The trigger `space_items_client_private`
+  refuses `sharing = 'team'` on an item a client wrote: it stays private
+  until submitted, and never shows in Team drafts.
+- **Who wrote it, for good** (0194). `space_items.author_role` is stamped
+  from `auth.users` by a trigger when the row is made and kept by another
+  on every update, never written by the app. It outlives the login (whose
+  id goes NULL on delete), so Review's Client badge, Accept's client rule,
+  the storage total and the lowering guard still know a client wrote it.
+- **Members read client requests, while submitted** (0194). The team role,
+  with the human flag on (a member's own request, never an agent), reads a
+  client's SUBMITTED item and the items submitted in its bundle
+  (`nodes_client_requests_read`, `space_items_client_requests_read`,
+  through `mantle_client_request_node()`); pages, drawings, tables and
+  chunks follow their node. A draft, returned or accepted item never
+  matches.
+- **Comments.** In a client's space (0194, `node_comments_space_read`,
+  `_insert`, `_update`) the client reads only the review talk
+  (`thread_scope` 'review') written by a reviewer or by itself, and writes
+  only as `author_kind` 'client' in that scope. The client thread
+  (`thread_scope` 'client', `node_comments_client_thread_read`) is read by
+  the client and team roles, human flag on, only while its item is a brain
+  item at client level; raise the item and it reads nothing. No level role
+  writes it: the app writes on the admin pool with the item's level checked
+  in the same statement (`packages/content/src/client-thread.ts`).
+- **Ledgers that deleting does not refund.** `space_submissions` (0194,
+  Submit) and `client_comment_ledger` (0195, comments): the space role
+  inserts and reads its own rows and has no update or delete rule.
+  `client_request_filings` (0197, requests) has no viewer grant at all: the
+  app writes it as the system.
+- **Storage, one definition** (0195). `mantle_client_space_usage()` sums
+  what each client space holds (files, table workbooks, page documents
+  saved, draft and plain text, note text, as stored); a deleted client's
+  space counts until the purge. The space role may call only
+  `mantle_client_space_bytes()`, its total: one number. Quota refusals are
+  kept in `client_quota_refusals` (reason and login only), read by admins.
+- **The taken title** (0196). `space_items.taken_title` is the title an
+  item had when a reviewer took it over; the author's list shows it.
+- **The lowering guard's marks** (0197). `client_sourced_nodes` (a node a
+  marked staff turn created) and `conversation_taints` (a conversation
+  that read client-written text in the last 24 hours) are written by the
+  app as the system only; no viewer role reads them
+  ([client-logins.md](./client-logins.md) section 8).
+
+Tests: `packages/db/src/*.db.test.ts` for the roles and rules,
+`packages/content/src/client-*.viewer.db.test.ts` for the client reads,
+threads, space and limits.

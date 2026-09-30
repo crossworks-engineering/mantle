@@ -2,7 +2,9 @@
  * Thread paging on the member, admin and owner comment routes (client
  * logins C5 audit, I2) without a database: every thread GET reads ONE page
  * (the newest, or the one before `?before=`) and answers `hasMore`; a
- * `before` that is not an ISO time is a 400 before any read. The client
+ * `before` that is not an ISO time is a 400 before any read. The owner's
+ * route also reads the client thread alone (`?scope=client`, client logins
+ * C6), paged the same way; any other scope is a 400 before any read. The client
  * routes are pinned in app/api/client/space/client-space-routes.test.ts;
  * the paging itself on Postgres in
  * packages/content/src/client-abuse.viewer.db.test.ts.
@@ -65,6 +67,9 @@ beforeEach(() => {
 });
 
 const ctx = { params: Promise.resolve({ id: ITEM }) };
+/** The page query among a call's arguments (the one with `before`). */
+const pageOf = (args: unknown[]) =>
+  args.find((a) => !!a && typeof a === 'object' && 'before' in a) as { before: Date | null };
 type Get = (req: Request, c: typeof ctx) => Promise<Response>;
 
 describe('thread paging on the member, admin and owner routes', () => {
@@ -101,12 +106,33 @@ describe('thread paging on the member, admin and owner routes', () => {
       expect(await res.json(), url).toEqual({ comments: [], hasMore: true });
       const [name, args] = h.calls[0]!;
       expect(name, url).toBe(fn);
-      const q = args[args.length - 1] as { before: Date };
+      const q = pageOf(args) as { before: Date };
       expect(q.before.toISOString(), url).toBe(BEFORE);
       const newest = await GET(new Request(`http://x${url}`), ctx);
       expect(newest.status, url).toBe(200);
-      const q2 = h.calls[1]![1][h.calls[1]![1].length - 1] as { before: Date | null };
+      const q2 = pageOf(h.calls[1]![1]);
       expect(q2.before, url).toBeNull();
+    }
+  });
+
+  it('the owner reads the client thread alone with ?scope=client, paged; another scope is a 400', async () => {
+    const { GET } = await import('../app/api/nodes/[id]/comments/route');
+    const url = `/api/nodes/${ITEM}/comments`;
+    // Without a scope: every scope, as before.
+    await GET(new Request(`http://x${url}`), ctx);
+    expect(h.calls[0]).toEqual(['listNodeComments', [ANCHOR, ITEM, { before: null }, {}]]);
+    h.calls.length = 0;
+    const res = await GET(new Request(`http://x${url}?scope=client&before=${BEFORE}`), ctx);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ comments: [], hasMore: true });
+    expect(h.calls).toEqual([
+      ['listNodeComments', [ANCHOR, ITEM, { before: new Date(BEFORE) }, { scope: 'client' }]],
+    ]);
+    for (const bad of ['team', 'review', 'CLIENT', '']) {
+      h.calls.length = 0;
+      const res = await GET(new Request(`http://x${url}?scope=${bad}`), ctx);
+      expect(res.status, bad).toBe(400);
+      expect(h.calls, bad).toEqual([]);
     }
   });
 });

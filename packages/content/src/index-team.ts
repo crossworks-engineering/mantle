@@ -385,6 +385,17 @@ export {
 export { clientReadableIds, getClientSharedItem, listClientShared } from './client-shared';
 export { docRefIds, noteRefIds, redactClientDoc, redactClientNote } from './client-redact';
 export { clientDrawSvg, clientVisibleDrawFileIds } from './client-draw-images';
+// Client logins (C6): pictures in a member's or a client's own chat thread
+// point at the reader's own routes, and only at items the reader may read.
+export {
+  chatImageIds,
+  chatImageSrc,
+  chatImagesFor,
+  chatTextsForReader,
+  rewriteChatImages,
+  type ChatImageKind,
+  type ChatImageReader,
+} from './chat-images';
 // Client logins (C5): clients' submitted items for members (decision 5 B),
 // and the client thread on client-level items (decision 8).
 export {

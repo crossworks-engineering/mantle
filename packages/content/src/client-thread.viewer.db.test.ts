@@ -260,4 +260,47 @@ describe.skipIf(!URL)('the client thread on a client-level item', () => {
       expect.arrayContaining(['admin only talk', 'from the admin', 'agent note']),
     );
   });
+
+  it('the owner reads the client thread alone (scope client, client logins C6), paged', async () => {
+    // On the same item the admins' 'team' talk and the agent's note sit next
+    // to the client thread: only the scope filter leaves them out.
+    const page = await nc.listNodeComments(brain, items.client, {}, { scope: 'client' });
+    const got = page.rows.map((c) => c.body);
+    expect(got).toContain('hello clients');
+    expect(got).toContain('from the admin');
+    expect(got).not.toContain('admin only talk');
+    expect(got).not.toContain('agent note');
+    expect(page.rows.every((c) => c.threadScope === 'client')).toBe(true);
+    expect(page.hasMore).toBe(false);
+    // Without the scope the same page holds every scope.
+    const all = (await nc.listNodeComments(brain, items.client, {})).rows.map((c) => c.body);
+    expect(all).toEqual(expect.arrayContaining(['admin only talk', 'agent note']));
+    // Paged as the rest: one page of COMMENT_PAGE_SIZE, older ones by `before`.
+    const extra = nc.COMMENT_PAGE_SIZE + 1;
+    await m.systemDb.execute(sqlTag`
+      insert into node_comments (owner_id, node_id, author_kind, login_id, author_name, body,
+                                 thread_scope, created_at)
+      select ${brain}, ${items.raise}, 'owner', ${adminLogin}, 'Admin', 'page ' || g,
+             case when g % 2 = 0 then 'client' else 'team' end,
+             now() - interval '1 hour' + g * interval '1 second'
+        from generate_series(1, ${extra * 2}) g`);
+    const first = await nc.listNodeComments(brain, items.raise, {}, { scope: 'client' });
+    expect(first.rows).toHaveLength(nc.COMMENT_PAGE_SIZE);
+    expect(first.hasMore).toBe(true);
+    expect(first.rows.every((c) => c.threadScope === 'client')).toBe(true);
+    const older = await nc.listNodeComments(
+      brain,
+      items.raise,
+      { before: first.rows[0]!.createdAt },
+      { scope: 'client' },
+    );
+    expect(older.hasMore).toBe(false);
+    expect(older.rows.every((c) => c.threadScope === 'client')).toBe(true);
+    // Every client comment on the item, over the two pages, once each: the
+    // extra ones and the one seeded before.
+    const seen = [...older.rows, ...first.rows].map((c) => c.body);
+    expect(new Set(seen).size).toBe(seen.length);
+    expect(seen).toHaveLength(extra + 1);
+    expect(seen).toContain('raise me');
+  });
 });

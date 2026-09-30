@@ -8,7 +8,9 @@
  * version accepted) or gives it back (the member's again, returned with the
  * note; refused while it uses what the member may not see). The purge never
  * deletes a taken item, and a taken item whose admin is deactivated goes
- * back to the Review queue for another admin.
+ * back to the Review queue for another admin. The title an item had when it
+ * was first taken (`taken_title`, audit L6) survives a retake by another
+ * admin and is cleared by a give back.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/member-takeover.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -62,8 +64,9 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
         reviewed_by: string | null;
         returned_note: string | null;
         sharing: string;
+        taken_title: string | null;
       }>(sqlTag`select review_state, author_login_id, taken_by, taken_root, reviewed_by,
-                       returned_note, sharing
+                       returned_note, sharing, taken_title
                   from space_items where node_id = ${id}`)
     )[0];
   const spool = (text: string) =>
@@ -194,6 +197,7 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
       taken_by: adminA,
       taken_root: null,
       sharing: 'private',
+      taken_title: `${tag} p`,
     });
     expect(await rowOf(imageId)).toMatchObject({
       review_state: 'taken',
@@ -335,8 +339,14 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
       reviewed_by: adminA,
       taken_by: null,
       author_login_id: member,
+      // The title it was taken with goes with the hold (audit L6).
+      taken_title: null,
     });
-    expect(await rowOf(imageId)).toMatchObject({ review_state: 'draft', taken_root: null });
+    expect(await rowOf(imageId)).toMatchObject({
+      review_state: 'draft',
+      taken_root: null,
+      taken_title: null,
+    });
     expect(readFileSync(fp.spaceFilePath(M, imageId), 'utf8')).toBe('MEMBERPNG');
     expect(existsSync(fp.spaceFilePath(spaceOf[adminA]!, imageId))).toBe(false);
     const got = await as(member, () => sp.getMineItem(M, pageId));
@@ -462,6 +472,13 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
     ).id;
     await as(member, () => sp.submitItem(M, heldId));
     await rv.takeOverReviewItem(heldId, actorA());
+    expect((await rowOf(heldId))?.taken_title).toBe(`${tag} held`);
+    // Admin A renames it while it is theirs: the author's list keeps the
+    // title it was taken with.
+    await as(adminA, () =>
+      sp.updateMineItem(A, heldId, { title: `${tag} ADMIN A title` }, { adminOfBrain: anchor }),
+    );
+    expect((await rowOf(heldId))?.taken_title).toBe(`${tag} held`);
     const ownPrivate = await as(adminA, () =>
       sp.createMineItem(A, { type: 'note', title: `${tag} a private` }),
     );
@@ -490,7 +507,20 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
     const res = await rv.takeOverReviewItem(heldId, actorB());
     expect(res.moved.map((b) => b.id)).toEqual([heldId]);
     expect(await ownerOf(heldId)).toBe(B);
-    expect(await rowOf(heldId)).toMatchObject({ review_state: 'taken', taken_by: adminB });
+    // Taken again under A's title: the FIRST recorded title stays (audit L6),
+    // never admin A's working title.
+    expect(await rowOf(heldId)).toMatchObject({
+      review_state: 'taken',
+      taken_by: adminB,
+      taken_title: `${tag} held`,
+    });
+    const [live] = await exec<{ title: string }>(
+      sqlTag`select title from nodes where id = ${heldId}`,
+    );
+    expect(live?.title).toBe(`${tag} ADMIN A title`);
+    expect((await sp.listWithAdmin(member, {})).find((r) => r.id === heldId)?.title).toBe(
+      `${tag} held`,
+    );
     expect((await rv.listReviewQueue()).items.map((i) => i.id)).not.toContain(heldId);
     await m.systemDb.execute(sqlTag`update auth.users set disabled_at = null where id = ${adminA}`);
   });
@@ -507,6 +537,7 @@ describe.skipIf(!URL)('take over a submitted member item', () => {
       review_state: 'returned',
       returned_note: 'Over to you again.',
       reviewed_by: anchor,
+      taken_title: null,
     });
     await m.systemDb.execute(sqlTag`update auth.users set disabled_at = null where id = ${adminB}`);
     await settle();

@@ -2,8 +2,10 @@
  * Owner-side comment thread on a node (tasks first — the model is
  * node-generic, see node-comments.ts).
  *
- *   GET  /api/nodes/[id]/comments[?before=ISO] → { comments: NodeComment[], hasMore }
- *        the newest 100, oldest first; `before` = the oldest shown's createdAt
+ *   GET  /api/nodes/[id]/comments[?before=ISO][&scope=client]
+ *        → { comments: NodeComment[], hasMore }
+ *        the newest 100, oldest first; `before` = the oldest shown's createdAt;
+ *        `scope=client` = only the client thread (client logins C6)
  *   POST /api/nodes/[id]/comments   { body } → 201 { comment }
  *
  * Attribution is stamped from the SESSION actor (the co-admin login actually
@@ -14,7 +16,9 @@
  * On an item at CLIENT level, a comment written here joins the client thread
  * (thread_scope 'client', decided in the insert): the team and every client
  * login read it, under the admin's display name (else the email's local
- * part). The owner's GET lists every scope.
+ * part). The owner's GET lists every scope, or with `?scope=client` only the
+ * client thread (what clients read), paged the same way. Any other `scope`
+ * is a 400.
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
@@ -40,7 +44,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   if (!isUuid(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
   const page = commentPageQuery(req);
   if (page instanceof Response) return page;
-  const thread = await listNodeComments(user.id, id, page);
+  const scope = new URL(req.url).searchParams.get('scope');
+  if (scope !== null && scope !== 'client') {
+    return NextResponse.json({ error: '`scope` must be client.' }, { status: 400 });
+  }
+  const thread = await listNodeComments(user.id, id, page, scope ? { scope } : {});
   const viewer = { loginId: user.actor.id };
   return NextResponse.json({
     comments: thread.rows.map((r) => toNodeCommentDto(r, viewer)),

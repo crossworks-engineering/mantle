@@ -164,6 +164,39 @@ them through without a session cookie.
   need only the active token (the tool broker refuses every call, the db
   broker takes queries only).
 
+## 4a. Clients: they sign in, never a link
+
+A client of the brain's one client company reads with its own client login
+([client-logins.md](./client-logins.md)), never through a link. So a link
+is only ever public (the level model: [access-levels.md](./access-levels.md)
+section 7):
+
+- **An item at client has no link.** Setting an item to client revokes its
+  open link; `createShare` refuses an item at client (and a sub-page asked
+  to follow a client parent) with `client-links-retired`, so `node_share`,
+  `page_share`, `POST /api/shares`, the email link and "Share sub-pages"
+  all meet it, and `email_page` with a link on a client page is refused
+  before anything is sent. The signed-in clients read the item in their
+  portal instead, with every reference to an item above client hidden.
+- **Old client links are retired** (client logins C3, migration 0192).
+  Links made when client meant "anyone with the link" were revoked and
+  marked `settings.retired = 'client'`; the item kept its level. `/s/`
+  answers such a token, and never serves a link on a client item, with a
+  410 "Sign in as a client" page (no item title) pointing at
+  `/client-signin`. Shared links lists the retired ones, without a token.
+- **Public is not client.** The client role reads client items only, never
+  public ones: a public item is reached by its own link, and an item that
+  goes public (set by hand, or embedded in something that goes public)
+  leaves the client logins' view. The tools say so when it happens
+  (`clientLeftWarning`).
+- **Before the first client.** An admin acknowledges "What clients see":
+  every item at client, its old links, the addresses a page was emailed to,
+  the team or admin items it names, and old links above it
+  (`GET /api/access/client-report`; access-levels.md section 7).
+- **Talking with clients about an item** is the comment thread on a
+  client-level item, which the team, the admins and every client login
+  read and write (client-logins.md section 9), not a link.
+
 ---
 
 ## 5. Rendering a public page (server static HTML)

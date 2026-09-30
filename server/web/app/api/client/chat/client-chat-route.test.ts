@@ -8,7 +8,8 @@
  *     session's epoch, the login from the session, and the member caps taken
  *     from the ledger first;
  *   - the Idempotency-Key rules of the member chat;
- *   - GET reads the session login's own thread.
+ *   - GET reads the session login's own thread, its pictures rewritten for
+ *     a client (chatTextsForReader at the client level, client logins C6).
  * The client gate itself (members and admins refused) is the client sweep's.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -38,6 +39,7 @@ const h = vi.hoisted(() => ({
     audience: string;
   } | null,
   threadCalls: [] as unknown[],
+  readerCalls: [] as unknown[][],
   rateOk: true,
 }));
 
@@ -94,6 +96,12 @@ vi.mock('@mantle/content', async (importOriginal) => ({
     ];
   }),
   recordTeamAccess: vi.fn(),
+  // The rewrite itself is chat-images.test.ts's (and on Postgres,
+  // chat-images.viewer.db.test.ts): here, that the route sends its output.
+  chatTextsForReader: vi.fn(async (...args: unknown[]) => {
+    h.readerCalls.push(args);
+    return (args[2] as string[]).map((t) => `${t} [for the client]`);
+  }),
 }));
 
 vi.mock('@/lib/rate-limit', async (importOriginal) => ({
@@ -246,7 +254,7 @@ describe('GET /api/client/chat', () => {
     expect(body.messages[0]).toEqual({
       id: 'm1',
       direction: 'outbound',
-      text: 'hello',
+      text: 'hello [for the client]',
       status: 'failed',
       failed: true,
       createdAt: '2026-09-29T10:00:00.000Z',
@@ -255,6 +263,8 @@ describe('GET /api/client/chat', () => {
     expect(anchor).toBe(ANCHOR);
     expect(contact).toBe('');
     expect(opts).toMatchObject({ loginId: LOGIN, before: '2026-09-29T11:00:00Z' });
+    // The pictures are rewritten for this brain, at the client level.
+    expect(h.readerCalls.at(-1)).toEqual([ANCHOR, 'client', ['hello']]);
   });
 
   it('agent null while client-responder is not at client level', async () => {

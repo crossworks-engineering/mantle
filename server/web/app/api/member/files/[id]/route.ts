@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { withViewer } from '@mantle/db';
 import { thumbnailFor } from '@mantle/files';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
-import { acceptedFileReadable } from '@mantle/content';
+import { acceptedFileMeta } from '@mantle/content';
 import { getMemberForAsset } from '@/lib/auth';
 import { fileById, openFileById, readFileById } from '@/lib/files';
 import { memberBytesGate } from '@/lib/member-space';
@@ -21,7 +21,10 @@ const IdParams = z.object({ id: z.string().uuid() });
  * whatever its level, so it still renders in the author's other drafts, but
  * only while the brain file holds exactly the bytes accepted (audit F07: the
  * accepted snapshot's sha256). Once an admin changed it, it is a 404 here
- * and /api/member/accepted/:id says `changedByAdmin`.
+ * and /api/member/accepted/:id says `changedByAdmin`. Such a file is served
+ * under the name and type it was accepted with (client logins C5 audit, L7,
+ * as the client files route), never the brain file's current name (an
+ * admin's rename, or the name Accept made unique in its folder).
  * The bytes are streamed, and the route is rate limited per login (429) like
  * the other member bytes routes.
  */
@@ -35,14 +38,20 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const scope = { ownerId: member.anchorId, fileId: idParsed.data.id };
   // Team level first; the author's accepted file (any level) second, on the
   // admin pool, only after member-accepted.ts proved the author rule.
-  const lookup = async <T>(fn: () => Promise<T | null>): Promise<T | null> =>
-    (await withViewer('team', fn)) ??
-    ((await acceptedFileReadable(member.anchorId, member.loginId, scope.fileId))
-      ? await fn()
-      : null);
+  // `accepted` is then the name and type it was accepted with.
+  type Accepted = Awaited<ReturnType<typeof acceptedFileMeta>>;
+  const lookup = async <T>(
+    fn: () => Promise<T | null>,
+  ): Promise<{ value: T; accepted: Accepted } | null> => {
+    const atTeam = await withViewer('team', fn);
+    if (atTeam) return { value: atTeam, accepted: null };
+    const accepted = await acceptedFileMeta(member.anchorId, member.loginId, scope.fileId);
+    const value = accepted ? await fn() : null;
+    return value ? { value, accepted } : null;
+  };
 
   if (new URL(req.url).searchParams.get('thumb') === '1') {
-    const meta = await lookup(() => fileById(scope));
+    const meta = (await lookup(() => fileById(scope)))?.value;
     if (!meta?.sha256) return NextResponse.json({ error: 'not found' }, { status: 404 });
     const etag = `"${meta.sha256}.thumb"`;
     if (req.headers.get('if-none-match') === etag) {
@@ -52,7 +61,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       sha256: meta.sha256,
       mimeType: meta.mimeType,
       loadBytes: async () => {
-        const res = await lookup(() => readFileById(scope));
+        const res = (await lookup(() => readFileById(scope)))?.value;
         return res ? res.bytes : null;
       },
     });
@@ -68,13 +77,17 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     });
   }
 
-  const opened = await lookup(() => openFileById(scope));
-  if (!opened) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  const found = await lookup(() => openFileById(scope));
+  if (!found) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  const { value: opened, accepted } = found;
   const web = Readable.toWeb(opened.stream) as unknown as NodeReadableStream<Uint8Array>;
   return new NextResponse(web as unknown as ReadableStream, {
     status: 200,
     headers: {
-      ...safeDownloadHeaders(opened.row.mimeType, opened.row.filename),
+      ...safeDownloadHeaders(
+        accepted ? (accepted.mimeType ?? opened.row.mimeType) : opened.row.mimeType,
+        accepted ? accepted.filename : opened.row.filename,
+      ),
       'content-length': String(opened.size),
     },
   });

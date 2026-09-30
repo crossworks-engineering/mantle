@@ -22,6 +22,8 @@ const h = vi.hoisted(() => ({
   enqueueFails: false,
   released: [] as string[],
   audience: 'team',
+  thread: [] as unknown[],
+  readerCalls: [] as unknown[][],
 }));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
@@ -61,8 +63,14 @@ vi.mock('@mantle/content', async (importOriginal) => ({
     h.released.push(turnId);
     h.ledger.delete(turnId);
   }),
-  listTeamThread: vi.fn(async () => []),
+  listTeamThread: vi.fn(async () => h.thread),
   recordTeamAccess: vi.fn(),
+  // The rewrite itself is chat-images.test.ts's (and on Postgres,
+  // chat-images.viewer.db.test.ts): here, that the route sends its output.
+  chatTextsForReader: vi.fn(async (...args: unknown[]) => {
+    h.readerCalls.push(args);
+    return (args[2] as string[]).map((t) => `${t} [for the member]`);
+  }),
 }));
 
 // The 6-a-minute limit is not under test here.
@@ -208,6 +216,28 @@ describe('member turns run on their own queue (audit F31)', () => {
 });
 
 describe('GET /api/member/chat', () => {
+  it('sends each message with its pictures rewritten for a member (client logins C6)', async () => {
+    h.thread = [
+      {
+        id: 'm1',
+        direction: 'outbound',
+        text: 'see ![x](media:abc)',
+        status: 'complete',
+        createdAt: new Date('2026-09-29T10:00:00Z'),
+      },
+    ];
+    try {
+      const { GET } = await import('./route');
+      const body = (await (await GET(new Request('http://x/api/member/chat'))).json()) as {
+        messages: { text: string }[];
+      };
+      expect(body.messages.map((m) => m.text)).toEqual(['see ![x](media:abc) [for the member]']);
+      expect(h.readerCalls.at(-1)).toEqual([ANCHOR, 'team', ['see ![x](media:abc)']]);
+    } finally {
+      h.thread = [];
+    }
+  });
+
   it('no longer answers the one-cycle `linked` field', async () => {
     const { GET } = await import('./route');
     const res = await GET(new Request('http://x/api/member/chat'));

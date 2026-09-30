@@ -12,6 +12,7 @@ import {
   type TeamTurnRunResult,
 } from '@mantle/runtime/assistant';
 import {
+  chatTextsForReader,
   claimMemberTurn,
   listTeamThread,
   recordTeamAccess,
@@ -40,7 +41,10 @@ import { firstIssue } from '@/lib/zod-issue';
  * members chat only with team-level agents, and the turn engine refuses any
  * other level for a member too. The turn runs at the agent's level (RLS), so
  * the agent reads only what the member's level may see. One thread per login
- * (team_messages.login_id), never in the owner's assistant stream. The login
+ * (team_messages.login_id), never in the owner's assistant stream. A
+ * picture in the thread points at the member's own file or drawing route,
+ * and only at an item at team level or below; every other image is left out
+ * (chat-images.ts, client logins C6), never an owner route. The login
  * IS the team member: no contact is needed (0167). Limits, per login: 6
  * messages a minute, and the daily turn cap and token budget
  * (member-daily-cap.ts), both checked when the turn is QUEUED against the turn
@@ -98,12 +102,19 @@ export async function GET(req: Request) {
       withPrivate: true,
     }),
   ]);
+  // Every picture points at the member's own routes, and only at an item they
+  // may read at the team level (client logins C6): never at an owner route.
+  const texts = await chatTextsForReader(
+    member.anchorId,
+    'team',
+    rows.map((r) => r.text),
+  );
   const body: MemberChatThread = {
     agent,
-    messages: rows.map((r) => ({
+    messages: rows.map((r, i) => ({
       id: r.id,
       direction: r.direction as 'inbound' | 'outbound',
-      text: r.text,
+      text: texts[i] ?? '',
       status: r.status,
       // Internals (provider errors, agent config) stay admin-side.
       failed: r.status === 'failed',
