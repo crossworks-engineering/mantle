@@ -146,18 +146,32 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
 /**
  * The folder a page sits in (folder phase 7): the `branch` row at its path,
  * the owner's or the brain's (a member's draft sits at a brain folder's
- * path); null at the top level, and null when this reader may not read the
- * folder row (the tree shows the reader its folders by its own rules).
+ * path); null at the top level. Answered by `mantle_page_folder_id`
+ * (migration 0210, SECURITY DEFINER), whatever role the caller runs under:
+ * a folder's own row is not readable by a member (it inherits only from
+ * above itself), and the id alone gives nothing away: the tree route
+ * answers 404 for a folder the reader may not see.
  */
 async function pageFolderId(ownerId: string, path: string): Promise<string | null> {
   if (path === PAGES_ROOT_LABEL || !path.startsWith(`${PAGES_ROOT_LABEL}.`)) return null;
   const rows = (await db.execute(sql`
-    select id from nodes
-     where type = 'branch' and path = ${path}::ltree
-       and owner_id in (${ownerId}, public.mantle_brain_id())
-     order by (owner_id = ${ownerId}) desc
-     limit 1`)) as unknown as Array<{ id: string }>;
+    select mantle_page_folder_id(${ownerId}::uuid, ${path}::ltree)::text as id`)) as unknown as Array<{
+    id: string | null;
+  }>;
   return rows[0]?.id ?? null;
+}
+
+/** The folder a page sits in, by the page's id (for the reader bodies that
+ *  carry a doc without the row: the member Library, accepted items, a
+ *  client's shared items). The page row is read as the caller (it reads the
+ *  page itself). Null at the top level or for no such page. */
+export async function pageFolderIdOf(ownerId: string, pageId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ path: nodes.path })
+    .from(nodes)
+    .where(and(eq(nodes.id, pageId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
+    .limit(1);
+  return row ? pageFolderId(ownerId, String(row.path)) : null;
 }
 
 /**

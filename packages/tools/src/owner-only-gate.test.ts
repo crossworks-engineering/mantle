@@ -63,6 +63,9 @@ const EXPECTED_OWNER_ONLY = [
   'openrouter_rankings',
   'openrouter_task_classes',
   // The owner's Recall acts on MCP (builtins-recall-owner.ts).
+  // A page's folder is the tree's (folder phase 7): the owner files it,
+  // like tree_item_move.
+  'page_move',
   'recall_card_set_slug',
   'recall_cards_reorder',
   'recall_map_delete',

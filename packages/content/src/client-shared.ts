@@ -143,7 +143,9 @@ export async function getClientSharedItem(
       const scan = { ownUrl: clientOwnUrl(clientRedactOrigins()) };
       const titles = await clientReadable(anchorId, docRefIds(item.doc, scan));
       const doc = redactClientDoc(item.doc, new Set(titles.keys()), redactOptions(titles));
-      return { ...base, type: 'page', doc };
+      // Its folder (folder phase 7): the client's Folder index block lists it
+      // through the client tree, which answers only what the client may see.
+      return { ...base, type: 'page', doc, folderId: item.folderId ?? null };
     }
     case 'note': {
       const scan = { ownUrl: clientOwnUrl(clientRedactOrigins()) };

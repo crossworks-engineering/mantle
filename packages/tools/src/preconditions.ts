@@ -67,6 +67,7 @@ const REF_LOOKUP: Record<MarkdownRef['scheme'], string> = {
   page: 'page_list / search_nodes',
   mention: 'search_nodes',
   draw: 'draw_list / search_nodes',
+  folder: 'tree_folders (kind pages)',
 };
 
 /** The href form as written, for quoting back in the error. */

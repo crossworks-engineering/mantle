@@ -42,6 +42,7 @@ const PUBLIC_VALUE_EXPORTS = [
   'listBacklinks',
   'listPageTags',
   'listPages',
+  'pageFolderIdOf',
   'saveDraft',
   'splitPage',
   'updatePage',

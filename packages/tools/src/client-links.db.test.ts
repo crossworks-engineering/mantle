@@ -27,8 +27,6 @@ describe.skipIf(!URL)('the share tools on client items, on Postgres', () => {
   const ids = {
     note: randomUUID(),
     page: randomUUID(),
-    parent: randomUUID(),
-    subClient: randomUUID(),
     embedder: randomUUID(),
     file: randomUUID(),
   };
@@ -70,15 +68,11 @@ describe.skipIf(!URL)('the share tools on client items, on Postgres', () => {
       insert into nodes (id, owner_id, type, title, path, parent_id, audience) values
         (${ids.note}, ${owner}, 'note', 'client note', 'notes', null, 'client'),
         (${ids.page}, ${owner}, 'page', 'client page', 'pages', null, 'client'),
-        (${ids.parent}, ${owner}, 'page', 'public parent', 'pages', null, 'admin'),
-        (${ids.subClient}, ${owner}, 'page', 'client sub', 'pages', ${ids.parent}, 'client'),
         (${ids.embedder}, ${owner}, 'page', 'embeds a client file', 'pages', null, 'admin'),
         (${ids.file}, ${owner}, 'file', 'plan.png', 'files', null, 'client')`);
     await m.db.execute(sqlTag`
       insert into pages (node_id, doc, doc_text) values
         (${ids.page}, ${empty}::jsonb, ''),
-        (${ids.parent}, ${empty}::jsonb, ''),
-        (${ids.subClient}, ${empty}::jsonb, ''),
         (${ids.embedder}, ${withFile}::jsonb, '')`);
   });
 

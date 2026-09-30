@@ -36,6 +36,7 @@
  * brain. Nothing here writes, and nothing returns a draft.
  */
 import { and, desc, eq, ilike, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { pageFolderIdOf } from './pages/read';
 import {
   acceptedSnapshots,
   asViewerLevel,
@@ -95,7 +96,7 @@ export type AcceptedRow = {
 };
 
 export type AcceptedItem =
-  | (AcceptedRow & { type: 'page'; doc: unknown })
+  | (AcceptedRow & { type: 'page'; doc: unknown; folderId?: string | null })
   | (AcceptedRow & { type: 'note'; content: string })
   | (AcceptedRow & { type: 'table'; table: NonNullable<Awaited<ReturnType<typeof getTable>>> })
   | (AcceptedRow & { type: 'draw'; changedByAdmin?: boolean })
@@ -425,6 +426,8 @@ export async function getAcceptedItem(
         ...base,
         type: 'page',
         doc: await redactedDoc(anchorId, loginId, reader, snap.doc),
+        // Where it sits now (folder phase 7), for a Folder index block.
+        folderId: await pageFolderIdOf(anchorId, base.id),
       };
     case 'note':
       return {

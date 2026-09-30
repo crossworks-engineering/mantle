@@ -65,6 +65,13 @@ describe.skipIf(!URL)('Accept claims in place', () => {
               ${JSON.stringify(data)}::jsonb, '{}')`);
     return id;
   };
+  const submittedPage = async (title: string, at: string) => {
+    const page = await as(() =>
+      sp.createMineItem(space, { type: 'page', title }, {}, { path: at }),
+    );
+    await as(() => sp.submitItem(space, page.id));
+    return page.id;
+  };
   const submittedNote = async (title: string, at: string) => {
     const note = await as(() =>
       sp.createMineItem(space, { type: 'note', title, content: 'x' }, {}, { path: at }),
@@ -427,5 +434,25 @@ describe.skipIf(!URL)('Accept claims in place', () => {
     await as(() => sp.submitItem(space, id));
     await rv.acceptReviewItem(anchor, id, reviewer(), { folderPath: 'files' });
     expect(await row(id)).toMatchObject({ path: 'files' });
+  });
+  it('a page lands in its brain folder like a note (folder phase 7), and never under a page', async () => {
+    await tree.ensureKindRoot(anchor, 'pages');
+    const plans = await tree.createTreeFolder(anchor, 'pages', { parentId: null, name: 'Plans' });
+    const id = await submittedPage('filed page', 'pages.plans');
+    const preview = await rv.previewAccept(id, anchor);
+    expect(preview?.place).toMatchObject({ kind: 'pages', folderId: plans.id, creates: [] });
+    const res = await rv.acceptReviewItem(anchor, id, reviewer());
+    expect(res).toMatchObject({ audience: 'admin', readAt: 'admin' });
+    const [landed] = (await m.systemDb.execute(sqlTag`
+      select owner_id, path::text as path, parent_id from nodes where id = ${id}`)) as unknown as Array<{
+      owner_id: string;
+      path: string;
+      parent_id: string | null;
+    }>;
+    expect(landed).toEqual({ owner_id: anchor, path: 'pages.plans', parent_id: null });
+    // The admin's pick moves it, still with no parent page.
+    const other = await submittedPage('picked page', 'pages');
+    await rv.acceptReviewItem(anchor, other, reviewer(), { folderId: plans.id });
+    expect(await row(other)).toMatchObject({ owner_id: anchor, path: 'pages.plans' });
   });
 });

@@ -61,7 +61,7 @@ export type ClientSharedPage = {
  *  a mention chip or a link names "Private item" and points nowhere, an
  *  embed of such an item is left out. */
 export type ClientSharedItem =
-  | (ClientSharedRow & { type: 'page'; doc: unknown })
+  | (ClientSharedRow & { type: 'page'; doc: unknown; folderId?: string | null })
   | (ClientSharedRow & { type: 'note'; content: string })
   | (ClientSharedRow & { type: 'table'; table: ClientSharedTable })
   | (ClientSharedRow & { type: 'draw' })
@@ -342,7 +342,7 @@ export type ClientSpaceRefusedReason =
  *  current version). A file's bytes: /api/client/files/:id while the brain
  *  file still holds the bytes accepted (`changedByAdmin` otherwise). */
 export type ClientAcceptedItem =
-  | (ClientAcceptedBase & { type: 'page'; doc: unknown })
+  | (ClientAcceptedBase & { type: 'page'; doc: unknown; folderId?: string | null })
   | (ClientAcceptedBase & { type: 'note'; content: string })
   | (ClientAcceptedBase & {
       type: 'file';

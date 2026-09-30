@@ -20,7 +20,7 @@ export const page_split: BuiltinToolDef = {
   preconditions: PAGE_ID_PRE,
   name: 'Split a page into pages',
   description:
-    "Break a long page into pages along its headings — the SCALING LEVER for documents too big to restyle or hold faithfully in one transform. Walks the page and turns every heading of the chosen level into a page of its own, in the same folder (heading text → title; the blocks under it → body), then replaces THIS page's body with a table-of-contents of link cards to the new pages. **Byte-faithful: every word + block is preserved, just redistributed — nothing is rewritten or summarised.** Writes the TOC to DRAFT only (the published page is untouched until the user commits); each new page is created + indexed immediately, so they're independently searchable and each is small enough to restyle with the block tools afterwards. **When a 'restyle/reformat this whole document' request is too large to do faithfully in one pass, PROPOSE this instead of attempting a doomed full-document transform.**",
+    "Break a long page into pages along its headings: the SCALING LEVER for documents too big to restyle or hold faithfully in one transform. Walks the page and turns every heading of the chosen level into a page of its own, in the same folder (heading text → title; the blocks under it → body), then replaces THIS page's body with a table-of-contents of link cards to the new pages. **Byte-faithful: every word + block is preserved, just redistributed, nothing is rewritten or summarised.** Writes the TOC to DRAFT only (the published page is untouched until the user commits); each new page is created + indexed immediately, so they're independently searchable and each is small enough to restyle with the block tools afterwards. **When a 'restyle/reformat this whole document' request is too large to do faithfully in one pass, PROPOSE this instead of attempting a doomed full-document transform.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -75,7 +75,7 @@ export const page_extract_section: BuiltinToolDef = {
   preconditions: PAGE_ID_PRE,
   name: 'Lift a section into its own page',
   description:
-    "Lift ONE section out of a page into a page of its own, in the same folder. Given a heading's block id (from page_blocks_list), moves that heading + everything under it (until the next heading of equal-or-higher level) into a new page — heading text → title, the blocks under it → body — and drops a link card (`[Title](page:<id>)`) where the section was. Byte-faithful (blocks moved, not rewritten). The surgical cousin of `page_split`: use it to peel off ONE oversized or self-contained section (e.g. 'pull the Appendix out into its own page') rather than splitting the whole document. Writes the source's new body to DRAFT only; the new page is created + indexed immediately.",
+    "Lift ONE section out of a page into a page of its own, in the same folder. Given a heading's block id (from page_blocks_list), moves that heading + everything under it (until the next heading of equal-or-higher level) into a new page (heading text becomes the title, the blocks under it the body) and drops a link card (`[Title](page:<id>)`) where the section was. Byte-faithful (blocks moved, not rewritten). The surgical cousin of `page_split`: use it to peel off ONE oversized or self-contained section (e.g. 'pull the Appendix out into its own page') rather than splitting the whole document. Writes the source's new body to DRAFT only; the new page is created + indexed immediately.",
   inputSchema: {
     type: 'object',
     properties: {
@@ -116,6 +116,8 @@ export const page_extract_section: BuiltinToolDef = {
 
 export const page_move: BuiltinToolDef = {
   slug: 'page_move',
+  // Like tree_item_move: a member or client organises through its own tree.
+  ownerOnly: true,
   preconditions: [
     ...PAGE_NODE_ID_PRE,
     { kind: 'node_exists', param: 'folder_id', nodeType: 'branch', lookup: 'tree_folders' },
@@ -175,7 +177,7 @@ export const page_move: BuiltinToolDef = {
         if (!beside) {
           return {
             ok: false,
-            error: `parent_id '${parentId}' is not one of your pages — pass a folder_id (tree_folders, kind pages) instead.`,
+            error: `parent_id '${parentId}' is not one of your pages: pass a folder_id (tree_folders, kind pages) instead.`,
           };
         }
         dest = beside.folderId ?? null;

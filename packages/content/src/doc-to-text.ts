@@ -52,7 +52,7 @@ const BLOCK_TYPES = new Set([
   'tableCell',
   'tableHeader',
   'figure',
-  // Page link card (Phase 4a) — its `title` attr is surfaced via
+  // Page link card (Phase 4a): its `title` attr is surfaced via
   // LABEL_KEYS; this just gives it a trailing newline so adjacent cards'
   // titles don't run together in the indexed plaintext.
   'childPage',

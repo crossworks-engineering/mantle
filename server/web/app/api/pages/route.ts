@@ -14,6 +14,7 @@ import {
 } from '@/lib/pages';
 import { recordIngest } from '@mantle/tracing';
 import { firstIssue } from '@/lib/zod-issue';
+import { treeErrorResponse } from '@/lib/tree-route';
 
 const SORTS: PageSort[] = ['edited', 'newest', 'oldest', 'title'];
 const PAGE_SIZE = 50;
@@ -38,6 +39,11 @@ const CreateBody = z.object({
   /** DEPRECATED (folder phase 7): pages do not nest. A page id here puts the
    *  new page in the same folder as that page. */
   parentId: z.string().uuid().optional(),
+  /** A page in a shared folder is read at the folder's share at once, what
+   *  it embeds with it: 409 `visibility` with the list until confirmed
+   *  (docs/folder-tree.md, "Confirm first"). `seen`: the change count shown. */
+  confirm: z.boolean().optional(),
+  seen: z.number().int().min(0).optional(),
 });
 
 /**
@@ -134,7 +140,8 @@ export async function POST(req: Request) {
     if (err instanceof ParentPageNotFoundError) {
       return NextResponse.json({ error: 'parent page not found' }, { status: 400 });
     }
-    throw err;
+    // Who can see the page would change: 409 with the list (or busy).
+    return treeErrorResponse(err);
   }
   const snippet = docToText(row.doc);
   void recordIngest({

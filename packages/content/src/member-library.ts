@@ -178,7 +178,7 @@ export async function libraryCounts(anchorId: string): Promise<Record<LibraryKin
 }
 
 export type LibraryItem =
-  | (LibraryRow & { type: 'page'; doc: unknown })
+  | (LibraryRow & { type: 'page'; doc: unknown; folderId?: string | null })
   | (LibraryRow & { type: 'note'; content: string })
   | (LibraryRow & { type: 'table'; table: NonNullable<Awaited<ReturnType<typeof getTable>>> })
   | (LibraryRow & { type: 'draw' })
@@ -211,7 +211,10 @@ export async function getLibraryItem(
   switch (n.type) {
     case 'page': {
       const page = await getPage(anchorId, id);
-      return page ? { ...base, type: 'page', doc: page.doc } : null;
+      // Its folder (folder phase 7), for a Folder index block set to `here`.
+      return page
+        ? { ...base, type: 'page', doc: page.doc, folderId: page.folderId ?? null }
+        : null;
     }
     case 'note': {
       const note = await getNote(anchorId, id);

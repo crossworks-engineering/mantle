@@ -5,7 +5,7 @@
  * Split out of builtins-pages.ts; bodies moved verbatim.
  */
 
-import { EMBEDS_SHARED } from '../visibility-refusal';
+import { CONFIRM_INPUT, EMBEDS_SHARED, visibilityRefusal } from '../visibility-refusal';
 import {
   createPage,
   updatePage,
@@ -57,6 +57,7 @@ export const page_create: BuiltinToolDef = {
       icon: { type: 'string', description: 'optional emoji icon, e.g. "📄"' },
       folder_id: FOLDER_ID_PROP,
       parent_id: PARENT_ID_PROP,
+      confirm: CONFIRM_INPUT,
     },
     required: ['title'],
   },
@@ -85,7 +86,7 @@ export const page_create: BuiltinToolDef = {
         payload: {
           via: 'page_create_tool',
           tags,
-          ...placement,
+          ...placementOutput(placement),
           ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
         },
         snippet: markdown,
@@ -101,6 +102,9 @@ export const page_create: BuiltinToolDef = {
         },
       };
     } catch (err) {
+      // A shared folder: the list, until the user agrees (confirm: true).
+      const refusal = visibilityRefusal(err);
+      if (refusal) return { ok: false, error: refusal };
       const msg = errorMessage(err);
       // createPage refuses a placement it cannot resolve: say so plainly.
       const placed = placementError(msg, placement);

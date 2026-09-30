@@ -28,18 +28,6 @@ import { getPage } from './read';
 import { createPage } from './tree';
 import { saveDraft } from './draft';
 
-/** The folder path a page sits at (its own path): where a page made from it
- *  goes too. */
-async function pagePath(ownerId: string, pageId: string): Promise<string> {
-  const [row] = await db
-    .select({ path: nodes.path })
-    .from(nodes)
-    .where(and(eq(nodes.id, pageId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
-    .limit(1);
-  if (!row) throw new Error(`page ${pageId} not found`);
-  return String(row.path);
-}
-
 /** Thrown by `splitPage` when the page has no heading at the requested level
  *  to split on. The tool layer maps this to a friendly message. */
 export class NoSplitHeadingsError extends Error {
@@ -64,7 +52,7 @@ export type SplitPageResult = {
  *
  * Safety + indexing model, mirroring the rest of Pages:
  *  - The pages are created via `createPage`, whose `nodes` insert fires the
- *    extractor — so each is indexed independently (its own summary /
+ *    extractor, so each is indexed independently (its own summary /
  *    embedding / facts), the whole point of splitting.
  *  - The source's new TOC is written to `draft_doc` ONLY (via `saveDraft`); the
  *    published `doc` is untouched until the user commits, so the restructure is
@@ -79,7 +67,6 @@ export async function splitPage(
 ): Promise<SplitPageResult> {
   const page = await getPage(ownerId, pageId);
   if (!page) throw new Error(`splitPage: page ${pageId} not found`);
-  const folderPath = await pagePath(ownerId, pageId);
 
   const source = (page.draft ?? page.doc) as Record<string, unknown>;
   const { intro, sections } = splitDocByHeading(source, opts.by);
@@ -96,7 +83,8 @@ export async function splitPage(
       type: 'doc',
       content: sec.blocks.length ? sec.blocks : [{ type: 'paragraph' }],
     });
-    const child = await createPage(ownerId, { title: sec.title, doc: childDoc, folderPath });
+    // Next to the source, in its folder (read inside the create's own lock).
+    const child = await createPage(ownerId, { title: sec.title, doc: childDoc, siblingOf: pageId });
     children.push({ id: child.id, title: child.title });
     tocBlocks.push({
       type: 'childPage',
@@ -140,7 +128,6 @@ export async function extractSectionToPage(
 ): Promise<ExtractSectionResult> {
   const page = await getPage(ownerId, pageId);
   if (!page) throw new Error(`extractSectionToPage: page ${pageId} not found`);
-  const folderPath = await pagePath(ownerId, pageId);
 
   const source = (page.draft ?? page.doc) as Record<string, unknown>;
   const section = extractSection(source, headingBlockId);
@@ -150,7 +137,11 @@ export async function extractSectionToPage(
     type: 'doc',
     content: section.childBlocks.length ? section.childBlocks : [{ type: 'paragraph' }],
   });
-  const child = await createPage(ownerId, { title: section.title, doc: childDoc, folderPath });
+  const child = await createPage(ownerId, {
+    title: section.title,
+    doc: childDoc,
+    siblingOf: pageId,
+  });
 
   const newParent = ensureBlockIds({
     type: 'doc',

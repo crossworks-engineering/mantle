@@ -64,7 +64,7 @@ export type MemberLibraryPage = {
 
 /** GET /api/member/library/:id -> { item } */
 export type MemberLibraryItem =
-  | (MemberLibraryRow & { type: 'page'; doc: unknown })
+  | (MemberLibraryRow & { type: 'page'; doc: unknown; folderId?: string | null })
   | (MemberLibraryRow & { type: 'note'; content: string })
   | (MemberLibraryRow & { type: 'table'; table: unknown })
   | (MemberLibraryRow & { type: 'draw' })
@@ -248,7 +248,7 @@ export type MemberAcceptedPage = {
  *  saved picture) since, so its bytes are not served any more; the metadata
  *  is what was accepted. */
 export type MemberAcceptedItem =
-  | (MemberAcceptedRow & { type: 'page'; doc: unknown })
+  | (MemberAcceptedRow & { type: 'page'; doc: unknown; folderId?: string | null })
   | (MemberAcceptedRow & { type: 'note'; content: string })
   | (MemberAcceptedRow & { type: 'table'; table: unknown })
   | (MemberAcceptedRow & { type: 'draw'; changedByAdmin?: boolean })

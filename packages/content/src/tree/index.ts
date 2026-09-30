@@ -58,6 +58,7 @@ export {
   guardNewFileIn,
   type ConfirmOpts,
 } from './files-guard';
+export { guardNewPageIn, newPageDiff } from './page-guard';
 export { repairShareDrift, type ShareDriftResult } from './share-drift';
 export {
   clientTreeFolderPage,

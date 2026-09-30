@@ -19,6 +19,7 @@ import type { BuiltinToolDef } from '../types';
 import { str, strArr } from '../coerce';
 import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
+import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 import {
   FILE_ID_PRE,
   FOLDER_ID_PRE,
@@ -32,7 +33,7 @@ import {
 
 export const page_from_file: BuiltinToolDef = {
   slug: 'page_from_file',
-  preconditions: FILE_ID_PRE,
+  preconditions: [...FILE_ID_PRE, ...FOLDER_ID_PRE],
   name: 'Create page from file',
   description:
     "Create a page by importing a markdown/text file's bytes directly — the bytes go server-side from `files` → `markdownToDoc` → `createPage` without round-tripping through your output. **Always prefer this over `file_read` + `page_create` for file → page operations.** It scales to arbitrarily large files (a 100 KB Notion export imports in one tool call instead of choking on your max_tokens cap) and the result is byte-faithful to the source. Returns the new page's id + title; the body is never echoed back to you (use page_get if you need to verify content). Title defaults to the file's basename without extension if you omit it. Only text-like files are accepted (markdown / plain text) — binaries (PDF / docx / xlsx) are rejected with a clear error since their indexed text already lives on the file node and can't be losslessly converted to a page. The source file is marked SUPERSEDED by the new page (a reversible retrieval down-weight — the page is now the living copy; undo with `content_supersede`); pass `supersede_source: false` to keep both at full retrieval weight.",
@@ -50,6 +51,8 @@ export const page_from_file: BuiltinToolDef = {
         description: "Labels for organisation and filtering, e.g. ['work'].",
       },
       icon: { type: 'string', description: 'optional emoji icon, e.g. "📄"' },
+      folder_id: FOLDER_ID_PROP,
+      confirm: CONFIRM_INPUT,
       supersede_source: {
         type: 'boolean',
         default: true,
@@ -99,6 +102,7 @@ export const page_from_file: BuiltinToolDef = {
 
     const tags = strArr(input.tags);
     const icon = str(input.icon).trim();
+    const placement = placementOf(input);
 
     try {
       const markdown = res.bytes.toString('utf8');
@@ -108,6 +112,7 @@ export const page_from_file: BuiltinToolDef = {
         doc,
         tags,
         ...(icon ? { icon } : {}),
+        ...placement,
       });
       // The page is now the living copy — stamp the lineage edge so retrieval
       // demotes the source file and annotates hits with the successor
@@ -166,7 +171,12 @@ export const page_from_file: BuiltinToolDef = {
         },
       };
     } catch (err) {
-      return { ok: false, error: errorMessage(err) };
+      const refusal = visibilityRefusal(err);
+      if (refusal) return { ok: false, error: refusal };
+      const msg = errorMessage(err);
+      const placed = placementError(msg, placement);
+      if (placed) return { ok: false, error: placed };
+      return { ok: false, error: msg };
     }
   },
 };
@@ -189,6 +199,7 @@ export const page_from_note: BuiltinToolDef = {
       },
       folder_id: FOLDER_ID_PROP,
       parent_id: PARENT_ID_PROP,
+      confirm: CONFIRM_INPUT,
       title: {
         type: 'string',
         description: "page title; defaults to the note's title if omitted",
@@ -264,7 +275,7 @@ export const page_from_note: BuiltinToolDef = {
         payload: {
           via: 'page_from_note_tool',
           sourceNoteId: noteId,
-          ...placement,
+          ...placementOutput(placement),
           tags,
           ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
         },
@@ -283,6 +294,8 @@ export const page_from_note: BuiltinToolDef = {
         },
       };
     } catch (err) {
+      const refusal = visibilityRefusal(err);
+      if (refusal) return { ok: false, error: refusal };
       const msg = errorMessage(err);
       const placed = placementError(msg, placement);
       if (placed) return { ok: false, error: placed };
@@ -309,6 +322,7 @@ export const page_from_notes: BuiltinToolDef = {
       title: { type: 'string', description: 'title for the combined page (required)' },
       folder_id: FOLDER_ID_PROP,
       parent_id: PARENT_ID_PROP,
+      confirm: CONFIRM_INPUT,
       headings: {
         type: 'boolean',
         description:
@@ -419,7 +433,7 @@ export const page_from_notes: BuiltinToolDef = {
           via: 'page_from_notes_tool',
           sourceNoteIds: noteIds,
           noteCount: notes.length,
-          ...placement,
+          ...placementOutput(placement),
           tags,
           ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
         },
@@ -439,6 +453,8 @@ export const page_from_notes: BuiltinToolDef = {
         },
       };
     } catch (err) {
+      const refusal = visibilityRefusal(err);
+      if (refusal) return { ok: false, error: refusal };
       const msg = errorMessage(err);
       const placed = placementError(msg, placement);
       if (placed) return { ok: false, error: placed };
@@ -466,6 +482,7 @@ export const page_from_journal: BuiltinToolDef = {
       title: { type: 'string', description: 'title for the compiled page (required)' },
       folder_id: FOLDER_ID_PROP,
       parent_id: PARENT_ID_PROP,
+      confirm: CONFIRM_INPUT,
       headings: {
         type: 'boolean',
         description:
@@ -552,7 +569,7 @@ export const page_from_journal: BuiltinToolDef = {
           via: 'page_from_journal_tool',
           sourceJournalIds: journalIds,
           entryCount: entries.length,
-          ...placement,
+          ...placementOutput(placement),
           tags,
           ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
         },
@@ -571,6 +588,8 @@ export const page_from_journal: BuiltinToolDef = {
         },
       };
     } catch (err) {
+      const refusal = visibilityRefusal(err);
+      if (refusal) return { ok: false, error: refusal };
       const msg = errorMessage(err);
       const placed = placementError(msg, placement);
       if (placed) return { ok: false, error: placed };

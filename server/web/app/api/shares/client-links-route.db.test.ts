@@ -22,14 +22,7 @@ describe.skipIf(!URL)('the share routes on client items, on Postgres', () => {
   let sqlTag: typeof import('drizzle-orm').sql;
   const owner = randomUUID();
   h.owner = owner;
-  const ids = {
-    note: randomUUID(),
-    cParent: randomUUID(),
-    cSub: randomUUID(),
-    parent: randomUUID(),
-    subClient: randomUUID(),
-    subAdmin: randomUUID(),
-  };
+  const ids = { note: randomUUID() };
   const tag = `client-links-route-${owner.slice(0, 8)}`;
 
   const post = (body: unknown) =>
@@ -51,29 +44,13 @@ describe.skipIf(!URL)('the share routes on client items, on Postgres', () => {
     m = await import('@mantle/db');
     create = await import('./route');
     sqlTag = (await import('drizzle-orm')).sql;
-    const empty = '{"type":"doc","content":[]}';
     await m.db.execute(sqlTag`
       insert into auth.users (id, email, password_hash, role) values (${owner}, ${`${tag}@example.invalid`}, 'x', 'admin')`);
     await m.db.execute(sqlTag`
       insert into spaces (id, kind, login_id) values (${owner}, 'brain', ${owner})`);
     await m.db.execute(sqlTag`
       insert into nodes (id, owner_id, type, title, path, parent_id, audience) values
-        (${ids.note}, ${owner}, 'note', 'client note', 'notes', null, 'client'),
-        (${ids.cParent}, ${owner}, 'page', 'client parent', 'pages', null, 'client'),
-        (${ids.cSub}, ${owner}, 'page', 'client sub', 'pages', ${ids.cParent}, 'client'),
-        (${ids.parent}, ${owner}, 'page', 'public parent', 'pages', null, 'admin'),
-        (${ids.subClient}, ${owner}, 'page', 'client sub', 'pages', ${ids.parent}, 'client'),
-        (${ids.subAdmin}, ${owner}, 'page', 'admin sub', 'pages', ${ids.parent}, 'admin')`);
-    await m.db.execute(sqlTag`
-      insert into pages (node_id, doc, doc_text) values
-        (${ids.cParent}, ${empty}::jsonb, ''), (${ids.cSub}, ${empty}::jsonb, ''),
-        (${ids.parent}, ${empty}::jsonb, ''), (${ids.subClient}, ${empty}::jsonb, ''),
-        (${ids.subAdmin}, ${empty}::jsonb, '')`);
-    // An old link on the client parent (made when client meant an open
-    // link), cascade OFF.
-    await m.db.execute(sqlTag`
-      insert into shares (owner_id, node_id, node_type, token, settings)
-      values (${owner}, ${ids.cParent}, 'page', ${`old-${randomUUID()}`}, '{"cascade":false}'::jsonb)`);
+        (${ids.note}, ${owner}, 'note', 'client note', 'notes', null, 'client')`);
   }, 60_000);
 
   afterAll(async () => {

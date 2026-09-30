@@ -97,19 +97,27 @@ export const PARENT_ID_PROP = {
 } as const;
 
 /** The placement a create-a-page tool passes to `createPage`: `folder_id`
- *  wins over the deprecated `parent_id`; neither means the top level. */
+ *  wins over the deprecated `parent_id`; neither means the top level.
+ *  `confirm` rides along: a page made in a shared folder is refused with
+ *  the list of what it opens until the user agreed (visibility-refusal.ts). */
 export function placementOf(input: Record<string, unknown>): {
   folderId?: string;
   parentId?: string;
+  confirm?: boolean;
 } {
+  const confirm = input.confirm === true ? { confirm: true } : {};
   const folderId = str(input.folder_id).trim();
-  if (folderId) return { folderId };
+  if (folderId) return { folderId, ...confirm };
   const parentId = str(input.parent_id).trim();
-  return parentId ? { parentId } : {};
+  return parentId ? { parentId, ...confirm } : { ...confirm };
 }
 
 /** The placement as a tool echoes it back (only what was given). */
-export function placementOutput(placement: { folderId?: string; parentId?: string }): {
+export function placementOutput(placement: {
+  folderId?: string;
+  parentId?: string;
+  confirm?: boolean;
+}): {
   folder_id?: string;
   parent_id?: string;
 } {
@@ -123,13 +131,13 @@ export function placementOutput(placement: { folderId?: string; parentId?: strin
  *  (PageFolderNotFoundError, ParentPageNotFoundError), or null. */
 export function placementError(
   message: string,
-  placement: { folderId?: string; parentId?: string },
+  placement: { folderId?: string; parentId?: string; confirm?: boolean },
 ): string | null {
   if (placement.folderId && message.includes('folder not found')) {
-    return `folder_id '${placement.folderId}' is not a folder of your pages — pass the id of a pages folder (see tree_folders with kind pages), or omit it for the top level.`;
+    return `folder_id '${placement.folderId}' is not a folder of your pages: pass the id of a pages folder (see tree_folders with kind pages), or omit it for the top level.`;
   }
   if (placement.parentId && message.includes('parent page not found')) {
-    return `parent_id '${placement.parentId}' is not one of your pages — pass the id of an existing page (see page_list / search_nodes), or better a folder_id (tree_folders, kind pages).`;
+    return `parent_id '${placement.parentId}' is not one of your pages: pass the id of an existing page (see page_list / search_nodes), or better a folder_id (tree_folders, kind pages).`;
   }
   return null;
 }
