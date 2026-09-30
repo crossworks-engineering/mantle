@@ -86,8 +86,11 @@ export const recallMaps = pgTable(
 export const recallNodes = pgTable(
   'recall_nodes',
   {
-    /** The source page's node id. */
-    id: uuid('id').primaryKey(),
+    /** v1: the source page's node id. v2: the card's own id, minted here —
+     *  a native card is not a page, so nothing outside supplies one. */
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
     /** The map this node serves under. Standalone prompts (a `recall`+`prompt`
      *  tagged page with no tree) compile as a one-node map of themselves. */

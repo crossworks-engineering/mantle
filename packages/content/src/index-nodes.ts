@@ -52,6 +52,24 @@ export {
   type RecallCompileResult,
 } from './recall';
 
+export {
+  RecallWriteError,
+  confirmRecallPrompt,
+  createRecallMap,
+  deleteRecallCard,
+  deleteRecallMap,
+  listRecallRevisions,
+  putRecallCard,
+  recallNativeSlug,
+  reorderRecallCards,
+  updateRecallMap,
+  type RecallActor,
+  type RecallCardInput,
+  type RecallOptionInput,
+  type RecallWarning,
+  type RecallWriteResult,
+} from './recall-native';
+
 export { registerRecallEmbedder, hasRecallEmbedder, type RecallEmbedder } from './embed-bridge';
 export {
   resolveExport,
