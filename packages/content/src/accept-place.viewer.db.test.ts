@@ -270,11 +270,14 @@ describe.skipIf(!URL)('Accept claims in place', () => {
   });
 
   it('keeps a member folder that holds a submitted draft where it is', async () => {
-    const held = await ownFolder('notes.clients.held', 'Held');
-    const id = await submittedNote('held', 'notes.clients.held');
+    // A folder the member sees (shared with the team), its own folder inside.
+    const room = await tree.createTreeFolder(anchor, 'notes', { parentId: null, name: 'Room' });
+    await tree.updateTreeFolder(anchor, 'notes', room.id, { share: 'team' }, { confirm: true });
+    const held = await ownFolder('notes.room.held', 'Held');
+    const id = await submittedNote('held', 'notes.room.held');
     const scope = { anchorId: anchor, spaceId: space, loginId: login };
     await expect(
-      tree.updateMemberFolder(scope, 'notes', held, { parentId: folders.acme }),
+      tree.updateMemberFolder(scope, 'notes', held, { parentId: null }),
     ).rejects.toMatchObject({ code: 'conflict' });
     await expect(
       tree.updateMemberFolder(scope, 'notes', held, { name: 'Renamed' }),
@@ -282,10 +285,10 @@ describe.skipIf(!URL)('Accept claims in place', () => {
     await expect(tree.deleteMemberFolder(scope, 'notes', held)).rejects.toMatchObject({
       code: 'conflict',
     });
-    expect(await row(id)).toMatchObject({ path: 'notes.clients.held' });
+    expect(await row(id)).toMatchObject({ path: 'notes.room.held' });
     // Its look still changes (no move).
     await tree.updateMemberFolder(scope, 'notes', held, { icon: '🗂️' });
-    expect(await row(held)).toMatchObject({ path: 'notes.clients.held', data: { icon: '🗂️' } });
+    expect(await row(held)).toMatchObject({ path: 'notes.room.held', data: { icon: '🗂️' } });
   });
 
   it('a client from before the tree still files every file in its folderPath', async () => {

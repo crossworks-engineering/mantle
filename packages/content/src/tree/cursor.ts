@@ -29,3 +29,26 @@ export function decodeTreeCursor(
     return null;
   }
 }
+
+/**
+ * A member tree's draft cursor (./member-tree): a folder's pages run through
+ * the member's drafts at that folder first, then the brain's items. Drafts
+ * are few and read whole per call, so this cursor is the number shown so
+ * far; the brain's items keep the keyset cursor above.
+ */
+export function encodeDraftCursor(shown: number): string {
+  return Buffer.from(JSON.stringify(['drafts', shown]), 'utf8').toString('base64url');
+}
+
+/** The drafts shown so far, or null when `raw` is not a draft cursor. */
+export function decodeDraftCursor(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as unknown;
+    if (!Array.isArray(v) || v.length !== 2 || v[0] !== 'drafts') return null;
+    const n = v[1];
+    return typeof n === 'number' && Number.isInteger(n) && n >= 0 ? n : null;
+  } catch {
+    return null;
+  }
+}

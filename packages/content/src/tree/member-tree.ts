@@ -7,13 +7,22 @@
  *   - teammates' drafts shared with the team.
  * A member's own folders are private: only they see them. A teammate's draft
  * shows at the deepest folder of its path that this member sees (never the
- * teammate's private folders), else at the top level. The brain folders on
- * the way to the member's own drafts and folders show too (names are
- * organisational, as for anything else a reader reads).
+ * teammate's private folders), else at the top level.
  *
- * Drafts come first on a folder's first page, newest first (own, then the
- * team's); the brain's items page after them as in the reader tree. A
- * member's drafts are few (SPACE_ITEM_LIMIT), so they are read whole.
+ * A brain folder shows only by the reader rules (./reader): its share covers
+ * the member, or it leads to something the member reads. Where a member's
+ * own folder sits at the path of a brain folder the member does NOT see, the
+ * member's own row shows (its name, its id), never the brain's: a member
+ * cannot learn a hidden folder's name, look or id by naming a folder like it
+ * (folder audit 2026-09-30, S4). A member's rows that end up below a hidden
+ * brain folder (the admin unshared or moved it) show at the deepest folder
+ * above them the member sees, like a teammate's draft.
+ *
+ * Drafts come before the brain's items, newest first (own, then the team's),
+ * and page like them: a folder's pages run through its drafts first, then
+ * its brain items (a draft cursor, then the reader tree's keyset cursor). A
+ * space holds at most SPACE_ITEM_LIMIT items, so a member's own drafts are
+ * read whole; the team's newest SPACE_ITEM_LIMIT drafts of the kind are.
  *
  * Files: a member's files and file folders sit under `space_files`, the
  * mirror of the brain's `files` (spaceFilesPath, @mantle/db), so no brain
@@ -49,7 +58,8 @@ import {
 import { treeFolderChain, treeParentPath } from '@mantle/content-core/tree';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import { pillOf } from '../member-items';
-import { encodeTreeCursor } from './cursor';
+import { SPACE_ITEM_LIMIT } from '../member-space-core';
+import { decodeDraftCursor, encodeDraftCursor, encodeTreeCursor } from './cursor';
 import { READER_TREE_KINDS, kindItemFilter } from './kinds';
 import {
   itemPage,
@@ -64,8 +74,9 @@ import { readerItems, visibleFolders } from './reader';
 /** Who browses: the anchor (brain), and the member's space and login. */
 export type MemberTreeScope = { anchorId: string; spaceId: string; loginId: string };
 
-/** How many drafts of a kind are read at once (own, and the team's). */
-const DRAFTS_MAX = 500;
+/** How many drafts of a kind are read at once (own, and the team's): all a
+ *  space can hold. */
+const DRAFTS_MAX = SPACE_ITEM_LIMIT;
 
 function assertAdminScope(): void {
   if (currentViewerLevel() !== 'admin' || currentSpaceScope()) {
@@ -205,33 +216,25 @@ export async function memberView(scope: MemberTreeScope, kind: TreeKind): Promis
   const ownItems = own.items.map((r) => ({ ...r, path: treePathOf(kind, r.path) }));
   const teamItems = team.map((r) => ({ ...r, path: treePathOf(kind, r.path) }));
 
-  // The paths that show: what the member reads of the brain, the chains of
-  // its own folders and drafts, and the brain folders on the way to a
-  // teammate's draft (never the teammate's own folders).
-  const wanted = new Set(vis.paths);
-  for (const p of [...ownFolders.map((f) => f.path), ...ownItems.map((r) => r.path)]) {
-    for (const c of treeFolderChain(p)) wanted.add(c);
-  }
-  const teamChains = new Set<string>();
-  for (const r of teamItems) for (const c of treeFolderChain(r.path)) teamChains.add(c);
-  const brainPaths = [...new Set([...wanted, ...teamChains])];
+  // The paths that show: the brain folders the member sees by the reader
+  // rules, and the member's own folders. A brain row shows only where the
+  // member sees it; elsewhere the member's own row at that path does (never
+  // the brain's name, look or id). Teammates' drafts add no folder: they
+  // show at the deepest folder above them the member sees.
+  const brainPaths = [...vis.paths];
   const brainRows = brainPaths.length
     ? await selectFolders(
         scope.anchorId,
         kind,
-        sql`f.path::text in (${sql.join(
-          brainPaths.map((p) => sql`${p}`),
-          sql`, `,
-        )})`,
+        sql`f.path = any(${`{${brainPaths.join(',')}}`}::ltree[])`,
       )
     : [];
   const brainByPath = new Map(brainRows.map((f) => [f.path, f]));
-  for (const c of teamChains) if (brainByPath.has(c)) wanted.add(c);
 
   const ownByPath = new Map(ownFolders.map((f) => [f.path, f]));
   const byPath = new Map<string, TreeFolder>();
-  for (const p of wanted) {
-    const shown = brainByPath.get(p) ?? ownByPath.get(p);
+  for (const p of new Set([...vis.paths, ...ownByPath.keys()])) {
+    const shown = (vis.paths.has(p) ? brainByPath.get(p) : undefined) ?? ownByPath.get(p);
     if (shown) byPath.set(p, { ...shown });
   }
   // A folder only shows under a parent that shows (the top level aside).
@@ -266,14 +269,18 @@ export async function memberView(scope: MemberTreeScope, kind: TreeKind): Promis
     })),
   ];
 
-  // Parents and counts are this member's.
+  // Parents and counts are this member's (one pass each: a brain with
+  // thousands of visible folders stays linear).
   const draftsAt = new Map<string, number>();
   for (const d of drafts) draftsAt.set(d.path, (draftsAt.get(d.path) ?? 0) + 1);
+  const childrenAt = new Map<string, number>();
+  for (const p of byPath.keys()) {
+    const parent = treeParentPath(p);
+    childrenAt.set(parent, (childrenAt.get(parent) ?? 0) + 1);
+  }
   for (const [p, f] of byPath) {
     f.parentId = f.depth > 1 ? (byPath.get(treeParentPath(p))?.id ?? null) : null;
-    let folders = 0;
-    for (const q of byPath.keys()) if (q !== p && treeParentPath(q) === p) folders++;
-    f.folderCount = folders;
+    f.folderCount = childrenAt.get(p) ?? 0;
     f.itemCount = (vis.items.get(p) ?? 0) + (draftsAt.get(p) ?? 0);
   }
 
@@ -283,8 +290,8 @@ export async function memberView(scope: MemberTreeScope, kind: TreeKind): Promis
   for (const f of ownFolders) {
     const shown = byPath.get(f.path);
     if (!shown) continue;
-    // Merged under a brain folder of the same path: the member still names
-    // its own row by id, and changes it as its own.
+    // Merged under a brain folder of the same path the member sees: the
+    // member still names its own row by id, and changes it as its own.
     const mine = shown.id === f.id ? shown : { ...shown, id: f.id, own: true };
     ownById.set(f.id, mine);
     if (!byId.has(f.id)) byId.set(f.id, mine);
@@ -330,7 +337,8 @@ function crumbsOf(view: MemberView, path: string): TreeCrumb[] {
 /**
  * One folder's page as the member sees it. `folderId` null is the kind's
  * root; a folder the member does not see is null (the same as a missing
- * one). The first page carries the folder's drafts before the brain's items.
+ * one). Its pages run through the folder's drafts first, then the brain's
+ * items; every page holds at most `limit` items.
  */
 export async function loadMemberTreeFolder(
   scope: MemberTreeScope,
@@ -346,18 +354,33 @@ export async function loadMemberTreeFolder(
   if (opts.folderId && !found) return null;
   const path = found?.path ?? spec.root;
   const shown = found ? (view.byPath.get(path) ?? found) : null;
-  const page = await withViewer('team', () =>
-    itemPage(
-      scope.anchorId,
-      kind,
-      path,
-      sort,
-      opts.cursor,
-      treePageLimit(opts.limit),
-      readerItems('team', 'n'),
-    ),
-  );
-  const drafts = opts.cursor ? [] : view.drafts.filter((d) => d.path === path).map((d) => d.item);
+  const limit = treePageLimit(opts.limit);
+  // Drafts first: no cursor, or a draft cursor, pages through them; a keyset
+  // cursor is past them, in the brain's items.
+  const shownDrafts = opts.cursor ? decodeDraftCursor(opts.cursor) : 0;
+  const allDrafts = view.drafts.filter((d) => d.path === path).map((d) => d.item);
+  const drafts = shownDrafts === null ? [] : allDrafts.slice(shownDrafts, shownDrafts + limit);
+  const draftsLeft = shownDrafts !== null && shownDrafts + drafts.length < allDrafts.length;
+  const room = limit - drafts.length;
+  const page =
+    draftsLeft || room === 0
+      ? { items: [], nextCursor: null }
+      : await withViewer('team', () =>
+          itemPage(
+            scope.anchorId,
+            kind,
+            path,
+            sort,
+            shownDrafts === null ? opts.cursor : null,
+            room,
+            readerItems('team', 'n'),
+          ),
+        );
+  const nextCursor = draftsLeft
+    ? encodeDraftCursor(shownDrafts! + drafts.length)
+    : room === 0
+      ? encodeDraftCursor(allDrafts.length)
+      : page.nextCursor;
   return {
     kind,
     folder: shown,
@@ -372,7 +395,7 @@ export async function loadMemberTreeFolder(
         ),
     items: [...drafts, ...page.items],
     sort,
-    nextCursor: page.nextCursor,
+    nextCursor,
   };
 }
 
@@ -402,7 +425,9 @@ export async function searchMemberTree(
         ).slice(0, limit);
   const drafts = opts.cursor
     ? []
-    : view.drafts.filter((d) => !term || d.item.title.toLowerCase().includes(needle));
+    : view.drafts
+        .filter((d) => !term || d.item.title.toLowerCase().includes(needle))
+        .slice(0, limit);
   const { page, more } = await withViewer('team', () =>
     searchItemRows(scope.anchorId, kind, term, opts.cursor, limit, readerItems('team', 'n')),
   );

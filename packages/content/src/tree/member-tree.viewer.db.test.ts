@@ -6,8 +6,8 @@
  *
  * Fixture, under folders of this run's own on the shared test anchor:
  *   notes.<L>_team    shared with the team, holds an admin note
- *   notes.<L>_hidden  not shared, holds an admin note (the member has a draft
- *                     there, so it shows: names are organisational)
+ *   notes.<L>_hidden  not shared, holds an admin note; the member's draft or
+ *                     own folder there never reveals it (audit S4)
  *   notes.<L>_closed  not shared, holds only an admin note: never shows
  * Member A browses; member B is the teammate.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/tree/member-tree.viewer.db.test.ts
@@ -149,14 +149,69 @@ describe.skipIf(!URL)('a member’s tree: own folders, drafts in place, teammate
     expect(inMine.crumbs.map((c) => c.id)).toEqual([ids.teamF]);
   });
 
-  it('a draft in a folder the member cannot read shows that folder (names are organisational)', async () => {
+  it('a draft below a folder the member cannot see shows higher up, never the folder', async () => {
+    // (The admin unshared its folder, say.) The member keeps its draft, at
+    // the deepest folder it sees: here the top level.
     const id = await draft(a, 'in hidden', `notes.${L}_hidden`);
     const top = (await page(null))!;
-    expect(top.folders.some((f) => f.id === ids.hiddenF)).toBe(true);
-    const hidden = (await page(ids.hiddenF))!;
-    // Its own draft, never the admin note there.
-    expect(hidden.items.map((i) => i.id)).toEqual([id]);
-    expect(hidden.folder?.itemCount).toBe(1);
+    expect(top.folders.some((f) => f.id === ids.hiddenF)).toBe(false);
+    expect(top.items.some((i) => i.id === id)).toBe(true);
+    expect(await page(ids.hiddenF)).toBeNull();
+  });
+
+  it('naming its own folder like a hidden brain folder reveals nothing of it (audit S4)', async () => {
+    const own = await tree.createMemberFolder(scopeA, 'notes', {
+      parentId: null,
+      name: `${L}_hidden`,
+    });
+    // The member's own row: its name, its id, no share, never the brain's.
+    expect(own).toMatchObject({ own: true, name: `${L}_hidden`, share: null });
+    expect(own.id).not.toBe(ids.hiddenF);
+    const top = (await page(null))!;
+    const shown = top.folders.filter((f) => f.path === `notes.${L}_hidden`);
+    expect(shown.map((f) => [f.id, f.name])).toEqual([[own.id, `${L}_hidden`]]);
+    expect(top.folders.some((f) => f.id === ids.hiddenF)).toBe(false);
+    expect(await page(ids.hiddenF)).toBeNull();
+    // Filing into the brain's id is refused: it is not a place the member sees.
+    await expect(tree.memberFilingPath(scopeA, 'notes', ids.hiddenF)).rejects.toThrow(/not found/);
+    const search = await tree.searchMemberTree(scopeA, 'notes', `${L}_hidden`);
+    expect(search.folders.map((f) => f.id)).toEqual([own.id]);
+    await tree.deleteMemberFolder(scopeA, 'notes', own.id);
+  });
+
+  it('a teammate’s shared draft below a hidden folder shows at a folder the member sees', async () => {
+    const S = spaceOf[b]!;
+    const inClosed = await draft(b, 'ben in closed', `notes.${L}_closed`);
+    await m.systemDb.execute(
+      sqlTag`update space_items set sharing = 'team' where node_id = ${inClosed}`,
+    );
+    const top = (await page(null))!;
+    expect(top.folders.some((f) => f.id === ids.closedF)).toBe(false);
+    expect(top.items.find((i) => i.id === inClosed)).toMatchObject({ source: 'team' });
+    await m.systemDb.execute(sqlTag`delete from nodes where id = ${inClosed} and owner_id = ${S}`);
+  });
+
+  it('pages a folder through its drafts, then the brain’s items', async () => {
+    const mine = (await page(ids.teamF))!.folders.find((f) => f.name === 'Mine')!;
+    const at = await tree.memberFilingPath(scopeA, 'notes', mine.id);
+    for (const n of [1, 2, 3]) await draft(a, `paged ${n}`, at);
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const p = (await tree.loadMemberTreeFolder(scopeA, 'notes', {
+        folderId: mine.id,
+        cursor,
+        limit: 2,
+      }))!;
+      expect(p.items.length).toBeLessThanOrEqual(2);
+      seen.push(...p.items.map((i) => i.id));
+      cursor = p.nextCursor;
+      pages++;
+    } while (cursor && pages < 10);
+    // Every draft there once, none repeated.
+    expect(new Set(seen).size).toBe(seen.length);
+    expect(seen.length).toBe((await page(mine.id))!.folder!.itemCount);
   });
 
   it('a teammate’s shared draft shows at the deepest folder the member sees; a private one never', async () => {

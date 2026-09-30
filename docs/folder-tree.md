@@ -233,9 +233,13 @@ A member files its drafts in the brain's tree and keeps private folders there.
   reads, its own folders (`own: true`) and drafts, and teammates' drafts
   shared with the team (`source`, `state`, `author` on the item). A
   teammate's draft shows at the deepest folder of its path the member sees,
-  never at the teammate's own folders. The brain folders on the way to the
-  member's own rows show too (names are organisational). Drafts come first on
-  a folder's first page; brain items page after them.
+  never at the teammate's own folders. A brain folder shows only by the
+  reader rules (its share covers the member, or it leads to something the
+  member reads). Where the member's own folder sits at the path of a brain
+  folder it does not see, its own row shows (its name and id), never the
+  brain's; its rows below a folder it no longer sees show at the deepest
+  folder above them it does. A folder's pages run through its drafts first,
+  then the brain's items, at most `limit` per page.
 - **The member's writes** (`member-tree-write.ts`, `POST /api/member/tree/:kind/folders`,
   `PATCH|DELETE .../folders/:id`, `POST .../move`): create, rename, restyle,
   move and delete its own folders, file its own drafts. A place must be a
