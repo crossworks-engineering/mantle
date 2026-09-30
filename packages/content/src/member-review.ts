@@ -1302,7 +1302,6 @@ async function moveIntoBrain(
 
       // 2. Destinations are planned below (3a), every tree kind alike: pages
       //    do not nest (folder phase 7), so the old `parentPageId` is ignored.
-      void root;
 
       // 3. The bundle, and every row in it locked, still in this space. An
       //    item another Accept moved first (a shared embed) is the brain's
