@@ -22,12 +22,18 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
   let tree: typeof import('./tree/index');
   let library: typeof import('./member-library');
   let shared: typeof import('./client-shared');
+  let memberApps: typeof import('./member-apps');
+  let clientApps: typeof import('./client-apps');
+  let chat: typeof import('./chat-images');
   let sqlTag: typeof import('drizzle-orm').sql;
   let brain = '';
   const label = `fsl${randomUUID().slice(0, 8)}`;
   const teamPath = `notes.${label}_team`;
   const clientPath = `notes.${label}_client`;
   const plainPath = `notes.${label}_plain`;
+  const appsTeamPath = `apps.${label}_team`;
+  const appsClientPath = `apps.${label}_client`;
+  const filesClientPath = `files.${label}_client`;
   const ids = {
     teamF: randomUUID(),
     clientF: randomUUID(),
@@ -42,6 +48,16 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     teamInClient: randomUUID(),
     /** Admin, in a folder nobody shared. */
     adminPlain: randomUUID(),
+    appsTeamF: randomUUID(),
+    appsClientF: randomUUID(),
+    filesClientF: randomUUID(),
+    /** An admin app (green published build) in a folder shared with the team. */
+    appInTeam: randomUUID(),
+    /** An admin app in a folder shared with clients. */
+    appInClient: randomUUID(),
+    /** An admin file in a folder shared with clients, and one outside it. */
+    fileInClient: randomUUID(),
+    filePlain: randomUUID(),
   };
   const title = (id: string) => `${label} ${Object.entries(ids).find(([, v]) => v === id)![0]}`;
 
@@ -69,6 +85,9 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     tree = await import('./tree/index');
     library = await import('./member-library');
     shared = await import('./client-shared');
+    memberApps = await import('./member-apps');
+    clientApps = await import('./client-apps');
+    chat = await import('./chat-images');
     sqlTag = (await import('drizzle-orm')).sql;
     const { ensureTestAnchor } = await import('@mantle/db/test-support');
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
@@ -76,6 +95,8 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
     brain = await ensureTestAnchor(admin);
     await tree.ensureKindRoot(brain, 'notes');
+    await tree.ensureKindRoot(brain, 'apps');
+    await tree.ensureKindRoot(brain, 'files');
     await insert(ids.teamF, 'branch', teamPath);
     await insert(ids.clientF, 'branch', clientPath);
     await insert(ids.plainF, 'branch', plainPath);
@@ -84,14 +105,38 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     await insert(ids.adminInClient, 'note', clientPath);
     await insert(ids.teamInClient, 'note', clientPath, 'team');
     await insert(ids.adminPlain, 'note', plainPath);
+    await insert(ids.appsTeamF, 'branch', appsTeamPath);
+    await insert(ids.appsClientF, 'branch', appsClientPath);
+    await insert(ids.filesClientF, 'branch', filesClientPath);
+    await insert(ids.appInTeam, 'app', appsTeamPath);
+    await insert(ids.appInClient, 'app', appsClientPath);
+    await insert(ids.fileInClient, 'file', filesClientPath);
+    await insert(ids.filePlain, 'file', plainPath);
+    const green = JSON.stringify({
+      storageKey: 'apps/x.js',
+      sha256: 'x',
+      builtAt: '2026-09-30T00:00:00Z',
+      esbuildVersion: '0',
+      bytes: 1,
+      ok: true,
+    });
+    await m.systemDb.execute(sqlTag`
+      insert into apps (node_id, manifest, published_build) values
+        (${ids.appInTeam}, '{}'::jsonb, ${green}::jsonb),
+        (${ids.appInClient}, '{}'::jsonb, ${green}::jsonb)`);
     await share(ids.teamF, 'team');
     await share(ids.clientF, 'client');
+    await share(ids.appsTeamF, 'team');
+    await share(ids.appsClientF, 'client');
+    await share(ids.filesClientF, 'client');
   });
 
   afterAll(async () => {
     await m.systemDb.execute(sqlTag`
       delete from nodes where owner_id = ${brain} and (
-        path <@ ${teamPath}::ltree or path <@ ${clientPath}::ltree or path <@ ${plainPath}::ltree)`);
+        path <@ ${teamPath}::ltree or path <@ ${clientPath}::ltree or path <@ ${plainPath}::ltree
+        or path <@ ${appsTeamPath}::ltree or path <@ ${appsClientPath}::ltree
+        or path <@ ${filesClientPath}::ltree)`);
   });
 
   it('lists folder-shared items in a member’s Library, badged Client when clients read them', async () => {
@@ -114,7 +159,7 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
       const res = await shared.listClientShared(brain, { q: label, limit: 200 });
       return new Set(res.items.map((r) => r.id));
     });
-    expect([...got].sort()).toEqual([ids.adminInClient, ids.teamInClient].sort());
+    expect([...got].sort()).toEqual([ids.adminInClient, ids.teamInClient, ids.fileInClient].sort());
     expect(await opens('client', ids.adminInClient)).toBe(true);
     expect(await opens('client', ids.teamInClient)).toBe(true);
     expect(await opens('client', ids.adminInTeam)).toBe(false);
@@ -152,5 +197,35 @@ describe.skipIf(!URL)('folder-shared items in the Library and for clients', () =
     } finally {
       await share(ids.clientF, 'client');
     }
+  });
+
+  it('runs an admin app in a shared folder at the folder’s share', async () => {
+    const team = await m.withViewer('team', () => memberApps.listMemberApps(brain));
+    const inTeam = team.find((a) => a.id === ids.appInTeam);
+    // Read at team through its folder: a member runs it and writes its data.
+    expect(inTeam).toMatchObject({ audience: 'team', dataReadOnly: false });
+    expect(team.find((a) => a.id === ids.appInClient)).toMatchObject({ audience: 'client' });
+    const run = await m.withViewer('team', () =>
+      memberApps.getMemberRunnableApp(brain, ids.appInTeam),
+    );
+    expect(run?.audience).toBe('team');
+    // The team surfaces' app-data reach (admin pool).
+    const teamIds = await memberApps.listTeamLevelAppIds(brain);
+    expect(teamIds.has(ids.appInTeam) && teamIds.has(ids.appInClient)).toBe(true);
+
+    const client = await m.withViewer('client', () => clientApps.listClientApps(brain));
+    expect(client.map((a) => a.id)).toContain(ids.appInClient);
+    expect(client.map((a) => a.id)).not.toContain(ids.appInTeam);
+    expect(
+      await m.withViewer('client', () => clientApps.getClientRunnableApp(brain, ids.appInClient)),
+    ).not.toBeNull();
+    expect(
+      await m.withViewer('client', () => clientApps.getClientRunnableApp(brain, ids.appInTeam)),
+    ).toBeNull();
+  });
+
+  it('shows a client a chat image from a folder shared with clients, not one outside', async () => {
+    const got = await chat.chatImagesFor(brain, 'client', [ids.fileInClient, ids.filePlain]);
+    expect([...got.keys()]).toEqual([ids.fileInClient.toLowerCase()]);
   });
 });

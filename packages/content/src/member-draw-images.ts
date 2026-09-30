@@ -25,6 +25,7 @@ import {
   nodes,
 } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
+import { readAtSql } from './item-level';
 import { acceptedFileReadable, isAuthorOfAcceptedFile } from './member-accepted';
 import { keepSvgImages, svgHasImages } from './scene-svg';
 
@@ -69,7 +70,8 @@ export async function memberVisibleDrawFileIds(
         eq(nodes.ownerId, anchorId),
         eq(nodes.type, 'file'),
         inArray(nodes.id, [...byNode.keys()]),
-        inArray(nodes.audience, [...LIMITED_LEVELS]),
+        // Its own level or the share of a folder holding it.
+        readAtSql(LIMITED_LEVELS),
       ),
     );
   const ok = new Set(teamLevel.map((r) => r.id.toLowerCase()));

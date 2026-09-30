@@ -18,6 +18,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { currentSpaceScope, currentViewerLevel, db, draws, nodes } from '@mantle/db';
 import { UUID_RE } from '@mantle/std';
+import { readAtSql } from './item-level';
 import { clientLinkHidden, clientOwnUrl, linkRefIds } from './client-redact';
 import { clientRedactOrigins } from './client-origins';
 import { clientReadableIds } from './client-shared';
@@ -56,7 +57,8 @@ export async function clientVisibleDrawFileIds(
       and(
         eq(nodes.ownerId, anchorId),
         eq(nodes.type, 'file'),
-        eq(nodes.audience, 'client'),
+        // At client by its own level or through a folder shared with clients.
+        readAtSql(['client']),
         inArray(nodes.id, [...byNode.keys()]),
       ),
     );

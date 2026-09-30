@@ -16,7 +16,7 @@
  * before any redaction, so it could name what the body calls "Private
  * item". A table is its committed grid only (audit B13, ClientSharedTable).
  */
-import { and, eq, inArray, or } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { currentSpaceScope, currentViewerLevel, db, nodes } from '@mantle/db';
 import type { TableDetail } from '@mantle/content-core/table-model';
 import type { ClientSharedItem, ClientSharedRow, ClientSharedTable } from '@mantle/client-types';
@@ -30,6 +30,7 @@ import {
   redactClientNote,
   type ClientRedactOptions,
 } from './client-redact';
+import { readAtSql } from './item-level';
 import { clientRedactOrigins } from './client-origins';
 import { getLibraryItem, listLibrary, type LibraryKind, type LibraryRow } from './member-library';
 
@@ -57,13 +58,7 @@ export async function clientReadable(
   const rows = await db
     .select({ id: nodes.id, title: nodes.title })
     .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, anchorId),
-        or(eq(nodes.audience, 'client'), eq(nodes.inheritedLevel, 'client')),
-        inArray(nodes.id, wanted),
-      ),
-    );
+    .where(and(eq(nodes.ownerId, anchorId), readAtSql(['client']), inArray(nodes.id, wanted)));
   return new Map(rows.map((r) => [r.id.toLowerCase(), r.title]));
 }
 

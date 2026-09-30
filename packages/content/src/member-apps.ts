@@ -13,7 +13,7 @@
  * Only granted columns are read (never `apps.draft_*`), so these work on the
  * team role.
  */
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import {
   apps,
   asViewerLevel,
@@ -25,6 +25,7 @@ import {
 } from '@mantle/db';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import type { AppTint, MemberAppCard, MemberAppLevel, MemberHomeApp } from '@mantle/client-types';
+import { isReadAt, itemLevel, readAtSql } from './item-level';
 
 /** The app levels a member may run: team and below. Pinned to the published
  *  `MemberAppLevel` in server/web/lib/client-types-drift.test.ts. */
@@ -74,7 +75,8 @@ function runnableWhere(anchorId: string) {
   return and(
     eq(nodes.ownerId, anchorId),
     eq(nodes.type, 'app'),
-    inArray(nodes.audience, [...MEMBER_APP_LEVELS]),
+    // Its own level or the share of a folder holding it.
+    readAtSql(MEMBER_APP_LEVELS),
     publishedGreen,
   );
 }
@@ -87,6 +89,7 @@ export async function listMemberApps(anchorId: string): Promise<MemberAppCard[]>
       title: nodes.title,
       data: nodes.data,
       audience: nodes.audience,
+      inheritedLevel: nodes.inheritedLevel,
       updatedAt: nodes.updatedAt,
       manifest: apps.manifest,
       dataReadOnly: apps.dataReadOnly,
@@ -99,7 +102,10 @@ export async function listMemberApps(anchorId: string): Promise<MemberAppCard[]>
   return rows.flatMap((r): MemberAppCard[] => {
     // The query already keeps to these levels; a row outside them is never
     // a card, whatever the column holds.
-    if (!isMemberAppLevel(r.audience)) return [];
+    if (!isReadAt(r.audience, r.inheritedLevel, MEMBER_APP_LEVELS)) return [];
+    // The level it is read at: its own, or its folder's share when that is
+    // more open (an admin app in a team folder runs, and writes, as team).
+    const audience = itemLevel(r.audience, r.inheritedLevel) as MemberAppLevel;
     const d = (r.data ?? {}) as Record<string, unknown>;
     const description = (r.manifest as AppManifest | null)?.description;
     return [
@@ -109,10 +115,10 @@ export async function listMemberApps(anchorId: string): Promise<MemberAppCard[]>
         icon: projectAppIcon(d.icon) ?? null,
         color: projectAppTint(d.color) ?? null,
         description: typeof description === 'string' && description.trim() ? description : null,
-        audience: r.audience,
+        audience,
         updatedAt: r.updatedAt.toISOString(),
         dataReadOnly: !memberMayWriteAppData({
-          audience: r.audience,
+          audience,
           dataReadOnly: r.dataReadOnly === true,
         }),
       },
@@ -132,6 +138,7 @@ export async function getMemberRunnableApp(
       title: nodes.title,
       data: nodes.data,
       audience: nodes.audience,
+      inheritedLevel: nodes.inheritedLevel,
       manifest: apps.manifest,
       publishedBuild: apps.publishedBuild,
       dataReadOnly: apps.dataReadOnly,
@@ -147,7 +154,7 @@ export async function getMemberRunnableApp(
     title: row.title,
     icon: projectAppIcon(d.icon) ?? null,
     color: projectAppTint(d.color) ?? null,
-    audience: asViewerLevel(row.audience),
+    audience: itemLevel(row.audience, row.inheritedLevel),
     manifest: (row.manifest ?? {}) as AppManifest,
     publishedBuild: row.publishedBuild,
     dataReadOnly: row.dataReadOnly === true,
@@ -160,13 +167,7 @@ export async function listTeamLevelAppIds(anchorId: string): Promise<Set<string>
   const rows = await db
     .select({ id: nodes.id })
     .from(nodes)
-    .where(
-      and(
-        eq(nodes.ownerId, anchorId),
-        eq(nodes.type, 'app'),
-        inArray(nodes.audience, [...MEMBER_APP_LEVELS]),
-      ),
-    );
+    .where(and(eq(nodes.ownerId, anchorId), eq(nodes.type, 'app'), readAtSql(MEMBER_APP_LEVELS)));
   return new Set(rows.map((r) => r.id));
 }
 
