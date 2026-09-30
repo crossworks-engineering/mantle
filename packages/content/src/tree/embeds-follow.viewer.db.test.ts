@@ -46,9 +46,13 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
     node('note', path, title, { content });
   const drawing = async (title: string, fileRefs: Record<string, string>) => {
     const id = await node('draw', 'draw', title);
+    // The published scene places every image in the map.
+    const scene = {
+      elements: Object.keys(fileRefs).map((fileId) => ({ type: 'image', fileId })),
+    };
     await m.systemDb.execute(sqlTag`
       insert into draws (node_id, scene, file_refs)
-      values (${id}, '{}'::jsonb, ${JSON.stringify(fileRefs)}::jsonb)`);
+      values (${id}, ${JSON.stringify(scene)}::jsonb, ${JSON.stringify(fileRefs)}::jsonb)`);
     return id;
   };
   const page = async (path: string, title: string, doc: unknown, docText = '') => {
@@ -193,8 +197,18 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
        where id = ${N}`);
     expect(await reads('client', [D, I1])).toEqual(sorted(D, I1));
     expect(await reads('client', [I2])).toEqual([]);
-    // A drawing that drops its image: the image goes too.
-    await m.systemDb.execute(sqlTag`update draws set file_refs = '{}'::jsonb where node_id = ${D}`);
+    // A draft autosave that pastes a picture opens nothing: only what the
+    // published scene places counts (review F4).
+    const pasted = await node('file', 'files', 'pasted.png');
+    await m.systemDb.execute(sqlTag`
+      update draws set file_refs = file_refs || jsonb_build_object('p', ${pasted}::text),
+                       draft_scene = '{"elements":[{"type":"image","fileId":"p"}]}'::jsonb
+       where node_id = ${D}`);
+    expect(await reads('client', [pasted])).toEqual([]);
+    // A drawing whose published scene drops its image: the image goes too.
+    await m.systemDb.execute(
+      sqlTag`update draws set scene = '{"elements":[]}'::jsonb where node_id = ${D}`,
+    );
     expect(await reads('client', [I1])).toEqual([]);
     expect(await reads('client', [D])).toEqual([D]);
   });
@@ -242,6 +256,93 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
     for (const id of [task, contact]) expect((await own(id))!.embedded_level).toBeNull();
     await tree.moveTreeItems(brain, 'notes', [pending], null, { confirm: true });
     expect(await reads('client', [table, other, branch.id])).toEqual([]);
+  });
+
+  it('an unshare closes a loop of embeds (a embeds b embeds a)', async () => {
+    const loop = { id: randomUUID(), path: `notes.${label}_loop` };
+    await folder(loop, 'Loop');
+    const a = await note(loop.path, 'loop a', '');
+    const b = await note('notes', 'loop b', `![a](media:${a})`);
+    await m.systemDb.execute(sqlTag`
+      update nodes set data = jsonb_build_object('content', ${`![b](media:${b})`}::text)
+       where id = ${a}`);
+    await setShare(loop, 'client');
+    expect(await reads('client', [a, b])).toEqual(sorted(a, b));
+    expect((await own(a))!.embedded_level).toBe('client'); // back to itself through b
+    await setShare(loop, null);
+    expect(await reads('client', [a, b])).toEqual([]);
+    expect((await own(a))!.embedded_level).toBeNull();
+    expect((await own(b))!.embedded_level).toBeNull();
+  });
+
+  it('an embed opens an app for reading only, never to run it (review F5)', async () => {
+    await setShare(folderF, 'client');
+    const app = async (title: string, audience: string) => {
+      const id = await node('app', 'apps', title, {}, audience);
+      await m.systemDb.execute(sqlTag`
+        insert into apps (node_id, manifest, published_build)
+        values (${id}, '{}'::jsonb, '{"ok": true}'::jsonb)`);
+      return id;
+    };
+    const named = await app('named by an embed', 'admin');
+    const ownApp = await app('client by its own level', 'client');
+    await note(folderF.path, 'names an app', `![x](media:${named})`);
+    expect((await own(named))!.embedded_level).toBe('client');
+    expect(await reads('client', [named])).toEqual([named]);
+    const { getClientRunnableApp, listClientApps } = await import('../client-apps');
+    expect(await getClientRunnableApp(brain, named)).toBeNull();
+    expect(await getClientRunnableApp(brain, ownApp)).not.toBeNull();
+    const listed = (await listClientApps(brain)).map((a) => a.id);
+    expect(listed).toContain(ownApp);
+    expect(listed).not.toContain(named);
+  });
+
+  it('asks even when only embeds change, and counts them in seen (review F6)', async () => {
+    await setShare(folderF, 'client');
+    const img = await node('file', 'files', 'only-embed.png');
+    // Client in its own right: moving it into the client folder changes
+    // nothing about the note, but its image would open.
+    const n = await node(
+      'note',
+      'notes',
+      'already client',
+      { content: `![i](media:${img})` },
+      'client',
+    );
+    const refusal = await tree
+      .moveTreeItems(brain, 'notes', [n], folderF.id)
+      .then(() => null)
+      .catch((e: unknown) => e as InstanceType<typeof tree.TreeVisibilityError>);
+    expect(refusal).toBeInstanceOf(tree.TreeVisibilityError);
+    expect(refusal!.diff.total).toBe(0);
+    expect(refusal!.diff.embedsTotal).toBe(1);
+    expect(refusal!.diff.alsoEmbeds).toEqual([
+      { id: img, title: 'only-embed.png', from: 'admin', to: 'client', type: 'file' },
+    ]);
+    expect(await reads('client', [img])).toEqual([]);
+    // `seen` is items plus embeds: a stale count asks again.
+    await expect(
+      tree.moveTreeItems(brain, 'notes', [n], folderF.id, { confirm: true, seen: 0 }),
+    ).rejects.toBeInstanceOf(tree.TreeVisibilityError);
+    await tree.moveTreeItems(brain, 'notes', [n], folderF.id, { confirm: true, seen: 1 });
+    expect(await reads('client', [img])).toEqual([img]);
+  });
+
+  it('counts the embeds of every item, past the first hundred listed (review F6)', async () => {
+    const big = { id: randomUUID(), path: `notes.${label}_big` };
+    await folder(big, 'Big');
+    for (let i = 0; i < 105; i++) {
+      const img = await node('file', 'files', `big-${String(i).padStart(3, '0')}.png`);
+      await note(big.path, `big note ${String(i).padStart(3, '0')}`, `![i](media:${img})`);
+    }
+    const refusal = await tree
+      .updateTreeFolder(brain, 'notes', big.id, { share: 'team' })
+      .then(() => null)
+      .catch((e: unknown) => e as InstanceType<typeof tree.TreeVisibilityError>);
+    expect(refusal!.diff.total).toBe(105);
+    expect(refusal!.diff.changes).toHaveLength(100);
+    expect(refusal!.diff.embedsTotal).toBe(105);
+    expect(refusal!.diff.alsoEmbeds).toHaveLength(100);
   });
 
   it('a page save that adds a child page card reaches it, and folds its text', async () => {

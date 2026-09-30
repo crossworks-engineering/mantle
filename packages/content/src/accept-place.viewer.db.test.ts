@@ -314,6 +314,62 @@ describe.skipIf(!URL)('Accept claims in place', () => {
     expect(await level()).toEqual({ audience: 'team', embedded_level: null });
   });
 
+  it('a member cannot slip an embed past the save gate in a heading (review F1)', async () => {
+    const secret = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, data, tags)
+      values (${secret}, ${anchor}, 'file', 'secret.pdf', 'files', '{}'::jsonb, '{}')`);
+    for (const content of [
+      `# Status ![.](media:${secret})`,
+      `| a |\n|---|\n| ![.](media:${secret}) |`,
+      `Some **bold ![.](media:${secret})** text`,
+    ]) {
+      await expect(
+        as(() =>
+          sp.createMineItem(space, { type: 'note', title: 'sly', content }, {}, { path: 'notes' }),
+        ),
+      ).rejects.toMatchObject({ reason: 'embed' });
+    }
+  });
+
+  it('an Accept at the folder’s own level still lists what its note embeds (review F1)', async () => {
+    const img = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, data, tags, audience)
+      values (${img}, ${anchor}, 'file', 'chart.png', 'files', '{}'::jsonb, '{}', 'team')`);
+    const hall = await tree.createTreeFolder(anchor, 'notes', { parentId: null, name: 'Hall' });
+    await tree.updateTreeFolder(anchor, 'notes', hall.id, { share: 'client' }, { confirm: true });
+    const note = await as(() =>
+      sp.createMineItem(
+        space,
+        { type: 'note', title: 'at client already', content: 'x' },
+        {},
+        { path: 'notes.hall' },
+      ),
+    );
+    await m.systemDb.execute(sqlTag`
+      update nodes set data = jsonb_set(data, '{content}', to_jsonb(${`# Chart ![c](media:${img})`}::text))
+       where id = ${note.id}`);
+    await as(() => sp.submitItem(space, note.id));
+    // Chosen level client = the folder's share: the note itself changes
+    // nothing, but its embed would open. Listed, nothing moved.
+    await expect(
+      rv.acceptReviewItem(anchor, note.id, reviewer(), { audience: 'client' }),
+    ).rejects.toMatchObject({
+      reason: 'visibility',
+      visibility: {
+        changes: [],
+        alsoEmbeds: [{ id: img, from: 'team', to: 'client', type: 'file' }],
+      },
+    });
+    expect(await row(note.id)).toMatchObject({ owner_id: space });
+    await rv.acceptReviewItem(anchor, note.id, reviewer(), {
+      audience: 'client',
+      visibilityConfirmed: true,
+    });
+    expect(await row(note.id)).toMatchObject({ owner_id: anchor });
+  });
+
   it('keeps a member folder that holds a submitted draft where it is', async () => {
     // A folder the member sees (shared with the team), its own folder inside.
     const room = await tree.createTreeFolder(anchor, 'notes', { parentId: null, name: 'Room' });
