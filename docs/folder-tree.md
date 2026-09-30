@@ -176,12 +176,41 @@ contacts, secrets) cannot be shared.
   meets another on the same rows answers "busy, try again" (409), never SQL.
   A nightly `share-drift` sweep repairs anything that slips through.
 - **Who reads it.** `nodes_viewer_read` reads a brain row at its own level
-  OR its inherited share; still a same-row check. Chunks, facts, pages and
-  the rest follow their node as before.
+  OR its inherited share OR its embedded level (below); still a same-row
+  check. Chunks, facts, pages and the rest follow their node as before.
+- **Embeds follow their embedder** (migration 0208, folder audit S5). An
+  item that a page, drawing or note embeds is read through that embedder's
+  folder share, wherever the item lives, and only while the embedder is:
+  unshare the folder, move the embedder out, delete the folder, or take the
+  embed out, and that access goes. Nothing's own level changes. The
+  database keeps it, like the shares: `node_embeds (from_id, to_id)` holds
+  the edges, kept by triggers from `pages.doc`, `draws.file_refs` and a
+  note's markdown (a note's image counts wherever the note shows it, even
+  in a heading or a table cell; a parity test pins the SQL to the
+  TypeScript walkers, `packages/content/src/embed-edges.db.test.ts`), and
+  `nodes.embedded_level` is the most open share among the owner's rows that
+  reach the item through embeds, transitively (a note embeds a drawing that
+  embeds an image). Only the brain's own rows pass a share on, so a
+  member's draft never does. A refresh runs only where something can
+  change (an edge added from a shared or reached row, an edge removed to a
+  reached row, a share or owner change on a row that embeds something): a
+  brain with no shared folder pays an index probe per save. Opening only
+  raises levels forward (an image embedded by a thousand notes in a folder
+  being shared is set once); closing recomputes only the rows read at the
+  level that went. Measured on the workstation: sharing a folder of 1,000
+  notes that embed one image takes about 0.4 s and unsharing it 0.8 s; a
+  note that embeds 1,000 images, 0.6 s and 2 s; a save, about 1 ms. It
+  grows with the rows reached from one change: expect tens of seconds past
+  about 10,000. The client thread
+  is not carried: an item read only through an embed has no client thread
+  of its own (the client talks on the item that embeds it). Items lowered
+  by a folder share before 0208 keep that level: they cannot be told apart
+  from levels set on purpose, so nothing is raised.
 - **The level shown** is the effective level (`effectiveLevel`,
-  `@mantle/content-core/tree`): the more open of the item's own level and
-  its inherited share. Tree rows carry it in `level`, with `inherited` naming
-  the share. Embeds follow it and a page's indexed text is folded for it
+  `@mantle/content-core/tree`): the most open of the item's own level, its
+  inherited share and its embedded level. Tree rows carry it in `level`,
+  with `inherited` naming the folder share and `embedded` the share it is
+  read at through an embedder. A page's indexed text is folded for it
   (`itemLevel`, `packages/content/src/item-level.ts`): text folded for the
   more open reader is safe for every reader of the row.
 - **Confirm first.** A share change, an item or folder move, and a folder
@@ -216,22 +245,25 @@ total }` and nothing is written; the same call with `confirm: true` goes
   folder to hide it"). The brain does not refuse such a raise (an unshared
   link sets an item back to admin); `access_get` returns `sharedVia` and
   `access_set` warns that the item is still read at the folder's share.
-- **After a confirmed change**, embeds of the pages, drawings and notes
-  concerned follow them to the level they are now read at (never raising
-  anything) and the pages' text is re-folded. Those embeds may live
-  anywhere, so the refusal lists them too (`alsoLowered`: "also goes down
-  with them"), and they keep that level after an unshare.
+- **After a confirmed change**, what the pages, drawings and notes
+  concerned embed is read through them at their new level (the database
+  did it, above), and the text of the pages concerned, of the pages they
+  reach, and of the client and public pages that name what changed is
+  re-folded. Those embeds may live anywhere, so the refusal lists them too
+  (`alsoEmbeds`, from and to each: "also readable through them", or no
+  longer).
 - **Members and clients** read a folder-shared item wherever they read
-  items, by the row policy's union rule: its own level OR its inherited
-  share is one of the reader's levels (`isReadAt` / `readAtSql`,
-  `packages/content/src/item-level.ts`). The member Library and the
+  items, by the row policy's union rule: its own level, its inherited share
+  or its embedded level is one of the reader's levels (`isReadAt` /
+  `readAtSql`, `packages/content/src/item-level.ts`). The member Library and the
   client's "Shared with you" (list, open, the `client_shared_*` tools), a
   client's redaction (which references keep their names), drawing and chat
   images, and apps (an app runs at its effective level, so an admin app in
   a team-shared folder is a team app). The client thread too: an item read
   at client level through a folder carries it (migration 0205 widens the
   0194 read policy to the union rule; `client-thread.ts`, `addNodeComment`
-  and the admin usage report check the same rule). Unsharing the folder, or
+  and the admin usage report check the same rule, without the embedded
+  level: `readAtSql(levels, { embeds: false })`). Unsharing the folder, or
   moving the item out, hides the thread below admin again.
 - **The member and client trees.** `GET /api/member/tree/:kind` and
   `/api/client/tree/:kind` (with `/search`) serve the kinds a Library holds

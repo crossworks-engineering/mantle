@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
-## Unreleased: a folder delete merges (branch feat/folder-audit-fixes-2)
+## Unreleased: a folder delete merges; embeds follow their embedder (branch feat/folder-audit-fixes-2)
 
 Follow-up to the folder system audit of 2026-09-30 (findings C2 and S5),
 decided by Jason the same day.
@@ -22,6 +22,23 @@ decided by Jason the same day.
   Members' drafts follow by path. The visibility confirm compares each row
   at its real landing place: what merges into a shared folder takes its
   share and is listed.
+- **Embeds follow their embedder** (audit S5; Jason: an embed "should not
+  show it anymore as technically it does not have permission"). A folder
+  share no longer lowers the own level of what its pages, drawings and
+  notes embed. **Migration 0208** keeps the embed edges (`node_embeds`, by
+  triggers on `pages.doc`, `draws.file_refs` and a note's markdown) and a
+  derived `nodes.embedded_level`: an embed is read through a shared
+  embedder, transitively, only while that embedder is. Unshare, move out,
+  delete the folder or take the embed out, and the access goes; nothing's
+  own level moves. `nodes_viewer_read` reads own level OR inherited share
+  OR embedded level (still a same-row check); the reader checks, the
+  client-exposure checks, the page text folding and the tree's `level`
+  (with `embedded`) follow; the client thread does not. Accept and saves
+  lower embeds only to the item's own level. The visibility refusal lists
+  `alsoEmbeds` (from and to) instead of the unreleased `alsoLowered`. The
+  nightly `share-drift` sweep repairs edges and embedded levels too.
+  Existing data: items lowered by earlier folder shares keep their level;
+  nothing is raised.
 
 ## 0.232.360: folder system audit fixes
 

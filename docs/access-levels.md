@@ -57,8 +57,15 @@ what a scope reads.
   level (member-logins.md section 6; the Library items a member embedded go
   down with it). The older `lowered` field carries the same items at their
   new level.
-- **Later embeds follow on save.** A page, drawing or note below admin that
-  gains an embed takes it to its own level, in the save's transaction: a
+  A FOLDER share is different: it lowers nothing. What a page, drawing or
+  note in a shared folder embeds is read through it only while it is
+  (`nodes.embedded_level`, migration 0208; docs/folder-tree.md, "Embeds
+  follow their embedder"), so an unshare takes that access back. Only the
+  own-level paths above lower embeds for good.
+- **Later embeds follow on save.** A page, drawing or note whose own level
+  is below admin and that gains an embed takes it to that level, in the
+  save's transaction (a folder share it sits in reaches the embed through
+  the database instead): a
   page or draft commit (`commitPage`, which the editor, `page_commit` and
   the block tools' commit use), a programmatic page write (`updatePage`), a
   drawing commit (`commitDraw`), a note's text (`updateNote`). Only what was
