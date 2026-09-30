@@ -7,9 +7,12 @@ in navigation. The same tree serves every reader; the brain prunes it to what
 that reader may see.
 
 Status: the tree serves **Files** (phase 1), the flat kinds **notes, draw,
-tables, formulas, tasks, events, contacts and secrets** (phase 2), and
-**Apps** (phase 3). Pages wait for Recall v2 (pages stop nesting). A client offers the tree for the kinds the shell's `treeKinds`
-names and keeps its older screen for the rest.
+tables, formulas, tasks, events, contacts and secrets** (phase 2), **Apps**
+(phase 3) and **Recall** maps. Folders can be shared with the team or
+clients (phase 4), and members file drafts in place (phase 5). Pages wait
+for Recall v2 to retire v1 (pages stop nesting, phase 7). A client offers
+the tree for the kinds the shell's `treeKinds` names and keeps its older
+screen for the rest.
 
 ## The model
 
@@ -68,8 +71,9 @@ same way, and no folders.
 The tree's filter menu narrows the same search: `level=` (admin, team, client,
 public) and `tag=` keep only the items read at that level or carrying that
 tag, together with any `q`. A filtered search lists items only; it is a
-question about items, not about where they sit. Until folder shares arrive
-(phase 4) an item's own level is the level it is read at.
+question about items, not about where they sit. The level filter uses the
+level an item is read at (its own level or a folder's share, the more
+open).
 `GET /api/tree/:kind/tags` lists the tags on the kind's items, most used
 first (at most 40), leaving out the tag every item of the kind carries by
 default (every file is tagged `file`).
@@ -168,7 +172,7 @@ total }` and nothing is written; the same call with `confirm: true` goes
   guards every Files write outside the tree routes
   (`packages/content/src/tree/files-guard.ts`): the Files screen's move and
   copy (`PATCH /api/files/files/:id { move, confirm }`, `POST ... { copy_to,
-confirm }`, and the same on `/api/files/folders/:id`), a new file or an
+  confirm }`, and the same on `/api/files/folders/:id`), a new file or an
   upload into a shared folder (`POST /api/files/files`, `confirm` in the JSON
   body or as a form field before the file), and the agent tools `file_move`,
   `file_copy`, `folder_move`, `folder_copy`, `file_create` and
@@ -343,8 +347,9 @@ never by path.
 
 ## What comes next
 
-The other kinds move onto the tree one by one; Apps' folder document becomes
-folder rows; a folder can then be shared with the team or clients (everything
-under it, now and later) and members and clients browse the same tree; members
-file their drafts in the same folders; pages stop nesting once Recall has its
-own content type.
+Pages stop nesting once Recall v2 has retired v1 (phase 7): each page with
+children becomes a folder, and a "Folder index" block lists a folder's
+pages. Still open from the plan, each waiting on a decision: the phone's
+read-only tree, pins and Recent / Most used for members and clients, the
+task board filtered by folder, and resolving embeds at the reader's level
+(today a confirmed share lowers embeds for good, and says so).

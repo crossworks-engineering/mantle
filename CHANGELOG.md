@@ -4,6 +4,50 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## Unreleased: folder system audit fixes (branch feat/folder-audit-fixes)
+
+From the folder system audit of 2026-09-30 (dev brain, "AUDIT: Universal
+folder system, phases 1 to 5") and a second audit's review.
+
+- **Nothing changes who can see an item without asking.** Accept in place
+  now checks the share of every folder its items land in (the item and its
+  bundle, the legacy Files folder too, for a reviewed and an admin's own
+  Accept) and answers 409 `visibility` with the list until
+  `visibilityConfirmed`; the client-level confirmation and the embeds
+  follow the level the item is read at. The Files screen's move, copy and
+  new-file routes, uploads, and the agent tools `file_move`, `file_copy`,
+  `folder_move`, `folder_copy`, `file_create` and `file_upload` ask the
+  same way (`confirm`). `tree_folder_update` declares `confirm` (over MCP
+  it could never go ahead), and a test pins that every tool reading it
+  declares it. A confirm may carry `seen`; a different change by then is
+  asked again. The refusal also lists the embeds that go down with it
+  (`alsoLowered`).
+- **Migration 0207**: a shared folder deleted by any writer leaves no share
+  behind; an unshare can no longer race an insert into the folder (a share
+  lock in the triggers); the share refresh skips brains with no shared
+  folder. A nightly `share-drift` sweep repairs and reports any row read at
+  a share its folders no longer give.
+- **Files folder tools and operations refuse another kind's folder** (a
+  notes folder deleted through them left its notes behind with their
+  share), a kind root and an Auto-filed folder.
+- **A member's tree never reveals a folder the member cannot see** (naming
+  an own folder like a hidden one showed its name, look and id); a member
+  keeps at most 500 folders per kind; the tree counts children in one pass
+  (it was quadratic) and pages drafts like items. A member's folder holding
+  a submitted draft stays put until the review is done.
+- Agents can make and move Recall folders (`tree_*` with kind `recall`).
+- Notes, drawings, files and Files folders report the share they inherit
+  (`inherited`; folders also `share`), so screens show the level an item is
+  read at.
+- Smaller: folder renames and moves re-check on locked rows; a combined
+  folder update checks its share before writing anything; a Files
+  delete-lift refuses over untracked files before moving anything; a
+  forged tree cursor restarts at the top; an app in a client-shared folder
+  counts as a client app for the client-sourced rules.
+- Tests: the viewer DB tests no longer race on the cluster-wide viewer
+  roles, and the two client byte-total tests share a lock; a full
+  `packages/content` run is green 3 of 3 on a fresh database.
+
 ## 0.232.356: client v0.6.184 (folder system and Recall v2 screens)
 
 - Pairs the client at jackdaw v0.6.184. It brings the UI for the folder
@@ -22,9 +66,11 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   with pins and opens in `item_marks` (phase 3). Agents get folder tools
   for every row-only kind.
 - **Share a folder** with the team or clients: everything in it, now and
-  later, is read at that level (phase 4, migration 0204). A write that
-  changes who can see something asks first (409 `visibility` until
-  confirmed). Access control says "Shared via" the folder. Members and
+  later, is read at that level (phase 4, migration 0204). A tree write
+  that changes who can see something asks first (409 `visibility` until
+  confirmed); Accept, the Files routes and the Files agent tools did not
+  yet (fixed after the audit, above). Access control says "Shared via" the
+  folder. Members and
   clients browse read-only trees of what they may read; folder-shared items
   reach the member Library, the client's "Shared with you", redaction,
   images and apps; the owner's gates count folder shares. Clients comment
@@ -38,6 +84,23 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 - Migrations 0204 (folder sharing; the Recall root joins the folder depth
   check) and 0205 (the client thread on folder-shared items) run after
   main's 0201 to 0203. Pairs with jackdaw's folder phases 2 to 5.
+
+## 0.232.352: the universal folder system, phase 1 (Files)
+
+- **Files gets the folder tree** (docs/folder-tree.md): folders nest at
+  most three levels (writers refuse or clamp; a deeper directory made on
+  disk stays out of the brain), a folder's name is kept apart from its slug
+  (the path label and the directory name), pins and opens live in the new
+  `item_marks` table, and the tree pages 50 items at a time.
+- **Auto-filed**: everything Mantle files by itself now lives under
+  `files/auto-filed/` (assistant and Telegram uploads, exports, generated
+  images, video, extracted images, sandbox exports, API docs), dated
+  folders by month. On first start the file watcher moves an older brain's
+  top-level machine folders there ON DISK and merges day folders into
+  months (a clashing name gets `-2`). Operators: expect those top-level
+  Files folders to move.
+- Migration 0201 (`item_marks`, the folder depth check, added NOT VALID).
+  (Entry added after the fact, by the folder audit.)
 
 ## 0.232.351: client v0.6.180 (whole client tier audit)
 
