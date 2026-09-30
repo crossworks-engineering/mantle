@@ -4,6 +4,17 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.351: client v0.6.180 (whole client tier audit)
+
+- Pairs the client at jackdaw v0.6.180, the client half of 0.232.350.
+  Admins see and answer the client thread on drawings. A client's pictures
+  load from the client routes in its own editor and in notes, sub-page cards
+  make no admin call, and staff screens show no remote pictures from client
+  text. Clients no longer read "admin" or "Library". A large client draft is
+  saved again after a reload. Sign out from a neutral screen goes to the
+  client sign-in. The storage card shows what client apps' databases hold.
+  The Informational switch shows on team and client apps only.
+
 ## 0.232.350: whole client tier audit fixes
 
 - **Client-level apps run the client tool rules for every runner**: an
