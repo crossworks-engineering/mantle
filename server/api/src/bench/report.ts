@@ -36,6 +36,7 @@ const JUDGE_OUT_TOK = 80;
 export function estimateRun(
   haystacks: readonly Haystack[],
   models: BenchModels,
+  opts: { answers?: boolean } = {},
 ): { usd: number; text: string } {
   let extract = 0;
   let embed = 0;
@@ -51,7 +52,7 @@ export function estimateRun(
       );
       embed += usd(models.embedding, body / 4, 0);
     }
-    for (const q of h.questions) {
+    for (const q of opts.answers === false ? [] : h.questions) {
       answer += usd(
         models.answer,
         ANSWER_CONTEXT_TOK + q.question.length / 4 + 400,
@@ -77,6 +78,10 @@ export type BenchSummary = {
   /** The responder's memory_config for the run ({} = code defaults). */
   memory_config: Record<string, unknown>;
   answer_style: string;
+  /** --retrieve-only: no answers were asked, so accuracy means nothing. */
+  retrieve_only?: boolean;
+  /** Haystacks whose ingest came from a snapshot. */
+  reused_ingest?: number;
   haystacks: { requested: number; completed: number };
   stopped_for_budget: boolean;
   total_queries: number;
@@ -125,6 +130,7 @@ export function summarize(
     stoppedForBudget: boolean;
     memoryConfig?: Record<string, unknown>;
     answerStyle?: string;
+    retrieveOnly?: boolean;
   },
 ): BenchSummary {
   const qs = results.flatMap((r) => r.questions);
@@ -156,6 +162,8 @@ export function summarize(
     models,
     memory_config: meta.memoryConfig ?? {},
     answer_style: meta.answerStyle ?? 'infer',
+    ...(meta.retrieveOnly ? { retrieve_only: true } : {}),
+    reused_ingest: results.filter((r) => r.reused_ingest).length,
     haystacks: { requested: meta.requested, completed: results.length },
     stopped_for_budget: meta.stoppedForBudget || results.some((r) => r.stopped_for_budget),
     total_queries: qs.length,
@@ -213,6 +221,7 @@ const REFERENCES: Record<DatasetName, Array<[string, number, number]>> = {
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
 export function renderReport(s: BenchSummary): string {
+  if (s.retrieve_only) return renderReachReport(s);
   const lines = [
     `# ${s.dataset} run`,
     '',
@@ -238,7 +247,8 @@ export function renderReport(s: BenchSummary): string {
     `Context per question: ${s.avg_context_chars} chars (about ${s.avg_context_tokens_est} tokens). ` +
       `Retrieval: ${s.avg_retrieve_ms} ms.`,
     `Ingest: ${s.ingest.extracted}/${s.ingest.sessions} sessions extracted (${s.ingest.failed} failed), ` +
-      `${Math.round(s.ingest.avg_haystack_ms / 1000)} s per haystack.`,
+      `${Math.round(s.ingest.avg_haystack_ms / 1000)} s per haystack` +
+      `${s.reused_ingest ? `; ${s.reused_ingest} reused from a snapshot` : ''}.`,
     `Spend: $${s.spend_usd.total.toFixed(2)} (extract $${s.spend_usd.extract.toFixed(2)}, ` +
       `answer $${s.spend_usd.answer.toFixed(2)}, judge $${s.spend_usd.judge.toFixed(2)}).`,
     '',
@@ -252,6 +262,28 @@ export function renderReport(s: BenchSummary): string {
     '| System | Accuracy | Context tokens |',
     '|---|---|---|',
     ...REFERENCES[s.dataset].map(([n, a, t]) => `| ${n} | ${pct(a)} | ${t} |`),
+  ];
+  return `${lines.join('\n')}\n`;
+}
+
+/** --retrieve-only: evidence reach and context size, no accuracy. */
+function renderReachReport(s: BenchSummary): string {
+  const lines = [
+    `# ${s.dataset} reach (retrieve only: no answer, no judge)`,
+    '',
+    `Evidence: for **${pct(s.evidence.all_found_rate)}** of labelled questions ` +
+      `(${s.evidence.all_found}/${s.evidence.labelled}), every session holding the answer ` +
+      'reached the context by title.',
+    '',
+    '| Category | Labelled | All evidence reached | Rate |',
+    '|---|---|---|---|',
+    ...Object.entries(s.evidence.by_category).map(
+      ([k, t]) => `| ${k} | ${t.labelled} | ${t.all_found} | ${pct(t.rate)} |`,
+    ),
+    '',
+    `Context per question: ${s.avg_context_chars} chars (about ${s.avg_context_tokens_est} tokens). ` +
+      `Retrieval: ${s.avg_retrieve_ms} ms. Errors ${s.errors}.`,
+    `Settings: memory_config ${JSON.stringify(s.memory_config)} (empty = the defaults).`,
   ];
   return `${lines.join('\n')}\n`;
 }

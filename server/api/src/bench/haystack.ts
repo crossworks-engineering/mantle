@@ -17,7 +17,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { agents, aiWorkers, db, embeddingConfig, nodes, type Agent } from '@mantle/db';
 import { setApiKey } from '@mantle/api-keys';
 import { createNote } from '@mantle/content';
@@ -81,6 +81,8 @@ export type HaystackResult = {
   questions: QuestionResult[];
   stopped_for_budget: boolean;
   total_usd: number;
+  /** The ingest came from a snapshot (--snapshot): no extraction this run. */
+  reused_ingest?: boolean;
 };
 
 async function seedBrain(
@@ -129,6 +131,38 @@ async function seedBrain(
     .returning();
   if (!agent) throw new Error('bench: agent insert returned no row');
   return { ownerId, agent };
+}
+
+/**
+ * A snapshot's brain, made ready for this run (--snapshot reuse): the owner
+ * and the responder it was seeded with. The API key is sealed again (the
+ * master key is new each run) and the agent takes this run's answer model and
+ * memory_config.
+ */
+async function reuseBrain(
+  models: BenchModels,
+  apiKey: string,
+  memoryConfig: Record<string, unknown>,
+): Promise<{ ownerId: string; agent: Agent; extracted: number }> {
+  const owners = (await db.execute(
+    sql`select id from auth.users where is_owner limit 1`,
+  )) as unknown as Array<{ id: string }>;
+  const ownerId = owners[0]?.id;
+  if (!ownerId) throw new Error('bench: the snapshot has no owner');
+  await setApiKey(ownerId, 'openrouter', 'default', apiKey);
+  clearEmbeddingModelCache(ownerId);
+  const [agent] = await db
+    .update(agents)
+    .set({ model: models.answer, memoryConfig })
+    .where(and(eq(agents.ownerId, ownerId), eq(agents.slug, 'assistant')))
+    .returning();
+  if (!agent) throw new Error('bench: the snapshot has no responder');
+  const counted = (await db.execute(
+    sql`select count(*)::int as n from ${nodes}
+        where ${nodes.ownerId} = ${ownerId} and ${nodes.tags} @> ARRAY['bench-session']::text[]
+          and (${nodes.data}->>'summary') is not null`,
+  )) as unknown as Array<{ n: number }>;
+  return { ownerId, agent, extracted: Number(counted[0]?.n ?? 0) };
 }
 
 async function ingest(
@@ -221,6 +255,7 @@ async function askOne(
   models: BenchModels,
   q: BenchQuestion,
   style: AnswerStyle,
+  retrieveOnly = false,
 ): Promise<QuestionResult> {
   const base = {
     query_id: q.id,
@@ -234,6 +269,24 @@ async function askOne(
   // Evidence is checked on the retrieved blocks only, never the corpus map.
   const retrieved = renderContext(ctx, models.answer, { withCorpusMap: false });
   const retrieveMs = Math.round(performance.now() - t0);
+  if (retrieveOnly) {
+    // Reach only: what the context holds, no answer and no judge.
+    return {
+      ...base,
+      response: '',
+      answer: '',
+      correct: null,
+      judge_raw: '',
+      context_chars: context.length,
+      context,
+      evidence_sessions: q.evidence,
+      evidence_found: evidenceFound(retrieved, q.evidence),
+      said_missing: false,
+      retrieve_ms: retrieveMs,
+      answer_usd: 0,
+      judge_usd: 0,
+    };
+  }
   const prompt = answerPrompt(q, context, style);
   const answered = await callModel(ownerId, models.answer, prompt.system, prompt.user, 8000);
   const answer = extractFinalAnswer(answered.text);
@@ -286,13 +339,24 @@ export async function runHaystack(opts: {
   /** The responder agent's memory_config (retrieval limits). Default {}. */
   memoryConfig?: Record<string, unknown>;
   answerStyle?: AnswerStyle;
+  /** The database is a snapshot's copy, already ingested: skip seed and
+   *  ingest (--snapshot). */
+  reuseIngest?: boolean;
+  /** Retrieve and record the context; no answer or judge call. */
+  retrieveOnly?: boolean;
 }): Promise<HaystackResult> {
   const { dataset, haystack, models } = opts;
-  const { ownerId, agent } = await seedBrain(models, opts.apiKey, opts.memoryConfig ?? {});
+  const reused = opts.reuseIngest
+    ? await reuseBrain(models, opts.apiKey, opts.memoryConfig ?? {})
+    : null;
+  const { ownerId, agent } =
+    reused ?? (await seedBrain(models, opts.apiKey, opts.memoryConfig ?? {}));
   const t0 = performance.now();
   const loop = monitorEventLoopDelay({ resolution: 20 });
   loop.enable();
-  const ingested = await ingest(ownerId, haystack, opts.extractConcurrency, opts.maxUsd);
+  const ingested = reused
+    ? { extracted: reused.extracted, failed: haystack.sessions.length - reused.extracted, stopped: false }
+    : await ingest(ownerId, haystack, opts.extractConcurrency, opts.maxUsd);
   loop.disable();
   const ms = (ns: number) => Math.round(ns / 1e6);
   const loopDelay = {
@@ -302,7 +366,8 @@ export async function runHaystack(opts: {
   };
   const { extracted, failed } = ingested;
   const ingestMs = Math.round(performance.now() - t0);
-  const extractUsd = await tracedSpendUsd(ownerId);
+  // A reused ingest was paid for by the run that made the snapshot.
+  const extractUsd = reused ? 0 : await tracedSpendUsd(ownerId);
   let spent = extractUsd;
   const questions: QuestionResult[] = [];
   let stopped = ingested.stopped;
@@ -312,7 +377,15 @@ export async function runHaystack(opts: {
       break;
     }
     try {
-      const r = await askOne(dataset, ownerId, agent, models, q, opts.answerStyle ?? 'infer');
+      const r = await askOne(
+        dataset,
+        ownerId,
+        agent,
+        models,
+        q,
+        opts.answerStyle ?? 'infer',
+        opts.retrieveOnly,
+      );
       spent += r.answer_usd + r.judge_usd;
       questions.push(r);
     } catch (err) {
@@ -348,5 +421,6 @@ export async function runHaystack(opts: {
     questions,
     stopped_for_budget: stopped,
     total_usd: spent,
+    ...(reused ? { reused_ingest: true } : {}),
   };
 }

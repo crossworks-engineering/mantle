@@ -17,6 +17,12 @@
  *
  * Output: <out>/results.jsonl (one line per question), <out>/summary.json and
  * <out>/report.md. --resume=<out> skips haystacks already written there.
+ *
+ * --snapshot=<name> keeps each haystack's ingested database as
+ * mantle_bsnap_<name>_<haystack> and reuses it when it exists: retrieval and
+ * answer changes then compare on the SAME ingest (no extraction spend, no
+ * extraction noise). A snapshot holds the schema of the code that made it.
+ * --retrieve-only retrieves and records the context; no answer, no judge.
  */
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -76,6 +82,8 @@ type Args = {
   ingestOnly: boolean;
   memoryConfig: Record<string, unknown>;
   answerStyle: AnswerStyle;
+  snapshot?: string;
+  retrieveOnly: boolean;
 };
 
 function parseArgs(argv: string[]): Args {
@@ -116,7 +124,31 @@ function parseArgs(argv: string[]): Args {
     ingestOnly: flags.has('ingest-only'),
     memoryConfig: parseMemoryConfig(kv.get('memory-config')),
     answerStyle: parseAnswerStyle(kv.get('answer-prompt')),
+    snapshot: parseSnapshotName(kv.get('snapshot')),
+    retrieveOnly: flags.has('retrieve-only'),
   };
+}
+
+/** A snapshot name goes into database names: keep it to [a-z0-9_]. */
+function parseSnapshotName(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  if (!/^[a-z0-9_]{1,24}$/.test(raw))
+    throw new Error('--snapshot must be 1-24 characters of a-z, 0-9 and _');
+  return raw;
+}
+
+/** The snapshot database that holds one haystack's ingest. */
+const snapshotDbName = (snapshot: string, haystackId: string): string =>
+  `mantle_bsnap_${snapshot}_${haystackId.replace(/[^a-zA-Z0-9]/g, '_')}`.slice(0, 63);
+
+async function databaseExists(adminUrl: string, name: string): Promise<boolean> {
+  const sql = postgres(adminUrl, { max: 1, onnotice: () => {} });
+  try {
+    const rows = await sql`select 1 from pg_database where datname = ${name}`;
+    return rows.length > 0;
+  } finally {
+    await sql.end();
+  }
 }
 
 /** `--memory-config='{"chunk_limit":20}'`: the responder's retrieval limits,
@@ -189,6 +221,7 @@ async function parent(args: Args): Promise<void> {
   const estimate = estimateRun(
     args.ingestOnly ? haystacks.map((h) => ({ ...h, questions: [] })) : haystacks,
     args.models,
+    { answers: !args.retrieveOnly },
   );
   console.log(
     `[bench] ${args.dataset}: ${haystacks.length} haystacks, ` +
@@ -198,7 +231,9 @@ async function parent(args: Args): Promise<void> {
   console.log(`[bench] estimate: ${estimate.text}`);
   console.log(`[bench] models: ${JSON.stringify(args.models)}  cap: $${args.maxUsd}`);
   console.log(
-    `[bench] memory_config: ${JSON.stringify(args.memoryConfig)}  answer prompt: ${args.answerStyle}`,
+    `[bench] memory_config: ${JSON.stringify(args.memoryConfig)}  answer prompt: ${args.answerStyle}` +
+      (args.snapshot ? `  snapshot: ${args.snapshot}` : '') +
+      (args.retrieveOnly ? '  RETRIEVE ONLY' : ''),
   );
   if (args.dryRun) return;
 
@@ -237,10 +272,11 @@ async function parent(args: Args): Promise<void> {
   let stoppedForBudget = false;
   // Copies of one template are made one at a time: CREATE DATABASE … TEMPLATE
   // refuses while another session is using the template.
+  // A snapshot is copied the same way, under the same lock.
   let createLock: Promise<void> = Promise.resolve();
-  const createDb = (name: string) => {
+  const createDb = (name: string, from: string = template.name) => {
     const next = createLock.then(() =>
-      adminExec(adminUrl, `create database "${name}" template "${template.name}"`),
+      adminExec(adminUrl, `create database "${name}" template "${from}"`),
     );
     createLock = next.catch(() => {});
     return next;
@@ -260,31 +296,72 @@ async function parent(args: Args): Promise<void> {
       let r: HaystackResult;
       // One haystack's failure (a database, a crashed child, an unreadable
       // result) is logged and skipped; it never takes the rest of the run down.
+      const childEnv = (o: { ingestOnly: boolean; reuse: boolean }) => ({
+        PATH: envDynamic('PATH'),
+        HOME: envDynamic('HOME'),
+        DATABASE_URL: withDatabase(adminUrl, dbName),
+        MANTLE_MASTER_KEY: masterKey,
+        BENCH_OPENROUTER_API_KEY: apiKey,
+        BENCH_MODELS: JSON.stringify(args.models),
+        BENCH_MAX_USD: String(Math.max(0, args.maxUsd - spent)),
+        BENCH_EXTRACT_CONCURRENCY: String(args.extractConcurrency),
+        BENCH_INGEST_ONLY: o.ingestOnly ? '1' : '',
+        BENCH_REUSE_INGEST: o.reuse ? '1' : '',
+        BENCH_RETRIEVE_ONLY: args.retrieveOnly ? '1' : '',
+        BENCH_MEMORY_CONFIG: JSON.stringify(args.memoryConfig),
+        BENCH_ANSWER_STYLE: args.answerStyle,
+      });
       try {
-        await createDb(dbName);
         writeFileSync(file, JSON.stringify({ dataset: args.dataset, haystack: h }));
-        const code = await runChild(file, {
-          PATH: envDynamic('PATH'),
-          HOME: envDynamic('HOME'),
-          DATABASE_URL: withDatabase(adminUrl, dbName),
-          MANTLE_MASTER_KEY: masterKey,
-          BENCH_OPENROUTER_API_KEY: apiKey,
-          BENCH_MODELS: JSON.stringify(args.models),
-          BENCH_MAX_USD: String(Math.max(0, args.maxUsd - spent)),
-          BENCH_EXTRACT_CONCURRENCY: String(args.extractConcurrency),
-          BENCH_INGEST_ONLY: args.ingestOnly ? '1' : '',
-          BENCH_MEMORY_CONFIG: JSON.stringify(args.memoryConfig),
-          BENCH_ANSWER_STYLE: args.answerStyle,
-        });
-        if (!args.keepDb)
-          await adminExec(adminUrl, `drop database if exists "${dbName}" with (force)`);
-        if (code !== 0) throw new Error(`the child exited ${code}`);
-        r = JSON.parse(readFileSync(resultFileFor(file), 'utf8')) as HaystackResult;
+        const snap = args.snapshot ? snapshotDbName(args.snapshot, h.id) : null;
+        if (snap && (await databaseExists(adminUrl, snap))) {
+          // Reuse: a copy of the snapshot, so the snapshot itself stays as ingested.
+          await createDb(dbName, snap);
+          const code = await runChild(file, childEnv({ ingestOnly: false, reuse: true }));
+          if (code !== 0) throw new Error(`the child exited ${code}`);
+          r = JSON.parse(readFileSync(resultFileFor(file), 'utf8')) as HaystackResult;
+        } else if (snap && !args.ingestOnly) {
+          // Make the snapshot: ingest, copy the untouched result, then answer
+          // on it. The first child has exited, so nothing holds the database.
+          await createDb(dbName);
+          let code = await runChild(file, childEnv({ ingestOnly: true, reuse: false }));
+          if (code !== 0) throw new Error(`the ingest child exited ${code}`);
+          const ingested = JSON.parse(readFileSync(resultFileFor(file), 'utf8')) as HaystackResult;
+          await createDb(snap, dbName);
+          console.log(`[bench] ${h.id}: snapshot ${snap} saved`);
+          code = await runChild(file, childEnv({ ingestOnly: false, reuse: true }));
+          if (code !== 0) throw new Error(`the answer child exited ${code}`);
+          const answered = JSON.parse(readFileSync(resultFileFor(file), 'utf8')) as HaystackResult;
+          r = {
+            ...answered,
+            extracted: ingested.extracted,
+            extract_failed: ingested.extract_failed,
+            ingest_ms: ingested.ingest_ms,
+            ingest_loop_delay_ms: ingested.ingest_loop_delay_ms,
+            extract_usd: ingested.extract_usd,
+            total_usd: ingested.extract_usd + answered.total_usd,
+            reused_ingest: false,
+          };
+        } else {
+          await createDb(dbName);
+          const code = await runChild(file, childEnv({ ingestOnly: args.ingestOnly, reuse: false }));
+          if (code !== 0) throw new Error(`the child exited ${code}`);
+          r = JSON.parse(readFileSync(resultFileFor(file), 'utf8')) as HaystackResult;
+          if (snap) {
+            await createDb(snap, dbName);
+            console.log(`[bench] ${h.id}: snapshot ${snap} saved`);
+          }
+        }
       } catch (err) {
         console.error(
           `[bench] haystack ${h.id} failed: ${(err as Error).message}; see the log above`,
         );
         continue;
+      } finally {
+        if (!args.keepDb)
+          await adminExec(adminUrl, `drop database if exists "${dbName}" with (force)`).catch(
+            () => {},
+          );
       }
       for (const q of r.questions)
         appendFileSync(
@@ -312,6 +389,7 @@ async function parent(args: Args): Promise<void> {
     stoppedForBudget,
     memoryConfig: args.memoryConfig,
     answerStyle: args.answerStyle,
+    retrieveOnly: args.retrieveOnly,
   });
   writeFileSync(join(args.out, 'summary.json'), JSON.stringify(summary, null, 2));
   writeFileSync(join(args.out, 'report.md'), renderReport(summary));
@@ -348,6 +426,8 @@ async function child(file: string): Promise<void> {
         unknown
       >,
       answerStyle: (envDynamic('BENCH_ANSWER_STYLE') ?? 'infer') as AnswerStyle,
+      reuseIngest: envDynamic('BENCH_REUSE_INGEST') === '1',
+      retrieveOnly: envDynamic('BENCH_RETRIEVE_ONLY') === '1',
     });
     writeFileSync(resultFileFor(file), JSON.stringify(result));
   } finally {

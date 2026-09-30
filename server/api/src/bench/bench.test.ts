@@ -335,5 +335,22 @@ describe('report', () => {
     const e = estimateRun([h], MODELS);
     expect(e.usd).toBeGreaterThan(0);
     expect(e.text).toMatch(/^about \$/);
+    const reach = estimateRun([h], MODELS, { answers: false });
+    expect(reach.usd).toBeLessThan(e.usd);
+    expect(reach.text).toContain('answer $0.00');
+  });
+
+  it('reports reach only for a retrieve-only run, and counts reused ingests', () => {
+    const s = summarize('locomo', MODELS, [{ ...result, reused_ingest: true }], {
+      requested: 1,
+      stoppedForBudget: false,
+      retrieveOnly: true,
+    });
+    expect(s.retrieve_only).toBe(true);
+    expect(s.reused_ingest).toBe(1);
+    const text = renderReport(s);
+    expect(text).toContain('retrieve only');
+    expect(text).not.toContain('Accuracy');
+    expect(text).toContain('| a | 2 | 1 | 50.0% |');
   });
 });
