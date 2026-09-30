@@ -284,6 +284,24 @@ describe.skipIf(!URL)('sharing a folder', () => {
       await m.systemDb.execute(sqlTag`delete from nodes where id in (${file}, ${note})`);
     });
 
+    it('a shared folder deleted by any writer leaves no share behind (0207)', async () => {
+      const f = randomUUID();
+      const inF = randomUUID();
+      await m.systemDb.execute(sqlTag`
+        insert into nodes (id, owner_id, type, title, slug, path, data, tags)
+        values (${f}, ${brain}, 'branch', 'Gone', 'gone', ${`notes.${label}_gone`}::ltree, '{}'::jsonb, '{}')`);
+      await m.systemDb.execute(sqlTag`update nodes set share_level = 'client' where id = ${f}`);
+      await m.systemDb.execute(sqlTag`
+        insert into nodes (id, owner_id, type, title, path, data, tags)
+        values (${inF}, ${brain}, 'note', 'left', ${`notes.${label}_gone`}::ltree,
+                ${JSON.stringify({ content: 'x' })}::jsonb, '{}')`);
+      expect(await inherited(inF)).toBe('client');
+      // A raw delete of the folder row, its note left where it was.
+      await m.systemDb.execute(sqlTag`delete from nodes where id = ${f}`);
+      expect(await inherited(inF)).toBeNull();
+      await m.systemDb.execute(sqlTag`delete from nodes where id = ${inF}`);
+    });
+
     it('refuses what cannot be shared', async () => {
       await tree.ensureKindRoot(brain, 'tasks');
       const tasksFolder = await tree.createTreeFolder(brain, 'tasks', {
