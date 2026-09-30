@@ -21,10 +21,14 @@
  *   5. an ENABLED tool group at team level or lower holds it.
  * The caller then dispatches inside `withViewer('team', …)` on a team surface
  * that carries the login, so row security still decides what the tool reads.
+ *
+ * These are the rules of a TEAM-level app, for every runner: the brokers pick
+ * the rules by the lower of the runner's level and the app's (app-tool-level.ts,
+ * client tier audit L1), so a member's run of a client-level app gets the
+ * client rules instead, and an admin's run of a team app gets these.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, toolGroups, type Tool } from '@mantle/db';
-import { getApp, isMemberAppLevel } from '@mantle/content';
 import { resolveTool } from './resolve';
 
 /** The group levels a member's app may draw tools from. */
@@ -32,8 +36,11 @@ const MEMBER_GROUP_LEVELS = ['team', 'client', 'public'];
 
 /**
  * Tools a member's app may never call, even from a team-level group:
- * - my_items_list / my_item_open read the member's PRIVATE items; an app
+ * - my_items_list / my_item_open read the runner's PRIVATE items; an app
  *   could copy them into its database, which every member and admin reads.
+ *   The same reasoning, one level up, is why no app tool reads above the
+ *   app's own level (app-tool-level.ts): whatever a tool returns can end up
+ *   in the app's shared database, where everyone who runs the app reads it.
  * - summarize_text and extract_from_image start LLM work (a chat and a
  *   vision model), and search_chunks does when the decider's passage scoring
  *   is on (cost-safety: a member app starts none). Every builtin flagged
@@ -132,32 +139,4 @@ export async function memberAppToolVerdict(
     };
   }
   return { ok: true, tool };
-}
-
-/**
- * For an app members can run (team level or lower): one warning per declared
- * tool the member broker would refuse, in the broker's own words. An
- * admin-level app gets none: only admins run it. Given back by every author
- * move that can change the answer: `app_tools_set`, `app_publish` and setting
- * an app's level (`access_set`). Best-effort: a failed check warns nothing and
- * never fails the move it rides on.
- */
-export async function appMemberToolWarnings(ownerId: string, appId: string): Promise<string[]> {
-  try {
-    const app = await getApp(ownerId, appId);
-    if (!app || !isMemberAppLevel(app.audience)) return [];
-    const declared = [...new Set(app.manifest.toolSlugs ?? [])];
-    const warnings: string[] = [];
-    for (const slug of declared) {
-      const verdict = await memberAppToolVerdict(ownerId, declared, slug);
-      if (!verdict.ok) {
-        warnings.push(
-          `${verdict.reason} Members running this app get an error: declare a read-only built-in tool from an enabled team-level group instead (\`tool_group_list\` shows levels), or keep the app at admin level.`,
-        );
-      }
-    }
-    return warnings;
-  } catch {
-    return [];
-  }
 }

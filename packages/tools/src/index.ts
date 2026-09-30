@@ -142,6 +142,16 @@ export {
   CLIENT_APP_TOOL_SLUGS,
   type ClientAppToolVerdict,
 } from './client-app-tools';
+export {
+  appToolLevel,
+  appToolScope,
+  appToolVerdict,
+  appToolWarnings,
+  PUBLIC_APP_NO_TOOLS,
+  type AppToolLevel,
+  type AppToolRunner,
+  type AppToolVerdict,
+} from './app-tool-level';
 export { surfaceHiddenNodeTypes, HIDDEN_NODE_ERROR } from './team-visibility';
 export { isOwnerSurface, OWNER_ONLY_ERROR, type ToolSurface } from './surface';
 export type { OwnerSurfaceVia } from './types';

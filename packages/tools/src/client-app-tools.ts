@@ -16,6 +16,11 @@
  * The caller then dispatches inside `withViewer('client', …)` on a client
  * surface that names the login, as the client chat does.
  *
+ * These are the rules of a CLIENT-level app for EVERY runner (client tier
+ * audit L1, app-tool-level.ts): an admin's or a member's run of a client app
+ * gets them too, since whatever a tool returns can be stored in the app's
+ * database, which every client reads with any SQL.
+ *
  * Why the allowlist is so narrow: a brain-wide read tool at client level
  * (search_chunks, page_get, node_read) still returns summaries, chunks and
  * raw documents built from text above client level, which can name team and
@@ -33,9 +38,10 @@ import { resolveTool } from './resolve';
  * (it opens a spilled result of a chat turn by handle; an app has none).
  *
  * `my_items_list` and `my_item_open` are left out as well, as for member apps
- * (MEMBER_APP_REFUSED_SLUGS): they read the client's PRIVATE drafts, and an
+ * (MEMBER_APP_REFUSED_SLUGS): they read the runner's PRIVATE drafts, and an
  * app could copy them into its database, which members and every other
- * client login read. Neither is marked read-only either, so rule 4 would
+ * client login read. The same holds for any read above client level, which
+ * is why an admin's or a member's run of a client app gets this list too. Neither is marked read-only either, so rule 4 would
  * refuse them anyway. client-app-tools.test.ts pins this list as a subset of
  * the chat's.
  *

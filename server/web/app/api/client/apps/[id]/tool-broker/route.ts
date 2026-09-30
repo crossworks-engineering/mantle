@@ -2,7 +2,7 @@ import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { withViewer } from '@mantle/db';
 import { recordAppAccess } from '@mantle/content';
-import { clientAppToolVerdict, dispatchTool } from '@mantle/tools';
+import { appToolLevel, appToolScope, appToolVerdict, dispatchTool } from '@mantle/tools';
 import { getClientOr401 } from '@/lib/auth';
 import { clientAppOr404, clientName } from '@/lib/client-apps';
 import { readJsonCapped } from '@/lib/body-limit';
@@ -16,7 +16,9 @@ const Body = z.object({
 /**
  * POST /api/client/apps/:id/tool-broker: a client's run of an app calls
  * host.tools.call() (client logins C6). Run-only and checked at dispatch
- * time, every call (clientAppToolVerdict): declared by the app, one of the
+ * time, every call, by the one app level rule the owner and member brokers
+ * share (appToolLevel: a client's run of a client app is at client level),
+ * which is clientAppToolVerdict: declared by the app, one of the
  * client tools (CLIENT_APP_TOOL_SLUGS: the redacted "Shared with you"
  * reads), a read-only built-in with no confirmation, in an enabled
  * client-level tool group. Then it runs on the CLIENT role, on a client
@@ -42,7 +44,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (app instanceof Response) return app;
 
   const { slug, input } = parsed.data;
-  const verdict = await clientAppToolVerdict(client.anchorId, app.manifest.toolSlugs ?? [], slug);
+  // clientAppOr404 finds client-level apps only, so this is 'client'.
+  const level = appToolLevel('client', 'client');
+  const verdict = await appToolVerdict(
+    level,
+    client.anchorId,
+    app.manifest.toolSlugs ?? [],
+    slug,
+  );
   recordAppAccess({
     ownerId: client.anchorId,
     appNodeId: app.id,
@@ -53,11 +62,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!verdict.ok) {
     return NextResponse.json({ ok: false, error: verdict.reason }, { status: verdict.status });
   }
-  const result = await withViewer('client', () =>
-    dispatchTool(verdict.tool, input, {
-      ownerId: client.anchorId,
-      surface: { kind: 'client', loginId: client.loginId, contactName: clientName(client) },
-    }),
+  const scope = appToolScope(level, { loginId: client.loginId, name: clientName(client) });
+  const result = await withViewer(scope.viewer, () =>
+    dispatchTool(verdict.tool, input, { ownerId: client.anchorId, surface: scope.surface }),
   );
   return NextResponse.json(result);
 }

@@ -44,7 +44,7 @@ import {
 import { putContent } from '@mantle/storage';
 import { recordIngest } from '@mantle/tracing';
 import { resolveTool } from './resolve';
-import { appMemberToolWarnings } from './member-app-tools';
+import { appToolWarnings } from './app-tool-level';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
@@ -425,7 +425,7 @@ const app_tools_set: BuiltinToolDef = {
     }
     const manifest = await setManifest(ctx.ownerId, id, { toolSlugs: slugs });
     if (!manifest) return { ok: false, error: `app ${id} not found` };
-    const warnings = await appMemberToolWarnings(ctx.ownerId, id);
+    const warnings = await appToolWarnings(ctx.ownerId, id);
     ctx.step?.setOutput({ id, tool_slugs: slugs, warnings: warnings.length });
     return {
       ok: true,
@@ -616,7 +616,7 @@ const app_publish: BuiltinToolDef = {
     try {
       const app = await publishApp(ctx.ownerId, id);
       if (!app) return { ok: false, error: `app ${id} not found` };
-      const warnings = await appMemberToolWarnings(ctx.ownerId, id);
+      const warnings = await appToolWarnings(ctx.ownerId, id);
       ctx.step?.setOutput({ id, published: true, warnings: warnings.length });
       return {
         ok: true,

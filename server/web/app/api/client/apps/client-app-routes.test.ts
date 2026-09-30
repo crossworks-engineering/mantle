@@ -91,7 +91,7 @@ vi.mock('@mantle/tools', async (importOriginal) => {
   const { currentViewerLevel } = await import('@mantle/db');
   return {
     ...(await importOriginal<Record<string, unknown>>()),
-    clientAppToolVerdict: vi.fn(async () =>
+    appToolVerdict: vi.fn(async () =>
       h.verdict.ok ? { ok: true, tool: { slug: 'client_shared_list' } } : h.verdict,
     ),
     dispatchTool: vi.fn(async (_tool: unknown, _input: unknown, ctx: Record<string, unknown>) => {
@@ -152,7 +152,7 @@ beforeAll(async () => {
   memberFrame = (await import('../../member/apps/[id]/frame/route')).GET;
   ownerFrame = (await import('../../apps/[id]/frame/route')).GET;
   listRoute = (await import('./route')).GET;
-  verdictMock = vi.mocked((await import('@mantle/tools')).clientAppToolVerdict) as never;
+  verdictMock = vi.mocked((await import('@mantle/tools')).appToolVerdict) as never;
   tokens = await import('@/lib/auth/tokens');
 }, 60_000);
 
@@ -226,7 +226,12 @@ describe('client tool broker', () => {
       surface: { kind: 'client', loginId: LOGIN, contactName: 'Casey' },
     });
     // The rule is asked about THIS app's declared tools, for this brain.
-    expect(verdictMock).toHaveBeenCalledWith(ANCHOR, ['client_shared_list'], 'client_shared_list');
+    expect(verdictMock).toHaveBeenCalledWith(
+      'client',
+      ANCHOR,
+      ['client_shared_list'],
+      'client_shared_list',
+    );
     expect(h.logged[0]).toMatchObject({
       ownerId: ANCHOR,
       actorId: LOGIN,

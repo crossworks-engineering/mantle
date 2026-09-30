@@ -18,7 +18,7 @@ import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './ty
 import { str, strOpt } from './coerce';
 import { NODE_ID_PRE } from './builtins-common';
 import { clientLeftWarning } from './builtins-share';
-import { appMemberToolWarnings } from './member-app-tools';
+import { appToolWarnings } from './app-tool-level';
 import { isOwnerSurface } from './surface';
 
 const LEVELS = ['admin', 'team', 'client', 'public'];
@@ -144,10 +144,12 @@ export const access_set: BuiltinToolDef = {
           withClosure: input.with_closure === true,
           raiseClosure: input.raise_closure === true,
         });
-        // An app set to team level or lower is run by members: say which of
-        // its declared tools they would be refused (member logins Phase 4b).
+        // An app set to team level or lower runs its tools by that level's
+        // rules: say which of its declared tools would be refused (member
+        // logins Phase 4b; client and public rules since the client tier
+        // audit, L1).
         const warnings =
-          res.item.type === 'app' ? await appMemberToolWarnings(ctx.ownerId, nodeId) : [];
+          res.item.type === 'app' ? await appToolWarnings(ctx.ownerId, nodeId) : [];
         // Client items it embeds that went to public left client logins'
         // view (audit A10): say so.
         const left = clientLeftWarning(res.alsoLowered);

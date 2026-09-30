@@ -26,6 +26,8 @@ const h = vi.hoisted(() => ({
   homeAppId: undefined as string | undefined,
   loginActive: true,
   verdict: { ok: true } as { ok: boolean; status?: number; reason?: string },
+  toolSlugs: ['note_list'] as string[],
+  levels: [] as string[],
   dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
   logged: [] as Array<Record<string, unknown>>,
   dbCalls: [] as string[],
@@ -72,7 +74,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
             icon: null,
             color: null,
             audience: h.audience,
-            manifest: { toolSlugs: ['note_list'] },
+            manifest: { toolSlugs: h.toolSlugs },
             publishedBuild: PUBLISHED,
             dataReadOnly: h.dataReadOnly,
           }
@@ -117,8 +119,18 @@ vi.mock('@mantle/tools', async (importOriginal) => {
   const { currentViewerLevel } = await import('@mantle/db');
   return {
     ...(await importOriginal<Record<string, unknown>>()),
-    memberAppToolVerdict: vi.fn(async () =>
-      h.verdict.ok ? { ok: true, tool: { slug: 'note_list' } } : h.verdict,
+    // The level rule (appToolLevel, appToolScope) is the real one; the
+    // verdict records the level it was asked at. At client level (and at
+    // none) the REAL rules answer: they refuse before any lookup.
+    appToolVerdict: vi.fn(
+      async (level: string, owner: string, declared: string[], slug: string) => {
+        h.levels.push(level);
+        if (level === 'client' || level === 'none') {
+          const real = await importOriginal<typeof import('@mantle/tools')>();
+          return real.appToolVerdict(level, owner, declared, slug);
+        }
+        return h.verdict.ok ? { ok: true, tool: { slug } } : h.verdict;
+      },
     ),
     dispatchTool: vi.fn(async (_tool: unknown, _input: unknown, ctx: Record<string, unknown>) => {
       h.dispatched.push({ level: currentViewerLevel(), ctx });
@@ -172,7 +184,7 @@ beforeAll(async () => {
   ownerFrame = (await import('../../apps/[id]/frame/route')).GET;
   listRoute = (await import('./route')).GET;
   homeRoute = (await import('../home/route')).GET;
-  verdictMock = vi.mocked((await import('@mantle/tools')).memberAppToolVerdict) as never;
+  verdictMock = vi.mocked((await import('@mantle/tools')).appToolVerdict) as never;
   tokens = await import('@/lib/auth/tokens');
 }, 60_000);
 
@@ -187,6 +199,8 @@ beforeEach(() => {
   verdictMock?.mockClear();
   h.loginActive = true;
   h.verdict = { ok: true };
+  h.toolSlugs = ['note_list'];
+  h.levels.length = 0;
   h.dispatched.length = 0;
   h.logged.length = 0;
   h.dbCalls.length = 0;
@@ -211,8 +225,54 @@ describe('member tool broker', () => {
       detail: { via: 'member', slug: 'note_list' },
     });
     // The rule is asked about THIS app's declared tools, for this brain.
-    expect(verdictMock).toHaveBeenCalledWith(ANCHOR, ['note_list'], 'note_list');
+    expect(verdictMock).toHaveBeenCalledWith('team', ANCHOR, ['note_list'], 'note_list');
     expect(h.dispatched[0]!.ctx).toMatchObject({ surface: { contactName: 'Pat' } });
+  });
+
+  it('runs a client-level app by the client rules: page_get refused, a team app still gets it (audit L1)', async () => {
+    h.toolSlugs = ['page_get'];
+    h.audience = 'client';
+    const refused = await toolBroker(post({ slug: 'page_get', input: {} }), params());
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as { error: string }).error).toMatch(/client apps/);
+    expect(h.levels).toEqual(['client']);
+    expect(h.dispatched).toHaveLength(0);
+    expect(h.logged[0]).toMatchObject({
+      detail: { via: 'member', slug: 'page_get', refused: expect.stringMatching(/client apps/) },
+    });
+
+    // The same declaration on a team app: the member rules, on the team role.
+    h.audience = 'team';
+    const ok = await toolBroker(post({ slug: 'page_get', input: {} }), params());
+    expect(ok.status).toBe(200);
+    expect(h.levels).toEqual(['client', 'team']);
+    expect(h.dispatched).toHaveLength(1);
+    expect(h.dispatched[0]!.level).toBe('team');
+  });
+
+  it('dispatches an allowed call of a client-level app on the client role and a client surface', async () => {
+    h.audience = 'client';
+    h.toolSlugs = ['client_shared_list'];
+    verdictMock.mockImplementationOnce(async (level: string, _o: string, _d: string[], slug: string) => {
+      h.levels.push(level);
+      return { ok: true, tool: { slug } };
+    });
+    const res = await toolBroker(post({ slug: 'client_shared_list', input: {} }), params());
+    expect(res.status).toBe(200);
+    expect(h.levels).toEqual(['client']);
+    expect(h.dispatched[0]!.level).toBe('client');
+    expect(h.dispatched[0]!.ctx).toMatchObject({
+      ownerId: ANCHOR,
+      surface: { kind: 'client', loginId: LOGIN, contactName: 'Pat' },
+    });
+  });
+
+  it('runs no tool in a public app', async () => {
+    h.audience = 'public';
+    const res = await toolBroker(post({ slug: 'note_list', input: {} }), params());
+    expect(res.status).toBe(403);
+    expect(h.levels).toEqual(['none']);
+    expect(h.dispatched).toHaveLength(0);
   });
 
   it('passes a refusal through, dispatches nothing, and logs the refusal', async () => {
