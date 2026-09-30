@@ -323,6 +323,9 @@ export type TreeVisibilityRefusal = {
    *  that away (nothing's own level changes; migration 0208). Absent when
    *  there are none, and from brains before it was listed. */
   alsoEmbeds?: TreeVisibilityChange[];
+  /** How many embedded items change in all (`alsoEmbeds` holds the first
+   *  TREE_VISIBILITY_LIST_MAX). A confirm's `seen` is `total` plus this. */
+  embedsTotal?: number;
   /** @deprecated Never sent: an unreleased first form of `alsoEmbeds`, when
    *  a share still lowered embeds for good. */
   alsoLowered?: TreeVisibilityChange[];

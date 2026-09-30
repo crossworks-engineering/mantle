@@ -36,6 +36,7 @@ import {
   shareDiff,
   type VisibilityDiff,
   withEmbedChanges,
+  changeCount,
 } from './visibility';
 import { refoldPageTexts } from '../pages/level-text';
 import {
@@ -214,12 +215,15 @@ async function checkVisibility(
   diff: Promise<VisibilityDiff>,
   opts: TreeWriteOpts,
 ): Promise<VisibilityDiff> {
-  const d = await diff;
+  // What the items embed counts as a change of its own: a note already read
+  // at the folder's share still opens its embeds there (review F6).
+  const d = await withEmbedChanges(ownerId, await diff);
+  const n = changeCount(d);
   const refused =
-    (d.total > 0 && !opts.confirm) ||
+    (n > 0 && !opts.confirm) ||
     // A different change than was shown asks again; none at all goes ahead.
-    (opts.confirm && opts.seen !== undefined && d.total > 0 && d.total !== opts.seen);
-  if (refused) throw new TreeVisibilityError(await withEmbedChanges(ownerId, d));
+    (opts.confirm && opts.seen !== undefined && n > 0 && n !== opts.seen);
+  if (refused) throw new TreeVisibilityError(d);
   return d;
 }
 
@@ -286,7 +290,7 @@ export async function updateTreeFolder(
     if (dest !== treeParentPath(folder.path)) {
       const diff = await checkVisibility(ownerId, moveFolderDiff(ownerId, folder, dest), opts);
       await refusing(() => ops.moveFolder(ownerId, folderId, dest));
-      if (diff.total > 0) {
+      if (changeCount(diff) > 0) {
         const moved = await folderOrThrow(ownerId, kind, folderId);
         await followShares(ownerId, { path: moved.path });
       }
@@ -363,7 +367,7 @@ async function setFolderShare(
     if (isBusy(err)) throw new TreeError('conflict', BUSY_MESSAGE);
     throw err;
   }
-  if (diff.total > 0) await followShares(ownerId, { path: folder.path });
+  if (changeCount(diff) > 0) await followShares(ownerId, { path: folder.path });
 }
 
 async function setFolderLook(
@@ -458,7 +462,7 @@ export async function deleteTreeFolder(
     throw new TreeError('invalid', 'this folder is made by Mantle; it cannot be deleted');
   }
   const diff = await checkVisibility(ownerId, liftDiff(ownerId, folder), opts);
-  const affected = diff.total
+  const affected = changeCount(diff)
     ? (
         (await db.execute(sql`
           select id::text as id from nodes
@@ -505,6 +509,6 @@ export async function moveTreeItems(
       });
     }
   }
-  if (diff.total > 0 && result.moved) await followShares(ownerId, { ids });
+  if (changeCount(diff) > 0 && result.moved) await followShares(ownerId, { ids });
   return result;
 }

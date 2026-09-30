@@ -27,12 +27,21 @@ export type VisibilityDiff = {
   changes: TreeVisibilityChange[];
   total: number;
   /** Embedded items elsewhere whose access changes with them (see
-   *  TreeVisibilityRefusal.alsoEmbeds); filled in when a write is refused. */
+   *  TreeVisibilityRefusal.alsoEmbeds): the first TREE_VISIBILITY_LIST_MAX. */
   alsoEmbeds?: TreeVisibilityChange[];
-  /** For each listed change, the folder share it would inherit: what its
-   *  embeds would be read through. Internal, never sent. */
-  newShares?: ReadonlyMap<string, string | null>;
+  /** How many embedded items change in all (withEmbedChanges). */
+  embedsTotal?: number;
+  /** The rows in scope with the share each would inherit (id, old_inh,
+   *  new_inh): every row whose share changes passes it on to what it embeds,
+   *  listed or not. Internal, never sent. */
+  rows?: SQL;
 };
+
+/** Everything a write changes: the items and what they embed. What a
+ *  caller's `seen` is compared with. */
+export function changeCount(d: VisibilityDiff): number {
+  return d.total + (d.embedsTotal ?? 0);
+}
 
 /** A write refused until it is repeated with `confirm: true`. */
 export class TreeVisibilityError extends Error {
@@ -51,23 +60,23 @@ export const NO_CHANGE: VisibilityDiff = { changes: [], total: 0 };
  * What else a refused write changes (TreeVisibilityRefusal.alsoEmbeds): an
  * item read through a folder share makes what it embeds readable at that
  * share too, wherever that lives (nodes.embedded_level, migration 0208), and
- * an unshare or a move out takes that away again. Dry, for the list only:
- * the items the listed changes reach through embeds, each at the level it
- * would be read at with the new shares, where that differs from now.
+ * an unshare or a move out takes that away again. Dry: the items that EVERY
+ * row in scope whose share changes reaches through embeds (listed or not,
+ * and whether or not its own level changes), each at the level it would be
+ * read at with the new shares, where that differs from now; the first
+ * TREE_VISIBILITY_LIST_MAX and the total (review F6).
  */
 export async function withEmbedChanges(
   ownerId: string,
   diff: VisibilityDiff,
 ): Promise<VisibilityDiff> {
-  const shares = diff.newShares;
-  if (!shares?.size) return diff;
-  const values = sql.join(
-    [...shares].map(([id, level]) => sql`(${id}::uuid, ${level}::text)`),
-    sql`, `,
-  );
+  if (!diff.rows) return diff;
   const inherited = sql`(case when ov.id is not null then ov.lvl else m.inherited_level end)`;
   const found = (await db.execute(sql`
-    with recursive ov(id, lvl) as (values ${values}),
+    with recursive ov(id, lvl) as (
+      select r.id, r.new_inh from (${diff.rows}) r
+       where r.old_inh is distinct from r.new_inh
+    ),
     down(id) as (
       select e.to_id from node_embeds e join ov on e.from_id = ov.id
       union
@@ -100,15 +109,25 @@ export async function withEmbedChanges(
        where m.id <> up.t
        group by up.t
     )
-    select r.id::text as id, r.title, r."from", r."to", r.type from (
+    select r.id::text as id, r.title, r."from", r."to", r.type,
+           count(*) over () as total from (
       select tg.id, tg.title, tg.type::text as type,
              ${eff(sql`tg.audience`, sql`tg.inherited_level`, sql`tg.embedded_level`)} as "from",
              ${eff(sql`tg.audience`, sql`tg.inherited_level`, sql`lv.emb`)} as "to"
         from tg left join lv on lv.t = tg.id) r
      where r."from" is distinct from r."to"
      order by lower(r.title), r.id
-     limit ${TREE_VISIBILITY_LIST_MAX}`)) as unknown as TreeVisibilityChange[];
-  return found.length ? { ...diff, alsoEmbeds: found } : diff;
+     limit ${TREE_VISIBILITY_LIST_MAX}`)) as unknown as Array<
+    TreeVisibilityChange & { total: number | string }
+  >;
+  if (!found.length) return diff;
+  const out: VisibilityDiff = {
+    ...diff,
+    alsoEmbeds: found.map(({ total: _total, ...c }) => c),
+    embedsTotal: Number(found[0]!.total),
+  };
+  Object.defineProperty(out, 'rows', { value: diff.rows, enumerable: false });
+  return out;
 }
 
 /** effectiveLevel in SQL: the most open of an own level and two shares. */
@@ -126,7 +145,7 @@ async function diffOf(rows: SQL): Promise<VisibilityDiff> {
   const from = eff(sql`r.audience`, sql`r.old_inh`, sql`r.emb`);
   const to = eff(sql`r.audience`, sql`r.new_inh`, sql`r.emb`);
   const found = (await db.execute(sql`
-    select r.id::text as id, r.title, ${from} as "from", ${to} as "to", r.new_inh,
+    select r.id::text as id, r.title, ${from} as "from", ${to} as "to",
            count(*) over () as total
       from (${rows}) r
      where ${from} is distinct from ${to}
@@ -136,14 +155,15 @@ async function diffOf(rows: SQL): Promise<VisibilityDiff> {
     title: string;
     from: AccessLevel;
     to: AccessLevel;
-    new_inh: string | null;
     total: number | string;
   }>;
-  return {
+  const diff: VisibilityDiff = {
     changes: found.map(({ id, title, from: f, to: t }) => ({ id, title, from: f, to: t })),
     total: Number(found[0]?.total ?? 0),
-    ...(found.length ? { newShares: new Map(found.map((r) => [r.id, r.new_inh])) } : {}),
   };
+  // Internal: kept off the enumerable shape (never sent, never compared).
+  Object.defineProperty(diff, 'rows', { value: rows, enumerable: false });
+  return diff;
 }
 
 /**

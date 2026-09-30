@@ -89,7 +89,9 @@ export function treeErrorResponse(err: unknown): NextResponse {
         error: 'visibility',
         changes: err.diff.changes,
         total: err.diff.total,
-        ...(err.diff.alsoEmbeds?.length ? { alsoEmbeds: err.diff.alsoEmbeds } : {}),
+        ...(err.diff.alsoEmbeds?.length
+          ? { alsoEmbeds: err.diff.alsoEmbeds, embedsTotal: err.diff.embedsTotal }
+          : {}),
       },
       { status: 409 },
     );

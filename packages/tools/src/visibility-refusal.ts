@@ -26,14 +26,18 @@ export function visibilityRefusal(err: unknown): string | null {
     .map((c) => `'${c.title}' ${c.from} → ${c.to}`)
     .join(', ');
   const through = err.diff.alsoEmbeds ?? [];
+  const embedsTotal = err.diff.embedsTotal ?? through.length;
   const also = through.length
-    ? ` What they embed changes with them: ${through
+    ? ` What they embed changes with them (${embedsTotal}): ${through
         .slice(0, 10)
-        .map((c) => `'${c.title}' ${c.from} → ${c.to}`)
-        .join(', ')}${through.length > 10 ? ', …' : ''}.`
+        .map((c) => `'${c.title}'${c.type ? ` (${c.type})` : ''} ${c.from} → ${c.to}`)
+        .join(', ')}${embedsTotal > 10 ? ', …' : ''}.`
     : '';
+  const head = err.diff.total
+    ? `this changes who can see ${err.diff.total} item(s) (${shown}${err.diff.total > 10 ? ', …' : ''}).`
+    : 'this changes who can see items through what they embed.';
   return (
-    `this changes who can see ${err.diff.total} item(s) (${shown}${err.diff.total > 10 ? ', …' : ''}).${also} ` +
+    `${head}${also} ` +
     'Tell the user what changes; call again with confirm: true only once they agree.'
   );
 }
