@@ -116,13 +116,16 @@ describe('verdicts that need no lookup', () => {
     ).toBe(true);
   });
 
-  it('a file overwrite by path waits; a new file runs', async () => {
+  it('a file overwrite by path waits; a new file looks up where it lands', async () => {
     expect(
       (await verdict('file_create', { parent_path: 'a', filename: 'b', overwrite: true })).gate,
     ).toBe(true);
-    expect(await verdict('file_create', { parent_path: 'a', filename: 'b' })).toEqual({
-      gate: false,
-    });
+    // Its folder may be shared with clients (folder sharing): the lookup
+    // runs, and with no database here it fails closed. The DB test proves
+    // a plain folder runs.
+    expect((await verdict('file_create', { parent_path: 'a', filename: 'b' })).gate).toBe(true);
+    // No destination named: nothing to look up.
+    expect(await verdict('file_create', { filename: 'b' })).toEqual({ gate: false });
   });
 
   it('a create with no parent runs; the always-rules wait; the free ones run', async () => {

@@ -24,7 +24,7 @@
  * (a builtin registered elsewhere) waits too. The owner approving the
  * pending entry runs the original call.
  */
-import { and, arrayOverlaps, eq, inArray, or } from 'drizzle-orm';
+import { and, arrayOverlaps, eq, inArray, or, sql } from 'drizzle-orm';
 import { agents, appTableExports, db, nodes, toolGroups } from '@mantle/db';
 import { asSystem } from '@mantle/db/viewer';
 import { isLoweringCall } from './client-sourced';
@@ -42,9 +42,15 @@ export type WriteRule =
   | {
       kind: 'write';
       /** Input fields naming the existing nodes it writes into (an id or a
-       *  list of ids). A value that is not an id, or an id of no node of
-       *  this brain, waits (the check fails closed). */
+       *  list of ids), destination folders included. A value that is not an
+       *  id, or an id of no node of this brain, waits (the check fails
+       *  closed). */
       nodes?: readonly string[];
+      /** Input fields naming a destination folder by its ltree path: what
+       *  lands there takes the share of a folder at or above it (folder
+       *  sharing), so a client-shared one waits. A path that does not parse
+       *  waits too. */
+      paths?: readonly string[];
       /** Input fields naming agents / tool groups by slug. */
       agents?: readonly string[];
       groups?: readonly string[];
@@ -66,7 +72,10 @@ export type WriteRule =
 const free = (why: string): WriteRule => ({ kind: 'free', why });
 const always = (why: string): WriteRule => ({ kind: 'always', why });
 const lowering: WriteRule = { kind: 'lowering' };
-const onNodes = (...fields: string[]): WriteRule => ({ kind: 'write', nodes: fields });
+const onNodes = (...fields: string[]): Extract<WriteRule, { kind: 'write' }> => ({
+  kind: 'write',
+  nodes: fields,
+});
 const creates = (...parentFields: string[]) =>
   ({ kind: 'write', nodes: parentFields, creates: true }) as const;
 const onApp = { kind: 'write', apps: ['id'] } as const;
@@ -167,16 +176,16 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   table_row_get: free(READS),
 
   // ── Files and folders ────────────────────────────────────────────────────
-  file_create: { ...creates(), alwaysWhen: overwrites },
-  file_upload: { ...creates(), alwaysWhen: overwrites },
-  file_copy: creates(),
-  file_move: onNodes('file_id'),
+  file_create: { ...creates(), alwaysWhen: overwrites, paths: ['parent_path'] },
+  file_upload: { ...creates(), alwaysWhen: overwrites, paths: ['parent_path'] },
+  file_copy: { ...creates(), paths: ['dest_path'] },
+  file_move: { ...onNodes('file_id'), paths: ['dest_path'] },
   file_rename: onNodes('file_id'),
   file_set_indexing: onNodes('file_id'),
   file_delete: onNodes('file_id'),
-  folder_create: creates(),
-  folder_copy: creates(),
-  folder_move: onNodes('folder_id'),
+  folder_create: { ...creates(), paths: ['parent_path'] },
+  folder_copy: { ...creates(), paths: ['dest_parent_path'] },
+  folder_move: { ...onNodes('folder_id'), paths: ['dest_parent_path'] },
   folder_rename: onNodes('folder_id'),
   folder_describe: onNodes('folder_id'),
   folder_set_indexing: onNodes('folder_id'),
@@ -184,8 +193,10 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   // The item tree's folders for the row-only kinds (builtins-tree.ts). A
   // folder at the top level names no parent, so that create waits.
   tree_folder_create: creates('parent_id'),
-  tree_folder_update: onNodes('folder_id'),
-  tree_item_move: onNodes('item_ids'),
+  // A move names its destination folder: what lands in a shared folder takes
+  // its share (null, the top level, is never shared).
+  tree_folder_update: onNodes('folder_id', 'parent_id'),
+  tree_item_move: onNodes('item_ids', 'folder_id'),
   tree_folder_delete: onNodes('folder_id'),
   export_node: creates(),
   sheet_build: creates(),
@@ -406,11 +417,18 @@ async function writeVerdict(
   if (!nodeIds || !appIds || [...nodeIds, ...appIds].some((id) => !UUID_RE.test(id))) {
     return wait('its target is not named by id');
   }
+  const paths = stringsOf(valuesOf(input, rule.paths));
+  if (!paths) return wait('its destination is not named by path');
   const agentSlugs = stringsOf(valuesOf(input, rule.agents)) ?? [];
   const groupSlugs = stringsOf(valuesOf(input, rule.groups)) ?? [];
   const toolSlugs = stringsOf(valuesOf(input, rule.tools)) ?? [];
   const named =
-    nodeIds.length + appIds.length + agentSlugs.length + groupSlugs.length + toolSlugs.length;
+    nodeIds.length +
+    appIds.length +
+    paths.length +
+    agentSlugs.length +
+    groupSlugs.length +
+    toolSlugs.length;
   if (named === 0) return RUN;
   return asSystem(async (): Promise<GateVerdict> => {
     // An app: the app itself and every brain table it exports.
@@ -428,13 +446,42 @@ async function writeVerdict(
     ];
     if (wanted.length > 0) {
       const rows = await db
-        .select({ id: nodes.id, audience: nodes.audience })
+        .select({
+          id: nodes.id,
+          audience: nodes.audience,
+          inheritedLevel: nodes.inheritedLevel,
+          shareLevel: nodes.shareLevel,
+        })
         .from(nodes)
         .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, wanted)));
       if (rows.length < wanted.length) return wait('its target is not an item of this brain');
-      if (rows.some((r) => EXPOSED.has(r.audience))) {
+      // Read by clients at its own level, through a folder holding it, or (a
+      // folder) sharing what it holds with them.
+      if (
+        rows.some(
+          (r) =>
+            EXPOSED.has(r.audience) ||
+            EXPOSED.has(r.inheritedLevel ?? '') ||
+            EXPOSED.has(r.shareLevel ?? ''),
+        )
+      ) {
         return wait('it writes into an item clients or the public read');
       }
+    }
+    for (const path of paths) {
+      // A folder at or above the destination shared with clients.
+      const [shared] = await db
+        .select({ id: nodes.id })
+        .from(nodes)
+        .where(
+          and(
+            eq(nodes.ownerId, ownerId),
+            eq(nodes.shareLevel, 'client'),
+            sql`${nodes.path} @> ${path}::ltree`,
+          ),
+        )
+        .limit(1);
+      if (shared) return wait('it puts something in a folder shared with clients');
     }
     if (agentSlugs.length > 0) {
       const rows = await db

@@ -313,6 +313,25 @@ describe.skipIf(!URL)('the "What clients see" report', () => {
     expect(res.acknowledged).toBe(true);
     expect(await r.clientReportAcknowledged(owner)).toBe(true);
   });
+
+  it('counts what a folder shared with clients holds, and asks again when one is shared', async () => {
+    const folderId = randomUUID();
+    const inside = randomUUID();
+    const folderPath = `notes.${tag.replace(/-/g, '_')}_shared`;
+    await exec(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, data) values
+        (${folderId}, ${owner}, 'branch', 'Shared', ${folderPath}::ltree, '{}'::jsonb),
+        (${inside}, ${owner}, 'note', 'Admin note in it', ${folderPath}::ltree, '{}'::jsonb)`);
+    // Admin by its own level: not a client item yet.
+    expect(await r.clientReportAcknowledged(owner)).toBe(true);
+    await exec(sqlTag`update nodes set share_level = 'client' where id = ${folderId}`);
+    expect(await r.clientReportAcknowledged(owner)).toBe(false);
+    const rep = await r.clientReport(owner);
+    expect(rep.items.map((i) => i.id)).toContain(inside);
+    expect(rep.newSinceAck).toEqual([inside]);
+    const res = await r.acknowledgeClientReport(owner, admin, { fingerprint: rep.fingerprint! });
+    expect(res.acknowledged).toBe(true);
+  });
 });
 
 describe.skipIf(!URL)('the report above the list cap (audit A7)', () => {
