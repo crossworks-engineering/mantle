@@ -46,4 +46,6 @@ export {
   listAllFolders,
   renamedFolderPath,
   renameFolderById,
+  FOLDER_NAME_MAX,
+  folderDisplayName,
 } from './ops/folders';

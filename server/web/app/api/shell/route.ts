@@ -5,6 +5,7 @@ import { loadPreferencesFor, logoVersion } from '@mantle/content';
 import { getOwnerOr401, mintAssetToken } from '@/lib/auth';
 import { isOnboarded } from '@/lib/onboarding';
 import { shellPart } from '@/lib/shell-part';
+import { TREE_LIVE_KINDS } from '@mantle/content/tree';
 
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 
@@ -97,6 +98,9 @@ export async function GET() {
     // The rail's starred screens: per LOGIN (the actor's row), so they follow
     // the person across browsers. [] when none are starred.
     navFavorites: personal.navFavorites ?? [],
+    // The kinds this brain serves as the item tree (/api/tree/:kind). A client
+    // shows the tree for these and its older list for the rest.
+    treeKinds: TREE_LIVE_KINDS,
     siteName: prefs.siteName ?? null,
     peerName: prefs.peerName ?? null,
     colorTheme: prefs.colorTheme ?? null,

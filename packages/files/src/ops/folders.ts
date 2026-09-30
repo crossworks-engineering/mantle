@@ -6,6 +6,8 @@
 
 import { and, eq, sql } from 'drizzle-orm';
 import {
+  assertFilesFolderDepth,
+  clampFilesFolderPath,
   dashToLtree,
   ensureDir,
   FILES_ROOT_LABEL,
@@ -19,14 +21,27 @@ import { isUniqueViolation, db, nodes } from '@mantle/db';
 import { folderCounts, folderRowFromNode, type FolderRow } from './shared';
 import { folderById } from './queries';
 
+/** Longest folder name people see (TREE_FOLDER_NAME_MAX in
+ *  @mantle/client-types/tree). */
+export const FOLDER_NAME_MAX = 60;
+
+/** A folder's display name: what the person typed, trimmed and capped. Its
+ *  slug (the path label and the disk name) is derived from it separately. */
+export function folderDisplayName(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').slice(0, FOLDER_NAME_MAX);
+}
+
 /**
- * Create a folder under `parentPath` with the given disk slug + description.
- * Throws if the parent isn't a host-mirrored branch or the slug collides.
+ * Create a folder under `parentPath`. `slug` names it on disk and in the path
+ * (slugified here); `name` is what people see, defaulting to the slug. Throws
+ * if the parent isn't a host-mirrored branch, the folder would sit deeper than
+ * three levels, or the slug collides.
  */
 export async function createFolder(args: {
   ownerId: string;
   parentPath: string;
   slug: string;
+  name?: string;
   description?: string;
 }): Promise<FolderRow> {
   if (!isFilesPath(args.parentPath)) {
@@ -38,6 +53,7 @@ export async function createFolder(args: {
   }
   const childLabel = dashToLtree(slug);
   const childPath = `${args.parentPath}.${childLabel}`;
+  assertFilesFolderDepth(childPath, 'createFolder');
 
   // Make sure parent ltree node exists (when parent is `files`, the
   // lazy root-creation handles it; deeper parents must already exist).
@@ -63,7 +79,7 @@ export async function createFolder(args: {
     .values({
       ownerId: args.ownerId,
       type: 'branch',
-      title: slug,
+      title: folderDisplayName(args.name ?? '') || slug,
       slug,
       path: childPath,
       data: {
@@ -178,43 +194,35 @@ export async function ensureExtractedImagesFolder(args: {
 /** Top-level folder holding every document's extracted pictures. */
 export const EXTRACTED_IMAGES_SLUG = 'extracted-images';
 
-/** How deep below `files` an agent may bring a folder chain into existence.
- *  Generous for real filing, short enough that a malformed path cannot walk a
- *  tree of empty folders into the store. */
-const MAX_ENSURED_DEPTH = 6;
-
 /**
  * Bring every missing folder on an ltree path under `files` into existence and
- * return the path. The `mkdir -p` every other writer here already performs for
- * itself — {@link ensureDatedUploadFolder} for uploads,
- * {@link ensureExtractedImagesFolder} for the extractor — lifted to one place so
- * an AGENT writing a file gets it too.
+ * return the path the caller should write into. The `mkdir -p` every other
+ * writer here already performs for itself ({@link ensureDatedUploadFolder} for
+ * uploads, {@link ensureExtractedImagesFolder} for the extractor) lifted to one
+ * place so an AGENT writing a file gets it too.
  *
  * Why it is needed: a skill can name a folder ("save the SVG under
  * `files/diagrams`") that nothing on a fresh brain ever creates, and `upsertFile`
  * refuses an absent parent. The agent then either fails or improvises a
  * different folder, and the artifact lands somewhere the instructions did not
- * intend — measured on the Draftsman, whose every first diagram errored and then
- * landed in the files ROOT instead.
+ * intend (measured on the Draftsman, whose every first diagram errored and then
+ * landed in the files ROOT instead).
  *
- * Deliberately narrow: `files` only (never a new top-level root), depth-capped,
- * and each segment must survive {@link slugifyFolder}, so a malformed path is
- * still an error rather than a tree of junk. Idempotent, and a concurrent create
- * loses the race harmlessly — same contract as the two helpers above.
+ * Folders nest at most FILES_MAX_FOLDER_DEPTH deep, so a deeper chain is cut
+ * back to its first three folders and the RETURNED path is where the file
+ * belongs. Deliberately narrow otherwise: `files` only (never a new top-level
+ * root), and each segment must survive {@link slugifyFolder}, so a malformed
+ * path is still an error rather than a tree of junk. Idempotent, and a
+ * concurrent create loses the race harmlessly, as with the two helpers above.
  */
 export async function ensureFolderPath(args: {
   ownerId: string;
   path: string;
   description?: string;
 }): Promise<string> {
-  const segments = args.path.split('.');
+  const segments = clampFilesFolderPath(args.path).split('.');
   if (segments[0] !== 'files') {
     throw new Error(`ensureFolderPath: '${args.path}' is not under 'files'`);
-  }
-  if (segments.length > MAX_ENSURED_DEPTH) {
-    throw new Error(
-      `ensureFolderPath: '${args.path}' is deeper than ${MAX_ENSURED_DEPTH} levels — create it deliberately with folder_create`,
-    );
   }
   let parent = 'files';
   for (const label of segments.slice(1)) {
@@ -246,7 +254,7 @@ export async function ensureFolderPath(args: {
     }
     parent = childPath;
   }
-  return args.path;
+  return parent;
 }
 
 export async function updateFolderDescription(args: {
@@ -412,7 +420,8 @@ export function renamedFolderPath(oldPath: string, newLabel: string): string {
 export async function renameFolderById(args: {
   ownerId: string;
   folderId: string;
-  /** New display name; slugified the same way createFolder does. */
+  /** The new name people see. Its slug (path label and disk name) is
+   *  derived the way createFolder derives one, and the directory follows. */
   newSlug: string;
 }): Promise<FolderRow | null> {
   const [node] = await db
@@ -425,13 +434,20 @@ export async function renameFolderById(args: {
     throw new Error('renameFolderById: cannot rename the files root');
   }
   const slug = slugifyFolder(args.newSlug);
-  if (!slug) throw new Error(`renameFolderById: invalid name '${args.newSlug}'`);
+  const name = folderDisplayName(args.newSlug);
+  if (!slug || !name) throw new Error(`renameFolderById: invalid name '${args.newSlug}'`);
   const newLabel = dashToLtree(slug);
   const oldPath = node.path;
   const newPath = renamedFolderPath(oldPath, newLabel);
   if (newPath === oldPath) {
-    const counts = await folderCounts(args.ownerId, oldPath);
-    return folderRowFromNode(node, counts.childFolderCount, counts.fileCount);
+    // Same slug ("acme" to "Acme"): only the name people see changes.
+    if (name !== node.title) {
+      await db
+        .update(nodes)
+        .set({ title: name, updatedAt: new Date() })
+        .where(eq(nodes.id, node.id));
+    }
+    return folderById({ ownerId: args.ownerId, folderId: args.folderId });
   }
 
   // Collision: another branch already at the target path. The
@@ -476,7 +492,7 @@ export async function renameFolderById(args: {
       const data = (node.data ?? {}) as Record<string, unknown>;
       await tx
         .update(nodes)
-        .set({ title: slug, slug, data: { ...data, slug }, updatedAt: new Date() })
+        .set({ title: name, slug, data: { ...data, slug }, updatedAt: new Date() })
         .where(eq(nodes.id, node.id));
     });
   } catch (err) {

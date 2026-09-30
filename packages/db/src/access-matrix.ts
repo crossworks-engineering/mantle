@@ -305,6 +305,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.team_notifications', 'system'),
   none('public.team_read_cursors', 'system'),
   none('public.assistant_read_cursors', 'system'),
+  // Per-login pins and opens of the item tree (docs/folder-tree.md). Owner
+  // paths only for now; members get their own when the tree reaches them.
+  none('public.item_marks'),
   none('public.sync_runs', 'system'),
   none('public.maintenance_runs', 'system'),
   none('public.heartbeat_fires', 'system'),

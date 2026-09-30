@@ -25,7 +25,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes, type Node } from '@mantle/db';
 import { moveFile as moveFileOnDisk, renameFolder as renameFolderOnDisk } from './disk';
-import { FILES_ROOT_LABEL } from './paths';
+import { FILES_MAX_FOLDER_DEPTH, FILES_ROOT_LABEL, filesFolderDepth } from './paths';
 import { reconcileFilesIndexing } from './indexing';
 import {
   createFolder,
@@ -133,6 +133,32 @@ export async function moveFileById(args: {
   return row!;
 }
 
+/** Refuse a move or copy that would put the folder's deepest subfolder more
+ *  than FILES_MAX_FOLDER_DEPTH below `files`. */
+async function assertSubtreeFits(
+  ownerId: string,
+  folderPath: string,
+  destParentPath: string,
+  op: string,
+): Promise<void> {
+  const [row] = await db
+    .select({ deepest: sql<number>`max(nlevel(${nodes.path}))::int` })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'branch'),
+        sql`${nodes.path} <@ ${folderPath}::ltree`,
+      ),
+    );
+  const span = (row?.deepest ?? 0) - folderPath.split('.').length + 1;
+  if (filesFolderDepth(destParentPath) + Math.max(span, 1) > FILES_MAX_FOLDER_DEPTH) {
+    throw new Error(
+      `${op}: '${folderPath}' would sit deeper than ${FILES_MAX_FOLDER_DEPTH} folder levels under '${destParentPath}'; move it higher up`,
+    );
+  }
+}
+
 /**
  * Move a FOLDER (and its whole subtree) under another parent. The folder
  * keeps its own name; only its location changes.
@@ -174,6 +200,7 @@ export async function moveFolderById(args: {
       `moveFolderById: cannot move '${oldPath}' into its own subtree ('${args.destParentPath}')`,
     );
   }
+  await assertSubtreeFits(args.ownerId, oldPath, args.destParentPath, 'moveFolderById');
   if (await branchAt(args.ownerId, newPath)) {
     throw new Error(
       `moveFolderById: a folder named '${label}' already exists under '${args.destParentPath}' — rename one of them first`,
@@ -302,6 +329,7 @@ export async function copyFolderById(args: {
       `copyFolderById: cannot copy '${node.path}' into its own subtree ('${args.destParentPath}')`,
     );
   }
+  await assertSubtreeFits(args.ownerId, node.path, args.destParentPath, 'copyFolderById');
   const label = node.path.split('.').at(-1)!;
   if (await branchAt(args.ownerId, `${args.destParentPath}.${label}`)) {
     throw new Error(

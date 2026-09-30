@@ -41,6 +41,35 @@ export function filesRoot(): string {
   return path.resolve(configured || DEFAULT_ROOT);
 }
 
+/** Folders nest at most this deep below `files`: folder › subfolder ›
+ *  sub-subfolder. The item tree's limit (TREE_MAX_DEPTH in
+ *  @mantle/client-types/tree; a content test pins the two together), and the
+ *  database refuses a deeper folder (migration 0199). */
+export const FILES_MAX_FOLDER_DEPTH = 3;
+
+/** How deep below `files` a path is: 0 for the root, 1 for a top folder. */
+export function filesFolderDepth(ltreePath: string): number {
+  return ltreePath.split('.').length - 1;
+}
+
+/** Cut a folder path back to its first FILES_MAX_FOLDER_DEPTH folders: a
+ *  deeper chain lands in its third folder instead of failing. */
+export function clampFilesFolderPath(ltreePath: string): string {
+  return ltreePath
+    .split('.')
+    .slice(0, FILES_MAX_FOLDER_DEPTH + 1)
+    .join('.');
+}
+
+/** Throw a readable error when a folder at `ltreePath` would sit too deep. */
+export function assertFilesFolderDepth(ltreePath: string, op: string): void {
+  if (filesFolderDepth(ltreePath) > FILES_MAX_FOLDER_DEPTH) {
+    throw new Error(
+      `${op}: '${ltreePath}' is deeper than ${FILES_MAX_FOLDER_DEPTH} folder levels; folders nest folder, subfolder, sub-subfolder`,
+    );
+  }
+}
+
 /**
  * Is this ltree path inside the host-mirrored `files` subtree?
  * Accepts the root itself ('files') and any descendant ('files.x.y').

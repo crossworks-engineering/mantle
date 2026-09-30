@@ -23,7 +23,8 @@
     "./table-storage": "./src/table-storage.ts",
     "./formula-to-text": "./src/formula-to-text.ts",
     "./formulas": "./src/formulas.ts",
-    "./calculate": "./src/calculate.ts"
+    "./calculate": "./src/calculate.ts",
+    "./tree": "./src/tree/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

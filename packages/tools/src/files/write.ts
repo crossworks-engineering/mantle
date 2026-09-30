@@ -58,10 +58,11 @@ export const file_create: BuiltinToolDef = {
       // `files/diagrams` was one), and refusing sent the agent off to file the
       // artifact somewhere the instructions never meant. Capped and confined to
       // `files` inside the helper, so a malformed path is still an error.
-      await ensureFolderPath({ ownerId: ctx.ownerId, path: parentPath });
+      // Folders nest three deep: a deeper path lands in its third folder.
+      const folderPath = await ensureFolderPath({ ownerId: ctx.ownerId, path: parentPath });
       const row = await upsertFile({
         ownerId: ctx.ownerId,
-        parentPath,
+        parentPath: folderPath,
         filename,
         bytes: Buffer.from(content, 'utf8'),
         overwrite: bool(input.overwrite),
@@ -77,7 +78,7 @@ export const file_create: BuiltinToolDef = {
         nodeId: row.id,
         summary: `File created by tool: ${row.filename}`,
         payload: {
-          parentPath,
+          parentPath: folderPath,
           filename: row.filename,
           mimeType: row.mimeType,
           sizeBytes: row.sizeBytes,
