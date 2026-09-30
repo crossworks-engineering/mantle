@@ -19,8 +19,8 @@
  * asked for this act in this conversation. Nothing here is auto-confirmed.
  */
 
-import { and, asc, eq, isNotNull } from 'drizzle-orm';
-import { db, recallMaps, recallNodes } from '@mantle/db';
+import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
+import { db, recallMaps, recallNodes, recallRevisions } from '@mantle/db';
 import {
   RecallWriteError,
   confirmRecallPrompt,
@@ -123,7 +123,8 @@ const recall_pending: BuiltinToolDef = {
             eq(recallMaps.published, false),
             isNotNull(recallMaps.nodeId),
           ),
-        );
+        )
+        .orderBy(desc(recallMaps.updatedAt));
       const prompts = await db
         .select({
           map: recallMaps.slug,
@@ -136,6 +137,8 @@ const recall_pending: BuiltinToolDef = {
         .from(recallNodes)
         .innerJoin(recallMaps, eq(recallMaps.id, recallNodes.mapId))
         .where(and(eq(recallNodes.ownerId, ctx.ownerId), eq(recallNodes.promptPending, true)))
+        // Newest first, so the cut at 50 keeps what changed most recently.
+        .orderBy(desc(recallNodes.updatedAt))
         .limit(50);
       return {
         ok: true,
@@ -412,8 +415,16 @@ const recall_revision_restore: BuiltinToolDef = {
       if (!/^[0-9a-f-]{36}$/i.test(id)) {
         return { ok: false, error: 'revision_id is the id of one row from recall_revisions.' };
       }
+      // The map it belongs to, for the answer (and a teaching miss when the
+      // id is not one of this owner's revisions).
+      const [owning] = await db
+        .select({ slug: recallMaps.slug })
+        .from(recallRevisions)
+        .innerJoin(recallMaps, eq(recallMaps.id, recallRevisions.mapId))
+        .where(and(eq(recallRevisions.ownerId, ctx.ownerId), eq(recallRevisions.id, id)))
+        .limit(1);
       const res = await restoreRecallRevision(ctx.ownerId, id, OWNER_VIA_MCP);
-      return written('', res, { restored: id });
+      return written(owning?.slug ?? '', res, { restored: id });
     }),
 };
 

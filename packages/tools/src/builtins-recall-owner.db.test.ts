@@ -200,7 +200,7 @@ describe.skipIf(!URL)('the Recall owner tools over MCP, on Postgres', () => {
     expect(await cards()).toEqual(['start', 'second', 'deploy']);
     const reordered = (await revisionsOf(map)).find((r) => r.summary === 'cards reordered')!;
     const undo = await call('recall_revision_restore', { revision_id: reordered.id });
-    expect(undo.ok).toBe(true);
+    expect(undo.output).toMatchObject({ map, restored: reordered.id });
     expect(await cards()).toEqual(['start', 'deploy', 'second']);
   });
 
