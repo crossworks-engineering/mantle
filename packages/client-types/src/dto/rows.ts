@@ -175,6 +175,11 @@ export type AppRow = {
   isHub: boolean;
   /** Access level (admin > team > client > public); the owner UI's badge. */
   audience: AccessLevel;
+  /** Informational (client logins C6): members and clients only read the
+   *  app's data. Off, an app at team or client level is a shared workspace
+   *  everyone who runs it writes. Set with PATCH /api/apps/:id
+   *  `{ dataReadOnly }`. Absent from an older brain: read as false. */
+  dataReadOnly?: boolean;
   createdAt: string;
   updatedAt: string;
 };

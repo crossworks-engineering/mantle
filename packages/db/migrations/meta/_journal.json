@@ -1387,6 +1387,13 @@
       "when": 1790018100000,
       "tag": "0197_client_sourced_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 198,
+      "version": "7",
+      "when": 1790018160000,
+      "tag": "0198_app_data_read_only",
+      "breakpoints": true
     }
   ]
 }

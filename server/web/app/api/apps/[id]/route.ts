@@ -1,5 +1,6 @@
 /**
  * /api/apps/[id] — get (GET), update metadata (PATCH), delete (DELETE).
+ * PATCH also sets the informational flag (`dataReadOnly`, client logins C6).
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
@@ -23,6 +24,9 @@ const PatchBody = z.object({
   // A tint key, or null to clear back to the neutral tile.
   color: z.enum(APP_TINTS).nullable().optional(),
   tags: z.array(z.string().max(40)).max(20).optional(),
+  // Informational (client logins C6): members and clients only read the
+  // app's data. This route (admin only) is its one writer.
+  dataReadOnly: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {

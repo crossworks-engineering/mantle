@@ -171,6 +171,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
       'manifest',
       'published_build',
       'version',
+      // The informational flag (0198): the member and client app lookups
+      // read it on their roles.
+      'data_read_only',
       'created_at',
       'updated_at',
     ],

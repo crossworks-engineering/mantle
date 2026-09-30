@@ -137,6 +137,11 @@ export {
   MEMBER_APP_REFUSED_SLUGS,
   type MemberAppToolVerdict,
 } from './member-app-tools';
+export {
+  clientAppToolVerdict,
+  CLIENT_APP_TOOL_SLUGS,
+  type ClientAppToolVerdict,
+} from './client-app-tools';
 export { surfaceHiddenNodeTypes, HIDDEN_NODE_ERROR } from './team-visibility';
 export { isOwnerSurface, OWNER_ONLY_ERROR, type ToolSurface } from './surface';
 export type { OwnerSurfaceVia } from './types';

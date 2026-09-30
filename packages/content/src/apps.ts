@@ -97,6 +97,8 @@ type SidecarCols = {
   shareSettings: Record<string, unknown> | null;
   /** prefs.teamHubAppId — resolved once per query, compared per row. */
   hubAppId: string | null;
+  /** apps.data_read_only: informational (client logins C6). */
+  dataReadOnly: boolean;
 };
 
 function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
@@ -119,6 +121,7 @@ function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
     shareMode: s.shareSettings ? 'public' : null,
     isHub: s.hubAppId != null && s.hubAppId === n.id,
     audience: asViewerLevel(n.audience),
+    dataReadOnly: s.dataReadOnly === true,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
@@ -204,6 +207,7 @@ export async function listApps(
         manifest: apps.manifest,
         draftSource: apps.draftSource,
         publishedBuild: apps.publishedBuild,
+        dataReadOnly: apps.dataReadOnly,
         shareSettings: shares.settings,
       })
       .from(nodes)
@@ -223,6 +227,7 @@ export async function listApps(
       publishedBuild: r.publishedBuild ?? null,
       shareSettings: r.shareSettings ?? null,
       hubAppId,
+      dataReadOnly: r.dataReadOnly === true,
     }),
   );
 }
@@ -258,6 +263,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
         manifest: apps.manifest,
         draftBuild: apps.draftBuild,
         publishedBuild: apps.publishedBuild,
+        dataReadOnly: apps.dataReadOnly,
         shareSettings: shares.settings,
       })
       .from(nodes)
@@ -276,6 +282,7 @@ async function loadDetail(ownerId: string, id: string): Promise<AppDetail | null
     publishedBuild: row.publishedBuild ?? null,
     shareSettings: row.shareSettings ?? null,
     hubAppId: prefs.teamHubAppId ?? null,
+    dataReadOnly: row.dataReadOnly === true,
   });
 }
 
@@ -332,6 +339,7 @@ export async function createApp(ownerId: string, input: CreateAppInput): Promise
       // A just-created app has no share and can't be the designated hub.
       shareSettings: null,
       hubAppId: null,
+      dataReadOnly: false,
     });
   });
 }
@@ -343,6 +351,9 @@ export type UpdateAppInput = Partial<{
   /** null clears back to the neutral tint. */
   color: AppTint | null;
   tags: string[];
+  /** Informational (client logins C6): members and clients only read the
+   *  app's data. The owner's app update route is its one writer. */
+  dataReadOnly: boolean;
 }>;
 
 export async function updateAppMeta(
@@ -378,6 +389,12 @@ export async function updateAppMeta(
       updatedAt: new Date(),
     })
     .where(eq(nodes.id, id));
+  if (input.dataReadOnly !== undefined) {
+    await db
+      .update(apps)
+      .set({ dataReadOnly: input.dataReadOnly, updatedAt: new Date() })
+      .where(eq(apps.nodeId, id));
+  }
   return loadDetail(ownerId, id);
 }
 

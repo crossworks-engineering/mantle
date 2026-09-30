@@ -50,7 +50,23 @@ export type MemberRunnableApp = {
   audience: ViewerLevel;
   manifest: AppManifest;
   publishedBuild: BuildRef;
+  /** apps.data_read_only: the app is informational (client logins C6). */
+  dataReadOnly: boolean;
 };
+
+/**
+ * May a member WRITE this app's database (client logins C6, Jason's rule of
+ * 2026-09-30)? An app at team or client level is a shared workspace: every
+ * member who runs it writes it, unless an admin marked it informational. A
+ * public app stays read only for members, so nothing a member writes shows
+ * to anonymous visitors (decided 2026-09-27).
+ */
+export function memberMayWriteAppData(app: {
+  audience: ViewerLevel;
+  dataReadOnly: boolean;
+}): boolean {
+  return (app.audience === 'team' || app.audience === 'client') && !app.dataReadOnly;
+}
 
 const publishedGreen = sql`(${apps.publishedBuild}->>'ok')::boolean is true`;
 
@@ -73,6 +89,7 @@ export async function listMemberApps(anchorId: string): Promise<MemberAppCard[]>
       audience: nodes.audience,
       updatedAt: nodes.updatedAt,
       manifest: apps.manifest,
+      dataReadOnly: apps.dataReadOnly,
     })
     .from(nodes)
     .innerJoin(apps, eq(apps.nodeId, nodes.id))
@@ -94,6 +111,10 @@ export async function listMemberApps(anchorId: string): Promise<MemberAppCard[]>
         description: typeof description === 'string' && description.trim() ? description : null,
         audience: r.audience,
         updatedAt: r.updatedAt.toISOString(),
+        dataReadOnly: !memberMayWriteAppData({
+          audience: r.audience,
+          dataReadOnly: r.dataReadOnly === true,
+        }),
       },
     ];
   });
@@ -113,6 +134,7 @@ export async function getMemberRunnableApp(
       audience: nodes.audience,
       manifest: apps.manifest,
       publishedBuild: apps.publishedBuild,
+      dataReadOnly: apps.dataReadOnly,
     })
     .from(nodes)
     .innerJoin(apps, eq(apps.nodeId, nodes.id))
@@ -128,6 +150,7 @@ export async function getMemberRunnableApp(
     audience: asViewerLevel(row.audience),
     manifest: (row.manifest ?? {}) as AppManifest,
     publishedBuild: row.publishedBuild,
+    dataReadOnly: row.dataReadOnly === true,
   };
 }
 

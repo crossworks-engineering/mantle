@@ -81,6 +81,13 @@ export function isBuiltinSpending(slug: string): boolean {
   return REGISTRY.get(slug)?.spends === true;
 }
 
+/** Is this builtin owner only (`ownerOnly`)? Unknown slugs answer false;
+ *  the client app broker also refuses anything that is not a known
+ *  read-only builtin. */
+export function isBuiltinOwnerOnly(slug: string): boolean {
+  return REGISTRY.get(slug)?.ownerOnly === true;
+}
+
 /** Every registered builtin currently marked read-only, sorted. Used by the
  *  drift test and by `tool_catalog`-style introspection — NOT by the turn
  *  path, which filters the agent's own resolved allowlist through

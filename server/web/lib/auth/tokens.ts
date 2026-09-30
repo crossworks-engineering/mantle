@@ -336,19 +336,27 @@ const APP_FRAME_TICKET_TTL_SECONDS = 120;
 
 /** Mint an app-frame ticket. `shareId` set ⇒ share surface (published build
  *  only); `loginId` set ⇒ member surface (a member login, published build
- *  only, /api/member/apps/:id/frame); neither ⇒ owner surface (`uid` = the
- *  owner, draft build allowed). `loginId` lets the member frame route
- *  re-check the login's liveness: a removed member loses access at once,
- *  not at ticket expiry. */
+ *  only, /api/member/apps/:id/frame); `loginId` AND `clientEpoch` set ⇒
+ *  client surface (a client login, published build only,
+ *  /api/client/apps/:id/frame, client logins C6); none ⇒ owner surface
+ *  (`uid` = the owner, draft build allowed). `loginId` lets the member and
+ *  client frame routes re-check the login's liveness: a removed member loses
+ *  access at once, not at ticket expiry. `clientEpoch` is the client login's
+ *  session epoch at mint time: Sign out, End sessions and Disable bump it,
+ *  and the client frame refuses a ticket of an older epoch. A client ticket
+ *  still carries `mem`, so every frame that refuses a login ticket (owner,
+ *  share) refuses a client's too. */
 export function buildAppFrameTicket(opts: {
   ownerId: string;
   appId: string;
   shareId?: string;
   loginId?: string;
+  clientEpoch?: number;
 }): string {
   const claims: Record<string, unknown> = { uid: opts.ownerId, app: opts.appId, k: 'f' };
   if (opts.shareId) claims.sh = opts.shareId;
   if (opts.loginId) claims.mem = opts.loginId;
+  if (opts.loginId && opts.clientEpoch !== undefined) claims.cep = opts.clientEpoch;
   return signClaims(claims, APP_FRAME_TICKET_TTL_SECONDS).value;
 }
 
@@ -361,8 +369,13 @@ export type AppFrameTicket = {
   ownerId: string;
   appId: string;
   shareId?: string;
-  /** A member login's ticket: only the member frame route may accept it. */
+  /** A member login's ticket: only the member frame route may accept it.
+   *  Also set on a client's ticket (with `clientEpoch`). */
   loginId?: string;
+  /** A CLIENT login's ticket (client logins C6): the login's session epoch
+   *  at mint time. Only the client frame route accepts it; the member frame
+   *  refuses a ticket that carries it. */
+  clientEpoch?: number;
 };
 
 export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
@@ -371,6 +384,16 @@ export function verifyAppFrameTicket(value: string): AppFrameTicket | null {
   const out: AppFrameTicket = { ownerId: claims.uid, appId: claims.app };
   if (typeof claims.sh === 'string') out.shareId = claims.sh;
   if (typeof claims.mem === 'string') out.loginId = claims.mem;
+  if (
+    typeof claims.cep === 'number' &&
+    Number.isSafeInteger(claims.cep) &&
+    claims.cep >= 0 &&
+    out.loginId
+  ) {
+    out.clientEpoch = claims.cep;
+  } else if (claims.cep !== undefined) {
+    return null;
+  }
   return out;
 }
 

@@ -1,10 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
-import { recordAppAccess } from '@mantle/content';
+import { memberMayWriteAppData, recordAppAccess } from '@mantle/content';
 import { appDbExec, appDbQuery } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
 import { errorMessage } from '@mantle/std';
 import { getMemberOr401 } from '@/lib/auth';
 import { AppDbBody, appDbBodyError } from '@/lib/app-db-broker-body';
+import { readOnlyAppResponse } from '@/lib/client-apps';
 import { memberAppOr404 } from '@/lib/member-apps';
 import { readJsonCapped } from '@/lib/body-limit';
 import { rateLimit } from '@/lib/rate-limit';
@@ -13,11 +14,15 @@ import { rateLimit } from '@/lib/rate-limit';
  * POST /api/member/apps/:id/db-broker: a member's run of an app calls
  * host.db.query / host.db.exec on the app's own SQLite (member logins Phase
  * 4b). Row security does not reach SQLite, so the audience check is explicit
- * (memberAppOr404: team level or lower, published). Only a TEAM-level app
- * takes writes, as team-mode shares do; a client- or public-level app is
- * read-only for members, so nothing a member writes shows to anonymous
- * visitors of a public app (decided 2026-09-27). App data is shared per app,
- * not per member (v1): every member reads and writes the same database.
+ * (memberAppOr404: team level or lower, published). An app at team or
+ * client level is a shared workspace (Jason's rule, 2026-09-30; client
+ * logins C6): every member who runs it writes it, unless an admin marked it
+ * informational (`dataReadOnly`), and then a write answers 403
+ * `reason: 'read-only'` (memberMayWriteAppData). A public app stays read-only
+ * for members, so nothing a member writes shows to anonymous visitors
+ * (decided 2026-09-27). App data is shared per app, not per member (v1):
+ * every member, and on a client app every client login, reads and writes the
+ * same database.
  *
  * The SQLite work runs on the admin pool: it writes the app's database
  * registry rows, which the team role cannot.
@@ -42,7 +47,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (app instanceof Response) return app;
 
   const { op, sql, params } = parsed.data;
-  if (op === 'exec' && app.audience !== 'team') {
+  if (op === 'exec' && !memberMayWriteAppData(app)) {
     recordAppAccess({
       ownerId: member.anchorId,
       appNodeId: app.id,
@@ -50,10 +55,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       kind: 'db',
       detail: { via: 'member', op, refused: 'read-only' },
     });
-    return NextResponse.json(
-      { ok: false, error: 'This app is read-only for team members.' },
-      { status: 403 },
-    );
+    return readOnlyAppResponse('This app is read-only for team members.');
   }
   recordAppAccess({
     ownerId: member.anchorId,

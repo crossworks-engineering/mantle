@@ -47,6 +47,8 @@ function makeApp() {
   app.get('/api/apps/a1/bundle', (c) => c.text('js'));
   app.get('/api/member/apps/a1/frame', (c) => c.text('<!doctype html>'));
   app.post('/api/member/apps/a1/tool-broker', (c) => c.json({ ok: true }));
+  app.get('/api/client/apps/a1/frame', (c) => c.text('<!doctype html>'));
+  app.post('/api/client/apps/a1/db-broker', (c) => c.json({ ok: true }));
   app.get('/settings', (c) => c.text('page'));
   app.get('/print/pages/p1', (c) => c.text('print page'));
   app.get('/print/draws/d1', (c) => c.text('print draw'));
@@ -173,6 +175,19 @@ describe('gate: session & bearer', () => {
     expect((await app.request(`/api/member/apps/a1/frame?t=${t}`, post)).status).toBe(401);
     const asset = mint({ exp: future(), k: 'a' });
     expect((await app.request(`/api/member/apps/a1/frame?t=${asset}`)).status).toBe(401);
+  });
+
+  it('accepts a ?t= frame ticket on the client frame path, GET only, nothing else there', async () => {
+    const app = makeApp();
+    const t = mint({ exp: future(), k: 'f' });
+    expect((await app.request(`/api/client/apps/a1/frame?t=${t}`)).status).toBe(200);
+    // The ticket opens the frame document, never a client broker.
+    const post = { method: 'POST' };
+    expect((await app.request(`/api/client/apps/a1/db-broker?t=${t}`, post)).status).toBe(401);
+    expect((await app.request(`/api/client/apps/a1/frame?t=${t}`, post)).status).toBe(401);
+    const asset = mint({ exp: future(), k: 'a' });
+    expect((await app.request(`/api/client/apps/a1/frame?t=${asset}`)).status).toBe(401);
+    expect((await app.request('/api/client/apps/a1/frame')).status).toBe(401);
   });
 
   it("accepts a render cookie only on the render surfaces and their byte routes, GET only, kind 'r' only", async () => {
