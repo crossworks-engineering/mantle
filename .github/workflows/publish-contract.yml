@@ -171,8 +171,15 @@ jobs:
           if [ -n "$NPM_TOKEN" ]; then echo "have=true" >> "$GITHUB_OUTPUT";
           else echo "have=false" >> "$GITHUB_OUTPUT"; echo "::notice::NPM_TOKEN not set, skipping contract publish"; fi
 
+      # Fails unless every package is visible on the registry afterwards.
+      # "✅ Published" from pnpm only means npm ACCEPTED the upload; the
+      # v0.232.354 versions took ~27 minutes to reach `npm view`, and the run
+      # was green while jackdaw could not install them. The script polls
+      # `npm view <pkg>@<ver>` for up to 40 min (PUBLISH_VERIFY_TIMEOUT_S), so
+      # this step can sit waiting on a slow registry: that is the check working.
       - name: Publish contract packages
         if: steps.token.outputs.have == 'true'
+        timeout-minutes: 50
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: node scripts/publish-contract.mjs "${{ inputs.tag || github.ref_name }}"
