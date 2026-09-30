@@ -4,6 +4,31 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.354: the universal folder system, phases 2 to 5
+
+- **One folder tree for every item kind** (docs/folder-tree.md). Notes,
+  drawings, tables, formulas, tasks, events, contacts and secrets join
+  Files on the tree (phase 2); Apps' layout document becomes folder rows,
+  with pins and opens in `item_marks` (phase 3). Agents get folder tools
+  for every row-only kind.
+- **Share a folder** with the team or clients: everything in it, now and
+  later, is read at that level (phase 4, migration 0204). A write that
+  changes who can see something asks first (409 `visibility` until
+  confirmed). Access control says "Shared via" the folder. Members and
+  clients browse read-only trees of what they may read; folder-shared items
+  reach the member Library, the client's "Shared with you", redaction,
+  images and apps; the owner's gates count folder shares. Clients comment
+  on folder-shared items (migration 0205).
+- **Members file drafts in place** (phase 5): private folders of their own
+  inside any folder they see, new drafts and uploads filed there, a merged
+  tree with their drafts and teammates' shared drafts. Brain folder renames,
+  moves and deletes carry members' drafts along. **Accept claims in place**:
+  a draft lands where its author filed it, the author's folders becoming
+  brain folders; the admin may pick another folder.
+- Migrations 0204 (folder sharing; the Recall root joins the folder depth
+  check) and 0205 (the client thread on folder-shared items) run after
+  main's 0201 to 0203. Pairs with jackdaw's folder phases 2 to 5.
+
 ## 0.232.351: client v0.6.180 (whole client tier audit)
 
 - Pairs the client at jackdaw v0.6.180, the client half of 0.232.350.
