@@ -35,17 +35,16 @@ export type ShareDriftResult = {
 };
 
 /** The edges the stored data gives: pages, drawings and notes. */
-const EXPECTED = sql`(select x.from_id, x.to_id from (
+const EXPECTED = sql`(
     select p.node_id as from_id, t as to_id from pages p
-     cross join lateral unnest(mantle_page_embed_ids(p.doc)) t
+     cross join lateral unnest(mantle_embed_targets(p.node_id, mantle_page_embed_refs(p.doc))) t
     union
     select d.node_id, t from draws d
-     cross join lateral unnest(mantle_draw_embed_ids(d.file_refs)) t
+     cross join lateral unnest(mantle_embed_targets(d.node_id, mantle_draw_embed_refs(d.file_refs))) t
     union
     select n.id, t from nodes n
-     cross join lateral unnest(mantle_note_embed_ids(n.data->>'content')) t
-     where n.type = 'note' and n.data ? 'content') x
-   where x.to_id <> x.from_id and exists (select 1 from nodes t where t.id = x.to_id))`;
+     cross join lateral unnest(mantle_embed_targets(n.id, mantle_note_embed_refs(n.data->>'content'))) t
+     where n.type = 'note' and jsonb_typeof(n.data) = 'object' and n.data ? 'content')`;
 
 /** The rows whose embedded level can be wrong: those that hold one, or
  *  that something embeds. */

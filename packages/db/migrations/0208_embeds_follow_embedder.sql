@@ -20,7 +20,12 @@
 --        (`[..](media:id)`), as noteEmbedIds reads the markdown. Images are
 --        counted wherever the note shows them (a heading or a table cell
 --        too), a little more than noteEmbedIds lists: the reader sees them.
---    Only ids of existing rows (the foreign keys); a self-embed is dropped.
+--    An edge is kept to any existing row the reference names, whatever its
+--    kind (Jason, 2026-09-30: a shared folder shares everything in it, and
+--    what its items embed, for simplicity; teams and clients are of the same
+--    admin owner). The type ceiling still holds: only workspace kinds ever
+--    take an embedded level, so a secret, task, email, contact or journal
+--    named by an embed opens nothing. A self-embed is dropped.
 -- 2. nodes.embedded_level (team, client or null): the most open
 --    inherited_level among the owner's rows that reach this row through
 --    embeds, transitively (a note embeds a drawing that embeds an image).
@@ -90,9 +95,11 @@ CREATE TABLE IF NOT EXISTS "public"."node_embeds" (
 CREATE INDEX IF NOT EXISTS "node_embeds_to_idx" ON "public"."node_embeds" ("to_id");
 --> statement-breakpoint
 
--- What a page doc embeds (referencedEmbedIds).
-CREATE OR REPLACE FUNCTION "public"."mantle_page_embed_ids"(doc jsonb)
-  RETURNS uuid[] LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+-- What a page doc embeds (referencedEmbedIds), as 'kind:uuid': an image's
+-- or page image's nodeId is a file and its drawId a drawing, a file embed's
+-- nodeId a file, a child page card's pageId a page.
+CREATE OR REPLACE FUNCTION "public"."mantle_page_embed_refs"(doc jsonb)
+  RETURNS text[] LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
   WITH RECURSIVE w(n) AS (
     SELECT doc WHERE jsonb_typeof(doc) = 'object'
     UNION ALL
@@ -101,32 +108,36 @@ CREATE OR REPLACE FUNCTION "public"."mantle_page_embed_ids"(doc jsonb)
                                 THEN w.n->'content' ELSE '[]'::jsonb END) c
      WHERE jsonb_typeof(c) = 'object'
   )
-  SELECT coalesce(array_agg(DISTINCT lower(v)::uuid), '{}'::uuid[])
+  SELECT coalesce(array_agg(DISTINCT r.kind || ':' || lower(r.v)), '{}'::text[])
     FROM w
-   CROSS JOIN LATERAL unnest(CASE w.n->>'type'
-       WHEN 'image' THEN ARRAY[w.n->'attrs'->>'nodeId', w.n->'attrs'->>'drawId']
-       WHEN 'pageImage' THEN ARRAY[w.n->'attrs'->>'nodeId', w.n->'attrs'->>'drawId']
-       WHEN 'fileEmbed' THEN ARRAY[w.n->'attrs'->>'nodeId']
-       WHEN 'childPage' THEN ARRAY[w.n->'attrs'->>'pageId']
-       ELSE ARRAY[]::text[] END) v
-   WHERE v ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+   CROSS JOIN LATERAL (
+     SELECT CASE WHEN jsonb_typeof(w.n->'attrs') = 'object' THEN w.n->'attrs' END AS a
+   ) at
+   CROSS JOIN LATERAL (VALUES
+       ('file', CASE WHEN w.n->>'type' IN ('image', 'pageImage', 'fileEmbed')
+                     THEN at.a->>'nodeId' END),
+       ('draw', CASE WHEN w.n->>'type' IN ('image', 'pageImage') THEN at.a->>'drawId' END),
+       ('page', CASE WHEN w.n->>'type' = 'childPage' THEN at.a->>'pageId' END)
+   ) r(kind, v)
+   WHERE r.v ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 $$;
 --> statement-breakpoint
 
--- What a drawing embeds: every file in its file map (drawEmbedIds).
-CREATE OR REPLACE FUNCTION "public"."mantle_draw_embed_ids"(refs jsonb)
-  RETURNS uuid[] LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
-  SELECT coalesce(array_agg(DISTINCT lower(e.value #>> '{}')::uuid), '{}'::uuid[])
+-- What a drawing embeds (drawEmbedIds): every file in its file map.
+CREATE OR REPLACE FUNCTION "public"."mantle_draw_embed_refs"(refs jsonb)
+  RETURNS text[] LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT coalesce(array_agg(DISTINCT 'file:' || lower(e.value #>> '{}')), '{}'::text[])
     FROM jsonb_each(CASE WHEN jsonb_typeof(refs) = 'object' THEN refs ELSE '{}'::jsonb END) e
    WHERE jsonb_typeof(e.value) = 'string'
      AND (e.value #>> '{}') ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 $$;
 --> statement-breakpoint
 
--- What a note's markdown embeds (noteEmbedIds): images outside code, and a
--- file link alone in its paragraph.
-CREATE OR REPLACE FUNCTION "public"."mantle_note_embed_ids"(md text)
-  RETURNS uuid[] LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $$
+-- What a note's markdown embeds (noteEmbedIds): images outside code
+-- (`media:` a file, `draw:` a drawing), and a file link alone in its
+-- paragraph (a file).
+CREATE OR REPLACE FUNCTION "public"."mantle_note_embed_refs"(md text)
+  RETURNS text[] LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $$
 DECLARE
   uuid_re constant text := '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
   lines text[];
@@ -135,7 +146,7 @@ DECLARE
   body text;
   fence text := NULL;
   m text[];
-  found uuid[] := '{}';
+  found text[] := '{}';
 BEGIN
   IF md IS NULL OR md = '' THEN
     RETURN found;
@@ -158,14 +169,14 @@ BEGIN
       CONTINUE;
     END IF;
     body := regexp_replace(line, '`[^`]*`', '', 'g');
-    FOR m IN SELECT regexp_matches(body, '!\[[^\]]*\]\((?:media|draw):(' || uuid_re || ')\)', 'g') LOOP
-      found := found || lower(m[1])::uuid;
+    FOR m IN SELECT regexp_matches(body, '!\[[^\]]*\]\((media|draw):(' || uuid_re || ')\)', 'g') LOOP
+      found := found || ((CASE m[1] WHEN 'media' THEN 'file' ELSE 'draw' END) || ':' || lower(m[2]));
     END LOOP;
     m := regexp_match(body, '^\s*\[[^\]]*\]\(media:(' || uuid_re || ')\)\s*$');
     IF m IS NOT NULL
        AND (i = 1 OR lines[i - 1] ~ '^\s*$')
        AND (i = n OR lines[i + 1] ~ '^\s*$') THEN
-      found := found || lower(m[1])::uuid;
+      found := found || ('file:' || lower(m[1]));
     END IF;
   END LOOP;
   RETURN ARRAY(SELECT DISTINCT unnest(found));
@@ -290,6 +301,19 @@ END
 $$;
 --> statement-breakpoint
 
+-- The existing rows `refs` ('kind:uuid', the kind the editor placed) name,
+-- `f` itself left out: what an embed reaches, whatever the row's type. The
+-- kind is kept for the parity test and a reader of the SQL, not as a filter
+-- (see the top); the type ceiling is the refresh's (mantle_open_embedded).
+CREATE OR REPLACE FUNCTION "public"."mantle_embed_targets"(f uuid, refs text[])
+  RETURNS uuid[] LANGUAGE sql STABLE AS $$
+  SELECT coalesce(array_agg(DISTINCT x.id), '{}'::uuid[])
+    FROM unnest(coalesce(refs, '{}'::text[])) r
+    JOIN "public"."nodes" x ON x.id = split_part(r, ':', 2)::uuid
+   WHERE x.id <> f
+$$;
+--> statement-breakpoint
+
 -- Make a row's edges what its data says.
 CREATE OR REPLACE FUNCTION "public"."mantle_sync_embeds"(f uuid, ids uuid[])
   RETURNS void LANGUAGE sql
@@ -307,7 +331,8 @@ CREATE OR REPLACE FUNCTION "public"."mantle_pages_embeds_trg"()
   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = public, pg_temp AS $$
 BEGIN
-  PERFORM "public"."mantle_sync_embeds"(NEW.node_id, "public"."mantle_page_embed_ids"(NEW.doc));
+  PERFORM "public"."mantle_sync_embeds"(
+    NEW.node_id, "public"."mantle_embed_targets"(NEW.node_id, "public"."mantle_page_embed_refs"(NEW.doc)));
   RETURN NULL;
 END
 $$;
@@ -317,7 +342,8 @@ CREATE OR REPLACE FUNCTION "public"."mantle_draws_embeds_trg"()
   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = public, pg_temp AS $$
 BEGIN
-  PERFORM "public"."mantle_sync_embeds"(NEW.node_id, "public"."mantle_draw_embed_ids"(NEW.file_refs));
+  PERFORM "public"."mantle_sync_embeds"(
+    NEW.node_id, "public"."mantle_embed_targets"(NEW.node_id, "public"."mantle_draw_embed_refs"(NEW.file_refs)));
   RETURN NULL;
 END
 $$;
@@ -327,7 +353,8 @@ CREATE OR REPLACE FUNCTION "public"."mantle_notes_embeds_trg"()
   RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
   SET search_path = public, pg_temp AS $$
 BEGIN
-  PERFORM "public"."mantle_sync_embeds"(NEW.id, "public"."mantle_note_embed_ids"(NEW.data->>'content'));
+  PERFORM "public"."mantle_sync_embeds"(
+    NEW.id, "public"."mantle_embed_targets"(NEW.id, "public"."mantle_note_embed_refs"(NEW.data->>'content')));
   RETURN NULL;
 END
 $$;
@@ -485,21 +512,18 @@ CREATE TRIGGER "nodes_embed_reach_after"
 -- they mostly return at once).
 INSERT INTO "public"."node_embeds" (from_id, to_id)
 SELECT p.node_id, t FROM "public"."pages" p
- CROSS JOIN LATERAL unnest("public"."mantle_page_embed_ids"(p.doc)) t
- WHERE t <> p.node_id AND EXISTS (SELECT 1 FROM "public"."nodes" x WHERE x.id = t)
+ CROSS JOIN LATERAL unnest("public"."mantle_embed_targets"(p.node_id, "public"."mantle_page_embed_refs"(p.doc))) t
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 INSERT INTO "public"."node_embeds" (from_id, to_id)
 SELECT d.node_id, t FROM "public"."draws" d
- CROSS JOIN LATERAL unnest("public"."mantle_draw_embed_ids"(d.file_refs)) t
- WHERE t <> d.node_id AND EXISTS (SELECT 1 FROM "public"."nodes" x WHERE x.id = t)
+ CROSS JOIN LATERAL unnest("public"."mantle_embed_targets"(d.node_id, "public"."mantle_draw_embed_refs"(d.file_refs))) t
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 INSERT INTO "public"."node_embeds" (from_id, to_id)
 SELECT n.id, t FROM "public"."nodes" n
- CROSS JOIN LATERAL unnest("public"."mantle_note_embed_ids"(n.data->>'content')) t
- WHERE n.type = 'note' AND n.data ? 'content'
-   AND t <> n.id AND EXISTS (SELECT 1 FROM "public"."nodes" x WHERE x.id = t)
+ CROSS JOIN LATERAL unnest("public"."mantle_embed_targets"(n.id, "public"."mantle_note_embed_refs"(n.data->>'content'))) t
+ WHERE n.type = 'note' AND jsonb_typeof(n.data) = 'object' AND n.data ? 'content'
 ON CONFLICT DO NOTHING;
 --> statement-breakpoint
 

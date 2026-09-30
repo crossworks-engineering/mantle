@@ -1,10 +1,13 @@
 /**
  * The embed edges the database keeps (migration 0208) read the stored data
- * the way the TypeScript walkers do: mantle_page_embed_ids is
- * referencedEmbedIds, mantle_draw_embed_ids is drawEmbedIds, and
- * mantle_note_embed_ids is noteEmbedIds, except that a note's image counts
+ * the way the TypeScript walkers do: mantle_page_embed_refs is
+ * referencedEmbedIds, mantle_draw_embed_refs is drawEmbedIds, and
+ * mantle_note_embed_refs is noteEmbedIds, except that a note's image counts
  * wherever the note shows it (a heading, a table cell), a little more than
- * noteEmbedIds lists. Pinned here so the two cannot drift.
+ * noteEmbedIds lists. Each reference also names the kind it may open (an
+ * image a file, a drawing image a drawing, a child page card a page), and
+ * no stored shape, however malformed, makes them throw. Pinned here so the
+ * two cannot drift.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/embed-edges.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -26,18 +29,21 @@ describe.skipIf(!URL)('embed edges in SQL match the TypeScript walkers', () => {
     sqlTag = (await import('drizzle-orm')).sql;
   });
 
-  const sqlIds = async (fn: 'page' | 'draw' | 'note', arg: unknown): Promise<string[]> => {
+  /** The 'kind:uuid' references a parser finds. */
+  const sqlRefs = async (fn: 'page' | 'draw' | 'note', arg: unknown): Promise<string[]> => {
     const call =
       fn === 'note'
-        ? sqlTag`mantle_note_embed_ids(${arg as string})`
+        ? sqlTag`mantle_note_embed_refs(${arg as string})`
         : fn === 'page'
-          ? sqlTag`mantle_page_embed_ids(${JSON.stringify(arg)}::jsonb)`
-          : sqlTag`mantle_draw_embed_ids(${JSON.stringify(arg)}::jsonb)`;
-    const [row] = (await m.db.execute(sqlTag`select ${call}::text[] as ids`)) as unknown as Array<{
-      ids: string[];
+          ? sqlTag`mantle_page_embed_refs(${JSON.stringify(arg)}::jsonb)`
+          : sqlTag`mantle_draw_embed_refs(${JSON.stringify(arg)}::jsonb)`;
+    const [row] = (await m.db.execute(sqlTag`select ${call} as refs`)) as unknown as Array<{
+      refs: string[];
     }>;
-    return sortLower(row!.ids);
+    return [...row!.refs].sort();
   };
+  const sqlIds = async (fn: 'page' | 'draw' | 'note', arg: unknown): Promise<string[]> =>
+    sortLower((await sqlRefs(fn, arg)).map((r) => r.split(':')[1]!));
 
   it('pages: images, page images, file embeds, drawings and child pages; not links', async () => {
     const [a, b, c, d, e, link] = [id(), id(), id(), id(), id(), id()];
@@ -69,6 +75,10 @@ describe.skipIf(!URL)('embed edges in SQL match the TypeScript walkers', () => {
     const ts = sortLower(referencedEmbedIds(doc).filter((x) => x !== 'not-an-id'));
     expect(await sqlIds('page', doc)).toEqual(ts);
     expect(ts).toHaveLength(5);
+    // Each names the kind it may open.
+    expect(await sqlRefs('page', doc)).toEqual(
+      [`file:${a}`, `draw:${b}`, `file:${c}`, `page:${d}`, `draw:${e}`].sort(),
+    );
     expect(await sqlIds('page', null)).toEqual([]);
     expect(await sqlIds('page', { type: 'doc' })).toEqual([]);
   });
@@ -111,6 +121,9 @@ describe.skipIf(!URL)('embed edges in SQL match the TypeScript walkers', () => {
     ].join('\n');
     expect(await sqlIds('note', md)).toEqual(sortLower(noteEmbedIds(md)));
     expect(await sqlIds('note', md)).toEqual(sortLower([img, drw, file]));
+    expect(await sqlRefs('note', md)).toEqual(
+      [`file:${img}`, `draw:${drw}`, `file:${file}`].sort(),
+    );
     expect(await sqlIds('note', '')).toEqual([]);
   });
 
@@ -121,5 +134,38 @@ describe.skipIf(!URL)('embed edges in SQL match the TypeScript walkers', () => {
     // A superset of noteEmbedIds: whatever it finds, SQL finds too.
     for (const x of noteEmbedIds(md)) expect(fromSql).toContain(x.toLowerCase());
     expect(fromSql).toEqual(sortLower([h, t]));
+  });
+
+  it('never throws on a malformed stored shape', async () => {
+    const x = id();
+    for (const doc of [
+      null,
+      [],
+      'text',
+      42,
+      { content: 'not an array' },
+      { content: [1, 'a', null, [], { type: 'image', attrs: 'str' }] },
+      { content: [{ type: 'image', attrs: { nodeId: 5, drawId: { a: 1 } } }] },
+      { content: [{ type: 7, attrs: { nodeId: x } }] },
+      { type: 'childPage', attrs: [x] },
+    ]) {
+      await expect(sqlIds('page', doc)).resolves.toEqual([]);
+    }
+    for (const refs of [null, [], 'x', 3, { a: { b: x } }, { a: 7 }, { a: [x] }]) {
+      await expect(sqlIds('draw', refs)).resolves.toEqual([]);
+    }
+    for (const md of ['```', '```\n![a](media:' + x + ')', '~~~~\n~~~', '`', '![](media:)']) {
+      await expect(sqlIds('note', md)).resolves.toEqual([]);
+    }
+    // A note whose data is not an object, or whose content is not text,
+    // goes through the same statements the backfill and the sweep run.
+    const [row] = (await m.db.execute(sqlTag`
+      select count(*)::int as n from (values ('[1,2]'::jsonb), ('{"content": 5}'::jsonb),
+                                             ('{"content": {"a": 1}}'::jsonb), ('"s"'::jsonb)) v(data)
+       cross join lateral unnest(mantle_note_embed_refs(v.data->>'content')) t
+       where jsonb_typeof(v.data) = 'object' and v.data ? 'content'`)) as unknown as Array<{
+      n: number;
+    }>;
+    expect(row!.n).toBe(0);
   });
 });
