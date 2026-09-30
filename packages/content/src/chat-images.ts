@@ -116,11 +116,13 @@ export function rewriteChatImages(
     kept.push(`![${alt}](${chatImageSrc(reader, kind, id)})`);
     return `\u0000${kept.length - 1}\u0000`;
   });
-  return pass
-    .replace(/!\[/g, '!\\[')
-    .replace(/<img/gi, '&lt;img')
-    // eslint-disable-next-line no-control-regex -- the placeholder above
-    .replace(/\u0000(\d+)\u0000/g, (_w, i: string) => kept[Number(i)] ?? '');
+  return (
+    pass
+      .replace(/!\[/g, '!\\[')
+      .replace(/<img/gi, '&lt;img')
+      // eslint-disable-next-line no-control-regex -- the placeholder above
+      .replace(/\u0000(\d+)\u0000/g, (_w, i: string) => kept[Number(i)] ?? '')
+  );
 }
 
 /**
