@@ -23,6 +23,11 @@
  *     a member's private folders never block it.
  * Items keep their `updated_at`: filing is not editing.
  *
+ * Files: a member's files and file folders never sit under `files` (every
+ * brain file helper, the disk watcher and the extractor resolve that root);
+ * they mirror it under `space_files` (brain `files.docs` is the member's
+ * `space_files.docs`, see spaceFilesPath). A Files folder carries both.
+ *
  * A no-op when `ownerId` is not a brain (a member reorganising its own
  * folders moves only its own rows).
  */
@@ -31,6 +36,18 @@ import type { Db } from './client';
 
 /** Root plus three folder levels (TREE_MAX_DEPTH in @mantle/client-types). */
 const MAX_TREE_NLEVEL = 4;
+
+const FILES_ROOT = 'files';
+export const SPACE_FILES_ROOT = 'space_files';
+
+/** Where a member's copy of a brain Files path lives: `files.a.b` is
+ *  `space_files.a.b`, the root `files` is `space_files`. Other paths are
+ *  their own. */
+export function spaceFilesPath(path: string): string {
+  return path === FILES_ROOT || path.startsWith(`${FILES_ROOT}.`)
+    ? SPACE_FILES_ROOT + path.slice(FILES_ROOT.length)
+    : path;
+}
 
 export async function carrySpaceRows(
   tx: Pick<Db, 'execute'>,
@@ -44,7 +61,20 @@ export async function carrySpaceRows(
     ok: number;
   }[];
   if (!brain || oldPath === newPath) return 0;
-  const lift = !!opts.lift;
+  let moved = await carry(tx, oldPath, newPath, !!opts.lift);
+  const mirrorOld = spaceFilesPath(oldPath);
+  if (mirrorOld !== oldPath) {
+    moved += await carry(tx, mirrorOld, spaceFilesPath(newPath), !!opts.lift);
+  }
+  return moved;
+}
+
+async function carry(
+  tx: Pick<Db, 'execute'>,
+  oldPath: string,
+  newPath: string,
+  lift: boolean,
+): Promise<number> {
   const mapped = sql`case when n.path = ${oldPath}::ltree then text2ltree(${newPath})
                           else (text2ltree(${newPath}) || subpath(n.path, nlevel(${oldPath}::ltree)))::ltree end`;
   const inSpaces = sql`n.owner_id in (select s.id from spaces s where s.kind = 'personal')

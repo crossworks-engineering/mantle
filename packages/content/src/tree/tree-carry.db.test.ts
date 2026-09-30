@@ -143,20 +143,22 @@ describe.skipIf(!URL)('members’ drafts follow the brain’s folders', () => {
     expect(await pathOf(inSub)).toBe('notes.parent.sub');
   });
 
-  it('Files folders carry member files too (rename, move, delete); no bytes move', async () => {
+  it('Files folders carry member files, mirrored under space_files (rename, move, delete)', async () => {
     const f = await tree.createTreeFolder(brain, 'files', { parentId: null, name: 'Docs' });
     const to = await tree.createTreeFolder(brain, 'files', { parentId: null, name: 'Archive' });
-    const file = await spaceRow(space, 'file', 'files.docs');
-    const folder = await spaceRow(space, 'branch', 'files.docs.drafts');
+    const file = await spaceRow(space, 'file', 'space_files.docs');
+    const folder = await spaceRow(space, 'branch', 'space_files.docs.drafts');
+    const unsorted = await spaceRow(space, 'file', 'space_files');
     await tree.updateTreeFolder(brain, 'files', f.id, { name: 'Papers' });
-    expect(await pathOf(file)).toBe('files.papers');
-    expect(await pathOf(folder)).toBe('files.papers.drafts');
+    expect(await pathOf(file)).toBe('space_files.papers');
+    expect(await pathOf(folder)).toBe('space_files.papers.drafts');
     await tree.updateTreeFolder(brain, 'files', f.id, { parentId: to.id });
-    expect(await pathOf(file)).toBe('files.archive.papers');
-    expect(await pathOf(folder)).toBe('files.archive.papers.drafts');
+    expect(await pathOf(file)).toBe('space_files.archive.papers');
+    expect(await pathOf(folder)).toBe('space_files.archive.papers.drafts');
     await tree.deleteTreeFolder(brain, 'files', f.id);
-    expect(await pathOf(file)).toBe('files.archive');
-    expect(await pathOf(folder)).toBe('files.archive.drafts');
+    expect(await pathOf(file)).toBe('space_files.archive');
+    expect(await pathOf(folder)).toBe('space_files.archive.drafts');
+    expect(await pathOf(unsorted)).toBe('space_files');
   });
 
   it('a member reorganising its own space moves only its own rows', async () => {

@@ -93,4 +93,4 @@ export {
   desc,
   asc,
 } from 'drizzle-orm';
-export { carrySpaceRows } from './space-carry';
+export { carrySpaceRows, spaceFilesPath, SPACE_FILES_ROOT } from './space-carry';
