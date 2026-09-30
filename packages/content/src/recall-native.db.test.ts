@@ -584,4 +584,212 @@ describe.skipIf(!URL)('Recall v2 native writes, on Postgres', () => {
       expect(rows[0]!.n).toBe(0);
     });
   });
+
+  describe('a restore keeps the card’s prompt state', () => {
+    type Card = {
+      title: string;
+      body_md: string;
+      use_when: string;
+      kind: string;
+      prompt_pending: boolean;
+      options: unknown[];
+      no_vec: boolean;
+    };
+    const card = async (mapId: string, slug: string) =>
+      (
+        (await m.db.execute(sqlTag`
+          select title, body_md, use_when, kind, prompt_pending, options,
+                 embedding is null as no_vec
+            from recall_nodes where map_id = ${mapId} and slug = ${slug}`)) as unknown as Card[]
+      )[0];
+    const revision = async (mapId: string, summary: string) =>
+      (await c.listRecallRevisions(owner, mapId)).find((r) => r.summary === summary)!;
+    const version = async (mapId: string) => (await mapRow(mapId)).version;
+
+    /** A map whose 'the-procedure' card an AGENT asked to be a prompt. It has
+     *  an option, so a restore that blanked the card would show. */
+    const requested = async (title: string) => {
+      const map = await freshMap(title);
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        null,
+        { title: 'Target', bodyMd: 't' },
+        OWNER,
+        map.version,
+      );
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        null,
+        {
+          title: 'The procedure',
+          bodyMd: 'steps',
+          useWhen: 'doing the thing',
+          prompt: true,
+          options: [{ label: 'Then', useWhen: 'after', targetSlug: 'target' }],
+        },
+        AGENT,
+        await version(map.mapId),
+      );
+      return map;
+    };
+    /** The card's content, unchanged from what `requested` wrote. */
+    const expectContentKept = (got: Card | undefined) => {
+      expect(got).toMatchObject({
+        title: 'The procedure',
+        body_md: 'steps',
+        use_when: 'doing the thing',
+      });
+      expect(got!.options).toHaveLength(1);
+    };
+
+    it("undoing 'prompt confirmed' puts back only the pending request, not a blank card", async () => {
+      const map = await requested('Undo confirm');
+      await c.confirmRecallPrompt(
+        owner,
+        map.mapId,
+        'the-procedure',
+        true,
+        OWNER,
+        await version(map.mapId),
+      );
+      expect((await card(map.mapId, 'the-procedure'))!.kind).toBe('prompt');
+
+      await c.restoreRecallRevision(
+        owner,
+        (await revision(map.mapId, 'prompt confirmed')).id,
+        OWNER,
+      );
+      const back = await card(map.mapId, 'the-procedure');
+      expectContentKept(back);
+      expect(back).toMatchObject({ kind: 'knowledge', prompt_pending: true, no_vec: true });
+
+      // And the restore is itself restorable: redo makes it a prompt again.
+      await c.restoreRecallRevision(
+        owner,
+        (await revision(map.mapId, 'prompt state restored')).id,
+        OWNER,
+      );
+      const redone = await card(map.mapId, 'the-procedure');
+      expectContentKept(redone);
+      expect(redone).toMatchObject({ kind: 'prompt', prompt_pending: false });
+    });
+
+    it("undoing 'prompt request dropped' puts the request back, content untouched", async () => {
+      const map = await requested('Undo drop');
+      await c.confirmRecallPrompt(
+        owner,
+        map.mapId,
+        'the-procedure',
+        false,
+        OWNER,
+        await version(map.mapId),
+      );
+      expect((await card(map.mapId, 'the-procedure'))!.prompt_pending).toBe(false);
+
+      await c.restoreRecallRevision(
+        owner,
+        (await revision(map.mapId, 'prompt request dropped')).id,
+        OWNER,
+      );
+      const back = await card(map.mapId, 'the-procedure');
+      expectContentKept(back);
+      expect(back).toMatchObject({ kind: 'knowledge', prompt_pending: true });
+    });
+
+    it('undoing a confirm on a card deleted since says to restore the delete first', async () => {
+      const map = await requested('Confirm then delete');
+      await c.confirmRecallPrompt(
+        owner,
+        map.mapId,
+        'the-procedure',
+        true,
+        OWNER,
+        await version(map.mapId),
+      );
+      await c.deleteRecallCard(owner, map.mapId, 'the-procedure', OWNER, await version(map.mapId));
+      await expect(
+        c.restoreRecallRevision(owner, (await revision(map.mapId, 'prompt confirmed')).id, OWNER),
+      ).rejects.toThrow(/card deleted.*first/i);
+    });
+
+    it('the entry card cannot be confirmed as a prompt: recall_open starts there', async () => {
+      const map = await freshMap('Entry stays entry');
+      await expect(
+        c.confirmRecallPrompt(owner, map.mapId, 'start', true, OWNER, map.version),
+      ).rejects.toThrow(/entry card/i);
+      expect((await card(map.mapId, 'start'))!.kind).toBe('index');
+    });
+
+    /** An owner-made prompt card, then an edit of its body. */
+    const ownerPrompt = async (title: string) => {
+      const map = await freshMap(title);
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        null,
+        { title: 'Style', bodyMd: 'first', useWhen: 'writing prose', prompt: true },
+        OWNER,
+        map.version,
+      );
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'style',
+        { title: 'Style', bodyMd: 'second', useWhen: 'writing prose', prompt: true },
+        OWNER,
+        await version(map.mapId),
+      );
+      return map;
+    };
+
+    it("undoing a 'card edited' keeps a prompt a prompt", async () => {
+      const map = await ownerPrompt('Prompt edit undo');
+      await c.restoreRecallRevision(owner, (await revision(map.mapId, 'card edited')).id, OWNER);
+      const back = await card(map.mapId, 'style');
+      // The text changed, so the vector is dropped for a refill: matchable
+      // again in seconds, servable by slug now.
+      expect(back).toMatchObject({ body_md: 'first', kind: 'prompt', no_vec: true });
+    });
+
+    it("undoing a 'card deleted' brings a prompt back as a prompt", async () => {
+      const map = await ownerPrompt('Prompt delete undo');
+      await c.deleteRecallCard(owner, map.mapId, 'style', OWNER, await version(map.mapId));
+      await c.restoreRecallRevision(owner, (await revision(map.mapId, 'card deleted')).id, OWNER);
+      expect(await card(map.mapId, 'style')).toMatchObject({
+        body_md: 'second',
+        kind: 'prompt',
+        prompt_pending: false,
+      });
+    });
+
+    it("the owner's undo of an agent's edit keeps a pending request pending, not confirmed", async () => {
+      const map = await requested('Pending edit undo');
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'the-procedure',
+        { title: 'The procedure', bodyMd: 'more steps', useWhen: 'doing the thing', prompt: true },
+        AGENT,
+        await version(map.mapId),
+      );
+      await c.restoreRecallRevision(owner, (await revision(map.mapId, 'card edited')).id, OWNER);
+      expect(await card(map.mapId, 'the-procedure')).toMatchObject({
+        body_md: 'steps',
+        kind: 'knowledge',
+        prompt_pending: true,
+      });
+    });
+
+    it('a revision written before the kind was recorded keeps the card as it is now', async () => {
+      const map = await ownerPrompt('Legacy revision');
+      const edit = await revision(map.mapId, 'card edited');
+      await m.db.execute(sqlTag`
+        update recall_revisions set before = before - 'kind' - 'promptPending'
+         where id = ${edit.id}`);
+      await c.restoreRecallRevision(owner, edit.id, OWNER);
+      expect(await card(map.mapId, 'style')).toMatchObject({ body_md: 'first', kind: 'prompt' });
+    });
+  });
 });

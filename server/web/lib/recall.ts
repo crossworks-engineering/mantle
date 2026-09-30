@@ -15,10 +15,15 @@
  * the owner needs to see, and this API is the only place lint reports
  * become visible outside psql.
  */
-import { and, asc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, asc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { NextResponse } from '@/server/http-compat';
-import { db, recallMaps, recallNodes } from '@mantle/db';
-import { RecallWriteError, getRecallCard, listRecallRevisions } from '@mantle/content';
+import { db, nodes, recallMaps, recallNodes } from '@mantle/db';
+import {
+  RecallWriteError,
+  getRecallCard,
+  listRecallRevisions,
+  recallFolderCrumbs,
+} from '@mantle/content';
 import type {
   RecallCardDetailDTO,
   RecallLintIssueDTO,
@@ -42,13 +47,34 @@ function toSummary(row: MapRow, folder: string | null = null): RecallMapSummaryD
     // regardless of a leftover flag from the map's page-built life.
     lastCompileOk: row.nodeId !== null ? true : row.lastCompileOk,
     nodeId: row.nodeId,
-    // Filled by the caller that has the map's item to hand; null for a
-    // page-built map, which has no item and so no folder.
+    // Resolved by the caller from the map item's path (`withFolders`); null
+    // for a page-built map, which has no item and so no folder.
     folder,
     published: row.published,
     version: row.version,
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/**
+ * Summaries with their folder crumbs, resolved the way `recall_index` does:
+ * from the path of each map's item, in one extra query for the whole list.
+ */
+async function withFolders(ownerId: string, rows: MapRow[]): Promise<RecallMapSummaryDTO[]> {
+  const itemIds = rows.map((r) => r.nodeId).filter((id): id is string => id !== null);
+  const items =
+    itemIds.length === 0
+      ? []
+      : await db
+          .select({ id: nodes.id, path: nodes.path })
+          .from(nodes)
+          .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, itemIds)));
+  const pathOf = new Map(items.map((i) => [i.id, i.path === null ? null : String(i.path)]));
+  const crumbs = await recallFolderCrumbs(
+    ownerId,
+    rows.map((r) => ({ id: r.id, path: r.nodeId ? (pathOf.get(r.nodeId) ?? null) : null })),
+  );
+  return rows.map((r) => toSummary(r, crumbs.get(r.id) ?? null));
 }
 
 function mapsWhere(ownerId: string, q?: string) {
@@ -73,9 +99,7 @@ export async function listRecallMaps(
     .$dynamic();
   if (opts.limit !== undefined) query = query.limit(opts.limit);
   if (opts.offset) query = query.offset(opts.offset);
-  const rows = await query;
-  // Not `rows.map(toSummary)`: Array.map would pass the index as `folder`.
-  return rows.map((row) => toSummary(row));
+  return await withFolders(ownerId, await query);
 }
 
 export async function countRecallMaps(ownerId: string, q?: string): Promise<number> {
@@ -135,8 +159,9 @@ export async function getRecallMapDetail(
   // The index (the root — its node id IS the map id) always leads.
   nodes.sort((a, b) => Number(b.id === map.id) - Number(a.id === map.id));
 
+  const [summary] = await withFolders(ownerId, [map]);
   return {
-    ...toSummary(map),
+    ...summary!,
     report: (map.lastCompileReport as RecallLintIssueDTO[] | null) ?? null,
     nodes,
   };
@@ -172,8 +197,9 @@ export async function getRecallStateForPage(
       .limit(1);
   }
   if (!map) return null;
+  const [summary] = await withFolders(ownerId, [map]);
   return {
-    map: toSummary(map),
+    map: summary!,
     node: nodeInfo,
     report: (map.lastCompileReport as RecallLintIssueDTO[] | null) ?? null,
   };

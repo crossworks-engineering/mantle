@@ -30,9 +30,9 @@
  * the map's signposts, the caller decides. All four are read-only.
  */
 
-import { and, arrayContains, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, arrayContains, asc, eq, isNotNull, sql } from 'drizzle-orm';
 import { db, nodes, recallMaps, recallNodes } from '@mantle/db';
-import { RECALL_ROOT_LABEL } from '@mantle/content';
+import { recallFolderCrumbs } from '@mantle/content';
 import { embed } from '@mantle/embeddings';
 import type { BuiltinToolDef } from './types';
 import { str } from './coerce';
@@ -53,10 +53,6 @@ const MATCH_LIMIT = 3;
  * than a weak hit the caller can still reject by reading `use_when`.
  */
 const MATCH_FLOOR = 0.35;
-
-/** Folder crumbs are cut off the front of a map's ltree path, so the root
- *  label has to be the same string the content layer plants. */
-const CRUMB_ROOT = RECALL_ROOT_LABEL;
 
 /** Shared arg — see the header: accepted for S3's recorder, unused today. */
 const INTENT_PROP = {
@@ -100,59 +96,6 @@ async function mapBySlugOrId(ownerId: string, ref: string): Promise<MapRow | nul
     .where(and(mine, eq(recallMaps.id, ref)))
     .limit(1);
   return byId ?? null;
-}
-
-/**
- * The display crumbs for each map's folder, keyed by map id.
- *
- * A map's ltree `path` is the Recall root plus the labels of the folders it
- * sits in ("recall.mantle.fleet"); the crumbs are those folders' TITLES, which
- * is what a person recognises ("Mantle / Fleet"). Resolved in one query over
- * the branch nodes on those paths, so the catalog stays two round-trips no
- * matter how many maps there are.
- *
- * A map at the root is unsorted and gets null. Every map gets null until the
- * item tree ships folders, which is correct rather than a placeholder.
- */
-async function folderCrumbs(
-  ownerId: string,
-  maps: { id: string; path: string | null }[],
-): Promise<Map<string, string | null>> {
-  const out = new Map<string, string | null>();
-  const prefixes = new Set<string>();
-  for (const m of maps) {
-    const labels = (m.path ?? '').split('.').filter(Boolean);
-    // Drop the root label; what remains is the folder chain.
-    const chain = labels[0] === CRUMB_ROOT ? labels.slice(1) : labels;
-    if (chain.length === 0) {
-      out.set(m.id, null);
-      continue;
-    }
-    for (let i = 1; i <= chain.length; i += 1) {
-      prefixes.add([CRUMB_ROOT, ...chain.slice(0, i)].join('.'));
-    }
-  }
-  if (prefixes.size === 0) return out;
-  const branches = await db
-    .select({ path: nodes.path, title: nodes.title })
-    .from(nodes)
-    .where(
-      and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'branch'), inArray(nodes.path, [...prefixes])),
-    );
-  const titleOf = new Map(branches.map((b) => [String(b.path), b.title]));
-  for (const m of maps) {
-    if (out.has(m.id)) continue;
-    const labels = (m.path ?? '').split('.').filter(Boolean);
-    const chain = labels[0] === CRUMB_ROOT ? labels.slice(1) : labels;
-    const crumbs = chain.map((_, i) => {
-      const p = [CRUMB_ROOT, ...chain.slice(0, i + 1)].join('.');
-      // Fall back to the label when a folder row is missing: a crumb that
-      // reads "mantle" is still an orientation, an empty string is not.
-      return titleOf.get(p) ?? chain[i];
-    });
-    out.set(m.id, crumbs.join(' / '));
-  }
-  return out;
 }
 
 /** The stale note a served node carries when the pages ahead of it failed
@@ -228,7 +171,7 @@ const recall_index: BuiltinToolDef = {
         ),
       )
       .orderBy(asc(recallMaps.title));
-    const crumbs = await folderCrumbs(
+    const crumbs = await recallFolderCrumbs(
       ctx.ownerId,
       rows.map((r) => ({ id: r.id, path: r.path === null ? null : String(r.path) })),
     );

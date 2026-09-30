@@ -75,6 +75,62 @@ export async function ensureRecallRoot(ownerId: string): Promise<void> {
     });
 }
 
+/**
+ * The display crumbs for each map's folder, keyed by map id.
+ *
+ * A map's ltree `path` is the Recall root plus the labels of the folders it
+ * sits in ("recall.mantle.fleet"); the crumbs are those folders' TITLES, which
+ * is what a person recognises ("Mantle / Fleet"). Resolved in one query over
+ * the branch nodes on those paths, so a catalog stays two round-trips no
+ * matter how many maps there are.
+ *
+ * A map at the root is unsorted and gets null, and so does a page-built (v1)
+ * map, which has no item and so no path.
+ *
+ * Shared by `recall_index` and the owner API (GET /api/recall/maps), so the
+ * agent catalog and the owner's never disagree about where a map is filed.
+ */
+export async function recallFolderCrumbs(
+  ownerId: string,
+  maps: { id: string; path: string | null }[],
+): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  const prefixes = new Set<string>();
+  for (const m of maps) {
+    const labels = (m.path ?? '').split('.').filter(Boolean);
+    // Drop the root label; what remains is the folder chain.
+    const chain = labels[0] === RECALL_ROOT_LABEL ? labels.slice(1) : labels;
+    if (chain.length === 0) {
+      out.set(m.id, null);
+      continue;
+    }
+    for (let i = 1; i <= chain.length; i += 1) {
+      prefixes.add([RECALL_ROOT_LABEL, ...chain.slice(0, i)].join('.'));
+    }
+  }
+  if (prefixes.size === 0) return out;
+  const branches = await db
+    .select({ path: nodes.path, title: nodes.title })
+    .from(nodes)
+    .where(
+      and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'branch'), inArray(nodes.path, [...prefixes])),
+    );
+  const titleOf = new Map(branches.map((b) => [String(b.path), b.title]));
+  for (const m of maps) {
+    if (out.has(m.id)) continue;
+    const labels = (m.path ?? '').split('.').filter(Boolean);
+    const chain = labels[0] === RECALL_ROOT_LABEL ? labels.slice(1) : labels;
+    const crumbs = chain.map((_, i) => {
+      const p = [RECALL_ROOT_LABEL, ...chain.slice(0, i + 1)].join('.');
+      // Fall back to the label when a folder row is missing: a crumb that
+      // reads "mantle" is still an orientation, an empty string is not.
+      return titleOf.get(p) ?? chain[i];
+    });
+    out.set(m.id, crumbs.join(' / '));
+  }
+  return out;
+}
+
 /** Sanity cap on tree walks — cycle guard, not a product limit. */
 const MAX_TREE_DEPTH = 64;
 

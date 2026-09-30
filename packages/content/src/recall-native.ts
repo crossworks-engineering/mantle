@@ -553,6 +553,41 @@ export async function putRecallCard(
   actor: RecallActor,
   version?: number,
 ): Promise<RecallWriteResult> {
+  return await writeCard(ownerId, mapId, cardSlug, input, actor, version);
+}
+
+/**
+ * A card's prompt state: what `kind` and `promptPending` were. Card revisions
+ * carry it in `before`, so a restore puts a prompt back as a prompt and a
+ * pending request back as pending, instead of reading the owner's restore as
+ * "make this knowledge".
+ */
+type PromptState = { kind: 'prompt' | 'knowledge'; promptPending: boolean };
+
+/** The kind a card had, as a restore should put it back. The entry card's kind
+ *  is not a prompt state: it is kept by the write whatever is asked. */
+function promptStateOf(card: { kind: string; promptPending: boolean }): PromptState {
+  return {
+    kind: card.kind === 'prompt' ? 'prompt' : 'knowledge',
+    promptPending: card.promptPending,
+  };
+}
+
+/**
+ * `putRecallCard`'s body. `restore` is the prompt state to put back, and only
+ * a restore sends it: it wins over the actor rule below, because the owner is
+ * reinstating a state that rule already produced once (a pending request an
+ * agent made stays pending, rather than being confirmed by the owner's undo).
+ */
+async function writeCard(
+  ownerId: string,
+  mapId: string,
+  cardSlug: string | null,
+  input: RecallCardInput,
+  actor: RecallActor,
+  version: number | undefined,
+  restore?: PromptState,
+): Promise<RecallWriteResult> {
   const title = input.title?.trim();
   if (!title) {
     throw new RecallWriteError(
@@ -563,7 +598,7 @@ export async function putRecallCard(
   const bodyMd = input.bodyMd ?? '';
   assertBody(bodyMd, title);
   const useWhen = input.useWhen?.trim() ?? '';
-  if (input.prompt && !useWhen) {
+  if ((input.prompt || restore?.kind === 'prompt') && !useWhen) {
     throw new RecallWriteError(
       'prompt_needs_use_when',
       `Card '${title}' asks to be a prompt but has no 'use when' line. That line is the only thing recall_match compares against, so a prompt without one can never be found. Add one sentence describing the task it fits.`,
@@ -603,20 +638,30 @@ export async function putRecallCard(
 
     // The entry card stays the entry card. Otherwise: a prompt if the OWNER
     // says so, a pending request if an agent asks, knowledge by default.
-    const promptConfirmed = Boolean(input.prompt) && actor.kind === 'owner';
-    const promptPending = Boolean(input.prompt) && actor.kind === 'agent';
+    const promptConfirmed = restore
+      ? restore.kind === 'prompt'
+      : Boolean(input.prompt) && actor.kind === 'owner';
     const kind = existing?.kind === 'index' ? 'index' : promptConfirmed ? 'prompt' : 'knowledge';
+    const promptPending =
+      kind === 'index'
+        ? false
+        : restore
+          ? restore.promptPending
+          : Boolean(input.prompt) && actor.kind === 'agent';
 
     // A prompt's vector is dropped when the text it was built from changed, so
     // `embedPendingRecallPrompts` refills it after the commit. NULL means
     // "servable by slug now, matchable in seconds", which is v1's posture and
     // the reason a write never waits on an embedder.
+    // A card that only BECOMES a prompt needs a vector too: as knowledge it
+    // had none, and an unchanged text would otherwise leave it unmatchable.
     const embedTextChanged =
       !existing ||
       existing.title !== title ||
       existing.useWhen !== useWhen ||
       existing.bodyMd !== bodyMd;
-    const embedding = kind === 'prompt' && embedTextChanged ? null : undefined;
+    const needsVector = kind === 'prompt' && (embedTextChanged || existing?.kind !== 'prompt');
+    const embedding = needsVector ? null : undefined;
 
     const values = {
       title,
@@ -664,15 +709,16 @@ export async function putRecallCard(
             bodyMd: existing.bodyMd,
             useWhen: existing.useWhen,
             options: existing.options,
+            ...promptStateOf(existing),
           }
         : null,
-      { title, bodyMd, useWhen, options },
+      { title, bodyMd, useWhen, options, ...promptStateOf({ kind, promptPending }) },
     );
     return {
       version: nextVersion,
       cardSlug: slug,
       warnings: warningsFor(await cardsOf(tx, map.id)),
-      promptQueued: kind === 'prompt' && embedTextChanged,
+      promptQueued: needsVector,
     };
   });
 
@@ -741,7 +787,13 @@ export async function deleteRecallCard(
       map.id,
       actor,
       { cardId: card.id, cardSlug: card.slug, summary: 'card deleted' },
-      { title: card.title, bodyMd: card.bodyMd, useWhen: card.useWhen, options: card.options },
+      {
+        title: card.title,
+        bodyMd: card.bodyMd,
+        useWhen: card.useWhen,
+        options: card.options,
+        ...promptStateOf(card),
+      },
       null,
     );
     return {
@@ -816,6 +868,14 @@ export async function confirmRecallPrompt(
       throw new RecallWriteError(
         'card_not_found',
         `No card '${cardSlug}' in map '${map.slug}'. Its cards: ${cards.map((c) => c.slug).join(', ')}.`,
+      );
+    }
+    // Confirming (or dropping) would rewrite the entry card's kind, and a map
+    // without an index card has nowhere for recall_open to start.
+    if (card.kind === 'index') {
+      throw new RecallWriteError(
+        'entry_card_not_prompt',
+        `Card '${cardSlug}' is the entry card of map '${map.slug}'. It is where every walk starts, so it cannot be a prompt. Put the prompt on its own card and add an option to it.`,
       );
     }
     if (confirm && !card.useWhen.trim()) {
@@ -912,9 +972,12 @@ export async function listRecallRevisions(
 /**
  * Put one revision's BEFORE state back. The editor's undo.
  *
- * There are three shapes, because a revision records what changed rather than
+ * There are four shapes, because a revision records what changed rather than
  * a whole map:
- *  - a card edit (before = the card's content) writes that content back;
+ *  - a card edit or delete (before = the card's content and prompt state)
+ *    writes that content back, and keeps a prompt a prompt;
+ *  - a prompt confirm or drop (before = only kind and promptPending) puts back
+ *    only that state and leaves the card's content alone;
  *  - a card ADD (before = null, cardSlug set) is undone by deleting the card;
  *  - a map-level change (no cardSlug) writes the map fields back.
  *
@@ -975,16 +1038,30 @@ export async function restoreRecallRevision(
       bodyMd?: string;
       useWhen?: string;
       options?: RecallOptionInput[];
+      kind?: string;
+      promptPending?: boolean;
     };
-    const exists = await db
-      .select({ slug: recallNodes.slug })
+    const stored: PromptState | undefined =
+      before.kind === undefined
+        ? undefined
+        : promptStateOf({ kind: before.kind, promptPending: Boolean(before.promptPending) });
+
+    // A prompt confirm or drop recorded only the prompt state. Writing that
+    // back as a whole card would blank it (title = the slug, no body, no
+    // options), so only the state goes back.
+    if (before.title === undefined && stored) {
+      return await restorePromptState(ownerId, rev.mapId, rev.cardSlug, stored, actor, map.version);
+    }
+
+    const [current] = await db
+      .select({ kind: recallNodes.kind, promptPending: recallNodes.promptPending })
       .from(recallNodes)
       .where(and(eq(recallNodes.mapId, rev.mapId), eq(recallNodes.slug, rev.cardSlug)))
       .limit(1);
-    return await putRecallCard(
+    return await writeCard(
       ownerId,
       rev.mapId,
-      exists[0] ? rev.cardSlug : null,
+      current ? rev.cardSlug : null,
       {
         title: before.title ?? rev.cardSlug,
         bodyMd: before.bodyMd ?? '',
@@ -993,6 +1070,9 @@ export async function restoreRecallRevision(
       },
       actor,
       map.version,
+      // A revision written before `before` carried the kind has none: keep the
+      // card's current state rather than demote it, since a guess is worse.
+      stored ?? (current ? promptStateOf(current) : undefined),
     );
   }
 
@@ -1014,6 +1094,78 @@ export async function restoreRecallRevision(
     },
     actor,
   );
+}
+
+/**
+ * Put a card's prompt state back (the restore of a prompt confirm or drop).
+ * The content is not touched. A card going back to being a prompt needs a
+ * fresh vector, queued after the commit like any other prompt write.
+ */
+async function restorePromptState(
+  ownerId: string,
+  mapId: string,
+  cardSlug: string,
+  state: PromptState,
+  actor: RecallActor,
+  version: number,
+): Promise<RecallWriteResult> {
+  const out = await db.transaction(async (tx) => {
+    const map = await mapOr404(tx, ownerId, mapId);
+    assertVersion(map, version);
+    const cards = await cardsOf(tx, map.id);
+    const card = cards.find((c) => c.slug === cardSlug);
+    if (!card) {
+      throw new RecallWriteError(
+        'card_not_found',
+        `Card '${cardSlug}' was deleted after this revision, so there is no prompt state to put back. Restore its 'card deleted' revision first, then this one.`,
+      );
+    }
+    if (card.kind === 'index') {
+      throw new RecallWriteError(
+        'entry_card_not_prompt',
+        `Card '${cardSlug}' is the entry card of map '${map.slug}'. It is where every walk starts, so it cannot become a prompt or knowledge.`,
+      );
+    }
+    if (state.kind === 'prompt' && !card.useWhen.trim()) {
+      throw new RecallWriteError(
+        'prompt_needs_use_when',
+        `Card '${cardSlug}' has no 'use when' line now, and that line is all recall_match compares against. Add one, then restore.`,
+      );
+    }
+    const becamePrompt = state.kind === 'prompt' && card.kind !== 'prompt';
+    await tx
+      .update(recallNodes)
+      .set({
+        kind: state.kind,
+        promptPending: state.promptPending,
+        // Keep a prompt's vector only while it stays a prompt; see putRecallCard.
+        ...(state.kind === 'prompt' && !becamePrompt ? {} : { embedding: null }),
+      })
+      .where(eq(recallNodes.id, card.id));
+    const next = await bumpMap(tx, map.id, map.version);
+    await recordRevision(
+      tx,
+      ownerId,
+      map.id,
+      actor,
+      { cardId: card.id, cardSlug: card.slug, summary: 'prompt state restored' },
+      promptStateOf(card),
+      state,
+    );
+    return {
+      version: next,
+      cardSlug,
+      warnings: warningsFor(await cardsOf(tx, map.id)),
+      becamePrompt,
+    };
+  });
+  if (out.becamePrompt) {
+    void embedPendingRecallPrompts(ownerId).catch((err) => {
+      console.error('[recall] prompt embed failed (non-fatal):', err);
+    });
+  }
+  const { becamePrompt: _b, ...rest } = out;
+  return rest;
 }
 
 /** One card with its body — what the editor opens. */

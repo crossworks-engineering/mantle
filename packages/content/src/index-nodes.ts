@@ -49,6 +49,7 @@ export {
   recallAfterPageWrite,
   removeRecallForPage,
   isRecallTreePage,
+  recallFolderCrumbs,
   type RecallCompileResult,
 } from './recall';
 
