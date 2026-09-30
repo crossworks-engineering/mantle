@@ -37,3 +37,8 @@ export function visibilityRefusal(err: unknown): string | null {
     'Tell the user what changes; call again with confirm: true only once they agree.'
   );
 }
+
+/** Said by every agent tool that writes a note's or a page's content
+ *  (migration 0208; Jason, 2026-09-30): an embed is shared with the item. */
+export const EMBEDS_SHARED =
+  " What it embeds (images, files, drawings, child pages, any item by id) is readable by whoever reads it, a shared folder's readers included, whatever kind it is, for as long as it stays shared.";

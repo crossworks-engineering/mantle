@@ -5,6 +5,7 @@
  * Split out of builtins-pages.ts; bodies moved verbatim.
  */
 
+import { EMBEDS_SHARED } from '../visibility-refusal';
 import {
   createPage,
   updatePage,
@@ -37,7 +38,8 @@ export const page_create: BuiltinToolDef = {
   preconditions: MARKDOWN_REFS_PRE,
   name: 'Create a page',
   description:
-    "Create a rich document (a `page` node under /pages) in the user's Mantle from content YOU compose. The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. To make a SUB-PAGE, pass `parent_id` (an existing page's id); omit for a top-level page. Prefer this over `note_create` when the content is long-form or structured (a plan, a doc, a comparison); use `note_create` for quick plain-text captures. **For importing an existing file use `page_from_file` instead — re-emitting the file body in `markdown` truncates silently above ~6 K output tokens. When the content already lives in a NOTE, use `page_from_note` — it copies the body server-side.**",
+    "Create a rich document (a `page` node under /pages) in the user's Mantle from content YOU compose. The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. To make a SUB-PAGE, pass `parent_id` (an existing page's id); omit for a top-level page. Prefer this over `note_create` when the content is long-form or structured (a plan, a doc, a comparison); use `note_create` for quick plain-text captures. **For importing an existing file use `page_from_file` instead — re-emitting the file body in `markdown` truncates silently above ~6 K output tokens. When the content already lives in a NOTE, use `page_from_note` — it copies the body server-side.**" +
+    EMBEDS_SHARED,
   inputSchema: {
     type: 'object',
     properties: {
@@ -228,7 +230,8 @@ export const page_update: BuiltinToolDef = {
   name: 'Update a page',
   preconditions: [...PAGE_NODE_ID_PRE, ...MARKDOWN_REFS_PRE],
   description:
-    "Update an existing page by id. **Pass ONLY the fields you're changing — every other field is left untouched.** Fixing the title? Pass `{ id, title }`, nothing else. Pass `markdown` ONLY when you intend to REPLACE the whole body in one shot (re-converted, page re-indexed) — re-emitting it just to bundle a metadata fix is wasted output tokens and risks truncation. Use `page_get` first if you need the current content before crafting a replacement. **For styling/restyling/reformatting an existing page (callouts, columns, restructure), DELEGATE to the `pages` agent via `invoke_agent` instead — the pages agent writes to draft_doc only and won't silently overwrite the live page on a bad transform.**",
+    "Update an existing page by id. **Pass ONLY the fields you're changing — every other field is left untouched.** Fixing the title? Pass `{ id, title }`, nothing else. Pass `markdown` ONLY when you intend to REPLACE the whole body in one shot (re-converted, page re-indexed) — re-emitting it just to bundle a metadata fix is wasted output tokens and risks truncation. Use `page_get` first if you need the current content before crafting a replacement. **For styling/restyling/reformatting an existing page (callouts, columns, restructure), DELEGATE to the `pages` agent via `invoke_agent` instead — the pages agent writes to draft_doc only and won't silently overwrite the live page on a bad transform.**" +
+    EMBEDS_SHARED,
   inputSchema: {
     type: 'object',
     properties: {
@@ -372,7 +375,8 @@ export const page_commit: BuiltinToolDef = {
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Commit a page draft',
   description:
-    "Publish a page's pending draft as the canonical body and re-index it into the brain. Use after a batch of body edits when the user has confirmed they want the changes live (or asked you to 'save'/'publish'). No-op error if there's no draft. Usually you LEAVE the draft for the user to review + commit in the editor — only commit yourself when explicitly asked. Publishing is what makes the new body searchable and recallable; until then only the old one is.",
+    "Publish a page's pending draft as the canonical body and re-index it into the brain. Use after a batch of body edits when the user has confirmed they want the changes live (or asked you to 'save'/'publish'). No-op error if there's no draft. Usually you LEAVE the draft for the user to review + commit in the editor — only commit yourself when explicitly asked. Publishing is what makes the new body searchable and recallable; until then only the old one is." +
+    EMBEDS_SHARED,
   inputSchema: {
     type: 'object',
     properties: {
