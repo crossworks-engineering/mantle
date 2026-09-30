@@ -175,6 +175,10 @@ export type AppRow = {
   isHub: boolean;
   /** Access level (admin > team > client > public); the owner UI's badge. */
   audience: AccessLevel;
+  /** The share it inherits from a folder above it (team or client), or
+   *  null; it is read at the more open of this and `audience`. Optional:
+   *  absent from brains before the folder audit fixes. */
+  inherited?: 'team' | 'client' | null;
   /** Informational (client logins C6): members and clients only read the
    *  app's data. Off, an app at team or client level is a shared workspace
    *  everyone who runs it writes. Set with PATCH /api/apps/:id

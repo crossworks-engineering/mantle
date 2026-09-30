@@ -41,6 +41,10 @@ export type FormulaRow = {
   summary: string | null;
   /** Access level (admin > team > client > public); the owner UI's badge. */
   audience: ViewerLevel;
+  /** The share it inherits from a folder above it (team or client), or
+   *  null; it is read at the more open of this and `audience`. Optional:
+   *  absent from brains before the folder audit fixes. */
+  inherited?: 'team' | 'client' | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -57,6 +61,8 @@ function rowOf(n: Node): FormulaRow {
     tags: n.tags ?? [],
     summary,
     audience: asViewerLevel(n.audience),
+    inherited:
+      n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
     createdAt: (n.createdAt as unknown as Date)?.toISOString?.() ?? String(n.createdAt),
     updatedAt: (n.updatedAt as unknown as Date)?.toISOString?.() ?? String(n.updatedAt),
   };

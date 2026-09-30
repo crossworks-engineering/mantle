@@ -121,6 +121,8 @@ function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
     shareMode: s.shareSettings ? 'public' : null,
     isHub: s.hubAppId != null && s.hubAppId === n.id,
     audience: asViewerLevel(n.audience),
+    inherited:
+      n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
     dataReadOnly: s.dataReadOnly === true,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),

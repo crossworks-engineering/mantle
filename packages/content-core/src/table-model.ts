@@ -857,6 +857,10 @@ export type TableRow = {
   rowCount: number;
   /** Access level (admin > team > client > public); the owner UI's badge. */
   audience: AccessLevel;
+  /** The share it inherits from a folder above it (team or client), or
+   *  null; it is read at the more open of this and `audience`. Optional:
+   *  absent from brains before the folder audit fixes. */
+  inherited?: 'team' | 'client' | null;
   createdAt: string;
   updatedAt: string;
 };

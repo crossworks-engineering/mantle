@@ -93,6 +93,8 @@ export function rowOf(n: Node, counts: { columnCount: number; rowCount: number }
     columnCount: counts.columnCount,
     rowCount: counts.rowCount,
     audience: asViewerLevel(n.audience),
+    inherited:
+      n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
