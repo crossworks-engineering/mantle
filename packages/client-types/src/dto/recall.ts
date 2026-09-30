@@ -11,11 +11,18 @@
 // ── Recall (memory maps) ─────────────────────────────────────────────────────
 
 export type {
+  RecallActorKind,
+  RecallCardDetailDTO,
+  RecallCardWriteDTO,
   RecallLintIssueDTO,
   RecallLintSeverity,
+  RecallMapCreateDTO,
   RecallMapDetailDTO,
+  RecallMapPatchDTO,
   RecallMapSummaryDTO,
   RecallNodeDTO,
   RecallOptionDTO,
   RecallPageStateDTO,
+  RecallRevisionDTO,
+  RecallWriteResultDTO,
 } from '../types/recall';

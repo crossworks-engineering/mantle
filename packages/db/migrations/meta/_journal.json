@@ -1396,17 +1396,17 @@
       "breakpoints": true
     },
     {
-      "idx": 200,
-      "version": "7",
-      "when": 1790018280000,
-      "tag": "0200_node_type_recall",
-      "breakpoints": true
-    },
-    {
       "idx": 201,
       "version": "7",
       "when": 1790018340000,
-      "tag": "0201_recall_v2_schema",
+      "tag": "0201_node_type_recall",
+      "breakpoints": true
+    },
+    {
+      "idx": 202,
+      "version": "7",
+      "when": 1790018400000,
+      "tag": "0202_recall_v2_schema",
       "breakpoints": true
     }
   ]

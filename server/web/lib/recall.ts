@@ -3,9 +3,12 @@
  * recall_nodes; docs/recall.md). The owner UI talks HTTP, not MCP, so these
  * back `/api/recall/**` the way lib/journal backs `/api/journal`.
  *
- * Deliberately read-only: authoring goes through the normal page
- * draft/commit path (the compiler, lint and trust model live there), so
- * there is no Recall write surface — here or anywhere else.
+ * Read-only for a PAGE-BUILT (v1) map: its authoring is the normal page
+ * draft/commit path, where the compiler, lint and trust model live.
+ *
+ * A NATIVE (v2) map is authored here instead — the rows are the source. Those
+ * write functions and their routes land later in R2; what is below is the read
+ * side, which now serves both kinds and tells them apart by `nodeId`.
  *
  * Unlike the agent-facing `recall_index`, the catalog here includes maps
  * that never compiled clean (nodeCount 0): a failed compile is exactly what
@@ -24,14 +27,22 @@ import type {
 
 type MapRow = typeof recallMaps.$inferSelect;
 
-function toSummary(row: MapRow): RecallMapSummaryDTO {
+function toSummary(row: MapRow, folder: string | null = null): RecallMapSummaryDTO {
   return {
     id: row.id,
     slug: row.slug,
     title: row.title,
     enterWhen: row.enterWhen,
     nodeCount: row.nodeCount,
-    lastCompileOk: row.lastCompileOk,
+    // A native map cannot be stale: its rows ARE the source. Reported true
+    // regardless of a leftover flag from the map's page-built life.
+    lastCompileOk: row.nodeId !== null ? true : row.lastCompileOk,
+    nodeId: row.nodeId,
+    // Filled by the caller that has the map's item to hand; null for a
+    // page-built map, which has no item and so no folder.
+    folder,
+    published: row.published,
+    version: row.version,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -59,7 +70,8 @@ export async function listRecallMaps(
   if (opts.limit !== undefined) query = query.limit(opts.limit);
   if (opts.offset) query = query.offset(opts.offset);
   const rows = await query;
-  return rows.map(toSummary);
+  // Not `rows.map(toSummary)`: Array.map would pass the index as `folder`.
+  return rows.map((row) => toSummary(row));
 }
 
 export async function countRecallMaps(ownerId: string, q?: string): Promise<number> {
@@ -87,11 +99,15 @@ export async function getRecallMapDetail(
       bodyChars: recallNodes.bodyChars,
       options: recallNodes.options,
       sourceVersion: recallNodes.sourceVersion,
+      rank: recallNodes.rank,
+      promptPending: recallNodes.promptPending,
       updatedAt: recallNodes.updatedAt,
     })
     .from(recallNodes)
     .where(eq(recallNodes.mapId, map.id))
-    .orderBy(asc(recallNodes.slug));
+    // Card order for a native map is the owner's (drag to reorder); slug is
+    // the tiebreak and the only order a page-built map ever had.
+    .orderBy(asc(recallNodes.rank), asc(recallNodes.slug));
 
   const nodes: RecallNodeDTO[] = rows.map((n) => ({
     id: n.id,
@@ -104,8 +120,12 @@ export async function getRecallMapDetail(
       label: o.label,
       useWhen: o.useWhen,
       targetSlug: o.targetSlug,
+      ...(o.targetId ? { targetId: o.targetId } : {}),
+      ...(o.targetMap ? { targetMap: o.targetMap } : {}),
     })),
     sourceVersion: n.sourceVersion,
+    rank: n.rank,
+    promptPending: n.promptPending,
     updatedAt: n.updatedAt.toISOString(),
   }));
   // The index (the root — its node id IS the map id) always leads.

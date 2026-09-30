@@ -51,7 +51,7 @@ describe('Recall v2 R1: node type', () => {
     // references the new value (see 0136 and the 0008/0037/0067/0069/0075
     // enum-adds). A second statement in this file is the mistake that rule
     // exists to prevent, so the file is pinned to exactly one.
-    const statements = statementsOf(sqlOf('0200_node_type_recall'));
+    const statements = statementsOf(sqlOf('0201_node_type_recall'));
     expect(statements).toHaveLength(1);
     expect(statements[0]).toMatch(/alter type "public"\."node_type" add value if not exists/i);
 
@@ -60,7 +60,7 @@ describe('Recall v2 R1: node type', () => {
     const adders = readdirSync(DIR)
       .filter((f) => f.endsWith('.sql'))
       .filter((f) => /add\s+value\s+if\s+not\s+exists\s+'recall'/i.test(sqlOf(f.slice(0, -4))));
-    expect(adders).toEqual(['0200_node_type_recall.sql']);
+    expect(adders).toEqual(['0201_node_type_recall.sql']);
   });
 });
 
@@ -120,7 +120,7 @@ describe('Recall v2 R1: recall_revisions', () => {
 });
 
 describe('Recall v2 R1: the cascades', () => {
-  const sql = sqlOf('0201_recall_v2_schema');
+  const sql = sqlOf('0202_recall_v2_schema');
 
   it('deletes a map row with its item, and its cards with the map', () => {
     // The two FKs are the whole reason a map can be deleted from the tree
