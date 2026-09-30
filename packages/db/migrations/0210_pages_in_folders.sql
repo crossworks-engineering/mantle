@@ -84,7 +84,8 @@ BEGIN
   -- 1. The pages root, for every brain with a page. A member's space keeps
   --    no root row: its folders are its own rows at brain folder paths.
   INSERT INTO "public"."nodes" (owner_id, type, title, slug, path, data, tags)
-  SELECT DISTINCT p.owner_id, 'branch', 'Pages', 'pages', 'pages'::ltree, '{}'::jsonb, '{}'
+  SELECT DISTINCT p.owner_id, 'branch'::"public"."node_type", 'Pages'::text, 'pages'::text,
+         'pages'::ltree, '{}'::jsonb, '{}'::text[]
     FROM "public"."nodes" p
    WHERE p.type = 'page'
      AND NOT EXISTS (SELECT 1 FROM "public"."spaces" s WHERE s.id = p.owner_id AND s.kind <> 'brain')
@@ -149,7 +150,8 @@ BEGIN
       END LOOP;
       folder_path := at_path || label::ltree;
       INSERT INTO "public"."nodes" (owner_id, type, title, slug, path, data, tags)
-      VALUES (r.owner_id, 'branch', title, replace(label, '_', '-'), folder_path, '{}'::jsonb, '{}');
+      VALUES (r.owner_id, 'branch'::"public"."node_type", title, replace(label, '_', '-'),
+              folder_path, '{}'::jsonb, '{}'::text[]);
       made := made + 1;
     END IF;
 
