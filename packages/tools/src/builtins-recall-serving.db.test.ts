@@ -183,6 +183,91 @@ describe.skipIf(!URL)('Recall serving, native and page-built, on Postgres', () =
     expect(res.output).toMatchObject({ node: 'start', kind: 'index' });
   });
 
+  // Plan section 14: the old payloads are unchanged, and only the documented
+  // additive fields differ (`folder` on a catalog entry, `map` on a cross-map
+  // option, `version` on a native card, `use_when` on any card that has one).
+  // Exact shapes, so a renamed or dropped key fails here rather than in every
+  // agent that reads it.
+  describe('golden payloads', () => {
+    const iso = expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/);
+
+    it('recall_index: one entry per map', async () => {
+      const res = await okOf(index, {});
+      const maps = res.output!.maps as Record<string, unknown>[];
+      expect(maps.find((x) => x.map === 'fleet-and-access')).toEqual({
+        map: 'fleet-and-access',
+        title: 'Fleet and access',
+        enter_when: 'Working on any box in the fleet',
+        nodes: 2,
+        folder: 'Mantle / Fleet',
+        updated_at: iso,
+      });
+      expect(Object.keys(res.output!).sort()).toEqual(['maps', 'note']);
+    });
+
+    it('recall_open: a native entry card', async () => {
+      const res = await okOf(open, { map: 'fleet-and-access' });
+      expect(res.output).toEqual({
+        map: 'fleet-and-access',
+        node: 'start',
+        kind: 'index',
+        title: 'Fleet and access',
+        body_md: '',
+        options: [
+          { label: 'Box by box', use_when: 'You need one box', target: 'box-by-box' },
+          {
+            label: 'The status workflow',
+            use_when: 'You want current work',
+            target: 'status-workflow',
+            map: 'status-workflow',
+          },
+        ],
+        version: 1,
+        updated_at: iso,
+      });
+    });
+
+    it('recall_open: a page-built entry card keeps the v1 shape', async () => {
+      const res = await okOf(open, { map: 'status-workflow' });
+      expect(res.output).toEqual({
+        map: 'status-workflow',
+        node: 'start',
+        kind: 'index',
+        title: 'Status workflow',
+        body_md: 'Read the current work state.',
+        options: [],
+        updated_at: iso,
+      });
+    });
+
+    it('recall_go: a knowledge card', async () => {
+      const res = await okOf(go, { map: 'fleet-and-access', target: 'box-by-box' });
+      expect(res.output).toEqual({
+        map: 'fleet-and-access',
+        node: 'box-by-box',
+        kind: 'knowledge',
+        title: 'Box by box',
+        body_md: 'One line per box.',
+        options: [],
+        version: 1,
+        updated_at: iso,
+      });
+    });
+
+    it('recall_match: pointers only', async () => {
+      const res = await okOf(match, { need: 'x' });
+      const prompts = res.output!.prompts as Record<string, unknown>[];
+      expect(prompts[0]).toEqual({
+        map: 'fleet-and-access',
+        target: 'the-close-prompt',
+        title: 'Close prompt',
+        use_when: 'When the task is this one',
+        score: expect.any(Number),
+      });
+      expect(Object.keys(res.output!).sort()).toEqual(['note', 'prompts']);
+    });
+  });
+
   it('resolves a map by a slug it used to answer to', async () => {
     const res = await okOf(open, { map: 'fleet-old' });
     expect(res.ok).toBe(true);

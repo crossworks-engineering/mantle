@@ -1350,6 +1350,29 @@ describe.skipIf(!URL)('Recall v2 native writes, on Postgres', () => {
       ).rejects.toMatchObject({ code: 'too_many_options' });
     });
 
+    it('refuses a cross-map option to a map that does not exist, naming recall_index', async () => {
+      const map = await freshMap('Nowhere to go');
+      await expect(
+        c.putRecallCard(
+          owner,
+          map.mapId,
+          'start',
+          {
+            title: 'Nowhere to go',
+            bodyMd: '',
+            options: [{ label: 'Go', useWhen: 'x', targetSlug: 'no-map', targetMap: 'no-map' }],
+          },
+          OWNER,
+          1,
+        ),
+      ).rejects.toMatchObject({
+        code: 'cross_map_not_found',
+        message: expect.stringContaining('recall_index lists the maps'),
+      });
+      // Refused means nothing written: the version did not move.
+      expect(await v(map.mapId)).toBe(1);
+    });
+
     it('N11: no card can take the slug the reorder route owns', async () => {
       const map = await freshMap('Reserved');
       const res = await c.putRecallCard(

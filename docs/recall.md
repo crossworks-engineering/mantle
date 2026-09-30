@@ -68,6 +68,16 @@ What that means in practice:
 - **Slugs are remembered.** A map's or card's former slugs keep resolving,
   and no other map or card may take them. A card slug changes only by an
   explicit owner write (`slug` on the card PUT); options in the map follow.
+- **Sizes are capped** besides the body budget: titles 200 characters,
+  `use_when` and `enter_when` lines 500, option labels 200, and 30 options
+  per card. Every option needs a `use_when` line. A card cannot take the slug
+  `reorder` (the reorder route owns it).
+- **Following a cross-map option**: an option to another map is served as
+  `{ target: X, map: X }`, and `recall_go(map: X, target: X)` lands on that
+  map's entry card.
+- **Client-marked turns**: every Recall write waits for the owner in a turn
+  that read client text, because cards are the owner's guidance to agents and
+  keep no client mark of their own.
 - **Dead cross-map options are hidden.** An option to a map that is no longer
   published is left out of what agents read, and the owner gets a
   `cross_map_target_gone` warning on the next write.
