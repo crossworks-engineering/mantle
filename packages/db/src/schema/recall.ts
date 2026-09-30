@@ -15,55 +15,44 @@ import { sql } from 'drizzle-orm';
 import { vector } from './_shared';
 
 /**
- * Recall's SERVING layer — the compiled artifact behind the memory-map
- * system (design: "Recall — architecture plan v1" on the dev brain; roadmap
- * task 97cf7850). Pages are the AUTHORING layer: a page tree whose root
- * carries the `recall` tag is a map, a page tagged `prompt` is a prompt.
- * `commitPage` compiles that tree into these rows so every agent-facing read
- * is one indexed row — no ProseMirror parsing, no joins, no LLM on the hot
- * path.
- *
- * Rows are a BUILD ARTIFACT, never edited directly (the `app_build`
- * source→artifact pattern applied to knowledge). The compiler owns them:
- * it upserts on commit, deletes on untag/delete, and refuses to overwrite a
- * map with a lint-broken rev — the last good rev keeps serving and the
- * report lands in `last_compile_report`.
- *
- * ── Recall v2 ────────────────────────────────────────────────────────────────
- * v2 promotes these rows from artifact to SOURCE: a map becomes one `recall`
- * NODE in the item tree and its cards are written here directly, checked in
- * the same transaction, so there is no compile step and no stale-rev note.
+ * Recall's serving tables, and since v2 its SOURCE: a map is one `recall`
+ * NODE in the item tree (`node_id`) and its cards are rows written here
+ * directly by packages/content/src/recall-native.ts, checked in the same
+ * transaction, so every agent-facing read is one indexed row with no compile
+ * step, no ProseMirror parsing and no LLM on the hot path.
  * Plan: "PLAN: Recall v2, its own content type" (dev brain, task 5d6ce06a).
  *
- * Both kinds live in these tables until R5 retires v1: the compiler owns the
- * rows of a page-built map (node_id NULL), packages/content/src/recall-native.ts
- * owns a native map's. A native map's id is its `node_id`; a v1 map's id is
- * its root page id. No native map ever reuses a page id, which is why the v1
- * page hooks (all of which key on page ids) can never reach a native row.
+ * History: until R5 (2026-09-30) these rows could also be a BUILD ARTIFACT
+ * compiled from a `recall`-tagged page tree (a "page-built" or v1 map, with
+ * node_id NULL and the root page's id as the map id). R5 removed that
+ * compiler; migration 0209 deleted the remaining rows. `last_compile_ok` and
+ * `last_compile_report` stay, unused, so the release before R5 still runs on
+ * this table after a rollback; a later migration drops them.
  */
 
 export const recallMaps = pgTable(
   'recall_maps',
   {
-    /** The map root page's node id — a map IS its root page. */
+    /** The map's id, which equals `node_id`. */
     id: uuid('id').primaryKey(),
     ownerId: uuid('owner_id').notNull(),
     /** Stable entry name agents use: `recall_open('mantle-registry')`. */
     slug: text('slug').notNull(),
     title: text('title').notNull(),
-    /** One line for the catalog — when an agent should enter this map.
-     *  From the root page's "Use when: …" paragraph; falls back to the title. */
+    /** One line for the catalog — when an agent should enter this map. */
     enterWhen: text('enter_when').default('').notNull(),
-    /** Compiled node count. 0 = never compiled clean; the catalog hides it. */
+    /** Card count, recounted on every write. 0 = no cards; the catalog hides it. */
     nodeCount: integer('node_count').default(0).notNull(),
-    /** Last compile outcome. `false` means the SERVED rows are one rev behind
-     *  the committed pages — the lint report says why. */
+    /** UNUSED since R5: the v1 compile outcome. Kept (and declared, so the
+     *  schema drift test still matches the table) only so the release before
+     *  R5 runs after a rollback. Nothing reads or writes them; drop both in a
+     *  later migration. */
     lastCompileOk: boolean('last_compile_ok').default(true).notNull(),
     lastCompileReport: jsonb('last_compile_report').$type<unknown[]>(),
-    /** v2: the map's `recall` node — the item in the tree. NULL for a v1 row
-     *  that is still page-built. FK to nodes(id) ON DELETE CASCADE lives in
-     *  the SQL migration, so deleting the item takes the map row and (via
-     *  recall_nodes.map_id) its cards. */
+    /** The map's `recall` node — the item in the tree. Nullable only because
+     *  page-built rows had none; every serving query requires it. FK to
+     *  nodes(id) ON DELETE CASCADE lives in the SQL migration, so deleting the
+     *  item takes the map row and (via recall_nodes.map_id) its cards. */
     nodeId: uuid('node_id'),
     /** v2: false while a map an AGENT created waits for the owner to publish
      *  it. recall_index / recall_open / recall_match skip unpublished maps.
@@ -86,34 +75,31 @@ export const recallMaps = pgTable(
 export const recallNodes = pgTable(
   'recall_nodes',
   {
-    /** v1: the source page's node id. v2: the card's own id, minted here —
-     *  a native card is not a page, so nothing outside supplies one. */
+    /** The card's own id, minted here — a card is not a page. */
     id: uuid('id')
       .primaryKey()
       .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
-    /** The map this node serves under. Standalone prompts (a `recall`+`prompt`
-     *  tagged page with no tree) compile as a one-node map of themselves. */
+    /** The map this card belongs to. */
     mapId: uuid('map_id').notNull(),
     slug: text('slug').notNull(),
-    /** 'index' (the root), 'knowledge', or 'prompt' (embedded for match). */
+    /** 'index' (the entry card), 'knowledge', or 'prompt' (embedded for match). */
     kind: text('kind').notNull(),
     title: text('title').notNull(),
-    /** Rendered markdown of the body, WITHOUT the Options section. Budgeted
-     *  at compile (chars, not tokens — the repo's size-budget convention). */
+    /** Markdown body. Budgeted on the write (chars, not tokens — the repo's
+     *  size-budget convention). */
     bodyMd: text('body_md').default('').notNull(),
     bodyChars: integer('body_chars').default(0).notNull(),
     /** Prompts: the matcher line recall_match shows before a caller commits
      *  context to the body. */
     useWhen: text('use_when').default('').notNull(),
-    /** Parsed Options block: [{label, useWhen, targetSlug}]. Affordances,
-     *  never commands — the lint owns that wording contract.
+    /** Options: [{label, useWhen, targetSlug}]. Affordances, never commands.
      *
      *  v2 adds `targetId` (the target card's id, so an edge survives a slug
      *  change) and `targetMap` (another map's slug, for a cross-map option to
      *  that map's entry card). `targetSlug` stays and is rewritten in the same
      *  transaction when a slug changes, so the read path is still one row with
-     *  no join. Both are optional: a v1-compiled row carries neither. */
+     *  no join. */
     options: jsonb('options').$type<
       {
         label: string;
@@ -130,8 +116,7 @@ export const recallNodes = pgTable(
      *  because this table is born empty (see 0153, and 0060 which retired
      *  ivfflat everywhere). */
     embedding: vector(768)('embedding'),
-    /** v1: `pages.version` this row was compiled from — staleness at a
-     *  glance. v2: the map `version` the card was written at. */
+    /** The map `version` the card was written at. */
     sourceVersion: integer('source_version').default(0).notNull(),
     /** v2: card order in the editor (drag to reorder). */
     rank: integer('rank').default(0).notNull(),

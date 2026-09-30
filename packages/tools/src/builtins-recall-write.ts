@@ -30,7 +30,7 @@
  * Plan: "PLAN: Recall v2, its own content type" (dev brain, task 5d6ce06a).
  */
 
-import { and, arrayContains, eq } from 'drizzle-orm';
+import { and, arrayContains, eq, isNotNull } from 'drizzle-orm';
 import { db, recallMaps } from '@mantle/db';
 import {
   RECALL_LABEL_MAX,
@@ -57,30 +57,32 @@ function actorOf(ctx: ToolHandlerContext): RecallActor {
 }
 
 /** Resolve a map by slug, a slug it answered to before a rename, or its id,
- *  and hand back its id and current version. */
+ *  and hand back its id and current version. A map row with no tree item is a
+ *  leftover page-built (v1) map, retired in R5: it does not resolve. */
 export async function mapRef(
   ownerId: string,
   ref: string,
 ): Promise<{ id: string; version: number; slug: string } | null> {
   const cols = { id: recallMaps.id, version: recallMaps.version, slug: recallMaps.slug };
+  const mine = and(eq(recallMaps.ownerId, ownerId), isNotNull(recallMaps.nodeId));
   const bySlug = await db
     .select(cols)
     .from(recallMaps)
-    .where(and(eq(recallMaps.ownerId, ownerId), eq(recallMaps.slug, ref)))
+    .where(and(mine, eq(recallMaps.slug, ref)))
     .limit(1);
   if (bySlug[0]) return bySlug[0];
   // A remembered slug still lands, as it does for recall_open.
   const byFormer = await db
     .select(cols)
     .from(recallMaps)
-    .where(and(eq(recallMaps.ownerId, ownerId), arrayContains(recallMaps.formerSlugs, [ref])))
+    .where(and(mine, arrayContains(recallMaps.formerSlugs, [ref])))
     .limit(1);
   if (byFormer[0]) return byFormer[0];
   if (!/^[0-9a-f-]{36}$/i.test(ref)) return null;
   const byId = await db
-    .select({ id: recallMaps.id, version: recallMaps.version, slug: recallMaps.slug })
+    .select(cols)
     .from(recallMaps)
-    .where(and(eq(recallMaps.ownerId, ownerId), eq(recallMaps.id, ref)))
+    .where(and(mine, eq(recallMaps.id, ref)))
     .limit(1);
   return byId[0] ?? null;
 }

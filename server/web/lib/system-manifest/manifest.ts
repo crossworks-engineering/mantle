@@ -886,7 +886,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'recall-read',
     name: 'Recall',
     description:
-      "Walk the brain's Recall maps and match its prompts — the owner-authored memory-map system (docs/recall.md). Read-only: the four tools serve compiled rows and never write.",
+      "Walk the brain's Recall maps and match its prompts — the owner-authored memory-map system (docs/recall.md). Read-only: the four tools serve the maps' cards and never write.",
     toolSlugs: ['recall_index', 'recall_open', 'recall_go', 'recall_match', 'tree_folders'],
   },
   {

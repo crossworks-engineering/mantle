@@ -51,7 +51,7 @@ describe.skipIf(!URL)('Recall owner API: map folders, on Postgres', () => {
       { title: 'Unsorted map', enterWhen: 'Anything else' },
       OWNER,
     );
-    // A page-built (v1) map has no item, so no folder.
+    // A leftover page-built (v1) row: no item. Retired in R5, never served.
     await m.db.execute(sqlTag`
       insert into recall_maps (id, owner_id, slug, title, node_count)
       values (${v1Id}, ${owner}, ${`v1-${tag}`}, 'Page built', 1)`);
@@ -72,12 +72,17 @@ describe.skipIf(!URL)('Recall owner API: map folders, on Postgres', () => {
     const folderOf = new Map(maps.map((x) => [x.id, x.folder]));
     expect(folderOf.get(filed.mapId)).toBe('Mantle / Fleet boxes');
     expect(folderOf.get(unsorted.mapId)).toBeNull();
-    expect(folderOf.get(v1Id)).toBeNull();
+  });
+
+  it('never lists or opens a leftover page-built row', async () => {
+    const maps = await lib.listRecallMaps(owner);
+    expect(maps.map((x) => x.id)).not.toContain(v1Id);
+    expect(await lib.countRecallMaps(owner)).toBe(maps.length);
+    expect(await lib.getRecallMapDetail(owner, v1Id)).toBeNull();
   });
 
   it('the map detail carries the same folder', async () => {
     expect((await lib.getRecallMapDetail(owner, filed.mapId))!.folder).toBe('Mantle / Fleet boxes');
     expect((await lib.getRecallMapDetail(owner, unsorted.mapId))!.folder).toBeNull();
-    expect((await lib.getRecallMapDetail(owner, v1Id))!.folder).toBeNull();
   });
 });

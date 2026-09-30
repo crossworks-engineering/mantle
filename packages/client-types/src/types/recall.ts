@@ -2,65 +2,37 @@
  * Wire shapes for the owner Recall API (roadmap tasks 073b322d / 91c93428;
  * docs/recall.md in the mantle repo). Dates are ISO strings.
  *
- * ── Two kinds of map ───────────────────────────────────────────────────────
- * v1 maps are COMPILED from a page tree: the rows are a build artifact, and a
- * card's `id` is its source page's node id, so every row is a click-through to
- * the page editor. v2 maps are NATIVE: the map is one `recall` item in the
- * tree, its cards are rows written directly, and a card's `id` is its own —
- * NOT a page. A client must not link a card to the page editor unless the map
- * is page-built, which `nodeId === null` tells it.
+ * A map is one `recall` item in the tree; its cards are rows written
+ * directly, and a card's `id` is its own, NOT a page. (Page-built v1 maps,
+ * compiled from a page tree, were retired in R5: the compile report, the
+ * page state route and `lastCompileOk` went with them.)
  *
  * Plan: "PLAN: Recall v2, its own content type" (dev brain, task 5d6ce06a).
- * Everything v2 adds here is additive, so a client written against the v1
- * shapes keeps compiling and keeps working against a v1 map.
  *
- * Whether a brain can serve the native path at all is `features.recallV2` from
- * `GET /api/shell`, absent on an older brain. Branch the SCREEN on that, not
- * on the shapes below.
+ * Whether a brain can serve Recall at all is `features.recallV2` from
+ * `GET /api/shell`, absent on a brain older than v2. Branch the SCREEN on
+ * that, not on the shapes below.
  */
 
-export type RecallLintSeverity = 'error' | 'warning';
-
-/** One issue from a map's last compile report (v1), or one warning from a
- *  native write (v2). */
-export interface RecallLintIssueDTO {
-  severity: RecallLintSeverity;
-  code: string;
-  message: string;
-  /** v1 only: the page the issue is about — the page-editor click-through. */
-  pageId?: string;
-  /** v2: the card the warning is about, by slug. A native map has no pages,
-   *  and a write that fails a CHECK is refused rather than reported here —
-   *  so on a native map these are only ever warnings (an orphan card, an
-   *  entry card with no options yet). */
-  cardSlug?: string;
-}
-
 /** One map in the catalog (`GET /api/recall/maps`). Unlike the agent-facing
- *  `recall_index`, the owner catalog includes never-compiled maps
- *  (`nodeCount` 0) — a failed compile is exactly what the owner must see. */
+ *  `recall_index`, the owner catalog includes unpublished maps and maps with
+ *  no cards yet. */
 export interface RecallMapSummaryDTO {
-  /** v1: the map root page's node id — a map IS its root page. v2: the map's
-   *  own id, which equals `nodeId`. Either way this is what the other Recall
+  /** The map's id, which equals `nodeId`. This is what the other Recall
    *  routes take as `:id`. */
   id: string;
   slug: string;
   title: string;
   /** The catalog line: when an agent should enter this map. */
   enterWhen: string;
-  /** Card count; 0 = a v1 map that never compiled clean. */
+  /** Card count. */
   nodeCount: number;
-  /** v1 only: false = the served rows are one rev behind the pages, and
-   *  `report` says why. Always true for a native map, which cannot be stale:
-   *  its rows are the source, and a write that fails its checks is refused. */
-  lastCompileOk: boolean;
-  /** v2: the map's `recall` item in the tree. NULL means this map is still
-   *  page-built, which is also the flag for "link its cards to the page
-   *  editor". */
-  nodeId: string | null;
+  /** The map's `recall` item in the tree. (It was null for a page-built map
+   *  before R5; a brain on R5 or later never serves one.) */
+  nodeId: string;
   /** v2: where the owner filed it, as display crumbs ("Mantle / Fleet");
-   *  null when unsorted or page-built. Derived from the item's folder, so it
-   *  is a label to show, never something to write back. */
+   *  null when unsorted. Derived from the item's folder, so it is a label to
+   *  show, never something to write back. */
   folder: string | null;
   /** v2: false while a map an AGENT created waits for the owner to publish
    *  it. An unpublished map is invisible to every agent-facing tool, so the
@@ -79,7 +51,7 @@ export interface RecallOptionDTO {
   /** Slug of the target card, within this map unless `targetMap` is set. */
   targetSlug: string;
   /** v2: the target card's id. Draw the graph from this, not from the slug —
-   *  it survives a rename. Absent on a v1-compiled row. */
+   *  it survives a rename. */
   targetId?: string;
   /** v2: a CROSS-MAP option. The slug of another published map, whose entry
    *  card this option leads to. Absent for an ordinary same-map edge. */
@@ -87,8 +59,7 @@ export interface RecallOptionDTO {
 }
 
 export interface RecallNodeDTO {
-  /** v1: the source page's node id, the page-editor click-through target.
-   *  v2: the card's own id. It is NOT a page — see the file header. */
+  /** The card's own id. It is NOT a page — see the file header. */
   id: string;
   slug: string;
   kind: 'index' | 'knowledge' | 'prompt';
@@ -100,8 +71,7 @@ export interface RecallNodeDTO {
    *  megabyte on the wire to render a sidebar. Fetch one card to edit it. */
   bodyChars: number;
   options: RecallOptionDTO[];
-  /** v1: the `pages.version` this row was compiled from. v2: the map version
-   *  the card was written at. */
+  /** The map version the card was written at. */
   sourceVersion: number;
   /** v2: the card's order in the editor. The list arrives sorted by it. */
   rank: number;
@@ -128,29 +98,16 @@ export interface RecallCardDetailDTO extends RecallNodeDTO {
  *  write check must read the same constant, or the counter promises room the
  *  write refuses. */
 
-/** `GET /api/recall/maps/:id` — the whole compiled map, index node first,
- *  plus the last lint report (null when the last compile was clean). */
+/** `GET /api/recall/maps/:id` — the whole map, its cards in rank order
+ *  (the entry card is rank 0). */
 export interface RecallMapDetailDTO extends RecallMapSummaryDTO {
-  report: RecallLintIssueDTO[] | null;
   nodes: RecallNodeDTO[];
-}
-
-/** `GET /api/recall/pages/:id` — this page's place in Recall, if any. Backs
- *  the editor lint badge: the compiler never blocks a commit, so this badge
- *  is the ONLY place an author learns the map is serving a stale rev.
- *  `node` is null when the page is named in a failing report but has no
- *  compiled row yet (a brand-new page that broke the map). */
-export interface RecallPageStateDTO {
-  map: RecallMapSummaryDTO;
-  node: { slug: string; kind: RecallNodeDTO['kind'] } | null;
-  report: RecallLintIssueDTO[] | null;
 }
 
 // ── v2: the write side ───────────────────────────────────────────────────────
 // The owner routes the Recall editor calls. Every write carries the map
 // `version` it was made against; a stale one is refused rather than silently
-// overwriting another editor's (or an agent's) change. Nothing here exists on
-// a v1 map: the page editor is its authoring surface.
+// overwriting another editor's (or an agent's) change.
 
 /** Who made a change. An `agent` row is why the revision log exists: v2 serves
  *  an agent's card edit immediately, with no compile step to hold it back. */

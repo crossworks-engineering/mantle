@@ -16,9 +16,10 @@
  *   recall_match(need)         → top prompts by meaning; open the winner
  *
  * Every read is one indexed row off the serving tables (recall_maps /
- * recall_nodes): written directly by the native path for a v2 map
- * (packages/content/src/recall-native.ts), compiled from pages for a v1 map
- * until R5 retires those. No ProseMirror parsing, no LLM; recall_match is one
+ * recall_nodes), written directly by the native path
+ * (packages/content/src/recall-native.ts). The page-built (v1) maps were
+ * retired in R5; a map row without its tree item is never served (the
+ * filter on `node_id` below). No ProseMirror parsing, no LLM; recall_match is one
  * ANN probe over the partial prompt index plus one (cached) embed of the
  * query line. Bodies are budget-capped at write time, so responses are small
  * by construction.
@@ -84,9 +85,16 @@ function notOwner(ctx: Pick<ToolHandlerContext, 'surface'>): ToolHandlerResult |
  * Unpublished maps never resolve here. A map an agent created waits for the
  * owner to publish it, and until then it must be invisible to every serving
  * tool rather than merely absent from the catalog.
+ *
+ * Nor does a map row with no tree item: that is a leftover page-built (v1)
+ * map, which migration 0209 deletes and nothing writes any more.
  */
 async function mapBySlugOrId(ownerId: string, ref: string): Promise<MapRow | null> {
-  const mine = and(eq(recallMaps.ownerId, ownerId), eq(recallMaps.published, true));
+  const mine = and(
+    eq(recallMaps.ownerId, ownerId),
+    eq(recallMaps.published, true),
+    isNotNull(recallMaps.nodeId),
+  );
   const [bySlug] = await db
     .select()
     .from(recallMaps)
@@ -108,25 +116,6 @@ async function mapBySlugOrId(ownerId: string, ref: string): Promise<MapRow | nul
     .where(and(mine, eq(recallMaps.id, ref)))
     .limit(1);
   return byId ?? null;
-}
-
-/** The stale note a served node carries when the pages ahead of it failed
- *  lint — honest about serving the last GOOD rev, without failing the read. */
-function staleNote(map: MapRow): string | undefined {
-  // A native map cannot be stale: its rows ARE the source, and a write that
-  // fails its checks is refused rather than served one rev behind. Guarded on
-  // the linkage rather than on `last_compile_ok`, so a leftover false from the
-  // map's v1 life can never attach the note to content it does not describe.
-  if (nativeMap(map)) return undefined;
-  return map.lastCompileOk
-    ? undefined
-    : 'Note: newer edits to this map failed its lint, so you are reading the last good version. The owner can see the report in the editor.';
-}
-
-/** A map whose rows are written directly (v2) rather than compiled from a
- *  page tree (v1). The node linkage is the discriminator. */
-function nativeMap(map: MapRow): boolean {
-  return map.nodeId !== null;
 }
 
 /**
@@ -157,6 +146,7 @@ async function nodePayload(ownerId: string, map: MapRow, row: typeof recallNodes
                 and(
                   eq(recallMaps.ownerId, ownerId),
                   eq(recallMaps.published, true),
+                  isNotNull(recallMaps.nodeId),
                   inArray(recallMaps.slug, crossMaps),
                 ),
               )
@@ -180,9 +170,8 @@ async function nodePayload(ownerId: string, map: MapRow, row: typeof recallNodes
         // still lands, because `target` resolves across maps too (see below).
         ...(o.targetMap ? { map: o.targetMap } : {}),
       })),
-    ...(nativeMap(map) ? { version: map.version } : {}),
+    version: map.version,
     updated_at: row.updatedAt.toISOString(),
-    ...(staleNote(map) ? { note: staleNote(map) } : {}),
   };
 }
 
@@ -209,9 +198,9 @@ const recall_index: BuiltinToolDef = {
         path: nodes.path,
       })
       .from(recallMaps)
-      // The map's item, for its folder. A left join: a v1 map has no node,
-      // and an inner join would have quietly emptied the catalog.
-      .leftJoin(nodes, eq(nodes.id, recallMaps.nodeId))
+      // The map's item, for its folder. An inner join, so a leftover
+      // page-built (v1) row, which has no item, is never listed.
+      .innerJoin(nodes, eq(nodes.id, recallMaps.nodeId))
       .where(
         and(
           eq(recallMaps.ownerId, ctx.ownerId),
@@ -288,35 +277,17 @@ const recall_open: BuiltinToolDef = {
     if (!ref) return { ok: false, error: 'map is required' };
     const map = await mapBySlugOrId(ctx.ownerId, ref);
     if (!map) return { ok: false, error: `No Recall map '${ref}' — recall_index lists them.` };
-    // The entry card is the one of kind 'index'.
-    //
-    // This used to select `recallNodes.id = map.id`, which is only ever true
-    // for a v1 map: there the entry card IS the root page, so card id and map
-    // id are the same uuid. A native map's entry card is an ordinary row with
-    // its own id, so that query found nothing and every natively created map
-    // answered "has no compiled index yet, its pages likely failed lint" —
-    // a lint failure that had not happened, on pages that do not exist.
-    // `kind` is the honest key and is correct for both.
-    let [row] = await db
+    // The entry card is the one of kind 'index'. A card's id is its own, never
+    // the map's, so `kind` is the only honest key.
+    const [row] = await db
       .select()
       .from(recallNodes)
       .where(and(eq(recallNodes.mapId, map.id), eq(recallNodes.kind, 'index')))
       .limit(1);
-    // A v1 one-page prompt map compiles its only page as kind 'prompt', so it
-    // has no 'index' row; its root card shares the map id. Until R5 retires v1.
-    if (!row && !nativeMap(map)) {
-      [row] = await db
-        .select()
-        .from(recallNodes)
-        .where(and(eq(recallNodes.mapId, map.id), eq(recallNodes.id, map.id)))
-        .limit(1);
-    }
     if (!row) {
       return {
         ok: false,
-        error: nativeMap(map)
-          ? `Map '${map.slug}' has no entry card. The owner can add one in the Recall editor.`
-          : `Map '${map.slug}' has no compiled index yet — its pages likely failed lint. The owner can check the report in the editor.`,
+        error: `Map '${map.slug}' has no entry card. The owner can add one in the Recall editor.`,
       };
     }
     return { ok: true, output: await nodePayload(ctx.ownerId, map, row) };
@@ -471,6 +442,8 @@ const recall_match: BuiltinToolDef = {
          eq(recallNodes.promptPending, false),
          // A map an agent created and the owner has not published.
          eq(recallMaps.published, true),
+         // A leftover page-built (v1) map: retired in R5, never served.
+         isNotNull(recallMaps.nodeId),
        )}
          and 1 - (${recallNodes.embedding} <=> ${vec}::vector) >= ${MATCH_FLOOR}
        order by ${recallNodes.embedding} <=> ${vec}::vector

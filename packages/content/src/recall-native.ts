@@ -2,9 +2,9 @@
  * Recall v2 — the NATIVE write path. A map is one `recall` item in the tree;
  * its cards are rows in `recall_nodes`, written here directly.
  *
- * This is the half of Recall that v2 replaces. v1 compiles a page tree into
- * these rows and treats them as a build artifact, which means the checks run
- * AFTER the commit: a page that broke its map published anyway, the map kept
+ * This path replaced v1 (retired in R5), which compiled a page tree into
+ * these rows and treated them as a build artifact, so its checks ran AFTER
+ * the commit: a page that broke its map published anyway, the map kept
  * serving its last good rev, and the only sign was a note on every agent read.
  * The dev brain's registry served a two-week-old revision that way. So here
  * the checks run INSIDE the write and refuse it — nothing is ever served that
@@ -25,7 +25,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { and, arrayContains, asc, count, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, arrayContains, asc, count, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 
 import {
   db,
@@ -134,10 +134,10 @@ type InboundOption = { cardSlug: string; option: StoredOption };
 /**
  * Slug from a title, cut at a WORD boundary.
  *
- * `recallSlug` (v1) slices at 60 characters mid-word, which is how the
- * registry ended up with `…-and-the-connector-fal`. It is left alone on
- * purpose: changing it would re-slug every page-built map on its next
- * compile, and a slug is exactly what agents and skills remember.
+ * `recallSlug` (from v1) slices at 60 characters mid-word, which is how the
+ * registry ended up with `…-and-the-connector-fal`. This cuts on a word
+ * instead; existing slugs never change, since a slug is exactly what agents
+ * and skills remember.
  */
 export function recallNativeSlug(title: string): string {
   const full = recallSlug(title);
@@ -184,19 +184,17 @@ async function mapOr404(tx: Tx, ownerId: string, mapId: string) {
   const [map] = await tx
     .select()
     .from(recallMaps)
-    .where(and(eq(recallMaps.ownerId, ownerId), eq(recallMaps.id, mapId)))
+    // A row with no tree item is a leftover page-built (v1) map, retired in
+    // R5 (migration 0209 deletes them): not a map this path knows.
+    .where(
+      and(eq(recallMaps.ownerId, ownerId), eq(recallMaps.id, mapId), isNotNull(recallMaps.nodeId)),
+    )
     .limit(1)
     .for('update');
   if (!map) {
     throw new RecallWriteError(
       'map_not_found',
       `No Recall map '${mapId}'. List them with recall_index, or the owner catalog at GET /api/recall/maps.`,
-    );
-  }
-  if (map.nodeId === null) {
-    throw new RecallWriteError(
-      'map_is_page_built',
-      `Map '${map.slug}' is still page-built (v1): its cards come from its page tree, so it cannot be written here. Edit its pages, or re-author it as a native map.`,
     );
   }
   return map;

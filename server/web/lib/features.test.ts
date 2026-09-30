@@ -19,7 +19,7 @@ import { routeManifest } from '../server/route-manifest.gen';
  * saves 404. So the flag and the routes are pinned together.
  */
 describe('shell features', () => {
-  it('reports recallV2 true from R2, so a client may build the v2 screen', () => {
+  it('reports recallV2 true (from R2, and for good since R5 retired v1), so a client builds the v2 screen', () => {
     expect(RECALL_V2).toBe(true);
     expect(shellFeatures()).toEqual({ recallV2: true });
   });

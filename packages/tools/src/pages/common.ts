@@ -1,5 +1,5 @@
 /**
- * Shared page helpers: owner-only tag stripping, the id preconditions,
+ * Shared page helpers: the id preconditions,
  * the editing-baseline pick, and the draft-conflict reply.
  *
  * Split out of builtins-pages.ts; bodies moved verbatim.
@@ -9,23 +9,6 @@ import type { ToolPrecondition } from '../types';
 
 // Shared referential preconditions (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING page the owner holds.
-/** The `recall` and `prompt` tags are OWNER GESTURES — `recall` turns a page
- *  tree into a served map, `prompt` makes a page auto-matchable by
- *  recall_match, and the security model (docs/recall.md) rests on a human
- *  making both calls in the editor. Agent-facing page tools therefore strip
- *  them: agents can DRAFT map and prompt pages freely; the owner activates
- *  them by tagging. (S7's recall_propose_* tools will route activation
- *  through pending approvals instead.) */
-const OWNER_ONLY_TAGS = new Set(['recall', 'prompt']);
-
-export function stripOwnerOnlyTags(tags: string[]): { tags: string[]; stripped: string[] } {
-  const stripped = tags.filter((x) => OWNER_ONLY_TAGS.has(x.trim().toLowerCase()));
-  return {
-    tags: tags.filter((x) => !OWNER_ONLY_TAGS.has(x.trim().toLowerCase())),
-    stripped,
-  };
-}
-
 export const PAGE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'page_id', nodeType: 'page', lookup: 'page_list / search_nodes' },
 ];

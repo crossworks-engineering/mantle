@@ -4,17 +4,21 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Every process that can reach a page write must register a Recall embedder.
+ * Every process that can run a Recall tool or route must register a Recall
+ * embedder.
  *
  * This is the failure the injection was designed around, and it is the reason
- * this file exists rather than a comment. `recallAfterPageWrite` calls
- * `embedPendingRecallPrompts` fire-and-forget, so a process that forgets to
- * register still saves pages, still compiles maps, and still answers every
- * request correctly. The only symptom is that prompt rows keep a null
- * embedding and `recall_match` returns nothing — which reads as "Recall found
- * no prompt for this task", not as a broken deploy.
+ * this file exists rather than a comment. A native card write, a prompt
+ * confirm and `recall_match` all call `embedPendingRecallPrompts`
+ * fire-and-forget, so a process that forgets to register still writes cards
+ * and still answers every request correctly. The only symptom is that prompt
+ * rows keep a null embedding and `recall_match` returns nothing — which reads
+ * as "Recall found no prompt for this task", not as a broken deploy.
  *
- * Adding another process that writes pages is therefore a silent regression
+ * (Until R5 the trigger was a page write into a `recall` tree. The processes
+ * are the same ones: wherever tools run, the Recall tools run.)
+ *
+ * Adding another process that runs tools is therefore a silent regression
  * unless something fails. That something is this test.
  *
  * The 2026-09-03 audit found two it had missed, both inside server/web, whose
@@ -31,24 +35,24 @@ import { describe, expect, it } from 'vitest';
  */
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 
-/** Every process entrypoint that can reach a page write. A worker is its own
+/** Every process entrypoint that can reach a Recall write. A worker is its own
  *  PROCESS: sharing server/web's package.json buys it nothing. */
 const ENTRYPOINTS = [
   {
     file: 'server/web/server/main.ts',
-    why: 'the editor commits Recall maps; this is the main authoring path',
+    why: 'the owner Recall routes; this is the main authoring path',
   },
   {
     file: 'server/api/src/main.ts',
-    why: 'agent page tools, forum and telegram turns write pages',
+    why: 'agent Recall tools in forum and telegram turns',
   },
   {
     file: 'server/mcp/src/server.ts',
-    why: 'the stdio transport exposes the same page tools',
+    why: 'the stdio transport exposes the same Recall tools',
   },
   {
     file: 'server/web/workers/runs.ts',
-    why: 'run items dispatch tools in-process, page_create among them',
+    why: 'run items dispatch tools in-process, the Recall tools among them',
   },
   {
     file: 'server/web/workers/telegram-poll.ts',
@@ -77,7 +81,7 @@ describe('Recall embedder is registered at every entrypoint', () => {
 
   it('lists every package that depends on @mantle/content', () => {
     // The coarse half: a new SERVER package that imports @mantle/content can
-    // reach a page write, so it belongs in ENTRYPOINTS above. Necessary, and on
+    // reach a Recall write, so it belongs in ENTRYPOINTS above. Necessary, and on
     // its own not sufficient — see the worker sweep below, which is the half
     // that would have caught the two misses of 2026-09-03.
     const packages = ['server/web', 'server/api', 'server/mcp'];
@@ -94,8 +98,8 @@ describe('Recall embedder is registered at every entrypoint', () => {
   it('covers every worker that can dispatch a tool', () => {
     // The fine half. Each server/web worker is a separate process with its own
     // module graph, so "server/web registers one" says nothing about it. A
-    // worker that can run a tool can run `page_create`; if it can, it needs an
-    // embedder, and if it needs one it belongs in ENTRYPOINTS.
+    // worker that can run a tool can run `recall_card_put`; if it can, it needs
+    // an embedder, and if it needs one it belongs in ENTRYPOINTS.
     //
     // "Can dispatch a tool" is read off the imports rather than guessed: these
     // three are every way a tool actually executes outside the agent runtime.
@@ -113,7 +117,7 @@ describe('Recall embedder is registered at every entrypoint', () => {
     for (const file of dispatching) {
       expect(
         listed,
-        `${file} can dispatch a tool, so it can write a page — add it to ENTRYPOINTS ` +
+        `${file} can dispatch a tool, so it can write Recall — add it to ENTRYPOINTS ` +
           `and call registerRecallEmbedder(embedBatch) at its top level`,
       ).toContain(file);
     }

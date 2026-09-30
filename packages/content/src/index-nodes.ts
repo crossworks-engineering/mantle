@@ -36,21 +36,10 @@ export {
 } from './entity-dedup';
 
 export {
-  RECALL_TAG,
-  RECALL_PROMPT_TAG,
   RECALL_ROOT_LABEL,
   ensureRecallRoot,
-  compileRecallMap,
   embedPendingRecallPrompts,
-  findPageRoot,
-  getRecallMap,
-  recallAfterPageDelete,
-  recallAfterPageMove,
-  recallAfterPageWrite,
-  removeRecallForPage,
-  isRecallTreePage,
   recallFolderCrumbs,
-  type RecallCompileResult,
 } from './recall';
 
 export {

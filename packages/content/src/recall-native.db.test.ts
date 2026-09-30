@@ -290,14 +290,14 @@ describe.skipIf(!URL)('Recall v2 native writes, on Postgres', () => {
       ).rejects.toThrow(/entry card.*delete the map instead/s);
     });
 
-    it('a write to a page-built (v1) map: its pages are its source', async () => {
+    it('a write to a leftover page-built (v1) row: retired in R5, not a map', async () => {
       const legacy = randomUUID();
       await m.db.execute(sqlTag`
         insert into recall_maps (id, owner_id, slug, title, enter_when, node_count, node_id)
         values (${legacy}, ${owner}, ${`v1-${tag}`}, 'V1 map', 'when', 1, null)`);
       await expect(
         c.putRecallCard(owner, legacy, null, { title: 'X', bodyMd: 'y' }, OWNER, 0),
-      ).rejects.toThrow(/page-built.*Edit its pages/s);
+      ).rejects.toMatchObject({ code: 'map_not_found' });
     });
   });
 

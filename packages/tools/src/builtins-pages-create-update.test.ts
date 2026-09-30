@@ -10,11 +10,9 @@
  * would still "work" in every happy-path test, so the assertions here name
  * which store edge was hit AND which one was not.
  *
- * The other thing worth pinning is the owner-only tag strip. `recall` and
- * `prompt` are owner gestures (docs/recall.md): an agent may draft a map
- * page, but only the owner activates it by tagging. The strip is a silent
- * filter on the way in, so a regression would be invisible in the output
- * unless the test looks at what reached the store.
+ * Tags pass through as given. `recall` and `prompt` were owner-only while
+ * page-built Recall maps existed (a tag activated a map); since R5 they are
+ * ordinary topic tags, and the tests below pin that nothing strips them.
  *
  * Store edges (createPage / updatePage / movePage / addPageMention) are
  * stubbed; markdownToDoc and the tools' own guards and mappings are real.
@@ -129,11 +127,13 @@ describe('page_create', () => {
     expect(outputOf(res).parent_id).toBe(PARENT_ID);
   });
 
-  it('strips owner-only tags before they reach the store, and says so', async () => {
+  it('keeps `recall` and `prompt` as ordinary tags (page-built maps retired in R5)', async () => {
     const res = await create.handler({ title: 'Map', tags: ['work', 'recall', 'Prompt'] }, ctx);
-    // An agent may DRAFT a map page; only the owner activates it by tagging.
-    expect(createPage).toHaveBeenCalledWith('o1', expect.objectContaining({ tags: ['work'] }));
-    expect(String(outputOf(res).note)).toMatch(/owner-only/);
+    expect(createPage).toHaveBeenCalledWith(
+      'o1',
+      expect.objectContaining({ tags: ['work', 'recall', 'Prompt'] }),
+    );
+    expect(outputOf(res).note).toBeUndefined();
   });
 
   it('records the ingest so the page reaches the brain', async () => {
@@ -182,9 +182,9 @@ describe('page_update', () => {
     expect(outputOf(res)).toMatchObject({ id: PAGE_ID, title: 'Runbook' });
   });
 
-  it('strips owner-only tags from a tag replacement', async () => {
+  it('passes a tag replacement through whole, `recall` included', async () => {
     await update.handler({ id: PAGE_ID, tags: ['recall', 'ops'] }, ctx);
-    expect(updatePage).toHaveBeenCalledWith('o1', PAGE_ID, { tags: ['ops'] });
+    expect(updatePage).toHaveBeenCalledWith('o1', PAGE_ID, { tags: ['recall', 'ops'] });
   });
 
   it('reports a missing page with the lookup that fixes it', async () => {

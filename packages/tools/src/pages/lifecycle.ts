@@ -30,7 +30,6 @@ import {
   MARKDOWN_REFS_PRE,
   PAGE_ID_PRE,
   PAGE_NODE_ID_PRE,
-  stripOwnerOnlyTags,
 } from './common';
 
 export const page_create: BuiltinToolDef = {
@@ -63,7 +62,7 @@ export const page_create: BuiltinToolDef = {
     const title = str(input.title).trim();
     if (!title) return { ok: false, error: 'title is required' };
     const markdown = str(input.markdown);
-    const { tags, stripped: strippedTags } = stripOwnerOnlyTags(strArr(input.tags));
+    const tags = strArr(input.tags);
     const icon = str(input.icon).trim();
     const parentId = str(input.parent_id).trim();
     try {
@@ -97,11 +96,6 @@ export const page_create: BuiltinToolDef = {
           title: page.title,
           tags: page.tags,
           ...(parentId ? { parent_id: parentId } : {}),
-          ...(strippedTags.length > 0
-            ? {
-                note: `The ${strippedTags.map((x) => `\`${x}\``).join(', ')} tag is owner-only — the owner sets it in the editor to turn a tree into a Recall map.`,
-              }
-            : {}),
         },
       };
     } catch (err) {
@@ -176,7 +170,7 @@ export const page_replace_from_file: BuiltinToolDef = {
       if (typeof input.title === 'string' && input.title.trim()) {
         metaPatch.title = input.title.trim().slice(0, 200);
       }
-      if (Array.isArray(input.tags)) metaPatch.tags = stripOwnerOnlyTags(strArr(input.tags)).tags;
+      if (Array.isArray(input.tags)) metaPatch.tags = strArr(input.tags);
       if (typeof input.icon === 'string' && input.icon.trim()) {
         metaPatch.icon = input.icon.trim();
       }
@@ -255,7 +249,7 @@ export const page_update: BuiltinToolDef = {
     const patch: Record<string, unknown> = {};
     if (typeof input.title === 'string') patch.title = input.title.trim().slice(0, 200);
     if (typeof input.markdown === 'string') patch.doc = markdownToDoc(input.markdown);
-    if (Array.isArray(input.tags)) patch.tags = stripOwnerOnlyTags(strArr(input.tags)).tags;
+    if (Array.isArray(input.tags)) patch.tags = strArr(input.tags);
     if (typeof input.icon === 'string') patch.icon = input.icon.trim();
     if (Object.keys(patch).length === 0) {
       return { ok: false, error: 'nothing to update — pass title, markdown, tags, or icon' };
@@ -312,7 +306,7 @@ export const page_update_draft: BuiltinToolDef = {
     // Metadata patch (low-risk, direct). Body change goes to draft separately.
     const metaPatch: Record<string, unknown> = {};
     if (typeof input.title === 'string') metaPatch.title = input.title.trim().slice(0, 200);
-    if (Array.isArray(input.tags)) metaPatch.tags = stripOwnerOnlyTags(strArr(input.tags)).tags;
+    if (Array.isArray(input.tags)) metaPatch.tags = strArr(input.tags);
     if (typeof input.icon === 'string') metaPatch.icon = input.icon.trim();
 
     let metaUpdated = false;

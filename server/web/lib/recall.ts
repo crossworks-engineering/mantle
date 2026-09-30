@@ -3,19 +3,14 @@
  * recall_nodes; docs/recall.md). The owner UI talks HTTP, not MCP, so these
  * back `/api/recall/**` the way lib/journal backs `/api/journal`.
  *
- * Read-only for a PAGE-BUILT (v1) map: its authoring is the normal page
- * draft/commit path, where the compiler, lint and trust model live.
+ * A map is authored through the routes: the rows are the source, written by
+ * packages/content/src/recall-native.ts. Page-built (v1) maps were retired in
+ * R5; a leftover row without its tree item is never listed or opened.
  *
- * A NATIVE (v2) map is authored through the routes instead: the rows are the
- * source, written by packages/content/src/recall-native.ts. The reads below
- * serve both kinds and tell them apart by `nodeId`.
- *
- * Unlike the agent-facing `recall_index`, the catalog here includes maps
- * that never compiled clean (nodeCount 0): a failed compile is exactly what
- * the owner needs to see, and this API is the only place lint reports
- * become visible outside psql.
+ * Unlike the agent-facing `recall_index`, the catalog here includes maps an
+ * agent made that the owner has not published yet, and maps with no cards.
  */
-import { and, asc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, ilike, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { NextResponse } from '@/server/http-compat';
 import { db, nodes, recallMaps, recallNodes } from '@mantle/db';
 import {
@@ -26,11 +21,9 @@ import {
 } from '@mantle/content';
 import type {
   RecallCardDetailDTO,
-  RecallLintIssueDTO,
   RecallMapDetailDTO,
   RecallMapSummaryDTO,
   RecallNodeDTO,
-  RecallPageStateDTO,
   RecallRevisionDTO,
 } from '@mantle/client-types';
 
@@ -43,12 +36,10 @@ function toSummary(row: MapRow, folder: string | null = null): RecallMapSummaryD
     title: row.title,
     enterWhen: row.enterWhen,
     nodeCount: row.nodeCount,
-    // A native map cannot be stale: its rows ARE the source. Reported true
-    // regardless of a leftover flag from the map's page-built life.
-    lastCompileOk: row.nodeId !== null ? true : row.lastCompileOk,
-    nodeId: row.nodeId,
+    // Every served row has its item: the queries below filter the rest.
+    nodeId: row.nodeId!,
     // Resolved by the caller from the map item's path (`withFolders`); null
-    // for a page-built map, which has no item and so no folder.
+    // for a map filed at the Recall root.
     folder,
     published: row.published,
     version: row.version,
@@ -77,14 +68,14 @@ async function withFolders(ownerId: string, rows: MapRow[]): Promise<RecallMapSu
   return rows.map((r) => toSummary(r, crumbs.get(r.id) ?? null));
 }
 
+/** A map row with no tree item is a leftover page-built (v1) map, retired in
+ *  R5 (migration 0209 deletes them): never listed, never opened. */
 function mapsWhere(ownerId: string, q?: string) {
+  const mine = and(eq(recallMaps.ownerId, ownerId), isNotNull(recallMaps.nodeId));
   const trimmed = q?.trim();
-  if (!trimmed) return eq(recallMaps.ownerId, ownerId);
+  if (!trimmed) return mine;
   const like = `%${trimmed}%`;
-  return and(
-    eq(recallMaps.ownerId, ownerId),
-    or(ilike(recallMaps.title, like), ilike(recallMaps.slug, like)),
-  );
+  return and(mine, or(ilike(recallMaps.title, like), ilike(recallMaps.slug, like)));
 }
 
 export async function listRecallMaps(
@@ -115,7 +106,7 @@ export async function getRecallMapDetail(
   id: string,
 ): Promise<RecallMapDetailDTO | null> {
   const [map] = await db.select().from(recallMaps).where(eq(recallMaps.id, id)).limit(1);
-  if (!map || map.ownerId !== ownerId) return null;
+  if (!map || map.ownerId !== ownerId || map.nodeId === null) return null;
 
   const rows = await db
     .select({
@@ -133,8 +124,7 @@ export async function getRecallMapDetail(
     })
     .from(recallNodes)
     .where(eq(recallNodes.mapId, map.id))
-    // Card order for a native map is the owner's (drag to reorder); slug is
-    // the tiebreak and the only order a page-built map ever had.
+    // Card order is the owner's (drag to reorder); slug is the tiebreak.
     .orderBy(asc(recallNodes.rank), asc(recallNodes.slug));
 
   const nodes: RecallNodeDTO[] = rows.map((n) => ({
@@ -156,53 +146,8 @@ export async function getRecallMapDetail(
     promptPending: n.promptPending,
     updatedAt: n.updatedAt.toISOString(),
   }));
-  // The index (the root — its node id IS the map id) always leads.
-  nodes.sort((a, b) => Number(b.id === map.id) - Number(a.id === map.id));
-
   const [summary] = await withFolders(ownerId, [map]);
-  return {
-    ...summary!,
-    report: (map.lastCompileReport as RecallLintIssueDTO[] | null) ?? null,
-    nodes,
-  };
-}
-
-/**
- * This page's place in Recall, if any — backs the editor lint badge. Two
- * lookups: the compiled row (the common case), then failing reports that
- * NAME this page (a brand-new page that broke its map has no compiled row,
- * and that is exactly when the badge matters most).
- */
-export async function getRecallStateForPage(
-  ownerId: string,
-  pageId: string,
-): Promise<RecallPageStateDTO | null> {
-  const [node] = await db.select().from(recallNodes).where(eq(recallNodes.id, pageId)).limit(1);
-
-  let map: MapRow | undefined;
-  let nodeInfo: RecallPageStateDTO['node'] = null;
-  if (node && node.ownerId === ownerId) {
-    [map] = await db.select().from(recallMaps).where(eq(recallMaps.id, node.mapId)).limit(1);
-    nodeInfo = { slug: node.slug, kind: node.kind as RecallNodeDTO['kind'] };
-  } else {
-    [map] = await db
-      .select()
-      .from(recallMaps)
-      .where(
-        and(
-          eq(recallMaps.ownerId, ownerId),
-          sql`${recallMaps.lastCompileReport} @> ${JSON.stringify([{ pageId }])}::jsonb`,
-        ),
-      )
-      .limit(1);
-  }
-  if (!map) return null;
-  const [summary] = await withFolders(ownerId, [map]);
-  return {
-    map: summary!,
-    node: nodeInfo,
-    report: (map.lastCompileReport as RecallLintIssueDTO[] | null) ?? null,
-  };
+  return { ...summary!, nodes };
 }
 
 // ── v2: the write side ───────────────────────────────────────────────────────

@@ -16,7 +16,6 @@ import { asViewerLevel, db, nodes, notifyNodeIngested, pages, withBusyRetry } fr
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { PageVisibility, PageWidth } from '@mantle/client-types';
 import { docToText } from '../doc-to-text';
-import { recallAfterPageWrite } from '../recall';
 import { EMPTY_DOC, dedupeTags, detailOf, type PageDetail } from './shared';
 import { filtersPageText, pageDocText } from './level-text';
 import { referencedEmbedIds } from '../doc-assets';
@@ -208,11 +207,6 @@ async function updatePageOnce(
   if (willReindex) {
     await notifyNodeIngested(id);
   }
-  // Recall: tags decide map membership, titles decide slugs, and a
-  // programmatic doc write changes the body — any of the three recompiles.
-  if (input.tags !== undefined || input.title !== undefined || docChanged) {
-    await recallAfterPageWrite(ownerId, id);
-  }
   return result;
 }
 
@@ -389,9 +383,6 @@ async function commitPageOnce(
 
   if (result.ok) {
     await notifyNodeIngested(id);
-    // Recall: a commit is the compile moment for a map's serving rows. The
-    // hook is no-throw and skips instantly for pages outside a `recall` tree.
-    await recallAfterPageWrite(ownerId, id);
   }
   return result;
 }

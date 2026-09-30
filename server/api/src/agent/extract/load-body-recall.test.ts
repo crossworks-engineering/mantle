@@ -4,10 +4,9 @@
  * Its cards are rows in recall_nodes, served through the recall tools. If the
  * extractor read them into the general corpus, prompt and map text would come
  * back out of ordinary search and team-turn retrieval — which is exactly what
- * the design excludes, and the reason the v1 page-built maps already take this
- * path (`isRecallTreePage`). Recall v2 has to arrive with the same posture on
- * day one: the node type exists from R1, so an unguarded extractor would start
- * indexing card text the moment R2 writes the first map.
+ * the design excludes. The node type exists from R1, so an unguarded
+ * extractor would have started indexing card text the moment R2 wrote the
+ * first map.
  *
  * Title and enter-when only, the same shape as secrets.
  */

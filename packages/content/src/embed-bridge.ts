@@ -1,7 +1,7 @@
 /**
  * The one embedding seam @mantle/content has.
  *
- * Recall compiles prompt rows and needs vectors for them. Everything else in
+ * Recall writes prompt cards and needs vectors for them. Everything else in
  * this package is storage: it reads and writes rows and never calls a model.
  * Reaching for `@mantle/embeddings` from here inverted the layering — content
  * is below the adapter layer, not above it — and it did so through a dynamic
@@ -14,22 +14,23 @@
  *
  * ## Why this bridge throws rather than no-ops
  *
- * `embedPendingRecallPrompts` is called from INSIDE `recallAfterPageWrite`,
- * fire-and-forget, on a path whose whole contract is "never take a page write
- * down". A missing embedder is therefore invisible by construction: the page
- * still saves, the map still compiles, and only `recall_match` quietly stops
- * finding prompts — weeks later, with nothing in the logs to connect it to.
+ * `embedPendingRecallPrompts` is called fire-and-forget after a card write, a
+ * prompt confirm and from `recall_match`, on paths that must not fail because
+ * an embed did. A missing embedder is therefore invisible by construction: the
+ * card still saves, and only `recall_match` quietly stops finding prompts —
+ * weeks later, with nothing in the logs to connect it to.
  *
  * Returning 0 would be that silent failure. `getRecallEmbedder` throws
- * instead, so the fire-and-forget `.catch` in recall.ts logs a named error the
+ * instead, so the fire-and-forget `.catch` at each caller logs a named error the
  * first time a prompt needs a vector in a process that forgot to register.
  *
- * Registration lives in the three process entrypoints that can reach a page
- * write, and `recall-embed-registration.test.ts` pins all three:
+ * Registration lives in every process entrypoint that can reach a Recall
+ * write, and `recall-embed-registration.test.ts` pins them all:
  *
- *   - server/web/server/main.ts   (the editor commits recall maps)
- *   - server/api/src/main.ts      (agent page tools, forum + telegram turns)
- *   - server/mcp/src/server.ts    (page tools over stdio)
+ *   - server/web/server/main.ts   (the owner Recall routes)
+ *   - server/api/src/main.ts      (agent Recall tools, forum + telegram turns)
+ *   - server/mcp/src/server.ts    (Recall tools over stdio)
+ *   - the server/web workers that dispatch tools (runs, telegram-poll)
  */
 
 /** Embed a batch of texts for one owner. Mirrors `embedBatch` in

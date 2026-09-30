@@ -11,8 +11,7 @@ import { getRecallMapDetail, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
 import { UUID_RE } from '@mantle/std';
 
-/** One map: its cards (without bodies) and options; for a page-built map,
- *  also its last lint report. */
+/** One map: its cards (without bodies) and options. */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;

@@ -482,6 +482,37 @@ client in `client-pair.tag`. What changes for a box:
   trigger in place; 338 reads none of them and never changes a client's
   role. Its members lose write access to client apps again.
 
+## Rolling to the Recall R5 release (page-built maps retired, migration 0209)
+
+R5 removes page-built (v1) Recall maps: maps compiled from a page tree whose
+root carries the `recall` tag. After the roll a map is only ever a native
+`recall` item, `recall` and `prompt` are ordinary page tags, and migration
+0209 deletes every `recall_maps` row with `node_id` NULL (their cards go with
+them). What to do per box:
+
+- **Before the roll**, run on the box:
+
+  ```sql
+  select slug, title from recall_maps where node_id is null;
+  ```
+
+  Roll only when it returns zero rows, or every slug it lists is answered by
+  a native map (its current slug or one of its `former_slugs`). A slug that
+  nothing answers stops resolving for every agent and skill that remembers
+  it. Only dev and jason-prod ever had page-built maps.
+
+- **On dev**, the v1 maps are retired by hand BEFORE this roll, on a release
+  that still has the v1 code: move each remembered slug onto its native map,
+  then untag the root (the v1 hooks drop its compiled map). 0209 then finds
+  nothing, and its NOTICE in the migrate log says so.
+- **The migrate log** shows `recall R5: deleting N page-built map(s): ...`
+  on every box. Anything other than 0 on a box other than dev and jason-prod
+  is unexpected: read the slugs.
+- **Rolling back** to the release before R5 is safe for the schema
+  (`last_compile_ok` and `last_compile_report` stay, unused). The deleted rows
+  do not come back on their own; a page still tagged `recall` recompiles on
+  its next commit under the old release.
+
 ## Rollback
 
 ```bash

@@ -24,6 +24,11 @@
  * The eleven owner write routes exist, and `features.test.ts` fails if this
  * flag is true while any of them is missing from the route manifest, so the
  * flag cannot say more than the brain can do.
+ *
+ * It stays true for good. Since R5 this brain serves no page-built (v1) map
+ * at all, and a client that reads the flag as false or absent falls back to
+ * its v1 screen (or, from jackdaw's R5 release, a "needs an update" state),
+ * which is wrong for this brain.
  */
 export const RECALL_V2 = true;
 

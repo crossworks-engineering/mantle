@@ -193,7 +193,6 @@ const recall_map_get: BuiltinToolDef = {
           title: row!.title,
           enter_when: row!.enterWhen,
           published: row!.published,
-          page_built: row!.nodeId === null,
           former_slugs: row!.formerSlugs,
           version: row!.version,
           cards: cards.map((c) => ({

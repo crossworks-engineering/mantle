@@ -2,10 +2,6 @@
  * Pages · tree shape. The three operations that change WHERE a page sits
  * rather than what it says: create (optionally under a parent), move (with the
  * whole subtree's ltree paths recomputed), and delete.
- *
- * All three notify Recall, because membership of a `recall` tree is decided by
- * position: a create can be born into a map, a move can carry a page out of
- * one and into another, and a delete removes a serving row.
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
@@ -13,12 +9,6 @@ import { db, nodes, pages } from '@mantle/db';
 import type { PageRow } from '@mantle/client-types';
 import { docToText } from '../doc-to-text';
 import { childPagePath } from '../page-path';
-import {
-  findPageRoot,
-  recallAfterPageDelete,
-  recallAfterPageMove,
-  recallAfterPageWrite,
-} from '../recall';
 import {
   EMPTY_DOC,
   PAGES_ROOT_LABEL,
@@ -122,9 +112,6 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
     return detailOf(node, doc);
   });
 
-  // Recall: a create lands a COMMITTED doc and tags in one write — a page
-  // born into a `recall` tree (or born as one) must compile like a commit.
-  await recallAfterPageWrite(ownerId, result.id);
   return result;
 }
 
@@ -210,10 +197,6 @@ export async function movePage(
   // Already where it's being asked to go — nothing to write.
   if ((node.parentId ?? null) === target) return rowOf(node);
 
-  // Recall: a move can carry a page out of one map and into another —
-  // remember the tree it is LEAVING so both maps recompile afterwards.
-  const recallOldRoot = await findPageRoot(ownerId, id).catch(() => null);
-
   await db.transaction(async (tx) => {
     await tx
       .update(nodes)
@@ -239,8 +222,6 @@ export async function movePage(
     `);
   });
 
-  await recallAfterPageMove(ownerId, id, recallOldRoot?.id ?? null);
-
   const [updated] = await db.select().from(nodes).where(eq(nodes.id, id)).limit(1);
   return updated ? rowOf(updated) : null;
 }
@@ -252,9 +233,6 @@ export async function deletePage(ownerId: string, id: string): Promise<boolean> 
     .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
   if (!row) return false;
-  // Recall needs the tree root BEFORE the delete severs `parent_id`.
-  const recallRoot = await findPageRoot(ownerId, id).catch(() => null);
   await db.delete(nodes).where(eq(nodes.id, id)); // `pages` row cascades.
-  await recallAfterPageDelete(ownerId, id, recallRoot?.id ?? null);
   return true;
 }
