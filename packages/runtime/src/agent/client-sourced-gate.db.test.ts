@@ -271,4 +271,67 @@ describe.skipIf(!URL)('the lowering guard, end to end', () => {
     });
     expect((await gate('table_row_add', { table_id: ids.appTable, cells: {} })).gate).toBe(true);
   });
+
+  it('folder sharing: a move into, a write into, or a file created in a client-shared folder waits', async () => {
+    const gate = (slug: string, input: Record<string, unknown>) =>
+      rules.clientSourcedGate({
+        ownerId,
+        tool: { slug, handler: { kind: 'builtin', ref: slug } },
+        input,
+        isReadOnlyBuiltin: tools.isBuiltinReadOnly,
+      });
+    const label = tag.replace(/-/g, '_');
+    const f = {
+      shared: randomUUID(),
+      plain: randomUUID(),
+      plain2: randomUUID(),
+      inShared: randomUUID(),
+      inPlain: randomUUID(),
+      filesShared: randomUUID(),
+      filesPlain: randomUUID(),
+    };
+    created.push(...Object.values(f));
+    await admin`insert into nodes (id, owner_id, type, title, path, data) values
+      (${f.shared}, ${ownerId}, 'branch', ${`${tag} shared`}, ${`notes.${label}_shared`}, '{}'::jsonb),
+      (${f.plain}, ${ownerId}, 'branch', ${`${tag} plain`}, ${`notes.${label}_plain`}, '{}'::jsonb),
+      (${f.plain2}, ${ownerId}, 'branch', ${`${tag} plain2`}, ${`notes.${label}_plain2`}, '{}'::jsonb),
+      (${f.inShared}, ${ownerId}, 'note', ${`${tag} in shared`}, ${`notes.${label}_shared`}, '{}'::jsonb),
+      (${f.inPlain}, ${ownerId}, 'note', ${`${tag} in plain`}, ${`notes.${label}_plain`}, '{}'::jsonb),
+      (${f.filesShared}, ${ownerId}, 'branch', ${`${tag} files shared`}, ${`files.${label}_shared`}, '{}'::jsonb),
+      (${f.filesPlain}, ${ownerId}, 'branch', ${`${tag} files plain`}, ${`files.${label}_plain`}, '{}'::jsonb)`;
+    await admin`update nodes set share_level = 'client' where id in ${admin([f.shared, f.filesShared])}`;
+
+    // Moving an admin note into the client-shared folder waits; elsewhere runs.
+    expect(
+      (await gate('tree_item_move', { kind: 'notes', item_ids: [f.inPlain], folder_id: f.shared }))
+        .gate,
+    ).toBe(true);
+    expect(
+      await gate('tree_item_move', { kind: 'notes', item_ids: [f.inPlain], folder_id: f.plain2 }),
+    ).toEqual({ gate: false });
+    expect(
+      await gate('tree_item_move', { kind: 'notes', item_ids: [f.inPlain], folder_id: null }),
+    ).toEqual({ gate: false });
+    // A folder moved under it waits; the shared folder itself, and what it
+    // holds (admin by its own level, client through the folder), wait.
+    expect(
+      (await gate('tree_folder_update', { kind: 'notes', folder_id: f.plain, parent_id: f.shared }))
+        .gate,
+    ).toBe(true);
+    expect(
+      (await gate('tree_folder_update', { kind: 'notes', folder_id: f.shared, name: 'x' })).gate,
+    ).toBe(true);
+    expect(
+      (await gate('tree_item_move', { kind: 'notes', item_ids: [f.inShared], folder_id: f.plain }))
+        .gate,
+    ).toBe(true);
+    // A file created by path in it (or below it) waits; in a plain folder runs.
+    const file = (parent_path: string) =>
+      gate('file_create', { parent_path, filename: 'x.md', content: 'x' });
+    expect((await file(`files.${label}_shared`)).gate).toBe(true);
+    expect((await file(`files.${label}_shared.sub`)).gate).toBe(true);
+    expect(await file(`files.${label}_plain`)).toEqual({ gate: false });
+    // A path that does not parse waits (fail closed).
+    expect((await file('not a path!')).gate).toBe(true);
+  });
 });

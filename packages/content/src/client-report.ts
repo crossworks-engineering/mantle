@@ -41,6 +41,7 @@ import type {
   ClientReportRef,
 } from '@mantle/client-types';
 import type { MemberItemKind } from '@mantle/client-types/member-kinds';
+import { isReadAt, readAtSql } from './item-level';
 import { noteRefs, pageRefs } from './embed-refs';
 import { refsOf } from './member-bundle';
 import { oldLinksAbove } from './client-old-links';
@@ -63,12 +64,13 @@ export class ClientReportChangedError extends Error {
   }
 }
 
-/** Every client-level item id of the brain, newest first. Ids only. */
+/** Every item id of the brain a client reads, newest first: at client by
+ *  its own level or through a folder shared with clients. Ids only. */
 async function clientItemIds(ownerId: string): Promise<string[]> {
   const rows = await db
     .select({ id: nodes.id })
     .from(nodes)
-    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.audience, 'client')))
+    .where(and(eq(nodes.ownerId, ownerId), readAtSql(['client'])))
     .orderBy(desc(nodes.updatedAt), nodes.id);
   return rows.map((r) => r.id);
 }
@@ -223,7 +225,8 @@ export async function clientReportAcknowledged(ownerId: string): Promise<boolean
     select exists (select 1 from ack)
        and not exists (
          select 1 from nodes n
-          where n.owner_id = ${ownerId} and n.audience = 'client'
+          where n.owner_id = ${ownerId}
+            and (n.audience = 'client' or n.inherited_level = 'client')
             and not (n.id = any (coalesce((select item_ids from ack), '{}'::uuid[])))) as ok`)) as unknown as {
     ok: boolean;
   }[];
@@ -291,6 +294,7 @@ export async function clientReport(
           type: nodes.type,
           title: nodes.title,
           audience: nodes.audience,
+          inheritedLevel: nodes.inheritedLevel,
         })
         .from(nodes)
         .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, refIds)))
@@ -300,7 +304,7 @@ export async function clientReport(
     (named.get(id) ?? []).flatMap((ref): ClientReportRef[] => {
       const r = refById.get(ref);
       if (!r) return [{ id: ref, type: null, title: null, audience: null }];
-      if (r.audience === 'client' || ref === id) return [];
+      if (isReadAt(r.audience, r.inheritedLevel, ['client']) || ref === id) return [];
       return [
         {
           id: ref,

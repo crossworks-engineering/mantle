@@ -171,9 +171,24 @@ contacts, secrets) cannot be shared.
 - **After a confirmed change**, embeds of the pages, drawings and notes
   concerned follow them to the level they are now read at (never raising
   anything) and the pages' text is re-folded.
-- **Clients** still read through their own tools, which list and redact by
-  an item's own level today; folder-shared items reach them with the member
-  and client trees (next in this phase).
+- **Members and clients** read a folder-shared item wherever they read
+  items, by the row policy's union rule: its own level OR its inherited
+  share is one of the reader's levels (`isReadAt` / `readAtSql`,
+  `packages/content/src/item-level.ts`). The member Library and the
+  client's "Shared with you" (list, open, the `client_shared_*` tools), a
+  client's redaction (which references keep their names), drawing and chat
+  images, and apps (an app runs at its effective level, so an admin app in
+  a team-shared folder is a team app). The client thread is not there yet
+  (its read rule is a DB policy, migration 0194). The member and client
+  TREES (folder navigation for those logins) are still to come.
+- **The owner's gates count it too.** "What clients see" lists what a
+  client-shared folder holds, and sharing a folder with clients asks for a
+  fresh acknowledgement before another client login can be added. A
+  client-sourced turn's write waits at Pending when it lands in a folder
+  shared with clients: a tree move into one (`tree_item_move`,
+  `tree_folder_update` with `parent_id`), a Files create, copy or move by
+  path into or below one, or any write into an item read by clients
+  through a folder.
 
 ## For agents
 
