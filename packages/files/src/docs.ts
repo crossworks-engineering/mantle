@@ -67,7 +67,7 @@ export function docsRoot(): string {
  * is explicitly 'full'. A Table stamped 'retrieval' is retrieval-only too:
  * an app-table export of an app clients write (client tier audit I2), so
  * client text never becomes graph facts. Every other node is always 'full'.
- * Pure — the extractor calls this to decide whether to run the L4 passes.
+ * Pure: the extractor calls this to decide whether to run the L4 passes.
  */
 export function effectiveBrainDepth(nodeType: string, rawDepth: unknown): DocBrainDepth {
   if (nodeType === 'documentation' && rawDepth !== 'full') return 'retrieval';
