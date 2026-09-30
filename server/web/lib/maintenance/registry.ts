@@ -158,7 +158,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'share-drift',
     title: 'Repair folder-share drift',
     description:
-      "Finds rows whose stored inherited share (nodes.inherited_level) differs from what their folders give (migration 0204's rule) and sets them right. The triggers keep it true for every ordinary write; this catches a race between an unshare and an insert into the same folder, which would leave a row readable at a share nobody set (folder audit Y1). Reports how many were read more openly than allowed.",
+      "Finds rows whose stored inherited share (nodes.inherited_level) differs from what their folders give (migration 0204's rule) and sets them right. The triggers keep it true for every ordinary write; this catches a race between an unshare and an insert into the same folder, which would leave a row readable at a share nobody set (folder audit Y1). Also puts the embed edges back to what the stored pages, drawings and notes say and repairs the level embeds are read through (nodes.embedded_level, migration 0208). Reports how many were read more openly than allowed.",
     kind: 'recurring',
     status: 'live',
     cost: 'sql',

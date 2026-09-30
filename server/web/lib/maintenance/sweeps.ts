@@ -144,12 +144,24 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
       ? 'nothing to reap'
       : `deleted ${r.deleted} code row(s) and ${r.skipsDeleted} skip row(s); cleared ${r.ipsCleared} address(es)`;
   },
-  // Folder audit Y1: rows read at a share their folders no longer give.
+  // Folder audit Y1: rows read at a share their folders no longer give;
+  // S5 (0208): embed edges and the level embeds are read at.
   'share-drift': async () => {
     const r = await repairShareDrift();
-    return r.drifted === 0
-      ? 'no drift'
-      : `repaired ${r.repaired} of ${r.drifted} drifted row(s) (${r.openedTooFar} read too openly)`;
+    const parts = [
+      ...(r.drifted
+        ? [
+            `repaired ${r.repaired} of ${r.drifted} drifted row(s) (${r.openedTooFar} read too openly)`,
+          ]
+        : []),
+      ...(r.edgesDrifted ? [`put back ${r.edgesDrifted} embed edge(s)`] : []),
+      ...(r.embeddedDrifted
+        ? [
+            `repaired ${r.embeddedDrifted} embedded level(s) (${r.embeddedOpenedTooFar} read too openly)`,
+          ]
+        : []),
+    ];
+    return parts.length ? parts.join('; ') : 'no drift';
   },
   // Client tier audit I4: app access log rows older than 90 days.
   'app-access-log-reap': async () => {

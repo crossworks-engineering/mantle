@@ -7,6 +7,13 @@
  * snapshot), and anything a future writer gets wrong. A row read at a share
  * nobody set any more fails OPEN, so the nightly sweep repairs and reports.
  * Plain SQL, no model, idempotent: a no-op once clean.
+ *
+ * The same for what embeds follow (migration 0208): the embed edges are put
+ * back to what the stored pages, drawings and notes say, then every
+ * nodes.embedded_level that differs from its rule (mantle_embedded_level) is
+ * repaired. An edge or a level a trigger missed (a write while a trigger was
+ * off, a race between two changes to one embed's embedders) fails open or
+ * closed; both are counted.
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
@@ -18,7 +25,78 @@ export type ShareDriftResult = {
   repaired: number;
   /** Of the drifted, how many were read MORE openly than the rule allows. */
   openedTooFar: number;
+  /** Embed edges missing or left over against the stored data. */
+  edgesDrifted: number;
+  /** Rows whose embedded level differs from its rule (after the edges are
+   *  put right, on a repair). */
+  embeddedDrifted: number;
+  /** Of those, how many were read MORE openly than the rule allows. */
+  embeddedOpenedTooFar: number;
 };
+
+/** The edges the stored data gives: pages, drawings and notes. */
+const EXPECTED = sql`(select x.from_id, x.to_id from (
+    select p.node_id as from_id, t as to_id from pages p
+     cross join lateral unnest(mantle_page_embed_ids(p.doc)) t
+    union
+    select d.node_id, t from draws d
+     cross join lateral unnest(mantle_draw_embed_ids(d.file_refs)) t
+    union
+    select n.id, t from nodes n
+     cross join lateral unnest(mantle_note_embed_ids(n.data->>'content')) t
+     where n.type = 'note' and n.data ? 'content') x
+   where x.to_id <> x.from_id and exists (select 1 from nodes t where t.id = x.to_id))`;
+
+/** The rows whose embedded level can be wrong: those that hold one, or
+ *  that something embeds. */
+const embedCandidates = sql`(n.embedded_level is not null
+  or exists (select 1 from node_embeds e where e.to_id = n.id))`;
+
+async function repairEmbedDrift(
+  dryRun: boolean,
+): Promise<Pick<ShareDriftResult, 'edgesDrifted' | 'embeddedDrifted' | 'embeddedOpenedTooFar'>> {
+  const [edges] = (await db.execute(sql`
+    select (select count(*) from ${EXPECTED} x
+             where not exists (select 1 from node_embeds e
+                                where e.from_id = x.from_id and e.to_id = x.to_id))::int
+         + (select count(*) from node_embeds e
+             where not exists (select 1 from ${EXPECTED} x
+                                where x.from_id = e.from_id and x.to_id = e.to_id))::int
+           as n`)) as unknown as Array<{ n: number }>;
+  const edgesDrifted = Number(edges?.n ?? 0);
+  if (!dryRun && edgesDrifted > 0) {
+    // Through the table, so the edge triggers refresh what the fix reaches.
+    await db.execute(sql`
+      delete from node_embeds e
+       where not exists (select 1 from ${EXPECTED} x
+                          where x.from_id = e.from_id and x.to_id = e.to_id)`);
+    await db.execute(sql`
+      insert into node_embeds (from_id, to_id) select x.from_id, x.to_id from ${EXPECTED} x
+      on conflict do nothing`);
+  }
+  const rule = sql`mantle_embedded_level(n.owner_id, n.id, n.type)`;
+  const [count] = (await db.execute(sql`
+    select count(*)::int as drifted,
+           count(*) filter (where d.stored is not null
+                             and (d.rule is null or (d.stored = 'client' and d.rule = 'team')))::int
+             as opened
+      from (select n.embedded_level as stored, ${rule} as rule from nodes n
+             where ${embedCandidates} and n.embedded_level is distinct from ${rule}) d`)) as unknown as Array<{
+    drifted: number;
+    opened: number;
+  }>;
+  const embeddedDrifted = Number(count?.drifted ?? 0);
+  if (!dryRun && embeddedDrifted > 0) {
+    await db.execute(sql`
+      update nodes n set embedded_level = ${rule}
+       where ${embedCandidates} and n.embedded_level is distinct from ${rule}`);
+  }
+  return {
+    edgesDrifted,
+    embeddedDrifted,
+    embeddedOpenedTooFar: Number(count?.opened ?? 0),
+  };
+}
 
 /** The only rows that can drift: those that hold a share, or could take one
  *  (workspace kinds under a shareable root). Email, tasks and the rest are
@@ -42,12 +120,16 @@ export async function repairShareDrift(opts: { dryRun?: boolean } = {}): Promise
       from (${drift}) d`)) as unknown as Array<{ drifted: number; opened: number }>;
   const drifted = Number(count?.drifted ?? 0);
   const openedTooFar = Number(count?.opened ?? 0);
-  if (opts.dryRun || drifted === 0) return { drifted, repaired: 0, openedTooFar };
-  const done = (await db.execute(sql`
-    update nodes n
-       set inherited_level = mantle_inherited_level(n.owner_id, n.path, n.type)
-     where ${candidates}
-       and n.inherited_level is distinct from mantle_inherited_level(n.owner_id, n.path, n.type)
-    returning n.id`)) as unknown as unknown[];
-  return { drifted, repaired: done.length, openedTooFar };
+  let repaired = 0;
+  if (!opts.dryRun && drifted > 0) {
+    // Shares first: what embeds are read through follows them (0208 trigger).
+    const done = (await db.execute(sql`
+      update nodes n
+         set inherited_level = mantle_inherited_level(n.owner_id, n.path, n.type)
+       where ${candidates}
+         and n.inherited_level is distinct from mantle_inherited_level(n.owner_id, n.path, n.type)
+      returning n.id`)) as unknown as unknown[];
+    repaired = done.length;
+  }
+  return { drifted, repaired, openedTooFar, ...(await repairEmbedDrift(!!opts.dryRun)) };
 }

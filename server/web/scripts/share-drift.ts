@@ -23,7 +23,10 @@ const apply = process.argv.slice(2).includes('--apply');
 
 async function main() {
   const r = await repairShareDrift({ dryRun: !apply });
-  const line = `${r.drifted} row(s) drifted, ${r.openedTooFar} read more openly than their folders allow`;
+  const line =
+    `${r.drifted} row(s) drifted, ${r.openedTooFar} read more openly than their folders allow; ` +
+    `${r.edgesDrifted} embed edge(s) off, ${r.embeddedDrifted} embedded level(s) drifted ` +
+    `(${r.embeddedOpenedTooFar} read too openly)`;
   if (!apply) {
     console.log(`[share-drift] ${line}. DRY RUN: pass --apply to repair them`);
     return;
