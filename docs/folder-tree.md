@@ -207,6 +207,47 @@ total }` and nothing is written; the same call with `confirm: true` goes
   path into or below one, or any write into an item read by clients
   through a folder.
 
+## Members' folders and drafts in place (phase 5)
+
+A member files its drafts in the brain's tree and keeps private folders there.
+
+- **Where a draft sits.** A draft (and a member's own folder) is a row the
+  member's space owns at a BRAIN folder path (`notes.clients.acme`), maybe
+  below the member's own folders (`notes.clients.acme.mine`). No new column:
+  the owner says whose it is. A member's files and file folders mirror the
+  brain's under `space_files` (`files.docs` is the member's
+  `space_files.docs`, `spaceFilesPath` in `@mantle/db`), so no brain file
+  helper, the disk watcher or the extractor ever resolves them; their bytes
+  stay keyed by id under `MANTLE_SPACES_ROOT`.
+- **The member's tree** (`packages/content/src/tree/member-tree.ts`,
+  `GET /api/member/tree/:kind`) merges per path: the brain's items the member
+  reads, its own folders (`own: true`) and drafts, and teammates' drafts
+  shared with the team (`source`, `state`, `author` on the item). A
+  teammate's draft shows at the deepest folder of its path the member sees,
+  never at the teammate's own folders. The brain folders on the way to the
+  member's own rows show too (names are organisational). Drafts come first on
+  a folder's first page; brain items page after them.
+- **The member's writes** (`member-tree-write.ts`, `POST /api/member/tree/:kind/folders`,
+  `PATCH|DELETE .../folders/:id`, `POST .../move`): create, rename, restyle,
+  move and delete its own folders, file its own drafts. A place must be a
+  folder its tree shows, or the top level. Only its own rows change; a draft
+  with an admin does not move on its own. New drafts (`POST /api/member/space`)
+  and uploads (`POST /api/member/space-files`) take a `folderId`.
+- **Brain folders carry them.** A brain folder rename, move or delete moves
+  every member's rows under it in the same transaction
+  (`carrySpaceRows`, `packages/db/src/space-carry.ts`): a member's folder
+  whose new path the member already has merges into it, a delete lifts the
+  drafts to the parent, and anything past three levels is cut to fit, so a
+  member's private folders never block the admin.
+- **Accept claims in place** (`packages/content/src/accept-place.ts`). An
+  accepted draft lands in the brain folder it was filed in; the author's own
+  folders below it become brain folders (merging by name, keeping name and
+  look, cut to three levels), and the author's emptied folders go. The admin
+  may pick another folder (`folderId`; null = the top level): the author's
+  folders still go below the pick. The rest of the bundle lands in place. The
+  preview names the default (`AcceptPreview.place`). Pages keep their own
+  placement until phase 7.
+
 ## For agents
 
 Files keep their own `folder_*` tools (their folders are directories). Every
