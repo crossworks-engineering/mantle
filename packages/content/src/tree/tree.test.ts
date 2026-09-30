@@ -37,7 +37,7 @@ describe('the tree limits agree everywhere', () => {
     expect(FOLDER_NAME_MAX).toBe(TREE_FOLDER_NAME_MAX);
   });
 
-  it('the database depth check names every kind root (migration 0199)', () => {
+  it('the database depth check names every kind root (migration 0201)', () => {
     const sqlText = readFileSync(
       join(__dirname, '..', '..', '..', 'db', 'migrations', '0201_item_tree.sql'),
       'utf8',
