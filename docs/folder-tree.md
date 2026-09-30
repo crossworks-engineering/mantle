@@ -282,8 +282,9 @@ A member files its drafts in the brain's tree and keeps private folders there.
 
 ## For agents
 
-Files keep their own `folder_*` tools (their folders are directories). Every
-other tree kind shares one set, told apart by `kind`
+Files keep their own `folder_*` tools (their folders are directories, and
+those tools refuse any other kind's folder). Every other tree kind, Recall
+included, shares one set, told apart by `kind`
 (`packages/tools/src/builtins-tree.ts`):
 
 - `tree_folders`: every folder of a kind, in tree order, with ids, paths,

@@ -41,6 +41,9 @@ export const TREE_TOOL_KINDS = [
   'contacts',
   'secrets',
   'apps',
+  // Recall maps are rows too (a map is a `recall` node filed by path). No
+  // other tool makes a Recall folder, and recall_map_create files into one.
+  'recall',
 ] as const satisfies readonly TreeKind[];
 type TreeToolKind = (typeof TREE_TOOL_KINDS)[number];
 

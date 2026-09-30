@@ -887,14 +887,25 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     name: 'Recall',
     description:
       "Walk the brain's Recall maps and match its prompts — the owner-authored memory-map system (docs/recall.md). Read-only: the four tools serve compiled rows and never write.",
-    toolSlugs: ['recall_index', 'recall_open', 'recall_go', 'recall_match'],
+    toolSlugs: ['recall_index', 'recall_open', 'recall_go', 'recall_match', 'tree_folders'],
   },
   {
     slug: 'recall-write',
     name: 'Recall authoring',
     description:
       "Keep the owner's Recall maps current: add and edit CARDS in an existing map (served to every agent at once), and start a new map for the owner to publish. Publishing a map, making a card a prompt and deleting a map stay the owner's act; what an agent may change here is what the brain knows, not what the brain tells other agents to do. Not in any default grant: hand it out deliberately. (An MCP client on the owner's token always has these tools.)",
-    toolSlugs: ['recall_map_create', 'recall_card_put', 'recall_card_delete', 'recall_map_update'],
+    toolSlugs: [
+      'recall_map_create',
+      'recall_card_put',
+      'recall_card_delete',
+      'recall_map_update',
+      // Recall's folders (builtins-tree.ts, kind 'recall'): a map is filed
+      // into one by recall_map_create's `folder`.
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+    ],
   },
   {
     slug: 'research',
