@@ -51,6 +51,15 @@ each with the crumbs of where it lives, so a result can be opened in place.
 An empty `q` is the A to Z view: every item of the kind by name, paged the
 same way, and no folders.
 
+The tree's filter menu narrows the same search: `level=` (admin, team, client,
+public) and `tag=` keep only the items read at that level or carrying that
+tag, together with any `q`. A filtered search lists items only; it is a
+question about items, not about where they sit. Until folder shares arrive
+(phase 4) an item's own level is the level it is read at.
+`GET /api/tree/:kind/tags` lists the tags on the kind's items, most used
+first (at most 40), leaving out the tag every item of the kind carries by
+default (every file is tagged `file`).
+
 ## Pins, Recent and Most used
 
 `item_marks` holds one login's marks per item: a pin and an open counter.

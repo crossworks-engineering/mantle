@@ -5,7 +5,14 @@
  */
 export { TREE_LIVE_KINDS, isTreeLiveKind } from './kinds';
 export { decodeTreeCursor, encodeTreeCursor, type TreeCursor } from './cursor';
-export { loadTreeFolder, searchTree, treeCrumbsFor, treeFolderById, treePageLimit } from './read';
+export {
+  listTreeTags,
+  loadTreeFolder,
+  searchTree,
+  treeCrumbsFor,
+  treeFolderById,
+  treePageLimit,
+} from './read';
 export {
   TREE_MARKS_LIST_MAX,
   listTreeMarks,

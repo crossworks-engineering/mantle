@@ -211,6 +211,22 @@ export type TreeFolderPage = {
   nextCursor: string | null;
 };
 
+/** Narrowing for GET /api/tree/:kind/search (`level=`, `tag=`), the tree's
+ *  filter menu. Both optional; together they both apply. A filtered search
+ *  lists items only, no folders. */
+export type TreeFilter = {
+  /** Only items read at this level (their own, or their folder's share). */
+  level?: AccessLevel;
+  /** Only items carrying this tag. */
+  tag?: string;
+};
+export const TREE_TAG_MAX = 100;
+
+/** GET /api/tree/:kind/tags — the tags on a kind's items, most used first,
+ *  for the filter menu. At most TREE_TAGS_LIST_MAX. */
+export type TreeTagList = { kind: TreeKind; tags: Array<{ tag: string; count: number }> };
+export const TREE_TAGS_LIST_MAX = 40;
+
 /** GET /api/tree/:kind/search?q= — matching folders first, then items, each
  *  with the crumbs of where it lives. */
 export type TreeSearchResult = {

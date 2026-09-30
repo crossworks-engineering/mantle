@@ -168,6 +168,29 @@ describe.skipIf(!URL)('the item tree on Files', () => {
     expect(rest.nextCursor).toBeNull();
   });
 
+  it('filters items by level and tag, without folders, and lists the tags in use', async () => {
+    await m.db.execute(sqlTag`
+      update nodes set tags = array_append(tags, 'invoice'), audience = 'team'
+       where owner_id = ${owner} and type = 'file' and title in ('b.txt', 'd.txt')`);
+    await m.db.execute(sqlTag`
+      update nodes set tags = array_append(tags, 'invoice')
+       where owner_id = ${owner} and type = 'file' and title = 'e.txt'`);
+    const titles = (r: { items: Array<{ title: string }> }) => r.items.map((i) => i.title);
+    const byTag = await tree.searchTree(owner, 'files', '', { tag: 'invoice' });
+    expect(titles(byTag)).toEqual(['b.txt', 'd.txt', 'e.txt']);
+    const byLevel = await tree.searchTree(owner, 'files', '', { level: 'team' });
+    expect(titles(byLevel)).toEqual(['b.txt', 'd.txt']);
+    expect(byLevel.items[0]!.level).toBe('team');
+    const both = await tree.searchTree(owner, 'files', 'd', { tag: 'invoice', level: 'team' });
+    expect(titles(both)).toEqual(['d.txt']);
+    // "Paged" matches a term that a folder would; a filtered search has none.
+    const withTerm = await tree.searchTree(owner, 'files', 'pag', { tag: 'invoice' });
+    expect(withTerm.folders).toEqual([]);
+    const tags = await tree.listTreeTags(owner, 'files');
+    expect(tags.tags[0]).toEqual({ tag: 'invoice', count: 3 });
+    expect(tags.tags.map((t) => t.tag)).not.toContain('file');
+  });
+
   it('moves items and deletes a folder by lifting what it holds', async () => {
     const box = await tree.createTreeFolder(owner, 'files', { parentId: null, name: 'Box' });
     const inner = await tree.createTreeFolder(owner, 'files', { parentId: box.id, name: 'Inner' });
