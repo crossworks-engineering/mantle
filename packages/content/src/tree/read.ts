@@ -30,7 +30,7 @@ import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import { effectiveLevel, treeFolderChain, treeParentPath } from '@mantle/content-core/tree';
 import type { AccessLevel } from '@mantle/client-types';
 import { decodeTreeCursor, encodeTreeCursor } from './cursor';
-import { itemMeta, itemSubtype, kindItemFilter } from './kinds';
+import { itemMeta, itemState, itemSubtype, kindItemFilter } from './kinds';
 
 type FolderSqlRow = {
   id: string;
@@ -106,7 +106,7 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
     subtype: itemSubtype(kind, data),
     level: effectiveLevel(asLevel(r.audience), asShare(r.inherited_level)),
     inherited: asShare(r.inherited_level),
-    state: null,
+    state: itemState(kind, data),
     updatedAt: iso(r.updated_at),
     ...(meta ? { meta } : {}),
   };

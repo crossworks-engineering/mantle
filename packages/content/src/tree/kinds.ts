@@ -4,13 +4,20 @@
  * and which of a kind's rows the tree leaves out.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { TREE_KIND_SPECS, type TreeItemMeta, type TreeKind } from '@mantle/client-types/tree';
+import {
+  TREE_KIND_SPECS,
+  type TreeItemMeta,
+  type TreeItemState,
+  type TreeKind,
+} from '@mantle/client-types/tree';
 import { isMemberItemKind } from '@mantle/client-types/member-kinds';
 
 /** The kinds the tree serves on this brain. A client offers the tree for
  *  these and keeps its older screen for the rest (the shell lists them).
  *  Pages wait for Recall v2 (pages stop nesting). Apps joined in phase 3,
- *  their old layout document moved in by tree/apps-nav.ts. */
+ *  their old layout document moved in by tree/apps-nav.ts. Recall joined with
+ *  Recall v2 R3: the tree lists maps, never cards (cards are rows, not
+ *  nodes). */
 export const TREE_LIVE_KINDS: readonly TreeKind[] = [
   'files',
   'notes',
@@ -22,6 +29,7 @@ export const TREE_LIVE_KINDS: readonly TreeKind[] = [
   'contacts',
   'secrets',
   'apps',
+  'recall',
 ];
 
 export function isTreeLiveKind(kind: TreeKind): boolean {
@@ -48,6 +56,16 @@ export function itemSubtype(kind: TreeKind, data: Record<string, unknown>): stri
     default:
       return null;
   }
+}
+
+/** The state pill an OWNER tree row carries, from the item's own data. Only
+ *  Recall has one today: a map an agent created waits as a draft until the
+ *  owner publishes it (the write path keeps `published` on the map's node).
+ *  A map without the flag is published: the flag is only ever written false
+ *  by the write path. */
+export function itemState(kind: TreeKind, data: Record<string, unknown>): TreeItemState | null {
+  if (kind === 'recall' && data.published === false) return 'draft';
+  return null;
 }
 
 const iso = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);

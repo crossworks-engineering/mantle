@@ -359,7 +359,7 @@ export async function createRecallMap(
     const published = actor.kind === 'owner';
     const [item] = await tx
       .insert(nodes)
-      .values({ ownerId, type: 'recall', title, slug, path, data: { enterWhen } })
+      .values({ ownerId, type: 'recall', title, slug, path, data: { enterWhen, published } })
       .returning({ id: nodes.id });
     const mapId = item!.id;
     await tx.insert(recallMaps).values({
@@ -495,11 +495,18 @@ export async function updateRecallMap(
     }
     if (Object.keys(set).length > 0)
       await tx.update(recallMaps).set(set).where(eq(recallMaps.id, map.id));
-    // The item carries the title and the enter-when line for the tree.
+    // The item carries the title, the enter-when line and the published flag
+    // for the tree (a draft pill on an unpublished map). `data` is MERGED, not
+    // replaced: an enter-when edit must not wipe the flag, or the reverse.
     const itemSet: Record<string, unknown> = {};
     if (set.title) itemSet.title = set.title;
     if (set.slug) itemSet.slug = set.slug;
-    if (set.enterWhen) itemSet.data = { enterWhen: set.enterWhen };
+    const itemData: Record<string, unknown> = {};
+    if (set.enterWhen) itemData.enterWhen = set.enterWhen;
+    if (set.published !== undefined) itemData.published = set.published;
+    if (Object.keys(itemData).length > 0) {
+      itemSet.data = sql`coalesce(${nodes.data}, '{}'::jsonb) || ${JSON.stringify(itemData)}::jsonb`;
+    }
     if (Object.keys(itemSet).length > 0 && map.nodeId) {
       await tx.update(nodes).set(itemSet).where(eq(nodes.id, map.nodeId));
     }

@@ -111,6 +111,52 @@ describe.skipIf(!URL)('Recall v2 native writes, on Postgres', () => {
       expect((await mapRow(made.mapId)).published).toBe(false);
     });
 
+    it('keeps the published flag on the tree item, and the tree shows a draft', async () => {
+      const made = await c.createRecallMap(
+        owner,
+        { title: 'Agent tree draft', enterWhen: 'Checking the tree' },
+        AGENT,
+      );
+      const itemData = async () =>
+        (
+          (await m.db.execute(
+            sqlTag`select data from nodes where id = ${made.mapId}`,
+          )) as unknown as { data: Record<string, unknown> }[]
+        )[0]!.data;
+      const treeState = async () => {
+        const { loadTreeFolder } = await import('./tree/read');
+        const page = await loadTreeFolder(owner, 'recall');
+        return page?.items.find((i) => i.id === made.mapId)?.state;
+      };
+      expect(await itemData()).toMatchObject({ enterWhen: 'Checking the tree', published: false });
+      expect(await treeState()).toBe('draft');
+
+      // An enter-when edit MERGES into the item's data: it must not wipe the
+      // flag, which is what a plain replace of `data` did.
+      const edited = await c.updateRecallMap(
+        owner,
+        made.mapId,
+        { enterWhen: 'Checking the tree again', version: 1 },
+        OWNER,
+      );
+      expect(await itemData()).toMatchObject({
+        enterWhen: 'Checking the tree again',
+        published: false,
+      });
+
+      await c.updateRecallMap(
+        owner,
+        made.mapId,
+        { published: true, version: edited.version },
+        OWNER,
+      );
+      expect(await itemData()).toMatchObject({
+        enterWhen: 'Checking the tree again',
+        published: true,
+      });
+      expect(await treeState()).toBeNull();
+    });
+
     it('refuses a map with no enter-when, and says what it is for', async () => {
       await expect(
         c.createRecallMap(owner, { title: 'Nameless', enterWhen: '  ' }, OWNER),

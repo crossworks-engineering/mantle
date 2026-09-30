@@ -9,7 +9,7 @@ import {
 } from '@mantle/client-types/tree';
 import { FILES_MAX_FOLDER_DEPTH, FOLDER_NAME_MAX } from '@mantle/files';
 import { decodeTreeCursor, encodeTreeCursor } from './cursor';
-import { TREE_LIVE_KINDS } from './kinds';
+import { TREE_LIVE_KINDS, itemState } from './kinds';
 
 describe('tree cursor', () => {
   it('round-trips and is opaque', () => {
@@ -54,5 +54,17 @@ describe('the tree limits agree everywhere', () => {
 
   it('only live kinds are served, and they are tree kinds', () => {
     for (const k of TREE_LIVE_KINDS) expect(TREE_KINDS).toContain(k);
+  });
+});
+
+describe('the owner tree row state', () => {
+  it('shows a Recall map an agent made as a draft until it is published', () => {
+    expect(itemState('recall', { published: false })).toBe('draft');
+    expect(itemState('recall', { published: true })).toBeNull();
+    // A map written before the flag lived on the item: published.
+    expect(itemState('recall', {})).toBeNull();
+  });
+  it('gives no other kind a state', () => {
+    expect(itemState('notes', { published: false })).toBeNull();
   });
 });
