@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   tableData: {} as Record<string, unknown>,
   link: null as null | Record<string, unknown>,
   commits: [] as Array<{ at: number; depth: unknown; version: number }>,
+  created: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock('drizzle-orm', () => ({ and: () => ({}), eq: () => ({}) }));
@@ -53,10 +54,13 @@ vi.mock('@mantle/db', () => {
       },
     }),
   });
-  return { db: { select, update }, nodes, appDatabases, appTableExports };
+  const insert = () => ({
+    values: (v: Record<string, unknown>) => ({ returning: async () => [{ id: 'new-link', ...v }] }),
+  });
+  return { db: { select, update, insert }, nodes, appDatabases, appTableExports };
 });
 vi.mock('@mantle/tabledb', () => ({ importMaxRows: () => 100_000 }));
-vi.mock('./apps', () => ({ getApp: vi.fn() }));
+vi.mock('./apps', () => ({ getApp: vi.fn(async () => ({ title: 'Orders' })) }));
 vi.mock('./app-broker', () => ({
   appDbReadQuery: vi.fn(async (_o: string, _a: string, sql: string) =>
     sql.startsWith('PRAGMA')
@@ -65,7 +69,10 @@ vi.mock('./app-broker', () => ({
   ),
 }));
 vi.mock('./tables', () => ({
-  createTable: vi.fn(),
+  createTable: vi.fn(async (_owner: string, input: Record<string, unknown>) => {
+    h.created.push(input);
+    return { id: 'table-new' };
+  }),
   saveTableDraft: vi.fn(async () => true),
   commitTable: vi.fn(async () => {
     h.commits.push({ at: Date.now(), depth: h.tableData.brain_depth, version: h.version });
@@ -73,7 +80,8 @@ vi.mock('./tables', () => ({
   }),
 }));
 
-const { CLIENT_SYNC_MIN_GAP_MS, scheduleAppTableExportSync } = await import('./app-table-exports');
+const { CLIENT_SYNC_MIN_GAP_MS, createAppTableExport, scheduleAppTableExportSync } =
+  await import('./app-table-exports');
 
 const OWNER = 'brain';
 let appSeq = 0;
@@ -86,6 +94,7 @@ beforeEach(() => {
   h.version = 0;
   h.tableData = {};
   h.commits.length = 0;
+  h.created.length = 0;
   h.link = {
     id: `link-${appSeq}`,
     ownerId: OWNER,
@@ -140,5 +149,15 @@ describe('export sync of a client-level app', () => {
     await fiveWrites(`app-${appSeq}`);
     expect(h.commits).toHaveLength(5);
     expect(h.commits.every((c) => c.depth === 'retrieval')).toBe(true);
+  });
+});
+
+describe('creating an export', () => {
+  it('creates the Table of a client-level app at retrieval depth, of a team app at full', async () => {
+    h.link = null;
+    await createAppTableExport(OWNER, `app-${appSeq}`, 'notes');
+    h.audience = 'team';
+    await createAppTableExport(OWNER, `app-${appSeq}`, 'notes');
+    expect(h.created.map((c) => c.brainDepth)).toEqual(['retrieval', undefined]);
   });
 });
