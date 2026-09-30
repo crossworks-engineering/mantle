@@ -11,6 +11,7 @@ import {
   type TreeMarkList,
   type TreeMarkView,
 } from '@mantle/client-types/tree';
+import { kindItemFilter } from './kinds';
 import { treeCrumbsFor, treeItemFromRow, type ItemSqlRow } from './read';
 
 /** How many items the Recent and Most used views list. */
@@ -99,7 +100,7 @@ export async function listTreeMarks(
       from item_marks m join nodes n on n.id = m.node_id
      where m.actor_id = ${actorId} and ${filter}
        and n.owner_id = ${ownerId} and n.type = ${spec.nodeType}
-       and n.path <@ ${spec.root}::ltree
+       and n.path <@ ${spec.root}::ltree ${kindItemFilter(kind, 'n')}
      order by ${order}
      limit ${TREE_MARKS_LIST_MAX}`)) as unknown as ItemSqlRow[];
   const crumbs = await treeCrumbsFor(

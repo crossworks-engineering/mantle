@@ -29,7 +29,7 @@ import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import { treeFolderChain, treeParentPath } from '@mantle/content-core/tree';
 import type { AccessLevel } from '@mantle/client-types';
 import { decodeTreeCursor, encodeTreeCursor } from './cursor';
-import { itemSubtype } from './kinds';
+import { itemMeta, itemSubtype, kindItemFilter } from './kinds';
 
 type FolderSqlRow = {
   id: string;
@@ -78,6 +78,7 @@ export function treeFolderFromRow(r: FolderSqlRow): TreeFolder {
 
 function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
   const data = r.data ?? {};
+  const meta = itemMeta(kind, data);
   return {
     id: r.id,
     title: r.title,
@@ -87,6 +88,7 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
     level: asLevel(r.audience),
     state: null,
     updatedAt: iso(r.updated_at),
+    ...(meta ? { meta } : {}),
   };
 }
 
@@ -106,7 +108,7 @@ async function selectFolders(ownerId: string, kind: TreeKind, where: SQL): Promi
                and c.path ~ (f.path::text || '.*{1}')::lquery) as folder_count,
            (select count(*)::int from nodes c
              where c.owner_id = f.owner_id and c.type = ${itemType}
-               and c.path = f.path) as item_count
+               and c.path = f.path ${kindItemFilter(kind, 'c')}) as item_count
       from nodes f
      where f.owner_id = ${ownerId} and f.type = 'branch' and ${where}
      order by f.data->>'rank' collate "C" nulls last, lower(f.title), f.id`)) as unknown as FolderSqlRow[];
@@ -174,8 +176,17 @@ function sortOf(sort: TreeSort): { key: SQL; desc: boolean } {
         key: sql`to_char(n.updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US')`,
         desc: true,
       };
-    default:
-      throw new Error(`tree: the '${sort}' order is not served yet`);
+    case 'due':
+      // Open tasks first, soonest due first, undated last; done tasks after.
+      return {
+        // Byte order (C collation): '~' sorts after every digit there, and
+        // the cursor compares with the same collation as the order.
+        key: sql`((case when n.data->>'status' = 'done' then '1' else '0' end
+                  || coalesce(n.data->>'due_at', '~')) collate "C")`,
+        desc: false,
+      };
+    case 'start':
+      return { key: sql`(coalesce(n.data->>'starts_at', '') collate "C")`, desc: false };
   }
 }
 
@@ -201,7 +212,7 @@ async function itemPage(
            ${key} as sort_key
       from nodes n
      where n.owner_id = ${ownerId} and n.type = ${TREE_KIND_SPECS[kind].nodeType}
-       and n.path = ${path}::ltree ${after}
+       and n.path = ${path}::ltree ${kindItemFilter(kind, 'n')} ${after}
      order by ${order}
      limit ${limit + 1}`)) as unknown as ItemSqlRow[];
   const more = rows.length > limit;
@@ -306,7 +317,8 @@ export async function searchTree(
            lower(n.title) as sort_key
       from nodes n
      where n.owner_id = ${ownerId} and n.type = ${spec.nodeType}
-       and n.path <@ ${spec.root}::ltree ${match} ${level} ${tag} ${after}
+       and n.path <@ ${spec.root}::ltree ${kindItemFilter(kind, 'n')}
+       ${match} ${level} ${tag} ${after}
      order by lower(n.title), n.id
      limit ${limit + 1}`)) as unknown as ItemSqlRow[];
   const more = rows.length > limit;
@@ -339,6 +351,7 @@ export async function listTreeTags(ownerId: string, kind: TreeKind): Promise<Tre
       from nodes n, unnest(n.tags) as t(tag)
      where n.owner_id = ${ownerId} and n.type = ${spec.nodeType}
        and n.path <@ ${spec.root}::ltree and t.tag <> ${spec.nodeType}
+       ${kindItemFilter(kind, 'n')}
      group by t.tag
      order by count(*) desc, t.tag
      limit ${TREE_TAGS_LIST_MAX}`)) as unknown as Array<{ tag: string; count: number }>;

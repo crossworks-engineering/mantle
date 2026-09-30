@@ -6,8 +6,11 @@ status slot. Summaries, descriptions and tags live in the item's own view, not
 in navigation. The same tree serves every reader; the brain prunes it to what
 that reader may see.
 
-Status: phase 1 serves **Files**. The other kinds keep their older lists until
-they move over (the shell's `treeKinds` names the kinds a brain serves).
+Status: the tree serves **Files** (phase 1) and the flat kinds **notes, draw,
+tables, formulas, tasks, events, contacts and secrets** (phase 2). Pages wait
+for Recall v2 (pages stop nesting) and Apps for their folder-document
+migration. A client offers the tree for the kinds the shell's `treeKinds`
+names and keeps its older screen for the rest.
 
 ## The model
 
@@ -32,10 +35,22 @@ they move over (the shell's `treeKinds` names the kinds a brain serves).
   Files, the directory name on disk. A rename re-derives the slug and moves the
   directory; a rename that only changes case or spacing keeps the path.
 - **Order.** Folders keep a manual order (`data.rank`, then name). Items follow
-  the chosen sort (name or last updated for Files).
+  the chosen sort: name or last updated for most kinds; tasks by due date
+  (open tasks first, soonest due first, undated last, done tasks after);
+  events by start.
+- **What a row carries.** A title, the item's level, a short `subtype` for the
+  status slot (a file's extension, a secret's kind) and, for tasks and events,
+  `meta` (a task's done box and due date, an event's start). Archived tasks are
+  left out of the tree; the task screen's Archived view is where they live.
 - **Files stay mirrored on disk.** Every Files write goes through the Files
   package's disk-safe operations (disk first, then the database, rolled back
   together), so agents and the sandbox always see the same tree people do.
+- **Every other kind is rows only** (`packages/content/src/tree/node-ops.ts`):
+  the same slug, clash and depth rules, and a folder's rename or move rewrites
+  the path of everything below it in one statement. Filing an item does not
+  change its `updated_at`. No other table keeps a copy of these kinds' paths,
+  and every list of these kinds selects by type, not by path, so filed items
+  stay visible on the older screens.
 
 ## Reading: lazy, 50 at a time
 
@@ -115,6 +130,16 @@ merges day folders into months; a file name taken in the month gets `-2`
 (then `-3`) rather than overwriting. The file watcher
 (`server/web/workers/files-watch.ts`) runs it before it starts watching, so it
 never mistakes the moves for deletes and adds. A second run finds nothing to do.
+
+Notes have an Auto-filed too: **Notes / Auto-filed / Assistant** holds the
+conversation digests the summarizer writes (`server/api/src/agent/summarizer.ts`
+creates it with `ensureNotesAssistantFolder`). Both folders are system folders.
+Digests used to be written at the path `assistant`, outside the notes root, so
+no tree showed them; `reconcileNotesAutoFiled`
+(`packages/content/src/tree/notes-auto-filed.ts`) moves a brain's older digests
+in once, the first time its notes tree is read. It is a path change only:
+digests are found by their `conversation-digest` tag, agent id and embedding,
+never by path.
 
 ## What comes next
 

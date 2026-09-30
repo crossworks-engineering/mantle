@@ -5,7 +5,12 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { isTreeKind, type TreeItem, type TreeKind } from '@mantle/client-types/tree';
-import { isTreeLiveKind, TreeError } from '@mantle/content/tree';
+import {
+  ensureKindRoot,
+  isTreeLiveKind,
+  reconcileNotesAutoFiled,
+  TreeError,
+} from '@mantle/content/tree';
 import { ensureFilesRootBranch } from '@/lib/files';
 import { allPrivateRows } from '@/lib/admin-private-rows';
 import type { SessionUser } from '@/lib/auth';
@@ -24,6 +29,9 @@ export async function treeKindOr404(ctx: {
 /** Make sure the kind's root exists before its first read or write. */
 export async function ensureTreeRoot(ownerId: string, kind: TreeKind): Promise<void> {
   if (kind === 'files') await ensureFilesRootBranch(ownerId);
+  else await ensureKindRoot(ownerId, kind);
+  // Older digests move into Notes / Auto-filed / Assistant once.
+  if (kind === 'notes') await reconcileNotesAutoFiled(ownerId);
 }
 
 /** A TreeError as its HTTP answer; anything else is rethrown (a 500). */
@@ -35,7 +43,8 @@ export function treeErrorResponse(err: unknown): NextResponse {
   throw err;
 }
 
-const PRIVATE_KIND = { files: 'file' } as const;
+/** The kinds whose admin can keep private items (a space of their own). */
+const PRIVATE_KIND = { files: 'file', notes: 'note', draw: 'draw', tables: 'table' } as const;
 
 /**
  * The caller's own private items of a kind, as tree rows for the root
@@ -51,7 +60,7 @@ export async function privateRootItems(user: SessionUser, kind: TreeKind): Promi
     title: r.title,
     icon: r.icon,
     color: null,
-    subtype: extensionOf(r.title),
+    subtype: kind === 'files' ? extensionOf(r.title) : null,
     level: 'admin',
     state: 'private',
     updatedAt: r.updatedAt,
