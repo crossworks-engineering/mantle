@@ -6,6 +6,8 @@ import { getMemberOr401 } from '@/lib/auth';
 import { readJsonNoNul } from '@/lib/strip-nul';
 import { inMySpace, memberWriteGate, spaceStateResponse } from '@/lib/member-space';
 import { firstIssue } from '@/lib/zod-issue';
+import { memberFilingPath } from '@mantle/content/tree';
+import { memberTreeScope, treeErrorResponse } from '@/lib/tree-route';
 
 const Query = z.object({
   kind: z.enum(SPACE_ITEM_KINDS).optional(),
@@ -33,12 +35,21 @@ const Query = z.object({
 const PAGE_SIZE = 50;
 
 const Title = z.string().trim().max(200).default('');
+/** A folder the member's tree shows, to file the new draft in (folder plan
+ *  phase 5). Pages have no tree yet. */
+const FolderId = z.string().uuid().nullable().optional();
 const Create = z.discriminatedUnion('type', [
   z.object({ type: z.literal('page'), title: Title, icon: z.string().max(16).optional() }),
-  z.object({ type: z.literal('note'), title: Title, content: z.string().max(200_000).optional() }),
-  z.object({ type: z.literal('draw'), title: Title }),
-  z.object({ type: z.literal('table'), title: Title }),
+  z.object({
+    type: z.literal('note'),
+    title: Title,
+    content: z.string().max(200_000).optional(),
+    folderId: FolderId,
+  }),
+  z.object({ type: z.literal('draw'), title: Title, folderId: FolderId }),
+  z.object({ type: z.literal('table'), title: Title, folderId: FolderId }),
 ]);
+const TREE_KIND_OF = { note: 'notes', draw: 'draw', table: 'tables' } as const;
 
 /**
  * GET /api/member/space?kind=&q=&review=&page= : the member's own items
@@ -47,7 +58,8 @@ const Create = z.discriminatedUnion('type', [
  * an admin has taken over (audit F07) as `with-admin` rows, title and kind
  * only, before the own rows (`total` counts them); `review=` without
  * `with-admin` leaves them out.
- * POST /api/member/space { type, title, … } : a new private draft item.
+ * POST /api/member/space { type, title, folderId?, … } : a new private draft
+ * item, filed in `folderId` (a folder the member's tree shows) when given.
  *
  * Member logins Phase 2. Pages, notes, drawings and tables; files arrive by
  * upload (POST /api/member/space-files).
@@ -79,8 +91,18 @@ export async function POST(req: Request) {
   const parsed = Create.safeParse(await readJsonNoNul(req));
   if (!parsed.success)
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
+  const { folderId, ...input } =
+    parsed.data.type === 'page' ? { ...parsed.data, folderId: null } : parsed.data;
+  let path: string | undefined;
+  if (folderId && input.type !== 'page') {
+    try {
+      path = await memberFilingPath(memberTreeScope(member), TREE_KIND_OF[input.type], folderId);
+    } catch (err) {
+      return treeErrorResponse(err);
+    }
+  }
   try {
-    const item = await inMySpace(member, () => createMineItem(member.spaceId, parsed.data));
+    const item = await inMySpace(member, () => createMineItem(member.spaceId, input, {}, { path }));
     return NextResponse.json({ item }, { status: 201 });
   } catch (err) {
     return spaceStateResponse(err);

@@ -24,7 +24,13 @@ import {
 } from '@mantle/content/tree';
 import { ensureFilesRootBranch } from '@/lib/files';
 import { allPrivateRows } from '@/lib/admin-private-rows';
-import type { SessionUser } from '@/lib/auth';
+import type { MemberCaller, SessionUser } from '@/lib/auth';
+import type { MemberTreeScope } from '@mantle/content/tree';
+
+/** A member's tree scope: its brain, its own space and its login. */
+export function memberTreeScope(member: MemberCaller): MemberTreeScope {
+  return { anchorId: member.anchorId, spaceId: member.spaceId, loginId: member.loginId };
+}
 
 /** The kind named by the route, or a 404 when the tree does not serve it. */
 export async function treeKindOr404(ctx: {

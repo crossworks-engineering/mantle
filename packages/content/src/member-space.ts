@@ -442,11 +442,13 @@ export type CreateSpaceItemInput =
   | { type: 'draw'; title: string; scene?: Record<string, unknown> }
   | { type: 'table'; title: string };
 
-/** Create an item in the caller's space: private, draft. */
+/** Create an item in the caller's space: private, draft. `opts.path` files
+ *  it in a folder (a stored path the tree checked: memberFilingPath). */
 export async function createMineItem(
   spaceId: string,
   input: CreateSpaceItemInput,
   writer: SpaceWriter = {},
+  opts: { path?: string } = {},
 ): Promise<SpaceItemRow> {
   const { loginId } = requireSpace(spaceId);
   await assertItemRoom(spaceId);
@@ -479,6 +481,12 @@ export async function createMineItem(
     },
     (created) => created,
   );
+  if (opts.path) {
+    await db
+      .update(nodes)
+      .set({ path: opts.path })
+      .where(and(eq(nodes.id, id), eq(nodes.ownerId, spaceId)));
+  }
   await db.insert(spaceItems).values({ nodeId: id, authorLoginId: loginId });
   const row = await getMineRow(spaceId, id);
   if (!row) throw new Error('createMineItem: the new item is not readable');

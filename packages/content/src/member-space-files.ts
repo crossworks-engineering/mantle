@@ -286,18 +286,14 @@ export async function assertSpaceStorage(spaceId: string, incoming = 0): Promise
 
 const mb = (n: number) => `${Math.round(n / 1024 / 1024)} MB`;
 
-/** The filenames this space's files already use (the unique index is per
- *  owner, path and exact filename). At most SPACE_ITEM_LIMIT rows. */
-async function spaceFilenames(spaceId: string): Promise<Set<string>> {
+/** The filenames this space's files already use in `path` (the unique index
+ *  is per owner, path and exact filename). At most SPACE_ITEM_LIMIT rows. */
+async function spaceFilenames(spaceId: string, path: string): Promise<Set<string>> {
   const rows = await db
     .select({ name: sql<string | null>`${nodes.data} ->> 'filename'` })
     .from(nodes)
     .where(
-      and(
-        eq(nodes.ownerId, spaceId),
-        eq(nodes.type, 'file'),
-        sql`${nodes.path}::text = ${SPACE_FILES_PATH}`,
-      ),
+      and(eq(nodes.ownerId, spaceId), eq(nodes.type, 'file'), sql`${nodes.path}::text = ${path}`),
     );
   return new Set(rows.flatMap((r) => (r.name ? [r.name] : [])));
 }
@@ -310,7 +306,9 @@ async function spaceFilenames(spaceId: string): Promise<Set<string>> {
  */
 export async function createMineFile(
   spaceId: string,
-  input: { filename: string; spooled: SpooledUpload },
+  /** `path`: a folder to file it in (a stored `space_files...` path the tree
+   *  checked: memberFilingPath); the space's top level by default. */
+  input: { filename: string; spooled: SpooledUpload; path?: string },
 ): Promise<string> {
   const { loginId } = requireSpace(spaceId);
   const { spooled } = input;
@@ -337,7 +335,11 @@ export async function createMineFile(
     // A second upload with a name the space already holds files as
     // `name-2.ext` (the Accept path's rule), not as a unique-index 500. The
     // storage lock above serialises this space's uploads, so the name holds.
-    const filename = dedupeFilename(cleaned, await spaceFilenames(spaceId));
+    const path = input.path ?? SPACE_FILES_PATH;
+    if (path !== SPACE_FILES_PATH && !path.startsWith(`${SPACE_FILES_PATH}.`)) {
+      throw new Error('a file goes in a files folder');
+    }
+    const filename = dedupeFilename(cleaned, await spaceFilenames(spaceId, path));
     await adoptSpooledIntoSpace(spaceId, id, spooled);
     adopted = true;
     const extension = extOf(filename);
@@ -346,7 +348,7 @@ export async function createMineFile(
       ownerId: spaceId,
       type: 'file',
       title: filename,
-      path: SPACE_FILES_PATH,
+      path,
       data: {
         filename,
         extension,
