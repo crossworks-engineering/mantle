@@ -55,6 +55,7 @@ describe('mcpOnly builtins', () => {
         'telegram_pair',
         'telegram_pending',
         'telegram_react',
+        'tree_folder_delete',
         'worker_group_ensure',
         'worker_group_list',
       ].sort(),

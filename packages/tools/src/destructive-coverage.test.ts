@@ -67,6 +67,10 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
   // no agent can be granted these (registry.listSeedableBuiltins excludes them).
   file_delete: { reason: 'owner-only operator surface', mcpOnly: true },
   folder_delete: { reason: 'owner-only operator surface', mcpOnly: true },
+  tree_folder_delete: {
+    reason: 'owner-only operator surface; lifts what it holds, deletes only the folder',
+    mcpOnly: true,
+  },
   note_delete: { reason: 'owner-only operator surface', mcpOnly: true },
   // Recoverable: undoes a share, a draft edit, or a pool entry.
   node_unshare: { reason: 'revokes a link; the gated half is node_share' },

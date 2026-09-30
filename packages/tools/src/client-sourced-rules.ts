@@ -181,6 +181,12 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   folder_describe: onNodes('folder_id'),
   folder_set_indexing: onNodes('folder_id'),
   folder_delete: onNodes('folder_id'),
+  // The item tree's folders for the row-only kinds (builtins-tree.ts). A
+  // folder at the top level names no parent, so that create waits.
+  tree_folder_create: creates('parent_id'),
+  tree_folder_update: onNodes('folder_id'),
+  tree_item_move: onNodes('item_ids'),
+  tree_folder_delete: onNodes('folder_id'),
   export_node: creates(),
   sheet_build: creates(),
   generate_image: creates(),

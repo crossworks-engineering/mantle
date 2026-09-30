@@ -13,6 +13,7 @@ export {
 } from './notes-auto-filed';
 export { decodeTreeCursor, encodeTreeCursor, type TreeCursor } from './cursor';
 export {
+  listTreeFolders,
   listTreeTags,
   loadTreeFolder,
   searchTree,
