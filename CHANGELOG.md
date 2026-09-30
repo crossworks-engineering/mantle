@@ -35,8 +35,16 @@ decided by Jason the same day.
   client-exposure checks, the page text folding and the tree's `level`
   (with `embedded`) follow; the client thread does not. Accept and saves
   lower embeds only to the item's own level. The visibility refusal lists
-  `alsoEmbeds` (from and to) instead of the unreleased `alsoLowered`. The
+  `alsoEmbeds` (from, to and type) instead of the unreleased
+  `alsoLowered`; an embed opens any workspace item it names (Jason: a
+  shared folder shares everything in it), never an admin-only kind. An
+  Accept into a shared folder lists what its bundle embeds too. The agent
+  tools that write note and page content say it. Page, note and drawing
+  saves retry once on a lock clash, then answer 409 "try again". The
   nightly `share-drift` sweep repairs edges and embedded levels too.
+  Measured: 0208 takes about 15 s on a 212,000-row brain (10,000 pages,
+  20,000 notes, 180,000 edges); the largest live brains are about 100
+  times smaller.
   Existing data: items lowered by earlier folder shares keep their level;
   nothing is raised.
 

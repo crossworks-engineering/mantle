@@ -274,7 +274,9 @@ describe.skipIf(!URL)('sharing a folder', () => {
       // The refusal lists the image too: it would be read through the note.
       const diff = await refusal(tree.moveTreeItems(brain, 'notes', [note], ids.top));
       expect(diff.changes.map((c) => c.id)).toEqual([note]);
-      expect(diff.alsoEmbeds).toEqual([{ id: file, title: 'pic.png', from: 'admin', to: 'team' }]);
+      expect(diff.alsoEmbeds).toEqual([
+        { id: file, title: 'pic.png', from: 'admin', to: 'team', type: 'file' },
+      ]);
       expect(await reads('team', [file])).toEqual([]);
       await tree.moveTreeItems(brain, 'notes', [note], ids.top, { confirm: true });
       expect(await reads('team', [file])).toEqual([file]);
@@ -282,7 +284,9 @@ describe.skipIf(!URL)('sharing a folder', () => {
       // Out again: the note is admin once more, and so is the image. The
       // refusal says so.
       const back = await refusal(tree.moveTreeItems(brain, 'notes', [note], null));
-      expect(back.alsoEmbeds).toEqual([{ id: file, title: 'pic.png', from: 'team', to: 'admin' }]);
+      expect(back.alsoEmbeds).toEqual([
+        { id: file, title: 'pic.png', from: 'team', to: 'admin', type: 'file' },
+      ]);
       await tree.moveTreeItems(brain, 'notes', [note], null, { confirm: true });
       expect(await reads('team', [file])).toEqual([]);
       expect(await audience(file)).toBe('admin');

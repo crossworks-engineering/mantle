@@ -210,6 +210,40 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
     expect(await reads('client', [n, img])).toEqual([]);
   });
 
+  it('an embed opens any workspace item it names, and no admin-only kind', async () => {
+    await setShare(folderF, 'client');
+    // Jason, 2026-09-30: a shared folder shares what its items embed,
+    // whatever kind. The type ceiling still holds: a task, a contact or a
+    // secret never opens.
+    const table = await node('table', 'tables', 'a table');
+    const other = await node('note', 'notes', 'another note');
+    const branch = { id: randomUUID(), path: `notes.${label}_named` };
+    await folder(branch, 'A folder');
+    const task = await node('task', 'tasks', 'a task');
+    const contact = await node('contact', 'contacts', 'a contact');
+    const refs = [table, other, branch.id, task, contact];
+    const text = refs.map((r) => `![x](media:${r})`).join('\n\n');
+    // The confirm names each and its kind before anything opens.
+    const pending = await note('notes', 'names them', text);
+    const diff = await tree
+      .moveTreeItems(brain, 'notes', [pending], folderF.id)
+      .then(() => null)
+      .catch((e: unknown) => (e as { diff?: { alsoEmbeds?: unknown[] } }).diff ?? null);
+    expect(
+      (diff?.alsoEmbeds as Array<{ id: string; type: string }>)
+        .map((c) => `${c.type}:${c.id}`)
+        .sort(),
+    ).toEqual([`branch:${branch.id}`, `note:${other}`, `table:${table}`].sort());
+    await tree.moveTreeItems(brain, 'notes', [pending], folderF.id, { confirm: true });
+    expect(await reads('client', [table, other, branch.id])).toEqual(
+      sorted(table, other, branch.id),
+    );
+    expect(await reads('client', [task, contact])).toEqual([]);
+    for (const id of [task, contact]) expect((await own(id))!.embedded_level).toBeNull();
+    await tree.moveTreeItems(brain, 'notes', [pending], null, { confirm: true });
+    expect(await reads('client', [table, other, branch.id])).toEqual([]);
+  });
+
   it('a page save that adds a child page card reaches it, and folds its text', async () => {
     const secret = await node('note', 'notes', 'Secret plans');
     const child = await page(

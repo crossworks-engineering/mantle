@@ -178,7 +178,12 @@ contacts, secrets) cannot be shared.
 - **Who reads it.** `nodes_viewer_read` reads a brain row at its own level
   OR its inherited share OR its embedded level (below); still a same-row
   check. Chunks, facts, pages and the rest follow their node as before.
-- **Embeds follow their embedder** (migration 0208, folder audit S5). An
+- **Embeds follow their embedder** (migration 0208, folder audit S5).
+  What a shared item embeds is readable with it, whatever kind it is, for
+  as long as the item is shared (Jason, 2026-09-30: a shared folder shares
+  everything in it; teams and clients are of the same admin owner). The
+  admin-only kinds (secrets, tasks, events, contacts, email, journal) never
+  open that way: the type ceiling holds. An
   item that a page, drawing or note embeds is read through that embedder's
   folder share, wherever the item lives, and only while the embedder is:
   unshare the folder, move the embedder out, delete the folder, or take the
@@ -250,8 +255,15 @@ total }` and nothing is written; the same call with `confirm: true` goes
   did it, above), and the text of the pages concerned, of the pages they
   reach, and of the client and public pages that name what changed is
   re-folded. Those embeds may live anywhere, so the refusal lists them too
-  (`alsoEmbeds`, from and to each: "also readable through them", or no
-  longer).
+  (`alsoEmbeds`, from, to and the item's `type` each: "also readable through
+  them", or no longer), every kind, not only images. An Accept that lands in
+  a shared folder lists the same for what its bundle embeds, whoever wrote
+  it, in its 409 `visibility` (`alsoEmbeds`), before anything moves. The
+  agent tools that write a note's or a page's content say so
+  (`EMBEDS_SHARED`, `packages/tools/src/visibility-refusal.ts`). A page,
+  note or drawing save that meets another write on the same rows (a
+  deadlock the embed triggers can meet against an unshare) runs once more,
+  then answers 409 "try again", never SQL (`withBusyRetry`, `@mantle/db`).
 - **Members and clients** read a folder-shared item wherever they read
   items, by the row policy's union rule: its own level, its inherited share
   or its embedded level is one of the reader's levels (`isReadAt` /

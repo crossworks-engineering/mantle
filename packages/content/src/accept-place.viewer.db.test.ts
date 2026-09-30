@@ -290,6 +290,14 @@ describe.skipIf(!URL)('Accept claims in place', () => {
       update nodes set data = jsonb_set(data, '{content}', to_jsonb(${`![logo](media:${img})`}::text))
        where id = ${note.id}`);
     await as(() => sp.submitItem(space, note.id));
+    // The refusal lists the Library item that would be read through it.
+    await expect(rv.acceptReviewItem(anchor, note.id, reviewer())).rejects.toMatchObject({
+      reason: 'visibility',
+      visibility: {
+        changes: [{ id: note.id, from: 'admin', to: 'client' }],
+        alsoEmbeds: [{ id: img, title: 'logo.png', from: 'team', to: 'client', type: 'file' }],
+      },
+    });
     await rv.acceptReviewItem(anchor, note.id, reviewer(), { visibilityConfirmed: true });
     const level = async () =>
       (
