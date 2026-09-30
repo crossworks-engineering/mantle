@@ -4,6 +4,13 @@
  * writes (folders and moves), with the kind differences kept in one place.
  */
 export { TREE_LIVE_KINDS, isTreeLiveKind } from './kinds';
+export { ensureKindRoot } from './node-ops';
+export {
+  NOTES_ASSISTANT_PATH,
+  NOTES_AUTO_FILED_PATH,
+  ensureNotesAssistantFolder,
+  reconcileNotesAutoFiled,
+} from './notes-auto-filed';
 export { decodeTreeCursor, encodeTreeCursor, type TreeCursor } from './cursor';
 export {
   listTreeTags,

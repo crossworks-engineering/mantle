@@ -5,7 +5,8 @@
  * What differs by kind lives in one small ops table. Files are the one kind
  * whose folders are real directories, so their ops are the Files package's
  * disk-safe operations (disk first, then the database, rolled back together);
- * the look and the order are plain row data for every kind.
+ * every other kind's folders are rows only (./node-ops). The look and the
+ * order are plain row data for every kind.
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { db, nodes } from '@mantle/db';
@@ -26,6 +27,14 @@ import {
 import { treeParentPath } from '@mantle/content-core/tree';
 import { ranksAfter } from '../rank';
 import { isTreeLiveKind } from './kinds';
+import {
+  NodeOpRefusal,
+  createNodeFolder,
+  moveNodeFolder,
+  moveNodeItem,
+  removeEmptyNodeFolder,
+  renameNodeFolder,
+} from './node-ops';
 import { treeFolderById } from './read';
 
 /** NOTIFY channel for a tree write (payload: JSON {ownerId, kind}). Consumed
@@ -87,14 +96,20 @@ const FILES_OPS: TreeKindOps = {
   },
 };
 
+/** Every kind but Files: folders and locations are rows only. */
+function nodeOps(kind: TreeKind): TreeKindOps {
+  return {
+    createFolder: createNodeFolder,
+    renameFolder: renameNodeFolder,
+    moveFolder: moveNodeFolder,
+    moveItem: (ownerId, itemId, destPath) => moveNodeItem(ownerId, kind, itemId, destPath),
+    removeEmptyFolder: removeEmptyNodeFolder,
+  };
+}
+
 function opsFor(kind: TreeKind): TreeKindOps {
   if (!isTreeLiveKind(kind)) throw new TreeError('invalid', `the ${kind} tree is not served yet`);
-  switch (kind) {
-    case 'files':
-      return FILES_OPS;
-    default:
-      throw new TreeError('invalid', `the ${kind} tree is not served yet`);
-  }
+  return kind === 'files' ? FILES_OPS : nodeOps(kind);
 }
 
 /** A Files op throws plain errors whose message is written for people
@@ -104,6 +119,7 @@ async function refusing<T>(run: () => Promise<T>): Promise<T> {
     return await run();
   } catch (err) {
     if (err instanceof TreeError) throw err;
+    if (err instanceof NodeOpRefusal) throw new TreeError(err.code, err.message);
     const message = err instanceof Error ? err.message : String(err);
     throw new TreeError(/already exists|unique/i.test(message) ? 'conflict' : 'invalid', message);
   }

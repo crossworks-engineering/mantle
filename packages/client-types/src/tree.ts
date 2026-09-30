@@ -177,6 +177,17 @@ export type TreeFolder = {
 /** An item's review state, when it has one (the one-list pill vocabulary). */
 export type TreeItemState = 'private' | 'draft' | 'submitted' | 'returned' | 'with-admin';
 
+/** Kind-specific facts a row draws: a task's done box and due date, an
+ *  event's start. Only the kinds that have them send them. */
+export type TreeItemMeta = {
+  /** A task marked done. */
+  done?: boolean;
+  /** A task's due instant (ISO), when it has one. */
+  due?: string | null;
+  /** An event's start (ISO). */
+  start?: string | null;
+};
+
 /** One item as the tree shows it: a title and what the status slot needs.
  *  Summaries, descriptions and tags live in the item's own view. */
 export type TreeItem = {
@@ -193,6 +204,7 @@ export type TreeItem = {
   level: AccessLevel;
   state: TreeItemState | null;
   updatedAt: string;
+  meta?: TreeItemMeta;
 };
 
 export type TreeCrumb = { id: string; name: string };
