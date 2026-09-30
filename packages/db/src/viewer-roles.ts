@@ -75,8 +75,10 @@ async function withRoleRetry<T>(fn: () => Promise<T>): Promise<T> {
       return await fn();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (attempt >= 5 || !/tuple concurrently updated/.test(msg)) throw err;
-      await new Promise((r) => setTimeout(r, 50 * attempt));
+      if (attempt >= 12 || !/tuple concurrently updated/.test(msg)) throw err;
+      // Jittered: colliding callers retrying in step collide again (48
+      // parallel test files hit five attempts of fixed backoff).
+      await new Promise((r) => setTimeout(r, 20 + Math.random() * 60 * attempt));
     }
   }
 }

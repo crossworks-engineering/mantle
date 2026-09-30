@@ -29,4 +29,15 @@ export default async function setup(): Promise<void> {
   await import(
     fileURLToPath(new URL('./server/web/scripts/gen-route-manifest.ts', import.meta.url))
   );
+
+  // The viewer roles are cluster-wide: bring them to their wanted state once
+  // here, so the test files that each ensure them at start find them in
+  // place (a CREATE never races) and their ALTERs retry less. Parallel files
+  // racing on these rows were the "tuple concurrently updated" setup
+  // failures (folder audit T2).
+  const url = process.env.MANTLE_TEST_DATABASE_URL;
+  if (url) {
+    const { ensureTestViewerRoles } = await import('./packages/db/src/test-support');
+    await ensureTestViewerRoles(url, process.env.MANTLE_MASTER_KEY ?? 'mantle-viewer-test-key');
+  }
 }

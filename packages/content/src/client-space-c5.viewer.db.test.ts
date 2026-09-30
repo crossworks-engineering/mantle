@@ -29,7 +29,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { notifyBarrier } from '@mantle/db/test-support';
+import { notifyBarrier, withTestLock } from '@mantle/db/test-support';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const MB = 1024 * 1024;
@@ -236,37 +236,40 @@ describe.skipIf(!URL)('a client’s own space: limits, caps, review talk, cost-s
     expect(await page(member, `${tag} member 501st`)).toBeTruthy();
   });
 
-  it('holds all client spaces to one total; other clients’ rows count, a member’s do not', async () => {
+  it('holds all client spaces to one total; other clients’ rows count, a member’s do not', () =>
     // The total is set from what client spaces hold now, and ANOTHER client
-    // holds 30 MB of it. Other test files change client bytes while this
-    // runs (a few KB of page text), so headroom is checked within 1 MB; the
-    // 30 MB of the other client is what the test proves.
-    const usedNow = async () =>
-      Number(
-        (await exec<{ n: string }>(sqlTag`select mantle_client_space_bytes()::text as n`))[0]!.n,
-      );
-    const big = await fakeFile(c.other, 30 * MB);
-    process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String((await usedNow()) + 5 * MB);
-    const headroom = () => as(c.total, () => sf.spaceUploadHeadroom(spaceOf[c.total]!));
-    try {
-      const h = await headroom();
-      expect(h).toBeGreaterThan(4 * MB);
-      expect(h).toBeLessThanOrEqual(6 * MB);
-      await expect(upload(c.total, 10 * MB)).rejects.toMatchObject({
-        reason: 'quota',
-        message: expect.stringMatching(/storage for client uploads is full/),
-      });
-      // A member's space is not a client's: the total never holds it.
-      expect(await upload(member, 10 * MB)).toBeTruthy();
-      // The other client's 30 MB counted: without it there is room again.
-      await m.systemDb.execute(sqlTag`delete from nodes where id = ${big}`);
-      expect(await headroom()).toBeGreaterThanOrEqual(10 * MB);
-      expect(await upload(c.total, 10 * MB)).toBeTruthy();
-    } finally {
-      delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
-      await m.systemDb.execute(sqlTag`delete from nodes where id = ${big}`);
-    }
-  });
+    // holds 30 MB of it. Another file (client-abuse) uploads megabytes of
+    // client files against the same total: both hold the 'client-total'
+    // test lock. Page text other files write moves it a few KB, so headroom
+    // is checked within 1 MB; the 30 MB of the other client is what the
+    // test proves.
+    withTestLock(URL!, 'client-total', async () => {
+      const usedNow = async () =>
+        Number(
+          (await exec<{ n: string }>(sqlTag`select mantle_client_space_bytes()::text as n`))[0]!.n,
+        );
+      const big = await fakeFile(c.other, 30 * MB);
+      process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String((await usedNow()) + 5 * MB);
+      const headroom = () => as(c.total, () => sf.spaceUploadHeadroom(spaceOf[c.total]!));
+      try {
+        const h = await headroom();
+        expect(h).toBeGreaterThan(4 * MB);
+        expect(h).toBeLessThanOrEqual(6 * MB);
+        await expect(upload(c.total, 10 * MB)).rejects.toMatchObject({
+          reason: 'quota',
+          message: expect.stringMatching(/storage for client uploads is full/),
+        });
+        // A member's space is not a client's: the total never holds it.
+        expect(await upload(member, 10 * MB)).toBeTruthy();
+        // The other client's 30 MB counted: without it there is room again.
+        await m.systemDb.execute(sqlTag`delete from nodes where id = ${big}`);
+        expect(await headroom()).toBeGreaterThanOrEqual(10 * MB);
+        expect(await upload(c.total, 10 * MB)).toBeTruthy();
+      } finally {
+        delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
+        await m.systemDb.execute(sqlTag`delete from nodes where id = ${big}`);
+      }
+    }));
 
   // ── Submit caps ─────────────────────────────────────────────────────────
 

@@ -34,6 +34,8 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { withTestLock } from '@mantle/db/test-support';
+
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const MB = 1024 * 1024;
 
@@ -609,25 +611,26 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
   it(
     'two clients’ parallel uploads at the last bytes of the total: exactly one passes',
     { retry: 2 },
-    async () => {
-      process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String((await usedBytes()) + 6 * MB);
-      try {
-        const results = await Promise.allSettled([
-          upload(c.totalA, 4 * MB),
-          upload(c.totalB, 4 * MB),
-        ]);
-        expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
-        const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
-        expect(lost.reason).toMatchObject({
-          reason: 'quota',
-          message: expect.stringMatching(/client uploads is full/),
-        });
-      } finally {
-        delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
-      }
-      const reasons = [...(await refusals(c.totalA)), ...(await refusals(c.totalB))];
-      expect(reasons.map((r) => r.reason)).toEqual(['total']);
-    },
+    () =>
+      withTestLock(URL!, 'client-total', async () => {
+        process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String((await usedBytes()) + 6 * MB);
+        try {
+          const results = await Promise.allSettled([
+            upload(c.totalA, 4 * MB),
+            upload(c.totalB, 4 * MB),
+          ]);
+          expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
+          const lost = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+          expect(lost.reason).toMatchObject({
+            reason: 'quota',
+            message: expect.stringMatching(/client uploads is full/),
+          });
+        } finally {
+          delete process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES;
+        }
+        const reasons = [...(await refusals(c.totalA)), ...(await refusals(c.totalB))];
+        expect(reasons.map((r) => r.reason)).toEqual(['total']);
+      }),
   );
 
   // ── Give back holds the client limits (I7) ──────────────────────────────

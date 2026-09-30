@@ -30,7 +30,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import postgres from 'postgres';
-import { POOL_ROLES } from './viewer-roles';
+import { POOL_ROLES, ensureViewerRoles } from './viewer-roles';
 import { applyViewerGrants } from './access-matrix';
 import { viewerRoleName } from './viewer';
 
@@ -207,4 +207,37 @@ export async function createMigratedScratchDatabase(
   }
   await sql.end();
   return { url, name, drop };
+}
+
+/**
+ * Bring the viewer roles to their wanted state once, before any test file
+ * runs (vitest.global-setup.ts). The roles are cluster-wide rows: dozens of
+ * parallel files each creating or altering them raced ("tuple concurrently
+ * updated", folder audit T2). With them in place first, no CREATE races and
+ * the ALTERs each file still runs retry with jitter.
+ */
+export async function ensureTestViewerRoles(url: string, masterKey: string): Promise<void> {
+  const sql = postgres(url, { max: 1 });
+  try {
+    await ensureViewerRoles(sql, masterKey);
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * Run `fn` holding a cluster-wide test lock named `name`: test files that
+ * measure one shared total (the brain-wide client bytes) while another file
+ * changes it take the same lock, so neither sees the other mid-way (folder
+ * audit T3). A session lock on its own connection, released at the end.
+ */
+export async function withTestLock<T>(url: string, name: string, fn: () => Promise<T>): Promise<T> {
+  const sql = postgres(url, { max: 1 });
+  try {
+    await sql`select pg_advisory_lock(hashtextextended(${`mantle-test:${name}`}, 0))`;
+    return await fn();
+  } finally {
+    await sql`select pg_advisory_unlock_all()`.catch(() => {});
+    await sql.end();
+  }
 }
