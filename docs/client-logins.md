@@ -1,11 +1,35 @@
 # Client logins
 
-> Client logins, phases C0 to C4 and the C2/C2b audit fixes. The operator's
-> guide: what a client login is, how an admin lets a client in, how emailed
-> codes work, what a client reads, and the client chat (section 8). What a client may read is decided by
-> Postgres row security at the client level
-> ([access-levels.md](./access-levels.md)); the role checks every route
-> makes are in [member-logins.md](./member-logins.md) section 2.
+> Client logins, phases C0 to C6 and the audit fixes of C2 to C5. The
+> operator's guide: what a client login is, how an admin lets a client in,
+> how emailed codes work, what a client reads and writes, and what bounds
+> it. What a client may read is decided by Postgres row security at the
+> client level ([access-levels.md](./access-levels.md)); the role checks
+> every route makes are in [member-logins.md](./member-logins.md) section 2,
+> and what members and admins see of clients is its section 14. The
+> security summary is [security.md](./security.md) section 5a.
+
+**Contents.**
+
+1. **What a client login is**: role client, no password, browser only, deny
+   by default, one client company per brain.
+2. **Team admin > Clients**: acknowledge "What clients see", add a client,
+   issue a sign-in link, end sessions, disable, delete.
+3. **Email sign-in codes**: the sign-in sender, the email worker, the card,
+   how a code works, its caps and upkeep.
+4. **Sessions**: 30 days, sign out ends every session, 10-minute asset
+   tokens.
+5. **What a client reads**: client items only, no staff fields, redacted
+   references, bytes at client level.
+6. **One origin**: the client pages need the same-origin Caddy shape.
+7. **Operations**: restore, Caddy, the auth POST guard, mail sync, the
+   rollback floor.
+8. **Client chat**: the client-responder, its fixed tools, requests, the
+   lowering guard, caps, its queue, pictures in the thread.
+9. **Client drafts, requests and comments**: the client's own space, caps,
+   what counts toward storage, comment caps, Review and Take over, accepted
+   items, comment threads, what an admin sees, when the client total fills.
+10. **Client apps** (C6): the apps a client runs and writes.
 
 ## 1. What a client login is
 
@@ -22,9 +46,12 @@
   on the brain's origin (section 6).
 - **Deny by default.** A client reaches only the routes in `CLIENT_ROUTES`
   (`server/web/lib/auth/client-routes.ts`): its shell, "Shared with you"
-  (list and item), the bytes of client files and drawings, and its own chat
-  (section 8). Every admin and member gate refuses it with 403
-  `client-login`.
+  (list, item and the item's comment thread), the bytes of client files and
+  drawings, its own chat (section 8), its own space, uploads and review
+  talk, My requests and its accepted items (section 9), and the client apps
+  (section 10). Every admin and member gate refuses it with 403
+  `client-login`; `server/web/server/client-sweep.test.ts` drives every
+  route of the manifest with a client session to prove it.
 - **A client stays a client.** `PATCH /api/users/:id` refuses a role change
   to or from client. To make a client a member, disable the login and
   invite the person as a member.
@@ -286,7 +313,13 @@ A client chats with the brain's **client-responder** in the client portal
   `client_shared_list`, `client_shared_search`, `client_shared_open` (the
   "Shared with you" items, with every reference to an item the client may
   not read shown as "Private item", section 5), `my_items_list` and
-  `my_item_open` (the client's own drafts), and `client_request_create`. It
+  `my_item_open` (the client's own drafts), and `client_request_create`,
+  plus `read_result` for a result too large to send whole. The turn keeps
+  only these, whatever the agent's tool groups hold
+  (`CLIENT_TURN_TOOL_SLUGS`, `packages/tools/src/client-turn-tools.ts`):
+  a group is config, and a brain-wide read tool added to `client-read` would
+  still show text the portal never shows. An agent that edits a tool group
+  below admin (`tool_group_ensure`) waits in Pending. It
   never holds the brain-wide search and read tools, and its turn loads no
   retrieval context at all (no facts, summaries, passages or graph): those
   were built from page text that can name team and admin items. Search
@@ -367,6 +400,16 @@ A client chats with the brain's **client-responder** in the client portal
   sent under. Sign out, End sessions or Disable before it runs, and it
   never runs.
 - **Polling.** The portal polls the thread (no live stream).
+- **Pictures in the thread** (C6). A reply may place a picture the way the
+  owner's assistant does (`![alt](media:<id>)`, or a path to the owner's
+  file route). The thread is sent with every markdown image rewritten for
+  the client: a file or drawing at client level points at
+  `/api/client/files/<id>` or `/api/client/draws/<id>/svg`; any other image
+  (an item above client, an id that is no item, an external or `data:`
+  image, a form the rewrite does not know) is left out or cannot draw, so a
+  client is never pointed at an owner route or made to load a picture from
+  another site (`packages/content/src/chat-images.ts`). The member chat
+  does the same at team level.
 - **Admins read client chats** in Team admin > Member chats (Clients
   filter), read-only, with the private placeholder rule for replies that
   quoted the client's own drafts.
@@ -427,7 +470,28 @@ took one over, and accepted.
 - **Review.** The same queue, with a Client badge. Accept of a client's item
   defaults to level team; client (or public) needs the explicit tick of
   everything that would go down with it. Return with a note shows the note
-  to the client as the Returned banner.
+  to the client as the Returned banner. The badge and the confirmation come
+  from the role stamped on the item (`space_items.author_role`), so they
+  hold after the client login is deleted.
+- **Take over** (member-logins.md section 11). A reviewer may take a
+  submitted client item into their own private space to work on it. The
+  client's My requests lists it as with a reviewer (its routes answer 409
+  `with-admin`, in words that say "a reviewer", never "admin"), under the
+  title it had when it was first taken (`space_items.taken_title`), never the
+  reviewer's working title; another admin taking it again keeps that first
+  title, and Give back or Accept clears it. Give back into the client's
+  space is refused while the item names anything the client may not read
+  (409 `embed`).
+- **Accepted items, as accepted.** `GET /api/client/accepted/:id` serves the
+  version accepted (its snapshot), never the brain's current one, and
+  without its level. A reviewer who took it over may have named team or
+  admin items in it, so a page's doc and a note's text are redacted at the
+  client level as "Shared with you" is (section 5): a mention or a link of
+  an item the client may not read is "Private item", an embed of it is left
+  out. The My requests search matches the accepted title, never a later
+  rename. An accepted file's bytes (`/api/client/files/:id`) are served
+  under the name and type it was accepted with, and only while the brain
+  file still holds the bytes accepted (else `changedByAdmin: true`).
 - **Review talk.** On a submitted item the client and the reviewers talk in
   its thread (`/api/client/space/:id/comments`). The client reads only the
   reviewers' comments and their own, never a member's; a reviewer shows as
@@ -435,8 +499,10 @@ took one over, and accepted.
 - **Comments on items shared with clients** (decision 8). An item at client
   level carries one thread that the team, admins and every client login
   read and write (`/api/client/shared/:id/comments`,
-  `/api/member/library/:id/comments`, the owner's `/api/nodes/:id/comments`).
-  Each comment shows its author's display name. An admin's comment on an
+  `/api/member/library/:id/comments`, the owner's `/api/nodes/:id/comments`;
+  `?scope=client` there reads that thread alone, paged the same way, without
+  the admins' own talk on the item). Each comment shows its author's
+  display name. An admin's comment on an
   item at client level joins that thread; an agent's never does. A thread
   on a team or admin item, a Team drafts item or a public item is never
   shown to a client. Raise the item above client and clients read none of

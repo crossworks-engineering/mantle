@@ -3,9 +3,9 @@
 > How a Mantle brain protects its data, what each external surface can and
 > cannot reach, and the safety nets that keep an install honest over time.
 > Written to be readable by a security reviewer during a corporate pilot; each
-> section links to the deeper doc. The two surfaces team members and outside
-> people actually touch (**member chat** and **shared Apps**) get their own
-> detailed sections (§5, §6).
+> section links to the deeper doc. The surfaces team members and outside
+> people actually touch (**member chat**, **client logins** and **shared
+> Apps**) get their own detailed sections (§5, §5a, §6).
 
 ---
 
@@ -13,7 +13,8 @@
 
 - **Self-hosted, one owner.** A brain runs on infrastructure you control. Its
   data anchors to one owner; named admins act as themselves, and invited
-  member logins read below admin (section 2).
+  member logins and the client company's logins read below admin (section
+  2).
   All state lives under `${MANTLE_DATA_DIR}` on that host (Postgres, the object
   store, files, per-app SQLite, backups). There is no vendor SaaS in the data path
   and no phone-home with content.
@@ -44,15 +45,15 @@
 
 ## 2. Identity & credentials
 
-| Credential                                                    | Who holds it                                         | Scope                                                                                                                                            | Revocation                                                                                                 |
-| ------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| Owner/admin login + session cookie                            | you and named admins                                 | the whole app                                                                                                                                    | change password or sign out everywhere (ends every session of the login); disable or delete the admin user |
-| **Member login** + session cookie                             | a person you invited (role member)                   | the member routes only (`MEMBER_ROUTES`): the Library, their chat with the team agent, their personal space, member apps; read at the team level | disable, demote or delete the login, instant, mid-session                                                  |
-| **Invite code** (16 chars, SHA-256 at rest, 72 hours)         | the person an admin invited                          | one redeem: set a password and become that member login                                                                                          | revoke the invite; it expires                                                                              |
-| **Client login** + session cookie (30 days)                   | a person at the brain's client company (role client) | the client routes only (`CLIENT_ROUTES`): "Shared with you" and the bytes of client files and drawings; read at the client level                 | sign out (ends every session of the login), End sessions, disable or delete the login                      |
-| **Client sign-in link** (16 chars, SHA-256 at rest, 72 hours) | the client an admin issued it to                     | one sign-in as that client login, with the login's email typed as a check                                                                        | revoke it, issue a new one, End sessions or disable the login; it expires                                  |
-| **Client email code** (8 digits, HMAC at rest, 10 minutes)    | the client who asked, in that browser                | one sign-in as that client login, from the browser that asked; 5 wrong tries                                                                     | End sessions or disable the login; it expires                                                              |
-| Share token (~128-bit CSPRNG in the URL)                      | anyone with the link                                 | exactly one shared item (or one public app)                                                                                                      | turn the share off                                                                                         |
+| Credential                                                    | Who holds it                                         | Scope                                                                                                                                                         | Revocation                                                                                                 |
+| ------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Owner/admin login + session cookie                            | you and named admins                                 | the whole app                                                                                                                                                 | change password or sign out everywhere (ends every session of the login); disable or delete the admin user |
+| **Member login** + session cookie                             | a person you invited (role member)                   | the member routes only (`MEMBER_ROUTES`): the Library, their chat with the team agent, their personal space, member apps; read at the team level              | disable, demote or delete the login, instant, mid-session                                                  |
+| **Invite code** (16 chars, SHA-256 at rest, 72 hours)         | the person an admin invited                          | one redeem: set a password and become that member login                                                                                                       | revoke the invite; it expires                                                                              |
+| **Client login** + session cookie (30 days)                   | a person at the brain's client company (role client) | the client routes only (`CLIENT_ROUTES`): "Shared with you", their own space and requests, comment threads, their chat, client apps; read at the client level | sign out (ends every session of the login), End sessions, disable or delete the login                      |
+| **Client sign-in link** (16 chars, SHA-256 at rest, 72 hours) | the client an admin issued it to                     | one sign-in as that client login, with the login's email typed as a check                                                                                     | revoke it, issue a new one, End sessions or disable the login; it expires                                  |
+| **Client email code** (8 digits, HMAC at rest, 10 minutes)    | the client who asked, in that browser                | one sign-in as that client login, from the browser that asked; 5 wrong tries                                                                                  | End sessions or disable the login; it expires                                                              |
+| Share token (~128-bit CSPRNG in the URL)                      | anyone with the link                                 | exactly one shared item (or one public app)                                                                                                                   | turn the share off                                                                                         |
 
 Notes that matter to a reviewer:
 
@@ -147,16 +148,16 @@ Notes that matter to a reviewer:
 Everything an outside person can touch, in one table. "Write path" is the
 complete list of ways that surface can change the brain.
 
-| Surface                                       | Auth                                                             | Reads                                                                                                                                                                                                           | Write path                                                                                                                                                                                                           | Audit                             |
-| --------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| `/s/<token>` shared page/note/task/event/file | link token                                                       | that one item + its own embedded assets only                                                                                                                                                                    | none                                                                                                                                                                                                                 | view count                        |
-| `/s/<token>` **public app**                   | link token                                                       | the app's own SQLite, read-only                                                                                                                                                                                 | none (no brain tools, no DB writes)                                                                                                                                                                                  | app access log                    |
-| **Member routes** (`/api/member/*`)           | member login                                                     | team-level items (row security on the team role), their own personal space, member apps; the team agent via their own chat thread                                                                               | their own personal space (items, files, comments on shared items), submit / recall for review, team-level apps (the app's SQLite + its declared built-in tools), one wrapped tool that files a task for human review | access log + full per-turn traces |
-| **Client routes** (`/api/client/*`)           | client login (a link or an emailed code)                         | client-level items only (row security on the client role), with every reference to an item it cannot read hidden; no summary; the client agent via their own chat thread, reading exactly what the portal shows | one wrapped tool that files a request for human review (3 per message, 10 a day)                                                                                                                                     | access log + full per-turn traces |
-| Telegram                                      | explicit bot pairing                                             | owner-level assistant (this is _your_ channel, not a team one)                                                                                                                                                  | assistant tools per its grants                                                                                                                                                                                       | traces                            |
-| MCP (Claude Desktop etc.)                     | SSH/exec into the container, operator-only today                 | owner-level tools                                                                                                                                                                                               | owner-level tools                                                                                                                                                                                                    | traces                            |
-| MCP connectors (outbound)                     | owner connects a server explicitly; key/OAuth creds vault-sealed | the external server sees only the arguments of calls to ITS tools                                                                                                                                               | agents granted the connector's `mcp-*` group call the remote tools; results return fenced as untrusted                                                                                                               | traces                            |
-| OpenAPI connectors (outbound)                 | owner connects a spec explicitly; key stays a vault ref          | the service sees only the arguments of calls compiled from ITS spec, sent to the one owner-set base URL                                                                                                         | agents granted the connector's `openapi-*` group call the compiled http tools; results return fenced like every http result                                                                                          | traces                            |
+| Surface                                       | Auth                                                             | Reads                                                                                                                                                                                                                                                                            | Write path                                                                                                                                                                                                                                                                                           | Audit                             |
+| --------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| `/s/<token>` shared page/note/task/event/file | link token                                                       | that one item + its own embedded assets only                                                                                                                                                                                                                                     | none                                                                                                                                                                                                                                                                                                 | view count                        |
+| `/s/<token>` **public app**                   | link token                                                       | the app's own SQLite, read-only                                                                                                                                                                                                                                                  | none (no brain tools, no DB writes)                                                                                                                                                                                                                                                                  | app access log                    |
+| **Member routes** (`/api/member/*`)           | member login                                                     | team-level items (row security on the team role), their own personal space, member apps; the team agent via their own chat thread                                                                                                                                                | their own personal space (items, files, comments on shared items), submit / recall for review, team-level apps (the app's SQLite + its declared built-in tools), one wrapped tool that files a task for human review                                                                                 | access log + full per-turn traces |
+| **Client routes** (`/api/client/*`)           | client login (a link or an emailed code)                         | client-level items only (row security on the client role), with every reference to an item it cannot read hidden; no summary; their own items, and what an admin accepted of them as accepted; the client agent via their own chat thread, reading exactly what the portal shows | their own space (pages, notes, uploads; private until submitted, capped), submit / recall for review, comments (review talk on their submitted items, the thread on client-level items; capped), client apps (§5a), one wrapped tool that files a request for human review (3 per message, 10 a day) | access log + full per-turn traces |
+| Telegram                                      | explicit bot pairing                                             | owner-level assistant (this is _your_ channel, not a team one)                                                                                                                                                                                                                   | assistant tools per its grants                                                                                                                                                                                                                                                                       | traces                            |
+| MCP (Claude Desktop etc.)                     | SSH/exec into the container, operator-only today                 | owner-level tools                                                                                                                                                                                                                                                                | owner-level tools                                                                                                                                                                                                                                                                                    | traces                            |
+| MCP connectors (outbound)                     | owner connects a server explicitly; key/OAuth creds vault-sealed | the external server sees only the arguments of calls to ITS tools                                                                                                                                                                                                                | agents granted the connector's `mcp-*` group call the remote tools; results return fenced as untrusted                                                                                                                                                                                               | traces                            |
+| OpenAPI connectors (outbound)                 | owner connects a spec explicitly; key stays a vault ref          | the service sees only the arguments of calls compiled from ITS spec, sent to the one owner-set base URL                                                                                                                                                                          | agents granted the connector's `openapi-*` group call the compiled http tools; results return fenced like every http result                                                                                                                                                                          | traces                            |
 
 Two structural points:
 
@@ -188,10 +189,11 @@ The AI itself is fenced the same way people are:
 - **Prompt-injection stance:** retrieved content is framed as data, not
   instructions (grounding skills), and (more importantly) the _blast radius_
   is bounded structurally: on external surfaces the worst an injected prompt
-  can do is what that surface's write path allows (§5, §6). Text a CLIENT
-  wrote (a client request, a client's chat thread) cannot move content out:
-  in a turn that read it, a lowering to client or public waits for the
-  owner in Pending (client-logins.md §8).
+  can do is what that surface's write path allows (§5, §5a, §6). Text a
+  CLIENT wrote (a client request, a client's chat thread, an item a client
+  wrote, a copy of one) cannot move content out: in a turn that read it, a
+  lowering to client or public and any write into an item clients already
+  read wait for the owner in Pending (client-logins.md §8, §5a below).
 - **Owner-only tools name their caller.** A tool marked owner-only runs only
   on the owner's own surfaces (the web app, Telegram, and the owner paths
   that say so: MCP, runs, delegated children, approved pending calls). A
@@ -255,6 +257,84 @@ attributable.
   in content; that is what setting an item to team means. (2) Members see
   the same live status narration the owner sees, chosen transparency,
   documented, within their level.
+
+## 5a. Client logins security (deep): [`client-logins.md`](./client-logins.md)
+
+The design assumption: a client is a person at the brain's ONE client
+company (two companies are two brains), _trusted to read what the team
+set to client_ and to write their own requests, but _never trusted with
+anything above client_, and with no way to move content between levels.
+
+- **Who.** Role `client`, made only in Team admin > Clients. No password
+  opens it: a client signs in with a one-use link an admin issues (72
+  hours, about 92 bits, SHA-256 at rest) or an 8-digit code the brain
+  emails (10 minutes, 5 tries, HMAC at rest, bound to the browser that
+  asked). Browser only, never a bearer; sessions last 30 days, sign out
+  ends every session, asset tokens live 10 minutes (client-logins.md
+  sections 2 to 4). The client pages need the same-origin Caddy shape.
+- **Deny by default.** A client reaches only the routes in `CLIENT_ROUTES`;
+  every admin and member gate answers 403 `client-login`, and a sweep test
+  drives every route of the manifest with a client session.
+- **Reads, by the database.** Every client read runs on the client role:
+  client items only, never team, admin or public ones (client and public
+  are siblings), agents and tool groups at client level only
+  ([access-levels.md](./access-levels.md) sections 1 and 8). What leaves
+  the brain is shaped for a client: no author, level, summary or app link;
+  a table is its grid; every mention, link or embed of an item the client
+  may not read is "Private item" or left out, failing closed on anything
+  unknown; bytes, drawing images and SVG links at client level only.
+- **Levels drive what they read, not links.** An item at client has no
+  open link: clients sign in to read it. Old client links are retired (410
+  "Sign in as a client"). Before the first client login an admin
+  acknowledges a report of every client item and the team or admin items
+  it names ([sharing.md](./sharing.md) section 4a).
+- **Writes are their own, and reviewed.** A client writes only its own
+  space (pages, notes, uploads; never a drawing or a table; private until
+  submitted, never shared with the team), its comments (the review talk on
+  its submitted items; the one thread on a client-level item, which the
+  team and admins share), its chat, and client apps (client-logins.md
+  section 10). Nothing becomes brain content until an admin accepts it,
+  at team by default; client or public needs the admin's explicit
+  confirmation. Members read a client's item only while it is submitted,
+  with the human flag (never an agent).
+- **What an admin changes stays the admin's.** An item a reviewer took
+  over is given back only if it names nothing above client, and the
+  client reads an accepted item as accepted, redacted at client level,
+  under the title and file name it had (member-logins.md section 11).
+- **The client agent is fenced twice.** `client-responder` runs at client
+  level inside a client scope, with no retrieval context and only the
+  client tools plus `read_result`, fixed in code whatever its tool groups
+  hold (an agent editing a group below admin waits in Pending). Pictures in
+  a client's chat point only at client-level items, through the client's
+  own routes.
+- **The lowering guard.** Text a client wrote is untrusted in every staff
+  turn. After a staff turn reads it (by id, anywhere in its tool inputs,
+  outputs or retrieval context, for the rest of the conversation for 24
+  hours, and through any copy the turn makes), a lowering to client or
+  public, and any write into an item already at client or public, wait in
+  Pending for the owner; the gate goes by the call's target, and an
+  unclassified write waits. Client-written titles stay out of the owner's
+  corpus map. The owner's MCP surface is not gated: a call there is the
+  owner acting by hand (client-logins.md section 8).
+- **Bounded cost and size.** The chat: 6 messages a minute, the daily turn
+  cap and token budget, one turn in flight per login on its own queue, and
+  a queued turn dies with the session. The space: 20 MB a file, 200 MB a
+  client (files and text alike), 50 MB uploaded a day, 500 items, 10
+  submissions a day and 50 open, 5 GB for all clients together; 100
+  comments a day per client, 1000 per thread, every thread read paged;
+  requests 3 a message and 10 a day; every JSON body under a size ceiling.
+  Each daily cap counts in a ledger that deleting does not refund. No
+  space, comment or request write of a client starts the extractor or any
+  other LLM work (client-logins.md sections 8 and 9).
+- **Operations.** A restore revokes every open sign-in link and code the
+  dump brought back; the access log redacts codes; code mails never enter
+  the corpus; Team admin > Clients shows each client's chat use, storage
+  and quota refusals (client-logins.md sections 7 and 9).
+- **Accepted trade-offs, stated plainly:** (1) whatever the team sets to
+  client every client login reads, and an item embedded in a client item
+  goes down with it (embedding means sharing). (2) An admin's comment on a
+  client-level item is read by every client login. (3) The owner's MCP
+  clients are outside the lowering guard.
 
 ## 6. Apps security (deep): [`app-authoring-guide.md`](./app-authoring-guide.md)
 

@@ -6,7 +6,8 @@
 > What a member may read is decided by Postgres row security at the team level
 > ([access-levels.md](./access-levels.md)), never by a check in each route.
 > Client logins (a person at the brain's one client company) have their own
-> operator guide: [client-logins.md](./client-logins.md).
+> operator guide: [client-logins.md](./client-logins.md); what members and
+> admins meet of them is section 14 here.
 
 ## 1. The model
 
@@ -1147,6 +1148,11 @@ the brain or give it back to the member.
   (`author_login_id`): `review_state` `taken`, `taken_by` (the admin),
   `taken_at`, `taken_root` (NULL on the item itself, the item's id on the
   rest of its bundle), sharing private. The recorded bundle is cleared.
+- The title each moved item had is recorded (`taken_title`, migration
+  0196, client logins C5 audit L6): the author's `with-admin` row shows it
+  and a search matches it, whatever the admin renames the item to while it
+  is theirs. A released item taken again by another admin keeps the title
+  recorded the first time; Give back and Accept clear it.
 - Nothing is indexed, embedded or extracted: it stays a personal item. Take
   over, the admin's edits and Give back start no LLM work; only Accept tells
   the extractor, once per moved item, after the commit and the bytes.
@@ -1186,8 +1192,8 @@ record: admin by default, no confirmation. Items taken with it that the admin re
 space as taken, each its own root (give them back or accept them).
 
 **What the member sees.** While taken, `GET /api/member/space` lists the
-item on page 1 as a `with-admin` row (id, kind, title; no icon, content,
-note or bytes), before the own rows; `total` counts them; `?review=` names
+item on page 1 as a `with-admin` row (id, kind, the title it was taken
+with; no icon, content, note or bytes), before the own rows; `total` counts them; `?review=` names
 `with-admin` to select them and leaves them out otherwise. Every
 `/api/member/space/:id…` route (the item, draft, save, share, submit,
 recall, bytes, comments) answers 409 `{ error, reason: 'with-admin' }`, so
@@ -1233,13 +1239,29 @@ version, at any level. A file's bytes are served (by
 `/api/member/files/:id`, which also lets an accepted image render in the
 author's other drafts) only while the brain file's recorded sha256 AND its
 bytes on disk (hashed, cached by path, size and mtime) equal the
-snapshot's; otherwise the file route is a 404 and the item answers its
-accepted metadata with `changedByAdmin: true`. A drawing's picture
+snapshot's, under the name and type the file was accepted with (never an
+admin's rename, nor the name Accept made unique in its folder); otherwise
+the file route is a 404 and the item answers its accepted metadata with
+`changedByAdmin: true`. A drawing's picture
 (`/api/member/draws/:id/svg`, the author fallback) is the snapshot's SVG,
 filtered by the snapshot's own image refs (an image the member wrote stays:
 its bytes inside that SVG are the accepted ones); a drawing accepted with
 no saved SVG shows the brain's SVG only while it is still at the accepted
-version, else `changedByAdmin: true`. The table backup
+version, else `changedByAdmin: true`.
+
+**Redacted at the author's level** (client logins C5 audit L1; tables and
+drawings in C6). An item an admin took over is accepted with the admin's
+edits, and an admin may mention, link or embed any brain item at any level
+while it is theirs. So what the author reads of the snapshot is redacted at
+the author's level (team for a member, client for a client), with the
+client redactors (`packages/content/src/client-redact.ts`): in a page's doc
+and a note's text a mention or a link of an item the author may not read
+is "Private item" and an embed of it is left out; a table cell that names
+one (a `/n/<id>` link, a `page:` ref, an absolute URL into the brain) reads
+"Private item"; a drawing's element link to one loses its href (the element
+stays). The author may read the brain's items at their level, their own
+items, and the items they wrote that an admin accepted (shown by their
+accepted title). `packages/content/src/member-accepted.ts`. The table backup
 (`snapshotAllTableDatabases`, the scheduled backup and `db-dump.sh`) copies
 the snapshot workbooks under the same `accepted-snapshots/` folder, so an
 untar into `TABLE_DB_DIR` restores them. Deleting the brain table removes
@@ -1303,6 +1325,10 @@ later saved edits stay the brain's for page, table, drawing and note; a
 changed file answers `changedByAdmin`),
 `member-draw-images.viewer.db.test.ts` (a changed accepted image leaves a
 member's drawing, and stays in their own accepted snapshot),
+`client-accepted-c5a.viewer.db.test.ts` (a taken, edited, accepted page,
+note, table and drawing redacted at the author's level; the taken title;
+an accepted file's name), the route tests in
+`server/web/app/api/member/accepted/member-accepted-routes.test.ts`,
 `server/web/server/admin-space-sweep.test.ts` and `auth-sweep.test.ts`
 (the routes and their gates).
 
@@ -1441,3 +1467,91 @@ row and marks it, since the item is read and written through
 no parent, so a tag filter, a sub-page level or a files folder other than
 the root lists none; in the pages tree they sit at the top level. Tests:
 `server/web/lib/admin-private-rows.test.ts`.
+
+## 14. Client logins, for members and admins
+
+What a member or an admin meets of the client tier (client logins C0 to C6,
+as they stand after the C5 audit fixes). The operator's guide is
+[client-logins.md](./client-logins.md); the security summary is
+[security.md](./security.md) section 5a.
+
+**Who a client is.** A login with role `client`: a person at the brain's one
+client company (two companies are two brains). No password: a client signs
+in with a link an admin issues or a code the brain emails, in a browser
+only, for 30 days at most. Every admin and member route refuses a client
+(403 `client-login`, section 2), and a client reaches only its own routes
+(`CLIENT_ROUTES`). It reads at the client level: client items, never team,
+admin or public ones, and never a staff name in a list or the chat (the
+brand name stands in). A client writes only in its own space (pages, notes,
+uploads; private until submitted), in the comment threads open to it, in
+its own chat, and in client apps (client-logins.md section 10).
+
+**For members.**
+
+- **The Library shows what clients see.** It lists team and client items,
+  each with its level; a client item wears a Client badge, and every client
+  login reads it. Set an item to Client only when the clients should read
+  it (section 3).
+- **Client requests.** A client's SUBMITTED item, and what renders inside
+  it, is a "Client requests" source in the member's one list
+  (`GET /api/member/client-requests`, `/:id`, `/:id/bytes`), read only,
+  while it waits for review. A client's draft, returned or accepted item is
+  not; row security holds this (the team role with the human flag on, never
+  an agent; migration 0194). A client's space never shows in Team drafts.
+- **The client thread.** An item at client level carries one comment
+  thread that members, admins and every client login read and write
+  (`/api/member/library/:id/comments`). A member's comment there shows the
+  member's display name (else the email's local part) to the clients too.
+  A member deletes only their own. The thread closes the moment the item
+  is raised above client.
+- **The chats are apart.** A member chats with `team-responder` at team
+  level, a client with `client-responder` at client level, each login in
+  its own thread; nothing of a member's thread reaches a client. Pictures in
+  either thread point only at the reader's own routes, for items the reader
+  may read (client-logins.md section 8).
+- **A member cannot share with clients.** A member's own items go to the
+  team at most (sharing `team`); they reach clients only when an admin
+  accepts them at client level.
+
+**For admins.**
+
+- **Before the first client.** Acknowledge "What clients see" (every item
+  at client, its old links and the team or admin items it names;
+  [access-levels.md](./access-levels.md) section 7). Adding a client or
+  issuing a sign-in link is refused until the newest acknowledgement covers
+  every client item.
+- **Team admin > Clients.** Add a client (a contact, or a typed email), issue or revoke
+  a sign-in link, pick the sender of emailed codes, End sessions, Disable,
+  Delete; each client's chat use today, the storage card (the client total,
+  each space, uploads, open submissions and the quota refusals of the last
+  7 days), the items with recent client comments, and removing every
+  comment one client wrote (client-logins.md sections 2, 3 and 9).
+- **Review.** A client's submission waits in the same queue, with a Client
+  badge, and counts in the Review badge and in Needs you (section 12) like
+  a member's. Accept of a client's item defaults to team; client or public
+  needs the explicit confirmation of everything that goes down with it
+  (409 `confirm-level` with `goingDown` otherwise, section 6). The badge and
+  the rule come from the role stamped on the item, so they hold after the
+  client login is deleted.
+- **Take over and give back** (section 11) work on a client's item as on a
+  member's. Give back checks the item's references at the client level, so
+  a team item named in it is refused (409 `embed`). The client lists the
+  held item under the title it had when taken; once accepted, the client
+  reads the version accepted, redacted at the client level.
+- **Comments on client-level items.** An admin's comment on an item at
+  client level joins the client thread: every client login reads it, under
+  the admin's display name (else the email's local part, never the whole
+  email). An agent's comment never joins it. The owner's
+  `GET /api/nodes/:id/comments` lists every scope of an item's comments;
+  `?scope=client` lists only the client thread, what the clients read,
+  paged the same way.
+- **Client chats** are read in Team admin > Member chats (Clients filter),
+  read only.
+- **Client-written text and staff agents.** After an agent turn reads text
+  a client wrote (a request, a client's chat thread, an item a client
+  wrote, a copy of one), lowering anything to client or public, and writing
+  into an item clients already read, wait in Pending for the owner
+  (client-logins.md section 8). The owner's MCP surface is not gated.
+- **Cost.** No client write starts the extractor, a trigger or a worker;
+  a client request reaches no model until an admin acts on it, and Accept
+  announces each moved item once.
