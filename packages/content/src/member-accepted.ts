@@ -16,13 +16,15 @@
  * and readers get the authorship: the author's name on an accepted item
  * (the "member-authored" badge).
  *
- * A page's doc and a note's text are the version accepted, and an admin may
- * have written it: an item an admin TOOK OVER (audit F07) is accepted with
- * the admin's edits, and an admin may mention, link or embed any brain item
- * at any level while it is theirs. So what its author reads is REDACTED at
- * the author's level (client logins C5 audit, L1), with the client shared
- * reader's own redactor (client-redact.ts): a reference to anything the
- * author may not read is "Private item", an embed of it is left out. The
+ * A page's doc, a note's text, a table's cells and a drawing's element links
+ * are the version accepted, and an admin may have written them: an item an
+ * admin TOOK OVER (audit F07) is accepted with the admin's edits, and an
+ * admin may mention, link or embed any brain item at any level while it is
+ * theirs. So what its author reads is REDACTED at the author's level (client
+ * logins C5 audit, L1; tables and drawings in C6), with the client shared
+ * reader's own redactors (client-redact.ts): a reference to anything the
+ * author may not read is "Private item" (a mention, a link, a cell), an
+ * embed of it is left out, and a drawing's link to it loses its href. The
  * author may read the brain's items at their level (team for a member,
  * client for a client), their own items, and the items they wrote that an
  * admin accepted (shown by their accepted title).
@@ -56,15 +58,20 @@ import type {
 import { MEMBER_ITEM_KINDS, type MemberItemKind } from '@mantle/client-types/member-kinds';
 import { getDrawSvg } from './draws';
 import {
+  cellRefIds,
+  clientLinkHidden,
   clientOwnUrl,
   docRefIds,
+  linkRefIds,
   noteRefIds,
+  redactClientCell,
   redactClientDoc,
   redactClientNote,
   type ClientRedactOptions,
 } from './client-redact';
 import { clientRedactOrigins } from './client-origins';
 import { clientReadable } from './client-shared';
+import { dropSvgLinks, svgLinkHrefs } from './scene-svg';
 import { tableFromSnapshot, type getTable } from './tables/read';
 import {
   acceptedDrawUnchanged,
@@ -325,12 +332,66 @@ async function redactedNote(
   return redactClientNote(content, new Set(titles.keys()), opts);
 }
 
+type AcceptedTable = NonNullable<Awaited<ReturnType<typeof getTable>>>;
+
+/** A table's grid as its author reads it: a cell that names an item the
+ *  author may not read (a link or lookup value such as `/n/<id>`, a
+ *  `page:` ref, an absolute URL into this brain) reads "Private item"; a
+ *  list cell is checked value by value. See authorReadable. */
+async function redactedTable(
+  anchorId: string,
+  loginId: string,
+  reader: AcceptedReader,
+  table: AcceptedTable,
+): Promise<AcceptedTable> {
+  const opts = { ownUrl: clientOwnUrl(clientRedactOrigins()) };
+  const values = table.data.rows.flatMap((r) => Object.values(r.cells).flat());
+  const ids = cellRefIds(values, opts);
+  if (!ids.length) return table;
+  const readable = new Set((await authorReadable(anchorId, loginId, reader, ids)).keys());
+  return {
+    ...table,
+    data: {
+      ...table.data,
+      rows: table.data.rows.map((r) => ({
+        ...r,
+        cells: Object.fromEntries(
+          Object.entries(r.cells).map(([k, v]) => [
+            k,
+            redactClientCell(v, readable, opts) as typeof v,
+          ]),
+        ),
+      })),
+    },
+  };
+}
+
+/** A drawing's SVG as its author reads it: an element's link to an item the
+ *  author may not read loses its href (the element stays, drawn as before,
+ *  and points nowhere); links to readable items and external sites stay.
+ *  See authorReadable. */
+async function redactedSvgLinks(
+  anchorId: string,
+  loginId: string,
+  reader: AcceptedReader,
+  svg: string,
+): Promise<string> {
+  const hrefs = svgLinkHrefs(svg);
+  if (!hrefs.length) return svg;
+  const opts = { ownUrl: clientOwnUrl(clientRedactOrigins()) };
+  const readable = new Set(
+    (await authorReadable(anchorId, loginId, reader, linkRefIds(hrefs, opts))).keys(),
+  );
+  return dropSvgLinks(svg, (href) => !clientLinkHidden(href, readable, opts));
+}
+
 /** One accepted item as ACCEPTED (its snapshot, never the brain's current
- *  version), for its author only. `tabId` picks a table's tab. A page's doc
- *  and a note's text are redacted at `reader`, the author's level (team by
- *  default, a member; audit L1). A drawing's picture is its accepted SVG
- *  (acceptedDrawSvg); a file's bytes come from the member files route while
- *  they are unchanged, and `changedByAdmin` says when they are not. */
+ *  version), for its author only. `tabId` picks a table's tab. A page's doc,
+ *  a note's text and a table's cells are redacted at `reader`, the author's
+ *  level (team by default, a member; audit L1). A drawing's picture is its
+ *  accepted SVG (acceptedDrawSvg, its links redacted the same way); a file's
+ *  bytes come from the member files route while they are unchanged, and
+ *  `changedByAdmin` says when they are not. */
 export async function getAcceptedItem(
   anchorId: string,
   loginId: string,
@@ -366,7 +427,11 @@ export async function getAcceptedItem(
         { storagePath: snap.tablePath, doc: snap.tableDoc },
         { tabId: opts.tabId },
       );
-      return { ...base, type: 'table', table };
+      return {
+        ...base,
+        type: 'table',
+        table: await redactedTable(anchorId, loginId, reader, table),
+      };
     }
     case 'draw': {
       const changed = !snap.sceneSvg && !(await acceptedDrawUnchanged(anchorId, id, snap));
@@ -430,29 +495,39 @@ export async function getClientAcceptedItem(
 /** An accepted drawing's picture as accepted, for its author only: the SVG
  *  saved with the snapshot, and the image refs it was drawn with. A drawing
  *  accepted with no saved SVG shows the brain's SVG only while the drawing
- *  is still at the accepted version. */
+ *  is still at the accepted version. Its element links are redacted at
+ *  `reader`, the author's level (team by default, a member; audit L1): an
+ *  admin who took it over may have linked an item the author may not read.
+ *  Its images are the caller's (memberDrawSvg, with these image refs). */
 export async function acceptedDrawSnapshot(
   anchorId: string,
   loginId: string,
   id: string,
+  opts: { reader?: AcceptedReader } = {},
 ): Promise<{ svg: string; fileRefs: Record<string, unknown> } | null> {
   const found = await authoredSnapshot(anchorId, loginId, id);
   if (found?.row.type !== 'draw') return null;
   const { snap } = found;
+  const reader = opts.reader ?? 'team';
   const refs = (snap.fileRefs ?? {}) as Record<string, unknown>;
-  if (snap.sceneSvg) return { svg: snap.sceneSvg, fileRefs: refs };
-  if (!(await acceptedDrawUnchanged(anchorId, id, snap))) return null;
-  const svg = await getDrawSvg(anchorId, id);
-  return svg ? { svg, fileRefs: refs } : null;
+  let svg = snap.sceneSvg;
+  if (!svg) {
+    if (!(await acceptedDrawUnchanged(anchorId, id, snap))) return null;
+    svg = await getDrawSvg(anchorId, id);
+  }
+  return svg
+    ? { svg: await redactedSvgLinks(anchorId, loginId, reader, svg), fileRefs: refs }
+    : null;
 }
 
-/** An accepted drawing's accepted SVG, for its author only. */
+/** An accepted drawing's accepted SVG, for its author only (acceptedDrawSnapshot). */
 export async function acceptedDrawSvg(
   anchorId: string,
   loginId: string,
   id: string,
+  opts: { reader?: AcceptedReader } = {},
 ): Promise<string | null> {
-  return (await acceptedDrawSnapshot(anchorId, loginId, id))?.svg ?? null;
+  return (await acceptedDrawSnapshot(anchorId, loginId, id, opts))?.svg ?? null;
 }
 
 /** True when this login wrote this accepted FILE (whatever an admin did to

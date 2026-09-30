@@ -5,8 +5,11 @@
  *  - an item a reviewer TOOK OVER, edited and accepted reaches its author
  *    redacted at the author's level: a client reads "Private item" for a
  *    team mention and a team link, and no child page card of an admin page;
- *    a member reads "Private item" for an admin mention. What the author may
- *    read stays: a client-level item (by today's title), their own image;
+ *    a member reads "Private item" for an admin mention, for a table cell
+ *    that links an admin item, and their drawing's link to an admin item
+ *    loses its href (client logins C6). What the author may read stays: a
+ *    client-level item (by today's title), a team item for a member, their
+ *    own image;
  *  - My requests search matches the accepted title, not an admin's later
  *    rename;
  *  - a taken item lists under the title it had when it was taken, never the
@@ -39,6 +42,7 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
   let sf: typeof import('./member-space-files');
   let rv: typeof import('./member-review');
   let ma: typeof import('./member-accepted');
+  let td: typeof import('./tables/draft');
   let fp: typeof import('@mantle/files');
   let sqlTag: typeof import('drizzle-orm').sql;
   const tag = `c5aleak-${randomUUID().slice(0, 8)}`;
@@ -117,6 +121,7 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     sf = await import('./member-space-files');
     rv = await import('./member-review');
     ma = await import('./member-accepted');
+    td = await import('./tables/draft');
     fp = await import('@mantle/files');
     sqlTag = (await import('drizzle-orm')).sql;
     const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
@@ -346,6 +351,111 @@ describe.skipIf(!URL)('held and accepted items, as their author reads them', () 
     // A team item the member reads keeps its chip, by today's title.
     expect(read).toContain(teamNote);
     expect(read).toContain(`${tag} TEAMSECRET note`);
+  });
+
+  // ── A member's table and drawing, taken over, accepted (C6) ─────────────
+
+  it('a member reads a table cell that links an admin item as "Private item"', async () => {
+    const M = spaceOf[member]!;
+    const A = spaceOf[adminA]!;
+    const t = await as(member, () =>
+      sp.createMineItem(M, { type: 'table', title: `${tag} member table` }),
+    );
+    mine.push(t.id);
+    const got = await as(member, () => sp.getMineItem(M, t.id));
+    const col = got?.body.type === 'table' ? got.body.table.data.columns[0]!.id : '';
+    await as(member, () =>
+      td.applyTableOps(M, t.id, [{ op: 'row_add', cells: { [col]: 'member cell' } }]),
+    );
+    await as(member, () => sp.saveMineTable(M, t.id));
+    await submit(member, t.id);
+    await rv.takeOverReviewItem(t.id, actorA());
+    // The admin links admin items (a path, an app scheme, an absolute URL)
+    // and a team item the member reads, then saves.
+    const cells = [
+      `/n/${adminNote}`,
+      `page:${adminPage}`,
+      `https://brain.example.invalid/n/${adminNote}`,
+      `/n/${teamNote}`,
+    ];
+    await as(adminA, () =>
+      td.applyTableOps(
+        A,
+        t.id,
+        cells.map((v) => ({ op: 'row_add' as const, cells: { [col]: v } })),
+      ),
+    );
+    await as(adminA, () => sp.saveMineTable(A, t.id, undefined, writer()));
+    const res = await rv.acceptOwnItem(anchor, actorA(), t.id);
+    expect(res.audience).toBe('admin');
+    // The fixture: the accepted workbook holds every link as the admin wrote it.
+    const { snapshotOf } = await import('./member-snapshots');
+    const { tableFromSnapshot } = await import('./tables/read');
+    const snap = await snapshotOf(anchor, t.id);
+    const { eq } = await import('drizzle-orm');
+    const [node] = await m.systemDb.select().from(m.nodes).where(eq(m.nodes.id, t.id));
+    const raw = JSON.stringify(
+      tableFromSnapshot(node!, { storagePath: snap!.tablePath, doc: snap!.tableDoc }).data,
+    );
+    for (const s of [adminNote, adminPage, teamNote]) expect(raw).toContain(s);
+
+    const item = await ma.getAcceptedItem(anchor, member, t.id);
+    expect(item?.type).toBe('table');
+    const values =
+      item?.type === 'table' ? item.table.data.rows.map((r) => r.cells[col] ?? null) : [];
+    expect(values).toEqual(['member cell', PRIVATE, PRIVATE, PRIVATE, `/n/${teamNote}`]);
+    const read = JSON.stringify(item);
+    expect(read).not.toContain(adminNote);
+    expect(read).not.toContain(adminPage);
+  });
+
+  it('a member’s drawing: a link to an admin item loses its href, others stay', async () => {
+    const M = spaceOf[member]!;
+    const A = spaceOf[adminA]!;
+    const id = (await as(member, () => sp.createMineItem(M, { type: 'draw', title: `${tag} dr` })))
+      .id;
+    mine.push(id);
+    const plain = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0"/></svg>';
+    expect(
+      (
+        await as(member, () =>
+          sp.saveMineDraw(M, id, { elements: [{ id: 'e0', type: 'rectangle' }] }, { svg: plain }),
+        )
+      ).ok,
+    ).toBe(true);
+    await submit(member, id);
+    await rv.takeOverReviewItem(id, actorA());
+    const links = [
+      `/n/${adminNote}`,
+      `https://brain.example.invalid/n/${adminPage}`,
+      `/n/${teamNote}`,
+      'https://example.invalid/',
+    ];
+    const scene = {
+      elements: links.map((link, i) => ({ id: `e${i + 1}`, type: 'rectangle', link })),
+    };
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg">${links
+      .map((l, i) => `<a href="${l}"><path d="M${i + 1}"/></a>`)
+      .join('')}</svg>`;
+    expect(
+      (await as(adminA, () => sp.saveMineDraw(A, id, scene, { svg, adminOfBrain: anchor }))).ok,
+    ).toBe(true);
+    await rv.acceptOwnItem(anchor, actorA(), id);
+    // The fixture: the accepted SVG holds every link as the admin wrote it.
+    const [snap] = await exec<{ scene_svg: string | null }>(
+      sqlTag`select scene_svg from accepted_snapshots where node_id = ${id}`,
+    );
+    for (const s of [adminNote, adminPage, teamNote]) expect(snap?.scene_svg).toContain(s);
+
+    const got = (await ma.acceptedDrawSvg(anchor, member, id)) ?? '';
+    expect(got).not.toContain(adminNote);
+    expect(got).not.toContain(adminPage);
+    // The elements stay, drawn as before; readable and external links stay.
+    for (let i = 1; i <= links.length; i += 1) expect(got).toContain(`d="M${i}"`);
+    expect(got).toContain(`<a href="/n/${teamNote}">`);
+    expect(got).toContain('<a href="https://example.invalid/">');
+    // The snapshot the member route filters for images carries the same SVG.
+    expect((await ma.acceptedDrawSnapshot(anchor, member, id))?.svg).toBe(got);
   });
 
   // ── An accepted file keeps its author's name (L7) ───────────────────────
