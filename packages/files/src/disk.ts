@@ -210,6 +210,10 @@ export async function strayFilesIn(
   ltreePath: string,
   tracked: ReadonlySet<string>,
   limit = 5,
+  /** With it, a subdirectory outside this set (lower-cased names) that holds
+   *  a real file is stray too, reported as `name/`: a folder delete removes
+   *  the directory it sits in. */
+  trackedDirs?: ReadonlySet<string>,
 ): Promise<string[]> {
   const dir = isFilesPath(ltreePath) ? diskPathForLtree(ltreePath) : null;
   if (!dir) return [];
@@ -223,10 +227,52 @@ export async function strayFilesIn(
   const found: string[] = [];
   for (const e of entries) {
     if (found.length >= limit) break;
-    if (e.isDirectory() || isDiskChaff(e.name)) continue;
+    if (e.isDirectory()) {
+      if (!trackedDirs || trackedDirs.has(e.name.toLowerCase())) continue;
+      if ((await realFilesUnder(path.join(dir, e.name), 1)).length) found.push(`${e.name}/`);
+      continue;
+    }
+    if (isDiskChaff(e.name)) continue;
     if (!tracked.has(e.name.toLowerCase())) found.push(e.name);
   }
   return found;
+}
+
+/** Real (non-chaff) files anywhere under a directory, up to `limit`. */
+async function realFilesUnder(dir: string, limit: number): Promise<string[]> {
+  const found: string[] = [];
+  const walk = async (d: string): Promise<void> => {
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = await fs.readdir(d, { withFileTypes: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw err;
+    }
+    for (const e of entries) {
+      if (found.length >= limit) return;
+      const abs = path.join(d, e.name);
+      if (e.isDirectory()) await walk(abs);
+      else if (!isDiskChaff(e.name)) found.push(abs);
+    }
+  };
+  await walk(dir);
+  return found;
+}
+
+/** Every name in a folder's directory (files and directories, chaff aside),
+ *  lower-cased; empty when it does not exist. Read only: what a file moving
+ *  in must not be named. */
+export async function diskNamesIn(ltreePath: string): Promise<Set<string>> {
+  const dir = isFilesPath(ltreePath) ? diskPathForLtree(ltreePath) : null;
+  if (!dir) return new Set();
+  try {
+    const names = await fs.readdir(dir);
+    return new Set(names.filter((n) => !isDiskChaff(n)).map((n) => n.toLowerCase()));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return new Set();
+    throw err;
+  }
 }
 
 /** Recursively remove a folder. Caller must check it's empty in the DB AND

@@ -69,6 +69,7 @@ export {
   removeFolder,
   isDiskChaff,
   strayFilesIn,
+  diskNamesIn,
   untrackedFilesOnDisk,
   spoolUpload,
   discardSpooled,
