@@ -10,7 +10,7 @@
 -- release neither reads nor writes any of them.
 --
 -- 1. recall_maps gains its node linkage and the native bookkeeping.
---    `node_id` is the map's `recall` node (0201). ON DELETE CASCADE: deleting
+--    `node_id` is the map's `recall` node (0202). ON DELETE CASCADE: deleting
 --    the item deletes the map row, and 4 below carries the cards with it.
 --    A map created natively has id = node_id; v1 rows keep id = root page id
 --    and node_id NULL until they are re-authored. No page id is ever reused
@@ -46,7 +46,7 @@
 -- recall_maps / recall_nodes through the v1 compiler, which names columns
 -- explicitly and so never sees the new ones; the new defaults keep its rows
 -- valid. To undo: drop recall_revisions, drop the added columns, drop the
--- two FKs. The enum value from 0200 stays (it cannot be removed) and is
+-- two FKs. The enum value from 0202 stays (it cannot be removed) and is
 -- harmless unused.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint

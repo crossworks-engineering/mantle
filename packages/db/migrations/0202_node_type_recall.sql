@@ -6,17 +6,18 @@
 -- Lives in its own file because `ALTER TYPE ... ADD VALUE` cannot run in the
 -- same transaction that later references the new value; isolating it sidesteps
 -- that (same reason as the 0008 / 0037 / 0067 / 0069 / 0075 / 0136 enum-adds).
--- 0202 carries the columns and tables that go with it and references nothing
+-- 0203 carries the columns and tables that go with it and references nothing
 -- from this file.
 --
--- Numbering: the universal-folder-system stack holds 0199 (the item tree) and
--- 0200 (folder sharing) and merges in order ahead of this, so these two sit at
--- 0201 / 0202. If that order changes, whichever lands second renumbers on the
--- rebase: a journal entry inserted BEFORE already-applied migrations is what
--- breaks the runner, not a gap.
+-- Numbering: written as 0201 / 0202, renumbered to 0202 / 0203 on landing
+-- (2026-09-30) because main had taken 0199 / 0200 (client logins) and 0201
+-- (the item tree). The journal `when` values were restamped above main's too:
+-- the runner applies only entries whose `when` is above the highest one a box
+-- has run, so a reused timestamp is skipped silently. A gap in the numbers is
+-- harmless; an entry stamped BEFORE already-applied ones is not.
 --
 -- Rollback: `ADD VALUE` is NOT reversible (unlike `RENAME VALUE`, see 0109).
 -- Nothing has to be undone: an unused enum value costs nothing, and the
 -- previous release never writes or reads a node of this type. The tables and
--- columns in 0201 are what a rollback would drop.
+-- columns in 0203 are what a rollback would drop.
 alter type "public"."node_type" add value if not exists 'recall';
