@@ -42,6 +42,13 @@ decided by Jason the same day.
   tools that write note and page content say it. Page, note and drawing
   saves retry once on a lock clash, then answer 409 "try again". The
   nightly `share-drift` sweep repairs edges and embedded levels too.
+  Review fixes: an unshare closes a loop of embeds; a drawing embeds what
+  its published scene places (a draft opens nothing); an embed opens an app
+  for reading only; the Access control, access_get and the rows say what
+  an item is read through (readThrough, embedded) and floor at it; the tree
+  confirm counts every embed a change opens (embedsTotal, in seen) and asks
+  when only embeds change; Accept lists what its bundle opens even at the
+  folder's own level; a member's note save checks every media id.
   Measured: 0208 takes about 15 s on a 212,000-row brain (10,000 pages,
   20,000 notes, 180,000 edges); the largest live brains are about 100
   times smaller.

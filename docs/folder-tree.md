@@ -183,7 +183,13 @@ contacts, secrets) cannot be shared.
   as long as the item is shared (Jason, 2026-09-30: a shared folder shares
   everything in it; teams and clients are of the same admin owner). The
   admin-only kinds (secrets, tasks, events, contacts, email, journal) never
-  open that way: the type ceiling holds. An
+  open that way: the type ceiling holds. An embed opens READING only: an
+  app named by an embed is not run, its tools and data are not used, by
+  anyone it was not shared with (the app gates read own level and folder
+  share, `readAtSql(levels, { embeds: false })`). A drawing embeds what its
+  published scene places, so a picture pasted into a draft opens nothing
+  until "Save version". An unshare closes a loop of embeds (a note that
+  embeds a note that embeds it) at once. An
   item that a page, drawing or note embeds is read through that embedder's
   folder share, wherever the item lives, and only while the embedder is:
   unshare the folder, move the embedder out, delete the folder, or take the
@@ -227,7 +233,8 @@ total }` and nothing is written; the same call with `confirm: true` goes
   real landing place: what merges into a folder takes that folder's share,
   a subfolder that moves up keeps its own and takes the shares above its
   new place. A caller that sends `seen` (the
-  `total` it showed; `&seen=` on DELETE) is refused again with the new list
+  `total` it showed, plus `embedsTotal` when embeds are listed; `&seen=` on
+  DELETE) is refused again with the new list
   when the change differs by then, so a confirm never covers items filed or
   shared while the dialog was open. A rename never asks. The same check
   guards every Files write outside the tree routes
@@ -250,15 +257,27 @@ total }` and nothing is written; the same call with `confirm: true` goes
   folder to hide it"). The brain does not refuse such a raise (an unshared
   link sets an item back to admin); `access_get` returns `sharedVia` and
   `access_set` warns that the item is still read at the folder's share.
+  The same for an item read through what embeds it: `readThrough { level,
+  via }` (`readThroughEmbeds`) names the nearest items that embed it and
+  carry a share, with title and kind, and is a floor too; the note, file,
+  folder, drawing, app, formula and table rows carry `embedded` next to
+  `inherited`, and badges count it.
 - **After a confirmed change**, what the pages, drawings and notes
   concerned embed is read through them at their new level (the database
   did it, above), and the text of the pages concerned, of the pages they
   reach, and of the client and public pages that name what changed is
   re-folded. Those embeds may live anywhere, so the refusal lists them too
   (`alsoEmbeds`, from, to and the item's `type` each: "also readable through
-  them", or no longer), every kind, not only images. An Accept that lands in
+  them", or no longer), every kind, not only images, from EVERY row whose
+  share changes (not only the hundred listed), with `embedsTotal`. A write
+  that only opens embeds (a note already read at the folder's share moving
+  in) asks too. An Accept that lands in
   a shared folder lists the same for what its bundle embeds, whoever wrote
-  it, in its 409 `visibility` (`alsoEmbeds`), before anything moves. The
+  it, in its 409 `visibility` (`alsoEmbeds`), before anything moves, also
+  when the item itself is read at the level chosen. A member's note save
+  checks every `media:` and `draw:` id in its text (`noteGateRefs`), a
+  superset of the edges the database records, so an image in a heading or
+  a table cannot carry an item the member could not share. The
   agent tools that write a note's or a page's content say so
   (`EMBEDS_SHARED`, `packages/tools/src/visibility-refusal.ts`). A page,
   note or drawing save that meets another write on the same rows (a
