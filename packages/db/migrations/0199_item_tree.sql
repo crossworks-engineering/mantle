@@ -38,7 +38,7 @@ BEGIN
         OR nlevel("path") <= 4
         OR subpath("path", 0, 1)::text NOT IN (
           'files', 'notes', 'pages', 'draw', 'tables', 'formulas',
-          'apps', 'tasks', 'events', 'contacts', 'secrets'
+          'apps', 'tasks', 'events', 'contacts', 'secrets', 'recall'
         )
       ) NOT VALID;
   END IF;
