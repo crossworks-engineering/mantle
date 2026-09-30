@@ -237,7 +237,8 @@ async function checkVisibility(
   const d = await diff;
   const refused =
     (d.total > 0 && !opts.confirm) ||
-    (opts.confirm && opts.seen !== undefined && d.total !== opts.seen);
+    // A different change than was shown asks again; none at all goes ahead.
+    (opts.confirm && opts.seen !== undefined && d.total > 0 && d.total !== opts.seen);
   if (refused) throw new TreeVisibilityError(await withEmbedsGoingDown(ownerId, d));
   return d;
 }

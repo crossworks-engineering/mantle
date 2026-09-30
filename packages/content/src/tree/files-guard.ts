@@ -32,7 +32,7 @@ export type ConfirmOpts = { confirm?: boolean; seen?: number };
 
 function check(diff: VisibilityDiff, opts: ConfirmOpts): VisibilityDiff {
   if (diff.total > 0 && !opts.confirm) throw new TreeVisibilityError(diff);
-  if (opts.confirm && opts.seen !== undefined && diff.total !== opts.seen) {
+  if (opts.confirm && opts.seen !== undefined && diff.total > 0 && diff.total !== opts.seen) {
     throw new TreeVisibilityError(diff);
   }
   return diff;
