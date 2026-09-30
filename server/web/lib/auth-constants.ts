@@ -89,6 +89,19 @@ export function isAuditSelfLogged(path: string): boolean {
 }
 
 /**
+ * A client app's broker calls (host.db and host.tools, client tier audit
+ * I4): a running app makes them by the hundred, and the app's own access
+ * log already records them (tool and write calls each, reads sampled), so
+ * the choke point writes no `api.write` row for them. Every other client
+ * write, the app's frame ticket included, is still audited.
+ */
+const CLIENT_APP_BROKER_PATH = /^\/api\/client\/apps\/[^/]+\/(?:db|tool)-broker\/?$/;
+
+export function isClientAppBrokerPath(path: string): boolean {
+  return CLIENT_APP_BROKER_PATH.test(path);
+}
+
+/**
  * Request-context headers injected by the middleware (overwritten there via
  * Headers.set, so a client-supplied value can't survive on any path middleware
  * runs on). They let the Node-side auth gate learn the method/path for audit

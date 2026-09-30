@@ -128,6 +128,9 @@ export {
 export {
   recordAppAccess,
   listAppAccess,
+  reapAppAccessLog,
+  APP_ACCESS_LOG_RETENTION_DAYS,
+  APP_ACCESS_QUERY_SAMPLE_MS,
   type AppAccessKind,
   type AppAccessEntry,
   type AppAccessRow,

@@ -21,6 +21,7 @@ import {
   findDuplicateCandidates,
   mergeEntities,
   purgeDeactivatedSpaces,
+  reapAppAccessLog,
   reapClientSigninCodes,
   type MergeCandidate,
 } from '@mantle/content';
@@ -141,6 +142,11 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
     return r.deleted + r.ipsCleared + r.skipsDeleted === 0
       ? 'nothing to reap'
       : `deleted ${r.deleted} code row(s) and ${r.skipsDeleted} skip row(s); cleared ${r.ipsCleared} address(es)`;
+  },
+  // Client tier audit I4: app access log rows older than 90 days.
+  'app-access-log-reap': async () => {
+    const r = await reapAppAccessLog();
+    return r.deleted === 0 ? 'nothing to reap' : `deleted ${r.deleted} access log row(s)`;
   },
   // Member logins plan 6.4: a deactivated login's private items, after 30 days.
   'space-purge': async () => {

@@ -155,6 +155,21 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
       'Plain SQL, no model, idempotent; a no-op once clean. The rule lives in @mantle/content client-codes.ts (reapClientSigninCodes), shared by the cron and the script.',
   },
   {
+    slug: 'app-access-log-reap',
+    title: 'Trim the app access log',
+    description:
+      "Deletes app access log rows older than 90 days (client tier audit I4): every app ticket, tool call and write by a member, a client or a share link, and each caller's reads at most once a minute, land a row, and nothing else removes them. The owner's access log view shows the newest 100 rows of an app.",
+    kind: 'recurring',
+    status: 'live',
+    cost: 'sql',
+    schedulable: true,
+    script: 'scripts/app-access-log-reap.ts',
+    cwd: 'server/web',
+    applyFlag: '--apply',
+    notes:
+      'Plain SQL in batches, no model, idempotent; a no-op once clean. The rule lives in @mantle/content app-access-log.ts (reapAppAccessLog), shared by the cron and the script.',
+  },
+  {
     slug: 'traces-reap',
     title: 'Reap abandoned traces (all owners)',
     description:

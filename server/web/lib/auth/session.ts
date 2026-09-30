@@ -16,6 +16,7 @@ import { loadAnchorId, loadLoginRow, loadPersonalSpaceId, type LoginRow } from '
 import {
   isDetachedDev,
   isAuditSelfLogged,
+  isClientAppBrokerPath,
   isRenderAssetPath,
   MANTLE_PATH_HEADER,
   MANTLE_METHOD_HEADER,
@@ -493,12 +494,12 @@ export async function getOwnerOr401(): Promise<SessionUser | NextResponse> {
  * a generic `api.write` row recording who did what — unless the route logs its
  * own richer event (`AUDIT_SELF_LOGGED_PATHS`). Reads (GET/HEAD) aren't logged.
  */
-async function auditMutation(user: SessionUser): Promise<void> {
+async function auditMutation(user: SessionUser, skip?: (path: string) => boolean): Promise<void> {
   const h = await headers();
   const method = (h.get(MANTLE_METHOD_HEADER) ?? '').toUpperCase();
   const path = h.get(MANTLE_PATH_HEADER) ?? '';
   const mutating = method !== '' && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
-  if (!mutating || isAuditSelfLogged(path)) return;
+  if (!mutating || isAuditSelfLogged(path) || skip?.(path)) return;
   auditFireAndForget({
     actorId: user.actor.id,
     actorEmail: user.actor.email,
@@ -558,16 +559,20 @@ export async function getClientOr401(): Promise<ClientCaller | NextResponse> {
 }
 
 async function auditClientMutation(client: ClientCaller): Promise<void> {
-  await auditMutation({
-    id: client.anchorId,
-    email: client.email,
-    actor: {
-      id: client.loginId,
+  // The app brokers log to the app's access log instead (audit I4).
+  await auditMutation(
+    {
+      id: client.anchorId,
       email: client.email,
-      displayName: client.displayName,
-      isOwner: false,
+      actor: {
+        id: client.loginId,
+        email: client.email,
+        displayName: client.displayName,
+        isOwner: false,
+      },
     },
-  });
+    isClientAppBrokerPath,
+  );
 }
 
 /**

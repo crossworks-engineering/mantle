@@ -164,7 +164,7 @@ streams a run.
   key, so CLI, UI, and cron (three different processes) can never merge
   concurrently, a contender fails fast with a clear message. Dry-runs skip
   the lock.
-- The schedule contains nine tasks: `entities-dedupe` (auto tier),
+- The schedule contains ten tasks: `entities-dedupe` (auto tier),
   `traces-reap` and `turns-reap` (all owners), `space-purge` (a deactivated
   login's private personal items after 30 days, see
   [member-logins.md](./member-logins.md) section 6; the worker mounts
@@ -172,8 +172,11 @@ streams a run.
   sign-in code rows: finished rows and cap skips after 30 days, request
   addresses blanked after 7; plain SQL, see
   [client-logins.md](./client-logins.md) section 3; by hand
-  `pnpm -C server/web client-codes:reap`, dry run unless `--apply`), and the
-  four read-only reports `deps-drift`, `models-drift`, `pinned-model-drift`
+  `pnpm -C server/web client-codes:reap`, dry run unless `--apply`),
+  `app-access-log-reap` (app access log rows older than 90 days; plain SQL
+  in batches, see [client-logins.md](./client-logins.md) section 10; by hand
+  `pnpm -C server/web app-access-log:reap`, dry run unless `--apply`), and
+  the four read-only reports `deps-drift`, `models-drift`, `pinned-model-drift`
   and `pool-fit`. Backups stay on the
   `db-dump.sh` path; they are already scheduled there.
 
