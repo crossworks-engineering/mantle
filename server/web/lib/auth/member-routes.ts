@@ -15,6 +15,10 @@ export const MEMBER_ROUTES: readonly string[] = [
   // The Library: team-level items, read at the team level (Phase 1).
   'GET /api/member/library',
   'GET /api/member/library/:id',
+  // The Library as a read-only folder tree (folder sharing): items read at
+  // the team level, folders shown only on the way to them.
+  'GET /api/member/tree/:kind',
+  'GET /api/member/tree/:kind/search',
   'GET /api/member/files/:id',
   'GET /api/member/draws/:id/svg',
   // Chat with the team-level agent, the login's own thread (Phase 1).

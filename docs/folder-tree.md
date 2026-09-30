@@ -179,8 +179,22 @@ contacts, secrets) cannot be shared.
   client's redaction (which references keep their names), drawing and chat
   images, and apps (an app runs at its effective level, so an admin app in
   a team-shared folder is a team app). The client thread is not there yet
-  (its read rule is a DB policy, migration 0194). The member and client
-  TREES (folder navigation for those logins) are still to come.
+  (its read rule is a DB policy, migration 0194).
+- **The member and client trees.** `GET /api/member/tree/:kind` and
+  `/api/client/tree/:kind` (with `/search`) serve the kinds a Library holds
+  (`READER_TREE_KINDS`: files, notes, drawings, tables; the shells list them
+  in `treeKinds`), read only (`packages/content/src/tree/reader.ts`). Items
+  are read AS the reader, at the Library's levels by the union rule, without
+  extracted image fragments. Folders are read as the brain (a shared folder's
+  own row is not the reader's: it inherits only from above itself) and show
+  when their share, or the share they inherit, covers the reader, or when
+  they lead to something the reader reads or to such a folder. Nothing is
+  stored; the visible set is computed per call. Counts are the reader's. A
+  folder the reader cannot see is a 404 like a missing one, by id and in
+  search. A member gets the owner's shapes (levels are staff information);
+  a client gets `ClientTreeFolderPage` / `ClientTreeSearchResult`, with no
+  level, share or system flag. No pins, Recent or Most used for these
+  readers yet (item marks are the owner's), and no tag or level filter.
 - **The owner's gates count it too.** "What clients see" lists what a
   client-shared folder holds, and sharing a folder with clients asks for a
   fresh acknowledgement before another client login can be added. A

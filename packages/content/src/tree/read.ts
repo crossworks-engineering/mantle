@@ -114,7 +114,11 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
 
 /** Folder rows matching `where`, with the reader's counts and parent id,
  *  in the folder order: manual rank first, then name. */
-async function selectFolders(ownerId: string, kind: TreeKind, where: SQL): Promise<TreeFolder[]> {
+export async function selectFolders(
+  ownerId: string,
+  kind: TreeKind,
+  where: SQL,
+): Promise<TreeFolder[]> {
   const itemType = TREE_KIND_SPECS[kind].nodeType;
   const rows = (await db.execute(sql`
     select f.id, f.path::text as path, f.title, f.data, f.share_level, f.inherited_level,
@@ -237,14 +241,16 @@ function sortOf(sort: TreeSort): { key: SQL; desc: boolean } {
   }
 }
 
-/** One page of the items directly in `path`. */
-async function itemPage(
+/** One page of the items directly in `path`. `extra` narrows the rows
+ *  further (`and ...` on alias `n`): the member and client trees' levels. */
+export async function itemPage(
   ownerId: string,
   kind: TreeKind,
   path: string,
   sort: TreeSort,
   cursorRaw: string | null | undefined,
   limit: number,
+  extra: SQL = sql``,
 ): Promise<{ items: TreeItem[]; nextCursor: string | null }> {
   const { key, desc } = sortOf(sort);
   const cursor = decodeTreeCursor(cursorRaw, sort);
@@ -259,7 +265,7 @@ async function itemPage(
            ${key} as sort_key
       from nodes n
      where n.owner_id = ${ownerId} and n.type = ${TREE_KIND_SPECS[kind].nodeType}
-       and n.path = ${path}::ltree ${kindItemFilter(kind, 'n')} ${after}
+       and n.path = ${path}::ltree ${kindItemFilter(kind, 'n')} ${extra} ${after}
      order by ${order}
      limit ${limit + 1}`)) as unknown as ItemSqlRow[];
   const more = rows.length > limit;
@@ -316,8 +322,40 @@ export async function loadTreeFolder(
 }
 
 /** `%` and `_` are ILIKE wildcards; a search for them means the characters. */
-function likePattern(q: string): string {
+export function likePattern(q: string): string {
   return `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+/**
+ * One page of a kind's items by name (A to Z), those whose title holds
+ * `term` (all of them for an empty term). `extra` narrows further (`and ...`
+ * on alias `n`).
+ */
+export async function searchItemRows(
+  ownerId: string,
+  kind: TreeKind,
+  term: string,
+  cursorRaw: string | null | undefined,
+  limit: number,
+  extra: SQL = sql``,
+): Promise<{ page: ItemSqlRow[]; more: boolean }> {
+  const spec = TREE_KIND_SPECS[kind];
+  const cursor = decodeTreeCursor(cursorRaw, 'name');
+  const match = term ? sql`and n.title ilike ${likePattern(term)}` : sql``;
+  const after = cursor
+    ? sql`and (lower(n.title), n.id) > (${cursor.key}, ${cursor.id}::uuid)`
+    : sql``;
+  const rows = (await db.execute(sql`
+    select n.id, n.path::text as path, n.title, n.data, n.audience, n.inherited_level, n.updated_at,
+           lower(n.title) as sort_key
+      from nodes n
+     where n.owner_id = ${ownerId} and n.type = ${spec.nodeType}
+       and n.path <@ ${spec.root}::ltree ${kindItemFilter(kind, 'n')}
+       ${match} ${extra} ${after}
+     order by lower(n.title), n.id
+     limit ${limit + 1}`)) as unknown as ItemSqlRow[];
+  const more = rows.length > limit;
+  return { page: more ? rows.slice(0, limit) : rows, more };
 }
 
 /**
@@ -351,25 +389,17 @@ export async function searchTree(
                 and (f.title ilike ${pattern} or f.slug ilike ${pattern})`,
           )
         ).slice(0, limit);
-  const match = term ? sql`and n.title ilike ${pattern}` : sql``;
-  // Phase 1 has no folder shares, so an item's own level is the level it is
-  // read at. The inherited level joins this with sharing (phase 4).
+  // The level an item is read at: its own, or its folder's share.
   const level = opts.level ? sql`and ${effectiveLevelSql('n')} = ${opts.level}` : sql``;
   const tag = opts.tag ? sql`and ${opts.tag} = any(n.tags)` : sql``;
-  const after = cursor
-    ? sql`and (lower(n.title), n.id) > (${cursor.key}, ${cursor.id}::uuid)`
-    : sql``;
-  const rows = (await db.execute(sql`
-    select n.id, n.path::text as path, n.title, n.data, n.audience, n.inherited_level, n.updated_at,
-           lower(n.title) as sort_key
-      from nodes n
-     where n.owner_id = ${ownerId} and n.type = ${spec.nodeType}
-       and n.path <@ ${spec.root}::ltree ${kindItemFilter(kind, 'n')}
-       ${match} ${level} ${tag} ${after}
-     order by lower(n.title), n.id
-     limit ${limit + 1}`)) as unknown as ItemSqlRow[];
-  const more = rows.length > limit;
-  const page = more ? rows.slice(0, limit) : rows;
+  const { page, more } = await searchItemRows(
+    ownerId,
+    kind,
+    term,
+    opts.cursor,
+    limit,
+    sql`${level} ${tag}`,
+  );
   const crumbs = await treeCrumbsFor(ownerId, [
     ...folders.map((f) => treeParentPath(f.path)),
     ...page.map((r) => r.path),

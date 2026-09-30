@@ -16,6 +16,10 @@ export const CLIENT_ROUTES: readonly string[] = [
   // "Shared with you": items at client level, read at the client level.
   'GET /api/client/shared',
   'GET /api/client/shared/:id',
+  // The same, as a read-only folder tree (folder sharing): items read at the
+  // client level, folders shown only on the way to them (no level fields).
+  'GET /api/client/tree/:kind',
+  'GET /api/client/tree/:kind/search',
   // The client thread on an item at client level (C5, decision 8): read on
   // the client role with the human flag on, written with the level checked.
   'GET /api/client/shared/:id/comments',

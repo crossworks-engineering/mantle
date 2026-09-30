@@ -4,7 +4,8 @@
  * and which of a kind's rows the tree leaves out.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import type { TreeItemMeta, TreeKind } from '@mantle/client-types/tree';
+import { TREE_KIND_SPECS, type TreeItemMeta, type TreeKind } from '@mantle/client-types/tree';
+import { isMemberItemKind } from '@mantle/client-types/member-kinds';
 
 /** The kinds the tree serves on this brain. A client offers the tree for
  *  these and keeps its older screen for the rest (the shell lists them).
@@ -26,6 +27,12 @@ export const TREE_LIVE_KINDS: readonly TreeKind[] = [
 export function isTreeLiveKind(kind: TreeKind): boolean {
   return TREE_LIVE_KINDS.includes(kind);
 }
+
+/** The kinds the member and client trees serve: the live kinds whose items a
+ *  Library holds (files, notes, drawings, tables). */
+export const READER_TREE_KINDS: readonly TreeKind[] = TREE_LIVE_KINDS.filter((k) =>
+  isMemberItemKind(TREE_KIND_SPECS[k].nodeType),
+);
 
 /** The short token an item shows in its row's status slot. */
 export function itemSubtype(kind: TreeKind, data: Record<string, unknown>): string | null {

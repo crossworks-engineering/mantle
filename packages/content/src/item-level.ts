@@ -36,3 +36,14 @@ export function readAtSql(levels: readonly string[]): SQL {
     ? or(inArray(nodes.audience, [...levels]), inArray(nodes.inheritedLevel, [...levels]))!
     : sql`false`;
 }
+
+/** `readAtSql` on a raw query's alias (`n.audience`, `n.inherited_level`). */
+export function readAtAliasSql(alias: string, levels: readonly string[]): SQL {
+  if (!levels.length) return sql`false`;
+  const a = sql.raw(alias);
+  const list = sql.join(
+    levels.map((l) => sql`${l}`),
+    sql`, `,
+  );
+  return sql`(${a}.audience in (${list}) or ${a}.inherited_level in (${list}))`;
+}

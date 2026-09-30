@@ -6,6 +6,7 @@
  */
 import type { AccessLevel, MemberItemAuthor } from './access';
 import type { MemberItemKind } from '../member-kinds';
+import type { TreeKind } from '../tree';
 export type { MemberItemFilter } from '../member-kinds';
 
 /** GET /api/member/shell */
@@ -30,6 +31,10 @@ export type MemberShell = {
   fontProseSize: string | null;
   logoVersion: string | null;
   logoDarkVersion: string | null;
+  /** The kinds this login browses as a read-only folder tree (GET
+   *  /api/{member,client}/tree/:kind). Absent from brains before folder
+   *  sharing: the client keeps its flat lists there. */
+  treeKinds?: TreeKind[];
 };
 
 export type MemberLibraryKind = MemberItemKind;
