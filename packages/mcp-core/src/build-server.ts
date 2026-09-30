@@ -46,6 +46,7 @@ import {
   PEER_TOOLS,
   EMAIL_TOOLS,
   RECALL_TOOLS,
+  RECALL_WRITE_TOOLS,
   SANDBOX_TOOLS,
   NODE_READ_TOOLS,
   SEARCH_TOOLS,
@@ -178,6 +179,11 @@ export function registerMantleTools(
   // match your task" nudge. Serving rows are compiled at page commit; every
   // read here is one indexed row.
   registerBuiltinTools(RECALL_TOOLS);
+  // And the v2 authoring tools, so an external agent can keep a map current
+  // rather than only read it. They are a separate grant (`recall-write`): an
+  // agent edits and adds CARDS, which serve at once, while publishing a map,
+  // minting a prompt and deleting a map stay the owner's act.
+  registerBuiltinTools(RECALL_WRITE_TOOLS);
   registerBuiltinTools(JOURNAL_TOOLS);
   registerBuiltinTools(PEER_TOOLS);
   // Outbound email included: email_send is gated by the contacts allowlist the

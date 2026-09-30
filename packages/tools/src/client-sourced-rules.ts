@@ -266,6 +266,15 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   openrouter_rankings: free(READS),
   openrouter_task_classes: free(READS),
   recall_eval: free('scores retrieval; writes nothing a client reads'),
+  // Recall v2 authoring. A map is admin-only: the recall tables are `none` in
+  // the access matrix, and a map is not shareable below admin at all until the
+  // team-sharing phase, which is TEAM only and never client or public. So no
+  // Recall write can put brain content in front of a client. Revisit if
+  // client-level Recall sharing is ever added (the plan refuses it for now).
+  recall_map_create: free('makes an admin-only Recall map; nothing a client reads'),
+  recall_card_put: free('writes a card in an admin-only Recall map'),
+  recall_card_delete: free('removes a card from an admin-only Recall map'),
+  recall_map_update: free('retitles an admin-only Recall map'),
   my_items_list: free(OWN_SPACE),
   my_item_open: free(OWN_SPACE),
 };

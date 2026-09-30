@@ -86,6 +86,11 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
   task_delete: { reason: 'row delete via the deliberate tasks group' },
   formula_delete: { reason: 'row delete via formulas-admin, deliberate-only' },
   api_tool_delete: { reason: 'row delete via the toolsmith kit, specialist-only' },
+  // One card inside an admin-only Recall map, granted only through the
+  // deliberately-held recall-write group. The card's whole content is kept in
+  // recall_revisions, the entry card is refused outright, and retiring a whole
+  // map is the owner's own act rather than an agent's.
+  recall_card_delete: { reason: 'card delete via the deliberate recall-write group' },
 };
 
 /**
