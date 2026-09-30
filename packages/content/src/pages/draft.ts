@@ -12,7 +12,7 @@
  * writing while the user types) from silently winning a lost update.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { asViewerLevel, db, nodes, notifyNodeIngested, pages } from '@mantle/db';
+import { asViewerLevel, db, nodes, notifyNodeIngested, pages, withBusyRetry } from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { PageVisibility, PageWidth } from '@mantle/client-types';
 import { docToText } from '../doc-to-text';
@@ -118,7 +118,17 @@ export type UpdatePageInput = Partial<{
   width: PageWidth;
 }>;
 
-export async function updatePage(
+/** updatePage, once more when another write held its rows (withBusyRetry). */
+export function updatePage(
+  ownerId: string,
+  id: string,
+  input: UpdatePageInput,
+  opts: { reindex?: boolean } = {},
+): Promise<PageDetail | null> {
+  return withBusyRetry(() => updatePageOnce(ownerId, id, input, opts));
+}
+
+async function updatePageOnce(
   ownerId: string,
   id: string,
   input: UpdatePageInput,
@@ -299,7 +309,16 @@ export type CommitPageResult =
  * a page body — autosaves never do, so a long editing session produces exactly
  * one index per commit instead of one per pause.
  */
-export async function commitPage(
+export function commitPage(
+  ownerId: string,
+  id: string,
+  doc: Record<string, unknown>,
+  opts: { baseRev?: number } = {},
+): Promise<CommitPageResult> {
+  return withBusyRetry(() => commitPageOnce(ownerId, id, doc, opts));
+}
+
+async function commitPageOnce(
   ownerId: string,
   id: string,
   doc: Record<string, unknown>,

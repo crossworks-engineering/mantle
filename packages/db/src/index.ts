@@ -58,6 +58,9 @@ export {
 export { isWriteRefused } from './write-refused';
 export {
   BUSY_MESSAGE,
+  BusyError,
+  SAVE_BUSY_MESSAGE,
+  withBusyRetry,
   isBusy,
   isCheckViolation,
   isUniqueViolation,

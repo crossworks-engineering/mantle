@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { BUSY_MESSAGE, BusyError, isBusy } from '@mantle/db';
 import { BodyTooLargeError, bodyTooLargeResponse } from '../lib/body-limit';
 import { RedirectError } from './http-compat/redirect-error';
 import { levelConflictResponse } from './level-conflict';
@@ -63,6 +64,14 @@ export async function createApp(): Promise<Hono> {
     if (refused) return refused;
     // A JSON body over its route's ceiling, found while reading (I4).
     if (err instanceof BodyTooLargeError) return bodyTooLargeResponse(err.maxBytes);
+    // Another write held the same rows (a deadlock broken, a lock timeout):
+    // "busy, try again" for a person, never the SQL (folder audit review F7).
+    if (isBusy(err)) {
+      return Response.json(
+        { error: err instanceof BusyError ? err.message : BUSY_MESSAGE },
+        { status: 409 },
+      );
+    }
     console.error(`[server] unhandled error on ${c.req.method} ${path}:`, err);
     if (path === '/api' || path.startsWith('/api/')) {
       // Body matches Next's opaque route-handler failure: no error details leak.

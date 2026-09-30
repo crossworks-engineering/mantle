@@ -26,6 +26,7 @@ import {
   notifyNodeIngested,
   type Node,
   type ViewerLevel,
+  withBusyRetry,
 } from '@mantle/db';
 import { sceneToText } from './scene-to-text';
 import { acceptSceneSvg, EXCALIDRAW_ENGINE } from './scene-svg';
@@ -687,7 +688,16 @@ export type CommitDrawResult =
  * `svg` is the client's exportToSvg output; it is validated (acceptSceneSvg)
  * and dropped to null on any doubt — the commit itself never fails on it.
  */
-export async function commitDraw(
+export function commitDraw(
+  ownerId: string,
+  id: string,
+  scene: Record<string, unknown>,
+  opts: { baseRev?: number; svg?: string; fileRefs?: Record<string, string> } = {},
+): Promise<CommitDrawResult> {
+  return withBusyRetry(() => commitDrawOnce(ownerId, id, scene, opts));
+}
+
+async function commitDrawOnce(
   ownerId: string,
   id: string,
   scene: Record<string, unknown>,

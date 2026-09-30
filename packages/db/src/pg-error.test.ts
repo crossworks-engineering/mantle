@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { isUniqueViolation, pgConstraint, pgErrorCode } from './pg-error';
+import {
+  BusyError,
+  isBusy,
+  isUniqueViolation,
+  pgConstraint,
+  pgErrorCode,
+  withBusyRetry,
+} from './pg-error';
 
 /** The shape drizzle 0.45 throws from its query builder: no code on top. */
 function drizzleQueryError(cause: unknown): Error {
@@ -72,5 +79,41 @@ describe('pgConstraint', () => {
   it('is null when there is no Postgres error or no name', () => {
     expect(pgConstraint(new Error('users_email_key'))).toBeNull();
     expect(pgConstraint(drizzleQueryError({ code: '40001' }))).toBeNull();
+  });
+});
+
+describe('withBusyRetry', () => {
+  const deadlock = () =>
+    drizzleQueryError(Object.assign(new Error('deadlock detected'), { code: '40P01' }));
+
+  it('runs a write once more after a deadlock, and returns its result', async () => {
+    let calls = 0;
+    const out = await withBusyRetry(async () => {
+      calls += 1;
+      if (calls === 1) throw deadlock();
+      return 'saved';
+    });
+    expect(out).toBe('saved');
+    expect(calls).toBe(2);
+  });
+
+  it('busy twice: a BusyError for people, no SQL, still isBusy', async () => {
+    const err = await withBusyRetry(async () => {
+      throw deadlock();
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BusyError);
+    expect((err as Error).message).not.toMatch(/deadlock|insert/i);
+    expect(isBusy(err)).toBe(true);
+  });
+
+  it('passes any other error through at once', async () => {
+    let calls = 0;
+    await expect(
+      withBusyRetry(async () => {
+        calls += 1;
+        throw pgUnique;
+      }),
+    ).rejects.toBe(pgUnique);
+    expect(calls).toBe(1);
   });
 });

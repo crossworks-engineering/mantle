@@ -56,9 +56,46 @@ export function isCheckViolation(err: unknown): boolean {
  *  another write held what this one needed. Safe to retry once; never to
  *  show a person as SQL (folder audit review F7). */
 export function isBusy(err: unknown): boolean {
+  if (err instanceof BusyError) return true;
   const code = pgErrorCode(err);
   return code === '40P01' || code === '55P03';
 }
 
 /** What a person reads when a write met another write on the same rows. */
 export const BUSY_MESSAGE = 'Another change to these folders is under way; try again in a moment.';
+
+/** The same for an item save (a page, note or drawing). */
+export const SAVE_BUSY_MESSAGE = 'Another change to this item is under way; try again in a moment.';
+
+/** A write that met another on the same rows twice: its message is for
+ *  people, never SQL. isBusy() is true for it (the API answers 409). */
+export class BusyError extends Error {
+  constructor(message: string = SAVE_BUSY_MESSAGE) {
+    super(message);
+    this.name = 'BusyError';
+  }
+}
+
+/**
+ * Run a write once more when another write held its rows (a deadlock broken
+ * by Postgres, or a lock timeout): its transaction rolled back whole, so the
+ * second run starts clean. Busy again: a BusyError. Item saves take row
+ * locks in the embed triggers (migration 0208) that a folder unshare may
+ * hold in the other order.
+ */
+export async function withBusyRetry<T>(
+  run: () => Promise<T>,
+  message: string = SAVE_BUSY_MESSAGE,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (first) {
+    if (!isBusy(first)) throw first;
+    try {
+      return await run();
+    } catch (err) {
+      if (isBusy(err)) throw new BusyError(message);
+      throw err;
+    }
+  }
+}

@@ -17,6 +17,7 @@ import {
   notifyNodeIngested,
   type Node,
   type ViewerLevel,
+  withBusyRetry,
 } from '@mantle/db';
 import { followNewEmbeds, noteEmbedIds, refoldEmbedReach } from './embed-closure';
 
@@ -184,7 +185,15 @@ export async function createNote(ownerId: string, input: CreateNoteInput): Promi
 
 export type UpdateNoteInput = Partial<CreateNoteInput>;
 
-export async function updateNote(
+export function updateNote(
+  ownerId: string,
+  id: string,
+  input: UpdateNoteInput,
+): Promise<NoteRow | null> {
+  return withBusyRetry(() => updateNoteOnce(ownerId, id, input));
+}
+
+async function updateNoteOnce(
   ownerId: string,
   id: string,
   input: UpdateNoteInput,
