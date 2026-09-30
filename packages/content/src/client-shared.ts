@@ -16,7 +16,7 @@
  * before any redaction, so it could name what the body calls "Private
  * item". A table is its committed grid only (audit B13, ClientSharedTable).
  */
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import { currentSpaceScope, currentViewerLevel, db, nodes } from '@mantle/db';
 import type { TableDetail } from '@mantle/content-core/table-model';
 import type { ClientSharedItem, ClientSharedRow, ClientSharedTable } from '@mantle/client-types';
@@ -44,8 +44,9 @@ function assertClient(): void {
 }
 
 /** The items among `ids` a client may read, with their current titles:
- *  client-level items of this brain (row security agrees; the level is also
- *  in the query). Keys lower-case. */
+ *  items of this brain at client by their own level or through a folder
+ *  shared with clients (row security agrees; the level is also in the
+ *  query). Keys lower-case. */
 export async function clientReadable(
   anchorId: string,
   ids: readonly string[],
@@ -57,7 +58,11 @@ export async function clientReadable(
     .select({ id: nodes.id, title: nodes.title })
     .from(nodes)
     .where(
-      and(eq(nodes.ownerId, anchorId), eq(nodes.audience, 'client'), inArray(nodes.id, wanted)),
+      and(
+        eq(nodes.ownerId, anchorId),
+        or(eq(nodes.audience, 'client'), eq(nodes.inheritedLevel, 'client')),
+        inArray(nodes.id, wanted),
+      ),
     );
   return new Map(rows.map((r) => [r.id.toLowerCase(), r.title]));
 }

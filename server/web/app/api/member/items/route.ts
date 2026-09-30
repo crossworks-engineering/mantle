@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { VIEWER_LEVELS, withHumanViewer, withTeamDrafts, withViewer } from '@mantle/db';
+import { withHumanViewer, withTeamDrafts, withViewer } from '@mantle/db';
 import type { MemberItemRow } from '@mantle/client-types';
 import { MEMBER_ITEM_FILTERS } from '@mantle/client-types/member-kinds';
 import {
@@ -37,9 +37,6 @@ const PAGE_SIZE = 50;
 
 /** A member reads the Library at the team level: its levels, and the rest. */
 const LIBRARY_LEVELS = libraryLevelsOf('team');
-const ABOVE_LIBRARY = VIEWER_LEVELS.filter(
-  (l) => !(LIBRARY_LEVELS as readonly string[]).includes(l),
-);
 
 /**
  * GET /api/member/items?kind=&q=&state=&page= : everything this MEMBER can
@@ -106,7 +103,7 @@ export async function GET(req: Request) {
         kind,
         q,
         order: 'updated',
-        ...(accepted === 'above-library' ? { audiences: ABOVE_LIBRARY } : {}),
+        ...(accepted === 'above-library' ? { outside: LIBRARY_LEVELS } : {}),
         limit,
         offset,
       });

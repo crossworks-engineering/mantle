@@ -173,6 +173,7 @@ describe('clientItemsPlan (My requests, client logins C5)', () => {
       title: 'A',
       icon: null,
       audience: 'admin',
+      inherited: 'client',
       acceptedAt: at(1),
       updatedAt: at(2),
     });
@@ -189,6 +190,7 @@ describe('clientItemsPlan (My requests, client logins C5)', () => {
     });
     for (const r of [own, accepted]) {
       expect(r).not.toHaveProperty('audience');
+      expect(r).not.toHaveProperty('inherited');
       expect(r).not.toHaveProperty('author');
     }
   });
@@ -206,6 +208,7 @@ describe('row mappers', () => {
       type: 'note' as const,
       title: 'A',
       icon: null,
+      inherited: null,
       acceptedAt: null,
       updatedAt: at(1),
     };
@@ -217,6 +220,10 @@ describe('row mappers', () => {
     expect(acceptedItemRow({ ...row, audience: 'admin' }, ['team', 'client']).source).toBe(
       'accepted',
     );
+    // An admin item in a folder shared with the team is in the Library.
+    expect(
+      acceptedItemRow({ ...row, audience: 'admin', inherited: 'team' }, ['team', 'client']).source,
+    ).toBe('library');
   });
 });
 

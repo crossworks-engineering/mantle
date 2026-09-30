@@ -219,6 +219,10 @@ export type MemberAcceptedRow = {
   icon: string | null;
   /** The level the admin chose: at team or lower it is in the Library too. */
   audience: AccessLevel;
+  /** The share it takes from a folder holding it: in the Library at that
+   *  level too, whatever `audience` says. Absent from brains before folder
+   *  sharing. */
+  inherited?: 'team' | 'client' | null;
   acceptedAt: string | null;
   updatedAt: string;
 };

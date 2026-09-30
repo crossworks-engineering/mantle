@@ -35,7 +35,7 @@
  * login as the author, its state is `accepted`, and the item belongs to this
  * brain. Nothing here writes, and nothing returns a draft.
  */
-import { and, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import {
   acceptedSnapshots,
   asViewerLevel,
@@ -87,6 +87,9 @@ export type AcceptedRow = {
   icon: string | null;
   /** The level the admin chose: at team or below it is in the Library too. */
   audience: ViewerLevel;
+  /** The share it takes from a folder holding it (folder sharing): in the
+   *  Library at that level too, whatever `audience` says. */
+  inherited?: 'team' | 'client' | null;
   acceptedAt: string | null;
   updatedAt: string;
 };
@@ -144,6 +147,10 @@ function rowOf({ node, acceptedAt, snapTitle, snapIcon, snapAt }: Joined): Accep
     title: snapTitle ?? node.title,
     icon: typeof icon === 'string' && icon.trim() ? icon : null,
     audience: asViewerLevel(node.audience),
+    inherited:
+      node.inheritedLevel === 'team' || node.inheritedLevel === 'client'
+        ? node.inheritedLevel
+        : null,
     acceptedAt: acceptedAt?.toISOString() ?? null,
     updatedAt: (snapAt ?? node.updatedAt).toISOString(),
   };
@@ -157,8 +164,8 @@ const snapCols = {
 
 /** The author's accepted items, newest accept first. `q` matches the title
  *  the row shows (the accepted title: an admin's later rename is the
- *  brain's, and a search on it would spell it out, audit L5); `audiences`
- *  keeps only items at those levels. `order: 'updated'` sorts by the row's
+ *  brain's, and a search on it would spell it out, audit L5); `outside`
+ *  keeps only items read at none of those levels (own or folder share). `order: 'updated'` sorts by the row's
  *  own `updatedAt` instead (the one list merges on it). */
 export async function listAccepted(
   anchorId: string,
@@ -168,7 +175,9 @@ export async function listAccepted(
     /** Without `kind`: only these kinds (a client's list, client logins C5). */
     kinds?: readonly MemberItemKind[];
     q?: string;
-    audiences?: readonly ViewerLevel[];
+    /** Only items read at none of these levels, by their own level or
+     *  through a shared folder: what the Library does not already list. */
+    outside?: readonly ViewerLevel[];
     order?: 'accepted' | 'updated';
     limit?: number;
     offset?: number;
@@ -191,7 +200,12 @@ export async function listAccepted(
           `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`,
         )
       : undefined,
-    opts.audiences ? inArray(nodes.audience, [...opts.audiences]) : undefined,
+    opts.outside?.length
+      ? and(
+          notInArray(nodes.audience, [...opts.outside]),
+          or(isNull(nodes.inheritedLevel), notInArray(nodes.inheritedLevel, [...opts.outside])),
+        )
+      : undefined,
   );
   // rowOf's updatedAt: the snapshot's time when there is one, else the node's.
   const order =

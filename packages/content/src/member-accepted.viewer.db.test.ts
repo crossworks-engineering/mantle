@@ -202,7 +202,7 @@ describe.skipIf(!URL)('member accepted items', () => {
 
   it('narrows by level and orders by the row time for the one list', async () => {
     const above = await ma.listAccepted(anchor, loginA, {
-      audiences: ['admin', 'public'],
+      outside: ['team', 'client'],
       order: 'updated',
     });
     expect(above.items.map((i) => i.id)).not.toContain(noteTeamId);
