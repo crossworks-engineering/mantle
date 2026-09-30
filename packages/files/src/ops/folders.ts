@@ -17,7 +17,7 @@ import {
   slugifyFolder,
   untrackedFilesOnDisk,
 } from '../index';
-import { isUniqueViolation, db, nodes } from '@mantle/db';
+import { carrySpaceRows, isUniqueViolation, db, nodes } from '@mantle/db';
 import { folderCounts, folderRowFromNode, type FolderRow } from './shared';
 import { folderById } from './queries';
 
@@ -258,7 +258,12 @@ export async function deleteFolder(args: {
       reason: `folder still holds file(s) on disk that the brain does not track (${untracked.join(', ')}) — move or delete them first`,
     };
   }
-  await db.delete(nodes).where(eq(nodes.id, args.folderId));
+  // Members' drafts and folders in it move up to the parent (never deleted).
+  await db.transaction(async (tx) => {
+    const parent = folder.path.slice(0, folder.path.lastIndexOf('.'));
+    await carrySpaceRows(tx, args.ownerId, folder.path, parent, { lift: true });
+    await tx.delete(nodes).where(eq(nodes.id, args.folderId));
+  });
   await removeFolderOnDisk(folder.path);
   return { ok: true };
 }
@@ -399,6 +404,9 @@ export async function renameFolderById(args: {
             updated_at = now()
         WHERE owner_id = ${args.ownerId} AND path <@ ${oldPath}::ltree
       `);
+      // Members' drafts and folders under it follow (no bytes move: member
+      // files are keyed by id, never by path).
+      await carrySpaceRows(tx, args.ownerId, oldPath, newPath);
       // The folder's own label fields (path already rewritten above).
       const data = (node.data ?? {}) as Record<string, unknown>;
       await tx

@@ -23,7 +23,7 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, type Node } from '@mantle/db';
+import { carrySpaceRows, db, nodes, type Node } from '@mantle/db';
 import { moveFile as moveFileOnDisk, renameFolder as renameFolderOnDisk } from './disk';
 import { FILES_MAX_FOLDER_DEPTH, FILES_ROOT_LABEL, filesFolderDepth } from './paths';
 import { reconcileFilesIndexing } from './indexing';
@@ -226,6 +226,7 @@ export async function moveFolderById(args: {
             updated_at = now()
         WHERE owner_id = ${args.ownerId} AND path <@ ${oldPath}::ltree
       `);
+      await carrySpaceRows(tx, args.ownerId, oldPath, newPath);
     });
   } catch (err) {
     await renameFolderOnDisk(newPath, oldPath).catch(() => {});
