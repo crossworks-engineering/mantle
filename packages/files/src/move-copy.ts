@@ -123,7 +123,8 @@ export async function moveFileById(args: {
   try {
     await db
       .update(nodes)
-      .set({ path: args.destPath, updatedAt: new Date() })
+      // Filing is not editing: the file keeps its updated_at (node-ops.ts).
+      .set({ path: args.destPath })
       .where(eq(nodes.id, node.id));
   } catch (err) {
     await moveFileOnDisk(args.destPath, filename, oldPath).catch(() => {});
@@ -234,7 +235,9 @@ export async function moveFolderById(args: {
               WHEN path = ${oldPath}::ltree THEN text2ltree(${newPath})
               ELSE (text2ltree(${newPath}) || subpath(path, nlevel(${oldPath}::ltree)))::ltree
             END,
-            updated_at = now()
+            -- Filing is not editing (as for every other kind, node-ops.ts):
+            -- only the folder itself is stamped, never what it holds.
+            updated_at = CASE WHEN path = ${oldPath}::ltree THEN now() ELSE updated_at END
         WHERE owner_id = ${args.ownerId} AND path <@ ${oldPath}::ltree
       `);
       await carrySpaceRows(tx, args.ownerId, oldPath, newPath);

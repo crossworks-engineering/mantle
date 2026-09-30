@@ -176,6 +176,16 @@ describe.skipIf(!URL)('the item tree on notes, tasks, events and secrets', () =>
       title: 'Later',
       dueAt: '2026-12-01T00:00:00.000Z',
     });
+    // Earlier as an instant, later as text: 2026-10-01T23:00+10:00 is
+    // 13:00 UTC, before 2026-10-01T14:00Z (audit C5).
+    const offsetEarly = await tasks.createTask(owner, {
+      title: 'Offset early',
+      dueAt: '2026-10-01T23:00:00+10:00',
+    });
+    const utcLater = await tasks.createTask(owner, {
+      title: 'UTC later',
+      dueAt: '2026-10-01T14:00:00.000Z',
+    });
     const undated = await tasks.createTask(owner, { title: 'Undated' });
     const done = await tasks.createTask(owner, {
       title: 'Done',
@@ -186,7 +196,16 @@ describe.skipIf(!URL)('the item tree on notes, tasks, events and secrets', () =>
     await tasks.updateTask(owner, gone.id, { archivedAt: new Date().toISOString() });
 
     const page = await tree.loadTreeFolder(owner, 'tasks', { sort: 'due' });
-    expect(page!.items.map((i) => i.title)).toEqual(['Soon', 'Later', 'Undated', 'Done']);
+    expect(page!.items.map((i) => i.title)).toEqual([
+      'Soon',
+      'Offset early',
+      'UTC later',
+      'Later',
+      'Undated',
+      'Done',
+    ]);
+    await tasks.deleteTask(owner, offsetEarly.id);
+    await tasks.deleteTask(owner, utcLater.id);
     const byId = new Map(page!.items.map((i) => [i.id, i]));
     expect(byId.get(soon.id)!.meta).toEqual({ done: false, due: '2026-10-01T00:00:00.000Z' });
     expect(byId.get(done.id)!.meta?.done).toBe(true);

@@ -229,16 +229,27 @@ function sortOf(sort: TreeSort): { key: SQL; desc: boolean } {
       };
     case 'due':
       // Open tasks first, soonest due first, undated last; done tasks after.
+      // The instant in UTC, not the stored text: '...T23:00+10:00' is before
+      // '...T14:00Z' (audit C5), as the task list's own order has it.
       return {
         // Byte order (C collation): '~' sorts after every digit there, and
         // the cursor compares with the same collation as the order.
         key: sql`((case when n.data->>'status' = 'done' then '1' else '0' end
-                  || coalesce(n.data->>'due_at', '~')) collate "C")`,
+                  || coalesce(${utcKey(sql`n.data->>'due_at'`)}, '~')) collate "C")`,
         desc: false,
       };
     case 'start':
-      return { key: sql`(coalesce(n.data->>'starts_at', '') collate "C")`, desc: false };
+      return {
+        key: sql`(coalesce(${utcKey(sql`n.data->>'starts_at'`)}, '') collate "C")`,
+        desc: false,
+      };
   }
+}
+
+/** A stored ISO date or time as a sortable UTC text key (the same function
+ *  the task and event lists sort by, mantle_iso_to_ts, migration 0025). */
+function utcKey(iso: SQL): SQL {
+  return sql`to_char(mantle_iso_to_ts(${iso}) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US')`;
 }
 
 /** One page of the items directly in `path`. `extra` narrows the rows

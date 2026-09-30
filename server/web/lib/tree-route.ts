@@ -46,7 +46,23 @@ export async function treeKindOr404(ctx: {
 /** Make sure the kind's root exists before its first read or write, and move
  *  in what older brains kept elsewhere (once). `actorId` is the login, for
  *  its own marks. */
+/** What this process has already ensured (owner, kind, login): the root,
+ *  and the once-only moves below, are done for good once done, so a tree read
+ *  after the first skips the writes (audit P9). */
+const ensured = new Set<string>();
+
 export async function ensureTreeRoot(
+  ownerId: string,
+  kind: TreeKind,
+  actorId?: string,
+): Promise<void> {
+  const key = `${ownerId}:${kind}:${actorId ?? ''}`;
+  if (ensured.has(key)) return;
+  await ensureTreeRootOnce(ownerId, kind, actorId);
+  ensured.add(key);
+}
+
+async function ensureTreeRootOnce(
   ownerId: string,
   kind: TreeKind,
   actorId?: string,

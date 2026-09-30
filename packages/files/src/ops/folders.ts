@@ -411,7 +411,9 @@ export async function renameFolderById(args: {
               WHEN path = ${oldPath}::ltree THEN text2ltree(${newPath})
               ELSE (text2ltree(${newPath}) || subpath(path, nlevel(${oldPath}::ltree)))::ltree
             END,
-            updated_at = now()
+            -- Filing is not editing (as for every other kind, node-ops.ts):
+            -- only the folder itself is stamped, never what it holds.
+            updated_at = CASE WHEN path = ${oldPath}::ltree THEN now() ELSE updated_at END
         WHERE owner_id = ${args.ownerId} AND path <@ ${oldPath}::ltree
       `);
       // Members' drafts and folders under it follow (no bytes move: member

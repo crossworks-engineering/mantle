@@ -73,6 +73,9 @@ export type Visible = {
   paths: Set<string>;
   /** Readable items per path (the kind's root included). */
   items: Map<string, number>;
+  /** Visible subfolders per path, counted once (a recount per folder over
+   *  every visible path was quadratic: audit P2). */
+  children: Map<string, number>;
 };
 
 export async function visibleFolders(
@@ -106,7 +109,12 @@ export async function visibleFolders(
   for (const p of [...itemRows.map((r) => r.path), ...sharedRows.map((r) => r.path)]) {
     for (const c of treeFolderChain(p)) paths.add(c);
   }
-  return { paths, items: new Map(itemRows.map((r) => [r.path, Number(r.n)])) };
+  const children = new Map<string, number>();
+  for (const p of paths) {
+    const parent = treeParentPath(p);
+    children.set(parent, (children.get(parent) ?? 0) + 1);
+  }
+  return { paths, items: new Map(itemRows.map((r) => [r.path, Number(r.n)])), children };
 }
 
 /** A folder whose own share or inherited share is one of `levels`. */
@@ -121,9 +129,11 @@ function readAtAliasShare(alias: string, levels: readonly string[]): SQL {
 
 /** The folder with the reader's counts. */
 function recount(f: TreeFolder, vis: Visible): TreeFolder {
-  let folders = 0;
-  for (const p of vis.paths) if (treeParentPath(p) === f.path && p !== f.path) folders++;
-  return { ...f, folderCount: folders, itemCount: vis.items.get(f.path) ?? 0 };
+  return {
+    ...f,
+    folderCount: vis.children.get(f.path) ?? 0,
+    itemCount: vis.items.get(f.path) ?? 0,
+  };
 }
 
 /**
@@ -211,8 +221,8 @@ export async function searchReaderTree(
           )
         )
           .filter((f) => vis.paths.has(f.path))
-          .map((f) => recount(f, vis))
-          .slice(0, limit);
+          .slice(0, limit)
+          .map((f) => recount(f, vis));
   const { page, more } = await withViewer(reader, () =>
     searchItemRows(anchorId, kind, term, opts.cursor, limit, readerItems(reader, 'n')),
   );
