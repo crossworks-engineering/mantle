@@ -14,10 +14,17 @@ import type {
   TreeFolderPage,
   TreeItem,
   TreeKind,
+  TreeFilter,
   TreeSearchResult,
   TreeSort,
+  TreeTagList,
 } from '@mantle/client-types/tree';
-import { TREE_KIND_SPECS, TREE_PAGE_MAX, TREE_PAGE_SIZE } from '@mantle/client-types/tree';
+import {
+  TREE_KIND_SPECS,
+  TREE_PAGE_MAX,
+  TREE_PAGE_SIZE,
+  TREE_TAGS_LIST_MAX,
+} from '@mantle/client-types/tree';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import { treeFolderChain, treeParentPath } from '@mantle/content-core/tree';
 import type { AccessLevel } from '@mantle/client-types';
@@ -259,21 +266,24 @@ function likePattern(q: string): string {
  * Search a kind by name: matching folders first (at most one page, with their
  * crumbs), then items by name, paged. Both carry the crumbs of where they
  * live, so a result can be shown and opened in place. An empty `q` is the
- * A to Z view: every item of the kind by name, and no folders.
+ * A to Z view: every item of the kind by name, and no folders. A filter
+ * (level, tag) narrows the items and drops the folders: it is a question
+ * about items.
  */
 export async function searchTree(
   ownerId: string,
   kind: TreeKind,
   q: string,
-  opts: { cursor?: string | null; limit?: number } = {},
+  opts: { cursor?: string | null; limit?: number } & TreeFilter = {},
 ): Promise<TreeSearchResult> {
   const spec = TREE_KIND_SPECS[kind];
   const limit = treePageLimit(opts.limit);
   const term = q.trim();
   const pattern = likePattern(term);
   const cursor = decodeTreeCursor(opts.cursor, 'name');
+  const filtered = opts.level !== undefined || opts.tag !== undefined;
   const folders =
-    cursor || !term
+    cursor || !term || filtered
       ? []
       : (
           await selectFolders(
@@ -284,6 +294,10 @@ export async function searchTree(
           )
         ).slice(0, limit);
   const match = term ? sql`and n.title ilike ${pattern}` : sql``;
+  // Phase 1 has no folder shares, so an item's own level is the level it is
+  // read at. The inherited level joins this with sharing (phase 4).
+  const level = opts.level ? sql`and n.audience = ${opts.level}` : sql``;
+  const tag = opts.tag ? sql`and ${opts.tag} = any(n.tags)` : sql``;
   const after = cursor
     ? sql`and (lower(n.title), n.id) > (${cursor.key}, ${cursor.id}::uuid)`
     : sql``;
@@ -292,7 +306,7 @@ export async function searchTree(
            lower(n.title) as sort_key
       from nodes n
      where n.owner_id = ${ownerId} and n.type = ${spec.nodeType}
-       and n.path <@ ${spec.root}::ltree ${match} ${after}
+       and n.path <@ ${spec.root}::ltree ${match} ${level} ${tag} ${after}
      order by lower(n.title), n.id
      limit ${limit + 1}`)) as unknown as ItemSqlRow[];
   const more = rows.length > limit;
@@ -311,6 +325,24 @@ export async function searchTree(
         ? encodeTreeCursor({ sort: 'name', key: String(last.sort_key), id: last.id })
         : null,
   };
+}
+
+/**
+ * The tags on a kind's items (under its root), most used first, for the
+ * filter menu. The tag every item of the kind carries by default (its node
+ * type: every file is tagged `file`) narrows nothing, so it is left out.
+ */
+export async function listTreeTags(ownerId: string, kind: TreeKind): Promise<TreeTagList> {
+  const spec = TREE_KIND_SPECS[kind];
+  const rows = (await db.execute(sql`
+    select t.tag, count(*)::int as count
+      from nodes n, unnest(n.tags) as t(tag)
+     where n.owner_id = ${ownerId} and n.type = ${spec.nodeType}
+       and n.path <@ ${spec.root}::ltree and t.tag <> ${spec.nodeType}
+     group by t.tag
+     order by count(*) desc, t.tag
+     limit ${TREE_TAGS_LIST_MAX}`)) as unknown as Array<{ tag: string; count: number }>;
+  return { kind, tags: rows.map((r) => ({ tag: r.tag, count: Number(r.count) })) };
 }
 
 export { treeItemFromRow };

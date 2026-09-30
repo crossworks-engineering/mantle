@@ -1,7 +1,8 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import { TREE_SEARCH_MAX } from '@mantle/client-types/tree';
+import { ACCESS_LEVELS } from '@mantle/client-types/dto/access';
+import { TREE_SEARCH_MAX, TREE_TAG_MAX } from '@mantle/client-types/tree';
 import { searchTree } from '@mantle/content/tree';
 import { treeKindOr404 } from '@/lib/tree-route';
 
@@ -9,11 +10,15 @@ const Query = z.object({
   q: z.string().trim().max(TREE_SEARCH_MAX).default(''),
   cursor: z.string().max(500).optional(),
   limit: z.coerce.number().int().positive().optional(),
+  level: z.enum(ACCESS_LEVELS).optional(),
+  tag: z.string().trim().min(1).max(TREE_TAG_MAX).optional(),
 });
 
-/** GET /api/tree/:kind/search?q=&cursor= — matching folders, then items, each
- *  with the crumbs of where it lives (TreeSearchResult). An empty or missing
- *  `q` lists every item by name (the A to Z view), no folders. */
+/** GET /api/tree/:kind/search?q=&cursor=&level=&tag= — matching folders,
+ *  then items, each with the crumbs of where it lives (TreeSearchResult). An
+ *  empty or missing `q` lists every item by name (the A to Z view), no
+ *  folders. `level` and `tag` (TreeFilter) narrow the items; a filtered
+ *  search has no folders. */
 export async function GET(req: Request, ctx: { params: Promise<{ kind: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
@@ -25,6 +30,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string }>
     await searchTree(user.id, kind, parsed.data.q, {
       cursor: parsed.data.cursor,
       limit: parsed.data.limit,
+      level: parsed.data.level,
+      tag: parsed.data.tag,
     }),
   );
 }
