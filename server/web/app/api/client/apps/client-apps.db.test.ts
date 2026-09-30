@@ -136,7 +136,8 @@ describe.skipIf(!URL)('client apps, end to end', () => {
     const manifest = { toolSlugs: ['client_shared_list', 'search_chunks'] };
     for (const id of Object.values(ids)) {
       await sql`insert into apps (node_id, manifest, published_build, data_read_only)
-                values (${id}, ${sql.json(manifest)}, ${sql.json(green)}, ${id === ids.info})`;
+                values (${id}, ${JSON.stringify(manifest)}::jsonb, ${JSON.stringify(green)}::jsonb,
+                        ${id === ids.info})`;
     }
     const { createApp } = await import('@/server/app');
     app = await createApp();
@@ -253,9 +254,7 @@ describe.skipIf(!URL)('client apps, end to end', () => {
   it('logs every call with the client login', async () => {
     let rows: Awaited<ReturnType<typeof log.listAppAccess>> = [];
     for (let i = 0; i < 250; i++) {
-      rows = (await log.listAppAccess(brain, ids.client)).filter(
-        (r) => r.actorId === clientLogin,
-      );
+      rows = (await log.listAppAccess(brain, ids.client)).filter((r) => r.actorId === clientLogin);
       if (new Set(rows.map((r) => r.kind)).size === 3) break;
       await new Promise((r) => setTimeout(r, 20));
     }
@@ -270,9 +269,9 @@ describe.skipIf(!URL)('client apps, end to end', () => {
     expect(await session.endLoginSessions(clientLogin)).not.toBeNull();
     expect((await frame(ids.client, ticket)).status).toBe(401);
     // A new session at the new epoch mints a ticket that opens it again.
-    expect((await frame(ids.client, await ticketFor(ids.client, await clientCookie()))).status).toBe(
-      200,
-    );
+    expect(
+      (await frame(ids.client, await ticketFor(ids.client, await clientCookie()))).status,
+    ).toBe(200);
   });
 
   it('the frame refuses a ticket of a disabled client', async () => {
