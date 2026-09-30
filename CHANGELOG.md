@@ -4,6 +4,27 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.350: whole client tier audit fixes
+
+- **Client-level apps run the client tool rules for every runner**: an
+  admin's or a member's run of a client-level app can no longer read team
+  or admin data into a database every client reads (audit L1).
+- **App databases are bounded**: 256 MB a file (`APP_SQL_MAX_DB_MB`), 8 MB a
+  reply, one statement at a time per caller; server error text never
+  reaches an app (I1, L4).
+- **Client app exports** index at retrieval depth and commit at most every
+  10 minutes; a Table that holds rows clients wrote stays client-sourced
+  after its app is raised or its export removed (I2, I3, migration 0199).
+- **Access log upkeep**: reads sampled once a minute, no audit row per
+  client broker call, a 90-day sweep (I4). App write tools are owner only
+  (I8).
+- **Give back** reads absolute brain URLs as references (L2). Deleting a
+  client login deletes its comments; its log rows read "Removed client"
+  (I5). A trigger refuses any role change to or from client (migration
+  0200). Race tests for the client caps (I7). A client's embed refusal no
+  longer names the Library (U6).
+- Roll notes: update-prod.md, "Rolling to v0.232.350".
+
 ## 0.232.349: the notes behind the top facts get a passage
 
 - **Retrieval reads the note a matching fact came from.** A fact is one
@@ -28,27 +49,6 @@ deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
   set to client level, run in the sandbox. An informational app says so to
   members and clients; an admin marks an app informational on its page. The
   admin's client thread panel shows only the client thread.
-
-## 0.232.349: whole client tier audit fixes
-
-- **Client-level apps run the client tool rules for every runner**: an
-  admin's or a member's run of a client-level app can no longer read team
-  or admin data into a database every client reads (audit L1).
-- **App databases are bounded**: 256 MB a file (`APP_SQL_MAX_DB_MB`), 8 MB a
-  reply, one statement at a time per caller; server error text never
-  reaches an app (I1, L4).
-- **Client app exports** index at retrieval depth and commit at most every
-  10 minutes; a Table that holds rows clients wrote stays client-sourced
-  after its app is raised or its export removed (I2, I3, migration 0199).
-- **Access log upkeep**: reads sampled once a minute, no audit row per
-  client broker call, a 90-day sweep (I4). App write tools are owner only
-  (I8).
-- **Give back** reads absolute brain URLs as references (L2). Deleting a
-  client login deletes its comments; its log rows read "Removed client"
-  (I5). A trigger refuses any role change to or from client (migration
-  0200). Race tests for the client caps (I7). A client's embed refusal no
-  longer names the Library (U6).
-- Roll notes: update-prod.md, "Rolling to v0.232.349".
 
 ## 0.232.347: C6, released
 

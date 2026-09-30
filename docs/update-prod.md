@@ -426,7 +426,7 @@ older client see client requests they cannot open. What to know:
   before v0.232.318 should roll with no long transaction open: a stuck
   migrate there is a lock wait, not an error.
 
-## Rolling to v0.232.349 (client logins C6 and the whole-tier audit fixes)
+## Rolling to v0.232.350 (client logins C6 and the whole-tier audit fixes)
 
 Boxes on v0.232.338 get C6 (v0.232.346 to 348) and these fixes in one roll,
 through the updater (`scripts/roll.sh`). The release pairs with the jackdaw
