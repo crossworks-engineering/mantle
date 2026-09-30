@@ -22,10 +22,9 @@
  * The caller then dispatches inside `withViewer('team', …)` on a team surface
  * that carries the login, so row security still decides what the tool reads.
  *
- * These are the rules of a TEAM-level app, for every runner: the brokers pick
- * the rules by the lower of the runner's level and the app's (app-tool-level.ts,
- * client tier audit L1), so a member's run of a client-level app gets the
- * client rules instead, and an admin's run of a team app gets these.
+ * These are a member's rules for a team or public app. The brokers pick the
+ * rules in app-tool-level.ts (client tier audit L1): a client-level app gets
+ * the client rules instead, for every runner.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, toolGroups, type Tool } from '@mantle/db';

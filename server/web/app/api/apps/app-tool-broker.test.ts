@@ -1,7 +1,7 @@
 /**
  * The OWNER's app tool broker (client tier audit 2026-09-30, L1): an admin's
- * run of an app below admin keeps the app level's rules, because the app's
- * database is read by everyone at that level. The level rule (appToolLevel,
+ * run of a CLIENT-level app keeps the client rules, because every client
+ * reads that app's database; any other app keeps the owner's rules. The level rule (appToolLevel,
  * appToolScope) is the real one; the verdict records the level it was asked
  * at, and at client level and at none the REAL rules answer (they refuse
  * before any lookup). No database.
@@ -74,7 +74,7 @@ beforeEach(() => {
   h.dispatched.length = 0;
 });
 
-describe('owner app tool broker: the lower of admin and the app level', () => {
+describe('owner app tool broker: client rules on a client app, owner rules elsewhere', () => {
   it('an admin-level app runs a declared tool with the owner auth, as always', async () => {
     const res = await call('contact_list');
     expect(res.status).toBe(200);
@@ -97,25 +97,18 @@ describe('owner app tool broker: the lower of admin and the app level', () => {
     expect(h.dispatched).toHaveLength(0);
   });
 
-  it('a team app runs on the team role, on a team surface naming the admin login', async () => {
-    h.audience = 'team';
-    const res = await call('contact_list');
-    expect(res.status).toBe(200);
-    expect(h.levels).toEqual(['team']);
-    expect(h.dispatched[0]).toMatchObject({
-      level: 'team',
-      ctx: {
-        ownerId: ANCHOR,
-        surface: { kind: 'team', loginId: ACTOR, contactName: 'Jo', privateReads: false },
-      },
-    });
-  });
-
-  it('a public app runs no tool', async () => {
-    h.audience = 'public';
-    const res = await call('contact_list');
-    expect(res.status).toBe(403);
-    expect(h.levels).toEqual(['none']);
-    expect(h.dispatched).toHaveLength(0);
+  it('a team or public app keeps the owner rules (team apps call MCP and recipe tools)', async () => {
+    for (const audience of ['team', 'public']) {
+      h.audience = audience;
+      h.levels.length = 0;
+      h.dispatched.length = 0;
+      const res = await call('contact_list');
+      expect(res.status, audience).toBe(200);
+      expect(h.levels).toEqual(['admin']);
+      expect(h.dispatched[0]).toMatchObject({
+        level: 'admin',
+        ctx: { ownerId: ANCHOR, surface: { kind: 'web' } },
+      });
+    }
   });
 });

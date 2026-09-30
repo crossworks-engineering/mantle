@@ -283,12 +283,12 @@ describe('member tool broker', () => {
     });
   });
 
-  it('runs no tool in a public app', async () => {
+  it('runs a public app on the member rules, as before', async () => {
     h.audience = 'public';
     const res = await toolBroker(post({ slug: 'note_list', input: {} }), params());
-    expect(res.status).toBe(403);
-    expect(h.levels).toEqual(['none']);
-    expect(h.dispatched).toHaveLength(0);
+    expect(res.status).toBe(200);
+    expect(h.levels).toEqual(['team']);
+    expect(h.dispatched).toHaveLength(1);
   });
 
   it('passes a refusal through, dispatches nothing, and logs the refusal', async () => {

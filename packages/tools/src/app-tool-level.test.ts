@@ -1,8 +1,8 @@
 /**
- * The one app tool level rule (client tier audit 2026-09-30, L1): an app's
- * tools run at the LOWER of the runner's level and the app's level, for the
- * owner, member and client brokers alike, and the author warnings follow the
- * same rule. No database: the refusals pinned here all happen before any
+ * The one app tool level rule (client tier audit 2026-09-30, L1): a
+ * client-level app's tools run at client level for every runner (owner,
+ * member and client brokers alike); any other app keeps the runner's rules.
+ * The author warnings follow the same rule. No database: the refusals pinned here all happen before any
  * lookup (the team and client rules themselves are proven on Postgres in
  * {member,client}-app-tools.viewer.db.test.ts).
  */
@@ -31,7 +31,7 @@ import {
   appToolScope,
   appToolVerdict,
   appToolWarnings,
-  PUBLIC_APP_NO_TOOLS,
+  APP_NO_TOOLS,
 } from './app-tool-level';
 
 beforeEach(() => {
@@ -39,26 +39,25 @@ beforeEach(() => {
   vi.mocked(resolveTool).mockClear();
 });
 
-describe('appToolLevel: the lower of the runner and the app', () => {
+describe('appToolLevel: a client app runs client rules for everyone', () => {
   it.each([
     ['admin', 'admin', 'admin'],
-    ['admin', 'team', 'team'],
+    ['admin', 'team', 'admin'],
     ['admin', 'client', 'client'],
-    ['admin', 'public', 'none'],
+    ['admin', 'public', 'admin'],
     ['team', 'team', 'team'],
     ['team', 'client', 'client'],
-    ['team', 'public', 'none'],
-    ['team', 'admin', 'team'],
+    ['team', 'public', 'team'],
     ['client', 'client', 'client'],
-    ['client', 'team', 'client'],
+    ['client', 'team', 'none'],
     ['client', 'public', 'none'],
   ] as const)('runner %s, app %s: %s', (runner, app, want) => {
     expect(appToolLevel(runner, app)).toBe(want);
   });
 
-  it('reads an unknown stored level as admin (fail closed to the runner)', () => {
+  it('reads an unknown stored level as admin: the runner keeps its rules, a client gets none', () => {
     expect(appToolLevel('team', 'weird')).toBe('team');
-    expect(appToolLevel('client', undefined)).toBe('client');
+    expect(appToolLevel('client', undefined)).toBe('none');
   });
 });
 
@@ -74,7 +73,7 @@ describe('appToolVerdict', () => {
 
   it('at none refuses every tool, declared or not', async () => {
     const v = await appToolVerdict('none', 'brain', ['calculate'], 'calculate');
-    expect(v).toEqual({ ok: false, status: 403, reason: PUBLIC_APP_NO_TOOLS });
+    expect(v).toEqual({ ok: false, status: 403, reason: APP_NO_TOOLS });
     expect(resolveTool).not.toHaveBeenCalled();
   });
 
@@ -113,7 +112,7 @@ describe('appToolScope', () => {
   });
 
   it('never scopes a call at none', () => {
-    expect(() => appToolScope('none', who)).toThrow(/public level/);
+    expect(() => appToolScope('none', who)).toThrow(APP_NO_TOOLS);
   });
 });
 
@@ -127,11 +126,13 @@ describe('appToolWarnings follows the app level', () => {
     expect(w.join(' ')).toMatch(/admins and members too/);
   });
 
-  it('warns a public app about every declared tool', async () => {
-    h.app = { audience: 'public', manifest: { toolSlugs: ['calculate'] } };
-    const w = await appToolWarnings('brain', 'app');
-    expect(w).toHaveLength(1);
-    expect(w[0]).toContain("'calculate'");
+  it('warns a team or public app about what members are refused', async () => {
+    for (const audience of ['team', 'public']) {
+      h.app = { audience, manifest: { toolSlugs: ['weather'] } };
+      const w = await appToolWarnings('brain', 'app');
+      expect(w, audience).toHaveLength(1);
+      expect(w[0]).toMatch(/Members running this app/);
+    }
   });
 
   it('says nothing for an admin-level app or a missing one', async () => {

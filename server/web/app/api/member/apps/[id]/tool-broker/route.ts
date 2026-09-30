@@ -25,7 +25,7 @@ const Body = z.object({
  * client-level app gets the client rules (clientAppToolVerdict) and runs on
  * the CLIENT role, on a client surface, as a client's run does: its
  * database is read by every client, so nothing above client level may land
- * in it. A public app runs no tools. Refused calls are logged too.
+ * in it. Refused calls are logged too.
  */
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const member = await getMemberOr401();

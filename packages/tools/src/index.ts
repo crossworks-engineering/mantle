@@ -147,7 +147,7 @@ export {
   appToolScope,
   appToolVerdict,
   appToolWarnings,
-  PUBLIC_APP_NO_TOOLS,
+  APP_NO_TOOLS,
   type AppToolLevel,
   type AppToolRunner,
   type AppToolVerdict,

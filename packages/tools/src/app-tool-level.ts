@@ -1,26 +1,28 @@
 /**
  * The ONE rule for the level an app's tools run at (client tier audit
- * 2026-09-30, L1): the LOWER of the runner's level and the app's level. The
- * three app tool brokers (owner, member, client) and the author warnings all
- * ask here, so they cannot drift.
+ * 2026-09-30, L1). The three app tool brokers (owner, member, client) and the
+ * author warnings all ask here, so they cannot drift.
  *
- * Why: an app's database is shared by everyone who runs the app. A tool that
- * reads above the app's level would let a run copy team or admin data into
- * a database that readers at the app's level query with any SQL (every
- * client, for a client-level app). So a client-level app gets the client
- * rules for every runner, an admin's and a member's run included, and a
- * public-level app gets no tools at all, as on its share link.
+ * Why: an app's database is shared by everyone who runs the app, and every
+ * client reads a client-level app's database with any SQL. A tool that reads
+ * above client level would let a member's or an admin's run copy team or
+ * admin data into it. So a client-level app gets the client rules for EVERY
+ * runner, an admin's and a member's run included (Jason, 2026-09-30). Every
+ * other app keeps the runner's own rules, as before: a team app's members
+ * write only what members can read, and an admin's run of a team or public
+ * app keeps the admin's tools (team apps on real boxes call MCP and recipe
+ * tools from an admin's run).
  *
  *   runner \ app   admin    team     client   public
- *   admin          admin    team     client   none
- *   member         (never)  team     client   none
+ *   admin          admin    admin    client   admin
+ *   member         (never)  team     client   team
  *   client         (never)  (never)  client   (never)
  *
  * `admin` is the owner broker's rule as it always was (declared, exists);
  * `team` is memberAppToolVerdict; `client` is clientAppToolVerdict; `none`
  * refuses every tool.
  */
-import { asViewerLevel, lowerLevel, type Tool, type ViewerLevel } from '@mantle/db';
+import { asViewerLevel, type Tool, type ViewerLevel } from '@mantle/db';
 import { getApp } from '@mantle/content';
 import { resolveTool } from './resolve';
 import { memberAppToolVerdict } from './member-app-tools';
@@ -36,24 +38,25 @@ export type AppToolRunner = 'admin' | 'team' | 'client';
 export type AppToolVerdict =
   { ok: true; tool: Tool } | { ok: false; status: 403 | 404; reason: string };
 
-/** The lower of the runner's level and the app's level. A public app, and a
- *  pair with no common level (client with public), run no tools. */
+/** A client-level app runs the client rules for every runner; any other app
+ *  runs the runner's own rules. A client never runs a non-client app (its
+ *  broker 404s first), so that pair runs no tools. */
 export function appToolLevel(runner: AppToolRunner, appLevel: unknown): AppToolLevel {
   let level: ViewerLevel;
   try {
-    level = lowerLevel(runner, asViewerLevel(appLevel));
+    level = asViewerLevel(appLevel);
   } catch {
     return 'none';
   }
-  return level === 'public' ? 'none' : level;
+  if (level === 'client') return 'client';
+  return runner === 'client' ? 'none' : runner;
 }
 
 const notDeclared = (slug: string) =>
   `This app isn't allowed to use the tool '${slug}'. It must be declared in the app's tools before it can run.`;
 
-/** Why a public-level app runs no tools: its share link gets none. */
-export const PUBLIC_APP_NO_TOOLS =
-  "This app is at public level, so it can't use tools: anyone with its link runs it, and a link gets only the app's own data.";
+/** Why a run gets no tools (a client run of a non-client app, never reached). */
+export const APP_NO_TOOLS = "This app can't use tools here.";
 
 /** May a run at `level` of an app that declares `declared` call `slug`? */
 export async function appToolVerdict(
@@ -74,7 +77,7 @@ export async function appToolVerdict(
       return { ok: true, tool };
     }
     case 'none':
-      return { ok: false, status: 403, reason: PUBLIC_APP_NO_TOOLS };
+      return { ok: false, status: 403, reason: APP_NO_TOOLS };
   }
 }
 
@@ -92,7 +95,7 @@ export function appToolScope(
   switch (level) {
     case 'none':
       // appToolVerdict refuses every call at 'none', so nothing gets here.
-      throw new Error(PUBLIC_APP_NO_TOOLS);
+      throw new Error(APP_NO_TOOLS);
     case 'admin':
       return { viewer: 'admin', surface: { kind: 'web' } };
     case 'team':
@@ -115,37 +118,32 @@ export function appToolScope(
 
 /**
  * For an app anyone below admin runs (team level or lower): one warning per
- * declared tool its runs would refuse, in the broker's own words. The rules
- * are the app's level (appToolLevel with an admin runner): a team app warns
- * about what members are refused, a client app about what the client rules
- * refuse (every run, an admin's too), a public app about every tool. An
- * admin-level app gets none. Given back by every author move that can
- * change the answer: `app_tools_set`, `app_publish` and setting an app's
- * level (`access_set`). Best-effort: a failed check warns nothing and never
- * fails the move it rides on.
+ * declared tool its runs would refuse, in the broker's own words. A client
+ * app warns about what the client rules refuse (every run, an admin's too);
+ * a team or public app about what members are refused. An admin-level app
+ * gets none. Given back by every author move that can change the answer:
+ * `app_tools_set`, `app_publish` and setting an app's level (`access_set`).
+ * Best-effort: a failed check warns nothing and never fails the move it
+ * rides on.
  */
 export async function appToolWarnings(ownerId: string, appId: string): Promise<string[]> {
   try {
     const app = await getApp(ownerId, appId);
     if (!app) return [];
-    const level = appToolLevel('admin', app.audience);
-    if (level === 'admin') return [];
+    const level = appToolLevel('team', app.audience);
+    if (app.audience === 'admin' || level === 'none') return [];
     const declared = [...new Set(app.manifest.toolSlugs ?? [])];
     const warnings: string[] = [];
     for (const slug of declared) {
       const verdict = await appToolVerdict(level, ownerId, declared, slug);
       if (verdict.ok) continue;
-      if (level === 'team') {
-        warnings.push(
-          `${verdict.reason} Members running this app get an error: declare a read-only built-in tool from an enabled team-level group instead (\`tool_group_list\` shows levels), or keep the app at admin level.`,
-        );
-      } else if (level === 'client') {
+      if (level === 'client') {
         warnings.push(
           `${verdict.reason} Everyone running this app (admins and members too) gets an error: a client-level app uses the client rules, so it can call only the client tools (${CLIENT_APP_TOOL_SLUGS.join(', ')}) from an enabled client-level group. Raise the app to team level to use other tools.`,
         );
       } else {
         warnings.push(
-          `The tool '${slug}' won't run: ${PUBLIC_APP_NO_TOOLS} Remove it, or raise the app to client level or above.`,
+          `${verdict.reason} Members running this app get an error: declare a read-only built-in tool from an enabled team-level group instead (\`tool_group_list\` shows levels), or keep the app at admin level.`,
         );
       }
     }

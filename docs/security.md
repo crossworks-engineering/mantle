@@ -326,13 +326,12 @@ anything above client_, and with no way to move content between levels.
   Each daily cap counts in a ledger that deleting does not refund. No
   space, comment or request write of a client starts the extractor or any
   other LLM work (client-logins.md sections 8 and 9).
-- **Client apps run at client level, for everyone.** An app's tools run
-  by the rules of the LOWER of the runner's level and the app's
-  (`appToolLevel`, `packages/tools/src/app-tool-level.ts`), so a member's
-  or an admin's run of a client-level app gets the client rules (the
-  client tools only, on the client role) and cannot copy team or admin
-  data into a database every client reads with any SQL; a public app runs
-  no tools. The app database is bounded: 256 MB a file
+- **Client apps run at client level, for everyone.** A client-level
+  app's tools run by the client rules whoever runs it (`appToolLevel`,
+  `packages/tools/src/app-tool-level.ts`), so a member's or an admin's run
+  (the client tools only, on the client role) cannot copy team or admin
+  data into a database every client reads with any SQL. Other apps keep
+  the runner's rules. The app database is bounded: 256 MB a file
   (`APP_SQL_MAX_DB_MB`), 8 MB a reply, one statement at a time per login
   or link; a server error's text never reaches the app. A Table exported
   from an app clients write is indexed at retrieval depth only (no facts or
@@ -363,12 +362,12 @@ even when _you_ wrote them:
 - **Capability is declared per app.** An app may call only the tool slugs
   explicitly set on it; the host refuses anything else at runtime. Secrets and
   API keys resolve server-side, the iframe never sees a key.
-- **An app's tools never read above its level.** Every run, the owner's
-  included, uses the rules of the lower of the runner's level and the app's
-  (`appToolLevel`): an admin-level app runs any declared tool; a team app
-  the member rules (read-only built-ins from team-level groups); a client
-  app the client rules; a public app none. What a tool returns can land in
-  the app's shared database, which everyone at the app's level reads.
+- **A client app's tools never read above client.** A client-level app
+  runs the client rules for every runner, the owner's included
+  (`appToolLevel`), because what a tool returns can land in the app's shared
+  database and every client reads it. Other apps keep the runner's rules:
+  the owner's run any declared tool, a member's run the member rules
+  (read-only built-ins from team-level groups).
 - **Only the owner authors apps.** The app write tools (`app_create`,
   `app_file_write`, `app_source_set`, `app_build`, `app_tools_set`,
   `app_db_schema_set`, `app_db_seed`, `app_publish`, `app_delete`, the

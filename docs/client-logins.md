@@ -603,14 +603,15 @@ write tools are `ownerOnly`: refused on a team, client or missing surface).
   they read the client's private drafts, and an app could copy them into its
   shared database (`clientAppToolVerdict`,
   `packages/tools/src/client-app-tools.ts`).
-- **The same rules for every runner.** An app's tools run by the rules of
-  the LOWER of the runner's level and the app's (`appToolLevel`,
+- **The same rules for every runner.** A client-level app's tools run by
+  the client rules whoever runs it (`appToolLevel`,
   `packages/tools/src/app-tool-level.ts`, client tier audit L1), in the
   owner, member and client brokers alike. So a member's or an admin's run
   of a client-level app gets the client rules above, on the client role and
   a client surface naming their login: whatever a run reads can be stored
   in the app's database, which every client reads with any SQL, so no run
-  reads above client. A public app runs no tools for anyone. The author
+  reads above client (Jason, 2026-09-30). Team, admin and public apps keep
+  the runner's own rules. The author
   warnings on `app_tools_set`, `app_publish` and `access_set` name each
   declared tool the app's level refuses.
 - **The access log.** Every ticket, tool call and write, refused calls

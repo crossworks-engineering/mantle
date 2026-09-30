@@ -150,14 +150,13 @@ Then `app_tools_set(id, ['that_slug'])` and call it from the app. For an app at
 team level or lower the result carries `warnings`: one per declared tool the
 app's level refuses (see "Team apps" below).
 
-**An app's tools never read above its level, whoever runs it.** Every run,
-yours included, uses the rules of the lower of the runner's level and the
-app's: an admin-level app runs any declared tool; a team-level app the member
-rules below (also when an admin runs it); a client-level app the client rules
+**A client-level app's tools never read above client, whoever runs it.** A
+client-level app runs the client rules for every runner, yours included
 (only `client_shared_list`, `client_shared_search` and `client_shared_open`,
-on the client role, for admins and members too); a public app no tools at
-all. What a tool returns can end up in the app's shared database, which
-everyone at the app's level reads. Only the owner authors apps: the app write
+on the client role): what a tool returns can end up in the app's shared
+database, which every client reads with any SQL. Any other app keeps the
+runner's rules: your run of an admin, team or public app runs any declared
+tool, and a member's run of a team or public app uses the member rules below. Only the owner authors apps: the app write
 tools refuse a team or client surface.
 
 **Recommended flow (this is the synergy):** first _explore the data yourself_

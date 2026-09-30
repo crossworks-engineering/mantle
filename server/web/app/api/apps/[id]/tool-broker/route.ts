@@ -5,15 +5,12 @@
  * itself was authored by the toolsmith / API Console; we just dispatch it with
  * the owner's auth so secrets resolve server-side (the iframe never sees a key).
  *
- * The rules are those of the LOWER of the admin's level and the app's
- * (appToolLevel, client tier audit L1), the one rule the member and client
- * brokers share. An admin-level app runs any declared tool with the owner's
- * auth, as always. An app below admin keeps its level's rules even when an
- * admin runs it: its database is read by everyone at that level, so a tool
- * that read above it could copy team or admin data there. A team app gets
- * the member rules on the team role, a client app the client rules on the
- * client role (each on a surface that names the admin's login), a public
- * app no tools at all (its share link gets none).
+ * The rules come from appToolLevel (client tier audit L1), the one rule the
+ * member and client brokers share. A client-level app gets the client rules
+ * on the client role, on a surface that names the admin's login, even when
+ * an admin runs it: every client reads its database with any SQL, so a tool
+ * that read above client could copy team or admin data there. Any other app
+ * runs any declared tool with the owner's auth, as always.
  *
  * The id is bound to the authenticated session + route — an app can only ever
  * broker as itself.
