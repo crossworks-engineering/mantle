@@ -8,8 +8,8 @@ import type { TreeItemMeta, TreeKind } from '@mantle/client-types/tree';
 
 /** The kinds the tree serves on this brain. A client offers the tree for
  *  these and keeps its older screen for the rest (the shell lists them).
- *  Pages wait for Recall v2 (pages stop nesting), apps for their nav-doc
- *  migration (phase 3). */
+ *  Pages wait for Recall v2 (pages stop nesting). Apps joined in phase 3,
+ *  their old layout document moved in by tree/apps-nav.ts. */
 export const TREE_LIVE_KINDS: readonly TreeKind[] = [
   'files',
   'notes',
@@ -20,6 +20,7 @@ export const TREE_LIVE_KINDS: readonly TreeKind[] = [
   'events',
   'contacts',
   'secrets',
+  'apps',
 ];
 
 export function isTreeLiveKind(kind: TreeKind): boolean {

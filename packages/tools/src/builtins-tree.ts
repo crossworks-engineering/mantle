@@ -2,7 +2,7 @@
  * Folder builtins for every kind whose folders are rows only (the item tree,
  * docs/folder-tree.md): notes, draw, tables, formulas, tasks, events, contacts
  * and secrets. One set for all of them, told apart by `kind`; Files keeps its
- * own folder_* tools, whose folders are real directories.
+ * own folder_* tools, whose folders are real directories. Apps joined in phase 3.
  *
  * The same rules as the screens: three folder levels at most, names unique
  * per folder, a rename or move carries everything inside, deleting a folder
@@ -39,6 +39,7 @@ export const TREE_TOOL_KINDS = [
   'events',
   'contacts',
   'secrets',
+  'apps',
 ] as const satisfies readonly TreeKind[];
 type TreeToolKind = (typeof TREE_TOOL_KINDS)[number];
 
@@ -46,7 +47,7 @@ const KIND_PROP = {
   type: 'string',
   enum: TREE_TOOL_KINDS,
   description:
-    "Which kind's folders: notes, draw, tables, formulas, tasks, events, contacts or secrets. Files use the folder_* tools.",
+    "Which kind's folders: notes, draw, tables, formulas, tasks, events, contacts, secrets or apps. Files use the folder_* tools.",
 } as const;
 
 const FOLDER_ID_PROP = {

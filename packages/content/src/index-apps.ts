@@ -106,14 +106,12 @@ export {
 
 export {
   APP_NAV_CHANGED_CHANNEL,
-  AppNavInvalidError,
+  APP_NAV_LAYOUT_RETIRED,
   listAppNavItems,
   loadAppNavView,
   notifyAppNavChanged,
   recordAppOpen,
-  saveAppNav,
   saveAppPins,
-  type SaveAppNavResult,
 } from './app-nav';
 
 export {
