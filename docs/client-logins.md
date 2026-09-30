@@ -548,7 +548,8 @@ took one over, and accepted.
 
 A client runs the brain's apps at **client level** in the portal
 (`/api/client/apps*`, the member app routes' twins, never shared with them).
-Only admins create, edit, build, publish, share or delete an app.
+Only admins create, edit, build, publish, share or delete an app (the app
+write tools are `ownerOnly`: refused on a team, client or missing surface).
 
 - **Which apps.** An app at client level with a green published build, and
   nothing else: never a team, admin or public app (a public app is for
@@ -578,7 +579,17 @@ Only admins create, edit, build, publish, share or delete an app.
 - **Its database.** `POST /api/client/apps/:id/db-broker`
   (`{ op: 'query' | 'exec', sql, params }`, 300 a minute). The level check is
   in the lookup and runs on the client role (row security holds as a second
-  lock); the SQLite work runs for the brain.
+  lock); the SQLite work runs for the brain. Bounded (client tier audit
+  I1): one app's file holds at most 256 MB (`APP_SQL_MAX_DB_MB` in the
+  stack's `.env`, web and api; a write past it fails with "database or disk
+  is full" and rolls back), a query returns at most 8 MB ("add a LIMIT"),
+  and each client login, member login or share link runs one statement at
+  a time: its next statement waits its turn (at most 10 s, 16 waiting),
+  else 429 `reason: 'busy'`. An error the app's own SQL earned keeps its
+  message (400); any other error answers a generic 500, so no server path
+  or id reaches a client (L4). The Team admin > Clients storage card
+  carries `clientAppDbBytes`: what the databases of client-level apps
+  hold (they are not part of the client space limits).
 - **Its tools.** `POST /api/client/apps/:id/tool-broker` (`{ slug, input }`,
   60 a minute) calls only a tool the app declares that is one of the client
   tools (`client_shared_list`, `client_shared_search`, `client_shared_open`:
@@ -592,15 +603,38 @@ Only admins create, edit, build, publish, share or delete an app.
   they read the client's private drafts, and an app could copy them into its
   shared database (`clientAppToolVerdict`,
   `packages/tools/src/client-app-tools.ts`).
-- **The access log.** Every ticket, tool call and database call, refused ones
+- **The same rules for every runner.** An app's tools run by the rules of
+  the LOWER of the runner's level and the app's (`appToolLevel`,
+  `packages/tools/src/app-tool-level.ts`, client tier audit L1), in the
+  owner, member and client brokers alike. So a member's or an admin's run
+  of a client-level app gets the client rules above, on the client role and
+  a client surface naming their login: whatever a run reads can be stored
+  in the app's database, which every client reads with any SQL, so no run
+  reads above client. A public app runs no tools for anyone. The author
+  warnings on `app_tools_set`, `app_publish` and `access_set` name each
+  declared tool the app's level refuses.
+- **The access log.** Every ticket, tool call and write, refused calls
   included, lands in the app's access log with the client login
-  (`detail.via = 'client'`).
+  (`detail.via = 'client'`); a login's reads land at most once per app a
+  minute. The `app-access-log-reap` maintenance sweep (nightly, plain SQL)
+  deletes rows older than 90 days. The broker calls write no `api.write`
+  audit row (the frame ticket and every other client write still do):
+  client tier audit I4.
 - **Client-written rows reach staff through table exports.** A write
-  schedules the app's table-export sync (debounced, hash-gated, as for a
-  member). An exported Table stays admin level, and a Table exported from an
-  app at client level counts as client-written for the lowering guard
-  (section 8): a staff turn that reads it waits in Pending before it lowers
-  anything to client or public, or writes into an item clients read.
+  schedules the app's table-export sync (debounced, hash-gated). An
+  exported Table stays admin level, and a Table exported from an app at
+  client level counts as client-written for the lowering guard (section
+  8): a staff turn that reads it waits in Pending before it lowers
+  anything to client or public, or writes into an item clients read. A
+  client's first write stamps the app's database
+  (`app_databases.client_written_at`, migration 0199), and from then on its
+  exports stay client-written even if an admin raises the app above client,
+  until the export is removed (the rows clients wrote stay in the app).
 - **Cost.** A client app starts no model of its own: no tool it may call
-  spends. A write costs what a member's does: the export sync commits an
-  exported Table only when its rows changed (bounded, not zero).
+  spends. The export sync commits an exported Table only when its rows
+  changed, and an app at client level commits at most once every 10
+  minutes (the writes in between join the next sync). The Table of an app
+  clients write is indexed at retrieval depth only (`data.brain_depth`
+  'retrieval': summary, embedding and chunks, never entities, relations or
+  facts), so client text never becomes graph facts (client tier audit
+  I2).

@@ -147,8 +147,18 @@ So to show your data in an app, you give it a tool that returns that data:
   set to team level or share.
 
 Then `app_tools_set(id, ['that_slug'])` and call it from the app. For an app at
-team level or lower the result carries `warnings`: one per declared tool its
-members would be refused (see "Team apps" below).
+team level or lower the result carries `warnings`: one per declared tool the
+app's level refuses (see "Team apps" below).
+
+**An app's tools never read above its level, whoever runs it.** Every run,
+yours included, uses the rules of the lower of the runner's level and the
+app's: an admin-level app runs any declared tool; a team-level app the member
+rules below (also when an admin runs it); a client-level app the client rules
+(only `client_shared_list`, `client_shared_search` and `client_shared_open`,
+on the client role, for admins and members too); a public app no tools at
+all. What a tool returns can end up in the app's shared database, which
+everyone at the app's level reads. Only the owner authors apps: the app write
+tools refuse a team or client surface.
 
 **Recommended flow (this is the synergy):** first _explore the data yourself_
 with your own MCP read tools (`search`, `table_list`, `note_list`, …) to learn
@@ -163,8 +173,14 @@ For app-local state (caches, user-entered rows, preferences). Declare DDL via
 `app_db_schema_set(id, "CREATE TABLE IF NOT EXISTS …")`; the host provisions the
 DB on first use. At runtime use `host.db.query/exec`. `ATTACH`, `DETACH`,
 `VACUUM` and every `PRAGMA` except `table_info` / `table_xinfo` are blocked.
-Each statement may run 5 seconds at most and return 50,000 rows at most (add
-a LIMIT or aggregate), and no single string or blob may pass 16 MiB. The
+Each statement may run 5 seconds at most and return 50,000 rows and 8 MB at
+most (add a LIMIT, select fewer columns or aggregate), and no single string or
+blob may pass 16 MiB. The whole database file may hold 256 MB
+(`APP_SQL_MAX_DB_MB`): a write past it fails with "database or disk is full"
+and rolls back. Each member login, client login or share link runs one
+statement at a time, and the next waits its turn (a burst of more than 16 at
+once answers 429 busy), so prefer one query that joins over many small ones.
+The
 declared schema runs under the same rules as one transaction (30 seconds at
 most): a script that fails anywhere applies nothing. Treat schema as **append-only**: there
 are no destructive migrations; add columns/tables, use views for renames.
@@ -202,7 +218,10 @@ app_table_export_remove(id, table)        → dissolves the link
 Direction of authority: **the app is the master.** After an app write
 (`host.db.exec`, member or owner, and `app_db_seed`) the platform
 re-materializes the Table from the SQLite rows — debounced, hash-gated (an
-unchanged table never re-commits), pure SQL, no LLM. Typed columns derive
+unchanged table never re-commits), pure SQL, no LLM. An app at client level
+re-commits at most once every 10 minutes, and the Table of an app clients
+write is indexed at retrieval depth only (no facts or entities from client
+text). Typed columns derive
 from the SQLite declared types (INTEGER/REAL → number, BOOLEAN → checkbox,
 DATE/DATETIME → date/datetime, else text).
 
@@ -340,8 +359,9 @@ PUBLISHED build only and never edit it.
   `my_item_open`, `summarize_text`, `search_chunks`, `team_request_create`
   and `read_result`. `app_tools_set`, `app_publish` and `access_set` list a
   warning for each declared tool members would be refused.
-- **Data:** `host.db.query` and `host.db.exec` both work on a team-level app;
-  on a client- or public-level app members only read. The database is shared
+- **Data:** `host.db.query` and `host.db.exec` both work on a team- or
+  client-level app (unless an admin marked it informational); on a
+  public-level app members only read. The database is shared
   by the whole team (not one per member): design for that (put who wrote a
   row in the row if it matters; the app cannot learn the member from the
   host yet).
