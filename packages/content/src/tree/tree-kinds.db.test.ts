@@ -129,6 +129,69 @@ describe.skipIf(!URL)('the item tree on notes, tasks, events and secrets', () =>
     expect(page!.items.map((i) => i.id)).toEqual([note.id]);
   });
 
+  it('a delete merges clashing subfolders by path, recursively, and renames nothing', async () => {
+    const keep = await tree.createTreeFolder(owner, 'notes', { parentId: null, name: 'Keep' });
+    await tree.updateTreeFolder(owner, 'notes', keep.id, { icon: 'lucide:star' });
+    const keepSub = await tree.createTreeFolder(owner, 'notes', { parentId: keep.id, name: 'Sub' });
+    const there = await notes.createNote(owner, { title: 'Same title', content: 'x' });
+    await tree.moveTreeItems(owner, 'notes', [there.id], keep.id);
+
+    const drop = await tree.createTreeFolder(owner, 'notes', { parentId: null, name: 'Drop' });
+    const dropKeep = await tree.createTreeFolder(owner, 'notes', {
+      parentId: drop.id,
+      name: 'Keep',
+    });
+    const dropSub = await tree.createTreeFolder(owner, 'notes', {
+      parentId: dropKeep.id,
+      name: 'Sub',
+    });
+    const fresh = await tree.createTreeFolder(owner, 'notes', {
+      parentId: dropKeep.id,
+      name: 'Fresh',
+    });
+    const same = await notes.createNote(owner, { title: 'Same title', content: 'y' });
+    const deep = await notes.createNote(owner, { title: 'Deep', content: 'z' });
+    const top = await notes.createNote(owner, { title: 'Top', content: 'w' });
+    await tree.moveTreeItems(owner, 'notes', [same.id], dropKeep.id);
+    await tree.moveTreeItems(owner, 'notes', [deep.id], dropSub.id);
+    await tree.moveTreeItems(owner, 'notes', [top.id], drop.id);
+
+    await tree.deleteTreeFolder(owner, 'notes', drop.id);
+
+    expect(await pathOf(drop.id)).toBeUndefined();
+    expect(await pathOf(dropKeep.id)).toBeUndefined();
+    expect(await pathOf(dropSub.id)).toBeUndefined();
+    expect(await pathOf(same.id)).toBe('notes.keep');
+    expect(await pathOf(deep.id)).toBe('notes.keep.sub');
+    expect(await pathOf(fresh.id)).toBe('notes.keep.fresh');
+    expect(await pathOf(top.id)).toBe('notes');
+    const page = (await tree.loadTreeFolder(owner, 'notes', { folderId: keep.id }))!;
+    expect(page.folder).toMatchObject({ id: keep.id, name: 'Keep', icon: 'lucide:star' });
+    expect(page.folders.map((f) => f.id).sort()).toEqual([fresh.id, keepSub.id].sort());
+    // Two notes of one title in one folder: nothing is renamed.
+    expect(
+      page.items
+        .filter((i) => i.title === 'Same title')
+        .map((i) => i.id)
+        .sort(),
+    ).toEqual([same.id, there.id].sort());
+  });
+
+  it('a subfolder named like the deleted folder takes its place', async () => {
+    const twin = await tree.createTreeFolder(owner, 'notes', { parentId: null, name: 'Twin' });
+    const inner = await tree.createTreeFolder(owner, 'notes', { parentId: twin.id, name: 'Twin' });
+    const innerSub = await tree.createTreeFolder(owner, 'notes', {
+      parentId: inner.id,
+      name: 'Twin',
+    });
+    const n = await notes.createNote(owner, { title: 'In twin twin', content: 'x' });
+    await tree.moveTreeItems(owner, 'notes', [n.id], innerSub.id);
+    await tree.deleteTreeFolder(owner, 'notes', twin.id);
+    expect(await pathOf(inner.id)).toBe('notes.twin');
+    expect(await pathOf(innerSub.id)).toBe('notes.twin.twin');
+    expect(await pathOf(n.id)).toBe('notes.twin.twin');
+  });
+
   it('moves older conversation digests into Notes / Auto-filed / Assistant once', async () => {
     const [digest] = (await m.db.execute(sqlTag`
       insert into nodes (owner_id, type, title, path, data, tags)

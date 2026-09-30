@@ -284,6 +284,51 @@ describe.skipIf(!URL)('sharing a folder', () => {
       await m.systemDb.execute(sqlTag`delete from nodes where id in (${file}, ${note})`);
     });
 
+    it('a delete that merges into a shared folder asks, listing what takes its share', async () => {
+      const tgt = randomUUID();
+      const del = randomUUID();
+      const twin = randomUUID();
+      const moved = randomUUID();
+      const inTwin = randomUUID();
+      const inMoved = randomUUID();
+      const t = `${label}_mt`;
+      await m.systemDb.execute(sqlTag`
+        insert into nodes (id, owner_id, type, title, slug, path, data, tags) values
+          (${tgt}, ${brain}, 'branch', 'Target', ${t}, ${`notes.${t}`}::ltree, '{}'::jsonb, '{}'),
+          (${del}, ${brain}, 'branch', 'Del', 'del', ${`notes.${label}_md`}::ltree, '{}'::jsonb, '{}'),
+          (${twin}, ${brain}, 'branch', 'Target', ${t}, ${`notes.${label}_md.${t}`}::ltree, '{}'::jsonb, '{}'),
+          (${moved}, ${brain}, 'branch', 'Other', 'other', ${`notes.${label}_md.${label}_mo`}::ltree, '{}'::jsonb, '{}')`);
+      await share(tgt, 'client');
+      await insert(inTwin, 'note', `notes.${label}_md.${t}`, 'merges in');
+      await insert(inMoved, 'note', `notes.${label}_md.${label}_mo`, 'moves up');
+      try {
+        // The merged note lands in the client-shared folder and takes its
+        // share; the folder that moves up, and what it holds, stay admin;
+        // the merged folder row goes and is not listed.
+        const diff = await refusal(tree.deleteTreeFolder(brain, 'notes', del));
+        expect(diff.changes).toEqual([
+          { id: inTwin, title: 'merges in', from: 'admin', to: 'client' },
+        ]);
+        expect(diff.total).toBe(1);
+        expect(await inherited(inTwin)).toBeNull(); // nothing written
+        await tree.deleteTreeFolder(brain, 'notes', del, { confirm: true, seen: 1 });
+        expect(await inherited(inTwin)).toBe('client');
+        expect(await inherited(inMoved)).toBeNull();
+        expect(await reads('client', [inTwin, inMoved])).toEqual([inTwin]);
+        const [kept] = (await m.systemDb.execute(sqlTag`
+          select share_level, title from nodes where id = ${tgt}`)) as unknown as Array<{
+          share_level: string;
+          title: string;
+        }>;
+        expect(kept).toEqual({ share_level: 'client', title: 'Target' });
+      } finally {
+        await m.systemDb.execute(sqlTag`
+          delete from nodes where owner_id = ${brain}
+             and (path <@ ${`notes.${t}`}::ltree or path <@ ${`notes.${label}_md`}::ltree
+                  or path <@ ${`notes.${label}_mo`}::ltree)`);
+      }
+    });
+
     it('a shared folder deleted by any writer leaves no share behind (0207)', async () => {
       const f = randomUUID();
       const inF = randomUUID();

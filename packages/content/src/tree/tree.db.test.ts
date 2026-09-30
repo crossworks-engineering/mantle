@@ -204,15 +204,88 @@ describe.skipIf(!URL)('the item tree on Files', () => {
     expect(rootPage!.items.map((i) => i.id)).toContain(file.id);
   });
 
-  it('refuses a delete whose contents would clash in the parent', async () => {
-    const outer = await tree.createTreeFolder(owner, 'files', { parentId: null, name: 'Outer' });
-    const inner = await tree.createTreeFolder(owner, 'files', {
-      parentId: outer.id,
-      name: 'Inner',
+  it('a delete merges a clashing subfolder, recursively, and renames a clashing file', async () => {
+    const proj = await tree.createTreeFolder(owner, 'files', { parentId: null, name: 'Proj' });
+    await tree.updateTreeFolder(owner, 'files', proj.id, { icon: 'lucide:star' });
+    const specs = await tree.createTreeFolder(owner, 'files', {
+      parentId: proj.id,
+      name: 'Specs',
     });
-    await upload(outer.path, 'same.md');
-    await upload(inner.path, 'same.md');
-    await expect(tree.deleteTreeFolder(owner, 'files', inner.id)).rejects.toThrow(/same\.md/);
+    await upload(proj.path, 'readme.md');
+    await upload(specs.path, 'a.md');
+    const box = await tree.createTreeFolder(owner, 'files', { parentId: null, name: 'Crate box' });
+    const boxProj = await tree.createTreeFolder(owner, 'files', { parentId: box.id, name: 'Proj' });
+    const boxSpecs = await tree.createTreeFolder(owner, 'files', {
+      parentId: boxProj.id,
+      name: 'Specs',
+    });
+    const extra = await tree.createTreeFolder(owner, 'files', {
+      parentId: boxProj.id,
+      name: 'Extra',
+    });
+    const readme2 = await upload(boxProj.path, 'readme.md');
+    const a2 = await upload(boxSpecs.path, 'a.md');
+    const b = await upload(boxSpecs.path, 'b.md');
+    const loose = await upload(box.path, 'loose.md');
+
+    await tree.deleteTreeFolder(owner, 'files', box.id);
+
+    // The folder that was there keeps its id, name and look; the merged
+    // ones are gone, and the one that did not clash moved up whole.
+    const kept = (await tree.loadTreeFolder(owner, 'files', { folderId: proj.id }))!;
+    expect(kept.folder).toMatchObject({ id: proj.id, name: 'Proj', icon: 'lucide:star' });
+    expect(kept.folders.map((f) => f.id).sort()).toEqual([extra.id, specs.id].sort());
+    expect(await tree.loadTreeFolder(owner, 'files', { folderId: boxProj.id })).toBeNull();
+    expect(await tree.loadTreeFolder(owner, 'files', { folderId: boxSpecs.id })).toBeNull();
+    expect(await tree.loadTreeFolder(owner, 'files', { folderId: box.id })).toBeNull();
+    // Clashing files took the -2 name; the rest kept theirs.
+    const titles = async (id: string) =>
+      (await tree.loadTreeFolder(owner, 'files', { folderId: id }))!.items.map((i) => [
+        i.id,
+        i.title,
+      ]);
+    expect(await titles(proj.id)).toContainEqual([readme2.id, 'readme-2.md']);
+    expect(await titles(specs.id)).toEqual(
+      expect.arrayContaining([
+        [a2.id, 'a-2.md'],
+        [b.id, 'b.md'],
+      ]),
+    );
+    expect((await tree.loadTreeFolder(owner, 'files'))!.items.map((i) => i.id)).toContain(loose.id);
+    // And on disk.
+    expect((await stat(path.join(root, 'proj', 'readme-2.md'))).isFile()).toBe(true);
+    expect((await stat(path.join(root, 'proj', 'specs', 'a-2.md'))).isFile()).toBe(true);
+    expect((await stat(path.join(root, 'proj', 'specs', 'b.md'))).isFile()).toBe(true);
+    expect((await stat(path.join(root, 'proj', 'extra'))).isDirectory()).toBe(true);
+    expect((await stat(path.join(root, 'loose.md'))).isFile()).toBe(true);
+    await expect(stat(path.join(root, 'crate-box'))).rejects.toThrow(/ENOENT/);
+  });
+
+  it('a subfolder named like the deleted folder takes its place', async () => {
+    const twin = await tree.createTreeFolder(owner, 'files', { parentId: null, name: 'Twin' });
+    const inner = await tree.createTreeFolder(owner, 'files', { parentId: twin.id, name: 'Twin' });
+    const c = await upload(inner.path, 'c.md');
+    const t = await upload(twin.path, 't.md');
+    await tree.deleteTreeFolder(owner, 'files', twin.id);
+    const now = (await tree.loadTreeFolder(owner, 'files', { folderId: inner.id }))!;
+    expect(now.folder).toMatchObject({ path: 'files.twin', depth: 1 });
+    expect(now.items.map((i) => i.id)).toEqual([c.id]);
+    expect((await tree.loadTreeFolder(owner, 'files'))!.items.map((i) => i.id)).toContain(t.id);
+    expect((await stat(path.join(root, 'twin', 'c.md'))).isFile()).toBe(true);
+    expect((await stat(path.join(root, 't.md'))).isFile()).toBe(true);
+  });
+
+  it('refuses a merge over an untracked file in a merging subfolder before anything moves', async () => {
+    const dest = await tree.createTreeFolder(owner, 'files', { parentId: null, name: 'Dest' });
+    const crate = await tree.createTreeFolder(owner, 'files', { parentId: null, name: 'Crate' });
+    const inner = await tree.createTreeFolder(owner, 'files', { parentId: crate.id, name: 'Dest' });
+    const f = await upload(crate.path, 'first.md');
+    await writeFile(path.join(root, 'crate', 'dest', 'stray.bin'), 'x');
+    await expect(tree.deleteTreeFolder(owner, 'files', crate.id)).rejects.toThrow(/stray\.bin/);
+    const page = await tree.loadTreeFolder(owner, 'files', { folderId: crate.id });
+    expect(page!.folders.map((x) => x.id)).toEqual([inner.id]);
+    expect(page!.items.map((x) => x.id)).toEqual([f.id]);
+    expect((await tree.loadTreeFolder(owner, 'files', { folderId: dest.id }))!.items).toEqual([]);
   });
 
   it('refuses a delete over an untracked file on disk before anything moves', async () => {

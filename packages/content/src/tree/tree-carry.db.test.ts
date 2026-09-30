@@ -143,6 +143,37 @@ describe.skipIf(!URL)('members’ drafts follow the brain’s folders', () => {
     expect(await pathOf(inSub)).toBe('notes.parent.sub');
   });
 
+  it('a delete that merges carries the drafts into the folder it merged into', async () => {
+    const target = await tree.createTreeFolder(brain, 'notes', { parentId: null, name: 'Mtgt' });
+    const del = await tree.createTreeFolder(brain, 'notes', { parentId: null, name: 'Mdel' });
+    const twin = await tree.createTreeFolder(brain, 'notes', { parentId: del.id, name: 'Mtgt' });
+    const draft = await spaceRow(space, 'note', 'notes.mdel.mtgt');
+    const own = await spaceRow(space, 'branch', 'notes.mdel.mtgt.mine');
+    const inOwn = await spaceRow(space, 'note', 'notes.mdel.mtgt.mine');
+    const theirs = await spaceRow(otherSpace, 'note', 'notes.mdel');
+    await tree.deleteTreeFolder(brain, 'notes', del.id);
+    expect(await pathOf(twin.id)).toBeNull();
+    expect(await pathOf(target.id)).toBe('notes.mtgt');
+    expect(await pathOf(draft)).toBe('notes.mtgt');
+    expect(await pathOf(own)).toBe('notes.mtgt.mine');
+    expect(await pathOf(inOwn)).toBe('notes.mtgt.mine');
+    expect(await pathOf(theirs)).toBe('notes');
+  });
+
+  it('a Files delete that merges carries member files into the folder it merged into', async () => {
+    const target = await tree.createTreeFolder(brain, 'files', { parentId: null, name: 'Ftgt' });
+    const del = await tree.createTreeFolder(brain, 'files', { parentId: null, name: 'Fdel' });
+    await tree.createTreeFolder(brain, 'files', { parentId: del.id, name: 'Ftgt' });
+    const file = await spaceRow(space, 'file', 'space_files.fdel.ftgt');
+    const own = await spaceRow(space, 'branch', 'space_files.fdel.ftgt.mine');
+    const lifted = await spaceRow(space, 'file', 'space_files.fdel');
+    await tree.deleteTreeFolder(brain, 'files', del.id);
+    expect(await pathOf(target.id)).toBe('files.ftgt');
+    expect(await pathOf(file)).toBe('space_files.ftgt');
+    expect(await pathOf(own)).toBe('space_files.ftgt.mine');
+    expect(await pathOf(lifted)).toBe('space_files');
+  });
+
   it('a lift whose rows land on each other’s old paths goes through (audit C3)', async () => {
     // The member's own "Proj" inside the brain's "Proj", each holding "Y":
     // lifting maps notes.proj.proj.y onto notes.proj.y, which itself moves
