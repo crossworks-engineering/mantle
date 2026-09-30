@@ -4,6 +4,23 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.349: the notes behind the top facts get a passage
+
+- **Retrieval reads the note a matching fact came from.** A fact is one
+  sentence, so it matches a question far better than a whole passage does.
+  Now up to 3 of the top facts' source notes that have no passage in the
+  context get their closest passage, inside the same chunk_limit (empty
+  slots first, then the weakest passages make room). The memory limits are
+  unchanged; one small extra query per turn, no model call. The average
+  context grows about 10% (slots the passage cutoff used to leave empty now
+  fill). LoCoMo at the default limits, same ingest: 84.0% to 85.0%,
+  retrieval misses 123 to 98, multi-hop evidence reach 46.5% to 55.3%.
+- **Benchmark: `--snapshot` and `--retrieve-only`.** A run can keep each
+  conversation's ingested database and later runs answer on a copy of it,
+  so a retrieval change is measured without extraction noise and without
+  paying for extraction again. `--retrieve-only` measures evidence reach
+  with no answer calls. See docs/benchmarks.md.
+
 ## 0.232.348: client v0.6.179 (client logins C6)
 
 - Pairs the client at jackdaw v0.6.179, the client half of 0.232.346/347.
