@@ -202,15 +202,22 @@ describe.skipIf(!URL)('migration 0210: pages in folders', () => {
   });
 
   it('two parents with the same slug get distinct folders', async () => {
-    expect((await pageOf(id.plan1)).path).toBe('pages.plan');
-    expect((await pageOf(id.plan1Kid)).path).toBe('pages.plan');
-    expect((await pageOf(id.plan2)).path).toBe('pages.plan_2');
-    expect((await pageOf(id.plan2Kid)).path).toBe('pages.plan_2');
+    // Which of the two gets the plain slug follows the title order of the
+    // database's collation ("Plan" against "plan!"), so only the pairing is
+    // pinned: each parent shares its folder with its child, and the folders
+    // are `plan` and `plan-2`, each named after its page.
+    const one = (await pageOf(id.plan1)).path;
+    const two = (await pageOf(id.plan2)).path;
+    expect([one, two].sort()).toEqual(['pages.plan', 'pages.plan_2']);
+    expect((await pageOf(id.plan1Kid)).path).toBe(one);
+    expect((await pageOf(id.plan2Kid)).path).toBe(two);
     const plans = (await folders(brain)).filter((f) => f.path.startsWith('pages.plan'));
-    expect(plans.map((f) => [f.path, f.title, f.slug])).toEqual([
-      ['pages.plan', 'Plan', 'plan'],
-      ['pages.plan_2', 'plan!', 'plan-2'],
+    expect(plans.map((f) => [f.path, f.slug]).sort()).toEqual([
+      ['pages.plan', 'plan'],
+      ['pages.plan_2', 'plan-2'],
     ]);
+    expect(plans.find((f) => f.path === one)?.title).toBe('Plan');
+    expect(plans.find((f) => f.path === two)?.title).toBe('plan!');
   });
 
   it('a title with no Latin letter gets the hashed slug and keeps its name', async () => {
