@@ -19,6 +19,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
   const chain = {
     from: () => chain,
     innerJoin: () => chain,
+    leftJoin: () => chain,
     where: () => chain,
     limit: async () => {
       h.queries++;
