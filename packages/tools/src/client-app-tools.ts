@@ -25,7 +25,6 @@
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, toolGroups, type Tool } from '@mantle/db';
-import { CLIENT_TURN_TOOL_SLUGS } from './client-turn-tools';
 import { resolveTool } from './resolve';
 
 /**

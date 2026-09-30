@@ -91,7 +91,7 @@ function batches<T>(list: readonly T[]): T[][] {
  * rows a client wrote stay in the table until then; the mark errs wide
  * only while the app is at client level). Call as the system.
  */
-async function clientAppExportsAmong(ownerId: string, list: readonly string[]) {
+function clientAppExportsAmong(ownerId: string, list: readonly string[]) {
   return db
     .select({ id: appTableExports.tableNodeId })
     .from(appTableExports)
@@ -156,7 +156,7 @@ export async function namesClientSourced(
         )
         .limit(1);
       if (copied) return true;
-      const [exported] = await clientAppExportsAmong(ownerId, list);
+      const [exported] = await clientAppExportsAmong(ownerId, list).limit(1);
       if (exported) return true;
     }
     return false;

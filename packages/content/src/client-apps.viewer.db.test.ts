@@ -105,7 +105,9 @@ describe.skipIf(!URL)('apps for clients', () => {
       sqlTag`delete from nodes where owner_id = ${brain} and title like ${`${tag} %`}`,
     );
     await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${other}`);
-    await m.systemDb.execute(sqlTag`delete from spaces where login_id in (${other}, ${clientLogin})`);
+    await m.systemDb.execute(
+      sqlTag`delete from spaces where login_id in (${other}, ${clientLogin})`,
+    );
     await m.systemDb.execute(sqlTag`delete from auth.users where id in (${other}, ${clientLogin})`);
     await m.closeDb();
   }, 60_000);
@@ -133,7 +135,10 @@ describe.skipIf(!URL)('apps for clients', () => {
   it('opens the client app, never its team, admin or public twin', async () => {
     for (const run of [<T>(fn: () => Promise<T>) => fn(), asClient]) {
       const app = await run(() => ca.getClientRunnableApp(brain, ids.client));
-      expect(app).toMatchObject({ id: ids.client, manifest: { toolSlugs: ['client_shared_list'] } });
+      expect(app).toMatchObject({
+        id: ids.client,
+        manifest: { toolSlugs: ['client_shared_list'] },
+      });
       expect(app?.publishedBuild.ok).toBe(true);
       expect(Object.keys(app ?? {})).not.toContain('draftBuild');
       for (const id of [ids.team, ids.admin, ids.pub]) {
@@ -184,9 +189,7 @@ describe.skipIf(!URL)('apps for clients', () => {
       expect(row?.dataReadOnly).toBe(true);
       expect((await ca.getClientRunnableApp(brain, ids.client))?.dataReadOnly).toBe(true);
       // A metadata update that does not name the flag leaves it.
-      expect((await ap.updateAppMeta(brain, ids.client, { icon: '🧾' }))?.dataReadOnly).toBe(
-        true,
-      );
+      expect((await ap.updateAppMeta(brain, ids.client, { icon: '🧾' }))?.dataReadOnly).toBe(true);
     } finally {
       await ap.updateAppMeta(brain, ids.client, { dataReadOnly: false, icon: '📦' });
     }

@@ -165,9 +165,9 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     expect(
       await m.withViewer('team', () => cs.namesClientSourced(owner, [ids.clientAppTable])),
     ).toBe(true);
-    expect(
-      [...(await cs.clientSourcedAmong(owner, [ids.clientAppTable, ids.teamAppTable]))],
-    ).toEqual([ids.clientAppTable]);
+    expect([
+      ...(await cs.clientSourcedAmong(owner, [ids.clientAppTable, ids.teamAppTable])),
+    ]).toEqual([ids.clientAppTable]);
     // Raise the app above client: its table stops counting.
     await admin`update nodes set audience = 'team' where id = ${ids.clientApp}`;
     try {
