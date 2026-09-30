@@ -4,6 +4,7 @@ import type { ClientShell } from '@mantle/client-types';
 import { getClientOr401, mintAssetToken } from '@/lib/auth';
 import { CLIENT_ASSET_TOKEN_TTL_SECONDS } from '@/lib/auth/tokens';
 import { shellPart } from '@/lib/shell-part';
+import { READER_TREE_KINDS } from '@mantle/content/tree';
 
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 
@@ -48,6 +49,8 @@ export async function GET() {
     fontProseSize: brain.fontProseSize ?? null,
     logoVersion: logoVersion(brain.logoKey),
     logoDarkVersion: logoVersion(brain.logoDarkKey),
+    // The kinds its Library holds, browsed as a read-only folder tree.
+    treeKinds: [...READER_TREE_KINDS],
   };
   return NextResponse.json(body);
 }

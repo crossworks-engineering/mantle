@@ -176,6 +176,10 @@ export type {
 // Types only at the root; the runtime constants (kinds, specs, limits) are the
 // `@mantle/client-types/tree` subpath.
 export type {
+  ClientTreeFolder,
+  ClientTreeFolderPage,
+  ClientTreeItem,
+  ClientTreeSearchResult,
   TreeCrumb,
   TreeFolder,
   TreeFolderPage,

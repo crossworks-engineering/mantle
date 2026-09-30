@@ -3,6 +3,7 @@ import { loadPreferencesFor, logoVersion } from '@mantle/content';
 import type { MemberShell } from '@mantle/client-types';
 import { getMemberOr401, mintAssetToken } from '@/lib/auth';
 import { shellPart } from '@/lib/shell-part';
+import { READER_TREE_KINDS } from '@mantle/content/tree';
 
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 
@@ -50,6 +51,8 @@ export async function GET() {
     fontProseSize: brain.fontProseSize ?? null,
     logoVersion: logoVersion(brain.logoKey),
     logoDarkVersion: logoVersion(brain.logoDarkKey),
+    // The kinds its Library holds, browsed as a read-only folder tree.
+    treeKinds: [...READER_TREE_KINDS],
   };
   return NextResponse.json(body);
 }

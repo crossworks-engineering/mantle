@@ -8,6 +8,7 @@
 import type { ClientItemKind, MemberItemKind } from '../member-kinds';
 import type { MemberItemPill, MemberSpaceItemRow } from './member';
 import type { NodeComment } from './rows';
+import type { TreeKind } from '../tree';
 
 /** GET /api/client/shell: who is signed in and the brain's brand. */
 export type ClientShell = {
@@ -29,6 +30,10 @@ export type ClientShell = {
   fontProseSize: string | null;
   logoVersion: string | null;
   logoDarkVersion: string | null;
+  /** The kinds this login browses as a read-only folder tree (GET
+   *  /api/{member,client}/tree/:kind). Absent from brains before folder
+   *  sharing: the client keeps its flat lists there. */
+  treeKinds?: TreeKind[];
 };
 
 /** One item in "Shared with you": an item at client level. */

@@ -4,9 +4,17 @@
  * The routes under app/api/tree stay a few lines each.
  */
 import { NextResponse } from '@/server/http-compat';
-import { isTreeKind, type TreeItem, type TreeKind } from '@mantle/client-types/tree';
+import { z } from 'zod';
+import {
+  isTreeKind,
+  TREE_SEARCH_MAX,
+  TREE_SORTS,
+  type TreeItem,
+  type TreeKind,
+} from '@mantle/client-types/tree';
 import {
   ensureKindRoot,
+  READER_TREE_KINDS,
   isTreeLiveKind,
   reconcileAppMarks,
   reconcileAppNav,
@@ -93,3 +101,31 @@ function extensionOf(name: string): string | null {
   const dot = name.lastIndexOf('.');
   return dot > 0 && dot < name.length - 1 ? name.slice(dot + 1).toLowerCase() : null;
 }
+
+/** The kind named by a member or client tree route, or a 404 when those
+ *  trees do not serve it (READER_TREE_KINDS: the kinds a Library holds). */
+export async function readerTreeKindOr404(ctx: {
+  params: Promise<{ kind: string }>;
+}): Promise<TreeKind | Response> {
+  const { kind } = await ctx.params;
+  if (!isTreeKind(kind) || !READER_TREE_KINDS.includes(kind)) {
+    return NextResponse.json({ error: 'not found' }, { status: 404 });
+  }
+  return kind;
+}
+
+/** A member or client tree folder page query. */
+export const ReaderTreeQuery = z.object({
+  folder: z.string().uuid().optional(),
+  cursor: z.string().max(500).optional(),
+  sort: z.enum(TREE_SORTS).optional(),
+  limit: z.coerce.number().int().positive().optional(),
+});
+
+/** A member or client tree search query: no level or tag filter (levels are
+ *  staff information; a reader's tags filter is not offered). */
+export const ReaderTreeSearchQuery = z.object({
+  q: z.string().trim().max(TREE_SEARCH_MAX).default(''),
+  cursor: z.string().max(500).optional(),
+  limit: z.coerce.number().int().positive().optional(),
+});

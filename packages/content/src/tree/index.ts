@@ -3,7 +3,7 @@
  * workspace kind. Reads (a folder's page, search, the reader's marks) and
  * writes (folders and moves), with the kind differences kept in one place.
  */
-export { TREE_LIVE_KINDS, isTreeLiveKind } from './kinds';
+export { READER_TREE_KINDS, TREE_LIVE_KINDS, isTreeLiveKind } from './kinds';
 export { ensureKindRoot } from './node-ops';
 export { reconcileAppMarks, reconcileAppNav } from './apps-nav';
 export {
@@ -49,3 +49,10 @@ export {
   shareDiff,
   type VisibilityDiff,
 } from './visibility';
+export {
+  clientTreeFolderPage,
+  clientTreeSearch,
+  loadReaderTreeFolder,
+  searchReaderTree,
+  type TreeReader,
+} from './reader';
