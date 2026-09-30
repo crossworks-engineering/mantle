@@ -98,6 +98,7 @@ export { PERSONA_TOOLS, PERSONA_TOOL_SLUGS } from './builtins-persona';
 export { TASK_TOOLS, TASK_TOOL_SLUGS } from './builtins-tasks';
 export { NOTE_TOOLS, NOTE_OPERATOR_TOOLS } from './builtins-notes';
 export { RECALL_TOOLS } from './builtins-recall';
+export { RECALL_WRITE_TOOLS } from './builtins-recall-write';
 export { EVENT_TOOLS } from './builtins-events';
 export { PEER_TOOLS } from './builtins-peers';
 export { EMAIL_TOOLS } from './builtins-email';
