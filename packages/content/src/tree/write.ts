@@ -194,6 +194,9 @@ export async function updateTreeFolder(
   const folder = await folderOrThrow(ownerId, kind, folderId);
   if (patch.parentId !== undefined) {
     if (patch.parentId === folderId) throw new TreeError('invalid', 'a folder cannot hold itself');
+    if (folder.system && patch.parentId !== folder.parentId) {
+      throw new TreeError('invalid', 'this folder is made by Mantle; it stays where it is');
+    }
     const dest = await pathOf(ownerId, kind, patch.parentId);
     if (dest !== treeParentPath(folder.path)) {
       await refusing(() => ops.moveFolder(ownerId, folderId, dest));
@@ -294,6 +297,9 @@ export async function deleteTreeFolder(
 ): Promise<void> {
   const ops = opsFor(kind);
   const folder = await folderOrThrow(ownerId, kind, folderId);
+  if (folder.system) {
+    throw new TreeError('invalid', 'this folder is made by Mantle; it cannot be deleted');
+  }
   const parentPath = treeParentPath(folder.path);
   const spec = TREE_KIND_SPECS[kind];
   const [children, items] = await Promise.all([

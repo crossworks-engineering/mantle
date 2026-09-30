@@ -40,6 +40,8 @@ import {
   APP_TOOLS,
   TOOLSMITH_TOOLS,
   NOTE_TOOLS,
+  TREE_TOOLS,
+  TREE_OPERATOR_TOOLS,
   TASK_TOOLS,
   EVENT_TOOLS,
   JOURNAL_TOOLS,
@@ -171,6 +173,10 @@ export function registerMantleTools(
   registerBuiltinTools(NOTE_OPERATOR_TOOLS);
   registerBuiltinTools(TASK_TOOLS);
   registerBuiltinTools(EVENT_TOOLS);
+  // Folders for every row-only tree kind (docs/folder-tree.md); Files keeps
+  // its own folder_* tools above.
+  registerBuiltinTools(TREE_TOOLS);
+  registerBuiltinTools(TREE_OPERATOR_TOOLS);
 
   // ─── Recall — the memory-map system (docs/recall.md) ─────────────────────
   // The tier-1 hook for external agents: these four read-only tools plus the

@@ -578,6 +578,12 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'Create/edit/list/read notes + import a file or page as a note. note_update covers the ' +
       'recurring append-to-a-log flow (client-site gap, 2026-07-18); note_delete stays out — deliberate.',
     toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+
       'note_create',
       'note_update',
       'note_list',
@@ -590,13 +596,30 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'events',
     name: 'Calendar',
     description: 'Calendar event CRUD.',
-    toolSlugs: ['event_list', 'event_get', 'event_create', 'event_update', 'event_delete'],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+      'event_list',
+      'event_get',
+      'event_create',
+      'event_update',
+      'event_delete',
+    ],
   },
   {
     slug: 'tasks',
     name: 'Tasks',
     description: 'Task CRUD + the per-task comment thread.',
     toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+
       'task_list',
       'task_get',
       'task_create',
@@ -658,7 +681,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     name: 'Tables toolkit',
     description:
       'Build + edit typed grids, incl. row/column deletes (authoring subset; excludes the whole-table delete).',
-    toolSlugs: [...TABLE_AUTHORING_TOOL_SLUGS],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+      ...TABLE_AUTHORING_TOOL_SLUGS,
+    ],
   },
   {
     slug: 'table-admin',
@@ -745,7 +775,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     // No-delete subset (mirrors pages/tables, decision 3); contact_delete rides
     // the `contacts-admin` group. Matches CORE_AUTO_GRANT exactly, so an
     // auto-granted conversational agent qualifies for the whole group.
-    toolSlugs: [...CONTACT_AUTO_GRANT_SLUGS],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+      ...CONTACT_AUTO_GRANT_SLUGS,
+    ],
   },
   {
     slug: 'contacts-admin',
@@ -776,7 +813,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
       'Author, read and evaluate calculation models taken from standards. No delete (escape hatch).',
     // No-delete subset (decision 3 pattern); formula_delete rides the
     // `formulas-admin` group.
-    toolSlugs: [...FORMULA_AUTO_GRANT_SLUGS],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+      ...FORMULA_AUTO_GRANT_SLUGS,
+    ],
   },
   {
     slug: 'formulas-eval',
@@ -793,7 +837,12 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     name: 'Draw (read)',
     description:
       'List + read whiteboard drawings as text (committed scenes only). No authoring — the canvas is the only writer; agent authoring is a future, separate decision.',
-    toolSlugs: ['draw_list', 'draw_get'],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'draw_list',
+      'draw_get',
+    ],
   },
   {
     slug: 'calculator',
@@ -870,7 +919,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'secrets',
     name: 'Secrets',
     description: 'Store a secret/credential the user shares in conversation.',
-    toolSlugs: ['secret_create'],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+      'secret_create',
+    ],
   },
   {
     slug: 'ingest',

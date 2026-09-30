@@ -65,6 +65,13 @@ const EXPECTED_OWNER_ONLY = [
   'team_access_list',
   'team_chat_list',
   'team_chat_read',
+  // The item tree's folders (builtins-tree.ts): members and clients browse a
+  // pruned tree from phase 4; until then only the owner reorganises it.
+  'tree_folder_create',
+  'tree_folder_delete',
+  'tree_folder_update',
+  'tree_folders',
+  'tree_item_move',
   'video_ingest',
   'web_crawl',
   'web_map',

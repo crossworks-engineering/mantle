@@ -28,6 +28,7 @@ import { RESEARCH_TOOLS } from './builtins-research';
 import { CRAWL_TOOLS } from './builtins-crawl';
 import { CURATION_TOOLS } from './builtins-curation';
 import { NOTE_TOOLS } from './builtins-notes';
+import { TREE_OPERATOR_TOOLS, TREE_TOOLS } from './builtins-tree';
 import { EMAIL_TOOLS } from './builtins-email';
 import { PAGE_TOOLS } from './builtins-pages';
 import { DRAW_TOOLS } from './builtins-draws';
@@ -172,6 +173,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // Notes — persist a markdown note (auto-indexed into the brain). Lets
   // Saskia keep research findings she's decided are worth saving.
   ...NOTE_TOOLS,
+  ...TREE_TOOLS,
   // Email — send mail from the user's own mailbox via provider SMTP. Pairs
   // with web_search/researcher ("research X and email it to me").
   ...EMAIL_TOOLS,
@@ -247,6 +249,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   ...TELEGRAM_OPERATOR_TOOLS,
   ...FILE_OPERATOR_TOOLS,
   ...NOTE_OPERATOR_TOOLS,
+  ...TREE_OPERATOR_TOOLS,
 ];
 
 // P6: there is no flat "default assistant grant" anymore. A generalist persona's

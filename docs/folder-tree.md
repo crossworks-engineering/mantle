@@ -103,6 +103,26 @@ per-kind ops table); path math shared with clients is
 `packages/content-core/src/tree.ts`; the routes are thin wrappers in
 `server/web/app/api/tree/` with their plumbing in `server/web/lib/tree-route.ts`.
 
+## For agents
+
+Files keep their own `folder_*` tools (their folders are directories). Every
+other tree kind shares one set, told apart by `kind`
+(`packages/tools/src/builtins-tree.ts`):
+
+- `tree_folders`: every folder of a kind, in tree order, with ids, paths,
+  counts and the system flag.
+- `tree_folder_create`, `tree_folder_update` (rename, move, or both).
+- `tree_item_move`: file items into a folder, or to the top level.
+- `tree_folder_delete` (MCP only, like Files' `folder_delete`): what the folder
+  held moves up first.
+
+They sit in each kind's tool group (`tree_folders` alone in Draw's read-only
+group), so an agent that can work with a kind can organise it. The brain is
+the trust boundary, so they are not split per kind. They are owner only: a
+member's or client's turn is refused until folder sharing (phase 4) gives
+those readers a tree of their own. Every write notifies the tree like the
+screens do.
+
 ## Auto-filed
 
 Everything Mantle files by itself lives in one admin folder, `files/auto-filed/`

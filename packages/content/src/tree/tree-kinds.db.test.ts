@@ -125,6 +125,18 @@ describe.skipIf(!URL)('the item tree on notes, tasks, events and secrets', () =>
     await expect(
       tree.updateTreeFolder(owner, 'notes', autoFiled!.id, { name: 'Mine' }),
     ).rejects.toMatchObject({ code: 'invalid' });
+    // Nor can it move or be deleted: the summarizer finds it by its path.
+    const other = await tree.createTreeFolder(owner, 'notes', { parentId: null, name: 'Other' });
+    await expect(
+      tree.updateTreeFolder(owner, 'notes', autoFiled!.id, { parentId: other.id }),
+    ).rejects.toMatchObject({ code: 'invalid' });
+    await expect(tree.deleteTreeFolder(owner, 'notes', autoFiled!.id)).rejects.toMatchObject({
+      code: 'invalid',
+    });
+    // The whole shape at once, each folder followed by its subfolders.
+    const all = await tree.listTreeFolders(owner, 'notes');
+    const at = all.findIndex((f) => f.path === 'notes.auto_filed');
+    expect(all[at + 1]?.path).toBe('notes.auto_filed.assistant');
   });
 
   it('refuses to move an item of another kind', async () => {

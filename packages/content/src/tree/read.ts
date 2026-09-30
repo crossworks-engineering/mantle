@@ -115,6 +115,33 @@ async function selectFolders(ownerId: string, kind: TreeKind, where: SQL): Promi
   return rows.map(treeFolderFromRow);
 }
 
+/** Every folder of a kind (all levels), in tree order: each folder's
+ *  subfolders follow it, siblings in their manual order. For agents, which
+ *  read the whole shape at once rather than a folder at a time. */
+export async function listTreeFolders(ownerId: string, kind: TreeKind): Promise<TreeFolder[]> {
+  const root = TREE_KIND_SPECS[kind].root;
+  const all = await selectFolders(
+    ownerId,
+    kind,
+    sql`f.path <@ ${root}::ltree and nlevel(f.path) > 1`,
+  );
+  const byParent = new Map<string | null, TreeFolder[]>();
+  for (const f of all) {
+    const list = byParent.get(f.parentId) ?? [];
+    list.push(f);
+    byParent.set(f.parentId, list);
+  }
+  const out: TreeFolder[] = [];
+  const walk = (parentId: string | null) => {
+    for (const f of byParent.get(parentId) ?? []) {
+      out.push(f);
+      walk(f.id);
+    }
+  };
+  walk(null);
+  return out;
+}
+
 /** One folder by id, when it is a folder of `kind` below the kind's root. */
 export async function treeFolderById(
   ownerId: string,
