@@ -4,6 +4,16 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.356: client v0.6.184 (folder system and Recall v2 screens)
+
+- Pairs the client at jackdaw v0.6.184. It brings the UI for the folder
+  system, phases 2 to 5: one folder tree on every item screen, folder
+  sharing with the visibility confirm, member and client trees, members'
+  own folders and drafts in place, and the Accept dialog's "Where it
+  goes" with a folder picker. It also brings the Recall v2 screens (the
+  native map editor and Recall in the item tree, behind
+  `features.recallV2`).
+
 ## 0.232.354: the universal folder system, phases 2 to 5
 
 - **One folder tree for every item kind** (docs/folder-tree.md). Notes,
