@@ -49,6 +49,16 @@ describe.skipIf(!URL)('member accepted items', () => {
     moved.push(id);
   };
 
+  /** A role change no route makes, around the client role guard (0200). */
+  const setRole = async (id: string, role: 'member' | 'client') => {
+    const { setLoginRoleUnguarded } = await import('@mantle/db/test-support');
+    await setLoginRoleUnguarded(
+      (m.systemDb as unknown as { $client: Parameters<typeof setLoginRoleUnguarded>[0] }).$client,
+      id,
+      role,
+    );
+  };
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -366,12 +376,12 @@ describe.skipIf(!URL)('member accepted items', () => {
 
   it('an author who is a client is labelled a client, never "A member" (audit B26)', async () => {
     // Clients author nothing yet (C5): a member login turned client stands in.
-    await m.systemDb.execute(sqlTag`update auth.users set role = 'client' where id = ${loginB}`);
+    await setRole(loginB, 'client');
     try {
       const got = (await ma.acceptedAuthors(anchor, [bNoteId])).get(bNoteId);
       expect(got).toMatchObject({ name: 'A client', role: 'client' });
     } finally {
-      await m.systemDb.execute(sqlTag`update auth.users set role = 'member' where id = ${loginB}`);
+      await setRole(loginB, 'member');
     }
     expect((await ma.acceptedAuthors(anchor, [bNoteId])).get(bNoteId)?.role).toBe('member');
   });

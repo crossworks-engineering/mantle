@@ -10,7 +10,8 @@
  *   - a contact link must be a contact of this brain, not another login's;
  *   - a deleted login's space records when it lost its login (0180, F21),
  *     and a member made admin gets their shared and submitted items back as
- *     private drafts.
+ *     private drafts;
+ *   - deleting a client login deletes its comments with it (audit I5).
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run 'server/web/app/api/users/[id]/users-lockout.db.test.ts'
  */
@@ -64,7 +65,8 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
   const eve = randomUUID(); // admin, links contacts
   const raw = randomUUID(); // deleted with raw SQL (the FK)
   const cli = randomUUID(); // a client login (client logins C0)
-  const logins = [anchor, otherBrain, bea, cal, dee, eve, raw, cli];
+  const gone = randomUUID(); // a client login, deleted below (audit I5)
+  const logins = [anchor, otherBrain, bea, cal, dee, eve, raw, cli, gone];
   const ids = {
     contact: randomUUID(),
     otherContact: randomUUID(),
@@ -121,7 +123,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     for (const id of logins) {
       await admin`insert into auth.users (id, email, password_hash, role)
                   values (${id}, ${`${tag}-${id.slice(0, 8)}@example.invalid`}, 'x',
-                          ${id === cli ? 'client' : 'admin'})`;
+                          ${id === cli || id === gone ? 'client' : 'admin'})`;
     }
     // Items belong to a space (0165): each test brain is a brain row.
     await admin`insert into spaces (id, kind, login_id) values
@@ -218,6 +220,7 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
     const { DELETE } = await import('./route');
     const res = await DELETE(new Request('http://x', { method: 'DELETE' }), ctx(dee));
     expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
     expect(await devicesOf(dee)).toEqual([]);
     expect(h.relayDeleted).toEqual([`${tag}-dee-1`]);
     // The space stays, with no login, and records when (the purge's clock).
@@ -358,6 +361,30 @@ describe.skipIf(!URL)('login lockout: push devices, the assistant, contact links
         id: eve,
       });
       await admin`update auth.users set password_hash = 'x' where id in (${cli}, ${eve})`;
+    });
+
+    it('deleting it deletes its comments too, and only its (audit I5)', async () => {
+      const item = randomUUID();
+      await admin`insert into nodes (id, owner_id, type, title, path, audience)
+                  values (${item}, ${anchor}, 'note', 'shared with clients', 'notes', 'client')`;
+      await admin`insert into node_comments
+                    (owner_id, node_id, author_kind, login_id, author_name, body, thread_scope)
+                  values (${anchor}, ${item}, 'client', ${gone}, 'Gone', 'one', 'client'),
+                         (${anchor}, ${item}, 'client', ${gone}, 'Gone', 'two', 'client'),
+                         (${anchor}, ${item}, 'client', ${cli}, 'Kept', 'mine', 'client')`;
+      const [sp] = await admin<Row[]>`
+        select id from spaces where kind = 'personal' and login_id = ${gone}`;
+      h.caller = as(anchor);
+      const { DELETE } = await import('./route');
+      const res = await DELETE(new Request('http://x', { method: 'DELETE' }), ctx(gone));
+      if (sp) await admin`delete from spaces where id = ${sp.id as string}`;
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, commentsDeleted: 2 });
+      const left = await admin<Row[]>`
+        select body, login_id from node_comments where node_id = ${item} order by body`;
+      // No orphan comment the bulk delete could no longer find.
+      expect(left).toEqual([{ body: 'mine', login_id: cli }]);
+      expect(await roleOf(gone)).toBeUndefined();
     });
 
     it('gets no password from an admin', async () => {

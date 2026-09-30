@@ -53,6 +53,8 @@ import {
   snapshotFile,
 } from '@mantle/tabledb';
 import { lockBundleRows, refsOf, type BundleItem } from './member-bundle';
+import { clientOwnUrl } from './client-redact';
+import { clientRedactOrigins } from './client-origins';
 import { SpaceItemStateError, spaceNotFound } from './member-space-core';
 import { notifySpaceItemChanged } from './member-space-events';
 import {
@@ -371,7 +373,9 @@ export type GiveBackResult = { id: string; returned: BundleItem[] };
  * logins C1, plan N3). An admin may have added a brain item at any level,
  * or one of their own private items, while it was theirs: giving that back
  * would show the author an id, a title in a mention chip, or a link to
- * something they may not read. Returns the ids that are not allowed.
+ * something they may not read. An absolute URL into this brain is read as
+ * the reference it stands for, as the client redactor reads it (audit L2).
+ * Returns the ids that are not allowed.
  */
 async function refsTheAuthorMayNotUse(
   tx: Via,
@@ -383,8 +387,9 @@ async function refsTheAuthorMayNotUse(
   const inGroup = new Set(group.map((g) => g.id));
   const ids = new Set<string>();
   const refused = new Set<string>();
+  const ownUrl = clientOwnUrl(clientRedactOrigins());
   for (const item of group) {
-    for (const r of await refsOf(tx, item)) {
+    for (const r of await refsOf(tx, item, ownUrl)) {
       for (const id of r.ids) if (!inGroup.has(id)) ids.add(id);
       for (const x of r.refused) refused.add(x);
     }

@@ -15,6 +15,9 @@
  *    sends its own sentinel on the channel and waits (with a deadline) until
  *    it arrives: Postgres delivers notifications in commit order, so by then
  *    every notification committed before it has arrived too.
+ *  - setLoginRoleUnguarded: a login's role never changes to or from client
+ *    (0200). A test that pins what the code does for a login that is no
+ *    longer a client (or turned client) makes that state around the guard.
  *  - createMigratedScratchDatabase: a test that DROPs or re-creates tables
  *    takes locks on `nodes` that deadlock with other test files deleting
  *    nodes. Such a test runs on a database of its own, migrated from scratch
@@ -51,6 +54,24 @@ export async function ensureTestAnchor(sql: Sql): Promise<string> {
   const [row] = await sql<{ id: string | null }[]>`select mantle_brain_id() as id`;
   if (!row?.id) throw new Error('ensureTestAnchor: no anchor after the insert');
   return row.id;
+}
+
+/**
+ * Set a login's role with the client role guard (0200) off for that one
+ * UPDATE. The trigger is disabled and enabled again in one transaction, so
+ * no other session ever sees it off (their writes to auth.users wait for
+ * the lock meanwhile).
+ */
+export async function setLoginRoleUnguarded(
+  sql: Sql,
+  loginId: string,
+  role: 'admin' | 'member' | 'client',
+): Promise<void> {
+  await sql.begin(async (tx) => {
+    await tx`alter table auth.users disable trigger users_client_role_guard`;
+    await tx`update auth.users set role = ${role} where id = ${loginId}`;
+    await tx`alter table auth.users enable trigger users_client_role_guard`;
+  });
 }
 
 /** Poll `check` until it holds, or fail after `timeoutMs`. */

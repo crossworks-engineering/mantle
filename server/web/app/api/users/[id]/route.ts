@@ -14,7 +14,11 @@ import {
   oauthAuthCodes,
   pairingCodes,
 } from '@mantle/db';
-import { revokeOpenClientSignins, settleSpaceOnPromotion } from '@mantle/content';
+import {
+  deleteClientComments,
+  revokeOpenClientSignins,
+  settleSpaceOnPromotion,
+} from '@mantle/content';
 import { endLoginSessions, getOwnerOr401 } from '@/lib/auth';
 import { releaseAssignedAgent } from '@/lib/agents';
 import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
@@ -216,7 +220,12 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   const targetId = idParsed.data.id;
 
   const [target] = await db
-    .select({ id: authUsers.id, email: authUsers.email, isOwner: authUsers.isOwner })
+    .select({
+      id: authUsers.id,
+      email: authUsers.email,
+      isOwner: authUsers.isOwner,
+      role: authUsers.role,
+    })
     .from(authUsers)
     .where(eq(authUsers.id, targetId))
     .limit(1);
@@ -243,10 +252,17 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
   // session cookie dies on its next request, since getSessionUser re-checks
   // auth.users per request. The push devices are deleted first, by hand, so
   // the relay can be told: a cascade would drop them silently.
-  const pushTokens = await db.transaction(async (tx) => {
+  //
+  // A client login (audit I5): its chat thread cascades with it, and its
+  // comments go in the same transaction (the admin's bulk comment delete),
+  // since a comment whose login is gone could no longer be found by it.
+  // Disable is how an admin ends a client and keeps that history.
+  const isClient = target.role === 'client';
+  const { pushTokens, commentsDeleted } = await db.transaction(async (tx) => {
     const tokens = await deleteLoginSubscriptions(targetId, tx);
+    const comments = isClient ? await deleteClientComments(user.id, targetId, tx) : 0;
     await tx.delete(authUsers).where(eq(authUsers.id, targetId));
-    return tokens;
+    return { pushTokens: tokens, commentsDeleted: comments };
   });
   await forgetRelayDevices(pushTokens);
 
@@ -256,9 +272,9 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }
     action: 'user.delete',
     method: 'DELETE',
     path: `/api/users/${targetId}`,
-    detail: { targetId, targetEmail: target.email },
+    detail: { targetId, targetEmail: target.email, ...(isClient ? { commentsDeleted } : {}) },
     ...requestMetaFrom(req),
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json(isClient ? { ok: true, commentsDeleted } : { ok: true });
 }

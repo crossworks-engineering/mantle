@@ -42,6 +42,16 @@ describe.skipIf(!URL)('client logins and sign-in links', () => {
     return row;
   };
 
+  /** A role change no route makes, around the client role guard (0200). */
+  const setRole = async (id: string, role: 'member' | 'client') => {
+    const { setLoginRoleUnguarded } = await import('@mantle/db/test-support');
+    await setLoginRoleUnguarded(
+      (m.systemDb as unknown as { $client: Parameters<typeof setLoginRoleUnguarded>[0] }).$client,
+      id,
+      role,
+    );
+  };
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     m = await import('@mantle/db');
@@ -193,6 +203,17 @@ describe.skipIf(!URL)('client logins and sign-in links', () => {
     expect(listed.lastLoginAt).not.toBeNull();
   });
 
+  it('one link redeemed twice at once signs in exactly once (I7)', async () => {
+    const row = await newClient('race');
+    const { code } = await c.issueClientSigninLink(owner, row.id, owner);
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, () => c.redeemClientSigninLink({ code, email: email('race') })),
+    );
+    expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+    const signedIn = results.filter((r) => r.status === 'fulfilled' && r.value !== null);
+    expect(signedIn).toHaveLength(1);
+  });
+
   it('refuses an expired link (after 72 hours)', async () => {
     const row = await newClient('late');
     const now = new Date();
@@ -229,7 +250,7 @@ describe.skipIf(!URL)('client logins and sign-in links', () => {
   it('refuses a link whose login is no longer a client', async () => {
     const row = await newClient('moved');
     const { code } = await c.issueClientSigninLink(owner, row.id, owner);
-    await exec(sqlTag`update auth.users set role = 'member' where id = ${row.id}`);
+    await setRole(row.id, 'member');
     expect(await c.redeemClientSigninLink({ code, email: email('moved') })).toBeNull();
     expect((await c.listClientLogins(owner)).map((r) => r.id)).not.toContain(row.id);
     made.splice(made.indexOf(row.id), 1);

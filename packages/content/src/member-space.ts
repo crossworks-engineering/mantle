@@ -80,7 +80,7 @@ import {
   type SpaceFile,
 } from './member-space-files';
 import { openSpaceFile } from '@mantle/files';
-import { spaceLimits } from './space-limits';
+import { inClientSpace, spaceLimits } from './space-limits';
 import {
   SpaceItemStateError,
   assertItemRoom,
@@ -938,13 +938,14 @@ async function assertEmbeds(
   writer: SpaceWriter = {},
 ): Promise<void> {
   const bad = await disallowedRefs(spaceId, refs, writer);
-  if (bad.length) {
-    throw new SpaceItemStateError(
-      'embed',
-      `This ${what} uses items you cannot share: only your own items and Library items. Remove them, then save.`,
-      bad,
-    );
-  }
+  if (bad.length) throw new SpaceItemStateError('embed', embedRefusal(what), bad);
+}
+
+/** The embed refusal, in the author's words: a client has no Library, so
+ *  it reads "items shared with you" (client logins, audit U6). */
+function embedRefusal(what: string, client = inClientSpace()): string {
+  const allowed = client ? 'items shared with you' : 'Library items';
+  return `This ${what} uses items you cannot share: only your own items and ${allowed}. Remove them, then save.`;
 }
 
 /** The references a table's working copy holds (the draft workbook, or the

@@ -13,7 +13,8 @@
  *    passes; a deleted client's space keeps counting until its purge;
  *  - races: two parallel creates at the last item place, two parallel
  *    submits at the last daily place, two clients' parallel uploads at the
- *    last bytes of the total: exactly one passes each time;
+ *    last bytes of the total, parallel comments at the last place of the
+ *    day and at a thread's last place: exactly one passes each time;
  *  - give back into a client's space holds the client limits;
  *  - space_items.author_role never changes after insert;
  *  - refusals are recorded (reason and login), and the record stays small;
@@ -68,6 +69,10 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     role: randomUUID(),
     admin: randomUUID(),
     other: randomUUID(),
+    raceCap: randomUUID(),
+    raceT1: randomUUID(),
+    raceT2: randomUUID(),
+    raceT3: randomUUID(),
   };
   const former = randomUUID();
   const formerMember = randomUUID();
@@ -146,6 +151,16 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
   const refusals = (login: string) =>
     exec<{ reason: string }>(sqlTag`
       select reason from client_quota_refusals where login_id = ${login} order by created_at`);
+
+  /** A role change no route makes, around the client role guard (0200). */
+  const setRole = async (id: string, role: 'member' | 'client') => {
+    const { setLoginRoleUnguarded } = await import('@mantle/db/test-support');
+    await setLoginRoleUnguarded(
+      (m.systemDb as unknown as { $client: Parameters<typeof setLoginRoleUnguarded>[0] }).$client,
+      id,
+      role,
+    );
+  };
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
@@ -552,6 +567,42 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     expect(n).toBe(10);
   });
 
+  it('parallel comments at the last place of the day: exactly one passes (I7)', async () => {
+    // 99 places taken; three threads, so only the day's lock can hold it.
+    await ledgerRows(c.raceCap, 99);
+    const notes = await Promise.all([1, 2, 3].map((i) => clientNote(`race day ${i}`)));
+    const results = await Promise.allSettled(
+      notes.map((n) =>
+        ct.addClientThreadComment(brain, n, { kind: 'client', loginId: c.raceCap, name: 'R' }, 'x'),
+      ),
+    );
+    expect(results.filter((r) => r.status === 'fulfilled').length).toBe(1);
+    for (const r of results.filter((x) => x.status === 'rejected')) {
+      expect((r as PromiseRejectedResult).reason).toMatchObject({ reason: 'comment-cap' });
+    }
+    const { n } = await one<{ n: number }>(sqlTag`
+      select count(*)::int as n from client_comment_ledger where login_id = ${c.raceCap}`);
+    expect(n).toBe(100);
+  });
+
+  it('parallel comments at a thread’s last place: exactly one passes (I7)', async () => {
+    // Three clients, each with room in its day: only the thread's lock holds it.
+    const note = await clientNote('race thread');
+    await seedComments(note, 999, 'client');
+    const results = await Promise.allSettled(
+      [c.raceT1, c.raceT2, c.raceT3].map((login) =>
+        ct.addClientThreadComment(brain, note, { kind: 'client', loginId: login, name: 'T' }, 'x'),
+      ),
+    );
+    expect(results.filter((r) => r.status === 'fulfilled').length).toBe(1);
+    for (const r of results.filter((x) => x.status === 'rejected')) {
+      expect((r as PromiseRejectedResult).reason).toMatchObject({ reason: 'thread-full' });
+    }
+    const { n } = await one<{ n: number }>(sqlTag`
+      select count(*)::int as n from node_comments where node_id = ${note}`);
+    expect(n).toBe(1000);
+  });
+
   // The boundary is the live brain-wide sum plus 6 MB; another test file that
   // removes megabytes of client bytes in the same moment can move it, so the
   // test may retry. A missing lock fails every attempt (both uploads pass).
@@ -655,12 +706,12 @@ describe.skipIf(!URL)('client abuse limits: comments, text, races, give back', (
     );
     expect(await role()).toBe('client');
     // Nor when the login changes role later.
-    await m.systemDb.execute(sqlTag`update auth.users set role = 'member' where id = ${c.role}`);
+    await setRole(c.role, 'member');
     await m.systemDb.execute(
       sqlTag`update space_items set updated_at = now() where node_id = ${id}`,
     );
     expect(await role()).toBe('client');
-    await m.systemDb.execute(sqlTag`update auth.users set role = 'client' where id = ${c.role}`);
+    await setRole(c.role, 'client');
   });
 
   // ── Refusals and the admin reads (I5, U2) ───────────────────────────────

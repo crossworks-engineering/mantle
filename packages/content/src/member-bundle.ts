@@ -28,7 +28,7 @@ import {
   MEMBER_ITEM_KINDS as SPACE_ITEM_KINDS,
   type MemberItemKind as SpaceItemKind,
 } from '@mantle/client-types/member-kinds';
-import { cellRefs, noteRefs, pageRefs, sceneRefs, type EmbedRefs } from './embed-refs';
+import { cellRefs, noteRefs, pageRefs, sceneRefs, type EmbedRefs, type OwnUrl } from './embed-refs';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Via = Pick<Tx, 'select'>;
@@ -50,8 +50,9 @@ export const BUNDLE_MAX_ITEMS = 200;
 export const BUNDLE_TOO_LARGE = `This item brings more than ${BUNDLE_MAX_ITEMS} items with it.`;
 
 /** The references one item carries, read from its SAVED version. Also the
- *  give-back embed check (member-takeover.ts). */
-export async function refsOf(via: Via, item: BundleItem): Promise<EmbedRefs[]> {
+ *  give-back embed check (member-takeover.ts), which passes `ownUrl` so an
+ *  absolute URL into this brain is read as the reference it is. */
+export async function refsOf(via: Via, item: BundleItem, ownUrl?: OwnUrl): Promise<EmbedRefs[]> {
   switch (item.type) {
     case 'page': {
       const [p] = await via
@@ -59,7 +60,7 @@ export async function refsOf(via: Via, item: BundleItem): Promise<EmbedRefs[]> {
         .from(pages)
         .where(eq(pages.nodeId, item.id))
         .limit(1);
-      return p ? [pageRefs(p.doc)] : [];
+      return p ? [pageRefs(p.doc, ownUrl)] : [];
     }
     case 'note': {
       const [n] = await via
@@ -68,7 +69,7 @@ export async function refsOf(via: Via, item: BundleItem): Promise<EmbedRefs[]> {
         .where(eq(nodes.id, item.id))
         .limit(1);
       const content = (n?.data as Record<string, unknown> | null)?.content;
-      return typeof content === 'string' ? [noteRefs(content)] : [];
+      return typeof content === 'string' ? [noteRefs(content, ownUrl)] : [];
     }
     case 'draw': {
       const [d] = await via
@@ -81,7 +82,7 @@ export async function refsOf(via: Via, item: BundleItem): Promise<EmbedRefs[]> {
       const files = Object.values((d.fileRefs ?? {}) as Record<string, string>).filter(
         (v) => typeof v === 'string',
       );
-      return [sceneRefs(d.scene), { ids: files, refused: [], embeds: files }];
+      return [sceneRefs(d.scene, ownUrl), { ids: files, refused: [], embeds: files }];
     }
     case 'table': {
       const [t] = await via
@@ -91,7 +92,7 @@ export async function refsOf(via: Via, item: BundleItem): Promise<EmbedRefs[]> {
         .limit(1);
       if (!t?.storagePath) return [];
       const file = resolveStoragePath(t.storagePath);
-      return existsSync(file) ? [cellRefs(refLikeCells(file))] : [];
+      return existsSync(file) ? [cellRefs(refLikeCells(file), ownUrl)] : [];
     }
     case 'file':
       return [];

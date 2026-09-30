@@ -7,6 +7,8 @@
  *    the level: the space must be the login's own, and the login active. A
  *    mixed-up pair (a real space, another real login) or a disabled login
  *    throws before anything runs.
+ *  - I8 (0200): a login's role never changes to or from client, by any
+ *    UPDATE; admin and member still change into each other.
  *
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/db/src/login-role.db.test.ts
  */
@@ -15,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
 const NOT_NULL_VIOLATION = '23502';
+const CHECK_VIOLATION = '23514';
 
 describe.skipIf(!URL)('login rows: the role is always named, withSpace checks the pair', () => {
   type Db = typeof import('./index');
@@ -114,5 +117,27 @@ describe.skipIf(!URL)('login rows: the role is always named, withSpace checks th
     expect(await m.withSpace({ spaceId: spaceOf[other]!, loginId: other }, async () => 'ok')).toBe(
       'ok',
     );
+  });
+
+  it('a role never changes to or from client; admin and member still swap (I8)', async () => {
+    const roleOf = async (id: string) =>
+      (await sql<{ role: string }[]>`select role from auth.users where id = ${id}`)[0]?.role;
+    for (const role of ['member', 'admin']) {
+      await expect(
+        sql`update auth.users set role = ${role} where id = ${client}`,
+        role,
+      ).rejects.toMatchObject({ code: CHECK_VIOLATION });
+    }
+    await expect(
+      sql`update auth.users set role = 'client' where id = ${member}`,
+    ).rejects.toMatchObject({ code: CHECK_VIOLATION });
+    expect(await roleOf(client)).toBe('client');
+    expect(await roleOf(member)).toBe('member');
+    // Not a role change: other columns of a client, and client to client.
+    await sql`update auth.users set display_name = 'C', role = 'client' where id = ${client}`;
+    // Staff roles change as before.
+    await sql`update auth.users set role = 'admin' where id = ${other}`;
+    await sql`update auth.users set role = 'member' where id = ${other}`;
+    expect(await roleOf(other)).toBe('member');
   });
 });

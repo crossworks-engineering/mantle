@@ -1400,6 +1400,13 @@
       "version": "7",
       "when": 1790018220000,
       "tag": "0199_app_client_written",
+        "breakpoints": true
+      },
+      {
+      "idx": 200,
+      "version": "7",
+      "when": 1790018280000,
+      "tag": "0200_client_role_guard",
       "breakpoints": true
     }
   ]

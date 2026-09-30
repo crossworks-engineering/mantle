@@ -90,6 +90,16 @@ describe.skipIf(!URL)('client requests: members read clients’ submitted items 
   const listed = async (opts: { kind?: string } = {}) =>
     m.withHumanViewer('team', () => cr.listClientRequests({ q: tag, ...opts }));
 
+  /** A role change no route makes, around the client role guard (0200). */
+  const setRole = async (id: string, role: 'member' | 'client') => {
+    const { setLoginRoleUnguarded } = await import('@mantle/db/test-support');
+    await setLoginRoleUnguarded(
+      (m.systemDb as unknown as { $client: Parameters<typeof setLoginRoleUnguarded>[0] }).$client,
+      id,
+      role,
+    );
+  };
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
@@ -165,7 +175,7 @@ describe.skipIf(!URL)('client requests: members read clients’ submitted items 
     await submit(turned, ids.sharedSubmitted);
     ids.sharedDraft = await page(turned, `${tag} turned shared draft`);
     await as(turned, () => sp.setSharing(spaceOf[turned]!, ids.sharedDraft, 'team'));
-    await m.systemDb.execute(sqlTag`update auth.users set role = 'client' where id = ${turned}`);
+    await setRole(turned, 'client');
 
     // A member's submitted item, shared with the team: a team draft, never
     // a client request.

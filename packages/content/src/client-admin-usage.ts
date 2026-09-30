@@ -135,10 +135,16 @@ export async function clientThreadActivity(
  * Delete every comment a client login wrote on this brain: the client
  * threads and its review talk (author kind client, that login). The day
  * ledger keeps its rows: this refunds no comment place. Returns how many
- * went.
+ * went. `via`: the login delete runs it in its own transaction, before the
+ * login row goes (audit I5): once the login is gone its comments keep no
+ * login id, so nothing could find them any more.
  */
-export async function deleteClientComments(brainId: string, loginId: string): Promise<number> {
-  const gone = (await db.execute(sql`
+export async function deleteClientComments(
+  brainId: string,
+  loginId: string,
+  via: Pick<typeof db, 'execute'> = db,
+): Promise<number> {
+  const gone = (await via.execute(sql`
     delete from node_comments
      where owner_id = ${brainId} and author_kind = 'client' and login_id = ${loginId}
     returning id`)) as unknown as { id: string }[];

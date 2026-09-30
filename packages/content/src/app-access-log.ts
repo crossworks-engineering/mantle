@@ -81,17 +81,24 @@ export function recordAppAccess(entry: AppAccessEntry): void {
 export type AppAccessRow = {
   id: string;
   contactId: string | null;
-  /** Who, by name at read time: the contact's, or for a member login its
-   *  display name (else the part of its email before the @); "Removed
-   *  member" once that login is deleted. Null for anonymous (public)
-   *  visitors or a since-deleted contact. */
+  /** Who, by name at read time: the contact's, or for a member or client
+   *  login its display name (else the part of its email before the @);
+   *  "Removed member" or "Removed client" once that login is deleted. Null
+   *  for anonymous (public) visitors or a since-deleted contact. */
   contactName: string | null;
-  /** The member login, when a member ran the app from the member shell. */
+  /** The member or client login, when one ran the app from its own shell. */
   actorId: string | null;
   kind: AppAccessKind;
   detail: Record<string, unknown>;
   createdAt: string;
 };
+
+function removedLoginName(detail: Record<string, unknown> | null): string | null {
+  const via = detail?.via;
+  if (via === 'member') return 'Removed member';
+  if (via === 'client') return 'Removed client';
+  return null;
+}
 
 /** Recent external activity for one app, newest first (operator surface). The
  *  owner predicate is IN the WHERE (not a post-filter) so the LIMIT can never
@@ -124,12 +131,10 @@ export async function listAppAccess(
   return rows.map((r) => ({
     id: r.id,
     contactId: r.contactId,
-    // A member row whose login was deleted keeps no name (SET NULL): say so,
-    // rather than let it read as an anonymous public visitor.
-    contactName:
-      r.contactName ??
-      r.actorName ??
-      (r.detail && (r.detail as { via?: unknown }).via === 'member' ? 'Removed member' : null),
+    // A member or client row whose login was deleted keeps no name (SET
+    // NULL): say so, rather than let it read as an anonymous public visitor
+    // (client logins, audit I5).
+    contactName: r.contactName ?? r.actorName ?? removedLoginName(r.detail),
     actorId: r.actorId,
     kind: r.kind as AppAccessKind,
     detail: r.detail,

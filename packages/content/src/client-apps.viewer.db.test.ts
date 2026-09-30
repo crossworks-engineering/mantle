@@ -7,7 +7,8 @@
  * the lookups work on the client role (no draft column is read) and row
  * security holds there as a second lock; the informational flag reaches the
  * client card, the member card and the owner's DTOs, and only the owner's
- * update writes it; the access log names a client login.
+ * update writes it; the access log names a client login, and a deleted one
+ * as "Removed client".
  *
  * Brain items belong to the shared test anchor (mantle_brain_id()): the
  * client-role reads go through row security, which knows only that brain.
@@ -216,5 +217,29 @@ describe.skipIf(!URL)('apps for clients', () => {
       kind: 'db',
       detail: { via: 'client', op: 'exec' },
     });
+  });
+
+  it('names a deleted client login as removed, never an anonymous visitor (audit I5)', async () => {
+    const gone = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into auth.users (id, email, password_hash, role, display_name)
+      values (${gone}, ${`${tag}-gone@example.invalid`}, 'x', 'client', 'Gone Client')`);
+    log.recordAppAccess({
+      ownerId: brain,
+      appNodeId: ids.info,
+      actorId: gone,
+      kind: 'auth',
+      detail: { via: 'client' },
+    });
+    let rows: Awaited<ReturnType<typeof log.listAppAccess>> = [];
+    for (let i = 0; i < 250 && rows.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      rows = await log.listAppAccess(brain, ids.info);
+    }
+    expect(rows[0]).toMatchObject({ actorId: gone, contactName: 'Gone Client' });
+    await m.systemDb.execute(sqlTag`delete from spaces where login_id = ${gone}`);
+    await m.systemDb.execute(sqlTag`delete from auth.users where id = ${gone}`);
+    const [after] = await log.listAppAccess(brain, ids.info);
+    expect(after).toMatchObject({ actorId: null, contactId: null, contactName: 'Removed client' });
   });
 });

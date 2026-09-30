@@ -172,9 +172,12 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     const id = (await as(client, () => sp.createMineItem(C, { type: 'page', title: `${tag} c` })))
       .id;
     created.push(id);
-    await expect(
-      as(client, () => sp.saveMinePage(C, id, say('x', [mention(brainItems.team)]))),
-    ).rejects.toMatchObject({ reason: 'embed', ids: [brainItems.team] });
+    const refused = as(client, () => sp.saveMinePage(C, id, say('x', [mention(brainItems.team)])));
+    await expect(refused).rejects.toMatchObject({ reason: 'embed', ids: [brainItems.team] });
+    // In a client's words: a client has no Library (audit U6).
+    await expect(refused).rejects.toThrow(
+      'This page uses items you cannot share: only your own items and items shared with you.',
+    );
     // A public item is not a client item either (decision 3).
     await expect(
       as(client, () => sp.saveMinePage(C, id, say('x', [mention(brainItems.pub)]))),
@@ -184,7 +187,11 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     );
     expect(ok.ok).toBe(true);
     // The member (control) may name the team item.
-    await page(member, `${tag} m`, [brainItems.team]);
+    const mid = await page(member, `${tag} m`, [brainItems.team]);
+    // A member's refusal still names the Library: the client's page is not theirs.
+    await expect(
+      as(member, () => sp.saveMinePage(spaceOf[member]!, mid, say('x', [mention(id)]))),
+    ).rejects.toThrow('only your own items and Library items.');
   });
 
   it('Accept of a client’s item defaults to team; client needs a confirmation', async () => {
@@ -262,6 +269,47 @@ describe.skipIf(!URL)('a client login’s space: its level, embeds, Accept and g
     );
     expect(row?.owner_id).toBe(spaceOf[client]);
   });
+  it('give back reads an absolute URL into this brain as the item it names (audit L2)', async () => {
+    const id = await submitted(client, `${tag} linked`);
+    const actor = { loginId: adminA, spaceId: spaceOf[adminA]! };
+    await rv.takeOverReviewItem(id, actor);
+    const A = actor.spaceId;
+    const writer = { adminOfBrain: brain };
+    // The admin links a TEAM item by its absolute URL while it is theirs.
+    const linked = async (href: string) => {
+      const doc = say('admin', [
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'Team plan', marks: [{ type: 'link', attrs: { href } }] },
+          ],
+        },
+      ]);
+      expect((await as(adminA, () => sp.saveMinePage(A, id, doc, writer))).ok, href).toBe(true);
+    };
+    const before = process.env.MANTLE_PUBLIC_URL;
+    process.env.MANTLE_PUBLIC_URL = 'https://brain.example.invalid';
+    try {
+      for (const href of [
+        `https://brain.example.invalid/pages/${brainItems.team}`,
+        `https://other.example.invalid/n/${brainItems.team}`,
+      ]) {
+        await linked(href);
+        await expect(tk.giveBackTakenItem(brain, actor, id, 'Fix it'), href).rejects.toMatchObject({
+          reason: 'embed',
+          ids: [brainItems.team],
+        });
+      }
+      // An external link still goes back.
+      await linked('https://example.com/plan');
+      const back = await tk.giveBackTakenItem(brain, actor, id, 'Fix it');
+      expect(back.returned.map((b) => b.id)).toEqual([id]);
+    } finally {
+      if (before === undefined) delete process.env.MANTLE_PUBLIC_URL;
+      else process.env.MANTLE_PUBLIC_URL = before;
+    }
+  });
+
   /** Make a submitted page embed the Accept brain's file (written by hand:
    *  the save rule reads the shared anchor, and Accept runs in its own). */
   const embedAcceptFile = async (id: string) => {

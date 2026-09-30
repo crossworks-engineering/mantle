@@ -65,6 +65,16 @@ describe.skipIf(!URL)('client email sign-in codes', () => {
       )
     )[0]!.attempts;
 
+  /** A role change no route makes, around the client role guard (0200). */
+  const setRole = async (id: string, role: 'member' | 'client') => {
+    const { setLoginRoleUnguarded } = await import('@mantle/db/test-support');
+    await setLoginRoleUnguarded(
+      (m.systemDb as unknown as { $client: Parameters<typeof setLoginRoleUnguarded>[0] }).$client,
+      id,
+      role,
+    );
+  };
+
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     savedSecret = process.env.SESSION_SECRET;
@@ -87,6 +97,7 @@ describe.skipIf(!URL)('client email sign-in codes', () => {
       ['gil', 'client', false],
       ['hal', 'client', false],
       ['ivy', 'client', false],
+      ['jo', 'client', false],
       ['old', 'client', false],
       ['gone', 'client', true],
       ['staff', 'member', false],
@@ -228,7 +239,7 @@ describe.skipIf(!URL)('client email sign-in codes', () => {
     const f = await sent('fay', { t });
     const g = await sent('gil', { t });
     await exec(sqlTag`update auth.users set disabled_at = now() where id = ${login.fay}`);
-    await exec(sqlTag`update auth.users set role = 'member' where id = ${login.gil}`);
+    await setRole(login.gil!, 'member');
     try {
       expect(
         await c.redeemClientEmailCode(
@@ -257,7 +268,7 @@ describe.skipIf(!URL)('client email sign-in codes', () => {
       expect(await attemptsOf(g.codeId)).toBe(1);
     } finally {
       await exec(sqlTag`update auth.users set disabled_at = null where id = ${login.fay}`);
-      await exec(sqlTag`update auth.users set role = 'client' where id = ${login.gil}`);
+      await setRole(login.gil!, 'client');
     }
   });
 
@@ -393,6 +404,23 @@ describe.skipIf(!URL)('client email sign-in codes', () => {
       Array.from({ length: 20 }, () => c.redeemClientEmailCode(input, at(31 * HOUR + MIN))),
     );
     expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
+  it('two requests for one login at once make exactly one code (the per-login lock, I7)', async () => {
+    const t = 40 * HOUR;
+    const results = await Promise.allSettled(
+      Array.from({ length: 3 }, () => ask('jo', { ip: '198.51.100.40', t })),
+    );
+    const kinds = results.map((r) => (r.status === 'fulfilled' ? r.value.kind : 'error'));
+    expect(kinds.sort()).toEqual(['send', 'skip', 'skip']);
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value.kind === 'skip') {
+        expect(r.value.reason).toBe('code-open');
+      }
+    }
+    const [n] = await rows<{ n: number }>(sqlTag`
+      select count(*)::int as n from client_signin_codes where login_id = ${login.jo}`);
+    expect(n).toEqual({ n: 1 });
   });
 
   it('stops sending brain-wide at the daily cap, and not before', async () => {

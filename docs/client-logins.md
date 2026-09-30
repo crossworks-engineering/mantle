@@ -93,7 +93,14 @@
    End sessions leaves no way straight back in. Issue a new link to let the
    client in again.
 5. **Delete** (`DELETE /api/users/:id`) removes the login. Its links and
-   codes go with it (foreign key cascade).
+   codes go with it (foreign key cascade), and so does its whole chat
+   thread with the client assistant. In the same transaction every comment
+   the client wrote is deleted, the client threads and its review talk (as
+   `DELETE /api/team-admin/clients/:id/comments` does): a comment whose
+   login is gone could no longer be found by that bulk delete. The answer
+   says how many went: `{ ok: true, commentsDeleted }`. The app activity
+   log names its rows "Removed client". To end a client and keep its chat
+   and comments for a dispute or a review, **Disable** it instead.
 
 The list (`GET /api/team-admin/clients`) shows each client's open link
 (never its code), its last sign-in and when a link of it was last used. The
@@ -222,7 +229,8 @@ rule is `reapClientSigninCodes` in `packages/content/src/client-codes.ts`.
 - **Sign out ends every session.** A client's plain Sign out ends all its
   sessions and asset tokens, not only this browser's: a client is often on
   a shared computer, and a download URL left in its history must stop
-  working.
+  working. It does not revoke a sign-in link or an emailed code the client
+  has not used yet: End sessions and Disable do (section 2).
 - **Asset tokens live 10 minutes.** The `?at=` token a client's image and
   file sources carry lives 10 minutes (a member's lives 2 hours). The client
   byte routes accept it; the admin and member byte routes refuse it.
@@ -449,7 +457,9 @@ took one over, and accepted.
   most 50,000 characters (400 `too-large`); a member's are 2 MB and
   200,000. A client may make 120 writes a minute (the editor autosaves
   800 ms after a pause), the member count, each at a quarter of a member's
-  size.
+  size. Comments and chat messages do not count toward the 200 MB or the
+  5 GB: their day caps bound them (100 comments a day, below, and the
+  chat's daily turn cap, section 8).
 - **Comment caps.** A client login writes at most 100 comments a day
   across every thread, its review talk and the client threads (429
   `comment-cap`), counted in `client_comment_ledger`: deleting a comment
@@ -523,7 +533,9 @@ took one over, and accepted.
   space's bytes, uploads today, items and open submissions, and every quota
   refusal of the last 7 days (the reason and the login, nothing of the
   file or text; kept to 7 days and 500 rows). A deleted client's space is
-  listed as former and still counts until the 30-day purge removes it.
+  listed as former and still counts. The 30-day purge removes only its
+  private items: what it submitted stays for an admin to accept or discard,
+  and counts until one does.
   `GET /api/team-admin/clients/comments?days=7` lists the client-level
   items whose thread had a client's comment lately (the thread itself is
   `/api/nodes/:id/comments`), and
@@ -538,10 +550,11 @@ took one over, and accepted.
   total (set `MANTLE_CLIENT_SPACES_TOTAL_BYTES` in the stack's `.env` and
   restart the web container; no release, but check the disk first:
   `df -h /`), or deal with a client who should no longer have room. Deleting
-  or disabling a login frees nothing at once: a deleted client's space
-  counts until the purge 30 days later
-  (`packages/content/src/member-space-purge.ts`), and a disabled
-  client's space stays as it is. Give back of a taken item into a full
+  or disabling a login frees nothing at once: a deleted client's private
+  items count until the purge 30 days later
+  (`packages/content/src/member-space-purge.ts`), its submitted items
+  count until an admin accepts or discards them (the purge keeps them),
+  and a disabled client's space stays as it is. Give back of a taken item into a full
   client space is refused (409 `quota`): accept it or delete it instead.
 
 ## 10. Client apps
