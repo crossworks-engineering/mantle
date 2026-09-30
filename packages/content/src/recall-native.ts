@@ -603,7 +603,7 @@ async function walkFolders(ownerId: string, crumbs: string[]): Promise<string> {
     if (!found) {
       throw new RecallWriteError(
         'folder_not_found',
-        `No Recall folder '${crumb}'${path === RECALL_ROOT_LABEL ? '' : ` under '${path}'`}. Create the folder first, or leave 'folder' off to file the map at the top.`,
+        `No Recall folder '${crumb}'${path === RECALL_ROOT_LABEL ? '' : ` under '${path}'`}. Create the folder first (tree_folder_create with kind 'recall'), or leave 'folder' off to file the map at the top.`,
       );
     }
     path = found;
