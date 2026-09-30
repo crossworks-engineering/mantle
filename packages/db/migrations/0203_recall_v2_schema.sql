@@ -87,7 +87,13 @@ ALTER TABLE "public"."recall_nodes"
   FOREIGN KEY ("map_id") REFERENCES "public"."recall_maps"("id") ON DELETE CASCADE;
 --> statement-breakpoint
 
--- ── 5. recall_nodes: card order and the pending-prompt gate ────────────────
+-- ── 5. recall_nodes: card order, the pending-prompt gate, minted ids ───────
+-- v1 always supplied the id (it IS the source page's node id), so the column
+-- never had a default. A native card is not a page and nothing outside the
+-- write path can name it, so it mints its own.
+ALTER TABLE "public"."recall_nodes"
+  ALTER COLUMN "id" SET DEFAULT gen_random_uuid();
+--> statement-breakpoint
 ALTER TABLE "public"."recall_nodes"
   ADD COLUMN IF NOT EXISTS "rank" integer NOT NULL DEFAULT 0;
 --> statement-breakpoint
