@@ -12,6 +12,7 @@ import {
   setAgentAudience,
   setItemLevel,
   setToolGroupAudience,
+  sharedViaFolder,
 } from '@mantle/content';
 import { errorMessage } from '@mantle/std';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
@@ -22,6 +23,23 @@ import { appMemberToolWarnings } from './member-app-tools';
 import { isOwnerSurface } from './surface';
 
 const LEVELS = ['admin', 'team', 'client', 'public'];
+const RANK: Record<string, number> = { public: 0, client: 1, team: 2, admin: 3 };
+
+/** Set above the share of a folder holding it, an item is still read at
+ *  that share: say so, and how to hide it. */
+async function sharedFolderWarning(
+  ownerId: string,
+  nodeId: string,
+  level: string,
+): Promise<string | null> {
+  const via = await sharedViaFolder(ownerId, nodeId);
+  if (!via || (RANK[level] ?? 0) <= RANK[via.level]!) return null;
+  const who = via.level === 'team' ? 'the team' : 'clients';
+  return (
+    `It is still read at ${via.level}: it sits in "${via.trail.join(' / ')}", a folder ` +
+    `shared with ${who}. Move it out of that folder to hide it.`
+  );
+}
 
 function ownerOnly(ctx: ToolHandlerContext): ToolHandlerResult | null {
   if (!isOwnerSurface(ctx.surface)) {
@@ -40,7 +58,7 @@ export const access_get: BuiltinToolDef = {
   preconditions: NODE_ID_PRE,
   name: 'Get an access level',
   description:
-    'Read the level (admin, team, client or public) of one brain item, agent or tool group. For an item it also returns its CLOSURE, each with its own level: for a page, drawing or note what it embeds (images, files, drawings, child pages), which goes down with it when it is lowered; for a folder its contents, which keep their own levels. Use before `access_set` to see what lowering an item will also share.',
+    'Read the level (admin, team, client or public) of one brain item, agent or tool group. For an item in a shared folder it returns `sharedVia`: the folder it takes its share from, which it is read at at least. For an item it also returns its CLOSURE, each with its own level: for a page, drawing or note what it embeds (images, files, drawings, child pages), which goes down with it when it is lowered; for a folder its contents, which keep their own levels. Use before `access_set` to see what lowering an item will also share.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -67,8 +85,15 @@ export const access_get: BuiltinToolDef = {
           .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ctx.ownerId)))
           .limit(1);
         if (!row) return { ok: false, error: 'item not found: find its id with search_nodes' };
-        const closure = await accessClosure(ctx.ownerId, nodeId);
-        return { ok: true, output: { item: row, closure } };
+        const [closure, sharedVia] = await Promise.all([
+          accessClosure(ctx.ownerId, nodeId),
+          sharedViaFolder(ctx.ownerId, nodeId),
+        ]);
+        // In a shared folder it is read at least at the folder's share.
+        return {
+          ok: true,
+          output: sharedVia ? { item: row, closure, sharedVia } : { item: row, closure },
+        };
       }
       if (agentSlug) {
         const [row] = await db
@@ -152,6 +177,8 @@ export const access_set: BuiltinToolDef = {
         // view (audit A10): say so.
         const left = clientLeftWarning(res.alsoLowered);
         if (left) warnings.push(left);
+        const floor = await sharedFolderWarning(ctx.ownerId, nodeId, level);
+        if (floor) warnings.push(floor);
         ctx.step?.setOutput({
           id: nodeId,
           level,

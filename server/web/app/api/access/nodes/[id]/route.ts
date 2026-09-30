@@ -29,6 +29,7 @@ import {
   isWorkspaceKind,
   oldLinksAboveItem,
   setItemLevel,
+  sharedViaFolder,
   type ShareSummary,
 } from '@mantle/content';
 import { db, isViewerLevel, nodes, VIEWER_LEVELS } from '@mantle/db';
@@ -74,7 +75,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .where(and(eq(nodes.id, idParsed.data.id), eq(nodes.ownerId, user.id)))
     .limit(1);
   if (!item) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
-  const [closure, share, childCount, authors, oldLinks] = await Promise.all([
+  const [closure, share, childCount, authors, oldLinks, sharedVia] = await Promise.all([
     accessClosure(user.id, item.id),
     getActiveShareForNode(user.id, item.id),
     item.type === 'page' ? countPageDescendants(user.id, item.id) : Promise.resolve(0),
@@ -82,6 +83,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     // Old live links above a client item (a client folder over it, a client
     // page embedding it): anyone with one opens this item too (audit A11).
     item.audience === 'client' ? oldLinksAboveItem(user.id, item.id) : Promise.resolve([]),
+    // The shared folder it takes its share from: the control's floor.
+    sharedViaFolder(user.id, item.id),
   ]);
   const { path, ...rest } = item;
   const body: AccessNodeView = {
@@ -101,6 +104,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     // A NEW open link is made at public only (client logins C1).
     openLinkLevels: ['public'],
     ...(item.audience === 'client' ? { oldLinksAbove: oldLinks } : {}),
+    sharedVia,
   };
   return NextResponse.json(body);
 }

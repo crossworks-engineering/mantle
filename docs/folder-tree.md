@@ -160,6 +160,14 @@ contacts, secrets) cannot be shared.
   total }` and nothing is written; the same call with `confirm: true` goes
   ahead (`?confirm=true` on DELETE). The agent folder tools take `confirm`
   too and tell the model to ask first. A rename never asks.
+- **Shared via.** `GET /api/access/nodes/:id` names the shared folder an
+  item takes its share from (`sharedVia { folderId, trail, level }`,
+  `sharedViaFolder` in `packages/content/src/shared-via.ts`). Its level is
+  the Access control's floor: the item is read there whatever its own level
+  says, so the control offers nothing above it ("Move it out of the shared
+  folder to hide it"). The brain does not refuse such a raise (an unshared
+  link sets an item back to admin); `access_get` returns `sharedVia` and
+  `access_set` warns that the item is still read at the folder's share.
 - **After a confirmed change**, embeds of the pages, drawings and notes
   concerned follow them to the level they are now read at (never raising
   anything) and the pages' text is re-folded.

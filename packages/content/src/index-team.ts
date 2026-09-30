@@ -365,6 +365,7 @@ export {
   clientReportFingerprint,
 } from './client-report';
 export { oldLinksAbove, oldLinksAboveItem } from './client-old-links';
+export { sharedViaFolder } from './shared-via';
 // Client logins (C2): Team admin > Clients and the sign-in link.
 export {
   CLIENT_SIGNIN_LINK_TTL_MS,

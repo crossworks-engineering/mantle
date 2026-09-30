@@ -74,6 +74,19 @@ export type AccessNodeView = {
   /** Old live links above this item (see ClientOldLinkAbove); only for an
    *  item at client. */
   oldLinksAbove?: ClientOldLinkAbove[];
+  /** The shared folder it takes its share from (folder sharing); null when
+   *  none. Absent from brains before folder sharing. */
+  sharedVia?: AccessSharedVia | null;
+};
+
+/** The nearest shared folder holding an item (folder sharing, phase 4). The
+ *  item is read at least at `level`, whatever its own level says, so the
+ *  control offers nothing above it: moving it out of the folder hides it. */
+export type AccessSharedVia = {
+  folderId: string;
+  /** Folder names from the kind's top level down to the shared folder. */
+  trail: string[];
+  level: 'team' | 'client';
 };
 
 /** One item that went down with the item that embeds it. */
