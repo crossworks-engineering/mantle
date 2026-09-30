@@ -115,7 +115,6 @@ import {
 import { DRAWS_ROOT_LABEL, getDrawSvg } from './draws';
 import { NOTES_ROOT_LABEL } from './notes';
 import { PAGES_ROOT_LABEL } from './pages/shared';
-import { childPagePath } from './page-path';
 import { draftAbsFor, removeTableFile } from './table-storage';
 import { dedupeFilename } from './dedupe-filename';
 import { isWorkspaceKind, setItemLevel } from './access';
@@ -703,7 +702,8 @@ export type AcceptOptions = {
    *  level) that the admin ticked. Every one must be here, or the Accept is
    *  refused with `confirm-level` and the list in `goingDown`. */
   confirmedIds?: string[];
-  /** A brain page to nest the accepted page under (pages only). */
+  /** DEPRECATED (folder phase 7): pages do not nest, so this is ignored. A
+   *  page lands like every tree kind (`folderId`). */
   parentPageId?: string | null;
   /** The brain Files folder the bundle's files land in: the request of a
    *  client from before the tree (folder plan phase 5). Without `folderId`,
@@ -713,8 +713,8 @@ export type AcceptOptions = {
    *  undefined keeps it in the brain folder it was filed in, with the
    *  member's own folders below recreated as brain folders; null is the
    *  kind's top level; an id is a brain folder of its kind (the member's
-   *  folders still go below it). Pages keep `parentPageId`. The rest of the
-   *  bundle always lands in place. */
+   *  folders still go below it). The rest of the bundle always lands in
+   *  place. */
   folderId?: string | null;
   /** The admin saw, and accepts, that items land in a shared folder and are
    *  read above the chosen level there (the `visibility` refusal's list). */
@@ -1300,26 +1300,9 @@ async function moveIntoBrain(
       const { spaceId, root, authorRole, bundle: bundleOf } = await steps.locate(tx);
       const audience = acceptLevel(authorRole, opts);
 
-      // 2. Destinations, checked before anything moves.
-      let parent: { id: string; path: string } | null = null;
-      if (opts.parentPageId) {
-        if (root.type !== 'page') {
-          throw new ReviewError('invalid', 'Only a page can go under a parent page.');
-        }
-        const [p] = await tx
-          .select({ id: nodes.id, path: nodes.path })
-          .from(nodes)
-          .where(
-            and(
-              eq(nodes.id, opts.parentPageId),
-              eq(nodes.ownerId, brainId),
-              eq(nodes.type, 'page'),
-            ),
-          )
-          .limit(1);
-        if (!p) throw new ReviewError('invalid', 'That parent page is not in the brain.');
-        parent = { id: p.id, path: String(p.path) };
-      }
+      // 2. Destinations are planned below (3a), every tree kind alike: pages
+      //    do not nest (folder phase 7), so the old `parentPageId` is ignored.
+      void root;
 
       // 3. The bundle, and every row in it locked, still in this space. An
       //    item another Accept moved first (a shared embed) is the brain's
@@ -1469,9 +1452,7 @@ async function moveIntoBrain(
         return plan.target;
       };
 
-      // 4. Re-own, kind by kind. Pages first in bundle order: a child's new
-      //    path extends its parent's, which is set by then.
-      const newPagePath = new Map<string, string>();
+      // 4. Re-own, kind by kind.
       // A file's name as filed, before the brain folder made it unique (a
       // `-2` says another file of that name is there): the name its
       // snapshot keeps (audit L7).
@@ -1483,20 +1464,12 @@ async function moveIntoBrain(
         const common = { ownerId: brainId, audience, updatedAt: now };
         switch (b.type) {
           case 'page': {
-            const inside = n.parentId ? newPagePath.get(n.parentId) : undefined;
-            let parentId: string | null = null;
-            let p = PAGES_ROOT_LABEL;
-            if (inside !== undefined) {
-              parentId = n.parentId;
-              p = childPagePath(inside, b.id);
-            } else if (b.id === id && parent) {
-              parentId = parent.id;
-              p = childPagePath(parent.path, b.id);
-            }
-            newPagePath.set(b.id, p);
+            // In its brain folder, like a note (folder phase 7); parent_id
+            // means nothing for a page and is cleared.
+            const at = await landing(b, String(n.path));
             await tx
               .update(nodes)
-              .set({ ...common, parentId, path: sql`${p}::ltree` })
+              .set({ ...common, parentId: null, path: sql`${at}::ltree` })
               .where(eq(nodes.id, b.id));
             await tx
               .update(pages)

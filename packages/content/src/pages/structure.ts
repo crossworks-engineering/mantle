@@ -1,14 +1,18 @@
 /**
  * Pages · restructuring. Three operations that rearrange a page into or
- * against other pages: split it into sub-pages along its headings, promote one
- * heading's section into a sub-page, and insert a mention chip.
+ * against other pages: split it into pages along its headings, lift one
+ * heading's section into a page of its own, and insert a mention chip.
  *
  * They share one safety model, and it is the reason they live together. Every
- * one of them creates its children through `createPage` (so each child is
- * indexed independently, which is the whole point of splitting) and writes the
- * rewritten parent to `draft_doc` ONLY, so the restructure is reviewable and
- * the published doc is untouched until the user commits. All three operate on
- * `draft ?? doc`, the current working content.
+ * one of them creates the new pages through `createPage` (so each is indexed
+ * independently, which is the whole point of splitting) and writes the
+ * rewritten source page to `draft_doc` ONLY, so the restructure is reviewable
+ * and the published doc is untouched until the user commits. All three operate
+ * on `draft ?? doc`, the current working content.
+ *
+ * Pages do not nest (folder phase 7): a page made here lands in the SAME
+ * FOLDER as the page it came from, and the card left behind (`childPage`, the
+ * page link card) is a link, not a parent-child bond.
  */
 import { and, eq } from 'drizzle-orm';
 import { db, entities, nodes } from '@mantle/db';
@@ -24,6 +28,18 @@ import { getPage } from './read';
 import { createPage } from './tree';
 import { saveDraft } from './draft';
 
+/** The folder path a page sits at (its own path): where a page made from it
+ *  goes too. */
+async function pagePath(ownerId: string, pageId: string): Promise<string> {
+  const [row] = await db
+    .select({ path: nodes.path })
+    .from(nodes)
+    .where(and(eq(nodes.id, pageId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
+    .limit(1);
+  if (!row) throw new Error(`page ${pageId} not found`);
+  return String(row.path);
+}
+
 /** Thrown by `splitPage` when the page has no heading at the requested level
  *  to split on. The tool layer maps this to a friendly message. */
 export class NoSplitHeadingsError extends Error {
@@ -34,23 +50,23 @@ export class NoSplitHeadingsError extends Error {
 }
 
 export type SplitPageResult = {
-  /** The created child pages, in document order. */
+  /** The created pages, in document order (next to the source page). */
   children: { id: string; title: string }[];
   /** Whether intro content (before the first heading) was kept on the parent. */
   introKept: boolean;
 };
 
 /**
- * Split a long page into sub-pages along its headings (Phase 4b). Each heading
- * of `by` becomes a child page (title = heading text, body = the blocks under
- * it); the parent's body is replaced with a table-of-contents of `childPage`
- * cards pointing at those children.
+ * Split a long page into pages along its headings (Phase 4b). Each heading
+ * of `by` becomes a page of its own (title = heading text, body = the blocks
+ * under it) in the same folder as the source; the source's body is replaced
+ * with a table-of-contents of `childPage` link cards pointing at them.
  *
  * Safety + indexing model, mirroring the rest of Pages:
- *  - Children are created via `createPage`, whose `nodes` insert fires the
- *    extractor — so each child is indexed independently (its own summary /
+ *  - The pages are created via `createPage`, whose `nodes` insert fires the
+ *    extractor — so each is indexed independently (its own summary /
  *    embedding / facts), the whole point of splitting.
- *  - The parent's new TOC is written to `draft_doc` ONLY (via `saveDraft`); the
+ *  - The source's new TOC is written to `draft_doc` ONLY (via `saveDraft`); the
  *    published `doc` is untouched until the user commits, so the restructure is
  *    reviewable. Operates on `draft ?? doc` (the current working content).
  *
@@ -63,6 +79,7 @@ export async function splitPage(
 ): Promise<SplitPageResult> {
   const page = await getPage(ownerId, pageId);
   if (!page) throw new Error(`splitPage: page ${pageId} not found`);
+  const folderPath = await pagePath(ownerId, pageId);
 
   const source = (page.draft ?? page.doc) as Record<string, unknown>;
   const { intro, sections } = splitDocByHeading(source, opts.by);
@@ -79,11 +96,7 @@ export async function splitPage(
       type: 'doc',
       content: sec.blocks.length ? sec.blocks : [{ type: 'paragraph' }],
     });
-    const child = await createPage(ownerId, {
-      title: sec.title,
-      doc: childDoc,
-      parentId: pageId,
-    });
+    const child = await createPage(ownerId, { title: sec.title, doc: childDoc, folderPath });
     children.push({ id: child.id, title: child.title });
     tocBlocks.push({
       type: 'childPage',
@@ -100,11 +113,11 @@ export async function splitPage(
   return { children, introKept: preserveIntro && intro.length > 0 };
 }
 
-/** Thrown by `extractSectionToChild` when the block id isn't a top-level
- *  heading (only top-level headings are promotable to sub-pages). */
+/** Thrown by `extractSectionToPage` when the block id isn't a top-level
+ *  heading (only top-level headings can be lifted into a page). */
 export class SectionNotFoundError extends Error {
   constructor(headingBlockId: string) {
-    super(`extractSectionToChild: no top-level heading with id ${headingBlockId}`);
+    super(`extractSectionToPage: no top-level heading with id ${headingBlockId}`);
     this.name = 'SectionNotFoundError';
   }
 }
@@ -112,20 +125,22 @@ export class SectionNotFoundError extends Error {
 export type ExtractSectionResult = { childId: string; title: string };
 
 /**
- * Promote a single heading + its body into a sub-page (Phase 4c). The section
- * runs from the heading until the next heading of equal-or-higher level; its
- * heading text becomes the child title, the blocks under it the child body, and
- * a `childPage` card replaces the section in the parent. Same safety + indexing
- * model as `splitPage`: child created via `createPage` (indexed on insert),
- * parent rewritten to `draft_doc` only. Operates on `draft ?? doc`.
+ * Lift a single heading + its body into a page of its own (Phase 4c), next
+ * to the source page. The section runs from the heading until the next
+ * heading of equal-or-higher level; its heading text becomes the new title,
+ * the blocks under it the new body, and a `childPage` link card replaces the
+ * section in the source. Same safety + indexing model as `splitPage`: the
+ * page is created via `createPage` (indexed on insert), the source rewritten
+ * to `draft_doc` only. Operates on `draft ?? doc`.
  */
-export async function extractSectionToChild(
+export async function extractSectionToPage(
   ownerId: string,
   pageId: string,
   headingBlockId: string,
 ): Promise<ExtractSectionResult> {
   const page = await getPage(ownerId, pageId);
-  if (!page) throw new Error(`extractSectionToChild: page ${pageId} not found`);
+  if (!page) throw new Error(`extractSectionToPage: page ${pageId} not found`);
+  const folderPath = await pagePath(ownerId, pageId);
 
   const source = (page.draft ?? page.doc) as Record<string, unknown>;
   const section = extractSection(source, headingBlockId);
@@ -135,11 +150,7 @@ export async function extractSectionToChild(
     type: 'doc',
     content: section.childBlocks.length ? section.childBlocks : [{ type: 'paragraph' }],
   });
-  const child = await createPage(ownerId, {
-    title: section.title,
-    doc: childDoc,
-    parentId: pageId,
-  });
+  const child = await createPage(ownerId, { title: section.title, doc: childDoc, folderPath });
 
   const newParent = ensureBlockIds({
     type: 'doc',

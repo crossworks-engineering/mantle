@@ -23,7 +23,6 @@ import {
   acceptedAuthors,
   accessClosure,
   canShareNode,
-  countPageDescendants,
   EMBEDDING_KINDS,
   getActiveShareForNode,
   isWorkspaceKind,
@@ -80,7 +79,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     [
       accessClosure(user.id, item.id),
       getActiveShareForNode(user.id, item.id),
-      item.type === 'page' ? countPageDescendants(user.id, item.id) : Promise.resolve(0),
+      // Always 0 since folder phase 7 (pages do not nest); kept on the wire.
+      Promise.resolve(0),
       acceptedAuthors(user.id, [item.id]),
       // Old live links above a client item (a client folder over it, a client
       // page embedding it): anyone with one opens this item too (audit A11).

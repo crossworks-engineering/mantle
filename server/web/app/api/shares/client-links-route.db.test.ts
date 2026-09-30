@@ -1,11 +1,10 @@
 /**
- * POST /api/shares and POST /api/shares/cascade on CLIENT items, against a
- * real, migrated Postgres (client logins C1, audit A31: one test per entry
- * point). Client is signed-in clients, never an open link: a client item
- * gets 400 `client-links-retired` and no link; a client parent's old link
- * shares no sub-pages (400); a client sub-page under a public parent keeps
- * client and is reported in `skipped` (audit A9). Only the owner check is
- * stubbed. Seeds its own owner and rows and removes them.
+ * POST /api/shares on CLIENT items, against a real, migrated Postgres
+ * (client logins C1, audit A31: one test per entry point). Client is
+ * signed-in clients, never an open link: a client item gets 400
+ * `client-links-retired` and no link. Only the owner check is stubbed.
+ * Seeds its own owner and rows and removes them. (The sub-page cascade route
+ * this file also covered went with folder phase 7: pages do not nest.)
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run client-links-route.db.test
  */
 import { randomUUID } from 'node:crypto';
@@ -20,7 +19,6 @@ describe.skipIf(!URL)('the share routes on client items, on Postgres', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
   let create: typeof import('./route');
-  let cascade: typeof import('./cascade/route');
   let sqlTag: typeof import('drizzle-orm').sql;
   const owner = randomUUID();
   h.owner = owner;
@@ -47,15 +45,11 @@ describe.skipIf(!URL)('the share routes on client items, on Postgres', () => {
         sqlTag`select count(*)::int as n from shares where node_id = ${id} and revoked_at is null`,
       )
     )[0]!.n;
-  const audienceOf = async (id: string) =>
-    (await exec<{ audience: string }>(sqlTag`select audience from nodes where id = ${id}`))[0]!
-      .audience;
 
   beforeAll(async () => {
     process.env.DATABASE_URL = URL;
     m = await import('@mantle/db');
     create = await import('./route');
-    cascade = await import('./cascade/route');
     sqlTag = (await import('drizzle-orm')).sql;
     const empty = '{"type":"doc","content":[]}';
     await m.db.execute(sqlTag`
@@ -95,26 +89,5 @@ describe.skipIf(!URL)('the share routes on client items, on Postgres', () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toMatchObject({ reason: 'client-links-retired' });
     expect(await liveLinks(ids.note)).toBe(0);
-  });
-
-  it('POST /api/shares/cascade: 400 for a client parent, its flag untouched', async () => {
-    const res = await cascade.POST(post({ nodeId: ids.cParent, on: true }));
-    expect(res.status).toBe(400);
-    expect(await res.json()).toMatchObject({ reason: 'client-links-retired' });
-    const [row] = await exec<{ settings: Record<string, unknown> }>(
-      sqlTag`select settings from shares where node_id = ${ids.cParent} and revoked_at is null`,
-    );
-    expect(row!.settings).toEqual({ cascade: false });
-    expect(await liveLinks(ids.cSub)).toBe(0);
-  });
-
-  it('POST /api/shares/cascade over a public parent: a client sub-page is skipped (A9)', async () => {
-    expect((await create.POST(post({ nodeId: ids.parent }))).status).toBe(200);
-    const res = await cascade.POST(post({ nodeId: ids.parent, on: true }));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ ok: true, count: 1, skipped: [ids.subClient] });
-    expect(await liveLinks(ids.subAdmin)).toBe(1);
-    expect(await liveLinks(ids.subClient)).toBe(0);
-    expect(await audienceOf(ids.subClient)).toBe('client');
   });
 });

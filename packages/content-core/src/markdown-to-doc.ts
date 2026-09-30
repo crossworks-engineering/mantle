@@ -29,7 +29,14 @@ import { ensureBlockIds } from './block-ids';
 // The reference-link schemes live in their own leaf so the client converter
 // (client/web/lib/rich-markdown.ts) reads the SAME definitions. See
 // markdown-refs.ts for why, and rich-markdown.drift.test.ts for the guard.
-import { MENTION_HREF, MEDIA_HREF, PAGE_HREF, DRAW_HREF } from './markdown-refs';
+import {
+  MENTION_HREF,
+  MEDIA_HREF,
+  PAGE_HREF,
+  DRAW_HREF,
+  FOLDER_HREF,
+  FOLDER_HERE,
+} from './markdown-refs';
 
 type PMMark = { type: string; attrs?: Record<string, unknown> };
 type PMNode = {
@@ -279,8 +286,9 @@ function paragraphAndImages(tokens: Tok[] | undefined): PMNode[] {
 }
 
 /** A paragraph consisting solely of one link (whitespace allowed around it)
- *  returns that link token; used to lift [file](media:…) and [Title](page:…)
- *  standalone lines into their block nodes (fileEmbed / childPage). */
+ *  returns that link token; used to lift [file](media:…), [Title](page:…)
+ *  and [Folder index](folder:…) standalone lines into their block nodes
+ *  (fileEmbed / childPage / folderIndex). */
 function soleLink(tokens: Tok[] | undefined): Tok | null {
   let link: Tok | null = null;
   for (const t of tokens ?? []) {
@@ -312,6 +320,13 @@ function blockRefNode(tokens: Tok[] | undefined): PMNode | null {
     return {
       type: 'childPage',
       attrs: { pageId: page[1]!, title: link.text || 'Untitled page', icon: null },
+    };
+  }
+  const folder = FOLDER_HREF.exec(link.href ?? '');
+  if (folder) {
+    return {
+      type: 'folderIndex',
+      attrs: { folderId: folder[1] === FOLDER_HERE ? null : folder[1]! },
     };
   }
   return null;

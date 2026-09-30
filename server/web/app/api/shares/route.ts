@@ -1,20 +1,20 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { ClientLinkRetiredError, countPageDescendants, type LoweredItem } from '@mantle/content';
+import { ClientLinkRetiredError, type LoweredItem } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 import { createShare, getActiveShareForNode } from '@/lib/shares';
 
-/** GET /api/shares?nodeId=… → the node's active link (or null), plus
- *  `childCount` (descendant pages — drives the "Share sub-pages" switch). */
+/** GET /api/shares?nodeId=… → the node's active link (or null). `childCount`
+ *  is always 0 and `cascade` always false since folder phase 7 (pages do
+ *  not nest, so a link never shares sub-pages); both stay on the wire for
+ *  clients from before the pages tree. */
 export async function GET(req: Request) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
   const nodeId = new URL(req.url).searchParams.get('nodeId');
   if (!nodeId) return NextResponse.json({ error: 'nodeId required' }, { status: 400 });
-  const [share, childCount] = await Promise.all([
-    getActiveShareForNode(user.id, nodeId),
-    countPageDescendants(user.id, nodeId),
-  ]);
+  const share = await getActiveShareForNode(user.id, nodeId);
+  const childCount = 0;
   return NextResponse.json({
     share: share
       ? {

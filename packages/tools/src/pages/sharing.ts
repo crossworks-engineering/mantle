@@ -1,14 +1,16 @@
 /**
  * Public sharing: share and unshare.
  *
- * Split out of builtins-pages.ts; bodies moved verbatim.
+ * Split out of builtins-pages.ts; bodies moved verbatim. The `children`
+ * option (share the page's sub-pages too) went with folder phase 7: pages do
+ * not nest; a set of pages is shared by sharing their folder with the team
+ * or clients (`tree_folder_update`), never by link.
  */
 
 import {
   getPage,
   createShare,
   unshareItem,
-  setShareCascade,
   getActiveShareForNode,
   shareUrlForToken,
   type LoweredItem,
@@ -25,9 +27,8 @@ export const page_share: BuiltinToolDef = {
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Share a page',
   description:
-    'Create (or fetch) a read-only link to a page and return its URL. Idempotent: one active link per page. The link is **public**: anyone with it can view, no login, and the page goes to public level, its embeds too (`alsoLowered`). No team or client links: members and clients sign in, so for them set the level with `access_set` instead (a client page is refused a link). `children: true` also shares every sub-page beneath it (a client sub-page keeps client, no link: `keptAtClient`); `children: false` revokes those sub-page links. Publishes brain content outward-facing. Use when the user asks to share or publish a page or section; to turn a link off use `page_unshare`.',
-  // Publishes brain content to the public web, so gated. `children` can share a
-  // large subtree at once, so confirm.
+    'Create (or fetch) a read-only link to a page and return its URL. Idempotent: one active link per page. The link is **public**: anyone with it can view, no login, and the page goes to public level, its embeds too (`alsoLowered`). No team or client links: members and clients sign in, so for them set the level with `access_set` instead (a client page is refused a link). To show a whole folder of pages to the team or clients, share the folder (`tree_folder_update` with `share`), not the pages one by one. Publishes brain content outward-facing. Use when the user asks to share or publish a page or section; to turn a link off use `page_unshare`.',
+  // Publishes brain content to the public web, so gated.
   requiresConfirm: true,
   inputSchema: {
     type: 'object',
@@ -39,11 +40,6 @@ export const page_share: BuiltinToolDef = {
         description:
           "Always 'public' (the default). Team links are retired: use access_set(level: 'team') to show a page to members.",
       },
-      children: {
-        type: 'boolean',
-        description:
-          "Also share every sub-page nested under this page, at the page's level. false revokes those sub-page links. Omit to leave sub-pages untouched.",
-      },
     },
     required: ['id'],
   },
@@ -52,30 +48,14 @@ export const page_share: BuiltinToolDef = {
     if (!id) return { ok: false, error: 'id is required' };
     const refused = linkModeRefusal(input.mode);
     if (refused) return { ok: false, error: refused };
-    const children = typeof input.children === 'boolean' ? input.children : undefined;
     try {
       const page = await getPage(ctx.ownerId, id);
       if (!page) return notFound('page', id, 'page_list / search_nodes');
       const alsoLowered: LoweredItem[] = [];
       const share = await createShare(ctx.ownerId, id, { alsoLowered });
-      let subpages: number | undefined;
-      let keptAtClient: string[] = [];
-      if (children !== undefined) {
-        const cascade = await setShareCascade(ctx.ownerId, id, children, alsoLowered);
-        subpages = cascade.count;
-        keptAtClient = cascade.skipped;
-      }
       const url = shareUrlForToken(share.token);
       ctx.step?.setOutput({ id, url, mode: share.mode });
-      // A sub-page at client keeps client and gets no link (client logins C1).
-      const notes = [
-        ...(keptAtClient.length
-          ? [
-              `Kept at client: ${keptAtClient.length} sub-page${keptAtClient.length === 1 ? '' : 's'} (clients sign in to read ${keptAtClient.length === 1 ? 'it' : 'them'}; no open link).`,
-            ]
-          : []),
-        ...[clientLeftWarning(alsoLowered)].filter((w): w is string => !!w),
-      ];
+      const warning = clientLeftWarning(alsoLowered);
       return {
         ok: true,
         output: {
@@ -84,11 +64,8 @@ export const page_share: BuiltinToolDef = {
           url,
           token: share.token,
           mode: share.mode,
-          ...(children === true ? { subpagesShared: subpages } : {}),
-          ...(children === false ? { subpagesRevoked: subpages } : {}),
-          ...(keptAtClient.length ? { keptAtClient } : {}),
           ...(alsoLowered.length ? { alsoLowered } : {}),
-          ...(notes.length ? { warning: notes.join(' ') } : {}),
+          ...(warning ? { warning } : {}),
         },
       };
     } catch (err) {
@@ -102,7 +79,7 @@ export const page_unshare: BuiltinToolDef = {
   preconditions: PAGE_NODE_ID_PRE,
   name: 'Stop sharing a page',
   description:
-    "Revoke a page's share link — and, if it was sharing its sub-pages, theirs too. The existing URL stops working immediately. No-op (still succeeds) if the page wasn't shared. Use when the user asks to unshare, unpublish, or make a page private again.",
+    "Revoke a page's share link. The existing URL stops working immediately. No-op (still succeeds) if the page wasn't shared. Use when the user asks to unshare, unpublish, or make a page private again.",
   inputSchema: {
     type: 'object',
     properties: {

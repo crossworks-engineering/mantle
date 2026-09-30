@@ -634,7 +634,16 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     name: 'Pages toolkit',
     description:
       'Author + edit rich pages, incl. block-level deletes (authoring subset; excludes whole-page delete/overwrite + the share toggles).',
-    toolSlugs: [...PAGE_AUTHORING_TOOL_SLUGS],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; folder phase 7: pages live in
+      // folders like notes, and never nest).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+
+      ...PAGE_AUTHORING_TOOL_SLUGS,
+    ],
   },
   {
     slug: 'page-admin',

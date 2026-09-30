@@ -19,7 +19,16 @@ import type { BuiltinToolDef } from '../types';
 import { str, strArr } from '../coerce';
 import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
-import { FILE_ID_PRE, NOTE_ID_PRE } from './common';
+import {
+  FILE_ID_PRE,
+  FOLDER_ID_PRE,
+  FOLDER_ID_PROP,
+  NOTE_ID_PRE,
+  PARENT_ID_PROP,
+  placementError,
+  placementOf,
+  placementOutput,
+} from './common';
 
 export const page_from_file: BuiltinToolDef = {
   slug: 'page_from_file',
@@ -164,10 +173,10 @@ export const page_from_file: BuiltinToolDef = {
 
 export const page_from_note: BuiltinToolDef = {
   slug: 'page_from_note',
-  preconditions: NOTE_ID_PRE,
+  preconditions: [...NOTE_ID_PRE, ...FOLDER_ID_PRE],
   name: 'Create page from note',
   description:
-    "Promote an EXISTING note into a rich page — the note's body is copied server-side WITHOUT round-tripping through your output, byte-faithful at any size. **Always prefer this over `note_get` + `page_create` when the user wants a note turned into a page** — you pass the note id, NOT its text. Pass `parent_id` to nest the new page UNDER an existing page. Title/tags default to the note's own unless you override. The note is marked SUPERSEDED — a reversible down-weight (`supersede_source: false` to skip). Returns the new page's id + title; the body is never echoed back (verify with `page_get`). **When delegating, hand off the note id + parent id only — never paste the note body into the prompt.**",
+    "Promote an EXISTING note into a rich page — the note's body is copied server-side WITHOUT round-tripping through your output, byte-faithful at any size. **Always prefer this over `note_get` + `page_create` when the user wants a note turned into a page** — you pass the note id, NOT its text. `folder_id` files it in a pages folder. Title/tags default to the note's own unless you override. The note is marked SUPERSEDED — a reversible down-weight (`supersede_source: false` to skip). Returns the new page's id + title; the body is never echoed back (verify with `page_get`). **When delegating, hand off the note id + folder id only — never paste the note body into the prompt.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -178,12 +187,8 @@ export const page_from_note: BuiltinToolDef = {
         description:
           'mark the source note superseded by the new page (reversible retrieval down-weight); false keeps both at full weight',
       },
-      parent_id: {
-        type: 'string',
-        format: 'uuid',
-        description:
-          'optional id of an existing page to nest the new page UNDER (makes it a sub-page); omit for top-level',
-      },
+      folder_id: FOLDER_ID_PROP,
+      parent_id: PARENT_ID_PROP,
       title: {
         type: 'string',
         description: "page title; defaults to the note's title if omitted",
@@ -209,7 +214,7 @@ export const page_from_note: BuiltinToolDef = {
       };
     }
 
-    const parentId = str(input.parent_id).trim();
+    const placement = placementOf(input);
     const titleArg = str(input.title).trim();
     const title = (titleArg || note.title || 'Untitled').slice(0, 200);
     const tagsArg = strArr(input.tags);
@@ -223,7 +228,7 @@ export const page_from_note: BuiltinToolDef = {
         doc,
         tags,
         ...(icon ? { icon } : {}),
-        ...(parentId ? { parentId } : {}),
+        ...placement,
       });
       // The page is the note's promotion — stamp the lineage edge (reversible
       // retrieval down-weight on the note; content-currency layer). Opt out
@@ -249,7 +254,7 @@ export const page_from_note: BuiltinToolDef = {
         title: page.title,
         source_note_id: noteId,
         source_superseded: sourceSuperseded,
-        ...(parentId ? { parent_id: parentId } : {}),
+        ...placementOutput(placement),
       });
       void recordIngest({
         source: 'agent_tool',
@@ -259,7 +264,7 @@ export const page_from_note: BuiltinToolDef = {
         payload: {
           via: 'page_from_note_tool',
           sourceNoteId: noteId,
-          ...(parentId ? { parentId } : {}),
+          ...placement,
           tags,
           ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
         },
@@ -274,19 +279,13 @@ export const page_from_note: BuiltinToolDef = {
           tags: page.tags,
           source_note_id: noteId,
           source_superseded: sourceSuperseded,
-          ...(parentId ? { parent_id: parentId } : {}),
+          ...placementOutput(placement),
         },
       };
     } catch (err) {
       const msg = errorMessage(err);
-      // createPage throws ParentPageNotFoundError when parent_id isn't one of
-      // the owner's pages — surface that plainly (mirrors page_create).
-      if (parentId && msg.includes('parent page not found')) {
-        return {
-          ok: false,
-          error: `parent_id '${parentId}' is not one of your pages — pass the id of an existing page (see page_list / search_nodes).`,
-        };
-      }
+      const placed = placementError(msg, placement);
+      if (placed) return { ok: false, error: placed };
       return { ok: false, error: msg };
     }
   },
@@ -294,9 +293,10 @@ export const page_from_note: BuiltinToolDef = {
 
 export const page_from_notes: BuiltinToolDef = {
   slug: 'page_from_notes',
+  preconditions: FOLDER_ID_PRE,
   name: 'Create page from several notes',
   description:
-    "Stitch SEVERAL existing notes into ONE rich page — every note's body is copied server-side and concatenated in the order given, byte-faithful at any size. **Prefer this over `note_get` + re-typing into `page_create`** — you pass the note ids, NOT their text. Each note becomes an `## ` section from its title; `headings: false` concatenates raw. Pass `parent_id` to nest under an existing page. Tags default to the union of the source notes' tags. Originals are marked SUPERSEDED — a reversible down-weight (`supersede_source: false` to skip). Returns the new page's id + title; the body is never echoed back (verify with `page_get`). **When delegating, hand off note ids + title + parent id only — never paste note bodies.**",
+    "Stitch SEVERAL existing notes into ONE rich page — every note's body is copied server-side and concatenated in the order given, byte-faithful at any size. **Prefer this over `note_get` + re-typing into `page_create`** — you pass the note ids, NOT their text. Each note becomes an `## ` section from its title; `headings: false` concatenates raw. `folder_id` files it in a pages folder. Tags default to the union of the source notes' tags. Originals are marked SUPERSEDED — a reversible down-weight (`supersede_source: false` to skip). Returns the new page's id + title; the body is never echoed back (verify with `page_get`). **When delegating, hand off note ids + title + folder id only — never paste note bodies.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -307,12 +307,8 @@ export const page_from_notes: BuiltinToolDef = {
         description: 'ids of the notes to combine, in the order they should appear in the page',
       },
       title: { type: 'string', description: 'title for the combined page (required)' },
-      parent_id: {
-        type: 'string',
-        format: 'uuid',
-        description:
-          'optional id of an existing page to nest the new page UNDER (makes it a sub-page); omit for top-level',
-      },
+      folder_id: FOLDER_ID_PROP,
+      parent_id: PARENT_ID_PROP,
       headings: {
         type: 'boolean',
         description:
@@ -361,7 +357,7 @@ export const page_from_notes: BuiltinToolDef = {
     }
     const notes = fetched as NonNullable<(typeof fetched)[number]>[];
 
-    const parentId = str(input.parent_id).trim();
+    const placement = placementOf(input);
     const withHeadings = input.headings === undefined ? true : input.headings === true;
     const tagsArg = strArr(input.tags);
     const tags = tagsArg.length ? tagsArg : [...new Set(notes.flatMap((n) => n.tags))];
@@ -383,7 +379,7 @@ export const page_from_notes: BuiltinToolDef = {
         doc,
         tags,
         ...(icon ? { icon } : {}),
-        ...(parentId ? { parentId } : {}),
+        ...placement,
       });
       // Each source note is now represented in the compiled page — stamp the
       // lineage edges (reversible retrieval down-weight; content-currency
@@ -412,7 +408,7 @@ export const page_from_notes: BuiltinToolDef = {
         source_note_ids: noteIds,
         note_count: notes.length,
         sources_superseded: supersededCount,
-        ...(parentId ? { parent_id: parentId } : {}),
+        ...placementOutput(placement),
       });
       void recordIngest({
         source: 'agent_tool',
@@ -423,7 +419,7 @@ export const page_from_notes: BuiltinToolDef = {
           via: 'page_from_notes_tool',
           sourceNoteIds: noteIds,
           noteCount: notes.length,
-          ...(parentId ? { parentId } : {}),
+          ...placement,
           tags,
           ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
         },
@@ -439,17 +435,13 @@ export const page_from_notes: BuiltinToolDef = {
           source_note_ids: noteIds,
           note_count: notes.length,
           sources_superseded: supersededCount,
-          ...(parentId ? { parent_id: parentId } : {}),
+          ...placementOutput(placement),
         },
       };
     } catch (err) {
       const msg = errorMessage(err);
-      if (parentId && msg.includes('parent page not found')) {
-        return {
-          ok: false,
-          error: `parent_id '${parentId}' is not one of your pages — pass the id of an existing page (see page_list / search_nodes).`,
-        };
-      }
+      const placed = placementError(msg, placement);
+      if (placed) return { ok: false, error: placed };
       return { ok: false, error: msg };
     }
   },
@@ -457,9 +449,10 @@ export const page_from_notes: BuiltinToolDef = {
 
 export const page_from_journal: BuiltinToolDef = {
   slug: 'page_from_journal',
+  preconditions: FOLDER_ID_PRE,
   name: 'Create page from journal entries',
   description:
-    "Compile SEVERAL Journal entries into ONE page — each entry's body is copied server-side and concatenated in the order given, byte-faithful at any size. The journal counterpart of `page_from_notes` — for 'compile this week's entries into a reflection doc'. You pass entry ids (from `journal_list`), NOT their text. Each entry lands under a date(+title) `## ` heading; `headings: false` concatenates raw. Pass `parent_id` to nest under an existing page. Tags default to the union of the source entries'. The originals are LEFT IN PLACE. Returns the new page's id + title; the body is never echoed back (verify with `page_get`). **When delegating, hand off entry ids + title + parent id only — never paste entry bodies.**",
+    "Compile SEVERAL Journal entries into ONE page — each entry's body is copied server-side and concatenated in the order given, byte-faithful at any size. The journal counterpart of `page_from_notes` — for 'compile this week's entries into a reflection doc'. You pass entry ids (from `journal_list`), NOT their text. Each entry lands under a date(+title) `## ` heading; `headings: false` concatenates raw. `folder_id` files it in a pages folder. Tags default to the union of the source entries'. The originals are LEFT IN PLACE. Returns the new page's id + title; the body is never echoed back (verify with `page_get`). **When delegating, hand off entry ids + title + folder id only — never paste entry bodies.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -471,12 +464,8 @@ export const page_from_journal: BuiltinToolDef = {
           'ids of the journal entries to compile, in the order they should appear (see journal_list)',
       },
       title: { type: 'string', description: 'title for the compiled page (required)' },
-      parent_id: {
-        type: 'string',
-        format: 'uuid',
-        description:
-          'optional id of an existing page to nest the new page UNDER; omit for top-level',
-      },
+      folder_id: FOLDER_ID_PROP,
+      parent_id: PARENT_ID_PROP,
       headings: {
         type: 'boolean',
         description:
@@ -519,7 +508,7 @@ export const page_from_journal: BuiltinToolDef = {
     }
     const entries = fetched as NonNullable<(typeof fetched)[number]>[];
 
-    const parentId = str(input.parent_id).trim();
+    const placement = placementOf(input);
     const withHeadings = input.headings === undefined ? true : input.headings === true;
     const tagsArg = strArr(input.tags);
     const tags = tagsArg.length ? tagsArg : [...new Set(entries.flatMap((e) => e.tags))];
@@ -545,14 +534,14 @@ export const page_from_journal: BuiltinToolDef = {
         doc,
         tags,
         ...(icon ? { icon } : {}),
-        ...(parentId ? { parentId } : {}),
+        ...placement,
       });
       ctx.step?.setOutput({
         id: page.id,
         title: page.title,
         source_journal_ids: journalIds,
         entry_count: entries.length,
-        ...(parentId ? { parent_id: parentId } : {}),
+        ...placementOutput(placement),
       });
       void recordIngest({
         source: 'agent_tool',
@@ -563,7 +552,7 @@ export const page_from_journal: BuiltinToolDef = {
           via: 'page_from_journal_tool',
           sourceJournalIds: journalIds,
           entryCount: entries.length,
-          ...(parentId ? { parentId } : {}),
+          ...placement,
           tags,
           ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
         },
@@ -578,17 +567,13 @@ export const page_from_journal: BuiltinToolDef = {
           tags: page.tags,
           source_journal_ids: journalIds,
           entry_count: entries.length,
-          ...(parentId ? { parent_id: parentId } : {}),
+          ...placementOutput(placement),
         },
       };
     } catch (err) {
       const msg = errorMessage(err);
-      if (parentId && msg.includes('parent page not found')) {
-        return {
-          ok: false,
-          error: `parent_id '${parentId}' is not one of your pages — pass the id of an existing page (see page_list / search_nodes).`,
-        };
-      }
+      const placed = placementError(msg, placement);
+      if (placed) return { ok: false, error: placed };
       return { ok: false, error: msg };
     }
   },

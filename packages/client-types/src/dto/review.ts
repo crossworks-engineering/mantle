@@ -53,6 +53,8 @@ export type AcceptPlace = {
  *  POST /api/admin/space/:id/accept. */
 export type AcceptRequest = {
   audience?: AccessLevel;
+  /** DEPRECATED (folder phase 7): pages do not nest; ignored. A page lands
+   *  like every tree kind (`folderId`). */
   parentPageId?: string | null;
   folderPath?: string | null;
   /** Where the item lands (folder plan phase 5): left out, in place; null,

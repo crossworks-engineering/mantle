@@ -36,7 +36,6 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
     cParent: randomUUID(),
     cSub: randomUUID(),
     cEmbed: randomUUID(),
-    // Audit A9: a public parent with an admin and a client sub-page.
     pubParent: randomUUID(),
     subAdmin: randomUUID(),
     subClient: randomUUID(),
@@ -179,26 +178,6 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
     expect(await audienceOf(ids.note)).toBe('admin');
   });
 
-  it("puts cascaded sub-pages at the parent's level, to team and to admin with it", async () => {
-    await a.setItemLevel(owner, ids.parent, 'public');
-    await s.setShareCascade(owner, ids.parent, true);
-    expect(await audienceOf(ids.sub)).toBe('public');
-    expect(await s.getActiveShareForNode(owner, ids.sub)).not.toBeNull();
-
-    // Parent to team: its link and the sub-page links go, the sub-page follows.
-    await a.setItemLevel(owner, ids.parent, 'team');
-    expect(await s.getActiveShareForNode(owner, ids.parent)).toBeNull();
-    expect(await s.getActiveShareForNode(owner, ids.sub)).toBeNull();
-    expect(await audienceOf(ids.sub)).toBe('team');
-
-    await a.setItemLevel(owner, ids.parent, 'public');
-    await s.setShareCascade(owner, ids.parent, true);
-    expect(await audienceOf(ids.sub)).toBe('public');
-    await a.setItemLevel(owner, ids.parent, 'admin');
-    expect(await audienceOf(ids.sub)).toBe('admin');
-    expect(await s.getActiveShareForNode(owner, ids.sub)).toBeNull();
-  });
-
   it('removing an open link puts the item at admin; a team item has no link to remove', async () => {
     await a.setItemLevel(owner, ids.team, 'team');
     expect(await s.getActiveShareForNode(owner, ids.team)).toBeNull();
@@ -207,17 +186,6 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
     const gone = await a.unshareItem(owner, open.share!.id);
     expect(gone).toEqual({ revoked: true, stillBelow: [] });
     expect(await audienceOf(ids.team)).toBe('admin');
-  });
-
-  it('a team parent has no link to cascade', async () => {
-    await a.setItemLevel(owner, ids.teamParent, 'team');
-    expect(await s.setShareCascade(owner, ids.teamParent, true)).toEqual({
-      ok: false,
-      count: 0,
-      skipped: [],
-    });
-    expect(await audienceOf(ids.teamSub)).toBe('admin');
-    expect(await s.getActiveShareForNode(owner, ids.teamSub)).toBeNull();
   });
 
   it('keeps a task admin whatever its link, and admin removes an old link', async () => {
@@ -256,10 +224,6 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
       await expect(s.createShare(owner, ids.cNote)).rejects.toMatchObject({
         reason: 'client-links-retired',
       });
-      // A sub-page asked to follow a client parent is refused the same way.
-      await expect(s.createShare(owner, ids.note, { preferred: 'client' })).rejects.toBeInstanceOf(
-        s.ClientLinkRetiredError,
-      );
       const set = await a.setItemLevel(owner, ids.cNote, 'client');
       expect(set.share).toBeNull();
       expect(await s.getActiveShareForNode(owner, ids.cNote)).toBeNull();
@@ -297,66 +261,12 @@ describe.skipIf(!URL)('levels drive links on Postgres', () => {
       expect(await audienceOf(ids.cOld)).toBe('client');
     });
 
-    it('an old cascading client parent shares no sub-page, and its re-syncs move nothing', async () => {
-      const old = await oldLink(ids.cParent, { cascade: true });
-      await m.db.execute(sqlTag`update nodes set audience = 'client' where id = ${ids.cSub}`);
-      await expect(s.setShareCascade(owner, ids.cParent, true)).rejects.toBeInstanceOf(
-        s.ClientLinkRetiredError,
-      );
-      expect(await s.getActiveShareForNode(owner, ids.cSub)).toBeNull();
-      expect(await s.applyShareMode(owner, old.id, 'public')).toBe(true);
-      expect(await audienceOf(ids.cParent)).toBe('client');
-      expect(await audienceOf(ids.cSub)).toBe('client');
-      // Cascade off: nothing moves either.
-      expect(await s.setShareCascade(owner, ids.cParent, false)).toMatchObject({ ok: true });
-      expect(await audienceOf(ids.cParent)).toBe('client');
-      expect(await audienceOf(ids.cSub)).toBe('client');
-      await s.revokeShareTree(owner, old.id);
-      expect(await audienceOf(ids.cParent)).toBe('client');
-      expect(await audienceOf(ids.cSub)).toBe('client');
-    });
-
     const settingsOf = async (shareId: string) =>
       (
         (await m.db.execute(
           sqlTag`select settings from shares where id = ${shareId}`,
         )) as unknown as { settings: Record<string, unknown> }[]
       )[0]!.settings;
-
-    it('refuses "sub-pages on" for a client parent before anything changes (audit T4)', async () => {
-      // Seeded with cascade OFF: the refusal must leave the flag where it was
-      // (with cascade already on, a missing refusal would go unseen).
-      const old = await oldLink(ids.cParent, { cascade: false });
-      // A client sub-page: without the refusal it would be skipped, nothing
-      // would throw, and the flag would be written.
-      await m.db.execute(sqlTag`update nodes set audience = 'client' where id = ${ids.cSub}`);
-      await expect(s.setShareCascade(owner, ids.cParent, true)).rejects.toBeInstanceOf(
-        s.ClientLinkRetiredError,
-      );
-      expect(await settingsOf(old.id)).toEqual({ cascade: false });
-      expect(await s.getActiveShareForNode(owner, ids.cSub)).toBeNull();
-      expect(await audienceOf(ids.cSub)).toBe('client');
-      await s.revokeShareTree(owner, old.id);
-    });
-
-    it('sub-pages on over a public parent keeps a client sub-page at client, no link (audit A9)', async () => {
-      await a.setItemLevel(owner, ids.pubParent, 'public');
-      await a.setItemLevel(owner, ids.subClient, 'client');
-      const lowered: import('./embed-closure').LoweredItem[] = [];
-      const res = await s.setShareCascade(owner, ids.pubParent, true, lowered);
-      expect(res).toEqual({ ok: true, count: 1, skipped: [ids.subClient] });
-      // The admin sub-page followed the parent; the client one kept its level.
-      expect(await audienceOf(ids.subAdmin)).toBe('public');
-      expect(await s.getActiveShareForNode(owner, ids.subAdmin)).not.toBeNull();
-      expect(await audienceOf(ids.subClient)).toBe('client');
-      expect(await s.getActiveShareForNode(owner, ids.subClient)).toBeNull();
-      expect((await s.getActiveShareForNode(owner, ids.pubParent))?.cascade).toBe(true);
-      // Off again: the admin sub-page's link goes, the client one is untouched.
-      const off = await s.setShareCascade(owner, ids.pubParent, false);
-      expect(off).toMatchObject({ ok: true, count: 1, skipped: [] });
-      expect(await audienceOf(ids.subClient)).toBe('client');
-      await a.setItemLevel(owner, ids.pubParent, 'admin');
-    });
 
     it('client to client keeps the item own old link: "Lower them too", "Raise them too", access_set (audit A12)', async () => {
       const old = await oldLink(ids.cFolder);

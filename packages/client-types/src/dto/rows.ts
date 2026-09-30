@@ -120,8 +120,10 @@ export type PageWidth = 'narrow' | 'wide';
 
 export type PageRow = {
   id: string;
-  /** Parent page id, or null for a top-level page. Drives the /pages tree
-   *  and the `childPage` card (Phase 4a sub-pages). */
+  /** DEPRECATED (folder phase 7): pages do not nest, so this is always
+   *  null. A page's place is its folder in the pages tree
+   *  (`GET /api/tree/pages`; `PageDetail.folderId`). Kept so a client from
+   *  before the tree, which built a hierarchy from it, still parses the row. */
   parentId: string | null;
   title: string;
   icon: string | null;
@@ -136,17 +138,14 @@ export type PageRow = {
 };
 
 /**
- * A row of the /pages LIST response (`GET /api/pages`): a `PageRow` plus where
- * it sits in the hierarchy. The list needs this per row because a search or tag
- * filter returns only the HITS, so the client cannot derive it from the rows it
- * holds: a hit's children and its parent are usually not among them.
+ * DEPRECATED (folder phase 7): `GET /api/pages` answers plain `PageRow`s.
+ * Pages do not nest, so nothing has sub-pages or a parent page any more; a
+ * client from before the tree reads `childCount` as 0 and `parentTitle` as
+ * null (both absent from the wire). Where a page sits is the pages tree's
+ * (`GET /api/tree/pages`).
  */
 export type PageListRow = PageRow & {
-  /** Direct sub-pages, counted across the whole hierarchy (not just this
-   *  response), so a search hit can offer the way into its sub-pages. */
   childCount: number;
-  /** The parent page's title, or null for a top-level page, so a hit can say
-   *  where it lives. */
   parentTitle: string | null;
 };
 

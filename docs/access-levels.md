@@ -41,9 +41,9 @@ what a scope reads.
   one decision covers the page and its embeds, so levels still go down only
   by an admin, by hand. When a page, drawing or note goes below admin, its
   **embed closure** goes down to the same level in the same transaction: a
-  page's images, file embeds, embedded drawings and child page cards, a
+  page's images, file embeds, embedded drawings and page link cards, a
   drawing's images (`draws.file_refs`), a note's images, file embeds and
-  drawings, followed transitively (a child page's images too;
+  drawings, followed transitively (a linked page's images too;
   `packages/content/src/embed-closure.ts`). So the level label tells the
   truth, and the item's link serves what it shows. Nothing is ever raised,
   an embed already at or below the level is left alone, and an embed that
@@ -51,9 +51,9 @@ what a scope reads.
   (`stillAbove`). Links are not embeds: a link mark or a mention chip names
   an item without showing it, and the item keeps its own level. Every setter
   does it and lists what went down in `alsoLowered: [{id, type, title,
-  from, to}]`: the Access control and `PATCH /api/access/nodes/:id`,
-  `access_set`, the share paths (`node_share`, `page_share` and its
-  sub-page cascade, `POST /api/shares`, the email link) and Accept at a
+from, to}]`: the Access control and `PATCH /api/access/nodes/:id`,
+  `access_set`, the share paths (`node_share`, `page_share`,
+  `POST /api/shares`, the email link) and Accept at a
   level (member-logins.md section 6; the Library items a member embedded go
   down with it). The older `lowered` field carries the same items at their
   new level.
@@ -279,20 +279,17 @@ outside a login reaches a team item.
   that an item at team stays at team; an open link keeps public
   and drops anything higher to public (so `node_share` on a team item puts
   it at public: to show an item to members only, set team instead). A
-  node a link lowers takes its embeds down with it (section 1).
-  Cascaded sub-pages take the parent's level, passed into every step, so a
-  sub-page goes straight to it and never passes through public on the way;
-  when a cascading link is revoked, a parent that went to admin takes its
-  sub-pages with it, and a parent that went to team takes them to team. So
+  node a link lowers takes its embeds down with it (section 1). So
   `node_share` / `page_share` and the email link never drift from the level.
+  (A page link used to share the page's sub-pages with it; pages do not
+  nest since folder phase 7, and that cascade is gone.)
 - **No client links** (client logins C1). Client means signed-in clients
   (a client login reads client items with its own login), never "anyone
   with the link": setting an item to client revokes its open link (an item
   already at client keeps its old link: client to client changes nothing),
-  and `createShare` refuses an item at client, or a sub-page asked to
-  follow a client parent, with `client-links-retired`
+  and `createShare` refuses an item at client with `client-links-retired`
   (`ClientLinkRetiredError`), so `node_share`, `page_share`,
-  `POST /api/shares`, the email link and `setShareCascade` all meet it. Its
+  `POST /api/shares` and the email link all meet it. Its
   message tells the model to ask the owner before making anything public
   (public puts the item on an open link and takes it out of client logins'
   view). `email_page` with `includeLink` on a client page is refused before

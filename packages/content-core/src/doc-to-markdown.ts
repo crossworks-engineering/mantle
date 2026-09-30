@@ -26,6 +26,8 @@
  * Pure + DB-free, like markdownToDoc, so it's safe to call from the tool runtime.
  */
 
+import { FOLDER_HERE } from './markdown-refs';
+
 type PMMark = { type?: string; attrs?: Record<string, unknown> };
 type PMNode = {
   type?: string;
@@ -277,6 +279,11 @@ function blockToMd(node: PMNode): string {
       // is the payload. The icon attr regenerates the same way.
       const title = (s(node.attrs?.title) || 'Untitled page').replace(/[[\]]/g, '\\$&');
       return `[${title}](page:${s(node.attrs?.pageId)})`;
+    }
+    case 'folderIndex': {
+      // Round-trip syntax: a standalone-line [Folder index](folder:<id>) link;
+      // `folder:here` is the page's own folder (folderId null).
+      return `[Folder index](folder:${s(node.attrs?.folderId) || FOLDER_HERE})`;
     }
     case 'blockMath': {
       const latex = s(node.attrs?.latex);

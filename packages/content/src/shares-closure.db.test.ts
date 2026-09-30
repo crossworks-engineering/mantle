@@ -5,8 +5,7 @@
  *  - an expired but unrevoked link does not block a new one (the one-link
  *    index is WHERE revoked_at IS NULL);
  *  - `setItemLevel` writes level and link as one: a link that fails leaves
- *    the level where it was;
- *  - a cascaded sub-page never passes through a level below its parent's.
+ *    the level where it was.
  * The pool is real; a thin wrapper around it records the levels written to
  * nodes and can refuse one link's insert (no DDL on shared tables: other DB
  * test files run beside this one). Seeds its own owner and rows and removes
@@ -189,25 +188,5 @@ describe.skipIf(!URL)('levels and links at the edges on Postgres', () => {
     }
     expect(await audienceOf(ids.refused)).toBe('admin');
     expect(await s.getActiveShareForNode(owner, ids.refused)).toBeNull();
-  });
-
-  it('a cascaded sub-page goes straight to the parent level, never through public', async () => {
-    // The team sub-page has a team-only link of its own: the cascade re-modes it.
-    await a.setItemLevel(owner, ids.teamSub, 'team');
-    await a.setItemLevel(owner, ids.parent, 'public');
-    h.audiences = [];
-    let written: string[];
-    try {
-      const res = await s.setShareCascade(owner, ids.parent, true);
-      expect(res).toEqual({ ok: true, count: 2, skipped: [] });
-    } finally {
-      written = h.audiences;
-      h.audiences = null;
-    }
-    // One write per sub-page, straight to public: the new link on `sub`, the
-    // re-moded one on `teamSub`. (Before client logins C1 this was a client parent.)
-    expect(written).toEqual(['public', 'public']);
-    expect(await audienceOf(ids.sub)).toBe('public');
-    expect(await audienceOf(ids.teamSub)).toBe('public');
   });
 });

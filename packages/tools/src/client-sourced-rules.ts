@@ -125,13 +125,13 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   set_timezone: free("the owner's time zone"),
 
   // ── Pages ────────────────────────────────────────────────────────────────
-  page_create: creates('parent_id'),
+  page_create: creates('folder_id', 'parent_id'),
   page_update: onNodes('id'),
   page_update_draft: onNodes('id'),
   page_commit: onNodes('id'),
   page_discard_draft: onNodes('id'),
   page_delete: onNodes('id'),
-  page_move: onNodes('id', 'parent_id'),
+  page_move: onNodes('id', 'folder_id', 'parent_id'),
   page_mention: onNodes('page_id'),
   page_block_append: onNodes('page_id'),
   page_block_insert_after: onNodes('page_id'),
@@ -143,9 +143,9 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   page_extract_section: creates('page_id'),
   page_split: creates('page_id'),
   page_from_file: { ...creates(), extraNodes: supersedes('file_id') },
-  page_from_journal: creates('parent_id'),
-  page_from_note: { ...creates('parent_id'), extraNodes: supersedes('note_id') },
-  page_from_notes: { ...creates('parent_id'), extraNodes: supersedes('note_ids') },
+  page_from_journal: creates('folder_id', 'parent_id'),
+  page_from_note: { ...creates('folder_id', 'parent_id'), extraNodes: supersedes('note_id') },
+  page_from_notes: { ...creates('folder_id', 'parent_id'), extraNodes: supersedes('note_ids') },
 
   // ── Notes ────────────────────────────────────────────────────────────────
   note_create: creates(),

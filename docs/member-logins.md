@@ -914,7 +914,7 @@ is a member login. Nobody hands a password around. The table is
     no link (the level is the truth; an expired or revoked team or client
     link leaves the item at its level).
   - Nothing makes a team link. Setting an item to team removes its open link
-    (a cascaded sub-page follows its parent to team). `PATCH /api/shares/:id`
+    `PATCH /api/shares/:id`
     with `mode: 'team'` answers 400 `{ error, reason: 'team-links-retired' }`,
     whose message says members use their own logins and to set the level to
     team instead; `node_share` and `page_share` refuse `mode: 'team'` with
@@ -1472,8 +1472,8 @@ the caller's OWN private items (read in the acting login's space, as
 private row is an `AdminPrivateListRow`: the `private` key holds the space
 row and marks it, since the item is read and written through
 `/api/admin/space`, never the brain route. Private items have no tags and
-no parent, so a tag filter, a sub-page level or a files folder other than
-the root lists none; in the pages tree they sit at the top level. Tests:
+no folder, so a tag filter or a folder other than the root lists none; in
+the pages tree they sit at the top level. Tests:
 `server/web/lib/admin-private-rows.test.ts`.
 
 ## 14. Client logins, for members and admins

@@ -8,11 +8,11 @@ that reader may see.
 
 Status: the tree serves **Files** (phase 1), the flat kinds **notes, draw,
 tables, formulas, tasks, events, contacts and secrets** (phase 2), **Apps**
-(phase 3) and **Recall** maps. Folders can be shared with the team or
-clients (phase 4), and members file drafts in place (phase 5). Pages wait
-for Recall v2 to retire v1 (pages stop nesting, phase 7). A client offers
-the tree for the kinds the shell's `treeKinds` names and keeps its older
-screen for the rest.
+(phase 3), **Recall** maps and, since phase 7, **Pages** (they stopped
+nesting; see "Pages" below). Folders can be shared with the team or
+clients (phase 4), and members file drafts in place (phase 5). A client
+offers the tree for the kinds the shell's `treeKinds` names and keeps its
+older screen for the rest.
 
 ## The model
 
@@ -242,7 +242,7 @@ total }` and nothing is written; the same call with `confirm: true` goes
   guards every Files write outside the tree routes
   (`packages/content/src/tree/files-guard.ts`): the Files screen's move and
   copy (`PATCH /api/files/files/:id { move, confirm }`, `POST ... { copy_to,
-  confirm }`, and the same on `/api/files/folders/:id`), a new file or an
+confirm }`, and the same on `/api/files/folders/:id`), a new file or an
   upload into a shared folder (`POST /api/files/files`, `confirm` in the JSON
   body or as a form field before the file), and the agent tools `file_move`,
   `file_copy`, `folder_move`, `folder_copy`, `file_create` and
@@ -260,7 +260,7 @@ total }` and nothing is written; the same call with `confirm: true` goes
   link sets an item back to admin); `access_get` returns `sharedVia` and
   `access_set` warns that the item is still read at the folder's share.
   The same for an item read through what embeds it: `readThrough { level,
-  via }` (`readThroughEmbeds`) names the nearest items that embed it and
+via }` (`readThroughEmbeds`) names the nearest items that embed it and
   carry a share, with title and kind, and is a floor too; the note, file,
   folder, drawing, app, formula and table rows carry `embedded` next to
   `inherited`, and badges count it.
@@ -366,8 +366,9 @@ A member files its drafts in the brain's tree and keeps private folders there.
   may pick another folder (`folderId`; null = the top level): the author's
   folders still go below the pick. The rest of the bundle lands in place. The
   preview names the default (`AcceptPreview.place`, with `share`: what a
-  shared folder there makes it read at; `?folderId=` previews a pick). Pages
-  keep their own placement until phase 7.
+  shared folder there makes it read at; `?folderId=` previews a pick). A
+  page lands like a note (phase 7); the request's old `parentPageId` is
+  ignored.
 - **Accept asks before a folder share applies.** In a shared folder an item
   is read at the more open of its level and the folder's share. When the
   item, or anything of its bundle, would be read above the level the admin
@@ -440,10 +441,56 @@ in once, the first time its notes tree is read. It is a path change only:
 digests are found by their `conversation-digest` tag, agent id and embedding,
 never by path.
 
+## Pages (phase 7)
+
+Pages live in folders exactly like notes do, and **a page is never the
+parent of another page** (Jason, 2026-09-30). A page's place is its
+folder's path under `pages`; the folder rows, the three levels, the shares
+and their inheritance (0204, 0207), the embed rule (0208) and the confirm
+diff all apply unchanged. The old sub-page model (`parent_id` on a page, a
+path of `pages.<id>.<id>`) is gone:
+
+- **Migration 0210** (`0210_pages_in_folders.sql`, idempotent) files the old
+  hierarchy: every page that had child pages becomes a page NEXT TO a folder
+  of its own name, its former children move into that folder, one level of
+  the old hierarchy at a time (a child with children of its own makes its
+  folder inside its parent's), cut to three levels (past that, children
+  land in the deepest folder allowed, next to their parent). Folder slugs
+  follow `folderSlugOf` (`mantle_folder_label` in SQL, pinned to the
+  TypeScript by `pages-in-folders.db.test.ts`); a taken slug gets `-2`. Every
+  page's `parent_id` that named a page is cleared (it was ON DELETE
+  CASCADE), and any page at a path with no folder row moves to the deepest
+  folder above it. Nothing is lost: ids, documents, tags, levels and links
+  stay. A member's nested draft becomes the member's own folder the same
+  way.
+- **A page may reference another page** without that page becoming its
+  child: the `childPage` block is a **page link card** now (`[Title](page:<id>)`
+  on its own line), still an embed edge (0208), so a shared page opens the
+  page it links to while it is shared. `page_split` and
+  `page_extract_section` (and the editor's "Extract to a new page") make
+  pages next to the source, in the same folder, and leave link cards behind.
+- **No index pages.** A folder is just a folder. A page that wants to list
+  its folder's pages uses the **Folder index** block
+  (`[Folder index](folder:<folder-id>)`, or `folder:here` for the page's own
+  folder): it lists the folder's pages live, title only, as the reader sees
+  them (the owner, member or client tree read), never stored. An open link
+  renders it as an inert label.
+- **Where a page sits.** `PageDetail.folderId` names the folder (null at
+  the top level); `PageRow.parentId` is always null and stays on the wire
+  for older clients, as do `childCount` and `parentTitle` (absent),
+  `AccessNodeView.childCount` (0) and a link's `cascade` (false). `POST
+/api/pages` takes `folderId`; `POST /api/pages/:id/move` takes `folderId`
+  (null = top level) and the confirm shape, and is the tree's item move for
+  one page. The deprecated `parentId` on both means "the same folder as that
+  page". `page_create` and the `page_from_*` tools take `folder_id`;
+  `page_move` takes `folder_id` or `to_top_level` with `confirm`; the tree
+  tools serve `kind: 'pages'` and sit in the `pages` tool group.
+- **Retired with the nesting**: the "Share sub-pages" cascade on a page
+  link (`setShareCascade`, `POST /api/shares/cascade`, `page_share`'s
+  `children`): a set of pages is shared by sharing its folder.
+
 ## What comes next
 
-Pages stop nesting once Recall v2 has retired v1 (phase 7): each page with
-children becomes a folder, and a "Folder index" block lists a folder's
-pages. Still open from the plan, each waiting on a decision: the phone's
+Still open from the plan, each waiting on a decision: the phone's
 read-only tree, pins and Recent / Most used for members and clients, and
 the task board filtered by folder.

@@ -26,7 +26,8 @@ export type AccessLinkView = {
   token: string;
   path: string;
   mode: ShareMode;
-  /** Page links only: sub-pages are shared with it. */
+  /** DEPRECATED (folder phase 7): a page link no longer shares sub-pages
+   *  (pages do not nest); always false. Kept for older clients. */
   cascade: boolean;
 };
 
@@ -52,7 +53,8 @@ export type AccessNodeView = {
    *  contents, which keep their own levels. */
   closure: AccessItemView[];
   share: AccessLinkView | null;
-  /** Descendant pages (pages only; 0 otherwise). */
+  /** DEPRECATED (folder phase 7): pages do not nest, so always 0. Kept for
+   *  older clients, which showed "Include sub-pages" above 0. */
   childCount: number;
   /** Only workspace kinds go below admin (tasks, events, … are admin only). */
   canLower: boolean;

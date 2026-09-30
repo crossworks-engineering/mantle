@@ -4,8 +4,7 @@ import { getOwnerOr401 } from '@/lib/auth';
 import { TeamLinkRetiredError, unshareItem } from '@mantle/content';
 import { applyShareMode } from '@/lib/shares';
 
-/** DELETE /api/shares/[id] → revoke the link (owner-scoped). If the share
- *  cascades to its subtree, the descendant links are revoked too. Removing
+/** DELETE /api/shares/[id] → revoke the link (owner-scoped). Removing
  *  an open link puts the item at admin with the same closure rule as the
  *  Access control: `stillBelow` lists what it embeds that is still below
  *  admin (raise it with PATCH /api/access/nodes/:id { audience: 'admin',

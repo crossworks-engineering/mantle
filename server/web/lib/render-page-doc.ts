@@ -226,9 +226,17 @@ function renderBlock(node: PMNode, opts: RenderOptions): string {
       const idAttr = id ? ` id="${escAttr(id)}"` : '';
       return `<div class="diagram" data-diagram-source${idAttr}><span class="diagram-label">Diagram</span><pre><code>${esc(source)}</code></pre></div>`;
     }
+    case 'folderIndex': {
+      // A live list of a folder's pages for the reader (folder phase 7). An
+      // open link has no reader to list for: an inert label.
+      const id = str(node.attrs?.id);
+      const idAttr = id ? ` id="${escAttr(id)}"` : '';
+      return `<div class="folder-index" data-folder-index${idAttr}><span class="folder-index-label">Folder index</span></div>`;
+    }
     case 'childPage': {
-      // Sub-pages aren't part of a shared subtree (Phase 4a) — render the card
-      // as an inert label, not a link into a private child page. The block id
+      // The linked page is not part of what the link shares (Phase 4a; a
+      // page link card, never a child since folder phase 7) — render the
+      // card as an inert label, not a link into a private page. The block id
       // is emitted so the outline can anchor-scroll to it.
       const title = esc(str(node.attrs?.title) || 'Untitled page');
       const icon = str(node.attrs?.icon);

@@ -32,6 +32,7 @@ import { reviewErrorResponse } from '@/lib/member-review';
 
 const Body = z.object({
   audience: z.enum(VIEWER_LEVELS).optional(),
+  /** DEPRECATED (folder phase 7): pages do not nest; accepted and ignored. */
   parentPageId: z.string().uuid().nullable().optional(),
   folderPath: z.string().max(500).nullable().optional(),
   folderId: z.string().uuid().nullable().optional(),

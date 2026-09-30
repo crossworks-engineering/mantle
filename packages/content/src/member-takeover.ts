@@ -68,7 +68,6 @@ import { recordClientQuotaRefusal } from './client-quota-log';
 import { savedState } from './member-space';
 import { draftAbsFor, removeTableFile } from './table-storage';
 import { dedupeFilename } from './dedupe-filename';
-import { childPagePath } from './page-path';
 import { PAGES_ROOT_LABEL } from './pages/shared';
 import { NOTES_ROOT_LABEL } from './notes';
 import { DRAWS_ROOT_LABEL } from './draws';
@@ -99,10 +98,10 @@ const ROOTS: Partial<Record<SpaceItemKind, { label: string; title: string }>> = 
 };
 
 /**
- * Re-own `items` (in bundle order: a parent page before its children) from
- * personal space `from` to personal space `to`, in `tx`. Same node ids. A
- * page keeps its parent only when the parent moves too (else it goes to the
- * top); a file gets a name `to` does not hold yet; a table's workbook is
+ * Re-own `items` from personal space `from` to personal space `to`, in `tx`.
+ * Same node ids. A page and a note keep their path (a brain folder's path
+ * means the same in every space; folder phase 7: pages do not nest); a file
+ * gets a name `to` does not hold yet; a table's workbook is
  * copied (VACUUM INTO) and a file's bytes are copied into `to` now, the old
  * ones removed after the commit (`hooks`). Leftover drafts are discarded:
  * what moves is the SAVED version. Rows only: nothing is announced.
@@ -133,7 +132,6 @@ export async function moveBetweenSpaces(
       });
   }
   let names: Set<string> | null = null;
-  const newPagePath = new Map<string, string>();
   const now = new Date();
   for (const b of items) {
     const [n] = await tx
@@ -144,21 +142,16 @@ export async function moveBetweenSpaces(
     if (!n) continue;
     const common = { ownerId: to, updatedAt: now };
     switch (b.type) {
-      case 'page': {
-        const inside = n.parentId ? newPagePath.get(n.parentId) : undefined;
-        const parentId = inside !== undefined ? n.parentId : null;
-        const p = inside !== undefined ? childPagePath(inside, b.id) : PAGES_ROOT_LABEL;
-        newPagePath.set(b.id, p);
+      case 'page':
         await tx
           .update(nodes)
-          .set({ ...common, parentId, path: sql`${p}::ltree` })
+          .set({ ...common, parentId: null })
           .where(eq(nodes.id, b.id));
         await tx
           .update(pages)
           .set({ draftDoc: null, draftUpdatedAt: null })
           .where(eq(pages.nodeId, b.id));
         break;
-      }
       case 'note':
         await tx.update(nodes).set(common).where(eq(nodes.id, b.id));
         break;

@@ -4,8 +4,7 @@
  * folders only under the files root); these are thin, type-agnostic wrappers
  * so the assistant can mint/revoke viewable links for ANY shareable item —
  * notes, tasks, events, files, apps, tables, folders — not just pages.
- * `page_share`/`page_unshare` remain the page-specific pair (they add the
- * sub-page cascade).
+ * `page_share`/`page_unshare` remain the page-specific pair.
  */
 import {
   createShare,
@@ -24,7 +23,7 @@ const node_share: BuiltinToolDef = {
   slug: 'node_share',
   name: 'Share an item',
   description:
-    'Create (or fetch) a read-only link to any shareable item — a note, task, event, file, app, table, or folder under files — and return its URL. Idempotent — one active link per item. The link is **public**: anyone with it can view, no login, and the item goes to public level, its embeds with it (`alsoLowered`). No team or client links: members and clients sign in, so for them set the level with `access_set` instead (a client item is refused a link). Publishes brain content outward-facing. For a PAGE prefer `page_share` (same behavior, plus the sub-page cascade); to turn a link off use `node_unshare`.',
+    'Create (or fetch) a read-only link to any shareable item — a note, task, event, file, app, table, or folder under files — and return its URL. Idempotent — one active link per item. The link is **public**: anyone with it can view, no login, and the item goes to public level, its embeds with it (`alsoLowered`). No team or client links: members and clients sign in, so for them set the level with `access_set` instead (a client item is refused a link). Publishes brain content outward-facing. For a PAGE prefer `page_share` (same behavior); to turn a link off use `node_unshare`.',
   // Publishes brain content outward-facing — gated, same as page_share.
   requiresConfirm: true,
   inputSchema: {
@@ -127,7 +126,7 @@ const node_unshare: BuiltinToolDef = {
   slug: 'node_unshare',
   name: 'Stop sharing an item',
   description:
-    "Revoke an item's share link — the existing URL stops working immediately. No-op (still succeeds) if it wasn't shared. Works for any shareable item; for pages `page_unshare` also revokes cascaded sub-page links.",
+    "Revoke an item's share link — the existing URL stops working immediately. No-op (still succeeds) if it wasn't shared. Works for any shareable item; `page_unshare` is the same for pages.",
   inputSchema: {
     type: 'object',
     properties: {

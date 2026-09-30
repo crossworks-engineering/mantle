@@ -12,9 +12,9 @@
  * chain still goes below the pick. Either way the result nests at most
  * TREE_MAX_DEPTH folders deep (the chain is cut to fit).
  *
- * Pages have no tree yet (phase 7): they keep their own Accept placement.
- * Files: a member's file paths mirror the brain's under `space_files`
- * (spaceFilesPath, @mantle/db); the brain's are `files...`.
+ * Pages joined the tree in phase 7 (they do not nest any more), so a page
+ * lands like a note. Files: a member's file paths mirror the brain's under
+ * `space_files` (spaceFilesPath, @mantle/db); the brain's are `files...`.
  */
 import { sql } from 'drizzle-orm';
 import { db, spaceFilesPath } from '@mantle/db';
@@ -30,9 +30,12 @@ import { treePathOf } from './tree/member-tree';
 
 type Via = Pick<typeof db, 'execute'>;
 
-/** The tree kind of a member item type; null for a page (no tree yet). */
+/** The tree kind of a member item type; null for a type the tree does not
+ *  hold. */
 export function treeKindOfType(type: string): TreeKind | null {
   switch (type) {
+    case 'page':
+      return 'pages';
     case 'note':
       return 'notes';
     case 'draw':
@@ -217,8 +220,8 @@ export type AcceptPlace = {
 };
 
 /** Where an Accept puts the item: in place (`pick` undefined), the top
- *  level (null) or a brain folder of its kind. Null when it has no tree (a
- *  page) or the pick is not such a folder. */
+ *  level (null) or a brain folder of its kind. Null when the type has no
+ *  tree or the pick is not such a folder. */
 export async function acceptPlace(
   via: Via,
   brainId: string,

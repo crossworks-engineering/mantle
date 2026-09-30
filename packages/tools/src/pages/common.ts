@@ -6,6 +6,7 @@
  */
 
 import type { ToolPrecondition } from '../types';
+import { str } from '../coerce';
 
 // Shared referential preconditions (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING page the owner holds.
@@ -23,6 +24,11 @@ export const FILE_ID_PRE: readonly ToolPrecondition[] = [
 
 export const NOTE_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'note_id', nodeType: 'note', lookup: 'note_list / search_nodes' },
+];
+
+/** A pages folder to file a new page in (folder phase 7): a `branch` row. */
+export const FOLDER_ID_PRE: readonly ToolPrecondition[] = [
+  { kind: 'node_exists', param: 'folder_id', nodeType: 'branch', lookup: 'tree_folders' },
 ];
 
 // Body check with one reason: the write looks fine, the page renders broken,
@@ -72,3 +78,58 @@ export const draftConflict = (pageId: string): { ok: false; error: string } => (
     `(or page_get for one block), re-apply your edit against the current content, ` +
     `then re-issue.`,
 });
+
+/** Where a new page goes (folder phase 7): a folder of the pages tree. */
+export const FOLDER_ID_PROP = {
+  type: 'string',
+  format: 'uuid',
+  description:
+    'the pages folder to file the new page in, from `tree_folders` (kind pages); omit for the top level',
+} as const;
+
+/** The pre-tree way to place a page, kept so older callers still land near
+ *  where they meant to: pages do not nest any more. */
+export const PARENT_ID_PROP = {
+  type: 'string',
+  format: 'uuid',
+  description:
+    'DEPRECATED, pages do not nest: a page id here files the new page in the SAME FOLDER as that page. Prefer `folder_id`.',
+} as const;
+
+/** The placement a create-a-page tool passes to `createPage`: `folder_id`
+ *  wins over the deprecated `parent_id`; neither means the top level. */
+export function placementOf(input: Record<string, unknown>): {
+  folderId?: string;
+  parentId?: string;
+} {
+  const folderId = str(input.folder_id).trim();
+  if (folderId) return { folderId };
+  const parentId = str(input.parent_id).trim();
+  return parentId ? { parentId } : {};
+}
+
+/** The placement as a tool echoes it back (only what was given). */
+export function placementOutput(placement: { folderId?: string; parentId?: string }): {
+  folder_id?: string;
+  parent_id?: string;
+} {
+  return {
+    ...(placement.folderId ? { folder_id: placement.folderId } : {}),
+    ...(placement.parentId ? { parent_id: placement.parentId } : {}),
+  };
+}
+
+/** The teaching error for a placement `createPage` refused
+ *  (PageFolderNotFoundError, ParentPageNotFoundError), or null. */
+export function placementError(
+  message: string,
+  placement: { folderId?: string; parentId?: string },
+): string | null {
+  if (placement.folderId && message.includes('folder not found')) {
+    return `folder_id '${placement.folderId}' is not a folder of your pages — pass the id of a pages folder (see tree_folders with kind pages), or omit it for the top level.`;
+  }
+  if (placement.parentId && message.includes('parent page not found')) {
+    return `parent_id '${placement.parentId}' is not one of your pages — pass the id of an existing page (see page_list / search_nodes), or better a folder_id (tree_folders, kind pages).`;
+  }
+  return null;
+}

@@ -26,18 +26,24 @@ import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import {
   FILE_ID_PRE,
+  FOLDER_ID_PRE,
+  FOLDER_ID_PROP,
   MARKDOWN_HINT,
   MARKDOWN_REFS_PRE,
   PAGE_ID_PRE,
   PAGE_NODE_ID_PRE,
+  PARENT_ID_PROP,
+  placementError,
+  placementOf,
+  placementOutput,
 } from './common';
 
 export const page_create: BuiltinToolDef = {
   slug: 'page_create',
-  preconditions: MARKDOWN_REFS_PRE,
+  preconditions: [...MARKDOWN_REFS_PRE, ...FOLDER_ID_PRE],
   name: 'Create a page',
   description:
-    "Create a rich document (a `page` node under /pages) in the user's Mantle from content YOU compose. The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. To make a SUB-PAGE, pass `parent_id` (an existing page's id); omit for a top-level page. Prefer this over `note_create` when the content is long-form or structured (a plan, a doc, a comparison); use `note_create` for quick plain-text captures. **For importing an existing file use `page_from_file` instead — re-emitting the file body in `markdown` truncates silently above ~6 K output tokens. When the content already lives in a NOTE, use `page_from_note` — it copies the body server-side.**",
+    "Create a rich document (a `page` node under /pages) in the user's Mantle from content YOU compose. The page is indexed into the brain — summary, embedding, facts, entities — so it becomes searchable and recallable. `folder_id` files it in a pages folder (`tree_folders`, kind pages); omit for the top level. Prefer this over `note_create` when the content is long-form or structured (a plan, a doc, a comparison); use `note_create` for quick plain-text captures. **For importing an existing file use `page_from_file` instead — re-emitting the file body in `markdown` truncates silently above ~6 K output tokens. When the content already lives in a NOTE, use `page_from_note` — it copies the body server-side.**",
   inputSchema: {
     type: 'object',
     properties: {
@@ -49,12 +55,8 @@ export const page_create: BuiltinToolDef = {
         description: "Labels for organisation and filtering, e.g. ['work'].",
       },
       icon: { type: 'string', description: 'optional emoji icon, e.g. "📄"' },
-      parent_id: {
-        type: 'string',
-        format: 'uuid',
-        description:
-          'optional — id of an existing page to nest this new page UNDER (creates a sub-page). Omit for a top-level page.',
-      },
+      folder_id: FOLDER_ID_PROP,
+      parent_id: PARENT_ID_PROP,
     },
     required: ['title'],
   },
@@ -64,7 +66,7 @@ export const page_create: BuiltinToolDef = {
     const markdown = str(input.markdown);
     const tags = strArr(input.tags);
     const icon = str(input.icon).trim();
-    const parentId = str(input.parent_id).trim();
+    const placement = placementOf(input);
     try {
       const doc = markdownToDoc(markdown);
       const page = await createPage(ctx.ownerId, {
@@ -72,7 +74,7 @@ export const page_create: BuiltinToolDef = {
         doc,
         tags,
         ...(icon ? { icon } : {}),
-        ...(parentId ? { parentId } : {}),
+        ...placement,
       });
       ctx.step?.setOutput({ id: page.id, title: page.title });
       void recordIngest({
@@ -83,7 +85,7 @@ export const page_create: BuiltinToolDef = {
         payload: {
           via: 'page_create_tool',
           tags,
-          ...(parentId ? { parentId } : {}),
+          ...placement,
           ...(ctx.agent ? { invokingAgent: ctx.agent.slug } : {}),
         },
         snippet: markdown,
@@ -95,19 +97,14 @@ export const page_create: BuiltinToolDef = {
           url: nodeUrl(page.id),
           title: page.title,
           tags: page.tags,
-          ...(parentId ? { parent_id: parentId } : {}),
+          ...placementOutput(placement),
         },
       };
     } catch (err) {
       const msg = errorMessage(err);
-      // createPage throws ParentPageNotFoundError ("…parent page not found") when
-      // parent_id isn't one of the owner's pages — surface that plainly.
-      if (parentId && msg.includes('parent page not found')) {
-        return {
-          ok: false,
-          error: `parent_id '${parentId}' is not one of your pages — pass the id of an existing page (see page_list / search_nodes).`,
-        };
-      }
+      // createPage refuses a placement it cannot resolve: say so plainly.
+      const placed = placementError(msg, placement);
+      if (placed) return { ok: false, error: placed };
       return { ok: false, error: msg };
     }
   },

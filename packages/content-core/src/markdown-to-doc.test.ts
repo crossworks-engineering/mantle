@@ -160,6 +160,15 @@ describe('markdownToDoc', () => {
       pageId: 'p-9',
       title: 'Sub plan',
     });
+    // The Folder index block (folder phase 7): an id, or `here` for the
+    // page's own folder.
+    expect(find('[Folder index](folder:f-3)', 'folderIndex')?.attrs).toMatchObject({
+      folderId: 'f-3',
+    });
+    expect(find('[Folder index](folder:here)', 'folderIndex')?.attrs).toMatchObject({
+      folderId: null,
+    });
+    expect(find('see [x](folder:f-3) here', 'folderIndex')).toBeUndefined();
     // Inline (mixed with prose) media:/page: links stay plain links.
     expect(find('see [spec.pdf](media:f-2) here', 'fileEmbed')).toBeUndefined();
     // Ordinary links are untouched.

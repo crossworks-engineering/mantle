@@ -85,9 +85,6 @@ vi.mock('@/lib/pages', async (importOriginal) => ({
   listPages: vi.fn(async () => [brainPage('new', 20), brainPage('old', 10)]),
   countPages: vi.fn(async () => 2),
   listPageTags: vi.fn(async () => []),
-  withPagePlacement: vi.fn(async (_o: string, rows: Array<{ id: string }>) =>
-    rows.map((r) => ({ ...r, childCount: 0, parentTitle: null })),
-  ),
 }));
 
 vi.mock('@/lib/notes', async (importOriginal) => ({

@@ -4,6 +4,56 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.364: folder system phase 7, pages in folders
+
+Pages join the item tree like notes, and a page is never the parent of
+another page (Jason, 2026-09-30: pages live in folders exactly like notes;
+no page children; no index pages; a page may reference another page
+without it becoming a child; nothing is lost). Plan: "PLAN: Universal
+folder system", section 10; docs/folder-tree.md, "Pages".
+
+- **Pages are a live tree kind.** `GET /api/tree/pages` and the member and
+  client trees serve them; folders, three levels, shares and their
+  inheritance, embeds and the confirm diff apply as for notes. The tree
+  tools take `kind: 'pages'` and sit in the `pages` tool group; a private
+  page shows at the root of the owner's tree.
+- **Migration 0210** (`0210_pages_in_folders.sql`, idempotent) files the
+  old hierarchy: every page that had child pages becomes a page next to a
+  folder of its name, its former children move into that folder (a child
+  with children makes its folder inside its parent's), cut to three levels;
+  every page's `parent_id` that named a page is cleared (it was ON DELETE
+  CASCADE); a stray `pages.<id>` path lands at the deepest folder above it.
+  Folder slugs follow `folderSlugOf` (`mantle_folder_label` in SQL, pinned
+  to the TypeScript by a test); a taken slug gets `-2`. A member's nested
+  draft becomes the member's own folder.
+- **Creating and moving.** `createPage` takes `folderId` (the deprecated
+  `parentId` means "the same folder as that page"); `POST /api/pages` takes
+  `folderId`; `POST /api/pages/:id/move` files a page in a folder through
+  the tree's item move, with the 409 `visibility` confirm. `page_create`
+  and the `page_from_*` tools take `folder_id`; `page_move` takes
+  `folder_id` or `to_top_level` and `confirm`. Accept lands a page like a
+  note (`folderId`; `parentPageId` is ignored). `page_split` and
+  `page_extract_section` (`extractSectionToPage`) make pages next to the
+  source, in the same folder.
+- **The page link card.** The `childPage` block (`[Title](page:<id>)` on its
+  own line) is a link to another page, still an embed edge (0208), never a
+  parent-child bond. The public renderer keeps its inert label.
+- **The Folder index block** (`folderIndex`; `[Folder index](folder:<id>)`
+  or `folder:here` on its own line): a live, title-only list of a folder's
+  pages as the reader sees them (the owner's, member's or client's tree
+  read); the open link renders an inert label; it indexes as nothing.
+- **Gone with the nesting**: `movePage`, `listChildPages`,
+  `countPageDescendants`, `withPagePlacement` (list rows are plain
+  `PageRow`s; `childCount` and `parentTitle` are absent), the "Share
+  sub-pages" cascade (`setShareCascade`, `listPageDescendantIds`,
+  `POST /api/shares/cascade`, `page_share`'s `children`, the `preferred`
+  level on `createShare`): a set of pages is shared by sharing its folder.
+  Kept on the wire for older clients: `PageRow.parentId` (null),
+  `AccessNodeView.childCount` (0), a link's `cascade` (false),
+  `GET /api/pages/:id/descendant-count` (`{ count: 0 }`).
+- `PageDetail.folderId` names the folder a page sits in (null at the top
+  level; null too when the reader may not read the folder row).
+
 ## 0.232.363: Recall R5, page-built maps retired
 
 Recall v1 compiled a map from a page tree whose root carried the `recall`
@@ -336,10 +386,11 @@ UI 7 of 10; no Blockers). Migrations 0195, 0196, 0197.
 - **An item accepted from a client counts as client-written** for the
   lowering guard, even after the client login is deleted.
 - Migration 0194. See docs/client-logins.md section 9.
+
 ## 0.232.341: memory benchmark experiments
 
 - **Benchmark runs can change retrieval limits.** `bench:memory
-  --memory-config='{"chunk_limit":20}'` runs with the retrieval limits a
+--memory-config='{"chunk_limit":20}'` runs with the retrieval limits a
   real brain's agent carries, so a setting that scores better can be applied
   to a brain as it is.
 - **The benchmark's answer prompt may infer.** The default answer prompt now
@@ -518,6 +569,7 @@ docs/client-logins.md.
 - **Tests (B6, B7, B8, B18, B28).** Real byte routes driven with a client
   token, the thumbnail branch, row-lock races, the code queue end to end,
   and two flaky or order-dependent tests fixed.
+
 ## 0.232.332: memory dates from the document, and faster extraction
 
 - **Facts start on their document's date.** A fact that is not an event
@@ -562,7 +614,7 @@ docs/client-logins.md.
 ## 0.232.330: memory benchmarks, and entities no longer lost to a race
 
 - **A benchmark harness for the whole memory path.** `pnpm -C server/api
-  bench:memory` runs LoCoMo and LongMemEval through the real brain: each
+bench:memory` runs LoCoMo and LongMemEval through the real brain: each
   conversation goes into its own scratch database as dated notes, the
   shipped extractor processes them, the responder's retrieval answers each
   question, and the published judges grade it. Manual runs only, with a cost
@@ -602,9 +654,9 @@ now (C2, C2b), so the old links retire (decision 4 A).
   (`linkLevels`).
 - **Shared links** (Team admin) lists the retired client links, without a
   token: title, level now, views, last view, retired date.
-- From C2b: `GET /api/auth/client-code` fails closed (codes off, never a
-  500) when the sender cannot be read; the code routes join the public
+- From C2b: `GET /api/auth/client-code` fails closed (codes off, never a 500) when the sender cannot be read; the code routes join the public
   session sweep.
+
 ## 0.232.327: keyword search finds the rare words in a chat question
 
 - **The keyword half of hybrid search works on real questions.** It used to
@@ -627,8 +679,8 @@ now (C2, C2b), so the old links retire (decision 4 A).
   shows only when the brain sends codes; otherwise the page says to ask the
   admin for a sign-in link. /login has a quiet line for clients. Team admin
   > Clients has a "Sign-in codes by email" card: pick the sender (or none),
-  see the sent folders kept out of the brain, and a banner when the daily
-  limit is reached.
+  > see the sent folders kept out of the brain, and a banner when the daily
+  > limit is reached.
 
 ## 0.232.325: client email codes, asking again
 
@@ -840,7 +892,7 @@ with an open link.
   old client link off keeps the item at client. `/api/shares/all` shows each
   link's level. Contract type `ShareRetiredReason`, `SharedLinkRow`.
 - **"What clients see"** (`GET /api/access/client-report`, `POST
-  /api/access/client-report/ack`, table `client_report_acks`): every item
+/api/access/client-report/ack`, table `client_report_acks`): every item
   at client level, its old link and views, the addresses a page was
   emailed to, and the team or admin items it names. Adding a client (C2)
   waits until an admin acknowledges it. Contract types `ClientReport*`.
@@ -849,6 +901,7 @@ with an open link.
   client items. Accept of a client-authored item defaults to team; client
   or public needs `lowerConfirmed` (409 `confirm-level`). Give back after
   Take over checks the item at the author's level.
+
 ## 0.232.317: client v0.6.169
 
 - Pairs the client at jackdaw v0.6.169, the client half of 0.232.316: a live
@@ -1352,6 +1405,7 @@ use it too: one image to host instead of two, and `MC_IMAGE_TAG` is gone
 (`MINIO_IMAGE_TAG` still overrides the tag). Boxes recreate the minio container
 once on their next update; the data is a bind mount and stays put. This is a
 stopgap: replacing MinIO with a maintained S3-compatible store is planned.
+
 ## Unreleased: a mini app appears when it's ready, behind the host's loader (branch feat/app-nav-folders)
 
 An app used to announce `ready` in the same tick as `root.render()`, before
@@ -1487,7 +1541,6 @@ browser-session export, some account-flag risk, goes stale on YouTube's
 schedule. docs/video-ingest.md ("YouTube and the bot check") carries the
 export recipe and the trade-offs.
 
-
 ## Unreleased — client pair moves to jackdaw v0.6.5 (branch claude/client-pair-v0.6.5)
 
 Interface-only roll: the paired jackdaw client moves to v0.6.5, which adds
@@ -1495,7 +1548,6 @@ the Media pill to the dashboard's system vitals (the yt-dlp/ffmpeg sidecar's
 health + running versions, beside Tika/Chromium/Sandboxes) and ships the
 files workspace's two-pane view series. No server-side changes beyond the
 pair record.
-
 
 ## Unreleased — video ingest hardened: the audit pass (branch claude/video-ingest-audit-fixes)
 
@@ -1555,7 +1607,6 @@ pull` for the whole stack), `docs/deploy.md` and the disposition catalogues
 cover the new skips, and forks can build the `mantle-media` image via
 `scripts/docker-build-push.sh`.
 
-
 ## Unreleased — video ingestion: paste a link, get a searchable transcript (branch claude/mantle-video-extraction-650157)
 
 The brain can now ingest a video. `video_ingest` takes a link (or a video
@@ -1595,8 +1646,6 @@ metadata-only indexing: the clips this tool saves are stamped
 and the disk-sync watcher now stores dropped media instead of silently
 ignoring it — never transcribing on its own; transcription is only ever the
 explicit tool.
-
-
 
 SheetJS (`xlsx`) read every spreadsheet that entered the brain. It has not
 published to npm since 0.18.5, and that release carries a prototype-pollution
@@ -1777,7 +1826,7 @@ so both get it.
 ## Unreleased — the share presenters learn which shell they are in (branch feat/team-presenter-chrome)
 
 Every presenter in `@mantle/share-ui` was written for one surface: the
-anonymous public `/s` page, where the presenter *is* the page. `/team` then
+anonymous public `/s` page, where the presenter _is_ the page. `/team` then
 reused them inside a master-detail pane, and two of those choices became wrong
 at once.
 
@@ -1798,8 +1847,8 @@ means the surrounding shell already owns the title and the padding, so the
 presenter drops its hero title, tightens the vertical rhythm, and stops
 centring.
 
-⚠ `'embedded'` is **not** a synonym for full-bleed. It means *the shell owns
-the chrome*; what to do with the width is still the content's call. A table, a
+⚠ `'embedded'` is **not** a synonym for full-bleed. It means _the shell owns
+the chrome_; what to do with the width is still the content's call. A table, a
 media viewer and a file row all get better as they get wider, so they span the
 pane. A note does not — a 2000px line is unreadable in anyone's pane — so prose
 keeps its measure and simply stops being centred under a title it no longer
@@ -1842,6 +1891,7 @@ the `sandbox` CSP is what makes that case inert. Copied from
 Both surfaces get it, deliberately. A marker that rendered in the Forum and
 broke in Team Chat would be worse than not having one: the reply text does not
 know which surface it will be read on.
+
 ## Unreleased — a shared table gets the owner's totals, and they are RIGHT (branch feat/team-tables-grid)
 
 `/team` tables were a centred `max-w-6xl` reader: a plain table, a "Load more"
@@ -1885,6 +1935,7 @@ The footer row renders even when nothing is set, because the row IS the
 affordance: a member who wants a total needs somewhere to ask for one.
 
 The standalone `/s` page keeps its centred, growing, non-sticky layout.
+
 ## Unreleased — an event listing that says when, not when it was edited (branch feat/team-list-event-time)
 
 `TeamVisibleShare` gains an optional `startsAt`, read from `nodes.data.starts_at`
@@ -1894,7 +1945,7 @@ Every other field on that DTO describes the SHARE. This one describes the thing
 shared, and it is carried because for an event the two are not interchangeable.
 The `/team` section cards show `updatedAt` — right for a note or a table, and
 useless for an event. A member scanning what is coming up needs when it
-*happens*; an event edited this morning has no business sorting above one that
+_happens_; an event edited this morning has no business sorting above one that
 starts tomorrow.
 
 The row query already selected `nodes.data`; the mapper simply read `icon` and
@@ -2065,7 +2116,7 @@ which is exactly why it stayed hidden.
 Also: `GET /api/assistant/thread` takes `?withMessages=0`, returning the agent
 picker list and the resolved active agent without the 100-message thread. The
 mobile companion needs both at launch — it holds no agent cookie, so the
-server's resolution *is* its default, and that resolution is what now respects
+server's resolution _is_ its default, and that resolution is what now respects
 `agents.assigned_user_id` — but it pages its own history from the local cache,
 so the thread was fetched and dropped on every cold start. Opt-out, so every
 existing caller is untouched.
@@ -2073,8 +2124,8 @@ existing caller is untouched.
 ## Unreleased — An assistant that answers to its own name (branch feat/agent-name-token)
 
 **A copied assistant introduced itself as the one it was copied from.** Give a
-login its own assistant called Tommy and his prompt still opened *"You are Mira
-— a specialist assistant to a Risk-Based Inspection team"*, because cloning
+login its own assistant called Tommy and his prompt still opened _"You are Mira
+— a specialist assistant to a Risk-Based Inspection team"_, because cloning
 copies the prompt verbatim and the name lived in the prose. Caught on a live
 box the day per-login assistants shipped.
 
@@ -2136,7 +2187,7 @@ skills, tool groups and delegation all come across, so it can reach the shared
 specialists from its first turn. Three things deliberately don't:
 
 - **Persona notes.** What an assistant learned about the person it was talking
-  to is about *that* person. A copy starts with none.
+  to is about _that_ person. A copy starts with none.
 - **Telegram.** A bot binding is a row against the old agent id, so a copy has
   no transport and no credentials — by construction, not by filtering.
 - **Rank.** A copy sits one priority below its source. Headless callers (event
@@ -2184,7 +2235,7 @@ paragraph before the image, putting a blank line above every picture.
 
 Three edges, decided rather than left to chance:
 
-- **Shown twice.** A reply that writes the image inline *and* calls `show_image`
+- **Shown twice.** A reply that writes the image inline _and_ calls `show_image`
   for the same file used to show it in both places. The reply's own placement
   wins; the strip copy is dropped at finalize. Mechanical, not prompt-only,
   because a confused model doing both is exactly the case a prompt misses.
@@ -2244,8 +2295,8 @@ change.
 **The chat worker's "Test" button did not test what production runs.** It read
 `api_key_id` directly, took the adapter and called `.chat()` — reproducing
 neither of the two things chat routing actually does. So it lied in both
-directions: a keyless `local` worker failed its test with *no api_key
-configured* while working perfectly in production, and a worker whose primary
+directions: a keyless `local` worker failed its test with _no api_key
+configured_ while working perfectly in production, and a worker whose primary
 was down but whose backup was healthy also failed, though every real caller
 would have been served. It now goes through `resolveChatRoutes` +
 `chatWithFailover` — the production path — and reports which route answered, so
@@ -2317,7 +2368,7 @@ the workstation passed and the deployed demo failed.
 ## Unreleased — Adding a Microsoft scope quietly killed every older account (branch claude/sharepoint-auth-directory-listing-d78be4)
 
 **A connected Microsoft account had a shelf life measured from the last time we
-edited a constant.** Every token refresh asked Azure for the app's *current*
+edited a constant.** Every token refresh asked Azure for the app's _current_
 scope list, but on the refresh leg Azure only honours scopes the user actually
 consented to — anything beyond that set is not a widened grant, it's a rejected
 request. So the day `Mail.Send` joined the list, every account connected before
@@ -2332,13 +2383,13 @@ code-exchange legs still ask for everything, because that is where consent is
 actually given.
 
 **The failure was also invisible from both ends.** Server-side, the refresh
-error was recorded onto `ms_accounts.last_sync_error` *inside* the transaction
+error was recorded onto `ms_accounts.last_sync_error` _inside_ the transaction
 it then aborted by rethrowing — the write rolled back with everything else, so
 an account that had been failing for a fortnight still read as healthy. It is
 now written after the transaction unwinds. Client-side, a token failure threw a
 plain `Error` with no status, so the drive browser's "reconnect the account"
-branch never fired and the folder picker said only *Could not list the folder.
-Try again* — advice that could never work. `invalid_grant` now carries a 401,
+branch never fired and the folder picker said only _Could not list the folder.
+Try again_ — advice that could never work. `invalid_grant` now carries a 401,
 which is the branch that tells the truth, and the browse route logs the
 underlying Graph error instead of swallowing it.
 
@@ -2347,7 +2398,7 @@ underlying Graph error instead of swallowing it.
 **Every parser in the stack was text-only, so a diagram in a Word file or a
 screenshot in a PDF manual was dropped on the floor** — invisible to recall and
 to display alike. Some answers cannot be described, only shown: a screenshot of
-a settings screen *is* the answer to "how do I configure this". Documents now
+a settings screen _is_ the answer to "how do I configure this". Documents now
 give their pictures up.
 
 `extractEmbeddedImages` mirrors the text path's three tiers — docx through
@@ -2357,7 +2408,7 @@ Tika's `/unpack/all`, a capability that container always had and we had never
 called. Extracted pictures become ordinary image files under
 `files/extracted-images/<document>/`, which is what keeps the change small: the
 extractor already indexes images (vision describe plus OCR, which reads the
-labels *inside* a screenshot), and Pages already embeds a stored image by node
+labels _inside_ a screenshot), and Pages already embeds a stored image by node
 id.
 
 **Reading order is the feature, not a detail.** A manual's screenshots are only
@@ -2381,7 +2432,7 @@ carries a hundred images — logos, bullets, one icon per slide — and describi
 them all would be a hundred LLM calls. Pulling bytes out is free and always
 happens; only survivors of deterministic filters (container, pixel dimensions,
 byte floor, duplicate collapse, thirty per document) are worth a vision call.
-The byte floor is deliberately *low*: flat line art compresses to about 2 KB, and
+The byte floor is deliberately _low_: flat line art compresses to about 2 KB, and
 an initial 8 KB floor rejected precisely the diagrams this exists for. Pixel
 dimensions do the real filtering.
 
@@ -2409,7 +2460,7 @@ dry-run by default. The documents themselves are free: the image pass sits ahead
 of the extractor's already-extracted guard, so no text, summary or embedding
 work re-runs.
 
-Fixed while here: `upsertFile` reset a file's title to its filename on *every*
+Fixed while here: `upsertFile` reset a file's title to its filename on _every_
 upsert, so any deliberately-titled file silently reverted on re-ingest.
 
 ## Unreleased — The rest of the "all good" over a dead brain (branches feat/healthcheck, feat/sanity-services, feat/test-timeouts)
@@ -2683,7 +2734,7 @@ stays a Next.js app, untouched.
   compose adoption, per-box smoke checklist, the pg17-era notes, rollback).
 - **The runtime moves to Node 26** (`26.5.0`, V8 14.6) — base image
   `node:26-slim`, `engines: node >=26`, `.nvmrc` and CI matched. Node 26 is the
-  *current* line, not yet LTS; it promotes around Oct 2026, so until then this
+  _current_ line, not yet LTS; it promotes around Oct 2026, so until then this
   pin rides ahead of LTS deliberately, for the V8 and stream performance work.
   Nothing in the application tree needed changing: the only native/wasm
   dependencies (`@napi-rs/canvas`, `libsodium-wrappers`) are N-API/wasm and
@@ -2790,7 +2841,7 @@ fallback is deprecated.
 
 **Postgres 18 is the default; Tika and Chromium bumped.** The bundled database moves
 to PostgreSQL 18 (pgvector `pg18` = PG 18.4 + pgvector 0.8.5) — fresh installs come
-up on 18 directly. Postgres 17 → 18 is a *major* upgrade for an existing box (it
+up on 18 directly. Postgres 17 → 18 is a _major_ upgrade for an existing box (it
 needs a dump/restore, not a tag swap), so the image is env-gated via
 `POSTGRES_IMAGE_TAG` (default `pg18`; pin `pg17` to defer), and the service now sets
 `PGDATA=/var/lib/postgresql/data` — the pg18 images moved the default data path and
@@ -2814,7 +2865,7 @@ degrades the column to plain text with values intact.
 
 A reference column **always stores as text** — the engine maps `reference →
 select` at every storage / read / filter boundary via `storageType()`. (An
-earlier cut of v2.2 explored per-column reference *modes* — a checkbox variant
+earlier cut of v2.2 explored per-column reference _modes_ — a checkbox variant
 and a deferred multi — but they were removed before release: the checkbox mode
 was flaky and the mode machinery widened the type surface for no user-visible
 gain. A linked column now has exactly one behavior.)
@@ -2945,7 +2996,7 @@ recognition from the hub. Full notes: `docs/_changelog/0.120.0.md`.
 ## v0.119.1 — 2026-07-07
 
 **See what the validator sees.** v0.119.0's argument validation ships in
-warn mode — recording what it *would* correct while changing nothing. The
+warn mode — recording what it _would_ correct while changing nothing. The
 new **`/debug` → Tool validation** tab makes that telemetry readable without
 SQL: the box's active mode (with what it means and how to flip it), flagged
 calls per tool over a selectable window (repairs / unknown keys /
@@ -2958,14 +3009,14 @@ the page says so, so an empty tab means "nothing flagged", not "no data".
 ## v0.119.0 — 2026-07-07
 
 **Tool calls stop being a wild card.** Until now, most of what kept an
-agent's tool use correct was *prose* — descriptions asking the model to pass
+agent's tool use correct was _prose_ — descriptions asking the model to pass
 the right types, call things in the right order, and report honestly. This
 release moves those rules into enforced machinery, end to end (the full
 architecture: [docs/tool-reliability.md](docs/tool-reliability.md)):
 
 - **Every call is validated against the tool's own schema.** Harmless drift
   is repaired automatically (`"42"`→`42`, a bare value where a list belongs,
-  stringified JSON); real violations produce *teaching errors* that name the
+  stringified JSON); real violations produce _teaching errors_ that name the
   field, what was expected, what arrived, and the closest valid alternative
   ("did you mean 'limit'?"), so the model fixes itself in one retry. Ships in
   **warn mode** (telemetry only, zero behaviour change); flip
@@ -2994,7 +3045,7 @@ architecture: [docs/tool-reliability.md](docs/tool-reliability.md)):
   per-tool in Settings → Tools).
 - **Wrong-id calls teach instead of confusing.** Pages/tables tools check
   their ids up front and say exactly what's wrong — including the case no
-  handler used to catch: "that id is a *note*, not a page."
+  handler used to catch: "that id is a _note_, not a page."
 - **Multi-block page edits are atomic.** New `page_blocks_apply` applies up
   to 50 block edits in one all-or-nothing call (one draft save; any failure
   aborts with the failing op named). The half-edited-draft failure mode from
@@ -3017,7 +3068,7 @@ as the fresh-install fallback), so upgrades propagate everywhere again.
 exposed a chain of agent-editing failures, all fixed here:
 
 - **Write batches are atomic.** The tool-loop's volume caps (40 calls/turn,
-  15/tool) used to trip *mid-batch* — a 10-delete batch got cut at 1-of-10 and
+  15/tool) used to trip _mid-batch_ — a 10-delete batch got cut at 1-of-10 and
   left the draft half-edited. Caps now enforce at batch boundaries: a batch
   that starts under its caps always completes; when the budget ends the turn,
   the model is told explicitly so it reports what's done vs what remains.
@@ -3041,7 +3092,7 @@ exposed a chain of agent-editing failures, all fixed here:
 Contacts you mint team tokens for) get their own chat at **/team**: they enter
 their token once and can ask the brain anything it knows — project history,
 documents, decisions — with attachments and live streaming, in a private
-thread that remembers them. What they *can't* do is change anything: the team
+thread that remembers them. What they _can't_ do is change anything: the team
 responder is strictly read-only, and any "please update / fix / add this"
 becomes a **request** in your review queue, where you (or a specialist) act on
 it and send the reply straight back into their thread.
@@ -3079,8 +3130,8 @@ itself is updating it — those now proceed without stalls or the occasional
 
 **Your assistant can read your apps' data.** If a mini-app keeps its own
 database — a tracker, an inventory, a log — you can now just ask about it in
-chat: *"how many open items in my tracker app?"*, *"what's in the inventory
-table?"*. The assistant discovers which apps have data and reads it directly to
+chat: _"how many open items in my tracker app?"_, _"what's in the inventory
+table?"_. The assistant discovers which apps have data and reads it directly to
 answer. It's **read-only** — the assistant can look but never change an app's
 data — and it works across all your apps with no setup. (Apps with clearly named
 tables and columns are the easiest for it to answer from.)
@@ -3097,7 +3148,7 @@ standard backup from now on.
 ## v0.115.1 — 2026-07-04
 
 **Shared apps got safer, and gained an activity log.** Public app links are now
-strictly limited to the app's *own* data — they can no longer reach your notes,
+strictly limited to the app's _own_ data — they can no longer reach your notes,
 email, or other brain tools, so a "public" app can never become a window into
 your private information. Team-shared apps stay full-featured for the people you
 name, and every open, tool call, and data write is logged on the app's Activity

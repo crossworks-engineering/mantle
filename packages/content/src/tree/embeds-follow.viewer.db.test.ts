@@ -392,8 +392,7 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
       },
       'See Secret plans',
     );
-    // Pages folders are not in the tree yet (phase 7): shared in the
-    // database, as a later tree write will.
+    // Shared in the database directly (as the tree's share write does).
     const f = { id: randomUUID(), path: `pages.${label}_p` };
     await folder(f, 'Pages P');
     await m.systemDb.execute(sqlTag`update nodes set share_level = 'client' where id = ${f.id}`);

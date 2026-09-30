@@ -14,13 +14,15 @@ import { isMemberItemKind } from '@mantle/client-types/member-kinds';
 
 /** The kinds the tree serves on this brain. A client offers the tree for
  *  these and keeps its older screen for the rest (the shell lists them).
- *  Pages wait for Recall v2 (pages stop nesting). Apps joined in phase 3,
- *  their old layout document moved in by tree/apps-nav.ts. Recall joined with
- *  Recall v2 R3: the tree lists maps, never cards (cards are rows, not
- *  nodes). */
+ *  Apps joined in phase 3, their old layout document moved in by
+ *  tree/apps-nav.ts. Recall joined with Recall v2 R3: the tree lists maps,
+ *  never cards (cards are rows, not nodes). Pages joined in phase 7: a page
+ *  is never the parent of another page any more; migration 0210 filed the
+ *  old sub-pages into folders. */
 export const TREE_LIVE_KINDS: readonly TreeKind[] = [
   'files',
   'notes',
+  'pages',
   'draw',
   'tables',
   'formulas',

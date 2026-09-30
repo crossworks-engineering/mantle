@@ -33,11 +33,8 @@ export {
   shareUrlForToken,
   nodeUrl,
   appUrl,
-  shareCascadeOf,
-  setShareCascade,
   applyShareMode,
   revokeShareTree,
-  listPageDescendantIds,
   canShareNode,
   shareModeForLevel,
   levelForShareMode,
@@ -47,7 +44,6 @@ export {
   type ShareMode,
   type ShareableType,
   type ShareSummary,
-  type ShareCascadeResult,
 } from './shares';
 
 export {

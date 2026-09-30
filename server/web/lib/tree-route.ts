@@ -108,7 +108,13 @@ export function treeErrorResponse(err: unknown): NextResponse {
 }
 
 /** The kinds whose admin can keep private items (a space of their own). */
-const PRIVATE_KIND = { files: 'file', notes: 'note', draw: 'draw', tables: 'table' } as const;
+const PRIVATE_KIND = {
+  files: 'file',
+  notes: 'note',
+  pages: 'page',
+  draw: 'draw',
+  tables: 'table',
+} as const;
 
 /**
  * The caller's own private items of a kind, as tree rows for the root

@@ -33,23 +33,13 @@ export type { PageSort, Backlink, PageVisibility, PageWidth, PageRow } from '@ma
 
 export { PAGES_ROOT_LABEL, EMPTY_DOC, type PageDetail } from './shared';
 
-export {
-  listPages,
-  countPages,
-  listPageTags,
-  withPagePlacement,
-  getPage,
-  listChildPages,
-  countPageDescendants,
-  listBacklinks,
-} from './read';
+export { listPages, countPages, listPageTags, getPage, listBacklinks } from './read';
 
 export {
   createPage,
-  movePage,
   deletePage,
   ParentPageNotFoundError,
-  PageCycleError,
+  PageFolderNotFoundError,
   type CreatePageInput,
 } from './tree';
 
@@ -70,7 +60,7 @@ export {
 
 export {
   splitPage,
-  extractSectionToChild,
+  extractSectionToPage,
   addPageMention,
   NoSplitHeadingsError,
   SectionNotFoundError,

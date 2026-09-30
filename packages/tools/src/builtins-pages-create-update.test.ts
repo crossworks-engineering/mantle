@@ -4,17 +4,18 @@
  * These four are the tools where the PUBLISHED-vs-DRAFT line is easiest to
  * get wrong, and the line is the thing worth pinning. page_create and
  * page_update write the published doc directly (createPage / updatePage);
- * page_move is a structural change that publishes at once and never touches
- * a draft; page_mention goes through addPageMention, which lands in the
- * draft. A tool that quietly moved from one side of that line to the other
- * would still "work" in every happy-path test, so the assertions here name
- * which store edge was hit AND which one was not.
+ * page_move is a structural change (the tree's item move, folder phase 7)
+ * that publishes at once and never touches a draft; page_mention goes
+ * through addPageMention, which lands in the draft. A tool that quietly
+ * moved from one side of that line to the other would still "work" in every
+ * happy-path test, so the assertions here name which store edge was hit AND
+ * which one was not.
  *
  * Tags pass through as given. `recall` and `prompt` were owner-only while
  * page-built Recall maps existed (a tag activated a map); since R5 they are
  * ordinary topic tags, and the tests below pin that nothing strips them.
  *
- * Store edges (createPage / updatePage / movePage / addPageMention) are
+ * Store edges (createPage / updatePage / moveTreeItems / addPageMention) are
  * stubbed; markdownToDoc and the tools' own guards and mappings are real.
  */
 
@@ -26,16 +27,21 @@ vi.mock('@mantle/content', async (importOriginal) => {
     ...actual,
     createPage: vi.fn(),
     updatePage: vi.fn(),
-    movePage: vi.fn(),
+    getPage: vi.fn(),
     addPageMention: vi.fn(),
     saveDraft: vi.fn(),
     nodeUrl: (id: string) => `https://brain.test/n/${id}`,
   };
 });
+vi.mock('@mantle/content/tree', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@mantle/content/tree')>();
+  return { ...actual, moveTreeItems: vi.fn(), notifyTreeChanged: vi.fn() };
+});
 vi.mock('@mantle/files', () => ({ fileById: vi.fn(), readFileById: vi.fn() }));
 vi.mock('@mantle/tracing', () => ({ recordIngest: vi.fn() }));
 
-import { createPage, updatePage, movePage, addPageMention, saveDraft } from '@mantle/content';
+import { createPage, updatePage, getPage, addPageMention, saveDraft } from '@mantle/content';
+import { moveTreeItems, notifyTreeChanged } from '@mantle/content/tree';
 import { recordIngest } from '@mantle/tracing';
 import { PAGE_TOOLS } from './builtins-pages';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
@@ -49,6 +55,7 @@ const mention = all.find((t) => t.slug === 'page_mention')!;
 const ctx: ToolHandlerContext = { ownerId: 'o1' };
 const PAGE_ID = 'p-1';
 const PARENT_ID = 'p-parent';
+const FOLDER_ID = 'f-plans';
 
 type Result = Awaited<ReturnType<BuiltinToolDef['handler']>>;
 
@@ -74,11 +81,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(createPage).mockResolvedValue(created() as never);
   vi.mocked(updatePage).mockResolvedValue(created() as never);
-  vi.mocked(movePage).mockResolvedValue({
-    id: PAGE_ID,
-    title: 'Runbook',
-    parentId: PARENT_ID,
-  } as never);
+  vi.mocked(getPage).mockResolvedValue({ id: PARENT_ID, folderId: FOLDER_ID } as never);
+  vi.mocked(moveTreeItems).mockResolvedValue({ moved: 1, failed: [] });
   vi.mocked(addPageMention).mockResolvedValue({
     ref: 'node',
     label: 'Target',
@@ -109,10 +113,11 @@ describe('page_create', () => {
     // The body reached the store as a ProseMirror doc, not raw markdown.
     const arg = vi.mocked(createPage).mock.calls[0]![1] as unknown as { doc: { type: string } };
     expect(arg.doc.type).toBe('doc');
-    // Omitting parent_id means top-level: no parentId key at all, not null.
+    // Omitting folder_id means the top level: no folderId key at all, not null.
+    expect(arg).not.toHaveProperty('folderId');
     expect(arg).not.toHaveProperty('parentId');
     expect(outputOf(res)).toMatchObject({ id: PAGE_ID, title: 'Runbook', tags: ['ops'] });
-    expect(outputOf(res)).not.toHaveProperty('parent_id');
+    expect(outputOf(res)).not.toHaveProperty('folder_id');
     expect(outputOf(res).url).toContain(PAGE_ID);
   });
 
@@ -121,10 +126,20 @@ describe('page_create', () => {
     expect(saveDraft).not.toHaveBeenCalled();
   });
 
-  it('nests under parent_id and echoes it back', async () => {
-    const res = await create.handler({ title: 'Child', parent_id: PARENT_ID }, ctx);
+  it('files the page in folder_id and echoes it back', async () => {
+    const res = await create.handler({ title: 'Plan', folder_id: FOLDER_ID }, ctx);
+    expect(createPage).toHaveBeenCalledWith('o1', expect.objectContaining({ folderId: FOLDER_ID }));
+    expect(outputOf(res).folder_id).toBe(FOLDER_ID);
+  });
+
+  it('still takes the deprecated parent_id (the same folder as that page), folder_id winning', async () => {
+    const res = await create.handler({ title: 'Beside', parent_id: PARENT_ID }, ctx);
     expect(createPage).toHaveBeenCalledWith('o1', expect.objectContaining({ parentId: PARENT_ID }));
     expect(outputOf(res).parent_id).toBe(PARENT_ID);
+    await create.handler({ title: 'Both', parent_id: PARENT_ID, folder_id: FOLDER_ID }, ctx);
+    const arg = vi.mocked(createPage).mock.calls[1]![1] as Record<string, unknown>;
+    expect(arg).toMatchObject({ folderId: FOLDER_ID });
+    expect(arg).not.toHaveProperty('parentId');
   });
 
   it('keeps `recall` and `prompt` as ordinary tags (page-built maps retired in R5)', async () => {
@@ -143,9 +158,17 @@ describe('page_create', () => {
     );
   });
 
+  it('turns a folder miss into a teaching error naming the id and the lookup', async () => {
+    vi.mocked(createPage).mockRejectedValue(new Error('createPage: folder not found'));
+    const res = await create.handler({ title: 'Plan', folder_id: 'f-nope' }, ctx);
+    expect(errorOf(res)).toContain('f-nope');
+    expect(errorOf(res)).toMatch(/tree_folders/);
+    expect(recordIngest).not.toHaveBeenCalled();
+  });
+
   it('turns a parent-page miss into a teaching error naming the id', async () => {
     vi.mocked(createPage).mockRejectedValue(new Error('createPage: parent page not found'));
-    const res = await create.handler({ title: 'Child', parent_id: 'p-nope' }, ctx);
+    const res = await create.handler({ title: 'Beside', parent_id: 'p-nope' }, ctx);
     expect(errorOf(res)).toContain('p-nope');
     expect(errorOf(res)).toMatch(/page_list/);
     expect(recordIngest).not.toHaveBeenCalled();
@@ -198,67 +221,73 @@ describe('page_move', () => {
     expect(errorOf(await move.handler({ id: ' ', to_top_level: true }, ctx))).toMatch(
       /id is required/,
     );
-    expect(movePage).not.toHaveBeenCalled();
+    expect(moveTreeItems).not.toHaveBeenCalled();
   });
 
   it('refuses both destinations at once, and neither, without moving', async () => {
     expect(
-      errorOf(await move.handler({ id: PAGE_ID, parent_id: PARENT_ID, to_top_level: true }, ctx)),
+      errorOf(await move.handler({ id: PAGE_ID, folder_id: FOLDER_ID, to_top_level: true }, ctx)),
     ).toMatch(/not both/);
     expect(errorOf(await move.handler({ id: PAGE_ID }, ctx))).toMatch(/specify a destination/);
-    expect(movePage).not.toHaveBeenCalled();
+    expect(moveTreeItems).not.toHaveBeenCalled();
   });
 
-  it('refuses a page as its own parent before asking the store', async () => {
-    expect(errorOf(await move.handler({ id: PAGE_ID, parent_id: PAGE_ID }, ctx))).toMatch(
-      /own parent/,
-    );
-    expect(movePage).not.toHaveBeenCalled();
+  it('files the page in folder_id through the tree move and reports the new spot', async () => {
+    const res = await move.handler({ id: PAGE_ID, folder_id: FOLDER_ID }, ctx);
+    expect(moveTreeItems).toHaveBeenCalledWith('o1', 'pages', [PAGE_ID], FOLDER_ID, {
+      confirm: false,
+    });
+    expect(notifyTreeChanged).toHaveBeenCalledWith('o1', 'pages');
+    expect(outputOf(res)).toMatchObject({ folder_id: FOLDER_ID, moved_to: 'folder' });
   });
 
-  it('nests under parent_id and reports the new spot', async () => {
-    const res = await move.handler({ id: PAGE_ID, parent_id: PARENT_ID }, ctx);
-    expect(movePage).toHaveBeenCalledWith('o1', PAGE_ID, PARENT_ID);
-    expect(outputOf(res)).toMatchObject({ parent_id: PARENT_ID, moved_to: 'sub-page' });
-  });
-
-  it('promotes to top level by passing a null parent', async () => {
-    vi.mocked(movePage).mockResolvedValue({
-      id: PAGE_ID,
-      title: 'Runbook',
-      parentId: null,
-    } as never);
+  it('moves to the top level with a null folder', async () => {
     const res = await move.handler({ id: PAGE_ID, to_top_level: true }, ctx);
-    expect(movePage).toHaveBeenCalledWith('o1', PAGE_ID, null);
+    expect(moveTreeItems).toHaveBeenCalledWith('o1', 'pages', [PAGE_ID], null, { confirm: false });
     expect(outputOf(res).moved_to).toBe('top-level');
   });
 
-  it('is a structural change: no draft is written', async () => {
+  it('reads the deprecated parent_id as "the same folder as that page"', async () => {
     await move.handler({ id: PAGE_ID, parent_id: PARENT_ID }, ctx);
+    expect(getPage).toHaveBeenCalledWith('o1', PARENT_ID);
+    expect(moveTreeItems).toHaveBeenCalledWith('o1', 'pages', [PAGE_ID], FOLDER_ID, {
+      confirm: false,
+    });
+    expect(errorOf(await move.handler({ id: PAGE_ID, parent_id: PAGE_ID }, ctx))).toMatch(
+      /next to itself/,
+    );
+  });
+
+  it('passes confirm through, so a visibility refusal can be answered', async () => {
+    await move.handler({ id: PAGE_ID, folder_id: FOLDER_ID, confirm: true }, ctx);
+    expect(moveTreeItems).toHaveBeenCalledWith('o1', 'pages', [PAGE_ID], FOLDER_ID, {
+      confirm: true,
+    });
+    expect(move.inputSchema.properties).toHaveProperty('confirm');
+  });
+
+  it('is a structural change: no draft is written', async () => {
+    await move.handler({ id: PAGE_ID, folder_id: FOLDER_ID }, ctx);
     expect(saveDraft).not.toHaveBeenCalled();
   });
 
   it('reports a missing page with the lookup that fixes it', async () => {
-    vi.mocked(movePage).mockResolvedValue(null as never);
+    vi.mocked(moveTreeItems).mockResolvedValue({
+      moved: 0,
+      failed: [{ id: PAGE_ID, error: 'not found' }],
+    });
     expect(errorOf(await move.handler({ id: PAGE_ID, to_top_level: true }, ctx))).toMatch(
       /page_list/,
     );
-  });
-
-  it('explains a cycle refusal in terms of the target', async () => {
-    vi.mocked(movePage).mockRejectedValue(
-      new Error('movePage: cannot move a page under itself or one of its own descendants'),
-    );
-    const res = await move.handler({ id: PAGE_ID, parent_id: 'p-desc' }, ctx);
-    expect(errorOf(res)).toMatch(/cycle/);
-    expect(errorOf(res)).toContain('p-desc');
+    expect(notifyTreeChanged).not.toHaveBeenCalled();
   });
 
   it('turns a parent-page miss into a teaching error naming the id', async () => {
-    vi.mocked(movePage).mockRejectedValue(new Error('createPage: parent page not found'));
+    vi.mocked(getPage).mockResolvedValue(null as never);
     const res = await move.handler({ id: PAGE_ID, parent_id: 'p-nope' }, ctx);
     expect(errorOf(res)).toContain('p-nope');
-    expect(errorOf(res)).toMatch(/page_list/);
+    expect(errorOf(res)).toMatch(/tree_folders/);
+    expect(moveTreeItems).not.toHaveBeenCalled();
   });
 });
 

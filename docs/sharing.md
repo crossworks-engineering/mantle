@@ -172,10 +172,9 @@ is only ever public (the level model: [access-levels.md](./access-levels.md)
 section 7):
 
 - **An item at client has no link.** Setting an item to client revokes its
-  open link; `createShare` refuses an item at client (and a sub-page asked
-  to follow a client parent) with `client-links-retired`, so `node_share`,
-  `page_share`, `POST /api/shares`, the email link and "Share sub-pages"
-  all meet it, and `email_page` with a link on a client page is refused
+  open link; `createShare` refuses an item at client with
+  `client-links-retired`, so `node_share`, `page_share`, `POST /api/shares`
+  and the email link all meet it, and `email_page` with a link on a client page is refused
   before anything is sent. The signed-in clients read the item in their
   portal instead, with every reference to an item above client hidden.
 - **Old client links are retired** (client logins C3, migration 0192).
@@ -280,40 +279,28 @@ their newer edits aren't in it yet.
 API (owner-scoped via `requireOwner`):
 
 - `POST /api/shares` `{ nodeId }` → `{ token, url }`
-- `DELETE /api/shares/[id]` → revoke (cascades to the subtree if the share does, §7b)
-- `PATCH /api/shares/[id]` `{ mode }` → `public` only, which confirms the open link (cascades if
-  the share does); `team` is refused with 400 `team-links-retired`, anything else is 400
-- `GET /api/shares?nodeId=` → current active link (if any) + `childCount` (descendant pages)
-- `POST /api/shares/cascade` `{ nodeId, on }` → turn subtree sharing on/off (§7b); `skipped`
-  lists the client sub-pages that kept client and got no link
+- `DELETE /api/shares/[id]` → revoke
+- `PATCH /api/shares/[id]` `{ mode }` → `public` only, which confirms the open link;
+  `team` is refused with 400 `team-links-retired`, anything else is 400
+- `GET /api/shares?nodeId=` → current active link (if any); `childCount` is
+  always 0 and a link's `cascade` always false since folder phase 7 (kept on
+  the wire for older clients, §7b)
 
 ---
 
-## 7b. Sharing a page's subtree: "Share sub-pages"
+## 7b. Sharing a page's subtree: retired (folder phase 7)
 
-A public page's Access control shows **Include sub-pages** whenever the page
-has descendant pages (the switch rides the link, so only at Public).
-Turning it on shares every descendant page; turning it off, or un-sharing the
-parent, revokes those child links. Children take the parent's level. An old
-client link cannot be extended to sub-pages (`client-links-retired`).
-Turning it on skips client sub-pages: each keeps client and gets no link
-(clients sign in to read it; an old link of its own stays untouched). The
-route answers their ids in `skipped`, and `page_share` in `keptAtClient`.
-The flag and every sub-page link change in ONE transaction: a failure part
-way leaves nothing half done.
-
-- **Intent lives on the parent share:** `settings.cascade = true`
-  (`shareCascadeOf`). Children are ordinary shares; the flag is what makes mode
-  changes and un-share propagate. No schema change (jsonb `settings`).
-- **Snapshot, not live:** toggling on shares the pages that exist at that moment
-  (descendants via the `parent_id` recursion, `listPageDescendantIds`). A page
-  added later isn't auto-shared, re-toggle to pick it up.
-- **Helpers** (`packages/content/src/shares.ts`): `setShareCascade(ownerId,
-parentNodeId, on)`, and the cascade-aware drop-ins `applyShareMode` /
-  `revokeShareTree` used by the PATCH / DELETE routes.
-- **Hub interaction:** retired with team links (member logins Phase 6). The
-  members' home app reads the newest team pages by level
-  (`GET /api/member/home`), not by share.
+A public page's Access control used to show **Include sub-pages** and share
+the page's descendant pages with its link (`settings.cascade`,
+`setShareCascade`, `POST /api/shares/cascade`, `page_share`'s `children`).
+Pages do not nest any more ([folder-tree.md](./folder-tree.md), "Pages"), so
+there is no subtree to share: the whole of it went on 2026-09-30. A set of
+pages is shared by sharing their **folder** with the team or clients
+(`PATCH /api/tree/pages/folders/:id { share }`, `tree_folder_update`); an
+open link stays per item. `revokeShareTree` and `applyShareMode` are plain
+revoke and mode-set now (the names stay as the drop-ins the unshare paths
+call); `AccessNodeView.childCount` (0) and a link's `cascade` (false) stay
+on the wire for clients from before the pages tree.
 
 ---
 
@@ -324,23 +311,20 @@ v0.145.0: `node_share { id, mode? }` / `node_unshare { id }`
 ([`packages/tools/src/builtins-share.ts`](../packages/tools/src/builtins-share.ts))
 mint/revoke a link for a note, task, event, file, app, table, or folder,
 thin, confirm-gated wrappers over the same `createShare` path (its validation
-owns the rules). Pages keep their dedicated pair, which adds the sub-page
-cascade
+owns the rules). Pages keep their dedicated pair
 ([`packages/tools/src/builtins-pages.ts`](../packages/tools/src/builtins-pages.ts)),
 so _"share that page and send me the link"_ works end to end:
 
-- **`page_share { id, mode?, children? }`** → `createShare` (idempotent, one
+- **`page_share { id, mode? }`** → `createShare` (idempotent, one
   active link per node) → returns `{ url, token, mode }`, and `alsoLowered`
   when the page's embeds went down with it (a client item among them goes
   to public). `mode` may only be `'public'`: `'team'` is refused
   (`team-links-retired`), and a page at client is refused
   (`client-links-retired`: clients sign in to read it); `node_share` answers
-  the same. `children: true|false` shares/unshares the subtree via `setShareCascade`
-  (§7b) and reports `subpagesShared` / `subpagesRevoked`, plus `keptAtClient`
-  (the client sub-pages that kept client, with no link). The URL is built with
-  `shareUrlForToken`.
-- **`page_unshare { id }`** → `getActiveShareForNode` → `revokeShareTree`
-  (subtree-aware, un-shares cascaded sub-pages too). No-op if unshared.
+  the same. The URL is built with `shareUrlForToken`. (The `children` option
+  went with folder phase 7, §7b: share the folder instead.)
+- **`page_unshare { id }`** → `getActiveShareForNode` → `revokeShareTree`.
+  No-op if unshared.
 
 Both are auto-granted at boot (`CORE_AUTO_GRANT_SLUGS`). Because the agent runs
 outside the web request cycle, it can't read an origin from the request, share

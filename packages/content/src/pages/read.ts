@@ -1,16 +1,17 @@
 /**
  * Pages · read paths. Every query that returns a page without changing one:
- * the list/count/tag surface, the single-page read, the tree's one-level
- * child read and descendant count, and inbound backlinks.
+ * the list/count/tag surface, the single-page read and inbound backlinks.
+ * Where a page sits (its folder) is the item tree's read (tree/read.ts);
+ * pages do not nest (folder phase 7).
  *
  * The one write it performs is `persistBlockIdBackfill` — maintenance, not an
  * edit: no version bump, no re-index, fire-and-forget.
  */
-import { and, asc, desc, eq, ilike, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { db, entityEdges, nodes, pages } from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
-import type { Backlink, PageListRow, PageRow, PageSort } from '@mantle/client-types';
-import { EMPTY_DOC, detailOf, rowOf, type PageDetail } from './shared';
+import type { Backlink, PageRow, PageSort } from '@mantle/client-types';
+import { EMPTY_DOC, PAGES_ROOT_LABEL, detailOf, rowOf, type PageDetail } from './shared';
 import { currentSpaceScope, readsDrafts } from '@mantle/db/viewer';
 
 type ListPagesOpts = { query?: string; tag?: string; sort?: PageSort };
@@ -62,48 +63,6 @@ export async function listPages(
     .limit(opts.limit ?? 500)
     .offset(opts.offset ?? 0);
   return rows.map((r) => rowOf(r.nodes));
-}
-
-/**
- * Place each row in the hierarchy: its direct sub-page count and its parent's
- * title. For the /pages list, where a search or tag filter returns only the
- * hits and the client therefore cannot work either out from the rows it holds.
- *
- * Two small queries whatever the row count: one grouped count over the owner's
- * pages (served by `nodes_parent_idx`), and one title lookup for the parents
- * that are not already among `rows` (none at all in tree mode, which loads the
- * whole hierarchy).
- */
-export async function withPagePlacement(ownerId: string, rows: PageRow[]): Promise<PageListRow[]> {
-  if (rows.length === 0) return [];
-  const isPage = and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'page'));
-
-  const counts = await db
-    .select({ parentId: nodes.parentId, n: sql<number>`count(*)::int` })
-    .from(nodes)
-    .where(and(isPage, isNotNull(nodes.parentId)))
-    .groupBy(nodes.parentId);
-  const childCount = new Map(counts.map((c) => [c.parentId, c.n]));
-
-  const titles = new Map(rows.map((r) => [r.id, r.title]));
-  const missing = [
-    ...new Set(rows.map((r) => r.parentId).filter((id): id is string => !!id && !titles.has(id))),
-  ];
-  if (missing.length > 0) {
-    // `type = 'page'` on purpose: a top-level page's parent is the `pages`
-    // branch root, which is plumbing and not somewhere a page "lives".
-    const parents = await db
-      .select({ id: nodes.id, title: nodes.title })
-      .from(nodes)
-      .where(and(isPage, inArray(nodes.id, missing)));
-    for (const p of parents) titles.set(p.id, p.title);
-  }
-
-  return rows.map((r) => ({
-    ...r,
-    childCount: childCount.get(r.id) ?? 0,
-    parentTitle: r.parentId ? (titles.get(r.parentId) ?? null) : null,
-  }));
 }
 
 /** Total pages matching the same filters as `listPages` (drives pagination). */
@@ -180,7 +139,25 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
   return {
     ...detailOf(row.node, doc, draft, { draftRev: row.draftRev ?? 0 }),
     draftUpdatedAt: draft ? (row.draftUpdatedAt?.toISOString() ?? null) : null,
+    folderId: await pageFolderId(ownerId, String(row.node.path)),
   };
+}
+
+/**
+ * The folder a page sits in (folder phase 7): the `branch` row at its path,
+ * the owner's or the brain's (a member's draft sits at a brain folder's
+ * path); null at the top level, and null when this reader may not read the
+ * folder row (the tree shows the reader its folders by its own rules).
+ */
+async function pageFolderId(ownerId: string, path: string): Promise<string | null> {
+  if (path === PAGES_ROOT_LABEL || !path.startsWith(`${PAGES_ROOT_LABEL}.`)) return null;
+  const rows = (await db.execute(sql`
+    select id from nodes
+     where type = 'branch' and path = ${path}::ltree
+       and owner_id in (${ownerId}, public.mantle_brain_id())
+     order by (owner_id = ${ownerId}) desc
+     limit 1`)) as unknown as Array<{ id: string }>;
+  return rows[0]?.id ?? null;
 }
 
 /**
@@ -208,40 +185,6 @@ async function persistBlockIdBackfill(
   } catch (err) {
     console.error('[pages] block-id backfill persist failed (non-fatal):', err);
   }
-}
-
-/** Immediate children of a page — the tree's expand-one-level read, ordered by
- *  title for a stable sidebar. Drives the /pages collapsible tree and lets the
- *  `childPage` card refresh a child's current title/icon. */
-export async function listChildPages(ownerId: string, parentId: string): Promise<PageRow[]> {
-  const rows = await db
-    .select()
-    .from(nodes)
-    .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'page'), eq(nodes.parentId, parentId)))
-    .orderBy(asc(nodes.title));
-  return rows.map((r) => rowOf(r));
-}
-
-/** Count ALL descendant pages (children, grandchildren, …) under a page via the
- *  parent_id tree. Used to warn before delete: parent_id is ON DELETE CASCADE,
- *  so deleting a parent silently takes its whole subtree. `UNION` (not UNION
- *  ALL) makes it cycle-safe even if the tree ever contained a loop. */
-export async function countPageDescendants(ownerId: string, id: string): Promise<number> {
-  const result = await db.execute<{ count: number }>(sql`
-    WITH RECURSIVE descendants AS (
-      SELECT id FROM ${nodes}
-       WHERE parent_id = ${id} AND owner_id = ${ownerId} AND type = 'page'
-      UNION
-      SELECT n.id FROM ${nodes} n
-        JOIN descendants d ON n.parent_id = d.id
-       WHERE n.owner_id = ${ownerId} AND n.type = 'page'
-    )
-    SELECT count(*)::int AS count FROM descendants
-  `);
-  const rows = (
-    Array.isArray(result) ? result : ((result as { rows?: Array<{ count: number }> }).rows ?? [])
-  ) as Array<{ count: number }>;
-  return rows[0]?.count ?? 0;
 }
 
 /**

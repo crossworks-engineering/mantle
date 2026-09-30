@@ -35,7 +35,6 @@ export {
   revokeShare,
   revokeShareTree,
   applyShareMode,
-  setShareCascade,
   getActiveShareForNode,
   resolveActiveShareByToken,
   recordShareView,

@@ -146,15 +146,6 @@ export async function walkBundle(
       for (const id of r.embeds) embeds.add(id);
       for (const id of r.ids) if (!r.embeds.includes(id)) links.add(id);
     }
-    if (item.type === 'page') {
-      const kids = await via
-        .select({ id: nodes.id })
-        .from(nodes)
-        .where(
-          and(eq(nodes.parentId, item.id), eq(nodes.ownerId, spaceId), eq(nodes.type, 'page')),
-        );
-      for (const k of kids) embeds.add(k.id);
-    }
     const fresh = [...embeds].filter((id) => !inBundle.has(id) && !leftOut.has(id));
     if (!fresh.length) continue;
     const own = and(

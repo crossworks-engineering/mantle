@@ -52,10 +52,13 @@ const BLOCK_TYPES = new Set([
   'tableCell',
   'tableHeader',
   'figure',
-  // Sub-page link card (Phase 4a) — its `title` attr is surfaced via
+  // Page link card (Phase 4a) — its `title` attr is surfaced via
   // LABEL_KEYS; this just gives it a trailing newline so adjacent cards'
   // titles don't run together in the indexed plaintext.
   'childPage',
+  // Folder index (folder phase 7): lists a folder's pages live for the
+  // reader; nothing of it is the page's own text, so it indexes as nothing.
+  'folderIndex',
   // Mermaid diagram atom — its `source` attr is surfaced via LABEL_KEYS.
   'diagram',
 ]);

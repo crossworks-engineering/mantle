@@ -1,20 +1,15 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
-import {
-  allPrivateRows,
-  isPrivateRow,
-  listStateOf,
-  pageWithPrivate,
-} from '@/lib/admin-private-rows';
+import { allPrivateRows, listStateOf, pageWithPrivate } from '@/lib/admin-private-rows';
 import {
   countPages,
   createPage,
   docToText,
   listPageTags,
   listPages,
+  PageFolderNotFoundError,
   ParentPageNotFoundError,
-  withPagePlacement,
   type PageSort,
 } from '@/lib/pages';
 import { recordIngest } from '@mantle/tracing';
@@ -22,9 +17,10 @@ import { firstIssue } from '@/lib/zod-issue';
 
 const SORTS: PageSort[] = ['edited', 'newest', 'oldest', 'title'];
 const PAGE_SIZE = 50;
-// Tree mode loads the whole hierarchy at once (a personal KB is hundreds of
-// pages, not thousands). The flat/paginated path kicks in only when a search or
-// tag filter is active — mirrors the old server page.
+// The unfiltered answer is the whole set at once (a personal KB is hundreds
+// of pages, not thousands), the shape a client from before the pages tree
+// reads. The flat/paginated path kicks in only when a search or tag filter
+// is active.
 const TREE_LIMIT = 2000;
 
 /** A ProseMirror/TipTap document — an opaque object the editor owns. We only
@@ -36,26 +32,27 @@ const CreateBody = z.object({
   doc: DocSchema.optional(),
   icon: z.string().max(16).optional(),
   tags: z.array(z.string().max(40)).max(20).optional().default([]),
-  /** Optional parent page id — nests the new page as a sub-page (Phase 4a). */
+  /** The folder of the pages tree the page goes in; null or absent is the
+   *  top level (folder phase 7). */
+  folderId: z.string().uuid().nullable().optional(),
+  /** DEPRECATED (folder phase 7): pages do not nest. A page id here puts the
+   *  new page in the same folder as that page. */
   parentId: z.string().uuid().optional(),
 });
 
 /**
  * The /pages list. Two shapes, matching the old server page:
  *   - filtering (q or tag): a flat, paginated, sorted list + `total` for the pager.
- *   - otherwise: the whole hierarchy (`mode: 'tree'`, up to TREE_LIMIT), built
- *     client-side from parent_id.
+ *   - otherwise: every page (`mode: 'tree'`, up to TREE_LIMIT), the shape a
+ *     client from before the pages tree reads (it built a hierarchy from
+ *     `parentId`; every row's is null now, so it shows one flat list).
  * Always returns the tag facet counts so the filter UI needs no second request.
+ * Where pages sit (their folders) is the pages tree's: `GET /api/tree/pages`.
  *
  * `?state=brain|private|all` (item-list alignment, lib/admin-private-rows):
  * `brain` (default) as always; `all` adds the caller's own private pages as
  * AdminPrivateListRow rows (top level in the tree, merged in the sort order
  * when filtering, none under a tag); `private` lists them alone.
- *
- * Every row carries its place in the hierarchy (`childCount`, `parentTitle`) in
- * BOTH shapes. The flat shape needs it: it returns only the hits, so without it
- * a hit that has sub-pages offers no way into them and a sub-page hit cannot
- * say where it lives.
  */
 export async function GET(req: Request) {
   const user = await getOwnerOr401();
@@ -93,18 +90,9 @@ export async function GET(req: Request) {
       }),
       tagsPromise,
     ]);
-    const placed = new Map(
-      (
-        await withPagePlacement(
-          user.id,
-          listed.items.flatMap((r) => (isPrivateRow(r) ? [] : [r])),
-        )
-      ).map((r) => [r.id, r]),
-    );
-    const pages = listed.items.map((r) => (isPrivateRow(r) ? r : placed.get(r.id)!));
     return NextResponse.json({
       mode: 'list',
-      pages,
+      pages: listed.items,
       total: listed.total,
       page,
       pageSize: PAGE_SIZE,
@@ -117,7 +105,7 @@ export async function GET(req: Request) {
     state === 'brain' ? [] : allPrivateRows(user, 'page', { sort }),
     tagsPromise,
   ]);
-  const pages = [...(await withPagePlacement(user.id, rows)), ...privateRows];
+  const pages = [...rows, ...privateRows];
   return NextResponse.json({
     mode: 'tree',
     pages,
@@ -140,6 +128,9 @@ export async function POST(req: Request) {
   try {
     row = await createPage(user.id, parsed.data);
   } catch (err) {
+    if (err instanceof PageFolderNotFoundError) {
+      return NextResponse.json({ error: 'folder not found' }, { status: 400 });
+    }
     if (err instanceof ParentPageNotFoundError) {
       return NextResponse.json({ error: 'parent page not found' }, { status: 400 });
     }

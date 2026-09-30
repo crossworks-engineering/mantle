@@ -35,6 +35,8 @@ import { CONFIRM_INPUT, visibilityRefusal } from './visibility-refusal';
 /** The kinds these tools serve: every tree kind but Files. */
 export const TREE_TOOL_KINDS = [
   'notes',
+  // Pages joined the tree in folder phase 7 (a page is never a parent).
+  'pages',
   'draw',
   'tables',
   'formulas',
@@ -53,7 +55,7 @@ const KIND_PROP = {
   type: 'string',
   enum: TREE_TOOL_KINDS,
   description:
-    "Which kind's folders: notes, draw, tables, formulas, tasks, events, contacts, secrets, apps or recall (Recall maps). Files use the folder_* tools.",
+    "Which kind's folders: notes, pages, draw, tables, formulas, tasks, events, contacts, secrets, apps or recall (Recall maps). Files use the folder_* tools.",
 } as const;
 
 const FOLDER_ID_PROP = {
