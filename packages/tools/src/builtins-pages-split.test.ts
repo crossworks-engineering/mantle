@@ -90,7 +90,11 @@ describe('page_split', () => {
 
   it('maps h1 to level 1 and keeps the intro by default', async () => {
     const res = await split.handler({ page_id: PAGE_ID, by: 'h1' }, ctx);
-    expect(splitPage).toHaveBeenCalledWith('o1', PAGE_ID, { by: 1, preserveIntro: true });
+    expect(splitPage).toHaveBeenCalledWith('o1', PAGE_ID, {
+      by: 1,
+      preserveIntro: true,
+      confirm: false,
+    });
     expect(outputOf(res)).toMatchObject({
       page_id: PAGE_ID,
       split_into: 2,
@@ -101,7 +105,11 @@ describe('page_split', () => {
 
   it('maps h2 to level 2, case-insensitively, and honours preserve_intro:false', async () => {
     await split.handler({ page_id: PAGE_ID, by: 'H2', preserve_intro: false }, ctx);
-    expect(splitPage).toHaveBeenCalledWith('o1', PAGE_ID, { by: 2, preserveIntro: false });
+    expect(splitPage).toHaveBeenCalledWith('o1', PAGE_ID, {
+      by: 2,
+      preserveIntro: false,
+      confirm: false,
+    });
   });
 
   it('tells the caller the TOC is in DRAFT while the children are already real', async () => {
@@ -132,7 +140,7 @@ describe('page_extract_section', () => {
 
   it('moves the section into a child, owner-scoped, and reports the child', async () => {
     const res = await extract.handler({ page_id: PAGE_ID, heading_block_id: 'h_1' }, ctx);
-    expect(extractSectionToPage).toHaveBeenCalledWith('o1', PAGE_ID, 'h_1');
+    expect(extractSectionToPage).toHaveBeenCalledWith('o1', PAGE_ID, 'h_1', { confirm: false });
     expect(outputOf(res)).toMatchObject({ page_id: PAGE_ID, child_id: 'c-9', title: 'Appendix' });
     const hint = String(outputOf(res).hint);
     expect(hint).toContain('Appendix');

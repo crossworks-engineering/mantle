@@ -29,6 +29,7 @@ import {
   placementError,
   placementOf,
   placementOutput,
+  placementRefusal,
 } from './common';
 
 export const page_from_file: BuiltinToolDef = {
@@ -63,6 +64,9 @@ export const page_from_file: BuiltinToolDef = {
     required: ['file_id'],
   },
   handler: async (input, ctx) => {
+    // Filing (and confirming) is the owner's: refused before any read.
+    const gated = placementRefusal(input, ctx);
+    if (gated) return { ok: false, error: gated };
     const fileId = str(input.file_id).trim();
     if (!fileId) return { ok: false, error: 'file_id is required' };
     const meta = await fileById({ ownerId: ctx.ownerId, fileId });
@@ -214,6 +218,9 @@ export const page_from_note: BuiltinToolDef = {
     required: ['note_id'],
   },
   handler: async (input, ctx) => {
+    // Filing (and confirming) is the owner's: refused before any read.
+    const gated = placementRefusal(input, ctx);
+    if (gated) return { ok: false, error: gated };
     const noteId = str(input.note_id).trim();
     if (!noteId) return { ok: false, error: 'note_id is required' };
 
@@ -344,6 +351,9 @@ export const page_from_notes: BuiltinToolDef = {
     required: ['note_ids', 'title'],
   },
   handler: async (input, ctx) => {
+    // Filing (and confirming) is the owner's: refused before any read.
+    const gated = placementRefusal(input, ctx);
+    if (gated) return { ok: false, error: gated };
     const noteIds = strArr(input.note_ids)
       .map((id) => id.trim())
       .filter(Boolean);
@@ -498,6 +508,9 @@ export const page_from_journal: BuiltinToolDef = {
     required: ['journal_ids', 'title'],
   },
   handler: async (input, ctx) => {
+    // Filing (and confirming) is the owner's: refused before any read.
+    const gated = placementRefusal(input, ctx);
+    if (gated) return { ok: false, error: gated };
     const journalIds = strArr(input.journal_ids)
       .map((id) => id.trim())
       .filter(Boolean);

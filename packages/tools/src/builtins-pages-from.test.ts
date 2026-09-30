@@ -68,7 +68,8 @@ const fromJournal = all.find((t) => t.slug === 'page_from_journal')!;
 const fromFile = all.find((t) => t.slug === 'page_from_file')!;
 const replaceFromFile = all.find((t) => t.slug === 'page_replace_from_file')!;
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// An owner surface: filing a page (folder_id, parent_id) is the owner's.
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp' } };
 const PAGE_ID = 'p-new';
 const FILE_ID = 'f-1';
 

@@ -5,8 +5,9 @@
  * Split out of builtins-pages.ts; bodies moved verbatim.
  */
 
-import type { ToolPrecondition } from '../types';
+import type { ToolHandlerContext, ToolPrecondition } from '../types';
 import { str } from '../coerce';
+import { isOwnerSurface } from '../surface';
 
 // Shared referential preconditions (checked centrally in dispatch — see
 // preconditions.ts): the id must name an EXISTING page the owner holds.
@@ -110,6 +111,25 @@ export function placementOf(input: Record<string, unknown>): {
   if (folderId) return { folderId, ...confirm };
   const parentId = str(input.parent_id).trim();
   return parentId ? { parentId, ...confirm } : { ...confirm };
+}
+
+/** Filing a page in a folder, or confirming what that opens, is the
+ *  owner's (like page_move and the tree tools): a member's or client's turn
+ *  runs with the brain's owner id, so without this a member-facing agent
+ *  could confirm a page into a client-shared brain folder. The refusal, or
+ *  null when the surface is the owner's or nothing was asked. */
+export function placementRefusal(
+  input: Record<string, unknown>,
+  ctx: ToolHandlerContext,
+): string | null {
+  if (isOwnerSurface(ctx.surface)) return null;
+  const asked = [
+    str(input.folder_id).trim() && 'folder_id',
+    str(input.parent_id).trim() && 'parent_id',
+    input.confirm === true && 'confirm',
+  ].filter(Boolean);
+  if (!asked.length) return null;
+  return `${asked.join(', ')} is the owner's: a page made in this turn goes to the top level of Pages, and only the owner files it in a folder or confirms what a shared folder opens.`;
 }
 
 /** The placement as a tool echoes it back (only what was given). */

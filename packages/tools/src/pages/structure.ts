@@ -37,6 +37,7 @@ export const page_split: BuiltinToolDef = {
         description:
           'keep the content BEFORE the first heading at the top of this page (as an intro above the table of contents). Default true.',
       },
+      confirm: CONFIRM_INPUT,
     },
     required: ['page_id', 'by'],
   },
@@ -48,7 +49,11 @@ export const page_split: BuiltinToolDef = {
     if (!level) return { ok: false, error: "by must be 'h1' or 'h2'" };
     const preserveIntro = input.preserve_intro !== false;
     try {
-      const res = await splitPage(ctx.ownerId, pageId, { by: level, preserveIntro });
+      const res = await splitPage(ctx.ownerId, pageId, {
+        by: level,
+        preserveIntro,
+        confirm: input.confirm === true,
+      });
       ctx.step?.setOutput({ split_into: res.children.length });
       const n = res.children.length;
       return {
@@ -66,6 +71,10 @@ export const page_split: BuiltinToolDef = {
         },
       };
     } catch (err) {
+      // A draft-only embed of the source would open in a shared folder: the
+      // list, until the user agrees (confirm: true).
+      const refusal = visibilityRefusal(err);
+      if (refusal) return { ok: false, error: refusal };
       return { ok: false, error: errorMessage(err) };
     }
   },
@@ -86,6 +95,7 @@ export const page_extract_section: BuiltinToolDef = {
         description:
           "block id of the section's heading (from page_blocks_list({ kinds:['heading'] })). Must be a top-level heading.",
       },
+      confirm: CONFIRM_INPUT,
     },
     required: ['page_id', 'heading_block_id'],
   },
@@ -95,7 +105,9 @@ export const page_extract_section: BuiltinToolDef = {
     if (!pageId) return { ok: false, error: 'page_id is required' };
     if (!headingId) return { ok: false, error: 'heading_block_id is required' };
     try {
-      const res = await extractSectionToPage(ctx.ownerId, pageId, headingId);
+      const res = await extractSectionToPage(ctx.ownerId, pageId, headingId, {
+        confirm: input.confirm === true,
+      });
       ctx.step?.setOutput({ child_id: res.childId });
       return {
         ok: true,
@@ -110,6 +122,10 @@ export const page_extract_section: BuiltinToolDef = {
         },
       };
     } catch (err) {
+      // A draft-only embed of the source would open in a shared folder: the
+      // list, until the user agrees (confirm: true).
+      const refusal = visibilityRefusal(err);
+      if (refusal) return { ok: false, error: refusal };
       return { ok: false, error: errorMessage(err) };
     }
   },

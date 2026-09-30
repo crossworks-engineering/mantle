@@ -91,16 +91,21 @@ export async function newPageDiff(
 }
 
 /** A NEW page in the folder at `destPath`: refused with the list unless
- *  confirmed; with `seen`, refused again when the change differs now. */
+ *  confirmed; with `seen`, refused again when the change differs now.
+ *  `ownRow: false` leaves the page's own row out (a page made NEXT TO one
+ *  that already shows at that share, by split or extract), so only what
+ *  its document newly opens can refuse it: the source's embeds are open
+ *  already, but a draft-only embed (0208 reads the published doc) is not. */
 export async function guardNewPageIn(
   via: Via,
   ownerId: string,
   destPath: string,
   title: string,
   doc: unknown,
-  opts: ConfirmOpts,
+  opts: ConfirmOpts & { ownRow?: boolean },
 ): Promise<VisibilityDiff> {
-  const diff = await newPageDiff(via, ownerId, destPath, title, doc);
+  const full = await newPageDiff(via, ownerId, destPath, title, doc);
+  const diff: VisibilityDiff = opts.ownRow === false ? { ...full, changes: [], total: 0 } : full;
   const count = changeCount(diff);
   if (count > 0 && !opts.confirm) throw new TreeVisibilityError(diff);
   if (opts.confirm && opts.seen !== undefined && count > 0 && count !== opts.seen) {

@@ -152,10 +152,14 @@ export async function getPage(ownerId: string, id: string): Promise<PageDetail |
  * above itself), and the id alone gives nothing away: the tree route
  * answers 404 for a folder the reader may not see.
  */
-async function pageFolderId(ownerId: string, path: string): Promise<string | null> {
+async function pageFolderId(
+  ownerId: string,
+  path: string,
+  reader?: 'client',
+): Promise<string | null> {
   if (path === PAGES_ROOT_LABEL || !path.startsWith(`${PAGES_ROOT_LABEL}.`)) return null;
   const rows = (await db.execute(sql`
-    select mantle_page_folder_id(${ownerId}::uuid, ${path}::ltree)::text as id`)) as unknown as Array<{
+    select mantle_page_folder_id(${ownerId}::uuid, ${path}::ltree, ${reader ?? null})::text as id`)) as unknown as Array<{
     id: string | null;
   }>;
   return rows[0]?.id ?? null;
@@ -164,14 +168,20 @@ async function pageFolderId(ownerId: string, path: string): Promise<string | nul
 /** The folder a page sits in, by the page's id (for the reader bodies that
  *  carry a doc without the row: the member Library, accepted items, a
  *  client's shared items). The page row is read as the caller (it reads the
- *  page itself). Null at the top level or for no such page. */
-export async function pageFolderIdOf(ownerId: string, pageId: string): Promise<string | null> {
+ *  page itself). For a client (`reader`), only a folder shared with clients
+ *  is named: a page shared on its own gives away no unshared folder. Null
+ *  at the top level or for no such page. */
+export async function pageFolderIdOf(
+  ownerId: string,
+  pageId: string,
+  reader?: 'client',
+): Promise<string | null> {
   const [row] = await db
     .select({ path: nodes.path })
     .from(nodes)
     .where(and(eq(nodes.id, pageId), eq(nodes.ownerId, ownerId), eq(nodes.type, 'page')))
     .limit(1);
-  return row ? pageFolderId(ownerId, String(row.path)) : null;
+  return row ? pageFolderId(ownerId, String(row.path), reader) : null;
 }
 
 /**

@@ -42,9 +42,9 @@ export type CreatePageInput = {
    *  draft) the brain's: a member files drafts at brain folder paths. */
   folderId?: string | null;
   /** Make the page NEXT TO this page of the owner's (the same folder): the
-   *  split and extract operations. The new page repeats content the source
-   *  already shows there, so it is not asked about. Takes precedence over
-   *  `folderId`. */
+   *  split and extract operations. The new page is read where the source
+   *  already is, so its own row is not asked about; what its document newly
+   *  opens (a draft-only embed) still is. Takes precedence over `folderId`. */
   siblingOf?: string;
   /** DEPRECATED (folder phase 7): pages no longer nest. An id here puts the
    *  new page in the SAME FOLDER as that page, so a caller from before the
@@ -138,11 +138,14 @@ export async function createPage(ownerId: string, input: CreatePageInput): Promi
     const path = await pagePathFor(tx, ownerId, input);
     // A folder's share reaches the new row through the insert trigger
     // (0204) and what the doc embeds through 0208's edges: asked first. A
-    // page made next to another repeats what that page already shows there.
-    if (path !== PAGES_ROOT_LABEL && !input.siblingOf) {
+    // page made next to another (split, extract) is read where its source
+    // already is, so its own row is not asked about; what its document
+    // opens still is (a draft-only embed of the source is not open yet).
+    if (path !== PAGES_ROOT_LABEL) {
       await guardNewPageIn(tx, ownerId, path, title, doc, {
         confirm: input.confirm,
         seen: input.seen,
+        ownRow: !input.siblingOf,
       });
     }
     const [node] = await tx

@@ -36,6 +36,7 @@ import {
   placementError,
   placementOf,
   placementOutput,
+  placementRefusal,
 } from './common';
 
 export const page_create: BuiltinToolDef = {
@@ -67,6 +68,8 @@ export const page_create: BuiltinToolDef = {
     const markdown = str(input.markdown);
     const tags = strArr(input.tags);
     const icon = str(input.icon).trim();
+    const gated = placementRefusal(input, ctx);
+    if (gated) return { ok: false, error: gated };
     const placement = placementOf(input);
     try {
       const doc = markdownToDoc(markdown);

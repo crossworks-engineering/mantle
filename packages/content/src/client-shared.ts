@@ -17,6 +17,7 @@
  * item". A table is its committed grid only (audit B13, ClientSharedTable).
  */
 import { and, eq, inArray } from 'drizzle-orm';
+import { pageFolderIdOf } from './pages/read';
 import { currentSpaceScope, currentViewerLevel, db, nodes } from '@mantle/db';
 import type { TableDetail } from '@mantle/content-core/table-model';
 import type { ClientSharedItem, ClientSharedRow, ClientSharedTable } from '@mantle/client-types';
@@ -143,9 +144,10 @@ export async function getClientSharedItem(
       const scan = { ownUrl: clientOwnUrl(clientRedactOrigins()) };
       const titles = await clientReadable(anchorId, docRefIds(item.doc, scan));
       const doc = redactClientDoc(item.doc, new Set(titles.keys()), redactOptions(titles));
-      // Its folder (folder phase 7): the client's Folder index block lists it
-      // through the client tree, which answers only what the client may see.
-      return { ...base, type: 'page', doc, folderId: item.folderId ?? null };
+      // Its folder (folder phase 7), only when shared with clients: the
+      // client's Folder index block lists it through the client tree, and a
+      // page shared on its own names no folder the client cannot open.
+      return { ...base, type: 'page', doc, folderId: await pageFolderIdOf(anchorId, id, 'client') };
     }
     case 'note': {
       const scan = { ownUrl: clientOwnUrl(clientRedactOrigins()) };

@@ -214,6 +214,49 @@ describe.skipIf(!URL)('pages in the item tree', () => {
     expect(await own(lifted.childId)).toMatchObject({ path: plans!.path, parent_id: null });
   });
 
+  it('a draft-only embed of the source is asked about when a section is lifted next to it', async () => {
+    const [shared] = (await m.systemDb.execute(sqlTag`
+      select id from nodes where owner_id = ${brain} and type = 'branch'
+         and path = ${`pages.${label}_shared`}::ltree`)) as unknown as Array<{ id: string }>;
+    // The source sits in the client-shared folder with an empty published doc.
+    const source = await pages.createPage(brain, {
+      title: 'Draft source',
+      folderId: shared!.id,
+      confirm: true,
+      seen: 1,
+    });
+    made.push(source.id);
+    // A private picture pasted into its DRAFT only: 0208 reads the published
+    // doc, so nothing is open yet.
+    const pic = randomUUID();
+    made.push(pic);
+    await m.systemDb.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, data, tags)
+      values (${pic}, ${brain}, 'file', 'draft-only.png', 'files'::ltree, '{}'::jsonb, '{}')`);
+    await pages.saveDraft(brain, source.id, {
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: { level: 1, id: 'h_1' },
+          content: [{ type: 'text', text: 'Pics' }],
+        },
+        { type: 'image', attrs: { id: 'i_1', nodeId: pic, src: 'x' } },
+      ],
+    });
+    expect(await own(pic)).toMatchObject({ embedded_level: null });
+    const diff = await refusal(pages.extractSectionToPage(brain, source.id, 'h_1'));
+    // The new page's own row is not asked about (its source shows there
+    // already); the picture it would open is.
+    expect(diff.total).toBe(0);
+    expect(diff.alsoEmbeds?.map((c) => c.id)).toEqual([pic]);
+    expect(await own(pic)).toMatchObject({ embedded_level: null });
+    const lifted = await pages.extractSectionToPage(brain, source.id, 'h_1', { confirm: true });
+    made.push(lifted.childId);
+    expect(await own(lifted.childId)).toMatchObject({ path: `pages.${label}_shared` });
+    expect(await own(pic)).toMatchObject({ audience: 'admin', embedded_level: 'client' });
+  });
+
   it('a member files a page draft where its tree shows, never in a hidden brain folder', async () => {
     const scope = { anchorId: brain, spaceId: space, loginId: member };
     // A brain folder shared with the team: the member sees it.

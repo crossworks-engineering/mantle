@@ -32,6 +32,7 @@ vi.mock('./resolve', () => ({ resolveTool: h.resolveTool, resolveTools: vi.fn() 
 import type { Tool } from '@mantle/db';
 import { dispatchTool } from './dispatch';
 import { getBuiltin, listBuiltins, registerBuiltin } from './registry';
+import { PAGE_TOOLS } from './builtins-pages';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import type { BuiltinToolDef, OwnerSurfaceVia, ToolHandlerContext } from './types';
 
@@ -273,4 +274,30 @@ describe('owner checks are allowlists', () => {
     }
     expect(found).toEqual(TEAM_KIND_ALLOWED);
   });
+});
+
+describe("filing a page in a folder is the owner's (folder phase 7)", () => {
+  // These tools are not ownerOnly (a member's turn may make a page at the
+  // top level), but folder_id, parent_id and confirm are refused on any
+  // surface that is not the owner's, before any store call.
+  const FOLDER = '00000000-0000-4000-8000-000000000009';
+  const placed: Array<[string, Record<string, unknown>]> = [
+    ['page_create', { title: 'x', folder_id: FOLDER }],
+    ['page_create', { title: 'x', parent_id: FOLDER }],
+    ['page_create', { title: 'x', confirm: true }],
+    ['page_from_note', { note_id: FOLDER, folder_id: FOLDER }],
+    ['page_from_notes', { note_ids: [FOLDER], folder_id: FOLDER }],
+    ['page_from_journal', { entry_ids: [FOLDER], folder_id: FOLDER }],
+    ['page_from_file', { file_id: FOLDER, folder_id: FOLDER }],
+  ];
+  for (const [slug, input] of placed) {
+    for (const [name, surface] of NOT_OWNER) {
+      it(`${slug} refuses ${JSON.stringify(input)} on a ${name} surface`, async () => {
+        const def = (PAGE_TOOLS as readonly BuiltinToolDef[]).find((t) => t.slug === slug)!;
+        const res = await def.handler(input, ctxFor(surface));
+        expect(res.ok).toBe(false);
+        if (!res.ok) expect(res.error).toMatch(/owner's/);
+      });
+    }
+  }
 });

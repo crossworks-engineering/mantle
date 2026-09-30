@@ -83,13 +83,19 @@ $$;
 -- DEFINER like mantle_brain_id (0187): a folder's own row is not readable
 -- by a member under the row rules (it inherits only from above itself), and
 -- the id alone gives nothing away; the tree routes answer 404 for a folder
--- the reader may not see. Null at the top level.
-CREATE OR REPLACE FUNCTION "public"."mantle_page_folder_id"(o uuid, p ltree)
+-- the reader may not see. Null at the top level. For a client reader
+-- (`reader` = 'client') the id is given only where the folder is shared
+-- with clients, its own share or an inherited one: a page shared on its own
+-- names no folder a client cannot open.
+CREATE OR REPLACE FUNCTION "public"."mantle_page_folder_id"(o uuid, p ltree, reader text DEFAULT NULL)
   RETURNS uuid LANGUAGE sql STABLE SECURITY DEFINER
   SET search_path = pg_catalog, public AS $$
   SELECT b.id FROM public.nodes b
    WHERE b.type = 'branch' AND b.path = p AND nlevel(p) > 1 AND p <@ 'pages'::ltree
      AND b.owner_id IN (o, public.mantle_brain_id())
+     AND (reader IS DISTINCT FROM 'client'
+          OR b.share_level = 'client'
+          OR public.mantle_inherited_level(b.owner_id, b.path, 'branch'::public.node_type) = 'client')
    ORDER BY (b.owner_id = o) DESC
    LIMIT 1
 $$;
@@ -140,7 +146,7 @@ BEGIN
    WHERE n.id IN (SELECT node_id FROM revoked) AND n.audience = 'public';
   GET DIAGNOSTICS n = ROW_COUNT;
   IF n > 0 THEN
-    RAISE NOTICE 'folders phase 7: % page(s) shared only through a parent''s "share sub-pages" link went back to admin (their links revoked)', n;
+    RAISE NOTICE 'folders phase 7: the links a parent''s "share sub-pages" switch opened were revoked; % page(s) left at public by them went back to admin', n;
   END IF;
 
   -- 1. The pages root, for every brain with a page (the row pages/tree.ts

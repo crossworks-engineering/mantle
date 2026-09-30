@@ -63,7 +63,7 @@ export type SplitPageResult = {
 export async function splitPage(
   ownerId: string,
   pageId: string,
-  opts: { by: SplitLevel; preserveIntro?: boolean },
+  opts: { by: SplitLevel; preserveIntro?: boolean; confirm?: boolean },
 ): Promise<SplitPageResult> {
   const page = await getPage(ownerId, pageId);
   if (!page) throw new Error(`splitPage: page ${pageId} not found`);
@@ -84,7 +84,12 @@ export async function splitPage(
       content: sec.blocks.length ? sec.blocks : [{ type: 'paragraph' }],
     });
     // Next to the source, in its folder (read inside the create's own lock).
-    const child = await createPage(ownerId, { title: sec.title, doc: childDoc, siblingOf: pageId });
+    const child = await createPage(ownerId, {
+      title: sec.title,
+      doc: childDoc,
+      siblingOf: pageId,
+      confirm: opts.confirm,
+    });
     children.push({ id: child.id, title: child.title });
     tocBlocks.push({
       type: 'childPage',
@@ -125,6 +130,7 @@ export async function extractSectionToPage(
   ownerId: string,
   pageId: string,
   headingBlockId: string,
+  opts: { confirm?: boolean } = {},
 ): Promise<ExtractSectionResult> {
   const page = await getPage(ownerId, pageId);
   if (!page) throw new Error(`extractSectionToPage: page ${pageId} not found`);
@@ -141,6 +147,7 @@ export async function extractSectionToPage(
     title: section.title,
     doc: childDoc,
     siblingOf: pageId,
+    confirm: opts.confirm,
   });
 
   const newParent = ensureBlockIds({
