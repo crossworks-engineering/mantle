@@ -18,7 +18,7 @@ import {
   slugifyFolder,
   untrackedFilesOnDisk,
 } from '../index';
-import { carrySpaceRows, isUniqueViolation, db, nodes } from '@mantle/db';
+import { carrySpaceRows, isUniqueViolation, db, nodes, takeShareWriteLock } from '@mantle/db';
 import { folderCounts, folderRowFromNode, type FolderRow } from './shared';
 import { folderById } from './queries';
 
@@ -267,6 +267,7 @@ export async function deleteFolder(args: {
   }
   // Members' drafts and folders in it move up to the parent (never deleted).
   await db.transaction(async (tx) => {
+    await takeShareWriteLock(tx, args.ownerId);
     const parent = folder.path.slice(0, folder.path.lastIndexOf('.'));
     await carrySpaceRows(tx, args.ownerId, folder.path, parent, { lift: true });
     await tx.delete(nodes).where(eq(nodes.id, args.folderId));
@@ -398,6 +399,7 @@ export async function renameFolderById(args: {
   await renameFolderOnDisk(oldPath, newPath);
   try {
     await db.transaction(async (tx) => {
+      await takeShareWriteLock(tx, args.ownerId);
       // Rewrite the prefix for the folder itself + every descendant (folders and
       // files — a file's path IS its parent folder's path). The folder itself is
       // handled by the CASE: `subpath(path, nlevel(oldPath))` would throw

@@ -124,6 +124,8 @@ async function handleUnlink(absPath: string): Promise<void> {
     if (!shouldSync(absPath)) return;
     const loc = ltreeForDiskPath(absPath);
     if (!loc) return;
+    // Back already (a move undone, a quick replace): nothing was deleted.
+    if (await fs.stat(absPath).then(() => true, () => false)) return;
     const res = await deleteFileByPath({
       ownerId: USER_ID!,
       parentPath: loc.parentPath,

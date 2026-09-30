@@ -9,7 +9,7 @@
  * order are plain row data for every kind.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { db, isCheckViolation, nodes } from '@mantle/db';
+import { db, isCheckViolation, nodes, takeShareWriteLock } from '@mantle/db';
 import {
   createFolder as createFilesFolder,
   deleteFolder as deleteFilesFolder,
@@ -355,10 +355,13 @@ async function setFolderShare(
   // share check is the last word on which roots may share: a refusal there
   // is a refusal, not a server error.
   try {
-    await db
-      .update(nodes)
-      .set({ shareLevel: share, updatedAt: new Date() })
-      .where(and(eq(nodes.id, folder.id), eq(nodes.ownerId, ownerId)));
+    await db.transaction(async (tx) => {
+      await takeShareWriteLock(tx, ownerId);
+      await tx
+        .update(nodes)
+        .set({ shareLevel: share, updatedAt: new Date() })
+        .where(and(eq(nodes.id, folder.id), eq(nodes.ownerId, ownerId)));
+    });
   } catch (err) {
     if (isCheckViolation(err)) {
       throw new TreeError('invalid', `${kind} folders cannot be shared on this brain yet`);

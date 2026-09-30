@@ -64,6 +64,7 @@ import {
   type ReviewState,
   type SpaceSharing,
   type ViewerLevel,
+  takeShareReadLock,
 } from '@mantle/db';
 import {
   TEXT_EXTS,
@@ -1309,7 +1310,10 @@ async function moveIntoBrain(
       }
       // The brain folders at and above every landing, locked against a share
       // change until the Accept commits: the share read here is the share
-      // it lands under.
+      // it lands under. The brain's share lock first (shared), so a writer
+      // changing a share (which takes it exclusive, then the folder row)
+      // never waits on these row locks in the other order.
+      await takeShareReadLock(tx, brainId);
       const landings = [...new Set(landingOf.values())];
       if (landings.length) {
         await tx.execute(sql`

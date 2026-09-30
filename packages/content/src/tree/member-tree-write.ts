@@ -16,7 +16,7 @@
  * so the place the admin reviewed is the place Accept uses.
  */
 import { sql } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { db, takeShareWriteLock } from '@mantle/db';
 import { dashToLtree, slugifyFolder } from '@mantle/files';
 import type { AppTint } from '@mantle/client-types/app-nav';
 import {
@@ -222,6 +222,7 @@ export async function updateMemberFolder(
   }
   await db.transaction(async (tx) => {
     if (path !== folder.path) {
+      await takeShareWriteLock(tx, scope.spaceId);
       await refuseFrozenInside(tx, scope.spaceId, storedPathOf(kind, folder.path), folder.name);
       await rewriteOwn(
         tx,
@@ -262,6 +263,7 @@ export async function deleteMemberFolder(
     );
   }
   await db.transaction(async (tx) => {
+    await takeShareWriteLock(tx, scope.spaceId);
     await refuseFrozenInside(tx, scope.spaceId, storedPathOf(kind, folder.path), folder.name);
     await rewriteOwn(
       tx,

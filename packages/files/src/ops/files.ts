@@ -659,9 +659,13 @@ export async function deleteFileByPath(args: {
   parentPath: string;
   filename: string;
 }): Promise<{ ok: boolean }> {
-  const [node] = await db
-    .select({ id: nodes.id })
-    .from(nodes)
+  // One statement, the path and name in its WHERE: a move that commits
+  // while this waits on the row lock is re-checked against the moved row
+  // (READ COMMITTED re-evaluates the WHERE), so the watcher's unlink for the
+  // old path never deletes a file that just moved (folder audit C1). A
+  // select-then-delete by id did.
+  const done = await db
+    .delete(nodes)
     .where(
       and(
         eq(nodes.ownerId, args.ownerId),
@@ -670,10 +674,8 @@ export async function deleteFileByPath(args: {
         sql`lower(${nodes.data}->>'filename') = lower(${args.filename})`,
       ),
     )
-    .limit(1);
-  if (!node) return { ok: false };
-  await db.delete(nodes).where(eq(nodes.id, node.id));
-  return { ok: true };
+    .returning({ id: nodes.id });
+  return { ok: done.length > 0 };
 }
 
 /** Lazy-mkdir for an arbitrary ltree path under `files.*`. Inserts a

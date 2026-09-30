@@ -23,7 +23,7 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { carrySpaceRows, db, nodes, type Node } from '@mantle/db';
+import { carrySpaceRows, db, nodes, takeShareWriteLock, type Node } from '@mantle/db';
 import { moveFile as moveFileOnDisk, renameFolder as renameFolderOnDisk } from './disk';
 import {
   FILES_MAX_FOLDER_DEPTH,
@@ -227,6 +227,7 @@ export async function moveFolderById(args: {
   await renameFolderOnDisk(oldPath, newPath);
   try {
     await db.transaction(async (tx) => {
+      await takeShareWriteLock(tx, args.ownerId);
       await tx.execute(sql`
         UPDATE ${nodes}
         SET path = CASE

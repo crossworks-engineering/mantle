@@ -302,6 +302,45 @@ describe.skipIf(!URL)('sharing a folder', () => {
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${inF}`);
     });
 
+    it('an unshare waits for an insert into the folder still in flight (0207)', async () => {
+      const f = await tree.createTreeFolder(brain, 'notes', {
+        parentId: null,
+        name: `${label}_race`,
+      });
+      await tree.updateTreeFolder(brain, 'notes', f.id, { share: 'client' }, { confirm: true });
+      const note = randomUUID();
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      let inserted!: () => void;
+      const didInsert = new Promise<void>((r) => (inserted = r));
+      // A write filing a note into the folder, its transaction still open.
+      const inserting = m.systemDb.transaction(async (tx) => {
+        await tx.execute(sqlTag`
+          insert into nodes (id, owner_id, type, title, path, data, tags)
+          values (${note}, ${brain}, 'note', 'racing', ${f.path}::ltree,
+                  ${JSON.stringify({ content: 'x' })}::jsonb, '{}')`);
+        inserted();
+        await held;
+      });
+      await didInsert;
+      // The unshare starts while that insert has computed 'client' and not
+      // committed; it must wait, then refresh the committed row.
+      const unsharing = tree.updateTreeFolder(
+        brain,
+        'notes',
+        f.id,
+        { share: null },
+        { confirm: true },
+      );
+      await new Promise((r) => setTimeout(r, 300));
+      release();
+      await inserting;
+      await unsharing;
+      expect(await inherited(note)).toBeNull();
+      await m.systemDb.execute(sqlTag`delete from nodes where id = ${note}`);
+      await tree.deleteTreeFolder(brain, 'notes', f.id, { confirm: true });
+    });
+
     it('repairs a row left at a share its folders no longer give (share drift)', async () => {
       const stray = randomUUID();
       await m.systemDb.execute(sqlTag`

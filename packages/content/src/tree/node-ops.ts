@@ -9,7 +9,7 @@
  * slug, and nothing nests deeper than TREE_MAX_DEPTH folders.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { carrySpaceRows, db, nodes } from '@mantle/db';
+import { carrySpaceRows, db, nodes, takeShareWriteLock } from '@mantle/db';
 import { dashToLtree, slugifyFolder } from '@mantle/files';
 import {
   TREE_KIND_SPECS,
@@ -237,6 +237,7 @@ export async function renameNodeFolder(
     throw new NodeOpRefusal('conflict', `a folder named '${title}' already exists here`);
   }
   await db.transaction(async (tx) => {
+    await takeShareWriteLock(tx, ownerId);
     await lockAndRecheck(tx, ownerId, folder, { newPath });
     await rewriteSubtree(tx, ownerId, folder.path, newPath);
     await tx
@@ -274,6 +275,7 @@ export async function moveNodeFolder(
     );
   }
   await db.transaction(async (tx) => {
+    await takeShareWriteLock(tx, ownerId);
     await lockAndRecheck(tx, ownerId, folder, { destParentPath, newPath });
     await rewriteSubtree(tx, ownerId, folder.path, newPath);
     await tx
@@ -308,6 +310,7 @@ export async function removeEmptyNodeFolder(ownerId: string, folderId: string): 
   // Members' drafts and folders in it move up to the parent (never deleted).
   // Emptiness is checked on the locked row, in the delete's transaction.
   await db.transaction(async (tx) => {
+    await takeShareWriteLock(tx, ownerId);
     await tx.execute(sql`
       select 1 from nodes where id = ${folderId} and owner_id = ${ownerId} for update`);
     const inside = (await tx.execute(sql`
