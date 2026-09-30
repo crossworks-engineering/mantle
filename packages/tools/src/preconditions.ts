@@ -49,6 +49,18 @@ async function defaultNodeTypeLookup(ownerId: string, id: string): Promise<strin
   return row?.type ?? null;
 }
 
+/** Injectable for tests: a node's path (text) by (ownerId, id), or null. */
+export type NodePathLookup = (ownerId: string, id: string) => Promise<string | null>;
+
+async function defaultNodePathLookup(ownerId: string, id: string): Promise<string | null> {
+  const [row] = await db
+    .select({ path: nodes.path })
+    .from(nodes)
+    .where(and(eq(nodes.id, id), eq(nodes.ownerId, ownerId)))
+    .limit(1);
+  return row ? String(row.path) : null;
+}
+
 /** Where to send the model to find a real id, per reference scheme. */
 const REF_LOOKUP: Record<MarkdownRef['scheme'], string> = {
   media: 'file_list / search_nodes',
@@ -136,6 +148,7 @@ export async function checkToolPreconditions(
   input: Record<string, unknown>,
   ownerId: string,
   lookup: NodeTypeLookup = defaultNodeTypeLookup,
+  pathLookup: NodePathLookup = defaultNodePathLookup,
 ): Promise<ToolHandlerResult | null> {
   for (const pre of preconditions) {
     if (pre.kind === 'markdown_refs') {
@@ -170,6 +183,18 @@ export async function checkToolPreconditions(
           `'${pre.param}' ${id} is a ${actualType}, not a ${pre.nodeType} — ` +
           `pass a ${pre.nodeType} id (find it with ${pre.lookup}).`,
       };
+    }
+    if (pre.pathRoot) {
+      const at = (await pathLookup(ownerId, id)) ?? '';
+      if (at !== pre.pathRoot && !at.startsWith(`${pre.pathRoot}.`)) {
+        return {
+          ok: false,
+          error:
+            `'${pre.param}' ${id} is not under ${pre.pathRoot} (it is at '${at}'); ` +
+            `find one with ${pre.lookup}. Another kind's folders are organised with ` +
+            'tree_folder_update and tree_folder_delete.',
+        };
+      }
     }
   }
   return null;

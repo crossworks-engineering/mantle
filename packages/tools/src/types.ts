@@ -209,6 +209,10 @@ export type ToolPrecondition =
       param: string;
       /** Expected node type ('page', 'table', 'note', …). Unset ⇒ any node. */
       nodeType?: string;
+      /** The node must sit at or under this root path ('files'): every kind's
+       *  folders are branch rows, and a Files folder tool must not be handed
+       *  another kind's (folder audit X1). Unset ⇒ anywhere. */
+      pathRoot?: string;
       /** Lookup tools quoted in the teaching error, e.g. 'page_list / search_nodes'. */
       lookup: string;
     }
