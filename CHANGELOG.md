@@ -4,6 +4,13 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.347: C6, released
+
+- The release of 0.232.346 (client apps and finish). The 0.232.346 tag built
+  no image and published no contract: one route test warmed its route
+  imports in parallel, which raced its auth mock in CI. The imports now run
+  one at a time. No product change.
+
 ## 0.232.346: client apps and finish (client logins C6)
 
 - **Clients run apps set to client level** (`/api/client/apps`, the frame,
