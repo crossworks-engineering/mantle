@@ -6,7 +6,10 @@
  * and after the client login is deleted: an item accepted from a client's
  * space still taints a staff turn that read it. So is a node a marked turn
  * created (C5 audit fix L10); the corpus map leaves all of them out (L4);
- * a conversation keeps its mark for 24 hours (I9). The gate itself runs end
+ * a conversation keeps its mark for 24 hours (I9). A Table exported from an
+ * app at client level is too (C6: clients write the app's rows), for as
+ * long as the app stays at client level; one exported from a team app is
+ * not. The gate itself runs end
  * to end in packages/runtime/src/agent/client-sourced-gate.db.test.ts.
  * Seeds its own rows on a random owner; removes them.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/client-sourced.db.test.ts
@@ -40,6 +43,11 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     older: randomUUID(),
     otherBrainNew: randomUUID(),
     agent: randomUUID(),
+    /** Apps (C6) at client and team level, and a Table each exports. */
+    clientApp: randomUUID(),
+    teamApp: randomUUID(),
+    clientAppTable: randomUUID(),
+    teamAppTable: randomUUID(),
   };
 
   beforeAll(async () => {
@@ -77,6 +85,15 @@ describe.skipIf(!URL)('namesClientSourced', () => {
       (${ids.acceptedClientItem}, ${ids.goneClient}, 'accepted'),
       (${ids.acceptedMemberItem}, ${ids.memberLogin}, 'accepted'),
       (${ids.submittedClientItem}, ${ids.clientLogin}, 'submitted')`;
+    // Two apps identical but for the level, each exporting a Table at admin.
+    await admin`insert into nodes (id, owner_id, type, title, path, audience) values
+      (${ids.clientApp}, ${owner}, 'app', 'orders (client)', 'apps', 'client'),
+      (${ids.teamApp}, ${owner}, 'app', 'orders (team)', 'apps', 'team'),
+      (${ids.clientAppTable}, ${owner}, 'table', 'orders export', 'tables', 'admin'),
+      (${ids.teamAppTable}, ${owner}, 'table', 'orders export', 'tables', 'admin')`;
+    await admin`insert into app_table_exports (owner_id, app_node_id, sqlite_table, table_node_id) values
+      (${owner}, ${ids.clientApp}, 'orders', ${ids.clientAppTable}),
+      (${owner}, ${ids.teamApp}, 'orders', ${ids.teamAppTable})`;
     // The client login goes: author_login_id goes NULL, the stamp stays.
     await admin`delete from spaces where login_id = ${ids.goneClient}`;
     await admin`delete from auth.users where id = ${ids.goneClient}`;
@@ -137,6 +154,27 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     expect(row?.via).toBe('note_create');
     // Marking twice is harmless.
     expect(await cs.markCreatedClientSourced(owner, out, 1500, 'note_create')).toBe(0);
+  });
+
+  it('a Table exported from an app at client level is client-sourced, from a team app not (C6)', async () => {
+    expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(true);
+    expect(await cs.namesClientSourced(owner, [ids.teamAppTable])).toBe(false);
+    // Only for this brain.
+    expect(await cs.namesClientSourced(other, [ids.clientAppTable])).toBe(false);
+    // Read on a limited role too (the check runs as the system).
+    expect(
+      await m.withViewer('team', () => cs.namesClientSourced(owner, [ids.clientAppTable])),
+    ).toBe(true);
+    expect(
+      [...(await cs.clientSourcedAmong(owner, [ids.clientAppTable, ids.teamAppTable]))],
+    ).toEqual([ids.clientAppTable]);
+    // Raise the app above client: its table stops counting.
+    await admin`update nodes set audience = 'team' where id = ${ids.clientApp}`;
+    try {
+      expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(false);
+    } finally {
+      await admin`update nodes set audience = 'client' where id = ${ids.clientApp}`;
+    }
   });
 
   it('the corpus map leaves client-sourced items out, and only those (L4)', async () => {
