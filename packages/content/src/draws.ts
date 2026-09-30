@@ -33,12 +33,7 @@ import { acceptSceneSvg, EXCALIDRAW_ENGINE } from './scene-svg';
 // The etag decision and the embedded-asset text bounds are shared with
 // pages — identical semantics, one truth.
 import { evaluateDraftRev, foldEmbeddedText } from './pages';
-import {
-  drawEmbedIds,
-  drawPlacedFileIds,
-  followNewEmbeds,
-  refoldEmbedReach,
-} from './embed-closure';
+import { drawPlacedFileIds, followNewEmbeds, refoldEmbedReach } from './embed-closure';
 
 export const DRAWS_ROOT_LABEL = 'draw';
 
