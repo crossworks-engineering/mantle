@@ -38,6 +38,8 @@ export {
 export {
   RECALL_TAG,
   RECALL_PROMPT_TAG,
+  RECALL_ROOT_LABEL,
+  ensureRecallRoot,
   compileRecallMap,
   embedPendingRecallPrompts,
   findPageRoot,

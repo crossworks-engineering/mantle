@@ -1394,6 +1394,20 @@
       "when": 1790018160000,
       "tag": "0198_app_data_read_only",
       "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "7",
+      "when": 1790018280000,
+      "tag": "0200_node_type_recall",
+      "breakpoints": true
+    },
+    {
+      "idx": 201,
+      "version": "7",
+      "when": 1790018340000,
+      "tag": "0201_recall_v2_schema",
+      "breakpoints": true
     }
   ]
 }

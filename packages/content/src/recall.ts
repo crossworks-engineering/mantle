@@ -23,7 +23,7 @@
 
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
-import { db, isBrainOwnerId, notifyNodeIngested, recallMaps, recallNodes } from '@mantle/db';
+import { db, isBrainOwnerId, nodes, notifyNodeIngested, recallMaps, recallNodes } from '@mantle/db';
 import { getRecallEmbedder } from './embed-bridge';
 import {
   RECALL_MAX_MAP_NODES,
@@ -36,6 +36,44 @@ import {
 } from '@mantle/content-core/recall-compile';
 
 export { RECALL_PROMPT_TAG, RECALL_TAG };
+
+/**
+ * Recall v2: the ltree root label for the Recall item tree, the `*_ROOT_LABEL`
+ * convention every kind follows (NOTES_ROOT_LABEL, JOURNAL_ROOT_LABEL, ...).
+ * A map is a `recall` node under this root, optionally inside folders (at most
+ * TREE_MAX_DEPTH of them). Cards are ROWS, never nodes, so they never appear
+ * in the tree.
+ *
+ * Plan: "PLAN: Recall v2, its own content type" (dev brain, task 5d6ce06a).
+ */
+export const RECALL_ROOT_LABEL = 'recall';
+
+/**
+ * Make sure the Recall root branch exists for this owner. Idempotent, and
+ * shaped exactly like every other kind's `ensureRoot` — the same conflict
+ * target, so two concurrent callers cannot make two roots.
+ *
+ * Unused until the native write path (R2) calls it; it lands here in R1 so
+ * the root's identity is fixed in one place before anything depends on it.
+ */
+export async function ensureRecallRoot(ownerId: string): Promise<void> {
+  await db
+    .insert(nodes)
+    .values({
+      ownerId,
+      type: 'branch',
+      title: 'Recall',
+      slug: RECALL_ROOT_LABEL,
+      path: RECALL_ROOT_LABEL,
+      data: {
+        description: 'Memory maps for agents: what to read, and when. Owner-authored.',
+      },
+    })
+    .onConflictDoNothing({
+      target: [nodes.ownerId, nodes.path],
+      where: sql`${nodes.type} = 'branch'`,
+    });
+}
 
 /** Sanity cap on tree walks — cycle guard, not a product limit. */
 const MAX_TREE_DEPTH = 64;

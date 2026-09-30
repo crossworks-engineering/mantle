@@ -153,6 +153,18 @@ async function readNodeBodyRaw(node: typeof nodes.$inferSelect): Promise<string>
     ];
     return lines.join('\n');
   }
+  // ─── Recall maps (v2) — metadata only ────────────────────────────────
+  // A `recall` node is a memory MAP; its cards are rows in recall_nodes and
+  // are served through the recall tools. Indexing them here would leak
+  // prompt and map text into general search and team-turn retrieval, exactly
+  // what the design excludes — same posture as the v1 page-built maps below,
+  // and as secrets. Title and enter-when only.
+  if (node.type === 'recall') {
+    const d = (node.data ?? {}) as Record<string, unknown>;
+    const enterWhen = typeof d.enterWhen === 'string' ? d.enterWhen.trim() : '';
+    const when = enterWhen ? `\n\nEnter when: ${enterWhen}` : '';
+    return `${node.title}\n\nRecall map — content served via the recall tools.${when}`.trim();
+  }
   // ─── Pages — derived plaintext from the TipTap sidecar ───────────────
   // The ProseMirror doc lives in `pages.doc`; `pages.doc_text` is its
   // flattened plaintext, computed on every save in @mantle/content.
