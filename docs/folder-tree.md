@@ -136,7 +136,7 @@ reaches everything below it, now and later. Public stays a per-item link.
 System folders (Auto-filed) and the admin-only kinds (tasks, events,
 contacts, secrets) cannot be shared.
 
-- **In the database** (migration 0200). `nodes.share_level` on the folder;
+- **In the database** (migration 0204). `nodes.share_level` on the folder;
   `nodes.inherited_level` on every row, kept true by triggers: a row takes
   the share of the nearest shared folder holding it (same owner; an item
   holds its folder's own share, a folder only what is above it), on insert
@@ -179,7 +179,7 @@ total }` and nothing is written; the same call with `confirm: true` goes
   client's redaction (which references keep their names), drawing and chat
   images, and apps (an app runs at its effective level, so an admin app in
   a team-shared folder is a team app). The client thread too: an item read
-  at client level through a folder carries it (migration 0204 widens the
+  at client level through a folder carries it (migration 0205 widens the
   0194 read policy to the union rule; `client-thread.ts`, `addNodeComment`
   and the admin usage report check the same rule). Unsharing the folder, or
   moving the item out, hides the thread below admin again.

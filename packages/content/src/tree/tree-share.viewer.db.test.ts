@@ -1,5 +1,5 @@
 /**
- * Folder sharing in the database (folder plan phase 4, migration 0200): a
+ * Folder sharing in the database (folder plan phase 4, migration 0204): a
  * folder's share reaches every row below it through `inherited_level`, kept
  * by triggers, and the viewer roles read through it. Reads run inside
  * withViewer, as the real team and client roles.

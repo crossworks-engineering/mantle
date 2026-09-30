@@ -44,7 +44,7 @@ export function filesRoot(): string {
 /** Folders nest at most this deep below `files`: folder › subfolder ›
  *  sub-subfolder. The item tree's limit (TREE_MAX_DEPTH in
  *  @mantle/client-types/tree; a content test pins the two together), and the
- *  database refuses a deeper folder (migration 0199). */
+ *  database refuses a deeper folder (migration 0201). */
 export const FILES_MAX_FOLDER_DEPTH = 3;
 
 /** How deep below `files` a path is: 0 for the root, 1 for a top folder. */

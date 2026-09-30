@@ -90,7 +90,7 @@ export const nodes = pgTable(
      *  everything below it, now and later. Null for everything else. */
     shareLevel: text('share_level'),
     /** The share of the nearest shared folder above this row (same owner),
-     *  kept by the database (migration 0200 triggers); never written by
+     *  kept by the database (migration 0204 triggers); never written by
      *  code. Null when nothing above is shared. */
     inheritedLevel: text('inherited_level'),
     /** Why: 'version' (filename-family sibling), 'migrated' (page built from

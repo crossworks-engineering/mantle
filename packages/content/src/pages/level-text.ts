@@ -64,7 +64,7 @@ async function readableAt(
     .from(nodes)
     .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, wanted)));
   // A reader reads a row at its own level or its inherited share
-  // (nodes_viewer_read, migration 0200): the same union here.
+  // (nodes_viewer_read, migration 0204): the same union here.
   return new Map(
     rows
       .filter(

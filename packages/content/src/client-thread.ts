@@ -3,7 +3,7 @@
  * decision 8): one discussion that the team, the admins and every client
  * login read and write, while the item is at client level. "At client
  * level" is the union rule (item-level.ts): its own level, or the share it
- * inherits from a folder shared with clients (migration 0204).
+ * inherits from a folder shared with clients (migration 0205).
  *
  * Stored in node_comments with `thread_scope` 'client', the brain's id as
  * owner. Row security holds the reads (migration 0194): the client role and

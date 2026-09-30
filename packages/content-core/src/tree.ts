@@ -23,7 +23,7 @@ const LEVEL_RANK: Record<AccessLevel, number> = { public: 0, client: 1, team: 2,
  * folded for. Folding for the more open reader is safe for every reader of
  * the row: what a public or client reader may see, every reader above may
  * too. (Which ROLES read the row is the database's union of the two:
- * nodes_viewer_read, migration 0200.)
+ * nodes_viewer_read, migration 0204.)
  */
 export function effectiveLevel(
   own: AccessLevel,

@@ -34,6 +34,23 @@
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 
+-- 5. The Recall root joins the folder depth check (0201_item_tree): the
+--    tree contract lists `recall` as a kind. 0201 ran on boxes without it,
+--    so the check is replaced here rather than edited there. NOT VALID as
+--    before: only new and changed rows are checked.
+ALTER TABLE "public"."nodes" DROP CONSTRAINT IF EXISTS "nodes_tree_folder_depth_ck";
+--> statement-breakpoint
+ALTER TABLE "public"."nodes"
+  ADD CONSTRAINT "nodes_tree_folder_depth_ck" CHECK (
+    "type" <> 'branch'
+    OR nlevel("path") <= 4
+    OR subpath("path", 0, 1)::text NOT IN (
+      'files', 'notes', 'pages', 'draw', 'tables', 'formulas',
+      'apps', 'tasks', 'events', 'contacts', 'secrets', 'recall'
+    )
+  ) NOT VALID;
+--> statement-breakpoint
+
 ALTER TABLE "public"."nodes"
   ADD COLUMN IF NOT EXISTS "share_level" text,
   ADD COLUMN IF NOT EXISTS "inherited_level" text;

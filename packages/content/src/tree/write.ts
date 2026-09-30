@@ -325,7 +325,7 @@ async function setFolderShare(
   }
   if ((folder.share ?? null) === share) return;
   const diff = await checkVisibility(shareDiff(ownerId, folder, share), opts);
-  // The database refreshes everything below (migration 0200 triggers).
+  // The database refreshes everything below (migration 0204 triggers).
   await db
     .update(nodes)
     .set({ shareLevel: share, updatedAt: new Date() })

@@ -1,7 +1,7 @@
 /**
  * The folder an item takes its share from (folder plan phase 4, "Access
  * control inside a shared folder"): the nearest shared folder holding it,
- * by the same rule as `mantle_inherited_level` (migration 0200). An item
+ * by the same rule as `mantle_inherited_level` (migration 0204). An item
  * holds its own folder's share (its path IS its folder's path); a folder
  * only what is above it. Same owner only, so a member's draft never has one.
  *

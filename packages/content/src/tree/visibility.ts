@@ -9,7 +9,7 @@
  *
  * Levels compared are EFFECTIVE levels (content-core effectiveLevel): the
  * more open of an item's own level and its inherited share, the level its
- * pill shows. Only workspace kinds ever inherit (migration 0200), so the rest
+ * pill shows. Only workspace kinds ever inherit (migration 0204), so the rest
  * never appear. A member's draft is another owner's row and never inherits.
  */
 import { sql, type SQL } from 'drizzle-orm';
