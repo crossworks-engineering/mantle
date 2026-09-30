@@ -8,6 +8,8 @@ import { isTreeKind, type TreeItem, type TreeKind } from '@mantle/client-types/t
 import {
   ensureKindRoot,
   isTreeLiveKind,
+  reconcileAppMarks,
+  reconcileAppNav,
   reconcileNotesAutoFiled,
   TreeError,
 } from '@mantle/content/tree';
@@ -26,12 +28,23 @@ export async function treeKindOr404(ctx: {
   return kind;
 }
 
-/** Make sure the kind's root exists before its first read or write. */
-export async function ensureTreeRoot(ownerId: string, kind: TreeKind): Promise<void> {
+/** Make sure the kind's root exists before its first read or write, and move
+ *  in what older brains kept elsewhere (once). `actorId` is the login, for
+ *  its own marks. */
+export async function ensureTreeRoot(
+  ownerId: string,
+  kind: TreeKind,
+  actorId?: string,
+): Promise<void> {
   if (kind === 'files') await ensureFilesRootBranch(ownerId);
   else await ensureKindRoot(ownerId, kind);
   // Older digests move into Notes / Auto-filed / Assistant once.
   if (kind === 'notes') await reconcileNotesAutoFiled(ownerId);
+  // The Apps layout document and this login's app pins and opens.
+  if (kind === 'apps') {
+    await reconcileAppNav(ownerId);
+    if (actorId) await reconcileAppMarks(ownerId, actorId);
+  }
 }
 
 /** A TreeError as its HTTP answer; anything else is rethrown (a 500). */

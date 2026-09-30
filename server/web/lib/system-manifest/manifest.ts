@@ -661,7 +661,14 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     name: 'Apps toolkit',
     description:
       'Author + build mini apps: source files, esbuild, declared api_tools + sqlite schema (authoring subset; excludes whole-app delete + publish).',
-    toolSlugs: [...APP_AUTHORING_TOOL_SLUGS],
+    toolSlugs: [
+      // The kind's folders (builtins-tree.ts; one set for every row-only kind).
+      'tree_folders',
+      'tree_folder_create',
+      'tree_folder_update',
+      'tree_item_move',
+      ...APP_AUTHORING_TOOL_SLUGS,
+    ],
   },
   {
     slug: 'app-admin',

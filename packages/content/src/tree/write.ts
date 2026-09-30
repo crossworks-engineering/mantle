@@ -49,6 +49,11 @@ export async function notifyTreeChanged(ownerId: string, kind: TreeKind): Promis
     await db.execute(
       sql`SELECT pg_notify(${TREE_CHANGED_CHANNEL}, ${JSON.stringify({ ownerId, kind })})`,
     );
+    // A client from before the tree draws Apps from /api/app-nav and refetches
+    // on this (app-nav.ts APP_NAV_CHANGED_CHANNEL; named here to keep the
+    // tree module free of the app-nav one).
+    if (kind === 'apps')
+      await db.execute(sql`SELECT pg_notify('app_nav_changed', ${ownerId}::text)`);
   } catch (err) {
     console.error('[tree] notify failed:', err instanceof Error ? err.message : err);
   }

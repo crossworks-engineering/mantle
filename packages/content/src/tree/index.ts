@@ -5,6 +5,7 @@
  */
 export { TREE_LIVE_KINDS, isTreeLiveKind } from './kinds';
 export { ensureKindRoot } from './node-ops';
+export { reconcileAppMarks, reconcileAppNav } from './apps-nav';
 export {
   NOTES_ASSISTANT_PATH,
   NOTES_AUTO_FILED_PATH,

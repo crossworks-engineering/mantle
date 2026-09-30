@@ -6,10 +6,9 @@ status slot. Summaries, descriptions and tags live in the item's own view, not
 in navigation. The same tree serves every reader; the brain prunes it to what
 that reader may see.
 
-Status: the tree serves **Files** (phase 1) and the flat kinds **notes, draw,
-tables, formulas, tasks, events, contacts and secrets** (phase 2). Pages wait
-for Recall v2 (pages stop nesting) and Apps for their folder-document
-migration. A client offers the tree for the kinds the shell's `treeKinds`
+Status: the tree serves **Files** (phase 1), the flat kinds **notes, draw,
+tables, formulas, tasks, events, contacts and secrets** (phase 2), and
+**Apps** (phase 3). Pages wait for Recall v2 (pages stop nesting). A client offers the tree for the kinds the shell's `treeKinds`
 names and keeps its older screen for the rest.
 
 ## The model
@@ -102,6 +101,31 @@ The server side is `packages/content/src/tree/` (reads, marks, writes, and the
 per-kind ops table); path math shared with clients is
 `packages/content-core/src/tree.ts`; the routes are thin wrappers in
 `server/web/app/api/tree/` with their plumbing in `server/web/lib/tree-route.ts`.
+
+## Apps (phase 3)
+
+Apps used to keep their folders in one JSON document on the brain's profile
+(`preferences.appNav`) and each login's pins and open counts in its own
+preferences. They now live like every other kind: folders are rows under
+`apps`, an app's place is its `path`, pins and opens are `item_marks`.
+
+The move is lazy and runs once (`packages/content/src/tree/apps-nav.ts`):
+`reconcileAppNav` turns the document into folder rows the first time a
+brain's apps are read, keeping each folder's id, name, icon, colour and
+order; names that clash in one folder get " 2", and a name with no letters or
+digits keeps its title with the slug `folder`. `reconcileAppMarks` copies one
+login's pins (in order) and open counts the first time that login's apps are
+read. Done-markers sit on the `apps` root row. The old document and
+preferences are left untouched, a copy to roll back to. Manual order of apps
+inside a folder is not kept: items follow the chosen sort, as on every kind.
+
+`GET /api/app-nav` still answers in its old shape, built from the rows, for
+clients from before the tree: each folder's subfolders then its apps by name,
+top-level apps left unsorted, and `rev` a digest of the layout. `PUT
+/api/app-nav` (the layout save) answers 410 with a message to update the
+app; `PUT /api/app-nav/pins` and the open counter keep working through
+`item_marks`. Tree writes to apps also notify `app_nav_changed`, so an older
+client refetches.
 
 ## For agents
 

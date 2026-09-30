@@ -140,9 +140,11 @@ export async function createNodeFolder(
   ownerId: string,
   parentPath: string,
   name: string,
+  /** A migration keeping ids and looks it already had (the app-nav folders). */
+  opts: { id?: string; data?: Record<string, unknown>; slug?: string } = {},
 ): Promise<string> {
   const title = displayName(name);
-  const slug = slugOf(title);
+  const slug = opts.slug ?? slugOf(title);
   const path = `${parentPath}.${dashToLtree(slug)}`;
   if (folderDepth(path) > TREE_MAX_DEPTH) {
     throw new NodeOpRefusal('invalid', `folders nest at most ${TREE_MAX_DEPTH} deep`);
@@ -155,7 +157,16 @@ export async function createNodeFolder(
   }
   const [row] = await db
     .insert(nodes)
-    .values({ ownerId, type: 'branch', title, slug, path, data: {}, tags: [] })
+    .values({
+      ...(opts.id ? { id: opts.id } : {}),
+      ownerId,
+      type: 'branch',
+      title,
+      slug,
+      path,
+      data: opts.data ?? {},
+      tags: [],
+    })
     .returning({ id: nodes.id });
   if (!row) throw new Error('createNodeFolder: insert returned no row');
   return row.id;

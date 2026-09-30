@@ -22,7 +22,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ kind: string }>
   if (kind instanceof Response) return kind;
   const parsed = Query.safeParse(Object.fromEntries(new URL(req.url).searchParams));
   if (!parsed.success) return NextResponse.json({ error: 'invalid query' }, { status: 400 });
-  await ensureTreeRoot(user.id, kind);
+  await ensureTreeRoot(user.id, kind, user.actor.id);
   const page = await loadTreeFolder(user.id, kind, {
     folderId: parsed.data.folder ?? null,
     cursor: parsed.data.cursor,
