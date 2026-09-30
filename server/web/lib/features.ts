@@ -17,14 +17,19 @@
  * serving tables. Plan: "PLAN: Recall v2, its own content type" (dev brain,
  * roadmap task 5d6ce06a).
  *
- * FALSE through R1, which is schema and contract only: the columns and the
- * revision table exist, nothing reads or writes them, and the v1 compiler
- * still owns every row. R2 lands the write path and the owner routes and
- * flips this to true in the same release, which is what tells a jackdaw
- * carrying the v2 screen (R3) that it may use it. Until then jackdaw keeps
- * the v1 screen, which is the correct rendering of this brain.
+ * TRUE from R2: the serving tools understand native maps and the contract
+ * shapes (@mantle/client-types) carry the v2 fields, so a client may build
+ * the v2 screen against this brain.
+ *
+ * ⚠ The owner WRITE routes (POST /api/recall/maps and friends) land later in
+ * R2. Until they do, this flag is ahead of the brain: it says the v2 screen
+ * may be used, and a save from that screen would 404. That is fine on an
+ * unmerged branch and NOT fine in a release — so this branch must not be
+ * released before those routes exist. When they land, pin the pairing with a
+ * test (flag true implies the routes are in the manifest) so the flag cannot
+ * lie again.
  */
-export const RECALL_V2 = false;
+export const RECALL_V2 = true;
 
 export type ShellFeatures = {
   recallV2: boolean;

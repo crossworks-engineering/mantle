@@ -6,13 +6,14 @@
 -- Lives in its own file because `ALTER TYPE ... ADD VALUE` cannot run in the
 -- same transaction that later references the new value; isolating it sidesteps
 -- that (same reason as the 0008 / 0037 / 0067 / 0069 / 0075 / 0136 enum-adds).
--- 0201 carries the columns and tables that go with it and references nothing
+-- 0202 carries the columns and tables that go with it and references nothing
 -- from this file.
 --
--- Numbering: 0199 belongs to the item-tree branch (the universal folder
--- system), which is expected to land first. If THIS branch merges first,
--- renumber these two to 0199 / 0200 while rebasing: a journal entry inserted
--- BEFORE already-applied migrations is what breaks the runner, not a gap.
+-- Numbering: the universal-folder-system stack holds 0199 (the item tree) and
+-- 0200 (folder sharing) and merges in order ahead of this, so these two sit at
+-- 0201 / 0202. If that order changes, whichever lands second renumbers on the
+-- rebase: a journal entry inserted BEFORE already-applied migrations is what
+-- breaks the runner, not a gap.
 --
 -- Rollback: `ADD VALUE` is NOT reversible (unlike `RENAME VALUE`, see 0109).
 -- Nothing has to be undone: an unused enum value costs nothing, and the

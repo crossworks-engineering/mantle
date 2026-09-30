@@ -8,17 +8,22 @@ import { RECALL_V2, shellFeatures } from './features';
  * The capability flags the owner client reads from `GET /api/shell`.
  *
  * The flags exist because jackdaw releases on its own cadence: a client that
- * ships the v2 Recall screen must not use it against a brain whose write path
- * does not exist. So the flag has to mean "this brain can do it", and R1 —
- * schema and contract only — must report false. A flag flipped early is worse
- * than no flag: the client would render a screen whose routes 404.
+ * ships the v2 Recall screen must not use it against a brain that cannot serve
+ * it. So the flag means "this brain can do it", and the test below is where
+ * its value is stated out loud rather than left to a reader of the constant.
+ *
+ * It is true from R2. The owner write routes arrive later in R2, so until then
+ * the flag is deliberately ahead of the brain and this branch must not be
+ * released — see the warning in features.ts.
  */
 describe('shell features', () => {
-  it('reports recallV2 false while R1 is schema only', () => {
-    // Flip this (and the expectation) in R2, in the same release that lands
-    // the native write path and the owner routes.
-    expect(RECALL_V2).toBe(false);
-    expect(shellFeatures()).toEqual({ recallV2: false });
+  it('reports recallV2 true from R2, so a client may build the v2 screen', () => {
+    // The serving tools understand native maps and the contract carries the
+    // v2 fields. The owner WRITE routes land later in R2: until they do this
+    // flag is deliberately ahead of the brain, and this branch must not be
+    // released. See the warning in features.ts.
+    expect(RECALL_V2).toBe(true);
+    expect(shellFeatures()).toEqual({ recallV2: true });
   });
 
   it('is reached through one function, so a flag is one line', () => {
