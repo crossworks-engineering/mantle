@@ -261,7 +261,7 @@ describe.skipIf(!URL)('sharing a folder', () => {
       expect(await inherited(ids.inSub)).toBe('team');
     });
 
-    it('takes what a shared note embeds to the level it is read at, never raising it', async () => {
+    it('makes what a shared note embeds readable through it, until it moves out', async () => {
       const file = randomUUID();
       const note = randomUUID();
       await m.systemDb.execute(sqlTag`
@@ -271,16 +271,21 @@ describe.skipIf(!URL)('sharing a folder', () => {
         insert into nodes (id, owner_id, type, title, path, data, tags)
         values (${note}, ${brain}, 'note', 'with pic', 'notes',
                 ${JSON.stringify({ content: `![pic](media:${file})` })}::jsonb, '{}')`);
-      // The refusal lists the image too: it would go down with the note.
+      // The refusal lists the image too: it would be read through the note.
       const diff = await refusal(tree.moveTreeItems(brain, 'notes', [note], ids.top));
       expect(diff.changes.map((c) => c.id)).toEqual([note]);
-      expect(diff.alsoLowered).toEqual([{ id: file, title: 'pic.png', from: 'admin', to: 'team' }]);
-      expect(await audience(file)).toBe('admin');
+      expect(diff.alsoEmbeds).toEqual([{ id: file, title: 'pic.png', from: 'admin', to: 'team' }]);
+      expect(await reads('team', [file])).toEqual([]);
       await tree.moveTreeItems(brain, 'notes', [note], ids.top, { confirm: true });
-      expect(await audience(file)).toBe('team');
-      // Out again: the note is admin once more, the image keeps its level.
+      expect(await reads('team', [file])).toEqual([file]);
+      expect(await audience(file)).toBe('admin'); // its own level never moved
+      // Out again: the note is admin once more, and so is the image. The
+      // refusal says so.
+      const back = await refusal(tree.moveTreeItems(brain, 'notes', [note], null));
+      expect(back.alsoEmbeds).toEqual([{ id: file, title: 'pic.png', from: 'team', to: 'admin' }]);
       await tree.moveTreeItems(brain, 'notes', [note], null, { confirm: true });
-      expect(await audience(file)).toBe('team');
+      expect(await reads('team', [file])).toEqual([]);
+      expect(await audience(file)).toBe('admin');
       await m.systemDb.execute(sqlTag`delete from nodes where id in (${file}, ${note})`);
     });
 

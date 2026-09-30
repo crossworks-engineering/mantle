@@ -269,6 +269,43 @@ describe.skipIf(!URL)('Accept claims in place', () => {
     expect(await row(picked)).toMatchObject({ owner_id: anchor, path: 'notes.portal' });
   });
 
+  it('what an accepted note embeds is read through its folder share, never lowered', async () => {
+    const img = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, data, tags, audience)
+      values (${img}, ${anchor}, 'file', 'logo.png', 'files', '{}'::jsonb, '{}', 'team')`);
+    const lobby = await tree.createTreeFolder(anchor, 'notes', { parentId: null, name: 'Lobby' });
+    await tree.updateTreeFolder(anchor, 'notes', lobby.id, { share: 'client' }, { confirm: true });
+    const note = await as(() =>
+      sp.createMineItem(
+        space,
+        { type: 'note', title: 'with logo', content: 'x' },
+        {},
+        { path: 'notes.lobby' },
+      ),
+    );
+    // This brain is not the viewer anchor, so the member's Library check
+    // cannot see its items: the embed is written as the system.
+    await m.systemDb.execute(sqlTag`
+      update nodes set data = jsonb_set(data, '{content}', to_jsonb(${`![logo](media:${img})`}::text))
+       where id = ${note.id}`);
+    await as(() => sp.submitItem(space, note.id));
+    await rv.acceptReviewItem(anchor, note.id, reviewer(), { visibilityConfirmed: true });
+    const level = async () =>
+      (
+        (await m.systemDb.execute(sqlTag`
+          select audience, embedded_level from nodes where id = ${img}`)) as unknown as Array<{
+          audience: string;
+          embedded_level: string | null;
+        }>
+      )[0];
+    // A Library item (team): read through the note at the folder's share,
+    // its own level untouched; the unshare takes that back.
+    expect(await level()).toEqual({ audience: 'team', embedded_level: 'client' });
+    await tree.updateTreeFolder(anchor, 'notes', lobby.id, { share: null }, { confirm: true });
+    expect(await level()).toEqual({ audience: 'team', embedded_level: null });
+  });
+
   it('keeps a member folder that holds a submitted draft where it is', async () => {
     // A folder the member sees (shared with the team), its own folder inside.
     const room = await tree.createTreeFolder(anchor, 'notes', { parentId: null, name: 'Room' });
