@@ -28,6 +28,7 @@
  */
 import { and, eq, inArray } from 'drizzle-orm';
 import { db, nodes, withViewer } from '@mantle/db';
+import { readAtSql } from './item-level';
 import { clientOwnUrl } from './client-redact';
 import { clientRedactOrigins } from './client-origins';
 import { pageRefs, type OwnUrl } from './embed-refs';
@@ -147,7 +148,7 @@ export async function chatImagesFor(
           eq(nodes.ownerId, anchorId),
           inArray(nodes.id, [...ids]),
           inArray(nodes.type, ['file', 'draw']),
-          reader === 'client' ? eq(nodes.audience, 'client') : undefined,
+          reader === 'client' ? readAtSql(['client']) : undefined,
         ),
       ),
   );
