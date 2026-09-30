@@ -5,6 +5,7 @@
  * the wire, so an older brain or an older client keeps working.
  */
 import type { AccessItemView, AccessLevel } from './access';
+import type { TreeCrumb, TreeKind } from '../tree';
 
 /** Who wrote a reviewable item: a member or a client login. */
 export type ReviewAuthorRole = 'member' | 'client';
@@ -29,6 +30,19 @@ export type AcceptPreview = {
    *  CURRENT level. The client shows the ones above the chosen level: they
    *  go DOWN with it and need a tick. */
   closure?: AccessItemView[];
+  /** Where it lands by default (folder plan phase 5): the brain folder the
+   *  author filed it in (`folderId` null = the kind's top level), and the
+   *  author's own folders that become brain folders below it. Absent for a
+   *  page (no tree yet) and from brains before the tree. */
+  place?: AcceptPlace;
+};
+
+export type AcceptPlace = {
+  kind: TreeKind;
+  folderId: string | null;
+  /** The folder's crumbs, top-down, itself included. */
+  crumbs: TreeCrumb[];
+  creates: string[];
 };
 
 /** POST /api/team-admin/submissions/:id/accept and
@@ -37,6 +51,10 @@ export type AcceptRequest = {
   audience?: AccessLevel;
   parentPageId?: string | null;
   folderPath?: string | null;
+  /** Where the item lands (folder plan phase 5): left out, in place; null,
+   *  the kind's top level; an id, a brain folder of its kind (the author's
+   *  own folders still go below it). The rest of the bundle lands in place. */
+  folderId?: string | null;
   /** A client's item at client or public: the admin confirmed the level. */
   lowerConfirmed?: boolean;
   /** Ids of closure items the admin ticked (with `lowerConfirmed: true`).

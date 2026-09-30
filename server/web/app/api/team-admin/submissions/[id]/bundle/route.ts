@@ -4,7 +4,9 @@
  * own items only), how many links point at items that stay behind, and
  * `closure`: the brain items it embeds, at their current levels (the ones
  * above the chosen level go down with it; for a client's item at client or
- * public each needs a tick, audit A28). For the accept dialog.
+ * public each needs a tick, audit A28), and `place`: where it lands by
+ * default (the brain folder it was filed in, and the author's own folders
+ * made below it; folder plan phase 5). For the accept dialog.
  */
 import { NextResponse } from '@/server/http-compat';
 import { previewAccept } from '@mantle/content';

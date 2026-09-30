@@ -133,6 +133,14 @@ import {
   withMoveHooks,
 } from './member-takeover';
 import { writeAcceptedSnapshots } from './member-snapshots';
+import { TREE_KIND_SPECS } from '@mantle/client-types/tree';
+import {
+  acceptPlace,
+  dropEmptyOwnFolders,
+  ensurePlaced,
+  planPlace,
+  type AcceptPlace,
+} from './accept-place';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -579,12 +587,24 @@ export type AcceptClosureItem = {
 export async function previewAccept(
   id: string,
   brainId?: string,
-): Promise<(Bundle & { closure?: AcceptClosureItem[] }) | null> {
+): Promise<(Bundle & { closure?: AcceptClosureItem[]; place?: AcceptPlace }) | null> {
   const found = await reviewRow(id);
   if (!found) return null;
   const bundle = await reviewBundle(db, found.spaceId, found.row);
   if (!brainId) return bundle;
-  return { ...bundle, closure: await acceptClosure(db, brainId, found.spaceId, bundle.items) };
+  // Where it lands by default (folder plan phase 5): the brain folder it
+  // was filed in, and the member's own folders made below it.
+  const [node] = (await db.execute(sql`
+    select type::text as type, path::text as path from nodes where id = ${found.row.id}`)) as unknown as Array<{
+    type: string;
+    path: string;
+  }>;
+  const place = node ? await acceptPlace(db, brainId, found.spaceId, node) : null;
+  return {
+    ...bundle,
+    closure: await acceptClosure(db, brainId, found.spaceId, bundle.items),
+    ...(place ? { place } : {}),
+  };
 }
 
 /** The brain items an Accept of `items` (still in `spaceId`) takes along:
@@ -656,8 +676,17 @@ export type AcceptOptions = {
   confirmedIds?: string[];
   /** A brain page to nest the accepted page under (pages only). */
   parentPageId?: string | null;
-  /** The brain Files folder the bundle's files land in (default `files`). */
+  /** The brain Files folder the bundle's files land in: the request of a
+   *  client from before the tree (folder plan phase 5). Without `folderId`,
+   *  it still files every file of the bundle there. */
   folderPath?: string | null;
+  /** Where the item lands (folder plan phase 5, "Accept claims in place"):
+   *  undefined keeps it in the brain folder it was filed in, with the
+   *  member's own folders below recreated as brain folders; null is the
+   *  kind's top level; an id is a brain folder of its kind (the member's
+   *  folders still go below it). Pages keep `parentPageId`. The rest of the
+   *  bundle always lands in place. */
+  folderId?: string | null;
 };
 
 export type AcceptResult = {
@@ -1142,8 +1171,11 @@ async function moveIntoBrain(
   if (opts.audience !== undefined && !isViewerLevel(opts.audience)) {
     throw new ReviewError('invalid', 'Pick a level.');
   }
-  const folder = opts.folderPath?.trim() || 'files';
-  if (!isFilesPath(folder)) throw new ReviewError('invalid', 'Pick a folder under Files.');
+  // A client from before the tree names one Files folder for every file.
+  const legacyFolder = opts.folderId === undefined ? opts.folderPath?.trim() || null : null;
+  if (legacyFolder && !isFilesPath(legacyFolder)) {
+    throw new ReviewError('invalid', 'Pick a folder under Files.');
+  }
 
   // Outside the transaction: lazy, idempotent, and it may create a directory.
   await ensureFilesRootBranch(brainId).catch((err) => {
@@ -1231,7 +1263,10 @@ async function moveIntoBrain(
       if (items.some((b) => b.type === 'draw')) {
         await ensureBrainRoot(tx, brainId, DRAWS_ROOT_LABEL, 'Draw');
       }
-      if (items.some((b) => b.type === 'file')) {
+      if (items.some((b) => b.type === 'table')) {
+        await ensureBrainRoot(tx, brainId, TREE_KIND_SPECS.tables.root, 'Tables');
+      }
+      if (legacyFolder && items.some((b) => b.type === 'file')) {
         const [f] = await tx
           .select({ id: nodes.id })
           .from(nodes)
@@ -1239,12 +1274,29 @@ async function moveIntoBrain(
             and(
               eq(nodes.ownerId, brainId),
               eq(nodes.type, 'branch'),
-              sql`${nodes.path}::text = ${folder}`,
+              sql`${nodes.path}::text = ${legacyFolder}`,
             ),
           )
           .limit(1);
         if (!f) throw new ReviewError('invalid', 'That folder is not in the brain.');
       }
+
+      /** Where a tree kind's item lands: in place, or (the item itself) the
+       *  admin's pick, with its brain folders made. */
+      const fromPaths: string[] = [];
+      const landing = async (b: BundleItem, stored: string): Promise<string> => {
+        const plan = await planPlace(
+          tx,
+          brainId,
+          spaceId,
+          { type: b.type, path: stored },
+          b.id === id ? opts.folderId : undefined,
+        );
+        if (!plan) throw new ReviewError('invalid', 'That folder is not in the brain.');
+        await ensurePlaced(tx, brainId, plan);
+        fromPaths.push(stored);
+        return plan.target;
+      };
 
       // 4. Re-own, kind by kind. Pages first in bundle order: a child's new
       //    path extends its parent's, which is set by then.
@@ -1281,17 +1333,28 @@ async function moveIntoBrain(
               .where(eq(pages.nodeId, b.id));
             break;
           }
-          case 'note':
-            await tx.update(nodes).set(common).where(eq(nodes.id, b.id));
+          case 'note': {
+            const at = await landing(b, String(n.path));
+            await tx
+              .update(nodes)
+              .set({ ...common, path: sql`${at}::ltree` })
+              .where(eq(nodes.id, b.id));
             break;
-          case 'draw':
-            await tx.update(nodes).set(common).where(eq(nodes.id, b.id));
+          }
+          case 'draw': {
+            const at = await landing(b, String(n.path));
+            await tx
+              .update(nodes)
+              .set({ ...common, path: sql`${at}::ltree` })
+              .where(eq(nodes.id, b.id));
             await tx
               .update(draws)
               .set({ draftScene: null, draftUpdatedAt: null })
               .where(eq(draws.nodeId, b.id));
             break;
+          }
           case 'table': {
+            const at = await landing(b, String(n.path));
             const [t] = await tx
               .select({ storagePath: tables.storagePath })
               .from(tables)
@@ -1310,7 +1373,10 @@ async function moveIntoBrain(
               });
               storagePath = relativeStoragePath(brainId, b.id);
             }
-            await tx.update(nodes).set(common).where(eq(nodes.id, b.id));
+            await tx
+              .update(nodes)
+              .set({ ...common, path: sql`${at}::ltree` })
+              .where(eq(nodes.id, b.id));
             await tx
               .update(tables)
               .set({ storagePath, draftData: null, draftUpdatedAt: null })
@@ -1318,6 +1384,7 @@ async function moveIntoBrain(
             break;
           }
           case 'file': {
+            const folder = legacyFolder ?? (await landing(b, String(n.path)));
             const data = { ...((n.data ?? {}) as Record<string, unknown>) };
             const display =
               typeof data.filename === 'string' && data.filename ? data.filename : n.title;
@@ -1362,6 +1429,10 @@ async function moveIntoBrain(
           }
         }
       }
+
+      // 4a. The member's own folders that held what moved and hold nothing
+      //     now go: their brain twins took their place.
+      await dropEmptyOwnFolders(tx, spaceId, fromPaths);
 
       // 4b. Embedding means sharing: at a level below admin, what the item
       //     embeds that is already the brain's (a Library item) goes down

@@ -53,6 +53,7 @@ export type {
 } from './dto/access';
 export type {
   AcceptConfirmLevelRefusal,
+  AcceptPlace,
   AcceptPreview,
   AcceptRequest,
   ReviewAuthorRole,
