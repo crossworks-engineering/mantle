@@ -1,6 +1,6 @@
 /**
  * Stored-docs round trip: an integration's documentation must land as a real
- * markdown file node under `files/api-docs/<group>.md` — the same pipeline an
+ * markdown file node under `files/auto-filed/api-docs/<group>.md` — the same pipeline an
  * upload uses, which is what gets it summarised, embedded and searchable — and
  * come back out byte-identical.
  *
@@ -12,10 +12,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const upsertFile = vi.fn();
-const createFolder = vi.fn();
-const folderByPath = vi.fn();
 const readFileById = vi.fn();
-const ensureFilesRootBranch = vi.fn();
+const ensureAutoFiledFolder = vi.fn();
 
 vi.mock('@mantle/db', async (importOriginal) => ({
   db: {},
@@ -23,10 +21,8 @@ vi.mock('@mantle/db', async (importOriginal) => ({
   isUniqueViolation: (await importOriginal<typeof import('@mantle/db')>()).isUniqueViolation,
 }));
 vi.mock('@mantle/files', () => ({
-  dashToLtree: (s: string) => s.replace(/-/g, '_'),
-  createFolder: (...a: unknown[]) => createFolder(...a),
-  ensureFilesRootBranch: (...a: unknown[]) => ensureFilesRootBranch(...a),
-  folderByPath: (...a: unknown[]) => folderByPath(...a),
+  autoFiledSourcePath: (s: string) => `files.auto_filed.${s.replace(/-/g, '_')}`,
+  ensureAutoFiledFolder: (...a: unknown[]) => ensureAutoFiledFolder(...a),
   readFileById: (...a: unknown[]) => readFileById(...a),
   upsertFile: (...a: unknown[]) => upsertFile(...a),
 }));
@@ -37,7 +33,7 @@ let mod: typeof import('./integration');
 
 beforeEach(async () => {
   vi.clearAllMocks();
-  folderByPath.mockResolvedValue({ id: 'folder-1', path: 'files.api_docs' });
+  ensureAutoFiledFolder.mockResolvedValue('files.auto_filed.api_docs');
   upsertFile.mockImplementation(async (args: { bytes: Buffer; filename: string }) => ({
     id: 'node-1',
     filename: args.filename,
@@ -47,7 +43,7 @@ beforeEach(async () => {
 });
 
 describe('upsertApiDocsFile', () => {
-  it('writes files/api-docs/<group>.md through the normal file pipeline', async () => {
+  it('writes files/auto-filed/api-docs/<group>.md through the normal file pipeline', async () => {
     const res = await mod.upsertApiDocsFile({
       ownerId: OWNER,
       groupSlug: 'weather-tools',
@@ -65,8 +61,8 @@ describe('upsertApiDocsFile', () => {
     };
     expect(call.ownerId).toBe(OWNER);
     // ltree labels can't carry a dash — the folder is api_docs, the disk dir api-docs.
-    expect(call.parentPath).toBe('files.api_docs');
-    expect(mod.API_DOCS_FOLDER_PATH).toBe('files.api_docs');
+    expect(call.parentPath).toBe('files.auto_filed.api_docs');
+    expect(mod.API_DOCS_FOLDER_PATH).toBe('files.auto_filed.api_docs');
     expect(call.filename).toBe('weather-tools.md');
     // One file per group: replacing is the point, not accumulating versions.
     expect(call.overwrite).toBe(true);
@@ -76,34 +72,15 @@ describe('upsertApiDocsFile', () => {
     expect(text).toContain('## GET /weather');
   });
 
-  it('creates the api-docs folder on first use and reuses it after', async () => {
-    folderByPath.mockResolvedValueOnce(null);
+  it('makes the folder through Auto-filed, and a folder failure stops the write', async () => {
     await mod.upsertApiDocsFile({ ownerId: OWNER, groupSlug: 'g', markdown: 'x' });
-    expect(ensureFilesRootBranch).toHaveBeenCalledWith(OWNER);
-    expect(createFolder).toHaveBeenCalledWith(
-      expect.objectContaining({ ownerId: OWNER, parentPath: 'files', slug: 'api-docs' }),
-    );
-    createFolder.mockClear();
-    await mod.upsertApiDocsFile({ ownerId: OWNER, groupSlug: 'g', markdown: 'x' });
-    expect(createFolder).not.toHaveBeenCalled();
-  });
-
-  it('swallows the concurrent-create race, not real folder failures', async () => {
-    folderByPath.mockResolvedValue(null);
-    // Drizzle's shape: the 23505 sits on `cause`, not in the message.
-    createFolder.mockRejectedValueOnce(
-      Object.assign(new Error('Failed query: insert into "nodes" ...'), {
-        cause: { code: '23505' },
-      }),
-    );
-    await expect(
-      mod.upsertApiDocsFile({ ownerId: OWNER, groupSlug: 'g', markdown: 'x' }),
-    ).resolves.toMatchObject({ nodeId: 'node-1' });
-
-    createFolder.mockRejectedValueOnce(new Error('disk on fire'));
+    expect(ensureAutoFiledFolder).toHaveBeenCalledWith(OWNER, 'api-docs');
+    ensureAutoFiledFolder.mockRejectedValueOnce(new Error('disk on fire'));
+    upsertFile.mockClear();
     await expect(
       mod.upsertApiDocsFile({ ownerId: OWNER, groupSlug: 'g', markdown: 'x' }),
     ).rejects.toThrow('disk on fire');
+    expect(upsertFile).not.toHaveBeenCalled();
   });
 
   it('clips oversized docs instead of writing an unbounded file', async () => {

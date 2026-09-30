@@ -221,7 +221,7 @@ export function registerMantleTools(
   registerResponderTools(ctx);
 
   // ─── Export (Word / Excel) ───────────────────────────────────────────────────
-  // Renders a page/note → .docx or a table → .xlsx into /files/exports and returns
+  // Renders a page/note → .docx or a table → .xlsx into /files/auto-filed/exports and returns
   // the new file's id/path. Pure (no surface, no artifact) — bridges as-is.
   registerBuiltinTools(EXPORT_TOOLS);
   // Levels (member logins Phase 0b): the owner sets item / agent / tool-group

@@ -125,7 +125,7 @@ export const api_docs_set: BuiltinToolDef = {
         ok: true,
         output: {
           group_slug: groupSlug,
-          file: `files/api-docs/${stored.filename}`,
+          file: `files/auto-filed/api-docs/${stored.filename}`,
           chars: stored.chars,
           stored: true,
           warnings,
@@ -208,7 +208,7 @@ export const api_docs_get: BuiltinToolDef = {
         secret_ref: meta.secretRef ?? null,
         source_url: meta.docsSourceUrl ?? null,
         captured_at: meta.docsUpdatedAt ?? null,
-        file: `files/api-docs/${file.filename}`,
+        file: `files/auto-filed/api-docs/${file.filename}`,
         text: slice,
         offset,
         total_chars: file.text.length,

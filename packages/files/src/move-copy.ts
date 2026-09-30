@@ -180,6 +180,11 @@ export async function moveFolderById(args: {
   if (node.path === FILES_ROOT_LABEL) {
     throw new Error('moveFolderById: cannot move the files root');
   }
+  if ((node.data as Record<string, unknown> | null)?.system === true) {
+    throw new Error(
+      'moveFolderById: this folder is made by Mantle and found by its path; it cannot be moved',
+    );
+  }
   const destParent = await branchAt(args.ownerId, args.destParentPath);
   if (!destParent) {
     throw new Error(

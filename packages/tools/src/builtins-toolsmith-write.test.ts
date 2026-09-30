@@ -567,7 +567,7 @@ describe('api_docs_set', () => {
     });
     expect(outputOf(res)).toMatchObject({
       group_slug: 'weather-tools',
-      file: 'files/api-docs/weather-tools.md',
+      file: 'files/auto-filed/api-docs/weather-tools.md',
       chars: 120,
       stored: true,
       warnings: [],

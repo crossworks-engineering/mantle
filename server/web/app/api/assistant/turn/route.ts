@@ -6,7 +6,7 @@
  *   - multipart/form-data: text + image|file (optional)   (attachment)
  *
  * An attachment is saved as a file node under
- * /files/assistant-uploads/<yyyy-mm-dd>/ (persistent + indexed by the
+ * /files/auto-filed/assistant-uploads/<yyyy-mm>/ (persistent + indexed by the
  * extractor), then `extractAttachmentForTurn` (shared with Telegram) turns it
  * into text for THIS turn — question-aware vision for images, parsed text for
  * documents (pdf/docx/xlsx/csv/txt/md/json/yaml). That text is folded into the
@@ -41,7 +41,7 @@ import {
 } from '@mantle/content';
 import { extractAttachmentForTurn } from '@mantle/runtime/agent';
 import {
-  ensureDatedUploadFolder,
+  ensureAutoFiledFolder,
   extOf,
   mimeForExt,
   upsertFile,
@@ -86,7 +86,6 @@ function locationFromForm(raw: FormDataEntryValue | null): LocationPing | undefi
   }
 }
 
-const ASSISTANT_UPLOADS_SLUG = 'assistant-uploads';
 const IMAGE_MIME_PREFIX = 'image/';
 
 type Attachment = {
@@ -100,7 +99,7 @@ type Attachment = {
 };
 
 /**
- * Save an uploaded attachment to /files/assistant-uploads/<date>/ and extract
+ * Save an uploaded attachment to /files/auto-filed/assistant-uploads/<month>/ and extract
  * its text for the current turn via the shared helper. The save fires
  * node_ingested → the extractor produces the durable index; this just gets the
  * responder enough to answer now. Save failures are non-fatal — extraction
@@ -117,11 +116,7 @@ async function processUpload(
     mimeType.startsWith(IMAGE_MIME_PREFIX) || mimeForExt(extOf(originalName)).startsWith('image/');
   let nodeId: string | null = null;
   try {
-    const parentPath = await ensureDatedUploadFolder({
-      ownerId,
-      topSlug: ASSISTANT_UPLOADS_SLUG,
-      topDescription: 'Files uploaded through the /assistant chat. Auto-created.',
-    });
+    const parentPath = await ensureAutoFiledFolder(ownerId, 'assistant-uploads');
     // Preserve the real extension (pdf/docx/heic/…); fall back to the MIME
     // subtype when the upload had no name.
     const ext = extOf(originalName) || mimeType.split('/')[1] || 'bin';

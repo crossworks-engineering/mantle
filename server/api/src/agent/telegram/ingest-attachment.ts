@@ -7,7 +7,7 @@
  * crashing the turn. Split out of runtime.ts on 2026-09-02 (audit, bloat B2).
  */
 import { accountById, downloadTelegramFile } from '@mantle/telegram';
-import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
+import { ensureAutoFiledFolder, upsertFile } from '@mantle/files';
 import { recordIngest, startTrace, step } from '@mantle/tracing';
 import { extractAttachmentForTurn } from '@mantle/runtime/agent';
 import { errorMessage } from '@mantle/std';
@@ -75,11 +75,7 @@ export async function ingestTelegramAttachment(args: {
       // we want the file persisted + searchable in /files.
       let nodeId: string | null = null;
       try {
-        const parentPath = await ensureDatedUploadFolder({
-          ownerId,
-          topSlug: 'telegram-uploads',
-          topDescription: 'Files sent to Saskia on Telegram. Auto-created.',
-        });
+        const parentPath = await ensureAutoFiledFolder(ownerId, 'telegram-uploads');
         const filename = `${Date.now()}-${baseName}`;
         const saved = await step({ name: 'persist_file', kind: 'db_write' }, async (h) => {
           const file = await upsertFile({

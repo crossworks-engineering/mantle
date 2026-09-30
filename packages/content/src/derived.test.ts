@@ -12,6 +12,10 @@ import { isPerDocumentExtractedImagesPath } from './derived';
 describe('isPerDocumentExtractedImagesPath', () => {
   it('accepts a per-document child of files.extracted_images', () => {
     expect(isPerDocumentExtractedImagesPath('files.extracted_images.owners_manual')).toBe(true);
+    expect(
+      isPerDocumentExtractedImagesPath('files.auto_filed.extracted_images.owners_manual'),
+    ).toBe(true);
+    expect(isPerDocumentExtractedImagesPath('files.auto_filed.extracted_images')).toBe(false);
   });
 
   it('rejects the shared extracted-images root itself', () => {

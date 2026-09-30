@@ -14,7 +14,7 @@
  * the user wanted a table leaves them nothing to filter or add a row to.
  */
 import { buildSheet, SheetSpecError, type SheetSpec, type WorkbookSpec } from '@mantle/content';
-import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
+import { ensureAutoFiledFolder, upsertFile } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef } from './types';
 import { str } from './coerce';
@@ -174,11 +174,7 @@ const sheet_build: BuiltinToolDef = {
     }
 
     try {
-      const parentPath = await ensureDatedUploadFolder({
-        ownerId: ctx.ownerId,
-        topSlug: 'exports',
-        topDescription: 'Documents exported from pages, notes, and tables.',
-      });
+      const parentPath = await ensureAutoFiledFolder(ctx.ownerId, 'exports');
       const file = await upsertFile({ ownerId: ctx.ownerId, parentPath, filename, bytes });
       ctx.step?.setOutput({ file_id: file.id, filename: file.filename });
       void recordIngest({

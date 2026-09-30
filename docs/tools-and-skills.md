@@ -400,7 +400,7 @@ migration `0137`) that turns it from a grant bundle into a whole API integration
   "baseUrl": "https://api.openweathermap.org/data/2.5",
   "secretRef": "openweathermap/default", // service/label — never a plaintext
   "authTemplate": { "query": { "appid": "{{secret:openweathermap/default}}" } },
-  "docsNodeId": "…", // files/api-docs/<group-slug>.md
+  "docsNodeId": "…", // files/auto-filed/api-docs/<group-slug>.md
   "skillSlug": "api-weather-tools", // the usage skill
 }
 ```

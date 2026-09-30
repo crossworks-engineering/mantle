@@ -37,6 +37,7 @@ import {
   filesRoot,
   isDiskChaff,
   ltreeForDiskPath,
+  reconcileAutoFiled,
   syncFileFromDisk,
 } from '@mantle/files';
 import { waitForOwner } from '@mantle/db';
@@ -140,6 +141,19 @@ runWorker('files-watch', async () => {
   USER_ID = await waitForOwner({ label: 'files-watch' });
   const root = filesRoot();
   await ensureRoot(); // mkdir -p
+  // Bring an older brain's machine folders into Auto-filed before watching,
+  // so the watcher never sees these moves as deletes and adds. Idempotent;
+  // a failure is logged and the watcher starts anyway.
+  try {
+    const moved = await reconcileAutoFiled(USER_ID);
+    if (moved.moved.length || moved.mergedDays) {
+      console.log(
+        `[files-watch] auto-filed: moved ${moved.moved.join(', ') || 'nothing'}; merged ${moved.mergedDays} day folder(s) into months`,
+      );
+    }
+  } catch (err) {
+    console.error(`[files-watch] auto-filed reconcile failed: ${describeError(err)}`);
+  }
   console.log(`[files-watch] watching ${root}`);
 
   const watcher = chokidar.watch(root, {

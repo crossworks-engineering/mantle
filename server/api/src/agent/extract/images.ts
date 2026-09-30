@@ -47,7 +47,7 @@ const EXTRACTED_IMAGE_TAG = 'extracted-image';
 
 /**
  * Pull the diagrams and screenshots out of a document and save them as real
- * image files under `files/extracted-images/<document>/`.
+ * image files under `files/auto-filed/extracted-images/<document>/`.
  *
  * This exists because some answers cannot be described, only shown: a manual's
  * screenshot of a settings screen is the answer to "how do I configure this",

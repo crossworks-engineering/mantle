@@ -39,7 +39,6 @@ const PUBLIC = [
   'fileById',
   // ops/folders.ts
   'createFolder',
-  'ensureDatedUploadFolder',
   'ensureExtractedImagesFolder',
   'EXTRACTED_IMAGES_SLUG',
   'ensureFolderPath',

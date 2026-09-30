@@ -327,7 +327,7 @@ API routes under `app/api/tables/`: `route` · `[id]` (`?tab=`) · `[id]/draft`
 
 - **`.xlsx`**: `renderXlsx` (`exceljs`-backed) maps the typed doc to formatted
   cells + a totals row. Web: the detail-header Download → `GET /api/export/[id]`.
-  Agent: `export_node` saves under `/files/exports`.
+  Agent: `export_node` saves under `/files/auto-filed/exports`.
 - **`.sqlite`** (v2): the workbook file itself via `[id]/export?format=sqlite`:
   a consistent VACUUM-INTO snapshot, openable in any SQLite client.
 

@@ -1,6 +1,6 @@
 /**
  * Export builtins — render a content node to an Office document and save it
- * under /files/exports. The rendering itself (and the page/note/table → format
+ * under /files/auto-filed/exports. The rendering itself (and the page/note/table → format
  * mapping) lives in `@mantle/content`'s `resolveExport`, the same code the web
  * `/api/export/[id]` download button uses. Page images are embedded by reading
  * their bytes from the file store via the injected `loadImage` callback.
@@ -12,7 +12,7 @@
  * workers that have no browser. See docs/draw.md §9.
  */
 import { resolveExport } from '@mantle/content';
-import { ensureDatedUploadFolder, readFileById, upsertFile } from '@mantle/files';
+import { ensureAutoFiledFolder, readFileById, upsertFile } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str } from './coerce';
@@ -30,7 +30,7 @@ const export_node: BuiltinToolDef = {
   slug: 'export_node',
   name: 'Export to Word / Excel',
   description:
-    "Render a page or note to a Word (.docx) document, or a table to an Excel (.xlsx) spreadsheet, and save it under /files/exports/<date>. The format is chosen automatically from the node type — pages/notes → Word, tables → Excel. Pages keep their headings, lists, tables, callouts and images; tables export typed cells (currency/number/percent/checkbox) plus the totals row. Returns the new file's id, name, and path. Use this when the user asks to download, export, or 'get a Word/Excel copy' of a page, note, or table.",
+    "Render a page or note to a Word (.docx) document, or a table to an Excel (.xlsx) spreadsheet, and save it under /files/auto-filed/exports/<month>. The format is chosen automatically from the node type — pages/notes → Word, tables → Excel. Pages keep their headings, lists, tables, callouts and images; tables export typed cells (currency/number/percent/checkbox) plus the totals row. Returns the new file's id, name, and path. Use this when the user asks to download, export, or 'get a Word/Excel copy' of a page, note, or table.",
   preconditions: NODE_ID_PRE,
   inputSchema: {
     type: 'object',
@@ -80,11 +80,7 @@ const export_node: BuiltinToolDef = {
       : result.filename;
 
     try {
-      const parentPath = await ensureDatedUploadFolder({
-        ownerId: ctx.ownerId,
-        topSlug: 'exports',
-        topDescription: 'Documents exported from pages, notes, and tables.',
-      });
+      const parentPath = await ensureAutoFiledFolder(ctx.ownerId, 'exports');
       const file = await upsertFile({
         ownerId: ctx.ownerId,
         parentPath,

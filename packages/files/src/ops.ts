@@ -35,8 +35,6 @@ export {
 export { listRecentFiles, listFiles, folderById, folderByPath, fileById } from './ops/queries';
 export {
   createFolder,
-  ensureDatedUploadFolder,
-  ensureExtractedImagesFolder,
   EXTRACTED_IMAGES_SLUG,
   ensureFolderPath,
   updateFolderDescription,
@@ -49,3 +47,4 @@ export {
   FOLDER_NAME_MAX,
   folderDisplayName,
 } from './ops/folders';
+export { ensureExtractedImagesFolder } from './auto-filed';
