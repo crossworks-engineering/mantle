@@ -29,6 +29,7 @@ export const APP_TINTS = [
   'lime',
   'green',
   'teal',
+  'cyan',
   'sky',
   'blue',
   'indigo',

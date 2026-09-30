@@ -59,19 +59,27 @@ describe.skipIf(!URL)('the item tree on Files', () => {
     const clients = await tree.createTreeFolder(owner, 'files', {
       parentId: null,
       name: 'Acme Corp',
+      icon: 'lucide:briefcase',
+      color: 'cyan',
     });
     expect(clients).toMatchObject({
       name: 'Acme Corp',
       path: 'files.acme_corp',
       depth: 1,
       parentId: null,
+      icon: 'lucide:briefcase',
+      color: 'cyan',
     });
     expect((await stat(path.join(root, 'acme-corp'))).isDirectory()).toBe(true);
 
     const a = await tree.createTreeFolder(owner, 'files', {
       parentId: clients.id,
       name: 'Contracts',
+      // An empty icon and a null colour are "none": nothing stored.
+      icon: '',
+      color: null,
     });
+    expect(a).toMatchObject({ icon: null, color: null });
     const b = await tree.createTreeFolder(owner, 'files', { parentId: a.id, name: '2026' });
     expect(b).toMatchObject({ depth: 3, parentId: a.id });
     await expect(

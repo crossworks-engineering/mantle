@@ -54,7 +54,14 @@ describe.skipIf(!URL)('the item tree on notes, tasks, events and secrets', () =>
 
   it('the Files folder operations refuse another kind’s folder (audit X1)', async () => {
     const files = await import('@mantle/files');
-    const f = await tree.createTreeFolder(owner, 'notes', { parentId: null, name: 'Not files' });
+    const f = await tree.createTreeFolder(owner, 'notes', {
+      parentId: null,
+      name: 'Not files',
+      icon: '🗂️',
+      color: 'cyan',
+    });
+    // The look rides in the insert for a row-only kind.
+    expect(f).toMatchObject({ icon: '🗂️', color: 'cyan' });
     const note = await notes.createNote(owner, { title: 'kept', content: 'x' });
     await tree.moveTreeItems(owner, 'notes', [note.id], f.id);
     // Its note is not a file, so the Files delete used to call it empty.

@@ -171,6 +171,45 @@ describe('the member tree write routes', () => {
     ]);
   });
 
+  it('carry a folder’s look into the create, and refuse a bad tint or icon first', async () => {
+    const folders = (await import('./[kind]/folders/route')).POST as Handler;
+    const url = '/api/member/tree/notes/folders';
+    const kind = { kind: 'notes' };
+    const res = await call(MEMBER, 'POST', url, folders, kind, {
+      parentId: null,
+      name: 'Mine',
+      icon: 'lucide:briefcase',
+      color: 'cyan',
+    });
+    expect(res.status).toBe(201);
+    expect(h.calls).toEqual([
+      {
+        fn: 'create',
+        args: [
+          scope,
+          'notes',
+          { parentId: null, name: 'Mine', icon: 'lucide:briefcase', color: 'cyan' },
+        ],
+      },
+    ]);
+    h.calls.length = 0;
+    const emoji = await call(MEMBER, 'POST', url, folders, kind, {
+      parentId: null,
+      name: 'A',
+      icon: '🗂️',
+    });
+    expect(emoji.status).toBe(201);
+    h.calls.length = 0;
+    for (const body of [
+      { parentId: null, name: 'A', color: 'magenta' },
+      { parentId: null, name: 'A', icon: 'briefcase' },
+      { parentId: null, name: 'A', icon: 'lucide:Not A Name' },
+    ]) {
+      expect((await call(MEMBER, 'POST', url, folders, kind, body)).status).toBe(400);
+    }
+    expect(h.calls).toEqual([]);
+  });
+
   it('refuse a client and an admin, a bad body, and a kind with no member tree', async () => {
     const folders = (await import('./[kind]/folders/route')).POST as Handler;
     const one = await import('./[kind]/folders/[id]/route');

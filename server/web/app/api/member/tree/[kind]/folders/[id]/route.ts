@@ -1,13 +1,18 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
 import { TREE_FOLDER_NAME_MAX } from '@mantle/client-types/tree';
 import { deleteMemberFolder, updateMemberFolder } from '@mantle/content/tree';
 import { getMemberOr401 } from '@/lib/auth';
 import { memberWriteGate } from '@/lib/member-space';
 import { readJsonNoNul } from '@/lib/strip-nul';
 import { firstIssue } from '@/lib/zod-issue';
-import { memberTreeScope, readerTreeKindOr404, treeErrorResponse } from '@/lib/tree-route';
+import {
+  FolderColorBody,
+  FolderIconBody,
+  memberTreeScope,
+  readerTreeKindOr404,
+  treeErrorResponse,
+} from '@/lib/tree-route';
 
 type Ctx = { params: Promise<{ kind: string; id: string }> };
 
@@ -15,8 +20,8 @@ const Id = z.string().uuid();
 const Patch = z
   .object({
     name: z.string().trim().min(1).max(TREE_FOLDER_NAME_MAX),
-    icon: z.string().max(APP_ICON_MAX).nullable(),
-    color: z.enum(APP_TINTS).nullable(),
+    icon: FolderIconBody.nullable(),
+    color: FolderColorBody.nullable(),
     /** Move under a folder the member's tree shows; null = the top level. */
     parentId: z.string().uuid().nullable(),
   })

@@ -80,6 +80,39 @@ describe('tree folder tools', () => {
     expect(notifyTreeChanged).toHaveBeenCalledWith('o1', 'notes');
   });
 
+  it('passes an icon and a colour into the create, and refuses a bad one first', async () => {
+    vi.mocked(createTreeFolder).mockResolvedValue({ id: 'f', path: 'notes.a' } as never);
+    const res = await tool('tree_folder_create').handler(
+      { kind: 'notes', name: 'A', icon: 'lucide:briefcase', color: 'cyan' },
+      owner,
+    );
+    expect(res.ok).toBe(true);
+    expect(createTreeFolder).toHaveBeenCalledWith('o1', 'notes', {
+      parentId: null,
+      name: 'A',
+      icon: 'lucide:briefcase',
+      color: 'cyan',
+    });
+    vi.clearAllMocks();
+    expect(
+      errorOf(
+        await tool('tree_folder_create').handler(
+          { kind: 'notes', name: 'A', color: 'magenta' },
+          owner,
+        ),
+      ),
+    ).toMatch(/color must be one of/);
+    expect(
+      errorOf(
+        await tool('tree_folder_create').handler(
+          { kind: 'notes', name: 'A', icon: 'briefcase' },
+          owner,
+        ),
+      ),
+    ).toMatch(/emoji or lucide/);
+    expect(createTreeFolder).not.toHaveBeenCalled();
+  });
+
   it('moves a folder only when asked, and to the top level on null', async () => {
     expect(
       errorOf(

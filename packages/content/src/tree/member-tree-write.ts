@@ -89,7 +89,7 @@ async function reload(scope: MemberTreeScope, kind: TreeKind, id: string): Promi
 export async function createMemberFolder(
   scope: MemberTreeScope,
   kind: TreeKind,
-  args: { parentId: string | null; name: string },
+  args: { parentId: string | null; name: string; icon?: string | null; color?: AppTint | null },
 ): Promise<TreeFolder> {
   assertKind(kind);
   const view = await memberView(scope, kind);
@@ -114,10 +114,14 @@ export async function createMemberFolder(
       `you keep ${MEMBER_FOLDERS_MAX} folders here already; delete some before making more`,
     );
   }
+  // The look rides in the row: an empty or null icon or colour is "none".
+  const look: Record<string, unknown> = {};
+  if (args.icon) look.icon = args.icon;
+  if (args.color) look.color = args.color;
   const [row] = (await db.execute(sql`
     insert into nodes (owner_id, type, title, slug, path, audience, data, tags)
     values (${scope.spaceId}, 'branch', ${title}, ${slug}, ${storedPathOf(kind, path)}::ltree,
-            'admin', '{}'::jsonb, '{}')
+            'admin', ${JSON.stringify(look)}::jsonb, '{}')
     on conflict do nothing
     returning id`)) as unknown as { id: string }[];
   if (!row) throw new TreeError('conflict', `a folder named '${title}' already exists here`);

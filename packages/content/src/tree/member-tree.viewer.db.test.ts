@@ -114,8 +114,16 @@ describe.skipIf(!URL)('a member’s tree: own folders, drafts in place, teammate
     const mine = await tree.createMemberFolder(scopeA, 'notes', {
       parentId: ids.teamF,
       name: 'Mine',
+      icon: 'lucide:briefcase',
+      color: 'cyan',
     });
-    expect(mine).toMatchObject({ own: true, path: `notes.${L}_team.mine`, parentId: ids.teamF });
+    expect(mine).toMatchObject({
+      own: true,
+      path: `notes.${L}_team.mine`,
+      parentId: ids.teamF,
+      icon: 'lucide:briefcase',
+      color: 'cyan',
+    });
     const inTeam = (await page(ids.teamF))!;
     expect(inTeam.folders.map((f) => f.name)).toEqual(['Mine']);
     expect(titles(inTeam.items)).toEqual([`notes.${L}_team`]);

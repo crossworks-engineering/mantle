@@ -86,8 +86,15 @@ export class TreeError extends Error {
 
 /** The per-kind half of a write. Paths are ltree strings. */
 type TreeKindOps = {
-  /** Returns the new folder's id. */
-  createFolder(ownerId: string, parentPath: string, name: string): Promise<string>;
+  /** Returns the new folder's id. `look` (icon, color) rides in the row
+   *  where the kind's folder is a row; Files sets it after (its create is
+   *  disk first, in its own transaction). */
+  createFolder(
+    ownerId: string,
+    parentPath: string,
+    name: string,
+    look?: TreeFolderLook,
+  ): Promise<string>;
   renameFolder(ownerId: string, folderId: string, name: string): Promise<void>;
   moveFolder(ownerId: string, folderId: string, destParentPath: string): Promise<void>;
   moveItem(ownerId: string, itemId: string, destPath: string): Promise<void>;
@@ -111,7 +118,8 @@ const FILES_OPS: TreeKindOps = {
 /** Every kind but Files: folders and locations are rows only. */
 function nodeOps(kind: TreeKind): TreeKindOps {
   return {
-    createFolder: createNodeFolder,
+    createFolder: (ownerId, parentPath, name, look) =>
+      createNodeFolder(ownerId, parentPath, name, look ? { data: look } : {}),
     renameFolder: renameNodeFolder,
     moveFolder: moveNodeFolder,
     moveItem: (ownerId, itemId, destPath) => moveNodeItem(ownerId, kind, itemId, destPath),
@@ -173,16 +181,30 @@ function cleanName(name: string): string {
   return clean;
 }
 
-/** Create a folder under `parentId` (null = the top level). */
+/** A folder's stored look: what of `icon` and `color` is set (an empty
+ *  string or null is "none" and is left out). */
+type TreeFolderLook = { icon?: string; color?: AppTint };
+
+function lookOf(args: { icon?: string | null; color?: AppTint | null }): TreeFolderLook | null {
+  const look: TreeFolderLook = {};
+  if (args.icon) look.icon = args.icon;
+  if (args.color) look.color = args.color;
+  return Object.keys(look).length ? look : null;
+}
+
+/** Create a folder under `parentId` (null = the top level), with its look
+ *  when given, in the one call. */
 export async function createTreeFolder(
   ownerId: string,
   kind: TreeKind,
-  args: { parentId: string | null; name: string },
+  args: { parentId: string | null; name: string; icon?: string | null; color?: AppTint | null },
 ): Promise<TreeFolder> {
   const ops = opsFor(kind);
   const parentPath = await pathOf(ownerId, kind, args.parentId);
   const name = cleanName(args.name);
-  const id = await refusing(() => ops.createFolder(ownerId, parentPath, name));
+  const look = lookOf(args);
+  const id = await refusing(() => ops.createFolder(ownerId, parentPath, name, look ?? undefined));
+  if (look && kind === 'files') await setFolderLook(ownerId, id, look);
   return folderOrThrow(ownerId, kind, id);
 }
 

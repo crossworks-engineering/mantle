@@ -24,6 +24,8 @@ import {
   type TreeFolderPatch,
 } from '@mantle/content/tree';
 import { TREE_KIND_SPECS, TREE_MAX_DEPTH, type TreeKind } from '@mantle/client-types/tree';
+import { APP_TINTS, isAppTint } from '@mantle/client-types/app-nav';
+import { projectAppIcon } from '@mantle/content-core/app-nav';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
@@ -130,7 +132,7 @@ export const tree_folder_create: BuiltinToolDef = {
     { kind: 'node_exists', param: 'parent_id', nodeType: 'branch', lookup: 'tree_folders' },
   ],
   name: 'Create a folder',
-  description: `Create a folder for one kind (notes, tasks, ...), at the top level or inside \`parent_id\`. Folders nest at most ${TREE_MAX_DEPTH} deep, and a name must be unique in its folder (case and punctuation do not count). Returns the folder.`,
+  description: `Create a folder for one kind (notes, tasks, ...), at the top level or inside \`parent_id\`, with an icon and a colour when asked for. Folders nest at most ${TREE_MAX_DEPTH} deep, and a name must be unique in its folder (case and punctuation do not count). Returns the folder.`,
   inputSchema: {
     type: 'object',
     properties: {
@@ -141,6 +143,15 @@ export const tree_folder_create: BuiltinToolDef = {
         description:
           'the folder to create it in, from `tree_folders`; omit or null for the top level',
       },
+      icon: {
+        type: 'string',
+        description: 'an emoji, or `lucide:<name>` (kebab-case); omit for the default folder glyph',
+      },
+      color: {
+        type: 'string',
+        enum: [...APP_TINTS],
+        description: 'the tile colour; omit for none',
+      },
     },
     required: ['kind', 'name'],
   },
@@ -148,9 +159,19 @@ export const tree_folder_create: BuiltinToolDef = {
     run(input, ctx, async (kind) => {
       const name = str(input.name);
       if (!name) return { ok: false, error: 'name required' };
+      const icon = str(input.icon);
+      if (icon && projectAppIcon(icon) === undefined) {
+        return { ok: false, error: 'icon must be an emoji or lucide:<name>' };
+      }
+      const color = str(input.color);
+      if (color && !isAppTint(color)) {
+        return { ok: false, error: `color must be one of ${APP_TINTS.join(', ')}` };
+      }
       const folder = await createTreeFolder(ctx.ownerId, kind, {
         parentId: parentOf(input.parent_id),
         name,
+        ...(icon ? { icon } : {}),
+        ...(isAppTint(color) ? { color } : {}),
       });
       await notifyTreeChanged(ctx.ownerId, kind);
       ctx.step?.setOutput({ kind, folderId: folder.id, path: folder.path });

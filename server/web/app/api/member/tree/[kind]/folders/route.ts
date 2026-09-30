@@ -6,17 +6,27 @@ import { getMemberOr401 } from '@/lib/auth';
 import { memberWriteGate } from '@/lib/member-space';
 import { readJsonNoNul } from '@/lib/strip-nul';
 import { firstIssue } from '@/lib/zod-issue';
-import { memberTreeScope, readerTreeKindOr404, treeErrorResponse } from '@/lib/tree-route';
+import {
+  FolderColorBody,
+  FolderIconBody,
+  memberTreeScope,
+  readerTreeKindOr404,
+  treeErrorResponse,
+} from '@/lib/tree-route';
 
 const Body = z.object({
   /** A folder the member's tree shows; null = the top level. */
   parentId: z.string().uuid().nullable(),
   name: z.string().trim().min(1).max(TREE_FOLDER_NAME_MAX),
+  /** Its look from the start (the same values PATCH takes); left out or
+   *  null = the default tile. */
+  icon: FolderIconBody.nullable().optional(),
+  color: FolderColorBody.nullable().optional(),
 });
 
 /** POST /api/member/tree/:kind/folders : create one of the member's own
- *  private folders under a folder its tree shows (folder plan phase 5);
- *  answers `{ folder }` (`own: true`). 404 for a folder it does not see, 409
+ *  private folders under a folder its tree shows (folder plan phase 5), with
+ *  its icon and colour when chosen; answers `{ folder }` (`own: true`). 404 for a folder it does not see, 409
  *  when its tree already shows a folder of that name there. */
 export async function POST(req: Request, ctx: { params: Promise<{ kind: string }> }) {
   const member = await getMemberOr401();

@@ -5,6 +5,8 @@
  */
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
+import { APP_ICON_MAX, APP_TINTS } from '@mantle/client-types/app-nav';
+import { projectAppIcon } from '@mantle/content-core/app-nav';
 import {
   isTreeKind,
   TREE_SEARCH_MAX,
@@ -145,6 +147,18 @@ export async function readerTreeKindOr404(ctx: {
   }
   return kind;
 }
+
+/** A folder's look as a body field, for a create and a restyle alike: an
+ *  emoji (up to APP_ICON_EMOJI_MAX UTF-16 units) or `lucide:<name>`, the
+ *  app-nav icon vocabulary; anything else is a 400, never stored. */
+export const FolderIconBody = z
+  .string()
+  .trim()
+  .max(APP_ICON_MAX)
+  .refine((v) => projectAppIcon(v) !== undefined, 'icon must be an emoji or lucide:<name>');
+
+/** A folder's tint: one of APP_TINTS. */
+export const FolderColorBody = z.enum(APP_TINTS);
 
 /** A member or client tree folder page query. */
 export const ReaderTreeQuery = z.object({
