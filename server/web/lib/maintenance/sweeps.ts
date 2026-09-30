@@ -35,6 +35,7 @@ import { runPinnedModelDrift } from './pinned-model-drift-run';
 import { summarisePoolFit } from './pool-fit';
 import { runPoolFit } from './pool-fit-run';
 import { reapAbandonedTracesAllOwners } from '../journey';
+import { repairShareDrift } from '@mantle/content/tree';
 import { reapStalePendingTurns, summariseTurnsReap } from './turns-reap';
 import { errorMessage } from '@mantle/std';
 
@@ -142,6 +143,13 @@ export const SWEEPS: Record<string, (ownerId: string) => Promise<string>> = {
     return r.deleted + r.ipsCleared + r.skipsDeleted === 0
       ? 'nothing to reap'
       : `deleted ${r.deleted} code row(s) and ${r.skipsDeleted} skip row(s); cleared ${r.ipsCleared} address(es)`;
+  },
+  // Folder audit Y1: rows read at a share their folders no longer give.
+  'share-drift': async () => {
+    const r = await repairShareDrift();
+    return r.drifted === 0
+      ? 'no drift'
+      : `repaired ${r.repaired} of ${r.drifted} drifted row(s) (${r.openedTooFar} read too openly)`;
   },
   // Client tier audit I4: app access log rows older than 90 days.
   'app-access-log-reap': async () => {

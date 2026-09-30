@@ -51,6 +51,10 @@ function labelOf(name: string): { slug: string; label: string } {
 
 const depthOf = (path: string) => path.split('.').length - 1;
 
+/** How many folders of one kind a member may keep. Branch rows do not count
+ *  toward the space's item limit, and every tree read builds all of them. */
+export const MEMBER_FOLDERS_MAX = 500;
+
 /** The tree path of a place the member may file into: a folder its tree
  *  shows, or the top level (null). */
 function placeOf(view: MemberView, folderId: string | null): string {
@@ -98,6 +102,17 @@ export async function createMemberFolder(
   }
   if (view.byPath.has(path)) {
     throw new TreeError('conflict', `a folder named '${title}' already exists here`);
+  }
+  const [{ n } = { n: 0 }] = (await db.execute(sql`
+    select count(*)::int as n from nodes
+     where owner_id = ${scope.spaceId} and type = 'branch'
+       and path <@ ${storedPathOf(kind, TREE_KIND_SPECS[kind].root)}::ltree
+       and nlevel(path) > 1`)) as unknown as Array<{ n: number }>;
+  if (n >= MEMBER_FOLDERS_MAX) {
+    throw new TreeError(
+      'invalid',
+      `you keep ${MEMBER_FOLDERS_MAX} folders here already; delete some before making more`,
+    );
   }
   const [row] = (await db.execute(sql`
     insert into nodes (owner_id, type, title, slug, path, audience, data, tags)

@@ -275,6 +275,14 @@ export async function updateTreeFolder(
 ): Promise<TreeFolder> {
   const ops = opsFor(kind);
   const folder = await folderOrThrow(ownerId, kind, folderId);
+  // A share in the patch is checked before anything else is written: its
+  // refusal (not shareable, or a confirmation needed) writes nothing.
+  if (patch.share !== undefined && (folder.share ?? null) !== patch.share) {
+    assertShareable(kind, folder, patch.share);
+    if (!opts.confirm) {
+      await checkVisibility(ownerId, shareDiff(ownerId, folder, patch.share), opts);
+    }
+  }
   if (patch.parentId !== undefined) {
     if (patch.parentId === folderId) throw new TreeError('invalid', 'a folder cannot hold itself');
     if (folder.system && patch.parentId !== folder.parentId) {
@@ -313,6 +321,25 @@ export async function updateTreeFolder(
   return folderOrThrow(ownerId, kind, folderId);
 }
 
+/** Refuse a share this kind, level or folder may not take (stopping a share
+ *  is always allowed). */
+function assertShareable(kind: TreeKind, folder: TreeFolder, share: TreeShareLevel | null): void {
+  if (share === null) return;
+  const spec = TREE_KIND_SPECS[kind];
+  if (!spec.shareable) {
+    throw new TreeError('invalid', `${kind} folders stay with admins; they cannot be shared`);
+  }
+  if (!(spec.shareLevels ?? TREE_SHARE_LEVELS).includes(share)) {
+    throw new TreeError(
+      'invalid',
+      `a ${kind} folder can only be shared with the ${(spec.shareLevels ?? TREE_SHARE_LEVELS).join(' or ')}`,
+    );
+  }
+  if (folder.system) {
+    throw new TreeError('invalid', 'this folder is made by Mantle and stays with admins');
+  }
+}
+
 /** Share a folder (and everything below it) at `share`, or stop sharing it. */
 async function setFolderShare(
   ownerId: string,
@@ -321,21 +348,7 @@ async function setFolderShare(
   share: TreeShareLevel | null,
   opts: TreeWriteOpts,
 ): Promise<void> {
-  const spec = TREE_KIND_SPECS[kind];
-  if (share !== null) {
-    if (!spec.shareable) {
-      throw new TreeError('invalid', `${kind} folders stay with admins; they cannot be shared`);
-    }
-    if (!(spec.shareLevels ?? TREE_SHARE_LEVELS).includes(share)) {
-      throw new TreeError(
-        'invalid',
-        `a ${kind} folder can only be shared with the ${(spec.shareLevels ?? TREE_SHARE_LEVELS).join(' or ')}`,
-      );
-    }
-    if (folder.system) {
-      throw new TreeError('invalid', 'this folder is made by Mantle and stays with admins');
-    }
-  }
+  assertShareable(kind, folder, share);
   if ((folder.share ?? null) === share) return;
   const diff = await checkVisibility(ownerId, shareDiff(ownerId, folder, share), opts);
   // The database refreshes everything below (migration 0204 triggers). Its

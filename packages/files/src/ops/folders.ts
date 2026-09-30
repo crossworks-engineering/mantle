@@ -248,6 +248,9 @@ export async function deleteFolder(args: {
   if (!isFilesPath(folder.path)) {
     return { ok: false, reason: notAFilesFolder('folder_delete', folder.path).message };
   }
+  if ((folder.data as Record<string, unknown> | null)?.system === true) {
+    return { ok: false, reason: 'this folder is made by Mantle and found by its path; it stays' };
+  }
   const counts = await folderCounts(args.ownerId, folder.path);
   if (counts.childFolderCount > 0 || counts.fileCount > 0) {
     return { ok: false, reason: 'folder is not empty — delete its contents first' };

@@ -1307,6 +1307,17 @@ async function moveIntoBrain(
         plans.set(b.id, plan);
         landingOf.set(b.id, plan.target);
       }
+      // The brain folders at and above every landing, locked against a share
+      // change until the Accept commits: the share read here is the share
+      // it lands under.
+      const landings = [...new Set(landingOf.values())];
+      if (landings.length) {
+        await tx.execute(sql`
+          select 1 from nodes
+           where owner_id = ${brainId} and type = 'branch'
+             and path @> any(${`{${landings.join(',')}}`}::ltree[])
+           for share`);
+      }
       const shares = await sharesAt(
         tx,
         brainId,

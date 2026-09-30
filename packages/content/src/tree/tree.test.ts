@@ -13,13 +13,10 @@ import { TREE_LIVE_KINDS, itemState } from './kinds';
 
 describe('tree cursor', () => {
   it('round-trips and is opaque', () => {
-    const raw = encodeTreeCursor({ sort: 'name', key: 'acme contract.pdf', id: 'abc' });
+    const id = '11111111-2222-4333-8444-555555555555';
+    const raw = encodeTreeCursor({ sort: 'name', key: 'acme contract.pdf', id });
     expect(raw).not.toContain('acme');
-    expect(decodeTreeCursor(raw, 'name')).toEqual({
-      sort: 'name',
-      key: 'acme contract.pdf',
-      id: 'abc',
-    });
+    expect(decodeTreeCursor(raw, 'name')).toEqual({ sort: 'name', key: 'acme contract.pdf', id });
   });
 
   it('restarts on a cursor for another sort or a malformed one', () => {
@@ -66,5 +63,20 @@ describe('the owner tree row state', () => {
   });
   it('gives no other kind a state', () => {
     expect(itemState('notes', { published: false })).toBeNull();
+  });
+});
+
+describe('the tree cursor', () => {
+  it('treats a forged id as no cursor instead of failing the query', () => {
+    const good = encodeTreeCursor({
+      sort: 'name',
+      key: 'a',
+      id: '11111111-2222-4333-8444-555555555555',
+    });
+    expect(decodeTreeCursor(good, 'name')).not.toBeNull();
+    const forged = Buffer.from(JSON.stringify(['name', 'a', "x' or 1=1"]), 'utf8').toString(
+      'base64url',
+    );
+    expect(decodeTreeCursor(forged, 'name')).toBeNull();
   });
 });

@@ -302,6 +302,37 @@ describe.skipIf(!URL)('sharing a folder', () => {
       await m.systemDb.execute(sqlTag`delete from nodes where id = ${inF}`);
     });
 
+    it('repairs a row left at a share its folders no longer give (share drift)', async () => {
+      const stray = randomUUID();
+      await m.systemDb.execute(sqlTag`
+        insert into nodes (id, owner_id, type, title, path, data, tags)
+        values (${stray}, ${brain}, 'note', 'drifted', 'notes',
+                ${JSON.stringify({ content: 'x' })}::jsonb, '{}')`);
+      // Forged drift (what a race could leave): the trigger sets it on
+      // insert and on path changes only.
+      await m.systemDb.execute(
+        sqlTag`update nodes set inherited_level = 'client' where id = ${stray}`,
+      );
+      const dry = await tree.repairShareDrift({ dryRun: true });
+      expect(dry.drifted).toBeGreaterThanOrEqual(1);
+      expect(dry.repaired).toBe(0);
+      expect(await inherited(stray)).toBe('client');
+      const done = await tree.repairShareDrift();
+      expect(done.repaired).toBeGreaterThanOrEqual(1);
+      expect(await inherited(stray)).toBeNull();
+      await m.systemDb.execute(sqlTag`delete from nodes where id = ${stray}`);
+    });
+
+    it('checks a share before the rest of a combined update writes anything', async () => {
+      const before = (await tree.loadTreeFolder(brain, 'notes', { folderId: ids.sub }))!.folder!;
+      const diff = await refusal(
+        tree.updateTreeFolder(brain, 'notes', ids.sub, { name: 'Renamed first', share: 'client' }),
+      );
+      expect(diff.total).toBeGreaterThan(0);
+      const after = (await tree.loadTreeFolder(brain, 'notes', { folderId: ids.sub }))!.folder!;
+      expect(after.name).toBe(before.name);
+    });
+
     it('refuses what cannot be shared', async () => {
       await tree.ensureKindRoot(brain, 'tasks');
       const tasksFolder = await tree.createTreeFolder(brain, 'tasks', {

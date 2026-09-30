@@ -8,6 +8,8 @@ import type { TreeSort } from '@mantle/client-types/tree';
 
 export type TreeCursor = { sort: TreeSort; key: string; id: string };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function encodeTreeCursor(c: TreeCursor): string {
   return Buffer.from(JSON.stringify([c.sort, c.key, c.id]), 'utf8').toString('base64url');
 }
@@ -24,6 +26,9 @@ export function decodeTreeCursor(
     if (!Array.isArray(v) || v.length !== 3) return null;
     const [s, key, id] = v as unknown[];
     if (s !== sort || typeof key !== 'string' || typeof id !== 'string') return null;
+    // The id is cast to uuid in the page query: a forged one restarts at the
+    // top instead of failing the request.
+    if (!UUID_RE.test(id)) return null;
     return { sort, key, id };
   } catch {
     return null;
