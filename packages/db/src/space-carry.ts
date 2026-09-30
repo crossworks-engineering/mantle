@@ -37,6 +37,11 @@ import type { Db } from './client';
 /** Root plus three folder levels (TREE_MAX_DEPTH in @mantle/client-types). */
 const MAX_TREE_NLEVEL = 4;
 
+/** The label a carry parks rows under between its two passes (never a kind
+ *  root, so no folder check applies; one carry per brain at a time, under
+ *  the brain's share write lock). */
+const CARRY_TMP = 'mantle_carry_tmp';
+
 const FILES_ROOT = 'files';
 export const SPACE_FILES_ROOT = 'space_files';
 
@@ -90,10 +95,21 @@ async function carry(
                         where b.owner_id = n.owner_id and b.type = 'branch'
                           and b.path = ${mapped}
                           and not (b.path <@ ${oldPath}::ltree)))`);
+  // Two passes through a temporary prefix: in one UPDATE a row's new path
+  // can be another moving row's old one (a lift maps `a.o.o.y` onto `a.o.y`,
+  // which itself moves on to `a.y`), and the unique index is checked row by
+  // row, so a single pass failed or not by physical order (folder audit C3).
+  // The prefix sits outside every kind root, so no folder check applies.
+  await tx.execute(sql`
+    update nodes n set path = text2ltree(${CARRY_TMP}) || n.path where ${inSpaces}`);
+  const from = sql`subpath(n.path, 1)`;
+  const mappedTmp = sql`case when ${from} = ${oldPath}::ltree then text2ltree(${newPath})
+                             else (text2ltree(${newPath}) || subpath(${from}, nlevel(${oldPath}::ltree)))::ltree end`;
   const moved = (await tx.execute(sql`
     update nodes n
-       set path = subpath(${mapped}, 0, least(nlevel(${mapped}), ${MAX_TREE_NLEVEL}))
-     where ${inSpaces}
+       set path = subpath(${mappedTmp}, 0, least(nlevel(${mappedTmp}), ${MAX_TREE_NLEVEL}))
+     where n.owner_id in (select s.id from spaces s where s.kind = 'personal')
+       and n.path <@ (text2ltree(${CARRY_TMP}) || ${oldPath}::ltree)
     returning n.id`)) as unknown as unknown[];
   return moved.length;
 }

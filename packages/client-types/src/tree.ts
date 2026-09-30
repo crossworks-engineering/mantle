@@ -28,7 +28,7 @@ export const TREE_KINDS = [
   'contacts',
   'secrets',
   // Recall v2's maps (its own content type, not pages). Appended last so no
-  // earlier kind's index moves. Not served until the Recall screen ships.
+  // earlier kind's index moves. Served since the Recall screen (R3).
   'recall',
 ] as const;
 export type TreeKind = (typeof TREE_KINDS)[number];

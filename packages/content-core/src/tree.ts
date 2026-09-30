@@ -72,9 +72,9 @@ export function isTreeFolderPathAllowed(path: string): boolean {
 
 /**
  * Cut a folder path that would sit too deep back to the deepest allowed
- * level: the extra levels are lifted into the third. Inbound paths use it (an
- * agent's `mkdir -p`, the crawler, Accept), so a deep chain lands in the
- * deepest folder instead of failing.
+ * level: the extra levels are lifted into the third. For clients; the brain's
+ * inbound paths clamp with their own helpers (Files: clampFilesFolderPath;
+ * Accept: accept-place.ts; member rows: carrySpaceRows).
  */
 export function clampTreePath(path: string): string {
   const parts = labels(path);

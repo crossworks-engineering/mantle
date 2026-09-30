@@ -143,6 +143,30 @@ describe.skipIf(!URL)('members’ drafts follow the brain’s folders', () => {
     expect(await pathOf(inSub)).toBe('notes.parent.sub');
   });
 
+  it('a lift whose rows land on each other’s old paths goes through (audit C3)', async () => {
+    // The member's own "Proj" inside the brain's "Proj", each holding "Y":
+    // lifting maps notes.proj.proj.y onto notes.proj.y, which itself moves
+    // on to notes.y. A one-pass rewrite hit the unique index by row order.
+    const proj = await tree.createTreeFolder(brain, 'notes', { parentId: null, name: 'Proj' });
+    // Inner rows first: a one-pass rewrite then meets them before the outer
+    // "Y" has left notes.proj.y.
+    const yInner = await spaceRow(space, 'branch', 'notes.proj.proj.y');
+    const ownProj = await spaceRow(space, 'branch', 'notes.proj.proj');
+    const yOuter = await spaceRow(space, 'branch', 'notes.proj.y');
+    const inInner = await spaceRow(space, 'note', 'notes.proj.proj.y');
+    await tree.deleteTreeFolder(brain, 'notes', proj.id);
+    expect(await pathOf(proj.id)).toBeNull();
+    expect(await pathOf(yOuter)).toBe('notes.y');
+    expect(await pathOf(ownProj)).toBe('notes.proj');
+    expect(await pathOf(yInner)).toBe('notes.proj.y');
+    expect(await pathOf(inInner)).toBe('notes.proj.y');
+    const [left] = (await m.db.execute(sqlTag`
+      select count(*)::int as n from nodes where path <@ 'mantle_carry_tmp'`)) as unknown as {
+      n: number;
+    }[];
+    expect(left!.n).toBe(0);
+  });
+
   it('Files folders carry member files, mirrored under space_files (rename, move, delete)', async () => {
     const f = await tree.createTreeFolder(brain, 'files', { parentId: null, name: 'Docs' });
     const to = await tree.createTreeFolder(brain, 'files', { parentId: null, name: 'Archive' });
