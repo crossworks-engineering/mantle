@@ -4,14 +4,19 @@
  * clever statement nor an endless one can escape the file or freeze the
  * server. Real SQLite files in a temp dir; no Postgres.
  */
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  APP_SQL_DEFAULT_MAX_DB_MB,
   APP_SQL_MAX_CHILDREN,
   APP_SQL_MAX_ROWS,
+  APP_SQL_MAX_WAITING_PER_CALLER,
+  AppSqlBusyError,
+  AppSqlError,
   appSqlChildPids,
+  appSqlMaxDbBytes,
   runAppSql,
 } from './app-sql-runner';
 
@@ -272,5 +277,96 @@ describe('runAppSql child processes', () => {
     await expect(write('INSERT INTO nope VALUES (1)')).rejects.toThrow(/no such table/);
     expect(appSqlChildPids()).toEqual(pids);
     expect(await count()).toBe(3);
+  });
+});
+
+/**
+ * Resource limits (client tier audit 2026-09-30, I1): a client or a member
+ * writes client- and team-level apps, so one caller must not fill the disk,
+ * the web process's memory or the SQL pool.
+ */
+describe('runAppSql resource limits', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'app-sql-limits-'));
+  const file = path.join(dir, 'app.sqlite');
+  const MB = 1024 * 1024;
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('refuses a write past the file cap with SQLITE_FULL and keeps the file under it', async () => {
+    const write = (sql: string) =>
+      runAppSql(file, { sql, mode: 'run', readOnly: false, maxDbBytes: MB });
+    await write('CREATE TABLE b (x BLOB)');
+    const err = await write(
+      'INSERT INTO b SELECT randomblob(400000) FROM (WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c LIMIT 6) SELECT x FROM c)',
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppSqlError);
+    expect((err as Error).message).toMatch(/database or disk is full/);
+    expect(statSync(file).size).toBeLessThanOrEqual(MB);
+    // Rolled back whole, and a write that fits still works.
+    await expect(write('INSERT INTO b VALUES (randomblob(1000))')).resolves.toMatchObject({
+      changes: 1,
+    });
+    expect(
+      await runAppSql(file, { sql: 'SELECT count(*) AS n FROM b', mode: 'all', readOnly: true }),
+    ).toEqual([{ n: 1 }]);
+  });
+
+  it('reads the cap from APP_SQL_MAX_DB_MB, and an empty value as the default', () => {
+    const saved = process.env.APP_SQL_MAX_DB_MB;
+    try {
+      delete process.env.APP_SQL_MAX_DB_MB;
+      expect(appSqlMaxDbBytes()).toBe(APP_SQL_DEFAULT_MAX_DB_MB * MB);
+      process.env.APP_SQL_MAX_DB_MB = '';
+      expect(appSqlMaxDbBytes()).toBe(APP_SQL_DEFAULT_MAX_DB_MB * MB);
+      process.env.APP_SQL_MAX_DB_MB = '32';
+      expect(appSqlMaxDbBytes()).toBe(32 * MB);
+    } finally {
+      if (saved === undefined) delete process.env.APP_SQL_MAX_DB_MB;
+      else process.env.APP_SQL_MAX_DB_MB = saved;
+    }
+  });
+
+  it('refuses a query whose reply passes the byte cap, and answers one under it', async () => {
+    const blobs = (n: number) =>
+      runAppSql(file, {
+        sql: `WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c LIMIT ${n}) SELECT hex(randomblob(500000)) AS h FROM c`,
+        mode: 'all',
+        readOnly: true,
+      });
+    await expect(blobs(12)).rejects.toThrow(/more than 8 MB: add a LIMIT/);
+    expect(((await blobs(4)) as unknown[]).length).toBe(4);
+  });
+
+  it('runs one statement at a time per caller, while another caller still runs', async () => {
+    const done: string[] = [];
+    const slow =
+      'WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c LIMIT 3000000) SELECT count(*) AS n FROM c';
+    const q = (name: string, sql: string, callerKey: string) =>
+      runAppSql(file, { sql, mode: 'all', readOnly: true, callerKey }).then((r) => {
+        done.push(name);
+        return r;
+      });
+    await Promise.all([
+      q('a-slow', slow, 'client:a'),
+      q('a-quick', 'SELECT 1 AS n', 'client:a'),
+      q('b-quick', 'SELECT 2 AS n', 'client:b'),
+    ]);
+    // b did not wait for a; a's second statement waited for its first.
+    expect(done.indexOf('b-quick')).toBeLessThan(done.indexOf('a-slow'));
+    expect(done.indexOf('a-quick')).toBeGreaterThan(done.indexOf('a-slow'));
+  });
+
+  it('refuses a caller that queues more than its share as busy', async () => {
+    const many = Array.from({ length: APP_SQL_MAX_WAITING_PER_CALLER + 3 }, () =>
+      runAppSql(file, {
+        sql: 'SELECT 1 AS n',
+        mode: 'all',
+        readOnly: true,
+        callerKey: 'client:greedy',
+      }).catch((e: unknown) => e),
+    );
+    const out = await Promise.all(many);
+    const busy = out.filter((r) => r instanceof AppSqlBusyError);
+    expect(busy.length).toBeGreaterThan(0);
+    expect(out.filter((r) => Array.isArray(r)).length).toBe(APP_SQL_MAX_WAITING_PER_CALLER + 1);
   });
 });

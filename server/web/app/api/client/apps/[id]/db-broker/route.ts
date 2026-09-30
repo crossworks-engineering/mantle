@@ -2,9 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { recordAppAccess } from '@mantle/content';
 import { appDbExec, appDbQuery } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
-import { errorMessage } from '@mantle/std';
 import { getClientOr401 } from '@/lib/auth';
-import { AppDbBody, appDbBodyError } from '@/lib/app-db-broker-body';
+import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
 import { clientAppOr404, readOnlyAppResponse } from '@/lib/client-apps';
 import { readJsonCapped } from '@/lib/body-limit';
 import { rateLimit } from '@/lib/rate-limit';
@@ -59,11 +58,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     kind: 'db',
     detail: { via: 'client', op },
   });
+  // One statement at a time per login (client tier audit I1): a second
+  // waits its turn, so one login never holds every SQL process.
+  const caller = { callerKey: `client:${client.loginId}` };
   try {
     const output =
       op === 'query'
-        ? await appDbQuery(client.anchorId, app.id, sql, params, app.manifest.sqlite)
-        : await appDbExec(client.anchorId, app.id, sql, params, app.manifest.sqlite);
+        ? await appDbQuery(client.anchorId, app.id, sql, params, app.manifest.sqlite, caller)
+        : await appDbExec(client.anchorId, app.id, sql, params, app.manifest.sqlite, caller);
     // A write may feed a linked app-table export: debounced, hash-gated, and
     // run for the brain (the sync is not a client act). The exported table
     // stays admin level, and a staff turn that reads it is marked as having
@@ -71,6 +73,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     if (op === 'exec') scheduleAppTableExportSync(client.anchorId, app.id);
     return NextResponse.json({ ok: true, output });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: errorMessage(err) }, { status: 400 });
+    return appDbErrorResponse(err, 'client-db-broker');
   }
 }

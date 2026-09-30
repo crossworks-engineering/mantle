@@ -13,8 +13,7 @@ import { getApp, recordAppAccess } from '@mantle/content';
 import { appDbQuery } from '@mantle/content/app-broker';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
 
-import { AppDbBody, appDbBodyError } from '@/lib/app-db-broker-body';
-import { errorMessage } from '@mantle/std';
+import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
@@ -71,9 +70,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
       parsed.data.sql,
       parsed.data.params,
       app.manifest.sqlite,
+      // One statement at a time per link (client tier audit I1).
+      { callerKey: `share:${share.id}` },
     );
     return NextResponse.json({ ok: true, output });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: errorMessage(err) }, { status: 400 });
+    return appDbErrorResponse(err, 'share-db-broker');
   }
 }

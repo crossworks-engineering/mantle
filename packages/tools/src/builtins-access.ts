@@ -148,8 +148,7 @@ export const access_set: BuiltinToolDef = {
         // rules: say which of its declared tools would be refused (member
         // logins Phase 4b; client and public rules since the client tier
         // audit, L1).
-        const warnings =
-          res.item.type === 'app' ? await appToolWarnings(ctx.ownerId, nodeId) : [];
+        const warnings = res.item.type === 'app' ? await appToolWarnings(ctx.ownerId, nodeId) : [];
         // Client items it embeds that went to public left client logins'
         // view (audit A10): say so.
         const left = clientLeftWarning(res.alsoLowered);

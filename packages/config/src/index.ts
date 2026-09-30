@@ -45,6 +45,7 @@ export type KnownEnvName =
   | 'ALLOWED_USER_ID'
   | 'APP_DB_DIR'
   | 'APP_RUNTIME_OUT'
+  | 'APP_SQL_MAX_DB_MB'
   | 'ATTACH_AGENT'
   | 'BROWSER_WS_ENDPOINT'
   | 'CRASH_MARKER'

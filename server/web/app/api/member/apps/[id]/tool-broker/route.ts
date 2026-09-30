@@ -47,12 +47,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
   const { slug, input } = parsed.data;
   const level = appToolLevel('team', app.audience);
-  const verdict = await appToolVerdict(
-    level,
-    member.anchorId,
-    app.manifest.toolSlugs ?? [],
-    slug,
-  );
+  const verdict = await appToolVerdict(level, member.anchorId, app.manifest.toolSlugs ?? [], slug);
   recordAppAccess({
     ownerId: member.anchorId,
     appNodeId: app.id,

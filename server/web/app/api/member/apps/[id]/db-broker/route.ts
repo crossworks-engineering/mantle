@@ -2,9 +2,8 @@ import { NextResponse } from '@/server/http-compat';
 import { memberMayWriteAppData, recordAppAccess } from '@mantle/content';
 import { appDbExec, appDbQuery } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
-import { errorMessage } from '@mantle/std';
 import { getMemberOr401 } from '@/lib/auth';
-import { AppDbBody, appDbBodyError } from '@/lib/app-db-broker-body';
+import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
 import { readOnlyAppResponse } from '@/lib/client-apps';
 import { memberAppOr404 } from '@/lib/member-apps';
 import { readJsonCapped } from '@/lib/body-limit';
@@ -64,17 +63,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     kind: 'db',
     detail: { via: 'member', op },
   });
+  // One statement at a time per login (client tier audit I1): a second
+  // waits its turn, so one login never holds every SQL process.
+  const caller = { callerKey: `member:${member.loginId}` };
   try {
     const output =
       op === 'query'
-        ? await appDbQuery(member.anchorId, app.id, sql, params, app.manifest.sqlite)
-        : await appDbExec(member.anchorId, app.id, sql, params, app.manifest.sqlite);
+        ? await appDbQuery(member.anchorId, app.id, sql, params, app.manifest.sqlite, caller)
+        : await appDbExec(member.anchorId, app.id, sql, params, app.manifest.sqlite, caller);
     // A write may feed a linked app-table export: debounced, hash-gated, and
     // run for the brain (the sync is not a member act). Cost is bounded, not
     // zero (decided 2026-09-26); exported tables stay admin level.
     if (op === 'exec') scheduleAppTableExportSync(member.anchorId, app.id);
     return NextResponse.json({ ok: true, output });
   } catch (err) {
-    return NextResponse.json({ ok: false, error: errorMessage(err) }, { status: 400 });
+    return appDbErrorResponse(err, 'member-db-broker');
   }
 }

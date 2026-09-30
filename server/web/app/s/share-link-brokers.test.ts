@@ -25,7 +25,10 @@ vi.mock('@mantle/content', async (importOriginal) => ({
   recordAppAccess: vi.fn(),
 }));
 
-vi.mock('@mantle/content/app-broker', () => ({
+vi.mock('@mantle/content/app-broker', async (importOriginal) => ({
+  AppSqlError: (await importOriginal<typeof import('@mantle/content/app-broker')>()).AppSqlError,
+  AppSqlBusyError: (await importOriginal<typeof import('@mantle/content/app-broker')>())
+    .AppSqlBusyError,
   appDbQuery: vi.fn(async () => {
     h.queries += 1;
     return { rows: [] };

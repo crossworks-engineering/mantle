@@ -21,7 +21,15 @@ import { db, nodes, appDatabases } from '@mantle/db';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 import { stripLiterals } from '@mantle/tabledb';
-import { APP_SCHEMA_TIMEOUT_MS, runAppSql } from './app-sql-runner';
+import {
+  APP_SCHEMA_TIMEOUT_MS,
+  APP_SQL_JOURNAL_LIMIT_BYTES,
+  AppSqlError,
+  appSqlMaxDbBytes,
+  runAppSql,
+} from './app-sql-runner';
+
+export { AppSqlBusyError, AppSqlError } from './app-sql-runner';
 
 /** Root dir for per-app SQLite files. A dedicated volume in prod (see compose);
  *  one file per app: <root>/<owner>/<app>.sqlite. When APP_DB_DIR is unset
@@ -56,6 +64,9 @@ function appDbRoot(): string {
 export type AppDbSchema = { schemaSql: string; schemaVersion: number };
 export type DbRows = Record<string, unknown>[];
 export type DbExecResult = { changes: number; lastInsertRowid: number };
+/** Who runs a broker statement: one statement at a time per key (a client
+ *  login, a member login, a share link; client tier audit I1). */
+export type AppDbCaller = { callerKey?: string };
 
 /** Minimal structural type for the bits of node:sqlite we use (keeps us
  *  independent of whether @types/node ships the declarations yet). */
@@ -102,9 +113,16 @@ async function openSqlite(file: string): Promise<SqliteDb> {
   //     trade for app data, and materially faster.
   //   busy_timeout=5000 — still wait (not instantly fail) on the one lock WAL
   //     keeps: two concurrent writers to the same app DB.
+  //   journal_size_limit / max_page_count: the same WAL and file caps the
+  //     SQL runner sets on its writable opens (app-sql-runner.ts), so a seed
+  //     cannot grow an app's file past APP_SQL_MAX_DB_MB either.
   handle.exec('PRAGMA journal_mode = WAL');
   handle.exec('PRAGMA synchronous = NORMAL');
   handle.exec('PRAGMA busy_timeout = 5000');
+  handle.exec(`PRAGMA journal_size_limit = ${APP_SQL_JOURNAL_LIMIT_BYTES}`);
+  const [ps] = handle.prepare('PRAGMA page_size').all() as { page_size: number }[];
+  const pageSize = Number(ps?.page_size) || 4096;
+  handle.exec(`PRAGMA max_page_count = ${Math.max(1, Math.floor(appSqlMaxDbBytes() / pageSize))}`);
   return handle;
 }
 
@@ -146,7 +164,7 @@ const INTROSPECTION =
 export function assertSafe(sql: string): void {
   if (INTROSPECTION.test(sql)) return;
   if (BLOCKED.test(stripLiterals(sql))) {
-    throw new Error(
+    throw new AppSqlError(
       'statement not allowed (ATTACH/DETACH/PRAGMA/VACUUM are blocked; the one exception is read-only `PRAGMA table_info(<table>)`)',
     );
   }
@@ -264,6 +282,7 @@ export async function appDbQuery(
   sql: string,
   params: unknown[] = [],
   schema?: AppDbSchema,
+  opts: AppDbCaller = {},
 ): Promise<DbRows> {
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
@@ -280,6 +299,7 @@ export async function appDbQuery(
     params,
     mode: 'all',
     readOnly: true,
+    ...(opts.callerKey ? { callerKey: opts.callerKey } : {}),
   })) as DbRows;
 }
 
@@ -290,6 +310,7 @@ export async function appDbExec(
   sql: string,
   params: unknown[] = [],
   schema?: AppDbSchema,
+  opts: AppDbCaller = {},
 ): Promise<DbExecResult> {
   assertSafe(sql);
   const reg = await ensureAppDatabase(ownerId, appNodeId, schema);
@@ -299,6 +320,7 @@ export async function appDbExec(
     params,
     mode: 'run',
     readOnly: false,
+    ...(opts.callerKey ? { callerKey: opts.callerKey } : {}),
   })) as DbExecResult;
   // Best-effort: keep the registry's size_bytes truthful after a write (a write
   // is the only thing that grows the file). Never fail the exec over this.

@@ -278,6 +278,9 @@ x-app-env: &app-env
   # container's ephemeral cwd and every app loses its data on each redeploy. The
   # web AND api services mount ${MANTLE_DATA_DIR}/app-dbs here.
   APP_DB_DIR: /data/app-dbs
+  # The largest one app's database file may grow, in MB (default 256, set in
+  # code when empty). A write past it fails and rolls back.
+  APP_SQL_MAX_DB_MB: ${APP_SQL_MAX_DB_MB:-}
   # Per-table SQLite files for sqlite-native Tables (Tables v2). One workbook
   # file per table node (<root>/<owner>/<node>.sqlite + .draft.sqlite, see
   # packages/tabledb). Tool handlers run in BOTH web and api, so BOTH services

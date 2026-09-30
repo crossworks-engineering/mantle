@@ -32,6 +32,8 @@ const h = vi.hoisted(() => ({
   dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
   logged: [] as Array<Record<string, unknown>>,
   dbCalls: [] as string[],
+  dbError: null as Error | null,
+  callers: [] as unknown[],
   synced: [] as string[],
   rendered: [] as string[],
 }));
@@ -100,16 +102,26 @@ vi.mock('@mantle/tools', async (importOriginal) => {
     }),
   };
 });
-vi.mock('@mantle/content/app-broker', async () => {
+vi.mock('@mantle/content/app-broker', async (importOriginal) => {
+  const { AppSqlError, AppSqlBusyError } =
+    await importOriginal<typeof import('@mantle/content/app-broker')>();
   const { currentViewerLevel } = await import('@mantle/db');
   // The SQLite work runs on the admin pool: it writes registry rows.
   const call = (op: string, owner: string, app: string) =>
     h.dbCalls.push(`${op}:${owner}:${app}:${currentViewerLevel()}`);
   return {
-    appDbQuery: vi.fn(async (owner: string, app: string) => (call('query', owner, app), [])),
-    appDbExec: vi.fn(
-      async (owner: string, app: string) => (call('exec', owner, app), { changes: 1 }),
-    ),
+    AppSqlError,
+    AppSqlBusyError,
+    appDbQuery: vi.fn(async (owner: string, app: string, ...rest: unknown[]) => {
+      h.callers.push(rest[3]);
+      if (h.dbError) throw h.dbError;
+      return (call('query', owner, app), []);
+    }),
+    appDbExec: vi.fn(async (owner: string, app: string, ...rest: unknown[]) => {
+      h.callers.push(rest[3]);
+      if (h.dbError) throw h.dbError;
+      return (call('exec', owner, app), { changes: 1 });
+    }),
   };
 });
 vi.mock('@mantle/content/app-table-exports', () => ({
@@ -168,6 +180,8 @@ beforeEach(() => {
   h.dispatched.length = 0;
   h.logged.length = 0;
   h.dbCalls.length = 0;
+  h.dbError = null;
+  h.callers.length = 0;
   h.synced.length = 0;
   h.rendered.length = 0;
   verdictMock?.mockClear();
@@ -262,6 +276,38 @@ describe('client tool broker', () => {
 });
 
 describe('client db broker', () => {
+  it('runs every statement under the login as its caller key (audit I1)', async () => {
+    await dbBroker(post({ op: 'query', sql: 'select 1' }), params());
+    await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
+    expect(h.callers).toEqual([{ callerKey: `client:${LOGIN}` }, { callerKey: `client:${LOGIN}` }]);
+  });
+
+  it("shows the app's own SQL error, but never a server error's text (audit L4)", async () => {
+    const { AppSqlError, AppSqlBusyError } = await import('@mantle/content/app-broker');
+    h.dbError = new AppSqlError('no such table: nope');
+    let res = await dbBroker(post({ op: 'query', sql: 'select * from nope' }), params());
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, error: 'no such table: nope' });
+
+    h.dbError = new AppSqlBusyError('app SQL is busy: try again');
+    res = await dbBroker(post({ op: 'query', sql: 'select 1' }), params());
+    expect(res.status).toBe(429);
+
+    const err = console.error;
+    console.error = () => {};
+    try {
+      h.dbError = new Error(`EACCES: permission denied, mkdir '/data/app-dbs/${ANCHOR}'`);
+      res = await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
+    } finally {
+      console.error = err;
+    }
+    expect(res.status).toBe(500);
+    const text = JSON.stringify(await res.json());
+    expect(text).not.toContain('/data/app-dbs');
+    expect(text).not.toContain(ANCHOR);
+    expect(h.synced).toEqual([]);
+  });
+
   it('writes the app database, schedules the export sync, and logs the login', async () => {
     const res = await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
     expect(res.status).toBe(200);

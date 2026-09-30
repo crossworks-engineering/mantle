@@ -29,7 +29,16 @@
  *    `VACUUM INTO`, both of which attach a database), DETACH, and every
  *    PRAGMA except `table_info` / `table_xinfo`;
  *  - a size limit on any one string or blob (`limits.length`);
- *  - a row cap on what a query returns.
+ *  - a row cap and a byte cap on what a query returns;
+ *  - on a writable open, a cap on the whole database file
+ *    (`PRAGMA max_page_count`, from APP_SQL_MAX_DB_MB) and on the WAL left
+ *    after a checkpoint (`PRAGMA journal_size_limit`): a write past the cap
+ *    fails with SQLITE_FULL ("database or disk is full") and rolls back.
+ *
+ * One caller (a client login, a member login, a share link) runs at most one
+ * statement at a time (`callerKey`, client tier audit I1): its next statement
+ * waits its turn, so one caller cannot hold every child while other callers'
+ * statements run on the rest.
  *
  * Mode 'script' runs an app's declared schema DDL (several statements) in
  * one transaction, under the same authorizer and limits: CREATE TABLE,
@@ -38,7 +47,7 @@
  * stays when any statement fails or is killed.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { envDynamic } from '@mantle/config';
+import { env, envDynamic, envInt } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
 
 /** How long one app statement may run. */
@@ -58,6 +67,45 @@ export const APP_SCHEMA_TIMEOUT_MS = 30_000;
 export const APP_SQL_MAX_CHILDREN = 4;
 /** An idle child exits after this long, so a quiet server holds none. */
 export const APP_SQL_CHILD_IDLE_MS = 60_000;
+/** The default cap on one app's database file, in MB (APP_SQL_MAX_DB_MB). */
+export const APP_SQL_DEFAULT_MAX_DB_MB = 256;
+/** The most bytes one query returns (roughly as serialized); beyond it the
+ *  query fails with an "add a LIMIT" error. The rows cross into the web
+ *  process and are JSON-encoded there, so this bounds its memory. */
+export const APP_SQL_MAX_REPLY_BYTES = 8 * 1024 * 1024;
+/** The WAL an app database keeps after a checkpoint (journal_size_limit). */
+export const APP_SQL_JOURNAL_LIMIT_BYTES = 64 * 1024 * 1024;
+/** Statements one caller may have waiting behind its running one; beyond it
+ *  the next is refused as busy at once. */
+export const APP_SQL_MAX_WAITING_PER_CALLER = 16;
+
+/** The cap on one app's database file, in bytes: APP_SQL_MAX_DB_MB (default
+ *  256), read at call time. */
+export function appSqlMaxDbBytes(): number {
+  // Compose passes an unset variable as '', which Number() reads as 0.
+  const mb = env('APP_SQL_MAX_DB_MB')?.trim()
+    ? envInt('APP_SQL_MAX_DB_MB', APP_SQL_DEFAULT_MAX_DB_MB, 1)
+    : APP_SQL_DEFAULT_MAX_DB_MB;
+  return mb * 1024 * 1024;
+}
+
+/** An error an app's own statement earned: its SQL, a refusal, a cap, the
+ *  time limit or a busy pool. Its message is meant for the app author, and a
+ *  broker shows it; any other error is the server's and is not shown. */
+export class AppSqlError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AppSqlError';
+  }
+}
+
+/** The pool, or this caller's turn, was not free in time: try again. */
+export class AppSqlBusyError extends AppSqlError {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AppSqlBusyError';
+  }
+}
 
 /** The child: a plain CommonJS script passed with `-e`, so it needs no file
  *  on disk and runs the same under tsx in dev, in tests and in the image. */
@@ -66,8 +114,20 @@ const { DatabaseSync, constants: C } = require('node:sqlite');
 process.title = 'mantle-app-sql';
 // The parent is gone (exited or crashed): so is the reason to live.
 process.on('disconnect', () => process.exit(0));
+// About what a row costs once serialized: keys, values, a little framing.
+function valueBytes(v) {
+  if (v === null || v === undefined) return 4;
+  if (typeof v === 'string') return Buffer.byteLength(v) + 2;
+  if (v instanceof Uint8Array) return v.byteLength;
+  return 8;
+}
+function rowBytes(row) {
+  let n = 2;
+  for (const k in row) n += k.length + 4 + valueBytes(row[k]);
+  return n;
+}
 function run(job) {
-  const { file, sql, params, mode, readOnly, maxRows, maxLength } = job;
+  const { file, sql, params, mode, readOnly, maxRows, maxLength, maxReplyBytes, maxDbBytes, journalLimit } = job;
   const db = new DatabaseSync(file, { readOnly, limits: { length: maxLength } });
   try {
     // Connection settings first: the authorizer below refuses app PRAGMAs.
@@ -75,6 +135,11 @@ function run(job) {
     if (!readOnly) {
       db.exec('PRAGMA journal_mode = WAL');
       db.exec('PRAGMA synchronous = NORMAL');
+      db.exec('PRAGMA journal_size_limit = ' + Number(journalLimit));
+      // The file cap: a write that would grow the file past it fails with
+      // SQLITE_FULL and rolls back. (A file already past it keeps its size.)
+      const pageSize = Number(db.prepare('PRAGMA page_size').get().page_size);
+      db.exec('PRAGMA max_page_count = ' + Math.max(1, Math.floor(maxDbBytes / pageSize)));
     }
     db.setAuthorizer((action, arg1) => {
       if (action === C.SQLITE_ATTACH || action === C.SQLITE_DETACH) return C.SQLITE_DENY;
@@ -106,9 +171,14 @@ function run(job) {
       return { changes: Number(r.changes), lastInsertRowid: Number(r.lastInsertRowid) };
     }
     const rows = [];
+    let bytes = 0;
     for (const row of db.prepare(sql).iterate(...params)) {
       if (rows.length >= maxRows) {
         throw new Error('the query returned more than ' + maxRows + ' rows: add a LIMIT or aggregate in SQL');
+      }
+      bytes += rowBytes(row);
+      if (bytes > maxReplyBytes) {
+        throw new Error('the query returned more than ' + Math.round(maxReplyBytes / 1048576) + ' MB: add a LIMIT, select fewer columns or aggregate in SQL');
       }
       rows.push(row);
     }
@@ -218,7 +288,7 @@ function acquire(waitMs: number): Promise<Child> {
       const at = waiting.indexOf(take);
       if (at >= 0) waiting.splice(at, 1);
       reject(
-        new Error(
+        new AppSqlBusyError(
           `app SQL is busy: every SQL process was running a statement for ${waitMs} ms; try again`,
         ),
       );
@@ -253,10 +323,55 @@ function kill(c: Child): Promise<void> {
 
 let nextId = 0;
 
+/** Each caller's turn: whether one of its statements runs, and who waits. */
+const callers = new Map<string, { waiting: (() => void)[] }>();
+
+/** Take `key`'s turn: at once when none of its statements runs, else after
+ *  the ones ahead of it, waiting at most `waitMs`. Returns the release. */
+function takeTurn(key: string, waitMs: number): Promise<() => void> {
+  const release = () => {
+    const turn = callers.get(key);
+    const next = turn?.waiting.shift();
+    if (next) next();
+    else callers.delete(key);
+  };
+  const turn = callers.get(key);
+  if (!turn) {
+    callers.set(key, { waiting: [] });
+    return Promise.resolve(release);
+  }
+  if (turn.waiting.length >= APP_SQL_MAX_WAITING_PER_CALLER) {
+    return Promise.reject(
+      new AppSqlBusyError(
+        `too many statements at once: this app sent ${APP_SQL_MAX_WAITING_PER_CALLER + 1} statements before the first finished; run them one after another`,
+      ),
+    );
+  }
+  return new Promise((resolve, reject) => {
+    const go = () => {
+      clearTimeout(timer);
+      resolve(release);
+    };
+    const timer = setTimeout(() => {
+      const at = turn.waiting.indexOf(go);
+      if (at >= 0) turn.waiting.splice(at, 1);
+      reject(
+        new AppSqlBusyError(
+          `app SQL is busy: this app's earlier statements ran for ${waitMs} ms; try again`,
+        ),
+      );
+    }, waitMs);
+    turn.waiting.push(go);
+  });
+}
+
 /** Run `sql` with `params`: mode 'all' returns rows, 'run' returns
  *  `{ changes, lastInsertRowid }`, 'script' runs several statements (no
- *  params) in one transaction and returns null. Rejects on SQL error, a
- *  refused statement, the row or size cap, or the time limit. */
+ *  params) in one transaction and returns null. Rejects with an AppSqlError
+ *  on SQL error, a refused statement, a row, size or file cap, the time
+ *  limit, or a busy pool or caller (AppSqlBusyError). With `callerKey`, the
+ *  statement waits for that caller's earlier ones (at most twice its time
+ *  limit). */
 export async function runAppSql(
   file: string,
   opts: {
@@ -265,11 +380,29 @@ export async function runAppSql(
     mode: 'all' | 'run' | 'script';
     readOnly: boolean;
     timeoutMs?: number;
+    /** Who asks ('client:<login>', 'member:<login>', 'share:<id>'). */
+    callerKey?: string;
+    /** The file cap in bytes; default appSqlMaxDbBytes(). */
+    maxDbBytes?: number;
   },
 ): Promise<unknown> {
   const timeoutMs = opts.timeoutMs ?? APP_SQL_TIMEOUT_MS;
   if (opts.mode === 'script' && opts.readOnly)
     throw new Error('a schema script needs a writable open');
+  if (!opts.callerKey) return runOnChild(file, opts, timeoutMs);
+  const endTurn = await takeTurn(opts.callerKey, timeoutMs * 2);
+  try {
+    return await runOnChild(file, opts, timeoutMs);
+  } finally {
+    endTurn();
+  }
+}
+
+async function runOnChild(
+  file: string,
+  opts: Parameters<typeof runAppSql>[1],
+  timeoutMs: number,
+): Promise<unknown> {
   const child = await acquire(timeoutMs);
   const id = ++nextId;
   const reply = await new Promise<Reply>((resolve) => {
@@ -307,10 +440,13 @@ export async function runAppSql(
       readOnly: opts.readOnly,
       maxRows: APP_SQL_MAX_ROWS,
       maxLength: APP_SQL_MAX_LENGTH,
+      maxReplyBytes: APP_SQL_MAX_REPLY_BYTES,
+      maxDbBytes: opts.maxDbBytes ?? appSqlMaxDbBytes(),
+      journalLimit: APP_SQL_JOURNAL_LIMIT_BYTES,
     });
   });
   release(child);
-  if (!reply.ok) throw new Error(reply.error);
+  if (!reply.ok) throw new AppSqlError(reply.error);
   return reply.result;
 }
 

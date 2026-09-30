@@ -46,12 +46,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { slug, input } = parsed.data;
   // clientAppOr404 finds client-level apps only, so this is 'client'.
   const level = appToolLevel('client', 'client');
-  const verdict = await appToolVerdict(
-    level,
-    client.anchorId,
-    app.manifest.toolSlugs ?? [],
-    slug,
-  );
+  const verdict = await appToolVerdict(level, client.anchorId, app.manifest.toolSlugs ?? [], slug);
   recordAppAccess({
     ownerId: client.anchorId,
     appNodeId: app.id,

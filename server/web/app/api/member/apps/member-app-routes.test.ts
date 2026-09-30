@@ -31,6 +31,8 @@ const h = vi.hoisted(() => ({
   dispatched: [] as Array<{ level: string; ctx: Record<string, unknown> }>,
   logged: [] as Array<Record<string, unknown>>,
   dbCalls: [] as string[],
+  dbError: null as Error | null,
+  callers: [] as unknown[],
   synced: 0,
   rendered: [] as string[],
 }));
@@ -138,16 +140,26 @@ vi.mock('@mantle/tools', async (importOriginal) => {
     }),
   };
 });
-vi.mock('@mantle/content/app-broker', async () => {
+vi.mock('@mantle/content/app-broker', async (importOriginal) => {
+  const { AppSqlError, AppSqlBusyError } =
+    await importOriginal<typeof import('@mantle/content/app-broker')>();
   const { currentViewerLevel } = await import('@mantle/db');
   // The SQLite work must run on the admin pool: it writes registry rows.
   const call = (op: string, owner: string, app: string) =>
     h.dbCalls.push(`${op}:${owner}:${app}:${currentViewerLevel()}`);
   return {
-    appDbQuery: vi.fn(async (owner: string, app: string) => (call('query', owner, app), [])),
-    appDbExec: vi.fn(
-      async (owner: string, app: string) => (call('exec', owner, app), { changes: 1 }),
-    ),
+    AppSqlError,
+    AppSqlBusyError,
+    appDbQuery: vi.fn(async (owner: string, app: string, ...rest: unknown[]) => {
+      h.callers.push(rest[3]);
+      if (h.dbError) throw h.dbError;
+      return (call('query', owner, app), []);
+    }),
+    appDbExec: vi.fn(async (owner: string, app: string, ...rest: unknown[]) => {
+      h.callers.push(rest[3]);
+      if (h.dbError) throw h.dbError;
+      return (call('exec', owner, app), { changes: 1 });
+    }),
   };
 });
 vi.mock('@mantle/content/app-table-exports', () => ({
@@ -204,6 +216,8 @@ beforeEach(() => {
   h.dispatched.length = 0;
   h.logged.length = 0;
   h.dbCalls.length = 0;
+  h.dbError = null;
+  h.callers.length = 0;
   h.synced = 0;
   h.rendered.length = 0;
 });
@@ -253,10 +267,12 @@ describe('member tool broker', () => {
   it('dispatches an allowed call of a client-level app on the client role and a client surface', async () => {
     h.audience = 'client';
     h.toolSlugs = ['client_shared_list'];
-    verdictMock.mockImplementationOnce(async (level: string, _o: string, _d: string[], slug: string) => {
-      h.levels.push(level);
-      return { ok: true, tool: { slug } };
-    });
+    verdictMock.mockImplementationOnce(
+      async (level: string, _o: string, _d: string[], slug: string) => {
+        h.levels.push(level);
+        return { ok: true, tool: { slug } };
+      },
+    );
     const res = await toolBroker(post({ slug: 'client_shared_list', input: {} }), params());
     expect(res.status).toBe(200);
     expect(h.levels).toEqual(['client']);
@@ -311,6 +327,22 @@ describe('member tool broker', () => {
 });
 
 describe('member db broker', () => {
+  it('runs under the login as its caller key and hides a server error (audit I1, L4)', async () => {
+    await dbBroker(post({ op: 'query', sql: 'select 1' }), params());
+    expect(h.callers).toEqual([{ callerKey: `member:${LOGIN}` }]);
+    const err = console.error;
+    console.error = () => {};
+    let res: Response;
+    try {
+      h.dbError = new Error(`EACCES: mkdir '/data/app-dbs/${ANCHOR}'`);
+      res = await dbBroker(post({ op: 'query', sql: 'select 1' }), params());
+    } finally {
+      console.error = err;
+    }
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(await res.json())).not.toContain('/data/app-dbs');
+  });
+
   it('checks the app before it touches SQLite', async () => {
     h.runnable = false;
     const res = await dbBroker(post({ op: 'exec', sql: 'delete from t' }), params());
