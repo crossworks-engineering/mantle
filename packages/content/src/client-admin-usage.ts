@@ -7,6 +7,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
+import { readAtAliasSql } from './item-level';
 
 /** One client space's use. A FORMER client (the login was deleted, the
  *  space waits for its 30-day purge and still counts toward the total) has
@@ -110,7 +111,7 @@ export async function clientThreadActivity(
        and c.author_kind = 'client'
        and c.created_at > now() - make_interval(days => ${days})
        and n.owner_id = ${brainId}
-       and n.audience = 'client'
+       and ${readAtAliasSql('n', ['client'])}
      group by n.id, n.title, n.type
      order by max(c.created_at) desc
      limit 100`)) as unknown as {

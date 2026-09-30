@@ -11,6 +11,7 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { agents, db, nodeComments, nodes, shares, type NodeCommentDbRow } from '@mantle/db';
 import type { NodeComment, NodeCommentAuthorKind } from '@mantle/client-types';
+import { readAtAliasSql } from './item-level';
 export type { NodeComment, NodeCommentAuthorKind };
 
 export const COMMENT_BODY_MAX = 10_000;
@@ -159,7 +160,8 @@ export async function getNodeComment(
  * (the caller turns that into a 404). Body is trimmed and length-capped.
  *
  * The thread it joins is decided in the insert itself (client logins C5,
- * decision 8): on an item at CLIENT level a person's comment is the client
+ * decision 8): on an item read at CLIENT level (its own level or a folder
+ * shared with clients, the union rule) a person's comment is the client
  * thread (`thread_scope` 'client', stored with `clientName`), which the
  * team and every client login read; anything else, and every agent's
  * comment, stays 'team' (admins only on a brain item). A level change
@@ -176,7 +178,7 @@ export async function addNodeComment(
   const name = author.name.trim().slice(0, 200) || 'Unknown';
   const clientName = (author.clientName ?? author.name).trim().slice(0, 200) || 'Unknown';
   // An agent never writes into what clients read.
-  const onClientThread = author.kind === 'agent' ? sql`false` : sql`n.audience = 'client'`;
+  const onClientThread = author.kind === 'agent' ? sql`false` : readAtAliasSql('n', ['client']);
   return db.transaction(async (tx) => {
     const rows = (await tx.execute(sql`
       insert into node_comments

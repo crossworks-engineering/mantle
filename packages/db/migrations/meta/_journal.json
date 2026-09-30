@@ -1436,6 +1436,13 @@
       "when": 1790018280000,
       "tag": "0200_folder_sharing",
       "breakpoints": true
+    },
+    {
+      "idx": 204,
+      "version": "7",
+      "when": 1790018520000,
+      "tag": "0204_folder_client_thread",
+      "breakpoints": true
     }
   ]
 }
