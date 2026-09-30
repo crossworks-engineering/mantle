@@ -15,6 +15,8 @@ import { recordIngest } from '@mantle/tracing';
 import { safeDownloadHeaders } from '@mantle/client-types/lib/safe-download';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
+import { TreeVisibilityError, guardFileTo } from '@mantle/content/tree';
+import { treeErrorResponse } from '@/lib/tree-route';
 
 const IdParams = z.object({ id: z.string().uuid() });
 const PatchBody = z.union([
@@ -23,7 +25,8 @@ const PatchBody = z.union([
   // 'inherit' clears the file's own flag (the folder chain decides again).
   z.object({ indexing: z.enum(['full', 'metadata', 'inherit']) }),
   // Move to another folder (filename unchanged; rename is its own action).
-  z.object({ move: z.string().min(1).max(500) }),
+  // Into or out of a shared folder: 409 `visibility` unless `confirm`.
+  z.object({ move: z.string().min(1).max(500), confirm: z.boolean().optional() }),
 ]);
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -111,6 +114,9 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 
   try {
     if ('move' in parsed.data) {
+      await guardFileTo(user.id, idParsed.data.id, parsed.data.move, {
+        confirm: parsed.data.confirm === true,
+      });
       const file = await moveFileById({
         ownerId: user.id,
         fileId: idParsed.data.id,
@@ -177,6 +183,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     });
     return NextResponse.json({ file });
   } catch (err) {
+    if (err instanceof TreeVisibilityError) return treeErrorResponse(err);
     const msg = errorMessage(err);
     if (msg.includes('already exists')) {
       return NextResponse.json({ error: msg }, { status: 409 });
@@ -194,12 +201,20 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!idParsed.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   const raw = await req.json().catch(() => ({}));
   const body = z
-    .object({ copy_to: z.string().min(1).max(500), new_filename: z.string().max(200).optional() })
+    .object({
+      copy_to: z.string().min(1).max(500),
+      new_filename: z.string().max(200).optional(),
+      // Into a shared folder: 409 `visibility` unless confirmed.
+      confirm: z.boolean().optional(),
+    })
     .safeParse(raw);
   if (!body.success) {
     return NextResponse.json({ error: firstIssue(body.error) }, { status: 400 });
   }
   try {
+    await guardFileTo(user.id, idParsed.data.id, body.data.copy_to, {
+      confirm: body.data.confirm === true,
+    });
     const file = await copyFileById({
       ownerId: user.id,
       fileId: idParsed.data.id,
@@ -208,6 +223,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     });
     return NextResponse.json({ file }, { status: 201 });
   } catch (err) {
+    if (err instanceof TreeVisibilityError) return treeErrorResponse(err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'copy failed' },
       { status: 400 },

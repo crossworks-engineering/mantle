@@ -17,10 +17,12 @@ import {
   setIndexingMode,
 } from '@mantle/files';
 import { deleteFileWithDerived, describeDerivedCounts } from '@mantle/content';
+import { guardNewFileIn } from '@mantle/content/tree';
 import { type BuiltinToolDef } from '../types';
 import { str, strOpt, boolOpt as bool } from '../coerce';
 import { errorMessage } from '@mantle/std';
 import { FILE_ID_PRE, FOLDER_ID_PRE } from '../builtins-common';
+import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
 
 export const folder_create: BuiltinToolDef = {
   slug: 'folder_create',
@@ -140,6 +142,7 @@ export const file_upload: BuiltinToolDef = {
         enum: ['full', 'metadata'],
         description: "'metadata' stores without reading the CONTENT into the brain",
       },
+      confirm: CONFIRM_INPUT,
     },
     required: ['parent_path', 'filename'],
   },
@@ -171,6 +174,8 @@ export const file_upload: BuiltinToolDef = {
       };
     }
     try {
+      // A shared folder makes the file readable by the team or clients: ask.
+      await guardNewFileIn(ctx.ownerId, parentPath, filename, { confirm: input.confirm === true });
       const row = await upsertFile({
         ownerId: ctx.ownerId,
         parentPath,
@@ -187,6 +192,8 @@ export const file_upload: BuiltinToolDef = {
       }
       return { ok: true, output: indexing ? { ...row, indexing } : row };
     } catch (err) {
+      const refusal = visibilityRefusal(err);
+      if (refusal) return { ok: false, error: refusal };
       return { ok: false, error: `file_upload failed: ${errorMessage(err)}` };
     }
   },

@@ -158,8 +158,17 @@ contacts, secrets) cannot be shared.
   (`packages/content/src/tree/visibility.ts`). If who can see anything would
   change, the write is refused with 409 `{ error: 'visibility', changes,
 total }` and nothing is written; the same call with `confirm: true` goes
-  ahead (`?confirm=true` on DELETE). The agent folder tools take `confirm`
-  too and tell the model to ask first. A rename never asks.
+  ahead (`?confirm=true` on DELETE). A rename never asks. The same check
+  guards every Files write outside the tree routes
+  (`packages/content/src/tree/files-guard.ts`): the Files screen's move and
+  copy (`PATCH /api/files/files/:id { move, confirm }`, `POST ... { copy_to,
+confirm }`, and the same on `/api/files/folders/:id`), a new file or an
+  upload into a shared folder (`POST /api/files/files`, `confirm` in the JSON
+  body or as a form field before the file), and the agent tools `file_move`,
+  `file_copy`, `folder_move`, `folder_copy`, `file_create` and
+  `file_upload`. Every agent tool that can change who sees something takes
+  `confirm` and tells the model to ask the user first; a test pins that each
+  such tool declares it (`packages/tools/src/confirm-schema.test.ts`).
 - **Shared via.** `GET /api/access/nodes/:id` names the shared folder an
   item takes its share from (`sharedVia { folderId, trail, level }`,
   `sharedViaFolder` in `packages/content/src/shared-via.ts`). Its level is
@@ -275,9 +284,11 @@ other tree kind shares one set, told apart by `kind`
 They sit in each kind's tool group (`tree_folders` alone in Draw's read-only
 group), so an agent that can work with a kind can organise it. The brain is
 the trust boundary, so they are not split per kind. They are owner only: a
-member's or client's turn is refused until folder sharing (phase 4) gives
-those readers a tree of their own. Every write notifies the tree like the
-screens do.
+member's or client's turn is refused (members and clients organise through
+their own trees, not these tools). A write that would change who can see
+items is refused with the list until the call repeats with `confirm: true`,
+which the model is told to send only once the user agreed. Every write
+notifies the tree like the screens do.
 
 ## Auto-filed
 

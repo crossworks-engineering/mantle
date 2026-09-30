@@ -15,7 +15,6 @@
  */
 import {
   TreeError,
-  TreeVisibilityError,
   createTreeFolder,
   deleteTreeFolder,
   listTreeFolders,
@@ -29,6 +28,7 @@ import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './ty
 import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
 import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
+import { CONFIRM_INPUT, visibilityRefusal } from './visibility-refusal';
 
 /** The kinds these tools serve: every tree kind but Files. */
 export const TREE_TOOL_KINDS = [
@@ -81,18 +81,8 @@ async function run(
     return await work(kind);
   } catch (err) {
     if (err instanceof TreeError) return { ok: false, error: err.message };
-    if (err instanceof TreeVisibilityError) {
-      const shown = err.diff.changes
-        .slice(0, 10)
-        .map((c) => `'${c.title}' ${c.from} → ${c.to}`)
-        .join(', ');
-      return {
-        ok: false,
-        error:
-          `this changes who can see ${err.diff.total} item(s) (${shown}${err.diff.total > 10 ? ', …' : ''}). ` +
-          'Tell the user what changes; call again with confirm: true only once they agree.',
-      };
-    }
+    const refusal = visibilityRefusal(err);
+    if (refusal) return { ok: false, error: refusal };
     return { ok: false, error: errorMessage(err) };
   }
 }
@@ -187,6 +177,7 @@ export const tree_folder_update: BuiltinToolDef = {
         description:
           'move it into this folder; null for the top level; omit to leave it where it is',
       },
+      confirm: CONFIRM_INPUT,
     },
     required: ['kind', 'folder_id'],
   },
@@ -234,11 +225,7 @@ export const tree_item_move: BuiltinToolDef = {
         type: ['string', 'null'],
         description: 'the destination folder; null for the top level',
       },
-      confirm: {
-        type: 'boolean',
-        description:
-          'go ahead although it changes who can see items; only after the user agreed to the changes a first call listed',
-      },
+      confirm: CONFIRM_INPUT,
     },
     required: ['kind', 'item_ids', 'folder_id'],
   },
@@ -277,11 +264,7 @@ export const tree_folder_delete: BuiltinToolDef = {
     properties: {
       kind: KIND_PROP,
       folder_id: FOLDER_ID_PROP,
-      confirm: {
-        type: 'boolean',
-        description:
-          'go ahead although it changes who can see items; only after the user agreed to the changes a first call listed',
-      },
+      confirm: CONFIRM_INPUT,
     },
     required: ['kind', 'folder_id'],
   },

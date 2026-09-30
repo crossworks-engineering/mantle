@@ -19,6 +19,8 @@ import { readMultipartUpload, type ParsedUpload } from '@/lib/upload-stream';
 import { errorMessage } from '@mantle/std';
 import { firstIssue } from '@/lib/zod-issue';
 import { isUniqueViolation } from '@mantle/db';
+import { TreeVisibilityError, guardNewFileIn } from '@mantle/content/tree';
+import { treeErrorResponse } from '@/lib/tree-route';
 
 const ListQuery = z.union([
   z.object({ parent: z.string().min(1).max(500) }),
@@ -68,6 +70,9 @@ export async function GET(req: Request) {
  *      STREAMED to disk, capped by MANTLE_MAX_UPLOAD_MB (default 512)
  *   2. application/json with `{ parentPath, filename, content }` for
  *      text-file creation (markdown / txt / json from the editor)
+ * Into a shared folder the file is read by the team or clients at once:
+ * 409 `visibility` (TreeVisibilityRefusal) unless `confirm` is `true` (a
+ * form field, sent before the file part, or the JSON body's `confirm`).
  */
 export async function POST(req: Request) {
   const user = await getOwnerOr401();
@@ -116,6 +121,9 @@ export async function POST(req: Request) {
       }
       let row;
       try {
+        await guardNewFileIn(user.id, parentPath, upload.filename, {
+          confirm: parsed.fields.confirm === 'true',
+        });
         row = await upsertFile({
           ownerId: user.id,
           parentPath,
@@ -153,12 +161,16 @@ export async function POST(req: Request) {
       parentPath: z.string().min(1).max(500),
       filename: z.string().min(1).max(200),
       content: z.string().max(2_000_000), // 2 MB cap for inline text creation
+      confirm: z.boolean().optional(),
     });
     const parsed = TextBody.safeParse(raw);
     if (!parsed.success) {
       return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
     }
     const buf = Buffer.from(parsed.data.content, 'utf8');
+    await guardNewFileIn(user.id, parsed.data.parentPath, parsed.data.filename, {
+      confirm: parsed.data.confirm === true,
+    });
     const row = await upsertFile({
       ownerId: user.id,
       parentPath: parsed.data.parentPath,
@@ -182,6 +194,7 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ file: row });
   } catch (err) {
+    if (err instanceof TreeVisibilityError) return treeErrorResponse(err);
     const msg = errorMessage(err);
     if (isUniqueViolation(err)) {
       return NextResponse.json(

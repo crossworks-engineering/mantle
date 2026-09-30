@@ -49,6 +49,7 @@ export {
   shareDiff,
   type VisibilityDiff,
 } from './visibility';
+export { guardFileTo, guardFolderTo, guardNewFileIn, type ConfirmOpts } from './files-guard';
 export {
   clientTreeFolderPage,
   clientTreeSearch,
