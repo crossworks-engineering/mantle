@@ -92,6 +92,8 @@ export type {
   MemberSpaceSharing,
 } from './dto/member';
 export type {
+  ClientAppCard,
+  ClientAppList,
   MemberAppCard,
   MemberAppLevel,
   MemberAppList,

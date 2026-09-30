@@ -89,10 +89,20 @@ export {
   listMemberApps,
   getMemberRunnableApp,
   listTeamLevelAppIds,
+  memberMayWriteAppData,
   resolveMemberHomeApp,
   type MemberAppCard,
   type MemberRunnableApp,
 } from './member-apps';
+
+export {
+  CLIENT_APP_LEVELS,
+  isClientAppLevel,
+  listClientApps,
+  getClientRunnableApp,
+  type ClientAppCard,
+  type ClientRunnableApp,
+} from './client-apps';
 
 export {
   APP_NAV_CHANGED_CHANNEL,

@@ -3,7 +3,8 @@
  * reads from /api/member/apps and /api/member/home, plus the admin's view of
  * member chats (/api/team-admin/member-chats). A member RUNS apps at team
  * level or lower with a green published build; it never creates, edits or
- * shares one.
+ * shares one. A CLIENT login runs apps at client level only (client logins
+ * C6, /api/client/apps).
  */
 import type { AppTint } from '../app-nav';
 import type { AccessLevel } from './access';
@@ -20,11 +21,37 @@ export type MemberAppCard = {
   description: string | null;
   audience: MemberAppLevel;
   updatedAt: string;
+  /** The member only reads this app's data (client logins C6): true for a
+   *  public app, and for an app an admin marked informational. Off, the
+   *  member runs AND writes it (team and client apps). A write to a read-only
+   *  app answers 403 `{ ok: false, error, reason: 'read-only' }`. Absent from
+   *  an older brain: read as `audience !== 'team'`. */
+  dataReadOnly?: boolean;
 };
 
 /** GET /api/member/apps: the apps a member may run, by title, and the
  *  brain's home app when a member may run it (else null). */
 export type MemberAppList = { apps: MemberAppCard[]; homeAppId: string | null };
+
+/** One launcher card of a CLIENT login (client logins C6, GET
+ *  /api/client/apps): an app at client level with a green published build.
+ *  No level and no author. `dataReadOnly`: the app is informational, and a
+ *  write answers 403 `{ ok: false, error, reason: 'read-only' }`. */
+export type ClientAppCard = {
+  id: string;
+  title: string;
+  icon: string | null;
+  color: AppTint | null;
+  description: string | null;
+  updatedAt: string;
+  dataReadOnly: boolean;
+};
+
+/** GET /api/client/apps: the apps a client may run, by title. The run routes
+ *  are the member routes' twins under `/api/client/apps/:id` (frame-ticket,
+ *  frame, tool-broker, db-broker), so the sandbox takes that as its API
+ *  base. */
+export type ClientAppList = { apps: ClientAppCard[] };
 
 /** The brain's pinned home app, when a member may run it. */
 export type MemberHomeApp = {

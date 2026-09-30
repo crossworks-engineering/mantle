@@ -108,8 +108,14 @@ if (!hasManifest && process.env.CI) {
 const IMAGE_EXT_RE = /\.(?:svg|png|jpg|jpeg|gif|webp)$/;
 
 /** Routes that authenticate with their own short-lived ticket, minted only
- *  by an admin- or member-gated route; a plain-text 401 without it. */
-const TICKET_GATED = new Set(['GET /api/apps/:id/frame', 'GET /api/member/apps/:id/frame']);
+ *  by an admin-, member- or client-gated route; a plain-text 401 without it.
+ *  The client frame is a client route: only the unknown-role sweep drives it
+ *  here (client-sweep.test.ts drives it with client tickets). */
+const TICKET_GATED = new Set([
+  'GET /api/apps/:id/frame',
+  'GET /api/member/apps/:id/frame',
+  'GET /api/client/apps/:id/frame',
+]);
 
 // Sign out (every role) and the MCP consent page (an HTML refusal) used to
 // be allow-lists here, but both live under PUBLIC_PATHS, which the sweep

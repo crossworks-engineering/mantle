@@ -49,6 +49,14 @@ export const CLIENT_ROUTES: readonly string[] = [
   'GET /api/client/items',
   // What the client wrote and an admin accepted, as accepted.
   'GET /api/client/accepted/:id',
+  // Apps at client level (C6): list, run (a frame ticket, then the frame the
+  // ticket opens) and the app's brokers. The frame authenticates with the
+  // ticket, not the session: a sandboxed iframe sends no cookie.
+  'GET /api/client/apps',
+  'POST /api/client/apps/:id/frame-ticket',
+  'GET /api/client/apps/:id/frame',
+  'POST /api/client/apps/:id/tool-broker',
+  'POST /api/client/apps/:id/db-broker',
 ];
 
 export function isClientRoute(method: string, pattern: string): boolean {

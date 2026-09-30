@@ -18,6 +18,7 @@ vi.mock('@mantle/db', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   const chain = {
     from: () => chain,
+    innerJoin: () => chain,
     where: () => chain,
     limit: async () => {
       h.queries++;
@@ -94,18 +95,18 @@ describe('namesClientSourced checks every id, in batches (L8)', () => {
     { length: ID_BATCH * 2 + 5 },
     (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
   );
-  it('asks every batch: four questions each, three batches', async () => {
+  it('asks every batch: five questions each, three batches', async () => {
     h.hit = false;
     h.throws = false;
     h.queries = 0;
     h.hitOnQuery = 0;
     expect(await namesClientSourced('o', ids)).toBe(false);
-    expect(h.queries).toBe(12);
+    expect(h.queries).toBe(15);
   });
   it('a client request in the LAST batch is found', async () => {
     h.queries = 0;
-    // Query 9 is the first question of the third batch (ids past 2000).
-    h.hitOnQuery = 9;
+    // Query 11 is the first question of the third batch (ids past 2000).
+    h.hitOnQuery = 11;
     expect(await namesClientSourced('o', ids)).toBe(true);
     h.hitOnQuery = 0;
   });

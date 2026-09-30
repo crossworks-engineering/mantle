@@ -263,6 +263,48 @@ describe('app-frame tickets carry no contact', () => {
   });
 });
 
+/** A CLIENT's frame ticket (client logins C6) carries the login and its
+ *  session epoch; an epoch without a login, or one that is not a
+ *  non-negative integer, makes the ticket invalid (never a ticket that reads
+ *  as a member's). */
+describe('client app-frame tickets', () => {
+  it('round-trips the login and the epoch, epoch 0 included', async () => {
+    const auth = await authLib();
+    for (const epoch of [0, 7]) {
+      const t = auth.buildAppFrameTicket({
+        ownerId: 'u1',
+        appId: 'app-1',
+        loginId: 'login-1',
+        clientEpoch: epoch,
+      });
+      expect(auth.verifyAppFrameTicket(t)).toEqual({
+        ownerId: 'u1',
+        appId: 'app-1',
+        loginId: 'login-1',
+        clientEpoch: epoch,
+      });
+    }
+    // A member's ticket has no epoch.
+    const member = auth.buildAppFrameTicket({ ownerId: 'u1', appId: 'app-1', loginId: 'login-1' });
+    expect(auth.verifyAppFrameTicket(member)).toEqual({
+      ownerId: 'u1',
+      appId: 'app-1',
+      loginId: 'login-1',
+    });
+  });
+
+  it('refuses an epoch without a login and an epoch that is not a whole number', async () => {
+    const auth = await authLib();
+    const exp = Math.floor(Date.now() / 1000) + 60;
+    for (const cep of [-1, 1.5, '2', null]) {
+      const bad = signRaw({ uid: 'u1', app: 'app-1', mem: 'login-1', cep, exp, k: 'f' });
+      expect(auth.verifyAppFrameTicket(bad), String(cep)).toBeNull();
+    }
+    const orphan = signRaw({ uid: 'u1', app: 'app-1', cep: 0, exp, k: 'f' });
+    expect(auth.verifyAppFrameTicket(orphan)).toBeNull();
+  });
+});
+
 /**
  * The session epoch (0181, final audit F06): cookies and asset tokens carry
  * the login's epoch when minted, so the session layer can end them all by
