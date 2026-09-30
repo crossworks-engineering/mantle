@@ -679,11 +679,15 @@ app's level in its Access control; nothing else lists it to members.
   return `warnings` for every declared tool its members would be refused.
 - **Data.** Row security does not reach SQLite, so the db broker checks the
   app itself (team level or lower, published) before it opens the database.
-  Members read every app they may run, and write only to a TEAM-level app
-  (as the retired team-mode shares did); a client- or public-level app is read-only for
-  them, so nothing a member writes shows to anonymous visitors (decided
-  2026-09-27). App data is shared per app, not per member (v1): every member
-  reads and writes the same database. The SQLite work runs on the admin pool
+  Members read every app they may run, and write to an app at TEAM or
+  CLIENT level (Jason, 2026-09-30: an app an admin sets to team or client is
+  a shared workspace, for example a job log, that everyone who runs it
+  writes; clients write client-level apps too) unless an admin marked it
+  informational (`dataReadOnly`, then members and clients only read). A
+  public app stays read-only for members, so nothing a member writes shows
+  to anonymous visitors (decided 2026-09-27). Only admins create, edit,
+  build, publish, share or delete apps. App data is shared per app, not per
+  member (v1): every member reads and writes the same database. The SQLite work runs on the admin pool
   (it writes the app's registry rows).
 - **SQL limits** (every app SQL caller: members, share links, the owner,
   `app_db_query`; `packages/content/src/app-sql-runner.ts`). Each statement

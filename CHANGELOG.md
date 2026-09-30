@@ -4,6 +4,28 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.346: client apps and finish (client logins C6)
+
+- **Clients run apps set to client level** (`/api/client/apps`, the frame,
+  the tool and db brokers; the member routes' twins): read AND write, with
+  every call logged with the client login. Never a team, admin or public app
+  (the same 404). The frame ticket carries the client's session epoch, so End
+  sessions stops a running app at once. App tools for clients: only the
+  client read tools (redacted), declared by the app and held by a client-level
+  group; no requiresConfirm, spending or owner-only tool.
+- **Apps are shared workspaces** (Jason, 2026-09-30): members write apps at
+  team AND client level, clients write client-level apps, unless an admin
+  marks the app informational (`dataReadOnly`, migration 0198; owner PATCH
+  /api/apps/:id). Only admins create or change apps.
+- **Client-written app data counts for the lowering guard**: a table exported
+  from a client-level app is client-sourced.
+- **Finish:** an accepted item carries nothing from the live node to its
+  author (tables and drawings redacted too, live summary, tags and app link
+  dropped); the member files route serves an accepted file under its accepted
+  name; `?scope=client` on the owner comment route; chat reply images point at
+  the reader's own file route or are dropped. Docs: security.md 5a,
+  access-levels.md 8, sharing.md 4a, member-logins.md 14, client-logins.md 10.
+
 ## 0.232.345: the benchmark judge always gets its verdict out
 
 - **No more cut-off verdicts.** The benchmark's judge sometimes stopped
