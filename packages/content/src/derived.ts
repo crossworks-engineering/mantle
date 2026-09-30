@@ -27,6 +27,7 @@ import {
   drawsReferencingFile,
   emptyDerivedCounts,
   EXTRACTED_IMAGES_SLUG,
+  autoFiledSourcePath,
   FILES_ROOT_LABEL,
   folderByPath,
   type DerivedCounts,
@@ -40,14 +41,19 @@ export { countDerivedFromFile, describeDerivedCounts, type DerivedCounts } from 
 
 /**
  * Is this ltree path a per-document extracted-images folder (a strict child
- * of `files.extracted_images`)? The reap may deleteFolder ONLY such a child,
+ * of `files.auto_filed.extracted_images`)? The reap may deleteFolder ONLY such a child,
  * never the shared extracted-images root — and deleteFolder itself still
  * refuses non-empty folders, so a folder holding anything the reap didn't
  * remove survives by construction.
  */
 export function isPerDocumentExtractedImagesPath(path: string): boolean {
-  const root = `${FILES_ROOT_LABEL}.${dashToLtree(EXTRACTED_IMAGES_SLUG)}`;
-  return path.startsWith(`${root}.`) && path.length > root.length + 1;
+  // Auto-filed's folder, and the top-level one older brains had until the
+  // file watcher moved it in (reconcileAutoFiled).
+  const roots = [
+    autoFiledSourcePath('extracted-images'),
+    `${FILES_ROOT_LABEL}.${dashToLtree(EXTRACTED_IMAGES_SLUG)}`,
+  ];
+  return roots.some((root) => path.startsWith(`${root}.`) && path.length > root.length + 1);
 }
 
 export type ReapResult = {

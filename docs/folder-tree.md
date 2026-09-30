@@ -77,11 +77,38 @@ per-kind ops table); path math shared with clients is
 `packages/content-core/src/tree.ts`; the routes are thin wrappers in
 `server/web/app/api/tree/` with their plumbing in `server/web/lib/tree-route.ts`.
 
+## Auto-filed
+
+Everything Mantle files by itself lives in one admin folder, `files/auto-filed/`
+(`packages/files/src/auto-filed.ts`), never at the top of Files:
+
+| Folder            | Holds                                      | Split                 |
+| ----------------- | ------------------------------------------ | --------------------- |
+| Assistant uploads | files sent to the assistant in chat        | a folder per month    |
+| Telegram uploads  | files sent over Telegram                   | a folder per month    |
+| Exports           | documents and sheets from the export tools | a folder per month    |
+| Generated images  | `generate_image` output                    | a folder per month    |
+| Video             | `video_ingest` audio and video             | a folder per month    |
+| Extracted images  | pictures pulled out of documents           | a folder per document |
+| Sandbox exports   | `sandbox_export` snapshots                 | none                  |
+| API docs          | stored integration docs (`api_docs_set`)   | none                  |
+
+Writers ask `ensureAutoFiledFolder(owner, source)` for their folder. Every
+folder there is a system folder (`data.system`): its name is locked and it
+cannot be moved, because writers find it by its path. Its contents can be
+moved, renamed and deleted freely.
+
+Brains made before Auto-filed kept these folders at the top of Files, dated by
+day. `reconcileAutoFiled` moves them in once (merging when both exist) and
+merges day folders into months; a file name taken in the month gets `-2`
+(then `-3`) rather than overwriting. The file watcher
+(`server/web/workers/files-watch.ts`) runs it before it starts watching, so it
+never mistakes the moves for deletes and adds. A second run finds nothing to do.
+
 ## What comes next
 
 The other kinds move onto the tree one by one; Apps' folder document becomes
 folder rows; a folder can then be shared with the team or clients (everything
 under it, now and later) and members and clients browse the same tree; members
 file their drafts in the same folders; pages stop nesting once Recall has its
-own content type. Machine-made folders gather under one admin-only "Auto-filed"
-folder, dated by month.
+own content type.

@@ -124,10 +124,21 @@ export {
 } from './derived-counts';
 
 export {
+  AUTO_FILED_PATH,
+  AUTO_FILED_SLUG,
+  AUTO_FILED_SOURCES,
+  autoFiledMonth,
+  autoFiledSourcePath,
+  ensureAutoFiledFolder,
+  ensureExtractedImagesFolder,
+  reconcileAutoFiled,
+  type AutoFiledReport,
+  type AutoFiledSource,
+} from './auto-filed';
+
+export {
   ensureFilesRootBranch,
   createFolder,
-  ensureDatedUploadFolder,
-  ensureExtractedImagesFolder,
   ensureFolderPath,
   EXTRACTED_IMAGES_SLUG,
   updateFolderDescription,

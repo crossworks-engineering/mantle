@@ -132,7 +132,7 @@ say why rather than appear to lack the capability.
 | `sandbox_exec` | run a bash command; `run_terminal`'s exact timeout/output/trace discipline |
 | `sandbox_list` | rows merged with live state + disk usage |
 | `sandbox_stop` / `sandbox_rm` | stop (keeps everything) / remove (keeps `/files` unless `purge_files`; confirm-gated) |
-| `sandbox_export` | tar a `/files` path into `files/sandbox-exports/` (100 MB cap); `raw: true` brings ONE file out under its own name instead |
+| `sandbox_export` | tar a `/files` path into `files/auto-filed/sandbox-exports/` (100 MB cap); `raw: true` brings ONE file out under its own name instead |
 | `sandbox_import` | copy a Files-workspace file into `/files`, byte for byte (100 MB cap); works on a stopped sandbox |
 | `sandbox_ls` | structured directory listing (name, type, size, modified); works stopped, does not wake the container |
 | `sandbox_autostart` | store a command re-run on every wake, so an idle-stopped service comes back by itself |

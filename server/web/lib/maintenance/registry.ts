@@ -362,7 +362,7 @@ export const MAINTENANCE_TASKS: MaintenanceTask[] = [
     slug: 'extract-images-backfill',
     title: 'Extract embedded images from existing documents',
     description:
-      'Re-fires node_ingested for documents ingested before embedded-image extraction existed, so their diagrams and screenshots become real image files under files/extracted-images/. Skips documents that already produced images.',
+      'Re-fires node_ingested for documents ingested before embedded-image extraction existed, so their diagrams and screenshots become real image files under files/auto-filed/extracted-images/. Skips documents that already produced images.',
     kind: 'backfill',
     status: 'live',
     cost: 'llm',

@@ -25,7 +25,7 @@ export const sandbox_export: BuiltinToolDef = {
   name: 'Export sandbox files',
   description:
     "Snapshot a path under a sandbox's /files into the brain as a .tgz in the Files workspace " +
-    '(`files/sandbox-exports/`) and return the file node. Use when work should outlive the ' +
+    '(`files/auto-filed/sandbox-exports/`) and return the file node. Use when work should outlive the ' +
     'sandbox or reach the owner — build outputs, reports, generated code. Export a specific ' +
     'subpath, not all of /files, when repos are cloned (size cap applies). For ad-hoc reads ' +
     'inside the sandbox use `sandbox_exec` (cat/ls) instead. Pass `raw: true` to bring ONE ' +
@@ -101,7 +101,7 @@ export const sandbox_export: BuiltinToolDef = {
       ok: true,
       output: {
         exported: relPath,
-        file: `files/sandbox-exports/${filename}`,
+        file: `files/auto-filed/sandbox-exports/${filename}`,
         nodeId: file.id,
         sizeBytes: res.bytes.length,
       },

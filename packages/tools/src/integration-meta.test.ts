@@ -128,9 +128,9 @@ describe('parseIntegrationMeta', () => {
   });
 
   it('refuses a docs node id that is not the id api_docs_set returned', () => {
-    expect(parseIntegrationMeta({ service: 'x', docs_node_id: 'files/api-docs/x.md' }).ok).toBe(
-      false,
-    );
+    expect(
+      parseIntegrationMeta({ service: 'x', docs_node_id: 'files/auto-filed/api-docs/x.md' }).ok,
+    ).toBe(false);
     const uuid = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
     expect(ok(parseIntegrationMeta({ service: 'x', docs_node_id: uuid })).value.docsNodeId).toBe(
       uuid,

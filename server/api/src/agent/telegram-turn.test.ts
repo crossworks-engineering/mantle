@@ -292,7 +292,7 @@ vi.mock('@mantle/content', () => ({
 }));
 vi.mock('@mantle/content/table-storage', () => ({ sweepLegacyTables: vi.fn(async () => {}) }));
 vi.mock('@mantle/files', () => ({
-  ensureDatedUploadFolder: vi.fn(async () => '/telegram-uploads/2026-07-17'),
+  ensureAutoFiledFolder: vi.fn(async () => 'files.auto_filed.telegram_uploads.2026_07'),
   upsertFile: (...a: unknown[]) => h.upsertFile(...a),
 }));
 vi.mock('@mantle/api-keys', () => ({

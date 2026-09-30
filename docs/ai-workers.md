@@ -502,7 +502,7 @@ through MCP, is handled by **two cleanly-separated responsibilities**:
 ### Per-surface flow
 
 - **Web `/assistant`** (`processUpload`): save to
-  `/files/assistant-uploads/<date>/` → `extractAttachmentForTurn` → fold into
+  `/files/auto-filed/assistant-uploads/<month>/` → `extractAttachmentForTurn` → fold into
   the turn. Images also echo an inbound artifact so the bubble renders them;
   documents render a client-side file chip. Accepts images + documents
   (pdf/docx/xlsx/csv/txt/md/json/yaml); anything else → 415.

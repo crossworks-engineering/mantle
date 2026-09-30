@@ -86,6 +86,7 @@ vi.mock('@mantle/files', async (importOriginal) => {
   return {
     ...actual,
     createFolder: vi.fn(),
+    ensureAutoFiledFolder: vi.fn(),
     ensureFilesRootBranch: vi.fn(),
     folderById: vi.fn(),
     folderByPath: vi.fn(),
@@ -103,6 +104,7 @@ import { createSandboxRow, getSandboxByRef, setSandboxStatus, touchSandbox } fro
 import {
   createFolder,
   diskPathForLtree,
+  ensureAutoFiledFolder,
   ensureFilesRootBranch,
   filesRoot,
   folderById,
@@ -182,6 +184,7 @@ beforeEach(() => {
   vi.mocked(ensureFilesRootBranch).mockResolvedValue(undefined as never);
   vi.mocked(folderByPath).mockResolvedValue({ id: 'f-exports' } as never);
   vi.mocked(createFolder).mockResolvedValue(undefined as never);
+  vi.mocked(ensureAutoFiledFolder).mockResolvedValue('files.auto_filed.sandbox_exports');
   vi.mocked(upsertFile).mockResolvedValue({ id: 'node-1' } as never);
   vi.mocked(readFileById).mockResolvedValue({
     row: { filename: 'reg.accdb' },
@@ -421,22 +424,19 @@ describe('sandbox_export', () => {
     expect(upsertFile).not.toHaveBeenCalled();
   });
 
-  it('archives a subpath into files/sandbox-exports under the owner', async () => {
+  it('archives a subpath into Auto-filed sandbox exports under the owner', async () => {
     daemonReplies({}, true, TGZ);
-    vi.mocked(folderByPath).mockResolvedValue(null);
     const res = await exportTool.handler({ sandbox: 'scratch', path: 'myapi' }, ctx);
     expect(daemonCalls()[0]).toEqual({
       url: 'http://sandboxd.test/sandboxes/sb1/export',
       method: 'POST',
       body: { path: 'myapi', raw: false },
     });
-    // The exports folder is created lazily when missing.
-    expect(createFolder).toHaveBeenCalledWith(
-      expect.objectContaining({ ownerId: 'o1', parentPath: 'files', slug: 'sandbox-exports' }),
-    );
+    // The exports folder is made on first use (Auto-filed).
+    expect(ensureAutoFiledFolder).toHaveBeenCalledWith('o1', 'sandbox-exports');
     expect(upsertFile).toHaveBeenCalledWith({
       ownerId: 'o1',
-      parentPath: 'files.sandbox_exports',
+      parentPath: 'files.auto_filed.sandbox_exports',
       filename: 'scratch-myapi.tgz',
       bytes: expect.any(Buffer),
       overwrite: true,
@@ -444,7 +444,7 @@ describe('sandbox_export', () => {
     expect(touchSandbox).toHaveBeenCalledWith('sb1');
     expect(outputOf(res)).toEqual({
       exported: 'myapi',
-      file: 'files/sandbox-exports/scratch-myapi.tgz',
+      file: 'files/auto-filed/sandbox-exports/scratch-myapi.tgz',
       nodeId: 'node-1',
       sizeBytes: TGZ.length,
     });

@@ -163,7 +163,7 @@ export type ToolArtifact = {
    *  (audio ≤ 300KB, images ≤ 2MB). */
   base64: string;
   /** Optional persisted node id when the artifact is also stored
-   *  (e.g. generate_image saves to /files/generated-images and
+   *  (e.g. generate_image saves to /files/auto-filed/generated-images and
    *  returns the node id so the client can deep-link). */
   nodeId?: string;
   /** Optional human-readable caption — the prompt for image gen,

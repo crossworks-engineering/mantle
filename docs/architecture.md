@@ -1136,7 +1136,7 @@ live reply via the shared `extractAttachmentForTurn` helper.
   photo or any image-typed file node.
 - **Image gen (Saskia tool):** `generate_image(prompt, size?, style?,
   quality?, negative_prompt?)`, runs the default image_gen worker,
-  saves to `/files/generated-images/<date>/`, delivers inline
+  saves to `/files/auto-filed/generated-images/<month>/`, delivers inline
   (`sendPhoto` on Telegram, base64 artifact on web).
 
 All routed through the same adapter framework as TTS/STT. 4 vision

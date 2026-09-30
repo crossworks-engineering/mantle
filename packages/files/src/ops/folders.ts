@@ -43,6 +43,9 @@ export async function createFolder(args: {
   slug: string;
   name?: string;
   description?: string;
+  /** Made and filled by Mantle (Auto-filed): its name is locked and it
+   *  cannot be moved, since writers find it by its path. */
+  system?: boolean;
 }): Promise<FolderRow> {
   if (!isFilesPath(args.parentPath)) {
     throw new Error(`createFolder: parent '${args.parentPath}' is outside the files root`);
@@ -84,6 +87,7 @@ export async function createFolder(args: {
       path: childPath,
       data: {
         description: args.description ?? '',
+        ...(args.system ? { system: true } : {}),
       },
       tags: [],
     })
@@ -95,110 +99,14 @@ export async function createFolder(args: {
   return folderRowFromNode(row, 0, 0);
 }
 
-/**
- * Ensure `files.<topSlug>.<YYYY-MM-DD>` exists (both levels) and return the
- * per-day folder's ltree path. The upload surfaces (web /assistant, Telegram)
- * use this to file an incoming image under a dated folder before persisting
- * the bytes. Idempotent — tolerates the unique-index race when two uploads
- * land in the same second. Note ltree labels use underscores, so the stored
- * path uses `dashToLtree(slug)` while `createFolder` keeps the dash slug as
- * the disk dir name (mirrors the original per-surface helpers).
- */
-export async function ensureDatedUploadFolder(args: {
-  ownerId: string;
-  topSlug: string;
-  topDescription?: string;
-}): Promise<string> {
-  const { ownerId, topSlug } = args;
-  const topLtree = `files.${dashToLtree(topSlug)}`;
-  const dateSlug = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
-  for (const [parent, slug, description] of [
-    ['files', topSlug, args.topDescription ?? ''],
-    [topLtree, dateSlug, `Uploads from ${dateSlug}.`],
-  ] as const) {
-    const childPath = `${parent}.${dashToLtree(slug)}`;
-    const [exists] = await db
-      .select({ id: nodes.id })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, ownerId),
-          eq(nodes.type, 'branch'),
-          sql`${nodes.path}::text = ${childPath}`,
-        ),
-      )
-      .limit(1);
-    if (!exists) {
-      try {
-        await createFolder({ ownerId, parentPath: parent, slug, description });
-      } catch (err) {
-        if (!isUniqueViolation(err)) throw err;
-      }
-    }
-  }
-  return `${topLtree}.${dashToLtree(dateSlug)}`;
-}
-
-/**
- * Ensure `files/extracted-images/<source-doc>/` exists and return its ltree
- * path.
- *
- * One folder per source document rather than one shared bucket: a single
- * 40-image manual would otherwise bury every other document's pictures, and
- * the per-document folder makes "everything that came out of this file"
- * answerable by browsing as well as by search.
- *
- * The folder slug is derived from the source document's own slug, so
- * re-ingesting the same file lands in the same place. Idempotent — a
- * concurrent create loses the race harmlessly, same as
- * {@link ensureDatedUploadFolder}.
- */
-export async function ensureExtractedImagesFolder(args: {
-  ownerId: string;
-  sourceSlug: string;
-  sourceTitle: string;
-}): Promise<string> {
-  const docSlug = slugifyFolder(args.sourceSlug) ?? 'document';
-  const topLtree = `files.${dashToLtree(EXTRACTED_IMAGES_SLUG)}`;
-  for (const [parent, slug, description] of [
-    [
-      'files',
-      EXTRACTED_IMAGES_SLUG,
-      'Pictures pulled out of documents — diagrams, screenshots and charts that the text of a file cannot convey.',
-    ],
-    [topLtree, docSlug, `Images extracted from ${args.sourceTitle}.`],
-  ] as const) {
-    const childPath = `${parent}.${dashToLtree(slug)}`;
-    const [exists] = await db
-      .select({ id: nodes.id })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, args.ownerId),
-          eq(nodes.type, 'branch'),
-          sql`${nodes.path}::text = ${childPath}`,
-        ),
-      )
-      .limit(1);
-    if (!exists) {
-      try {
-        await createFolder({ ownerId: args.ownerId, parentPath: parent, slug, description });
-      } catch (err) {
-        if (!isUniqueViolation(err)) throw err;
-      }
-    }
-  }
-  return `${topLtree}.${dashToLtree(docSlug)}`;
-}
-
 /** Top-level folder holding every document's extracted pictures. */
 export const EXTRACTED_IMAGES_SLUG = 'extracted-images';
 
 /**
  * Bring every missing folder on an ltree path under `files` into existence and
  * return the path the caller should write into. The `mkdir -p` every other
- * writer here already performs for itself ({@link ensureDatedUploadFolder} for
- * uploads, {@link ensureExtractedImagesFolder} for the extractor) lifted to one
+ * writer here already performs for itself (`ensureAutoFiledFolder` for
+ * uploads and extracted images) lifted to one
  * place so an AGENT writing a file gets it too.
  *
  * Why it is needed: a skill can name a folder ("save the SVG under
@@ -432,6 +340,9 @@ export async function renameFolderById(args: {
   if (!node || node.type !== 'branch') return null;
   if (node.path === FILES_ROOT_LABEL) {
     throw new Error('renameFolderById: cannot rename the files root');
+  }
+  if ((node.data as Record<string, unknown> | null)?.system === true) {
+    throw new Error('renameFolderById: this folder is made by Mantle; its name is fixed');
   }
   const slug = slugifyFolder(args.newSlug);
   const name = folderDisplayName(args.newSlug);

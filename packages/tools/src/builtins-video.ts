@@ -26,10 +26,9 @@
  */
 
 import { and, eq, sql } from 'drizzle-orm';
-import { isUniqueViolation, db, nodes, bumpWorkerUsage } from '@mantle/db';
+import { db, nodes, bumpWorkerUsage } from '@mantle/db';
 import {
-  createFolder,
-  dashToLtree,
+  ensureAutoFiledFolder,
   fileById,
   mediaAudio,
   mediaCaptions,
@@ -75,44 +74,9 @@ const MAX_STT_DURATION_S = () => intEnv('MEDIA_MAX_STT_DURATION_S', 3600);
 const MAX_AUDIO_BYTES = () => intEnv('MEDIA_MAX_AUDIO_BYTES', 20_000_000);
 const MAX_VIDEO_BYTES = () => intEnv('MEDIA_MAX_VIDEO_BYTES', 1024 ** 3);
 
-// ─── files/video-ingest/<date>/ (the generated-images folder pattern) ──────
-const VIDEO_INGEST_FOLDER_SLUG = 'video-ingest';
-const VIDEO_INGEST_FOLDER_LTREE = `files.${dashToLtree(VIDEO_INGEST_FOLDER_SLUG)}`;
-
-async function ensureFolder(
-  ownerId: string,
-  parentPath: string,
-  slug: string,
-  description: string,
-) {
-  const path = `${parentPath}.${dashToLtree(slug)}`;
-  const [exists] = await db
-    .select({ id: nodes.id })
-    .from(nodes)
-    .where(
-      and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'branch'), sql`${nodes.path}::text = ${path}`),
-    )
-    .limit(1);
-  if (!exists) {
-    try {
-      await createFolder({ ownerId, parentPath, slug, description });
-    } catch (err) {
-      // Concurrent creation racing — swallow the unique hit, keep going.
-      if (!isUniqueViolation(err)) throw err;
-    }
-  }
-  return path;
-}
-
-async function ensureVideoIngestDateFolder(ownerId: string): Promise<string> {
-  await ensureFolder(
-    ownerId,
-    'files',
-    VIDEO_INGEST_FOLDER_SLUG,
-    'Audio + video pulled in by the video_ingest tool.',
-  );
-  const today = new Date().toISOString().slice(0, 10);
-  return ensureFolder(ownerId, VIDEO_INGEST_FOLDER_LTREE, today, `Video ingests from ${today}.`);
+/** Where an ingested video lands: this month's folder under Auto-filed. */
+function ensureVideoIngestDateFolder(ownerId: string): Promise<string> {
+  return ensureAutoFiledFolder(ownerId, 'video-ingest');
 }
 
 function slugBase(title: string | null, fallback: string): string {

@@ -2,7 +2,7 @@
  * Tests for sheet_build, the tool that turns a workbook spec into a styled
  * .xlsx under /files.
  *
- * The renderer (buildSheet) and the file store (ensureDatedUploadFolder /
+ * The renderer (buildSheet) and the file store (ensureAutoFiledFolder /
  * upsertFile) are stubbed; the filename normalisation, the error split, and
  * the save-and-report path are real.
  *
@@ -32,11 +32,11 @@ vi.mock('@mantle/content', () => {
   }
   return { buildSheet: vi.fn(), SheetSpecError };
 });
-vi.mock('@mantle/files', () => ({ ensureDatedUploadFolder: vi.fn(), upsertFile: vi.fn() }));
+vi.mock('@mantle/files', () => ({ ensureAutoFiledFolder: vi.fn(), upsertFile: vi.fn() }));
 vi.mock('@mantle/tracing', () => ({ recordIngest: vi.fn(async () => undefined) }));
 
 import { buildSheet, SheetSpecError } from '@mantle/content';
-import { ensureDatedUploadFolder, upsertFile } from '@mantle/files';
+import { ensureAutoFiledFolder, upsertFile } from '@mantle/files';
 import { recordIngest } from '@mantle/tracing';
 import { SHEET_TOOLS, SHEET_TOOL_SLUGS } from './builtins-sheets';
 import type { ToolHandlerContext } from './types';
@@ -76,7 +76,7 @@ const BYTES = Buffer.from('xlsx');
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(buildSheet).mockResolvedValue(BYTES);
-  vi.mocked(ensureDatedUploadFolder).mockResolvedValue('files.exports.2026_09_03');
+  vi.mocked(ensureAutoFiledFolder).mockResolvedValue('files.exports.2026_09_03');
   vi.mocked(upsertFile).mockImplementation(
     async (args) =>
       ({
@@ -123,7 +123,7 @@ describe('sheet_build', () => {
     vi.mocked(buildSheet).mockRejectedValue(new SheetSpecError("sheet 'Quote': unknown key 'amt'"));
     const res = await build.handler({ filename: 'q', sheets }, ctx);
     expect(errorOf(res)).toBe("sheet 'Quote': unknown key 'amt'");
-    expect(ensureDatedUploadFolder).not.toHaveBeenCalled();
+    expect(ensureAutoFiledFolder).not.toHaveBeenCalled();
     expect(upsertFile).not.toHaveBeenCalled();
   });
 
@@ -135,12 +135,10 @@ describe('sheet_build', () => {
     expect(upsertFile).not.toHaveBeenCalled();
   });
 
-  it('saves the bytes owner-scoped into the dated exports folder and reports the file', async () => {
+  it('saves the bytes owner-scoped into the current month folder of exports and reports the file', async () => {
     const res = await build.handler({ filename: 'q1', sheets }, ctx);
     expect(buildSheet).toHaveBeenCalledWith({ sheets });
-    expect(ensureDatedUploadFolder).toHaveBeenCalledWith(
-      expect.objectContaining({ ownerId: 'o1', topSlug: 'exports' }),
-    );
+    expect(ensureAutoFiledFolder).toHaveBeenCalledWith('o1', 'exports');
     expect(upsertFile).toHaveBeenCalledWith({
       ownerId: 'o1',
       parentPath: 'files.exports.2026_09_03',
