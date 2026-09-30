@@ -36,10 +36,15 @@ const PAGE_SIZE = 50;
 
 const Title = z.string().trim().max(200).default('');
 /** A folder the member's tree shows, to file the new draft in (folder plan
- *  phase 5). Pages have no tree yet. */
+ *  phase 5; pages since phase 7). */
 const FolderId = z.string().uuid().nullable().optional();
 const Create = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('page'), title: Title, icon: z.string().max(16).optional() }),
+  z.object({
+    type: z.literal('page'),
+    title: Title,
+    icon: z.string().max(16).optional(),
+    folderId: FolderId,
+  }),
   z.object({
     type: z.literal('note'),
     title: Title,
@@ -49,7 +54,7 @@ const Create = z.discriminatedUnion('type', [
   z.object({ type: z.literal('draw'), title: Title, folderId: FolderId }),
   z.object({ type: z.literal('table'), title: Title, folderId: FolderId }),
 ]);
-const TREE_KIND_OF = { note: 'notes', draw: 'draw', table: 'tables' } as const;
+const TREE_KIND_OF = { page: 'pages', note: 'notes', draw: 'draw', table: 'tables' } as const;
 
 /**
  * GET /api/member/space?kind=&q=&review=&page= : the member's own items
@@ -91,10 +96,9 @@ export async function POST(req: Request) {
   const parsed = Create.safeParse(await readJsonNoNul(req));
   if (!parsed.success)
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
-  const { folderId, ...input } =
-    parsed.data.type === 'page' ? { ...parsed.data, folderId: null } : parsed.data;
+  const { folderId, ...input } = parsed.data;
   let path: string | undefined;
-  if (folderId && input.type !== 'page') {
+  if (folderId) {
     try {
       path = await memberFilingPath(memberTreeScope(member), TREE_KIND_OF[input.type], folderId);
     } catch (err) {

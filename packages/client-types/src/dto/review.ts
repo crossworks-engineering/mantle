@@ -32,8 +32,8 @@ export type AcceptPreview = {
   closure?: AccessItemView[];
   /** Where it lands by default (folder plan phase 5): the brain folder the
    *  author filed it in (`folderId` null = the kind's top level), and the
-   *  author's own folders that become brain folders below it. Absent for a
-   *  page (no tree yet) and from brains before the tree. */
+   *  author's own folders that become brain folders below it. Absent from
+   *  brains before the tree (pages joined it in folder phase 7). */
   place?: AcceptPlace;
 };
 
