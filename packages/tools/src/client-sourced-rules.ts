@@ -462,18 +462,20 @@ async function writeVerdict(
           id: nodes.id,
           audience: nodes.audience,
           inheritedLevel: nodes.inheritedLevel,
+          embeddedLevel: nodes.embeddedLevel,
           shareLevel: nodes.shareLevel,
         })
         .from(nodes)
         .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, wanted)));
       if (rows.length < wanted.length) return wait('its target is not an item of this brain');
-      // Read by clients at its own level, through a folder holding it, or (a
-      // folder) sharing what it holds with them.
+      // Read by clients at its own level, through a folder holding it, through
+      // something that embeds it, or (a folder) sharing what it holds with them.
       if (
         rows.some(
           (r) =>
             EXPOSED.has(r.audience) ||
             EXPOSED.has(r.inheritedLevel ?? '') ||
+            EXPOSED.has(r.embeddedLevel ?? '') ||
             EXPOSED.has(r.shareLevel ?? ''),
         )
       ) {

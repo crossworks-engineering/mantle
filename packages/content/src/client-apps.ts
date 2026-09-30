@@ -64,6 +64,7 @@ export async function listClientApps(anchorId: string): Promise<ClientAppCard[]>
       data: nodes.data,
       audience: nodes.audience,
       inheritedLevel: nodes.inheritedLevel,
+      embeddedLevel: nodes.embeddedLevel,
       updatedAt: nodes.updatedAt,
       manifest: apps.manifest,
       dataReadOnly: apps.dataReadOnly,
@@ -76,7 +77,7 @@ export async function listClientApps(anchorId: string): Promise<ClientAppCard[]>
   return rows.flatMap((r): ClientAppCard[] => {
     // The query already keeps to client level; a row outside it is never a
     // card, whatever the column holds.
-    if (!isReadAt(r.audience, r.inheritedLevel, CLIENT_APP_LEVELS)) return [];
+    if (!isReadAt(r.audience, r.inheritedLevel, CLIENT_APP_LEVELS, r.embeddedLevel)) return [];
     const d = (r.data ?? {}) as Record<string, unknown>;
     const description = (r.manifest as AppManifest | null)?.description;
     return [
@@ -107,6 +108,7 @@ export async function getClientRunnableApp(
       data: nodes.data,
       audience: nodes.audience,
       inheritedLevel: nodes.inheritedLevel,
+      embeddedLevel: nodes.embeddedLevel,
       manifest: apps.manifest,
       publishedBuild: apps.publishedBuild,
       dataReadOnly: apps.dataReadOnly,
@@ -115,7 +117,10 @@ export async function getClientRunnableApp(
     .innerJoin(apps, eq(apps.nodeId, nodes.id))
     .where(and(eq(nodes.id, appId), runnableWhere(anchorId)))
     .limit(1);
-  if (!row?.publishedBuild?.ok || !isReadAt(row.audience, row.inheritedLevel, CLIENT_APP_LEVELS)) {
+  if (
+    !row?.publishedBuild?.ok ||
+    !isReadAt(row.audience, row.inheritedLevel, CLIENT_APP_LEVELS, row.embeddedLevel)
+  ) {
     return null;
   }
   const d = (row.data ?? {}) as Record<string, unknown>;

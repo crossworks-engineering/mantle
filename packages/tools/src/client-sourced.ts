@@ -112,6 +112,7 @@ function clientAppExportsAmong(ownerId: string, list: readonly string[]) {
         or(
           eq(nodes.audience, 'client'),
           eq(nodes.inheritedLevel, 'client'),
+          eq(nodes.embeddedLevel, 'client'),
           isNotNull(appDatabases.clientWrittenAt),
         ),
       ),

@@ -225,12 +225,16 @@ export type TreeItem = {
   /** A short kind-specific token for the status slot: a file's extension, a
    *  secret's kind, an event's start. Null when the kind has none. */
   subtype: string | null;
-  /** Who can read it: its own level, or its folder's share when that is more
-   *  open. */
+  /** Who can read it: the most open of its own level, its folder's share and
+   *  the share of something that embeds it. */
   level: AccessLevel;
   /** The share it takes from the nearest shared folder holding it (what
    *  "Shared via" names); null = none. `level` already counts it. */
   inherited?: TreeShareLevel | null;
+  /** The share it is read at through something that embeds it (a shared
+   *  note's image), kept by the brain; absent = none. `level` already
+   *  counts it. */
+  embedded?: TreeShareLevel | null;
   state: TreeItemState | null;
   updatedAt: string;
   meta?: TreeItemMeta;
@@ -309,11 +313,14 @@ export type TreeVisibilityRefusal = {
   changes: TreeVisibilityChange[];
   /** How many items change in all. */
   total: number;
-  /** Items elsewhere that pages, drawings and notes in `changes` embed, and
-   *  that would go down with them to the level those are read at (embedding
-   *  means sharing). They keep that level after an unshare: nothing is ever
-   *  raised again by itself. Absent when there are none, and from brains
-   *  before it was listed. */
+  /** Items elsewhere that pages, drawings and notes in `changes` embed,
+   *  whose access changes with them: `to` more open when they become
+   *  readable through them, less open when an unshare or a move out takes
+   *  that away (nothing's own level changes; migration 0208). Absent when
+   *  there are none, and from brains before it was listed. */
+  alsoEmbeds?: TreeVisibilityChange[];
+  /** @deprecated Never sent: an unreleased first form of `alsoEmbeds`, when
+   *  a share still lowered embeds for good. */
   alsoLowered?: TreeVisibilityChange[];
 };
 export const TREE_VISIBILITY_LIST_MAX = 100;
@@ -330,7 +337,10 @@ export const TREE_VISIBILITY_LIST_MAX = 100;
 /** A folder as a client login's tree shows it. */
 export type ClientTreeFolder = Omit<TreeFolder, 'share' | 'inherited' | 'system' | 'own'>;
 /** An item as a client login's tree shows it. */
-export type ClientTreeItem = Omit<TreeItem, 'level' | 'inherited' | 'state' | 'source' | 'author'>;
+export type ClientTreeItem = Omit<
+  TreeItem,
+  'level' | 'inherited' | 'embedded' | 'state' | 'source' | 'author'
+>;
 
 export type ClientTreeFolderPage = Omit<TreeFolderPage, 'folder' | 'folders' | 'items'> & {
   folder: ClientTreeFolder | null;

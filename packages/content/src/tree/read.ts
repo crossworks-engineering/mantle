@@ -51,6 +51,7 @@ type ItemSqlRow = {
   data: Record<string, unknown> | null;
   audience: string;
   inherited_level: string | null;
+  embedded_level?: string | null;
   updated_at: Date | string;
   sort_key: string;
 };
@@ -63,13 +64,15 @@ function asShare(v: string | null): TreeShareLevel | null {
   return v === 'team' || v === 'client' ? v : null;
 }
 
-/** effectiveLevel (content-core) in SQL, for filters: the more open of the
- *  row's own level and its inherited share. */
+/** effectiveLevel (content-core) in SQL, for filters: the most open of the
+ *  row's own level, its inherited share and its embedded level. */
 export function effectiveLevelSql(alias: string): SQL {
   const n = sql.raw(alias);
   return sql`(case
-      when ${n}.inherited_level = 'client' and ${n}.audience in ('admin', 'team') then 'client'
-      when ${n}.inherited_level = 'team' and ${n}.audience = 'admin' then 'team'
+      when 'client' in (${n}.inherited_level, ${n}.embedded_level)
+           and ${n}.audience in ('admin', 'team') then 'client'
+      when 'team' in (${n}.inherited_level, ${n}.embedded_level)
+           and ${n}.audience = 'admin' then 'team'
       else ${n}.audience end)`;
 }
 
@@ -104,8 +107,13 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
     icon: projectAppIcon(data.icon) ?? null,
     color: projectAppTint(data.color) ?? null,
     subtype: itemSubtype(kind, data),
-    level: effectiveLevel(asLevel(r.audience), asShare(r.inherited_level)),
+    level: effectiveLevel(
+      asLevel(r.audience),
+      asShare(r.inherited_level),
+      asShare(r.embedded_level ?? null),
+    ),
     inherited: asShare(r.inherited_level),
+    ...(r.embedded_level ? { embedded: asShare(r.embedded_level) } : {}),
     state: itemState(kind, data),
     updatedAt: iso(r.updated_at),
     ...(meta ? { meta } : {}),
@@ -272,7 +280,7 @@ export async function itemPage(
     : sql``;
   const order = desc ? sql`${key} desc, n.id desc` : sql`${key} asc, n.id asc`;
   const rows = (await db.execute(sql`
-    select n.id, n.path::text as path, n.title, n.data, n.audience, n.inherited_level, n.updated_at,
+    select n.id, n.path::text as path, n.title, n.data, n.audience, n.inherited_level, n.embedded_level, n.updated_at,
            ${key} as sort_key
       from nodes n
      where n.owner_id = ${ownerId} and n.type = ${TREE_KIND_SPECS[kind].nodeType}
@@ -357,7 +365,7 @@ export async function searchItemRows(
     ? sql`and (lower(n.title), n.id) > (${cursor.key}, ${cursor.id}::uuid)`
     : sql``;
   const rows = (await db.execute(sql`
-    select n.id, n.path::text as path, n.title, n.data, n.audience, n.inherited_level, n.updated_at,
+    select n.id, n.path::text as path, n.title, n.data, n.audience, n.inherited_level, n.embedded_level, n.updated_at,
            lower(n.title) as sort_key
       from nodes n
      where n.owner_id = ${ownerId} and n.type = ${spec.nodeType}

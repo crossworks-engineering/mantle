@@ -168,7 +168,7 @@ function ownFolder(r: {
   };
 }
 
-const draftColumns = sql`n.id, n.path::text as path, n.title, n.data, n.audience, n.inherited_level,
+const draftColumns = sql`n.id, n.path::text as path, n.title, n.data, n.audience, n.inherited_level, n.embedded_level,
   n.updated_at, lower(n.title) as sort_key, si.sharing, si.review_state, si.author_login_id`;
 
 /** Read everything a member's tree of `kind` needs, once per call. */

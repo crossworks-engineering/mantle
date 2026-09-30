@@ -90,6 +90,7 @@ export async function listMemberApps(anchorId: string): Promise<MemberAppCard[]>
       data: nodes.data,
       audience: nodes.audience,
       inheritedLevel: nodes.inheritedLevel,
+      embeddedLevel: nodes.embeddedLevel,
       updatedAt: nodes.updatedAt,
       manifest: apps.manifest,
       dataReadOnly: apps.dataReadOnly,
@@ -102,10 +103,10 @@ export async function listMemberApps(anchorId: string): Promise<MemberAppCard[]>
   return rows.flatMap((r): MemberAppCard[] => {
     // The query already keeps to these levels; a row outside them is never
     // a card, whatever the column holds.
-    if (!isReadAt(r.audience, r.inheritedLevel, MEMBER_APP_LEVELS)) return [];
+    if (!isReadAt(r.audience, r.inheritedLevel, MEMBER_APP_LEVELS, r.embeddedLevel)) return [];
     // The level it is read at: its own, or its folder's share when that is
     // more open (an admin app in a team folder runs, and writes, as team).
-    const audience = itemLevel(r.audience, r.inheritedLevel) as MemberAppLevel;
+    const audience = itemLevel(r.audience, r.inheritedLevel, r.embeddedLevel) as MemberAppLevel;
     const d = (r.data ?? {}) as Record<string, unknown>;
     const description = (r.manifest as AppManifest | null)?.description;
     return [
@@ -139,6 +140,7 @@ export async function getMemberRunnableApp(
       data: nodes.data,
       audience: nodes.audience,
       inheritedLevel: nodes.inheritedLevel,
+      embeddedLevel: nodes.embeddedLevel,
       manifest: apps.manifest,
       publishedBuild: apps.publishedBuild,
       dataReadOnly: apps.dataReadOnly,
@@ -154,7 +156,7 @@ export async function getMemberRunnableApp(
     title: row.title,
     icon: projectAppIcon(d.icon) ?? null,
     color: projectAppTint(d.color) ?? null,
-    audience: itemLevel(row.audience, row.inheritedLevel),
+    audience: itemLevel(row.audience, row.inheritedLevel, row.embeddedLevel),
     manifest: (row.manifest ?? {}) as AppManifest,
     publishedBuild: row.publishedBuild,
     dataReadOnly: row.dataReadOnly === true,

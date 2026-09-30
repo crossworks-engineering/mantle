@@ -17,20 +17,26 @@ import type { AccessLevel } from '@mantle/client-types';
 const LEVEL_RANK: Record<AccessLevel, number> = { public: 0, client: 1, team: 2, admin: 3 };
 
 /**
- * The level an item is read at: the more open of its own level and the share
- * it inherits from a folder (public < client < team < admin). This is the
- * level its pill shows, its embeds follow and its indexed page text is
- * folded for. Folding for the more open reader is safe for every reader of
- * the row: what a public or client reader may see, every reader above may
- * too. (Which ROLES read the row is the database's union of the two:
- * nodes_viewer_read, migration 0204.)
+ * The level an item is read at: the most open of its own level, the share it
+ * inherits from a folder, and the share of something that embeds it
+ * (public < client < team < admin). This is the level its pill shows and its
+ * indexed page text is folded for. Folding for the more open reader is safe
+ * for every reader of the row: what a public or client reader may see, every
+ * reader above may too. (Which ROLES read the row is the database's union of
+ * the three: nodes_viewer_read, migrations 0204 and 0208.)
  */
 export function effectiveLevel(
   own: AccessLevel,
   inherited: TreeShareLevel | null | undefined,
+  /** The share of something that embeds the item (a shared note's image),
+   *  when the brain sends it. */
+  embedded?: TreeShareLevel | null,
 ): AccessLevel {
-  if (!inherited) return own;
-  return LEVEL_RANK[inherited] < LEVEL_RANK[own] ? inherited : own;
+  let level = own;
+  for (const share of [inherited, embedded]) {
+    if (share && LEVEL_RANK[share] < LEVEL_RANK[level]) level = share;
+  }
+  return level;
 }
 
 function labels(path: string): string[] {

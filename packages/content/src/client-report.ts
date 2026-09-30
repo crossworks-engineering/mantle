@@ -226,7 +226,7 @@ export async function clientReportAcknowledged(ownerId: string): Promise<boolean
        and not exists (
          select 1 from nodes n
           where n.owner_id = ${ownerId}
-            and (n.audience = 'client' or n.inherited_level = 'client')
+            and (n.audience = 'client' or n.inherited_level = 'client' or n.embedded_level = 'client')
             and not (n.id = any (coalesce((select item_ids from ack), '{}'::uuid[])))) as ok`)) as unknown as {
     ok: boolean;
   }[];
@@ -295,6 +295,7 @@ export async function clientReport(
           title: nodes.title,
           audience: nodes.audience,
           inheritedLevel: nodes.inheritedLevel,
+          embeddedLevel: nodes.embeddedLevel,
         })
         .from(nodes)
         .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, refIds)))
@@ -304,7 +305,8 @@ export async function clientReport(
     (named.get(id) ?? []).flatMap((ref): ClientReportRef[] => {
       const r = refById.get(ref);
       if (!r) return [{ id: ref, type: null, title: null, audience: null }];
-      if (isReadAt(r.audience, r.inheritedLevel, ['client']) || ref === id) return [];
+      if (isReadAt(r.audience, r.inheritedLevel, ['client'], r.embeddedLevel) || ref === id)
+        return [];
       return [
         {
           id: ref,

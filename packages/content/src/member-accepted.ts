@@ -204,6 +204,7 @@ export async function listAccepted(
       ? and(
           notInArray(nodes.audience, [...opts.outside]),
           or(isNull(nodes.inheritedLevel), notInArray(nodes.inheritedLevel, [...opts.outside])),
+          or(isNull(nodes.embeddedLevel), notInArray(nodes.embeddedLevel, [...opts.outside])),
         )
       : undefined,
   );

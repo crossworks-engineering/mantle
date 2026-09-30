@@ -140,7 +140,8 @@ async function stampAppLinkMark(tableNodeId: string, mark: TableAppLink | null):
 }
 
 /** Whether clients write this app: it is read at client level now (its own
- *  level, or a client-shared folder it sits in: the union rule), or a client
+ *  level, a client-shared folder it sits in, or something client-read that
+ *  embeds it: the union rule), or a client
  *  login has written its database (`client_written_at`, audit I3). */
 async function clientAppState(
   ownerId: string,
@@ -150,13 +151,15 @@ async function clientAppState(
     .select({
       audience: nodes.audience,
       inherited: nodes.inheritedLevel,
+      embedded: nodes.embeddedLevel,
       clientWrittenAt: appDatabases.clientWrittenAt,
     })
     .from(nodes)
     .leftJoin(appDatabases, eq(appDatabases.appNodeId, nodes.id))
     .where(and(eq(nodes.id, appNodeId), eq(nodes.ownerId, ownerId)))
     .limit(1);
-  const clientLevel = row?.audience === 'client' || row?.inherited === 'client';
+  const clientLevel =
+    row?.audience === 'client' || row?.inherited === 'client' || row?.embedded === 'client';
   return { clientLevel, clientWritten: clientLevel || !!row?.clientWrittenAt };
 }
 

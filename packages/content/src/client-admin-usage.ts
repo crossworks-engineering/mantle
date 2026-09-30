@@ -111,7 +111,7 @@ export async function clientThreadActivity(
        and c.author_kind = 'client'
        and c.created_at > now() - make_interval(days => ${days})
        and n.owner_id = ${brainId}
-       and ${readAtAliasSql('n', ['client'])}
+       and ${readAtAliasSql('n', ['client'], { embeds: false })}
      group by n.id, n.title, n.type
      order by max(c.created_at) desc
      limit 100`)) as unknown as {

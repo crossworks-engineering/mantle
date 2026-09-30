@@ -178,7 +178,8 @@ export async function addNodeComment(
   const name = author.name.trim().slice(0, 200) || 'Unknown';
   const clientName = (author.clientName ?? author.name).trim().slice(0, 200) || 'Unknown';
   // An agent never writes into what clients read.
-  const onClientThread = author.kind === 'agent' ? sql`false` : readAtAliasSql('n', ['client']);
+  const onClientThread =
+    author.kind === 'agent' ? sql`false` : readAtAliasSql('n', ['client'], { embeds: false });
   return db.transaction(async (tx) => {
     const rows = (await tx.execute(sql`
       insert into node_comments

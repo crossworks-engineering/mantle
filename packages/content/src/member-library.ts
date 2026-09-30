@@ -113,7 +113,9 @@ function rowOf(n: typeof nodes.$inferSelect): LibraryRow {
     // The list admits only these two; a public item opened by id (B10), or
     // anything else, reads as team: the Client badge is never gained. A
     // client reads it at its own level or through a client-shared folder.
-    audience: isReadAt(n.audience, n.inheritedLevel, ['client']) ? 'client' : 'team',
+    audience: isReadAt(n.audience, n.inheritedLevel, ['client'], n.embeddedLevel)
+      ? 'client'
+      : 'team',
     updatedAt: n.updatedAt.toISOString(),
   };
 }
