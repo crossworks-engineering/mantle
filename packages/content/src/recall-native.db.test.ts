@@ -838,4 +838,445 @@ describe.skipIf(!URL)('Recall v2 native writes, on Postgres', () => {
       expect(await card(map.mapId, 'style')).toMatchObject({ body_md: 'first', kind: 'prompt' });
     });
   });
+
+  // ── Audit 2026-09-30 fixes (page "AUDIT: Recall v2 (R1 to R3)") ───────────
+  describe('audit fixes', () => {
+    type Row = {
+      slug: string;
+      title: string;
+      body_md: string;
+      use_when: string;
+      kind: string;
+      rank: number;
+      prompt_pending: boolean;
+      options: { label: string; targetSlug: string; targetId?: string; targetMap?: string }[];
+      former_slugs: string[];
+      no_vec: boolean;
+    };
+    const rows = async (mapId: string) =>
+      (await m.db.execute(sqlTag`
+        select slug, title, body_md, use_when, kind, rank, prompt_pending, options,
+               former_slugs, embedding is null as no_vec
+          from recall_nodes where map_id = ${mapId} order by rank, slug`)) as unknown as Row[];
+    const row = async (mapId: string, slug: string) =>
+      (await rows(mapId)).find((r) => r.slug === slug);
+    const v = async (mapId: string) => (await mapRow(mapId)).version;
+    const revision = async (mapId: string, summary: string) =>
+      (await c.listRecallRevisions(owner, mapId)).find((r) => r.summary === summary)!;
+    /** A map with an owner-confirmed prompt card 'deploy'. */
+    const withPrompt = async (title: string) => {
+      const map = await freshMap(title);
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        null,
+        { title: 'Deploy', bodyMd: 'do x', useWhen: 'deploying', prompt: true },
+        OWNER,
+        map.version,
+      );
+      return map;
+    };
+
+    it('H1: two writes sent from the same version cannot both commit', async () => {
+      for (let i = 0; i < 6; i += 1) {
+        const map = await freshMap(`Race ${i}`);
+        const res = await Promise.allSettled([
+          c.putRecallCard(owner, map.mapId, null, { title: 'A', bodyMd: 'a' }, OWNER, map.version),
+          c.putRecallCard(owner, map.mapId, null, { title: 'B', bodyMd: 'b' }, OWNER, map.version),
+        ]);
+        const won = res.filter((r) => r.status === 'fulfilled');
+        const lost = res.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+        expect(won).toHaveLength(1);
+        expect(lost[0]!.reason).toMatchObject({ code: 'version_stale' });
+        expect(await v(map.mapId)).toBe(2);
+      }
+    });
+
+    it('H1: two creates with the same title get two slugs, not a raw error', async () => {
+      const made = await Promise.all([
+        c.createRecallMap(owner, { title: 'Same title', enterWhen: 'x' }, OWNER),
+        c.createRecallMap(owner, { title: 'Same title', enterWhen: 'x' }, OWNER),
+      ]);
+      expect(made.map((x) => x.slug).sort()).toEqual(['same-title', 'same-title-2']);
+    });
+
+    it('H2: an agent editing a confirmed prompt leaves it a prompt', async () => {
+      const map = await withPrompt('Sticky agent');
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'deploy',
+        { title: 'Deploy', bodyMd: 'do x.' },
+        AGENT,
+        await v(map.mapId),
+      );
+      expect(await row(map.mapId, 'deploy')).toMatchObject({
+        kind: 'prompt',
+        prompt_pending: false,
+        use_when: 'deploying',
+      });
+      // Asking again, or trying to demote it, changes nothing, and says so.
+      const res = await c.putRecallCard(
+        owner,
+        map.mapId,
+        'deploy',
+        { title: 'Deploy', bodyMd: 'do x.', prompt: false },
+        AGENT,
+        await v(map.mapId),
+      );
+      expect((await row(map.mapId, 'deploy'))!.kind).toBe('prompt');
+      expect(res.warnings.map((w) => w.code)).toContain('prompt_kept');
+    });
+
+    it('H2: an owner save without the flag keeps a prompt, and keeps a pending request', async () => {
+      const map = await withPrompt('Sticky owner');
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'deploy',
+        { title: 'Deploy', bodyMd: 'do y' },
+        OWNER,
+        await v(map.mapId),
+      );
+      expect((await row(map.mapId, 'deploy'))!.kind).toBe('prompt');
+
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        null,
+        { title: 'Asked', bodyMd: 'x', useWhen: 'when asked', prompt: true },
+        AGENT,
+        await v(map.mapId),
+      );
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'asked',
+        { title: 'Asked', bodyMd: 'typo fixed' },
+        OWNER,
+        await v(map.mapId),
+      );
+      expect(await row(map.mapId, 'asked')).toMatchObject({
+        kind: 'knowledge',
+        prompt_pending: true,
+        use_when: 'when asked',
+      });
+      // An explicit owner false is the deliberate drop.
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'asked',
+        { title: 'Asked', bodyMd: 'typo fixed', prompt: false },
+        OWNER,
+        await v(map.mapId),
+      );
+      expect((await row(map.mapId, 'asked'))!.prompt_pending).toBe(false);
+    });
+
+    it('H2: options left out are kept; sent, they replace', async () => {
+      const map = await freshMap('Sticky options');
+      await c.putRecallCard(owner, map.mapId, null, { title: 'Two', bodyMd: '' }, OWNER, 1);
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'start',
+        {
+          title: 'Sticky options',
+          bodyMd: '',
+          options: [{ label: 'Go', useWhen: 'x', targetSlug: 'two' }],
+        },
+        OWNER,
+        await v(map.mapId),
+      );
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'start',
+        { title: 'Sticky options', bodyMd: 'intro' },
+        AGENT,
+        await v(map.mapId),
+      );
+      expect((await row(map.mapId, 'start'))!.options).toHaveLength(1);
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'start',
+        { title: 'Sticky options', bodyMd: 'intro', options: [] },
+        OWNER,
+        await v(map.mapId),
+      );
+      expect((await row(map.mapId, 'start'))!.options).toHaveLength(0);
+    });
+
+    it('M2: a deleted card comes back under its old slug, in its place, linked', async () => {
+      const map = await freshMap('Undelete');
+      let ver = map.version;
+      for (const t of ['Fleet', 'Other']) {
+        ver = (await c.putRecallCard(owner, map.mapId, null, { title: t, bodyMd: 'x' }, OWNER, ver))
+          .version;
+      }
+      ver = (
+        await c.putRecallCard(
+          owner,
+          map.mapId,
+          'start',
+          {
+            title: 'Undelete',
+            bodyMd: '',
+            options: [
+              { label: 'Fleet', useWhen: 'f', targetSlug: 'fleet' },
+              { label: 'Other', useWhen: 'o', targetSlug: 'other' },
+            ],
+          },
+          OWNER,
+          ver,
+        )
+      ).version;
+      ver = (
+        await c.putRecallCard(
+          owner,
+          map.mapId,
+          'fleet',
+          { title: 'Fleet and boxes', bodyMd: 'x' },
+          OWNER,
+          ver,
+        )
+      ).version;
+      await c.deleteRecallCard(owner, map.mapId, 'fleet', OWNER, ver);
+      await c.restoreRecallRevision(owner, (await revision(map.mapId, 'card deleted')).id, OWNER);
+      const all = await rows(map.mapId);
+      // Back at rank 1, ahead of 'other', under its OLD slug (not the title's).
+      expect(all.map((r) => r.slug)).toEqual(['start', 'fleet', 'other']);
+      expect(all.find((r) => r.slug === 'fleet')!.rank).toBe(1);
+      const start = all.find((r) => r.slug === 'start')!;
+      expect(start.options.map((o) => o.targetSlug).sort()).toEqual(['fleet', 'other']);
+    });
+
+    it('M2: a reorder can be undone; "map created" says it cannot', async () => {
+      const map = await freshMap('Undo order');
+      let ver = map.version;
+      for (const t of ['One', 'Two']) {
+        ver = (await c.putRecallCard(owner, map.mapId, null, { title: t, bodyMd: '' }, OWNER, ver))
+          .version;
+      }
+      await c.reorderRecallCards(owner, map.mapId, ['two', 'one'], OWNER, ver);
+      await c.restoreRecallRevision(
+        owner,
+        (await revision(map.mapId, 'cards reordered')).id,
+        OWNER,
+      );
+      expect((await rows(map.mapId)).map((r) => r.slug)).toEqual(['start', 'one', 'two']);
+      await expect(
+        c.restoreRecallRevision(owner, (await revision(map.mapId, 'map created')).id, OWNER),
+      ).rejects.toMatchObject({ code: 'revision_not_restorable' });
+    });
+
+    it('M2: a slug change can be undone, and undoing a rename leaves later changes alone', async () => {
+      const map = await freshMap('Undo slug');
+      await c.updateRecallMap(owner, map.mapId, { title: 'Undo slug two', version: 1 }, OWNER);
+      await c.updateRecallMap(owner, map.mapId, { published: false, version: 2 }, OWNER);
+      await c.updateRecallMap(owner, map.mapId, { slug: 'moved', version: 3 }, OWNER);
+      await c.restoreRecallRevision(owner, (await revision(map.mapId, 'slug changed')).id, OWNER);
+      let got = await mapRow(map.mapId);
+      expect(got.slug).toBe('undo-slug');
+      expect(got.former_slugs).toEqual(['moved']);
+      await c.restoreRecallRevision(owner, (await revision(map.mapId, 'renamed')).id, OWNER);
+      got = await mapRow(map.mapId);
+      // The rename is undone; the later unpublish is not.
+      expect(got).toMatchObject({ title: 'Undo slug', published: false });
+    });
+
+    it('M2: a no-op patch writes no revision and keeps the version', async () => {
+      const map = await freshMap('Quiet');
+      const res = await c.updateRecallMap(
+        owner,
+        map.mapId,
+        { title: 'Quiet', slug: 'Quiet', version: 1 },
+        OWNER,
+      );
+      expect(res.version).toBe(1);
+      expect((await mapRow(map.mapId)).former_slugs).toEqual([]);
+      expect((await c.listRecallRevisions(owner, map.mapId)).map((r) => r.summary)).toEqual([
+        'map created',
+      ]);
+    });
+
+    it('M4: an option to a map that went away is reported', async () => {
+      const target = await freshMap('Gone target');
+      const from = await freshMap('Still pointing');
+      await c.putRecallCard(
+        owner,
+        from.mapId,
+        'start',
+        {
+          title: 'Still pointing',
+          bodyMd: '',
+          options: [
+            { label: 'Go', useWhen: 'x', targetSlug: 'gone-target', targetMap: 'gone-target' },
+          ],
+        },
+        OWNER,
+        from.version,
+      );
+      await c.deleteRecallMap(owner, target.mapId, OWNER);
+      const res = await c.putRecallCard(
+        owner,
+        from.mapId,
+        'start',
+        { title: 'Still pointing', bodyMd: 'x' },
+        OWNER,
+        await v(from.mapId),
+      );
+      expect(res.warnings.map((w) => w.code)).toContain('cross_map_target_gone');
+    });
+
+    it('M5: a revision keeps the actor name', async () => {
+      const map = await freshMap('Named');
+      await c.putRecallCard(owner, map.mapId, null, { title: 'X', bodyMd: '' }, AGENT, 1);
+      const revs = await c.listRecallRevisions(owner, map.mapId);
+      expect(revs[0]).toMatchObject({ actorKind: 'agent', actorName: 'librarian' });
+      expect(revs.at(-1)).toMatchObject({ actorKind: 'owner', actorName: 'Owner' });
+    });
+
+    it('M6: a former map slug is not given to another map', async () => {
+      const map = await freshMap('Remembered');
+      await c.updateRecallMap(owner, map.mapId, { slug: 'remembered-now', version: 1 }, OWNER);
+      const other = await freshMap('Remembered');
+      expect(other.slug).not.toBe('remembered');
+      await expect(
+        c.updateRecallMap(owner, other.mapId, { slug: 'remembered', version: 1 }, OWNER),
+      ).rejects.toMatchObject({ code: 'slug_taken' });
+    });
+
+    it('M6: a card slug change keeps the old slug, and options follow the card', async () => {
+      const map = await freshMap('Card slugs');
+      await c.putRecallCard(owner, map.mapId, null, { title: 'Box', bodyMd: '' }, OWNER, 1);
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'start',
+        {
+          title: 'Card slugs',
+          bodyMd: '',
+          options: [{ label: 'Box', useWhen: 'x', targetSlug: 'box' }],
+        },
+        OWNER,
+        await v(map.mapId),
+      );
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'box',
+        { title: 'Box', bodyMd: '', slug: 'box-by-box' },
+        OWNER,
+        await v(map.mapId),
+      );
+      expect((await row(map.mapId, 'box-by-box'))!.former_slugs).toEqual(['box']);
+      expect((await row(map.mapId, 'start'))!.options[0]!.targetSlug).toBe('box-by-box');
+      expect((await c.getRecallCard(owner, map.mapId, 'box'))!.slug).toBe('box-by-box');
+      await expect(
+        c.putRecallCard(
+          owner,
+          map.mapId,
+          'box-by-box',
+          { title: 'Box', bodyMd: '', slug: 'again' },
+          AGENT,
+          await v(map.mapId),
+        ),
+      ).rejects.toMatchObject({ code: 'slug_is_owners' });
+    });
+
+    it('L2: a reorder must name every card exactly once', async () => {
+      const map = await freshMap('Whole order');
+      let ver = map.version;
+      for (const t of ['A', 'B', 'C']) {
+        ver = (await c.putRecallCard(owner, map.mapId, null, { title: t, bodyMd: '' }, OWNER, ver))
+          .version;
+      }
+      await expect(c.reorderRecallCards(owner, map.mapId, ['c'], OWNER, ver)).rejects.toMatchObject(
+        { code: 'reorder_incomplete' },
+      );
+      await expect(
+        c.reorderRecallCards(owner, map.mapId, ['a', 'a', 'b', 'c'], OWNER, ver),
+      ).rejects.toMatchObject({ code: 'reorder_incomplete' });
+      await c.reorderRecallCards(owner, map.mapId, ['start', 'c', 'b', 'a'], OWNER, ver);
+      expect((await rows(map.mapId)).map((r) => `${r.slug}@${r.rank}`)).toEqual([
+        'start@0',
+        'c@1',
+        'b@2',
+        'a@3',
+      ]);
+    });
+
+    it('L5 and more refusals: folder, after, map_full, owner-only delete', async () => {
+      await expect(
+        c.createRecallMap(owner, { title: 'Filed', enterWhen: 'x', folder: 'Nope' }, OWNER),
+      ).rejects.toMatchObject({ code: 'folder_not_found' });
+      const map = await freshMap('Refusals');
+      await expect(
+        c.putRecallCard(
+          owner,
+          map.mapId,
+          null,
+          { title: 'X', bodyMd: '', after: 'nope' },
+          OWNER,
+          1,
+        ),
+      ).rejects.toMatchObject({ code: 'after_not_found' });
+      await expect(c.deleteRecallMap(owner, map.mapId, AGENT)).rejects.toMatchObject({
+        code: 'delete_is_owners',
+      });
+      await m.db.execute(sqlTag`
+        insert into recall_nodes (owner_id, map_id, slug, kind, title, rank)
+        select ${owner}, ${map.mapId}, 'filler-' || g, 'knowledge', 'Filler', g
+          from generate_series(1, 99) g`);
+      await expect(
+        c.putRecallCard(owner, map.mapId, null, { title: 'One more', bodyMd: '' }, OWNER, 1),
+      ).rejects.toMatchObject({ code: 'map_full' });
+    });
+
+    it('L9: a new card that links to itself carries its own id', async () => {
+      const map = await freshMap('Self link');
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        null,
+        {
+          title: 'Loop',
+          bodyMd: '',
+          options: [{ label: 'Again', useWhen: 'x', targetSlug: 'loop' }],
+        },
+        OWNER,
+        1,
+      );
+      const loop = await c.getRecallCard(owner, map.mapId, 'loop');
+      expect(loop!.options![0]!.targetId).toBe(loop!.id);
+    });
+
+    it('M7: the embed refill fills a prompt, and never onto text that changed under it', async () => {
+      const bridge = await import('./embed-bridge');
+      const recall = await import('./recall');
+      const vec = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
+      const map = await withPrompt('Embedded');
+      bridge.registerRecallEmbedder(async (_o, texts) => texts.map(() => vec));
+      try {
+        await recall.embedPendingRecallPrompts(owner);
+        expect((await row(map.mapId, 'deploy'))!.no_vec).toBe(false);
+
+        // An edit lands while the embed is in flight: that vector is for the
+        // old text, so it must not be written.
+        await m.db.execute(sqlTag`
+          update recall_nodes set embedding = null where map_id = ${map.mapId} and slug = 'deploy'`);
+        bridge.registerRecallEmbedder(async (_o, texts) => {
+          await m.db.execute(sqlTag`
+            update recall_nodes set body_md = 'changed' where map_id = ${map.mapId} and slug = 'deploy'`);
+          return texts.map(() => vec);
+        });
+        await recall.embedPendingRecallPrompts(owner);
+        expect((await row(map.mapId, 'deploy'))!.no_vec).toBe(true);
+      } finally {
+        bridge.__resetRecallEmbedderForTests();
+      }
+    });
+  });
 });

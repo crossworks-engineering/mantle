@@ -182,13 +182,14 @@ export function registerMantleTools(
   // The tier-1 hook for external agents: these four read-only tools plus the
   // server instructions (MANTLE_MCP_INSTRUCTIONS) are the only surfaces an
   // MCP client auto-loads, so their descriptions carry the "enter the map /
-  // match your task" nudge. Serving rows are compiled at page commit; every
-  // read here is one indexed row.
+  // match your task" nudge. Every read here is one indexed row.
   registerBuiltinTools(RECALL_TOOLS);
   // And the v2 authoring tools, so an external agent can keep a map current
-  // rather than only read it. They are a separate grant (`recall-write`): an
-  // agent edits and adds CARDS, which serve at once, while publishing a map,
-  // minting a prompt and deleting a map stay the owner's act.
+  // rather than only read it. ALWAYS registered here, deliberately (decided
+  // 2026-09-30, Recall audit M1): an MCP client holds the owner's token, like
+  // for every other owner tool on this surface. Inside the app they stay the
+  // `recall-write` grant, in no default. Either way they run as an AGENT, so
+  // publishing a map, minting a prompt and deleting a map stay the owner's act.
   registerBuiltinTools(RECALL_WRITE_TOOLS);
   registerBuiltinTools(JOURNAL_TOOLS);
   registerBuiltinTools(PEER_TOOLS);

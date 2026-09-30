@@ -112,9 +112,9 @@ export interface RecallNodeDTO {
   updatedAt: string;
 }
 
-/** One card with its body — `GET /api/recall/maps/:id/cards/:cardId`, what
- *  the editor opens. Separate from the list shape on purpose (see
- *  `bodyChars`). */
+/** One card with its body, `GET /api/recall/maps/:id/cards/:slug`: what
+ *  the editor opens. A slug the card had before an explicit slug change still
+ *  finds it. Separate from the list shape on purpose (see `bodyChars`). */
 export interface RecallCardDetailDTO extends RecallNodeDTO {
   /** The markdown the owner edits, at most RECALL_BODY_CHAR_BUDGET characters
    *  (`@mantle/content-core/recall-compile`). */
@@ -179,8 +179,10 @@ export interface RecallMapCreateResultDTO {
 /** The body of every refused Recall write. `error` is a sentence written to be
  *  shown as is: what failed and what to do. `code` is stable and absent only on
  *  a malformed request (a body that failed validation). A stale `version` is
- *  409 with code `version_stale`; any code ending `_not_found` is 404; every
- *  other refusal is 400. */
+ *  409 with code `version_stale`; `map_not_found`, `card_not_found` and
+ *  `revision_not_found` are 404; every other refusal is 400, including a bad
+ *  reference inside the body (`cross_map_not_found`, `folder_not_found`) and a
+ *  revision that has nothing to put back (`revision_not_restorable`). */
 export interface RecallWriteErrorDTO {
   error: string;
   code?: string;
@@ -199,28 +201,44 @@ export interface RecallMapPatchDTO {
   version: number;
 }
 
-/** `PUT /api/recall/maps/:id/cards/:cardId` — create or replace one card.
- *  `options` replaces the card's whole list, so read-modify-write it. */
+/** A card write. `POST /api/recall/maps/:id/cards` adds one;
+ *  `PUT /api/recall/maps/:id/cards/:slug` replaces an existing one (an unknown
+ *  slug is 404, not a create).
+ *
+ *  `title` and `bodyMd` always replace. `useWhen`, `options` and `prompt` are
+ *  STICKY on a replace: leave one out and the card keeps its value. So send
+ *  `prompt` only when the owner changed the Prompt switch: a save that sends
+ *  `prompt: false` for a card with a pending request drops the request. When
+ *  `options` is sent it replaces the card's whole list: read-modify-write it. */
 export interface RecallCardWriteDTO {
   title: string;
   /** Markdown, at most RECALL_BODY_CHAR_BUDGET characters. */
   bodyMd: string;
-  /** The matcher line. Required when `prompt` is true: a prompt without one
-   *  cannot be matched by meaning, which is the only thing prompts are for. */
+  /** The matcher line. Required when the card is or asks to be a prompt: a
+   *  prompt without one cannot be matched by meaning, which is the only thing
+   *  prompts are for. */
   useWhen?: string;
-  /** Ask for this card to be a prompt. From the OWNER this makes it one; from
-   *  an agent it only records the request (`promptPending`). */
+  /** From the OWNER: true makes the card a prompt (confirming any pending
+   *  request), false makes it knowledge (demoting a prompt, or dropping a
+   *  request). From an agent, true only records a request (`promptPending`). */
   prompt?: boolean;
   options?: RecallOptionDTO[];
-  /** Slug of the card to place this one after, for a new card. */
+  /** POST only: the slug of the card to place the new one after. A slug that
+   *  names no card is refused (`after_not_found`). */
   after?: string;
+  /** PUT only, owner only: an explicit slug change. The old slug keeps
+   *  resolving (recall_go, the card GET), and options in this map that led to
+   *  it follow the card. */
+  slug?: string;
   version: number;
 }
 
 /** One advisory warning from a native write. Never blocks: an orphan card is
  *  a normal intermediate state while a map is being built. No `severity`,
  *  because a native write has only one kind of issue it reports rather than
- *  refuses. Codes today: `orphan_card`, `entry_without_options`. */
+ *  refuses. Codes today: `orphan_card`, `entry_without_options`,
+ *  `cross_map_target_gone` (an option to a map no longer published, hidden
+ *  from agents), `prompt_kept` (an agent tried to demote a prompt). */
 export interface RecallWarningDTO {
   code: string;
   message: string;
@@ -242,7 +260,13 @@ export interface RecallWriteResultDTO {
 }
 
 /** One entry in a map's revision log (`GET /api/recall/maps/:id/revisions`),
- *  newest first. Restore one with `POST /api/recall/revisions/:id/restore`. */
+ *  newest first. Restore one with `POST /api/recall/revisions/:id/restore`,
+ *  which puts back what that write replaced: a card's content (and its slug,
+ *  if that write moved it); a deleted card under its old slug, at its old
+ *  place, with the options other cards had to it; the old order for a
+ *  reorder; the map fields that write changed. Undoing "card added" deletes
+ *  the card. "map created" cannot be restored (`revision_not_restorable`), nor
+ *  can a reorder logged before its old order was kept. */
 export interface RecallRevisionDTO {
   id: string;
   /** The card this touched; null for a map-level change. */
@@ -250,9 +274,12 @@ export interface RecallRevisionDTO {
   /** The card's slug at the time, for display when the card is gone. */
   cardSlug: string | null;
   actorKind: RecallActorKind;
-  /** The agent's slug or the admin's display name, when known. */
+  /** The agent's slug, 'mcp' for an external MCP client, or the admin's
+   *  display name, stored with the revision. Null on rows written before
+   *  brain v0.232.357. */
   actorName: string | null;
-  /** One line on what changed ("body edited", "card added", "published"). */
+  /** One line on what changed: "card added", "card edited", "card deleted",
+   *  "cards reordered", "prompt confirmed", "renamed, published", and so on. */
   summary: string;
   createdAt: string;
 }

@@ -85,6 +85,9 @@ describe.skipIf(!URL)('the Recall write tools, on Postgres', () => {
     await m.db.execute(sqlTag`update recall_maps set published = true where slug = ${slug}`);
     return slug;
   };
+  /** The version an agent reads, as it reads it: from recall_go. */
+  const readVersion = async (map: string, target = 'start') =>
+    Number((await call(go, { map, target })).output!.version);
 
   it('creates a map UNPUBLISHED, and says so rather than looking done', async () => {
     const res = await call(create, { title: 'Agent map', enter_when: 'Some time' });
@@ -127,7 +130,6 @@ describe.skipIf(!URL)('the Recall write tools, on Postgres', () => {
       use_when: 'doing the thing',
       prompt: true,
     });
-    expect(res.output).toMatchObject({ prompt_pending: true });
     expect(String(res.output!.note)).toMatch(/owner confirms/i);
     const rows = (await m.db.execute(sqlTag`
       select kind, prompt_pending from recall_nodes
@@ -163,8 +165,9 @@ describe.skipIf(!URL)('the Recall write tools, on Postgres', () => {
         title: 'Deleting',
         body: '',
         options: [{ label: 'The detail', use_when: 'you need it', target: 'detail' }],
+        version: await readVersion(map),
       });
-      const res = await call(del, { map, card: 'detail' });
+      const res = await call(del, { map, card: 'detail', version: await readVersion(map) });
       expect(res.ok).toBe(true);
       expect(res.output!.options_removed).toEqual(["start: 'The detail'"]);
       const gone = await call(go, { map, target: 'detail' });
@@ -173,10 +176,102 @@ describe.skipIf(!URL)('the Recall write tools, on Postgres', () => {
 
     it('refuses to delete the entry card, and says to delete the map instead', async () => {
       const map = await publishedMap('Protected');
-      const res = await call(del, { map, card: 'start' });
+      const res = await call(del, { map, card: 'start', version: await readVersion(map) });
       expect(res.ok).toBe(false);
       expect(res.error).toMatch(/entry card.*delete the map instead/s);
     });
+
+    it('refuses a delete without the version the agent read', async () => {
+      const map = await publishedMap('Blind delete');
+      await call(put, { map, title: 'Victim', body: 'x' });
+      const res = await call(del, { map, card: 'victim' });
+      expect(res.ok).toBe(false);
+      expect(res.error).toMatch(/send the map's 'version'.*recall_go/s);
+    });
+  });
+
+  // ── audit 2026-09-30: versions, sticky fields, surfaces ───────────────────
+
+  it('replacing a card needs the version read, and a stale one is refused', async () => {
+    const map = await publishedMap('Versioned');
+    await call(put, { map, title: 'Card', body: 'one' });
+    const read = await readVersion(map, 'card');
+    const blind = await call(put, { map, card: 'card', title: 'Card', body: 'two' });
+    expect(blind.ok).toBe(false);
+    expect(blind.error).toMatch(/version/);
+    // The owner edits after the agent read the card.
+    await m.db.execute(sqlTag`
+      update recall_maps set version = version + 1 where owner_id = ${owner} and slug = ${map}`);
+    const stale = await call(put, { map, card: 'card', title: 'Card', body: 'two', version: read });
+    expect(stale.ok).toBe(false);
+    expect(stale.error).toMatch(/changed since you read it/);
+  });
+
+  it('an agent edit keeps a confirmed prompt a prompt, and its options', async () => {
+    const map = await publishedMap('Prompted');
+    await call(put, { map, title: 'Target', body: 't' });
+    await call(put, {
+      map,
+      title: 'Style',
+      body: 'be brief',
+      use_when: 'writing',
+      options: [{ label: 'Then', use_when: 'after', target: 'target' }],
+    });
+    await m.db.execute(sqlTag`
+      update recall_nodes set kind = 'prompt'
+       where owner_id = ${owner} and slug = 'style'`);
+    const read = await call(go, { map, target: 'style' });
+    expect(read.output).toMatchObject({ use_when: 'writing' });
+    const res = await call(put, {
+      map,
+      card: 'style',
+      title: 'Style',
+      body: 'be brief.',
+      version: Number(read.output!.version),
+    });
+    expect(res.ok).toBe(true);
+    const rows = (await m.db.execute(sqlTag`
+      select kind, use_when, jsonb_array_length(options) as n from recall_nodes
+       where owner_id = ${owner} and slug = 'style'`)) as unknown as {
+      kind: string;
+      use_when: string;
+      n: number;
+    }[];
+    expect(rows[0]).toMatchObject({ kind: 'prompt', use_when: 'writing', n: 1 });
+  });
+
+  it('finds a map by a slug it had before a rename', async () => {
+    const map = await publishedMap('Old name');
+    await m.db.execute(sqlTag`
+      update recall_maps set slug = 'new-name', former_slugs = array[${map}]
+       where owner_id = ${owner} and slug = ${map}`);
+    const res = await call(put, { map, title: 'Still found', body: 'x' });
+    expect(res.ok).toBe(true);
+    expect(res.output).toMatchObject({ map: 'new-name' });
+  });
+
+  it('names the agent in the revision log', async () => {
+    const map = await publishedMap('Attributed');
+    await call(put, { map, title: 'Signed', body: 'x' });
+    const rows = (await m.db.execute(sqlTag`
+      select r.actor_kind, r.actor_name from recall_revisions r
+        join recall_maps m on m.id = r.map_id
+       where m.owner_id = ${owner} and m.slug = ${map} and r.summary = 'card added'`)) as unknown as {
+      actor_kind: string;
+      actor_name: string;
+    }[];
+    expect(rows[0]).toMatchObject({ actor_kind: 'agent', actor_name: 'librarian' });
+  });
+
+  it('refuses a team or client turn, reads and writes alike', async () => {
+    const map = await publishedMap('Owner only');
+    for (const surface of [{ kind: 'team' }, { kind: 'client', loginId: owner }, undefined]) {
+      const other = { ...ctx, surface } as unknown as ToolHandlerContext;
+      const wrote = await put.handler({ map, title: 'X', body: 'y' }, other);
+      const read = await index.handler({}, other);
+      expect(wrote).toMatchObject({ ok: false });
+      expect(read).toMatchObject({ ok: false });
+    }
   });
 
   // ── the owner-only acts ───────────────────────────────────────────────────

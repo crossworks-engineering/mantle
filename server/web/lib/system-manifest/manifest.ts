@@ -893,7 +893,7 @@ export const MANIFEST_TOOL_GROUPS: readonly ManifestToolGroup[] = [
     slug: 'recall-write',
     name: 'Recall authoring',
     description:
-      "Keep the owner's Recall maps current: add and edit CARDS in an existing map (served to every agent at once), and start a new map for the owner to publish. Publishing a map, making a card a prompt and deleting a map stay the owner's act — what an agent may change here is what the brain knows, not what the brain tells other agents to do. Not in any default grant: hand it out deliberately.",
+      "Keep the owner's Recall maps current: add and edit CARDS in an existing map (served to every agent at once), and start a new map for the owner to publish. Publishing a map, making a card a prompt and deleting a map stay the owner's act; what an agent may change here is what the brain knows, not what the brain tells other agents to do. Not in any default grant: hand it out deliberately. (An MCP client on the owner's token always has these tools.)",
     toolSlugs: ['recall_map_create', 'recall_card_put', 'recall_card_delete', 'recall_map_update'],
   },
   {

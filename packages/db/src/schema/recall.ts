@@ -29,17 +29,17 @@ import { vector } from './_shared';
  * map with a lint-broken rev — the last good rev keeps serving and the
  * report lands in `last_compile_report`.
  *
- * ── Recall v2 (in progress) ────────────────────────────────────────────────
+ * ── Recall v2 ────────────────────────────────────────────────────────────────
  * v2 promotes these rows from artifact to SOURCE: a map becomes one `recall`
  * NODE in the item tree and its cards are written here directly, checked in
  * the same transaction, so there is no compile step and no stale-rev note.
  * Plan: "PLAN: Recall v2, its own content type" (dev brain, task 5d6ce06a).
  *
- * R1 (this schema) is contract only — the columns below marked v2 are added,
- * defaulted and unread. The v1 compiler still owns every row until the native
- * write path lands in R2. A native map's id is its `node_id`; a v1 map's id
- * is its root page id. No native map ever reuses a page id, which is why the
- * v1 page hooks (all of which key on page ids) can never reach a native row.
+ * Both kinds live in these tables until R5 retires v1: the compiler owns the
+ * rows of a page-built map (node_id NULL), packages/content/src/recall-native.ts
+ * owns a native map's. A native map's id is its `node_id`; a v1 map's id is
+ * its root page id. No native map ever reuses a page id, which is why the v1
+ * page hooks (all of which key on page ids) can never reach a native row.
  */
 
 export const recallMaps = pgTable(
@@ -138,7 +138,8 @@ export const recallNodes = pgTable(
     /** v2: an agent asked for prompt status and the owner has not confirmed.
      *  A pending card is not embedded and never matches. */
     promptPending: boolean('prompt_pending').default(false).notNull(),
-    /** v2: slugs this card answered to before a rename. */
+    /** v2: slugs this card answered to before an explicit slug change (a
+     *  retitle never moves a slug). recall_go and the card GET still find it. */
     formerSlugs: text('former_slugs').array().default([]).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -171,6 +172,10 @@ export const recallRevisions = pgTable(
     /** 'owner' (the UI) or 'agent' (a recall-write tool). CHECK in SQL. */
     actorKind: text('actor_kind').notNull(),
     actorId: uuid('actor_id'),
+    /** The actor's name when the write happened: the agent's slug, 'mcp' for
+     *  an external MCP client, or the admin's display name. Stored rather than
+     *  joined, so the log still names an agent or admin that is gone (0206). */
+    actorName: text('actor_name'),
     /** The card's slug at the time, so the panel can name a deleted card. */
     cardSlug: text('card_slug'),
     /** One line for the panel. Its own column so `before`/`after` stay pure

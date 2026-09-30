@@ -51,10 +51,8 @@ export const RECALL_ROOT_LABEL = 'recall';
 /**
  * Make sure the Recall root branch exists for this owner. Idempotent, and
  * shaped exactly like every other kind's `ensureRoot` — the same conflict
- * target, so two concurrent callers cannot make two roots.
- *
- * Unused until the native write path (R2) calls it; it lands here in R1 so
- * the root's identity is fixed in one place before anything depends on it.
+ * target, so two concurrent callers cannot make two roots. Called by the
+ * native write path before a map is created.
  */
 export async function ensureRecallRoot(ownerId: string): Promise<void> {
   await db
@@ -193,12 +191,15 @@ async function listMapMembers(ownerId: string, rootId: string): Promise<MemberRo
  *  that already owns a slug for this base keeps it (stability over prettiness). */
 async function resolveMapSlug(ownerId: string, rootId: string, base: string): Promise<string> {
   const taken = await db
-    .select({ id: recallMaps.id, slug: recallMaps.slug })
+    .select({ id: recallMaps.id, slug: recallMaps.slug, formerSlugs: recallMaps.formerSlugs })
     .from(recallMaps)
     .where(eq(recallMaps.ownerId, ownerId));
   const mine = taken.find((t) => t.id === rootId);
   if (mine && (mine.slug === base || mine.slug.startsWith(`${base}-`))) return mine.slug;
-  const others = new Set(taken.filter((t) => t.id !== rootId).map((t) => t.slug));
+  // A native map's former slugs are still remembered by agents: taken too.
+  const others = new Set(
+    taken.filter((t) => t.id !== rootId).flatMap((t) => [t.slug, ...(t.formerSlugs ?? [])]),
+  );
   let slug = base;
   for (let n = 2; others.has(slug); n++) slug = `${base}-${n}`;
   return slug;
@@ -520,7 +521,8 @@ async function hasCompiledRows(ownerId: string, ids: string[]): Promise<boolean>
 }
 
 /** Embed prompt rows whose vector is missing. Fire-and-forget from the write
- *  hooks; also safe to call from a sweep (none exists yet — S3 wires one).
+ *  hooks, and from recall_match, which is what heals a prompt whose embed
+ *  failed at write time (an embedder that was down, a process restart).
  *  The embedder is injected at boot (see embed-bridge.ts), so this package
  *  never reaches up into the adapter layer. Throws when the process forgot to
  *  register one — deliberately loud, because the caller is fire-and-forget and
@@ -550,11 +552,24 @@ export async function embedPendingRecallPrompts(ownerId: string): Promise<number
   let done = 0;
   for (let i = 0; i < pending.length; i++) {
     const vec = vectors[i];
+    const p = pending[i]!;
     if (!vec) continue;
+    // Only onto the text it was built from. Two quick edits can run two
+    // embeds; without this guard the one for the OLDER text could land last
+    // and leave a vector that matches words the card no longer has.
     await db
       .update(recallNodes)
       .set({ embedding: vec })
-      .where(and(eq(recallNodes.id, pending[i]!.id), isNull(recallNodes.embedding)));
+      .where(
+        and(
+          eq(recallNodes.id, p.id),
+          isNull(recallNodes.embedding),
+          eq(recallNodes.kind, 'prompt'),
+          eq(recallNodes.title, p.title),
+          eq(recallNodes.useWhen, p.useWhen),
+          eq(recallNodes.bodyMd, p.bodyMd),
+        ),
+      );
     done++;
   }
   return done;

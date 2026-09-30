@@ -10,6 +10,10 @@ import { UUID_RE } from '@mantle/std';
  * One card of a native Recall map. `card` in the path is the card's SLUG, not
  * its id: the slug is the handle every other surface uses (an option's target,
  * `recall_go`), and it is stable across a retitle.
+ *
+ * PUT replaces `title` and `bodyMd`; `useWhen`, `options` and `prompt` keep the
+ * card's value when left out. `slug` is an explicit slug change: the old one
+ * keeps resolving and options in the map follow it.
  */
 const Option = z.object({
   label: z.string().min(1),
@@ -24,7 +28,7 @@ const Card = z.object({
   useWhen: z.string().optional(),
   prompt: z.boolean().optional(),
   options: z.array(Option).optional(),
-  after: z.string().optional(),
+  slug: z.string().min(1).optional(),
   version: z.number().int().nonnegative(),
 });
 
@@ -69,7 +73,10 @@ export async function DELETE(req: Request, ctx: { params: Promise<{ id: string; 
   if (user instanceof Response) return user;
   const { id, card } = await ctx.params;
   if (!UUID_RE.test(id)) return NextResponse.json({ error: 'not found' }, { status: 404 });
-  const version = Number(new URL(req.url).searchParams.get('version'));
+  // `Number(null)` is 0, which would pass as a (stale) version and answer 409
+  // for a request that never sent one: check presence first.
+  const raw = new URL(req.url).searchParams.get('version');
+  const version = raw === null || raw.trim() === '' ? Number.NaN : Number(raw);
   if (!Number.isInteger(version) || version < 0) {
     return NextResponse.json(
       { error: "Send the map's current version as ?version=N, so a concurrent edit is not lost." },

@@ -14,10 +14,18 @@
  * repo's error style guide: the reader is usually an LLM mid-turn, and an
  * error that says what to do next produces one retry instead of a flail.
  *
+ * Concurrency: every write locks the map row (`mapOr404`) before it compares
+ * the caller's `version`, so two writes sent from the same version cannot both
+ * pass the check. Without the lock both read version N under read committed,
+ * both pass, and the second silently overwrites the first (audit 2026-09-30,
+ * H1: 12 races out of 12 lost an update).
+ *
  * Plan: "PLAN: Recall v2, its own content type" (dev brain, task 5d6ce06a).
  */
 
-import { and, asc, count, desc, eq, ne, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+
+import { and, arrayContains, asc, count, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import {
   db,
@@ -43,7 +51,8 @@ export type RecallActor = {
   kind: 'owner' | 'agent';
   /** The admin login or the agent's node id, for the revision log. */
   id?: string | null;
-  /** Display name or agent slug, for the revisions panel. */
+  /** Display name, agent slug, or 'mcp' for an external MCP client. Stored on
+   *  the revision, so the log still names an actor that is gone. */
   name?: string | null;
 };
 
@@ -66,14 +75,27 @@ export type RecallOptionInput = {
   targetMap?: string;
 };
 
+/**
+ * One card write. `title` and `bodyMd` always replace. The other fields are
+ * STICKY on a replace: left out, they keep what the card has. That is what
+ * lets an agent fix a typo without knowing (or being allowed to set) the
+ * card's prompt state, and what stops a caller that did not send `options`
+ * from wiping every edge out of the card. Sent, they replace.
+ */
 export type RecallCardInput = {
   title: string;
   bodyMd: string;
   useWhen?: string;
+  /** From the owner: true makes a prompt, false makes knowledge. From an
+   *  agent: true records a request (`promptPending`), false withdraws one; an
+   *  agent can never turn a confirmed prompt back into knowledge. */
   prompt?: boolean;
   options?: RecallOptionInput[];
   /** Slug of the card to place a NEW card after. Ignored on replace. */
   after?: string;
+  /** An explicit slug change on an EXISTING card (owner only). The old slug
+   *  keeps resolving in recall_go, and options in this map follow it. */
+  slug?: string;
 };
 
 export type RecallWarning = { code: string; message: string; cardSlug?: string };
@@ -87,6 +109,11 @@ export type RecallWriteResult = {
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type CardRow = typeof recallNodes.$inferSelect;
+type StoredOption = NonNullable<CardRow['options']>[number];
+
+/** An option another card had to a card, kept on the card's delete revision
+ *  so a restore can put the edge back. */
+type InboundOption = { cardSlug: string; option: StoredOption };
 
 /**
  * Slug from a title, cut at a WORD boundary.
@@ -118,13 +145,31 @@ function uniqueSlug(base: string, taken: Set<string>): string {
   );
 }
 
-/** The map row, or a teaching miss. */
+/** Every slug a set of cards answers to, current and former: a new card must
+ *  not take a slug an agent still remembers for another card. */
+function cardSlugsTaken(cards: Pick<CardRow, 'slug' | 'formerSlugs'>[]): Set<string> {
+  const out = new Set<string>();
+  for (const c of cards) {
+    out.add(c.slug);
+    for (const s of c.formerSlugs ?? []) out.add(s);
+  }
+  return out;
+}
+
+/**
+ * The map row, LOCKED for the rest of the transaction, or a teaching miss.
+ *
+ * The lock is what makes the version check mean something: a second write
+ * from the same version waits here until the first commits, then reads the
+ * bumped version and is refused as stale.
+ */
 async function mapOr404(tx: Tx, ownerId: string, mapId: string) {
   const [map] = await tx
     .select()
     .from(recallMaps)
     .where(and(eq(recallMaps.ownerId, ownerId), eq(recallMaps.id, mapId)))
-    .limit(1);
+    .limit(1)
+    .for('update');
   if (!map) {
     throw new RecallWriteError(
       'map_not_found',
@@ -180,9 +225,9 @@ async function resolveOptions(
   cards: Pick<CardRow, 'id' | 'slug'>[],
   options: RecallOptionInput[],
   cardTitle: string,
-): Promise<RecallOptionInput[] & { targetId?: string }[]> {
+): Promise<StoredOption[]> {
   const bySlug = new Map(cards.map((c) => [c.slug, c.id]));
-  const out: (RecallOptionInput & { targetId?: string })[] = [];
+  const out: StoredOption[] = [];
   for (const o of options) {
     if (!o.label?.trim()) {
       throw new RecallWriteError(
@@ -208,7 +253,12 @@ async function resolveOptions(
           `Option '${o.label}' points at map '${o.targetMap}', which is not published yet, so no agent could follow it. Publish that map first, or point somewhere else.`,
         );
       }
-      out.push({ ...o, targetSlug: o.targetMap });
+      out.push({
+        label: o.label,
+        useWhen: o.useWhen,
+        targetSlug: o.targetMap,
+        targetMap: o.targetMap,
+      });
       continue;
     }
     const id = bySlug.get(o.targetSlug);
@@ -223,20 +273,28 @@ async function resolveOptions(
         }. This map's cards: ${[...bySlug.keys()].join(', ')}. For another map's entry card, set targetMap instead.`,
       );
     }
-    out.push({ ...o, targetId: id });
+    out.push({ label: o.label, useWhen: o.useWhen, targetSlug: o.targetSlug, targetId: id });
   }
-  return out as never;
+  return out;
 }
 
-/** Advisory findings, returned with the write and shown in the editor. Never
- *  blocking: an orphan card is a normal state while a map is being built, and
- *  refusing it would mean you could not add card two before linking it. */
-function warningsFor(cards: CardRow[]): RecallWarning[] {
+/**
+ * Advisory findings, returned with the write and shown in the editor. Never
+ * blocking: an orphan card is a normal state while a map is being built, and
+ * refusing it would mean you could not add card two before linking it.
+ *
+ * A cross-map option whose target map has since been unpublished, re-slugged
+ * away or deleted is reported here too: the serving tools already hide it from
+ * agents, and this is where the owner learns it needs repointing.
+ */
+async function warningsFor(tx: Tx, ownerId: string, cards: CardRow[]): Promise<RecallWarning[]> {
   const out: RecallWarning[] = [];
   const reached = new Set<string>();
+  const crossMaps = new Set<string>();
   for (const c of cards) {
     for (const o of c.options ?? []) {
-      if (!o.targetMap) reached.add(o.targetSlug);
+      if (o.targetMap) crossMaps.add(o.targetMap);
+      else reached.add(o.targetSlug);
     }
   }
   const entry = cards.find((c) => c.kind === 'index');
@@ -256,6 +314,33 @@ function warningsFor(cards: CardRow[]): RecallWarning[] {
       cardSlug: entry.slug,
       message: `The entry card has no options, so the map's other ${cards.length - 1} card(s) cannot be reached from it.`,
     });
+  }
+  if (crossMaps.size > 0) {
+    const live = new Set(
+      (
+        await tx
+          .select({ slug: recallMaps.slug })
+          .from(recallMaps)
+          .where(
+            and(
+              eq(recallMaps.ownerId, ownerId),
+              eq(recallMaps.published, true),
+              inArray(recallMaps.slug, [...crossMaps]),
+            ),
+          )
+      ).map((r) => r.slug),
+    );
+    for (const c of cards) {
+      for (const o of c.options ?? []) {
+        if (o.targetMap && !live.has(o.targetMap)) {
+          out.push({
+            code: 'cross_map_target_gone',
+            cardSlug: c.slug,
+            message: `Option '${o.label}' on '${c.slug}' leads to map '${o.targetMap}', which is no longer a published map, so agents do not see it. Point it at another map or remove it.`,
+          });
+        }
+      }
+    }
   }
   return out;
 }
@@ -278,6 +363,7 @@ async function recordRevision(
     summary: entry.summary,
     actorKind: actor.kind,
     actorId: actor.id ?? null,
+    actorName: actor.name ?? null,
     // Pure snapshots: restore writes `before` back as it was, so nothing
     // that is not part of the content may be smuggled in here.
     before: before as never,
@@ -319,6 +405,23 @@ async function cardsOf(tx: Tx, mapId: string): Promise<CardRow[]> {
     .orderBy(asc(recallNodes.rank), asc(recallNodes.slug));
 }
 
+/** The slugs other maps answer to, current and former. A slug a map used to
+ *  have is still what some agent or skill remembers, so no other map may take
+ *  it: that would silently send the remembered slug somewhere else. */
+async function mapSlugsTaken(tx: Tx, ownerId: string, exceptMapId?: string): Promise<Set<string>> {
+  const rows = await tx
+    .select({ id: recallMaps.id, slug: recallMaps.slug, formerSlugs: recallMaps.formerSlugs })
+    .from(recallMaps)
+    .where(eq(recallMaps.ownerId, ownerId));
+  const out = new Set<string>();
+  for (const r of rows) {
+    if (r.id === exceptMapId) continue;
+    out.add(r.slug);
+    for (const s of r.formerSlugs ?? []) out.add(s);
+  }
+  return out;
+}
+
 /**
  * A new map, with its entry card. An agent's map is created UNPUBLISHED: it
  * serves nowhere until the owner publishes it, which is the human act that
@@ -347,15 +450,13 @@ export async function createRecallMap(
   const path = await resolveFolderPath(ownerId, input.folder);
 
   return await db.transaction(async (tx) => {
-    const taken = new Set(
-      (
-        await tx
-          .select({ slug: recallMaps.slug })
-          .from(recallMaps)
-          .where(eq(recallMaps.ownerId, ownerId))
-      ).map((r) => r.slug),
+    // Two creates with the same title at once would both pick the same free
+    // slug and the second would die on the unique index as a raw 500. One
+    // owner-scoped lock makes the slug pick and the insert one step.
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`recall-map-create:${ownerId}`}))`,
     );
-    const slug = uniqueSlug(recallNativeSlug(title), taken);
+    const slug = uniqueSlug(recallNativeSlug(title), await mapSlugsTaken(tx, ownerId));
     const published = actor.kind === 'owner';
     const [item] = await tx
       .insert(nodes)
@@ -396,8 +497,8 @@ export async function createRecallMap(
 }
 
 /** Folder crumbs ("Mantle / Fleet") to the ltree path a map item sits on.
- *  The folders must already exist: this is Recall's write path, not the
- *  tree's. */
+ *  Each crumb is a DIRECT child of the one before it. The folders must already
+ *  exist: this is Recall's write path, not the tree's. */
 async function resolveFolderPath(ownerId: string, folder?: string): Promise<string> {
   const crumbs = (folder ?? '')
     .split('/')
@@ -414,7 +515,8 @@ async function resolveFolderPath(ownerId: string, folder?: string): Promise<stri
           eq(nodes.ownerId, ownerId),
           eq(nodes.type, 'branch'),
           eq(nodes.title, crumb),
-          sql`${nodes.path}::text like ${`${path}.%`}`,
+          sql`${nodes.path} <@ ${path}::ltree`,
+          sql`nlevel(${nodes.path}) = nlevel(${path}::ltree) + 1`,
         ),
       )
       .limit(1);
@@ -452,34 +554,36 @@ export async function updateRecallMap(
       );
     }
     const set: Partial<typeof recallMaps.$inferInsert> = {};
-    if (patch.title?.trim()) set.title = patch.title.trim();
-    if (patch.enterWhen?.trim()) set.enterWhen = patch.enterWhen.trim();
-    if (patch.published !== undefined) set.published = patch.published;
+    const title = patch.title?.trim();
+    if (title && title !== map.title) set.title = title;
+    const enterWhen = patch.enterWhen?.trim();
+    if (enterWhen && enterWhen !== map.enterWhen) set.enterWhen = enterWhen;
+    if (patch.published !== undefined && patch.published !== map.published) {
+      set.published = patch.published;
+    }
 
     // A rename does NOT move the slug: agents and skills remember slugs, and
     // a title is the thing an owner most often tidies. Changing the slug is a
-    // separate, explicit act, and the old one keeps resolving.
-    if (patch.slug && patch.slug !== map.slug) {
-      const next = recallNativeSlug(patch.slug);
-      const [clash] = await tx
-        .select({ id: recallMaps.id })
-        .from(recallMaps)
-        .where(
-          and(
-            eq(recallMaps.ownerId, ownerId),
-            eq(recallMaps.slug, next),
-            ne(recallMaps.id, map.id),
-          ),
-        )
-        .limit(1);
-      if (clash) {
+    // separate, explicit act, and the old one keeps resolving. Compared AFTER
+    // normalising, so "Fleet Ops" sent to a map already at fleet-ops is no
+    // change rather than a former slug equal to the current one.
+    const next = patch.slug !== undefined ? recallNativeSlug(patch.slug) : undefined;
+    if (next !== undefined && next !== map.slug) {
+      if (actor.kind !== 'owner') {
+        throw new RecallWriteError(
+          'slug_is_owners',
+          `Changing map '${map.slug}''s slug is the owner's call: agents and skills remember it.`,
+        );
+      }
+      if ((await mapSlugsTaken(tx, ownerId, map.id)).has(next)) {
         throw new RecallWriteError(
           'slug_taken',
-          `Another map already answers to '${next}'. Pick a different slug.`,
+          `Another map answers to '${next}', now or as a former slug that agents may still remember. Pick a different slug.`,
         );
       }
       set.slug = next;
-      set.formerSlugs = [...new Set([...map.formerSlugs, map.slug])];
+      // A map renamed back to an old slug takes it off its own former list.
+      set.formerSlugs = [...new Set([...map.formerSlugs, map.slug])].filter((s) => s !== next);
       // Cross-map options elsewhere point at this map by slug; keep them live.
       await tx.execute(sql`
         update ${recallNodes}
@@ -493,8 +597,15 @@ export async function updateRecallMap(
          where owner_id = ${ownerId}
            and options @> ${JSON.stringify([{ targetMap: map.slug }])}::jsonb`);
     }
-    if (Object.keys(set).length > 0)
-      await tx.update(recallMaps).set(set).where(eq(recallMaps.id, map.id));
+    // Nothing changed: no version bump and no "no change" revision to clutter
+    // the log (or to be offered as a restore that does nothing).
+    if (Object.keys(set).length === 0) {
+      return {
+        version: map.version,
+        warnings: await warningsFor(tx, ownerId, await cardsOf(tx, map.id)),
+      };
+    }
+    await tx.update(recallMaps).set(set).where(eq(recallMaps.id, map.id));
     // The item carries the title, the enter-when line and the published flag
     // for the tree (a draft pill on an unpublished map). `data` is MERGED, not
     // replaced: an enter-when edit must not wipe the flag, or the reverse.
@@ -528,7 +639,7 @@ export async function updateRecallMap(
       { title: map.title, enterWhen: map.enterWhen, slug: map.slug, published: map.published },
       set,
     );
-    return { version, warnings: warningsFor(await cardsOf(tx, map.id)) };
+    return { version, warnings: await warningsFor(tx, ownerId, await cardsOf(tx, map.id)) };
   });
 }
 
@@ -543,8 +654,9 @@ function describeMapPatch(set: Partial<typeof recallMaps.$inferInsert>): string 
 }
 
 /**
- * Create or replace one card. `options` replaces the card's whole list, so a
- * caller edits by read-modify-write.
+ * Create or replace one card. `title` and `bodyMd` replace; `useWhen`,
+ * `options` and `prompt` are sticky (see RecallCardInput). `options`, when
+ * sent, replaces the card's whole list, so a caller edits by read-modify-write.
  *
  * `prompt: true` from an AGENT does not mint a prompt: it records the request
  * (`promptPending`), and the card is neither embedded nor matchable until the
@@ -581,10 +693,42 @@ function promptStateOf(card: { kind: string; promptPending: boolean }): PromptSt
 }
 
 /**
+ * What a card's kind and pending flag become after a write.
+ *
+ * Absent `prompt` keeps the card's state: that is the fix for a typo edit
+ * demoting a prompt (audit H2). An owner's explicit true or false decides. An
+ * agent's true is a request, its false withdraws its request, and neither can
+ * turn a confirmed prompt back into knowledge: that is the owner's voice.
+ */
+function nextPromptState(
+  existing: CardRow | undefined,
+  prompt: boolean | undefined,
+  actor: RecallActor,
+): { kind: 'index' | 'prompt' | 'knowledge'; promptPending: boolean; keptPrompt: boolean } {
+  if (existing?.kind === 'index') return { kind: 'index', promptPending: false, keptPrompt: false };
+  const current: PromptState = existing
+    ? promptStateOf(existing)
+    : { kind: 'knowledge', promptPending: false };
+  if (prompt === undefined) return { ...current, keptPrompt: false };
+  if (actor.kind === 'owner') {
+    return { kind: prompt ? 'prompt' : 'knowledge', promptPending: false, keptPrompt: false };
+  }
+  if (current.kind === 'prompt') {
+    return { kind: 'prompt', promptPending: false, keptPrompt: prompt === false };
+  }
+  return { kind: 'knowledge', promptPending: prompt, keptPrompt: false };
+}
+
+/** Where a restored card goes back: its old slug, its old rank, and the
+ *  options other cards had to it. Only a restore sends this. */
+type Placement = { slug: string; rank: number | null; inbound: InboundOption[] };
+
+/**
  * `putRecallCard`'s body. `restore` is the prompt state to put back, and only
- * a restore sends it: it wins over the actor rule below, because the owner is
+ * a restore sends it: it wins over the actor rule, because the owner is
  * reinstating a state that rule already produced once (a pending request an
  * agent made stays pending, rather than being confirmed by the owner's undo).
+ * `placement` is a deleted card's old slug, rank and inbound edges.
  */
 async function writeCard(
   ownerId: string,
@@ -594,6 +738,7 @@ async function writeCard(
   actor: RecallActor,
   version: number | undefined,
   restore?: PromptState,
+  placement?: Placement,
 ): Promise<RecallWriteResult> {
   const title = input.title?.trim();
   if (!title) {
@@ -604,13 +749,6 @@ async function writeCard(
   }
   const bodyMd = input.bodyMd ?? '';
   assertBody(bodyMd, title);
-  const useWhen = input.useWhen?.trim() ?? '';
-  if ((input.prompt || restore?.kind === 'prompt') && !useWhen) {
-    throw new RecallWriteError(
-      'prompt_needs_use_when',
-      `Card '${title}' asks to be a prompt but has no 'use when' line. That line is the only thing recall_match compares against, so a prompt without one can never be found. Add one sentence describing the task it fits.`,
-    );
-  }
 
   const result = await db.transaction(async (tx) => {
     const map = await mapOr404(tx, ownerId, mapId);
@@ -630,31 +768,75 @@ async function writeCard(
       );
     }
 
-    // Resolve options against the card set INCLUDING a card being created, so
-    // a self-referencing or freshly-split card can be linked in one write.
-    const slug = existing
-      ? existing.slug
-      : uniqueSlug(recallNativeSlug(title), new Set(cards.map((c) => c.slug)));
-    const options = await resolveOptions(
-      tx,
-      ownerId,
-      [...cards.map((c) => ({ id: c.id, slug: c.slug })), { id: existing?.id ?? slug, slug }],
-      input.options ?? [],
-      title,
-    );
+    const useWhen = input.useWhen === undefined ? (existing?.useWhen ?? '') : input.useWhen.trim();
+    const state = restore
+      ? {
+          kind: existing?.kind === 'index' ? ('index' as const) : restore.kind,
+          promptPending: existing?.kind === 'index' ? false : restore.promptPending,
+          keptPrompt: false,
+        }
+      : nextPromptState(existing, input.prompt, actor);
+    const { kind, promptPending } = state;
+    if ((kind === 'prompt' || promptPending) && !useWhen) {
+      throw new RecallWriteError(
+        'prompt_needs_use_when',
+        `Card '${title}' ${kind === 'prompt' ? 'is' : 'asks to be'} a prompt but has no 'use when' line. That line is the only thing recall_match compares against, so a prompt without one can never be found. Add one sentence describing the task it fits.`,
+      );
+    }
 
-    // The entry card stays the entry card. Otherwise: a prompt if the OWNER
-    // says so, a pending request if an agent asks, knowledge by default.
-    const promptConfirmed = restore
-      ? restore.kind === 'prompt'
-      : Boolean(input.prompt) && actor.kind === 'owner';
-    const kind = existing?.kind === 'index' ? 'index' : promptConfirmed ? 'prompt' : 'knowledge';
-    const promptPending =
-      kind === 'index'
-        ? false
-        : restore
-          ? restore.promptPending
-          : Boolean(input.prompt) && actor.kind === 'agent';
+    // An explicit slug change on an existing card: the owner's act, like the
+    // map's. The old slug goes onto former_slugs and keeps resolving.
+    let slug: string;
+    let formerSlugs: string[] | undefined;
+    if (existing) {
+      slug = existing.slug;
+      const wanted = input.slug !== undefined ? recallNativeSlug(input.slug) : undefined;
+      if (wanted !== undefined && wanted !== existing.slug) {
+        if (actor.kind !== 'owner') {
+          throw new RecallWriteError(
+            'slug_is_owners',
+            `Changing card '${existing.slug}''s slug is the owner's call: agents remember it.`,
+          );
+        }
+        const others = cardSlugsTaken(cards.filter((c) => c.id !== existing.id));
+        if (others.has(wanted)) {
+          throw new RecallWriteError(
+            'slug_taken',
+            `Another card in map '${map.slug}' answers to '${wanted}', now or as a former slug. Pick a different slug.`,
+          );
+        }
+        slug = wanted;
+        formerSlugs = [...new Set([...existing.formerSlugs, existing.slug])].filter(
+          (s) => s !== wanted,
+        );
+      }
+    } else {
+      const taken = cardSlugsTaken(cards);
+      slug =
+        placement && !taken.has(placement.slug)
+          ? placement.slug
+          : uniqueSlug(recallNativeSlug(title), taken);
+    }
+    // A new card's id is minted here rather than by the insert, so an option
+    // on the card that points at itself carries a real id.
+    const cardId = existing?.id ?? randomUUID();
+
+    // Resolve options against the card set INCLUDING a card being created (or
+    // renamed), so a self-referencing or freshly-split card links in one write.
+    // Left out on a replace, the card keeps the options it has, untouched.
+    const options =
+      input.options === undefined && existing
+        ? (existing.options ?? [])
+        : await resolveOptions(
+            tx,
+            ownerId,
+            [
+              ...cards.filter((c) => c.id !== cardId).map((c) => ({ id: c.id, slug: c.slug })),
+              { id: cardId, slug },
+            ],
+            input.options ?? [],
+            title,
+          );
 
     // A prompt's vector is dropped when the text it was built from changed, so
     // `embedPendingRecallPrompts` refills it after the commit. NULL means
@@ -668,7 +850,6 @@ async function writeCard(
       existing.useWhen !== useWhen ||
       existing.bodyMd !== bodyMd;
     const needsVector = kind === 'prompt' && (embedTextChanged || existing?.kind !== 'prompt');
-    const embedding = needsVector ? null : undefined;
 
     const values = {
       title,
@@ -680,23 +861,76 @@ async function writeCard(
       options: options as never,
       sourceVersion: map.version + 1,
       updatedAt: new Date(),
-      ...(embedding === null ? { embedding: null } : {}),
+      ...(needsVector ? { embedding: null } : {}),
       // A card that stops being a prompt must not keep a vector, or it would
       // go on matching from the partial index after the owner demoted it.
       ...(kind !== 'prompt' ? { embedding: null } : {}),
+      ...(formerSlugs ? { slug, formerSlugs } : {}),
     };
 
     if (existing) {
       await tx.update(recallNodes).set(values).where(eq(recallNodes.id, existing.id));
+      if (formerSlugs) {
+        // Same-map options that led to the old slug follow the card.
+        for (const other of cards) {
+          if (other.id === existing.id) continue;
+          let changed = false;
+          const next = (other.options ?? []).map((o) => {
+            if (!o.targetMap && (o.targetId === existing.id || o.targetSlug === existing.slug)) {
+              changed = true;
+              return { ...o, targetSlug: slug, targetId: existing.id };
+            }
+            return o;
+          });
+          if (changed) {
+            await tx
+              .update(recallNodes)
+              .set({ options: next as never })
+              .where(eq(recallNodes.id, other.id));
+          }
+        }
+      }
     } else {
-      const after = input.after ? cards.find((c) => c.slug === input.after) : undefined;
-      const rank = after ? after.rank + 1 : (cards.at(-1)?.rank ?? 0) + 1;
+      let rank: number;
+      if (placement && placement.rank !== null) {
+        rank = Math.max(1, placement.rank);
+      } else if (input.after !== undefined) {
+        const after = cards.find((c) => c.slug === input.after);
+        if (!after) {
+          throw new RecallWriteError(
+            'after_not_found',
+            `There is no card '${input.after}' to place '${title}' after. This map's cards: ${cards.map((c) => c.slug).join(', ')}. Leave 'after' off to add it at the end.`,
+          );
+        }
+        rank = after.rank + 1;
+      } else {
+        rank = (cards.at(-1)?.rank ?? 0) + 1;
+      }
       // Make room, so `after` means after and ranks stay dense.
       await tx
         .update(recallNodes)
         .set({ rank: sql`${recallNodes.rank} + 1` })
         .where(and(eq(recallNodes.mapId, map.id), sql`${recallNodes.rank} >= ${rank}`));
-      await tx.insert(recallNodes).values({ ownerId, mapId: map.id, slug, rank, ...values });
+      await tx
+        .insert(recallNodes)
+        .values({ id: cardId, ownerId, mapId: map.id, slug, rank, ...values });
+      // A restored card gets back the edges other cards had to it, where
+      // those cards still exist and do not already lead there.
+      for (const edge of placement?.inbound ?? []) {
+        const from = cards.find((c) => c.slug === edge.cardSlug);
+        if (!from) continue;
+        const has = (from.options ?? []).some((o) => !o.targetMap && o.targetSlug === slug);
+        if (has) continue;
+        await tx
+          .update(recallNodes)
+          .set({
+            options: [
+              ...(from.options ?? []),
+              { ...edge.option, targetSlug: slug, targetId: cardId },
+            ] as never,
+          })
+          .where(eq(recallNodes.id, from.id));
+      }
     }
 
     const nextVersion = await bumpMap(tx, map.id, map.version);
@@ -706,7 +940,7 @@ async function writeCard(
       map.id,
       actor,
       {
-        cardId: existing?.id ?? null,
+        cardId,
         cardSlug: slug,
         summary: existing ? 'card edited' : 'card added',
       },
@@ -717,33 +951,57 @@ async function writeCard(
             useWhen: existing.useWhen,
             options: existing.options,
             ...promptStateOf(existing),
+            // Only a write that MOVED the slug records the old one, so undoing
+            // an ordinary edit never re-slugs the card.
+            ...(formerSlugs ? { slug: existing.slug } : {}),
           }
         : null,
-      { title, bodyMd, useWhen, options, ...promptStateOf({ kind, promptPending }) },
+      {
+        title,
+        bodyMd,
+        useWhen,
+        options,
+        ...promptStateOf({ kind, promptPending }),
+        ...(formerSlugs ? { slug } : {}),
+      },
     );
+    const warnings = await warningsFor(tx, ownerId, await cardsOf(tx, map.id));
+    if (state.keptPrompt) {
+      warnings.push({
+        code: 'prompt_kept',
+        cardSlug: slug,
+        message: `Card '${slug}' stays a prompt: only the owner can turn a prompt back into knowledge.`,
+      });
+    }
     return {
       version: nextVersion,
       cardSlug: slug,
-      warnings: warningsFor(await cardsOf(tx, map.id)),
+      warnings,
       promptQueued: needsVector,
     };
   });
 
   // After the commit, never inside it: the embedder is a network call, and a
   // write that waited on it would hold a transaction open on a hot table.
-  if (result.promptQueued) {
-    void embedPendingRecallPrompts(ownerId).catch((err) => {
-      console.error('[recall] prompt embed failed (non-fatal):', err);
-    });
-  }
+  if (result.promptQueued) queueEmbed(ownerId);
   const { promptQueued: _queued, ...out } = result;
   return out;
+}
+
+/** Fire the prompt embed after a commit. Never awaited: a write does not wait
+ *  on an embedder, and recall_match refills anything this one misses. */
+function queueEmbed(ownerId: string): void {
+  void embedPendingRecallPrompts(ownerId).catch((err) => {
+    console.error('[recall] prompt embed failed (non-fatal):', err);
+  });
 }
 
 /**
  * Delete one card. Options pointing at it are removed in the SAME write and
  * listed back, because the alternative is a map that still offers a route to
  * something gone — the failure v1's post-hoc lint reported and did not fix.
+ * The revision keeps those edges and the card's rank, so a restore puts the
+ * card back where it was, linked as it was.
  */
 export async function deleteRecallCard(
   ownerId: string,
@@ -772,11 +1030,15 @@ export async function deleteRecallCard(
     await tx.delete(recallNodes).where(eq(recallNodes.id, card.id));
 
     const optionsDropped: { cardSlug: string; label: string }[] = [];
+    const inbound: InboundOption[] = [];
     for (const other of cards) {
       if (other.id === card.id) continue;
       const kept = (other.options ?? []).filter((o) => {
         const points = !o.targetMap && o.targetSlug === cardSlug;
-        if (points) optionsDropped.push({ cardSlug: other.slug, label: o.label });
+        if (points) {
+          optionsDropped.push({ cardSlug: other.slug, label: o.label });
+          inbound.push({ cardSlug: other.slug, option: o });
+        }
         return !points;
       });
       if (kept.length !== (other.options ?? []).length) {
@@ -800,19 +1062,23 @@ export async function deleteRecallCard(
         useWhen: card.useWhen,
         options: card.options,
         ...promptStateOf(card),
+        rank: card.rank,
+        inbound,
       },
       null,
     );
     return {
       version: version2,
-      warnings: warningsFor(await cardsOf(tx, map.id)),
+      warnings: await warningsFor(tx, ownerId, await cardsOf(tx, map.id)),
       ...(optionsDropped.length > 0 ? { optionsDropped } : {}),
     };
   });
 }
 
-/** Reorder a map's cards. The entry card keeps rank 0 whatever is asked: it is
- *  where a walk starts, and the list is read as an order. */
+/** Reorder a map's cards. `slugs` must name every card exactly once (the entry
+ *  card may be left out): a partial list would leave two cards on one rank.
+ *  The entry card keeps rank 0 whatever is asked: it is where a walk starts,
+ *  and the list is read as an order. */
 export async function reorderRecallCards(
   ownerId: string,
   mapId: string,
@@ -832,10 +1098,25 @@ export async function reorderRecallCards(
         `Map '${map.slug}' has no card(s) ${unknown.join(', ')}. Send every card's slug, in the order you want: ${cards.map((c) => c.slug).join(', ')}.`,
       );
     }
+    const body = cards.filter((c) => c.kind !== 'index');
+    const sent = slugs.filter((s) => cards.find((c) => c.slug === s)?.kind !== 'index');
+    const missing = body.filter((c) => !sent.includes(c.slug)).map((c) => c.slug);
+    if (missing.length > 0 || new Set(sent).size !== sent.length) {
+      throw new RecallWriteError(
+        'reorder_incomplete',
+        `A reorder must list every card exactly once${missing.length > 0 ? ` (missing: ${missing.join(', ')})` : ' (one is listed twice)'}. This map's cards, in their order now: ${cards.map((c) => c.slug).join(', ')}.`,
+      );
+    }
+    const beforeOrder = body.map((c) => c.slug);
+    if (sent.every((s, i) => s === beforeOrder[i])) {
+      return {
+        version: map.version,
+        warnings: await warningsFor(tx, ownerId, cards),
+      };
+    }
     let rank = 1;
-    for (const slug of slugs) {
+    for (const slug of sent) {
       const card = cards.find((c) => c.slug === slug)!;
-      if (card.kind === 'index') continue;
       await tx.update(recallNodes).set({ rank: rank++ }).where(eq(recallNodes.id, card.id));
     }
     await tx
@@ -843,10 +1124,16 @@ export async function reorderRecallCards(
       .set({ rank: 0 })
       .where(and(eq(recallNodes.mapId, map.id), eq(recallNodes.kind, 'index')));
     const next = await bumpMap(tx, map.id, map.version);
-    await recordRevision(tx, ownerId, map.id, actor, { summary: 'cards reordered' }, null, {
-      slugs,
-    });
-    return { version: next, warnings: warningsFor(await cardsOf(tx, map.id)) };
+    await recordRevision(
+      tx,
+      ownerId,
+      map.id,
+      actor,
+      { summary: 'cards reordered' },
+      { slugs: beforeOrder },
+      { slugs: sent },
+    );
+    return { version: next, warnings: await warningsFor(tx, ownerId, await cardsOf(tx, map.id)) };
   });
 }
 
@@ -913,19 +1200,20 @@ export async function confirmRecallPrompt(
       { kind: card.kind, promptPending: card.promptPending },
       { kind: confirm ? 'prompt' : 'knowledge', promptPending: false },
     );
-    return { version: next, cardSlug, warnings: warningsFor(await cardsOf(tx, map.id)), confirm };
+    return {
+      version: next,
+      cardSlug,
+      warnings: await warningsFor(tx, ownerId, await cardsOf(tx, map.id)),
+      confirm,
+    };
   });
-  if (out.confirm) {
-    void embedPendingRecallPrompts(ownerId).catch((err) => {
-      console.error('[recall] prompt embed failed (non-fatal):', err);
-    });
-  }
+  if (out.confirm) queueEmbed(ownerId);
   const { confirm: _c, ...rest } = out;
   return rest;
 }
 
 /** Delete a whole map: the item goes, and the cascades take the map row, its
- *  cards and its revisions (migration 0202). */
+ *  cards and its revisions (migration 0203). */
 export async function deleteRecallMap(
   ownerId: string,
   mapId: string,
@@ -955,6 +1243,7 @@ export async function listRecallRevisions(
     cardSlug: string | null;
     actorKind: 'owner' | 'agent';
     actorId: string | null;
+    actorName: string | null;
     summary: string;
     createdAt: string;
   }[]
@@ -971,22 +1260,32 @@ export async function listRecallRevisions(
     cardSlug: r.cardSlug,
     actorKind: r.actorKind as 'owner' | 'agent',
     actorId: r.actorId,
+    actorName: r.actorName,
     summary: r.summary,
     createdAt: r.createdAt.toISOString(),
   }));
 }
 
+/** A revision that has no before state to put back. */
+function notRestorable(message: string): RecallWriteError {
+  return new RecallWriteError('revision_not_restorable', message);
+}
+
 /**
  * Put one revision's BEFORE state back. The editor's undo.
  *
- * There are four shapes, because a revision records what changed rather than
- * a whole map:
- *  - a card edit or delete (before = the card's content and prompt state)
- *    writes that content back, and keeps a prompt a prompt;
+ * The shapes, because a revision records what changed rather than a whole map:
+ *  - a card edit (before = the card's content and prompt state, plus its old
+ *    slug when that write moved it) writes that content back;
+ *  - a card delete (before = the content, rank and the options other cards had
+ *    to it) brings the card back under its old slug, at its old place, with
+ *    those edges;
  *  - a prompt confirm or drop (before = only kind and promptPending) puts back
  *    only that state and leaves the card's content alone;
  *  - a card ADD (before = null, cardSlug set) is undone by deleting the card;
- *  - a map-level change (no cardSlug) writes the map fields back.
+ *  - a reorder (before = the old order) puts the old order back;
+ *  - a map-level change (no cardSlug) writes the map fields back, slug too;
+ *  - a map CREATE has nothing to put back: deleting the map is the undo.
  *
  * A restore is itself a write: it takes the current version, records its own
  * revision, and runs every check. So restoring a card whose body is now over
@@ -1031,14 +1330,43 @@ export async function restoreRecallRevision(
     );
   }
 
+  if (rev.summary === 'map created') {
+    throw notRestorable(
+      'This revision created the map, so there is nothing before it to put back. To remove the map, delete it.',
+    );
+  }
+
+  if (rev.summary === 'cards reordered') {
+    const before = rev.before as { slugs?: string[] } | null;
+    if (!before?.slugs) {
+      throw notRestorable(
+        'This reorder was logged before undo of reorders existed, so its old order was not kept. Drag the cards back by hand.',
+      );
+    }
+    const current = await db
+      .select({ slug: recallNodes.slug, kind: recallNodes.kind })
+      .from(recallNodes)
+      .where(eq(recallNodes.mapId, rev.mapId))
+      .orderBy(asc(recallNodes.rank), asc(recallNodes.slug));
+    const now = current.filter((c) => c.kind !== 'index').map((c) => c.slug);
+    // The old order for cards that still exist, then any added since, in the
+    // order they have now.
+    const order = [
+      ...before.slugs.filter((s) => now.includes(s)),
+      ...now.filter((s) => !before.slugs!.includes(s)),
+    ];
+    return await reorderRecallCards(ownerId, rev.mapId, order, actor, map.version);
+  }
+
   // A card that was ADDED: undoing it means removing it again.
   if (rev.cardSlug && rev.before === null) {
     return await deleteRecallCard(ownerId, rev.mapId, rev.cardSlug, actor, map.version);
   }
 
   // A card edit or delete: write the old content back. A deleted card comes
-  // back as a new card with its old slug, which `putRecallCard` allows because
-  // the slug is free again.
+  // back under its old slug when it is free, at its old rank, with the edges
+  // other cards had to it (revisions written before 2026-09-30 kept neither,
+  // so such a card comes back at the end without them).
   if (rev.cardSlug) {
     const before = (rev.before ?? {}) as {
       title?: string;
@@ -1047,6 +1375,9 @@ export async function restoreRecallRevision(
       options?: RecallOptionInput[];
       kind?: string;
       promptPending?: boolean;
+      slug?: string;
+      rank?: number;
+      inbound?: InboundOption[];
     };
     const stored: PromptState | undefined =
       before.kind === undefined
@@ -1056,47 +1387,78 @@ export async function restoreRecallRevision(
     // A prompt confirm or drop recorded only the prompt state. Writing that
     // back as a whole card would blank it (title = the slug, no body, no
     // options), so only the state goes back.
-    if (before.title === undefined && stored) {
-      return await restorePromptState(ownerId, rev.mapId, rev.cardSlug, stored, actor, map.version);
-    }
-
+    // The card as it is now. By id: a later write may have moved its slug, and
+    // a NEW card may since have taken the old slug, which a slug match would
+    // then overwrite. Only a revision without a card id falls back to the slug.
     const [current] = await db
-      .select({ kind: recallNodes.kind, promptPending: recallNodes.promptPending })
+      .select({
+        slug: recallNodes.slug,
+        kind: recallNodes.kind,
+        promptPending: recallNodes.promptPending,
+      })
       .from(recallNodes)
-      .where(and(eq(recallNodes.mapId, rev.mapId), eq(recallNodes.slug, rev.cardSlug)))
+      .where(
+        and(
+          eq(recallNodes.mapId, rev.mapId),
+          rev.cardId ? eq(recallNodes.id, rev.cardId) : eq(recallNodes.slug, rev.cardSlug),
+        ),
+      )
       .limit(1);
+
+    if (before.title === undefined && stored) {
+      return await restorePromptState(
+        ownerId,
+        rev.mapId,
+        current?.slug ?? rev.cardSlug,
+        stored,
+        actor,
+        map.version,
+      );
+    }
+    const oldSlug = before.slug ?? rev.cardSlug;
     return await writeCard(
       ownerId,
       rev.mapId,
-      current ? rev.cardSlug : null,
+      current ? current.slug : null,
       {
         title: before.title ?? rev.cardSlug,
         bodyMd: before.bodyMd ?? '',
-        useWhen: before.useWhen,
+        useWhen: before.useWhen ?? '',
         options: before.options ?? [],
+        ...(current && before.slug && before.slug !== current.slug ? { slug: before.slug } : {}),
       },
       actor,
       map.version,
       // A revision written before `before` carried the kind has none: keep the
       // card's current state rather than demote it, since a guess is worse.
       stored ?? (current ? promptStateOf(current) : undefined),
+      current
+        ? undefined
+        : { slug: oldSlug, rank: before.rank ?? null, inbound: before.inbound ?? [] },
     );
   }
 
-  // A map-level change.
+  // A map-level change. Only the fields THAT write changed go back (its
+  // `after` holds exactly those): `before` snapshots every field, and writing
+  // them all back would also undo later, unrelated changes, such as
+  // unpublishing a map when the owner only meant to undo a rename.
   const before = (rev.before ?? {}) as {
     title?: string;
     enterWhen?: string;
     slug?: string;
     published?: boolean;
   };
+  const changed = (rev.after ?? {}) as Record<string, unknown>;
   return await updateRecallMap(
     ownerId,
     rev.mapId,
     {
-      ...(before.title ? { title: before.title } : {}),
-      ...(before.enterWhen ? { enterWhen: before.enterWhen } : {}),
-      ...(before.published !== undefined ? { published: before.published } : {}),
+      ...('title' in changed && before.title ? { title: before.title } : {}),
+      ...('enterWhen' in changed && before.enterWhen ? { enterWhen: before.enterWhen } : {}),
+      ...('slug' in changed && before.slug ? { slug: before.slug } : {}),
+      ...('published' in changed && before.published !== undefined
+        ? { published: before.published }
+        : {}),
       version: map.version,
     },
     actor,
@@ -1162,35 +1524,33 @@ async function restorePromptState(
     return {
       version: next,
       cardSlug,
-      warnings: warningsFor(await cardsOf(tx, map.id)),
+      warnings: await warningsFor(tx, ownerId, await cardsOf(tx, map.id)),
       becamePrompt,
     };
   });
-  if (out.becamePrompt) {
-    void embedPendingRecallPrompts(ownerId).catch((err) => {
-      console.error('[recall] prompt embed failed (non-fatal):', err);
-    });
-  }
+  if (out.becamePrompt) queueEmbed(ownerId);
   const { becamePrompt: _b, ...rest } = out;
   return rest;
 }
 
-/** One card with its body — what the editor opens. */
+/** One card with its body: what the editor opens. A slug the card answered
+ *  to before an explicit slug change still finds it. */
 export async function getRecallCard(
   ownerId: string,
   mapId: string,
   cardSlug: string,
 ): Promise<CardRow | null> {
+  const mine = and(eq(recallNodes.ownerId, ownerId), eq(recallNodes.mapId, mapId));
   const [row] = await db
     .select()
     .from(recallNodes)
-    .where(
-      and(
-        eq(recallNodes.ownerId, ownerId),
-        eq(recallNodes.mapId, mapId),
-        eq(recallNodes.slug, cardSlug),
-      ),
-    )
+    .where(and(mine, eq(recallNodes.slug, cardSlug)))
     .limit(1);
-  return row ?? null;
+  if (row) return row;
+  const [former] = await db
+    .select()
+    .from(recallNodes)
+    .where(and(mine, arrayContains(recallNodes.formerSlugs, [cardSlug])))
+    .limit(1);
+  return former ?? null;
 }

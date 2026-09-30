@@ -15,13 +15,22 @@
  * second is the owner's voice, and a prompt an agent minted for itself would
  * be an agent instructing every future agent.
  *
- * These are not in any default grant: they ship as the `recall-write` group
- * for the owner to hand out deliberately.
+ * Inside the app these are in no default grant: they ship as the
+ * `recall-write` group for the owner to hand out deliberately. On the MCP
+ * surface they are always registered (packages/mcp-core/src/build-server.ts),
+ * like the rest of the owner's tools there: an MCP client holds the owner's
+ * token, and the agent-kind actor still keeps publish, prompt minting and map
+ * delete with the owner (decided 2026-09-30, audit finding M1).
+ *
+ * Versions: every read (recall_open, recall_go) returns the map's `version`.
+ * Replacing or deleting a card REQUIRES it, so an agent writing from a stale
+ * read is refused instead of silently overwriting the owner's newer edit.
+ * Adding a card or retitling the map takes it when sent.
  *
  * Plan: "PLAN: Recall v2, its own content type" (dev brain, task 5d6ce06a).
  */
 
-import { and, eq } from 'drizzle-orm';
+import { and, arrayContains, eq } from 'drizzle-orm';
 import { db, recallMaps } from '@mantle/db';
 import {
   RecallWriteError,
@@ -34,26 +43,35 @@ import {
 } from '@mantle/content';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { str } from './coerce';
+import { OWNER_ONLY_ERROR, isOwnerSurface } from './surface';
 
-/** The caller, for the revision log. An agent turn carries its slug. */
+/** The caller, for the revision log: the agent's slug in the app, 'mcp' for an
+ *  external MCP client (it runs as the owner's token, not as a named agent). */
 function actorOf(ctx: ToolHandlerContext): RecallActor {
-  return { kind: 'agent', id: null, name: ctx.agent?.slug ?? null };
+  const via = ctx.surface?.kind === 'owner' ? ctx.surface.via : null;
+  return { kind: 'agent', id: null, name: ctx.agent?.slug ?? via ?? null };
 }
 
-/** Resolve a map by slug (or id) and hand back its id and current version.
- *  Reading the row is how these tools get the version, so a caller never has
- *  to fetch one first: the write is still refused if the row moved under it,
- *  because the transaction re-reads and compares. */
+/** Resolve a map by slug, a slug it answered to before a rename, or its id,
+ *  and hand back its id and current version. */
 async function mapRef(
   ownerId: string,
   ref: string,
 ): Promise<{ id: string; version: number; slug: string } | null> {
+  const cols = { id: recallMaps.id, version: recallMaps.version, slug: recallMaps.slug };
   const bySlug = await db
-    .select({ id: recallMaps.id, version: recallMaps.version, slug: recallMaps.slug })
+    .select(cols)
     .from(recallMaps)
     .where(and(eq(recallMaps.ownerId, ownerId), eq(recallMaps.slug, ref)))
     .limit(1);
   if (bySlug[0]) return bySlug[0];
+  // A remembered slug still lands, as it does for recall_open.
+  const byFormer = await db
+    .select(cols)
+    .from(recallMaps)
+    .where(and(eq(recallMaps.ownerId, ownerId), arrayContains(recallMaps.formerSlugs, [ref])))
+    .limit(1);
+  if (byFormer[0]) return byFormer[0];
   if (!/^[0-9a-f-]{36}$/i.test(ref)) return null;
   const byId = await db
     .select({ id: recallMaps.id, version: recallMaps.version, slug: recallMaps.slug })
@@ -63,9 +81,24 @@ async function mapRef(
   return byId[0] ?? null;
 }
 
+/** The version a caller sent, when it sent a usable one. */
+function versionOf(input: Record<string, unknown>): number | undefined {
+  const v = input.version;
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : undefined;
+}
+
+/** The refusal for a replace or delete sent without the version it read. */
+const needVersion = (map: string, verb: string) =>
+  `To ${verb} a card, send the map's 'version' from your last read of it (recall_go or recall_open on map '${map}' returns it). The version is what stops your write from overwriting an edit made since you read the card.`;
+
 /** Turn a RecallWriteError into the tool's teaching failure, and let anything
- *  else surface as a real error (a bug, not a refusal). */
-async function guard(run: () => Promise<ToolHandlerResult>): Promise<ToolHandlerResult> {
+ *  else surface as a real error (a bug, not a refusal). Owner surfaces only:
+ *  a team or client turn never writes Recall. */
+async function guard(
+  ctx: ToolHandlerContext,
+  run: () => Promise<ToolHandlerResult>,
+): Promise<ToolHandlerResult> {
+  if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
   try {
     return await run();
   } catch (err) {
@@ -93,10 +126,16 @@ function optionsFrom(input: unknown): RecallOptionInput[] | undefined {
   });
 }
 
+const VERSION_PROP = {
+  type: 'integer',
+  minimum: 0,
+  description: "The map's version from your last recall_go or recall_open, e.g. 12.",
+} as const;
+
 const OPTIONS_PROP = {
   type: 'array',
   description:
-    "The card's whole option list, replacing what was there. Each is an affordance, never a command: a `label`, a `use_when` line, and a `target` card slug in this map — or a `map` slug to lead to another map's entry card.",
+    "The card's whole option list, replacing what was there; omit it to keep the card's options. Each is an affordance, never a command: a `label`, a `use_when` line, and a `target` card slug in this map, or a `map` slug to lead to another map's entry card.",
   items: {
     type: 'object',
     properties: {
@@ -138,7 +177,7 @@ const recall_map_create: BuiltinToolDef = {
     required: ['title', 'enter_when'],
   },
   handler: async (input, ctx) =>
-    guard(async () => {
+    guard(ctx, async () => {
       const made = await createRecallMap(
         ctx.ownerId,
         {
@@ -166,7 +205,7 @@ const recall_card_put: BuiltinToolDef = {
   slug: 'recall_card_put',
   name: 'Write a Recall card',
   description:
-    "Create or replace one card in an existing Recall map; it serves to every agent at once. `options` REPLACES the card's whole list, so read the card with `recall_go` first and send the list back edited. A body over its budget is refused and tells you to split the card. `prompt: true` only REQUESTS prompt status: the owner confirms it, and until then the card never matches. To remove a card use `recall_card_delete`.",
+    'Create or replace one card in an existing Recall map; it serves to every agent at once. To replace, read the card with `recall_go` first and send its `version`: a card changed since your read is refused, not overwritten. `title` and `body` replace; `use_when`, `options` and `prompt` keep their value when omitted, and `options` when sent replaces the whole list. A body over budget is refused and tells you to split the card. `prompt: true` only REQUESTS prompt status; the owner confirms it. To remove a card use `recall_card_delete`.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -189,35 +228,42 @@ const recall_card_put: BuiltinToolDef = {
       prompt: {
         type: 'boolean',
         description:
-          'Ask the owner to make this card a prompt, so it can be matched by meaning. Recorded as a request, never applied by this call.',
+          'true asks the owner to make this card a prompt (a request, never applied by this call); false withdraws your request. Omit to leave it as it is.',
       },
       options: OPTIONS_PROP,
       after: {
         type: 'string',
         description: 'For a new card: the slug of the card to place it after.',
       },
+      version: VERSION_PROP,
     },
     required: ['map', 'title', 'body'],
   },
   handler: async (input, ctx) =>
-    guard(async () => {
+    guard(ctx, async () => {
       const ref = str(input.map).trim();
       const map = await mapRef(ctx.ownerId, ref);
       if (!map) return { ok: false, error: notFound(ref) };
+      const card = str(input.card).trim() || null;
+      const sent = versionOf(input);
+      // Replacing needs the version the caller READ: a fresh one would always
+      // match and let a stale read overwrite a newer edit (audit H3). Adding a
+      // card cannot clobber anything, so it may go without.
+      if (card && sent === undefined) return { ok: false, error: needVersion(map.slug, 'replace') };
       const res = await putRecallCard(
         ctx.ownerId,
         map.id,
-        str(input.card).trim() || null,
+        card,
         {
           title: str(input.title),
           bodyMd: str(input.body),
-          useWhen: str(input.use_when).trim() || undefined,
-          prompt: input.prompt === true,
-          options: optionsFrom(input.options),
+          ...(input.use_when !== undefined ? { useWhen: str(input.use_when).trim() } : {}),
+          ...(typeof input.prompt === 'boolean' ? { prompt: input.prompt } : {}),
+          ...(optionsFrom(input.options) ? { options: optionsFrom(input.options) } : {}),
           after: str(input.after).trim() || undefined,
         },
         actorOf(ctx),
-        map.version,
+        sent ?? map.version,
       );
       return {
         ok: true,
@@ -228,8 +274,7 @@ const recall_card_put: BuiltinToolDef = {
           ...(res.warnings.length > 0 ? { warnings: res.warnings.map((w) => w.message) } : {}),
           ...(input.prompt === true
             ? {
-                prompt_pending: true,
-                note: 'Recorded as a prompt REQUEST. The owner confirms it in the Recall editor; until then the card serves by slug but never matches.',
+                note: 'If this card was not already a prompt, this is recorded as a prompt REQUEST. The owner confirms it in the Recall editor; until then the card serves by slug but never matches.',
               }
             : {}),
         },
@@ -243,26 +288,29 @@ const recall_card_delete: BuiltinToolDef = {
   slug: 'recall_card_delete',
   name: 'Delete a Recall card',
   description:
-    "Remove one card from a Recall map. Options on other cards that pointed at it are removed in the same write and listed back, so the map cannot be left offering a route to something gone. The map's entry card cannot be deleted.",
+    "Remove one card from a Recall map. Options on other cards that pointed at it are removed in the same write and listed back, so the map cannot be left offering a route to something gone. The map's entry card cannot be deleted. Send the map's `version` from your last read, so a card changed since is not deleted blind.",
   inputSchema: {
     type: 'object',
     properties: {
       map: { type: 'string', description: "The map's slug." },
       card: { type: 'string', description: "The card's slug." },
+      version: VERSION_PROP,
     },
-    required: ['map', 'card'],
+    required: ['map', 'card', 'version'],
   },
   handler: async (input, ctx) =>
-    guard(async () => {
+    guard(ctx, async () => {
       const ref = str(input.map).trim();
       const map = await mapRef(ctx.ownerId, ref);
       if (!map) return { ok: false, error: notFound(ref) };
+      const sent = versionOf(input);
+      if (sent === undefined) return { ok: false, error: needVersion(map.slug, 'delete') };
       const res = await deleteRecallCard(
         ctx.ownerId,
         map.id,
         str(input.card).trim(),
         actorOf(ctx),
-        map.version,
+        sent,
       );
       return {
         ok: true,
@@ -296,11 +344,12 @@ const recall_map_update: BuiltinToolDef = {
         type: 'string',
         description: 'The new catalog line: when an agent should enter this map.',
       },
+      version: VERSION_PROP,
     },
     required: ['map'],
   },
   handler: async (input, ctx) =>
-    guard(async () => {
+    guard(ctx, async () => {
       const ref = str(input.map).trim();
       const map = await mapRef(ctx.ownerId, ref);
       if (!map) return { ok: false, error: notFound(ref) };
@@ -318,7 +367,7 @@ const recall_map_update: BuiltinToolDef = {
         {
           ...(title ? { title } : {}),
           ...(enterWhen ? { enterWhen } : {}),
-          version: map.version,
+          version: versionOf(input) ?? map.version,
         },
         actorOf(ctx),
       );

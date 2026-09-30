@@ -1,14 +1,14 @@
 /**
- * Recall — owner-UI reads over the COMPILED serving layer (recall_maps /
+ * Recall: the owner UI's HTTP side over the serving layer (recall_maps /
  * recall_nodes; docs/recall.md). The owner UI talks HTTP, not MCP, so these
  * back `/api/recall/**` the way lib/journal backs `/api/journal`.
  *
  * Read-only for a PAGE-BUILT (v1) map: its authoring is the normal page
  * draft/commit path, where the compiler, lint and trust model live.
  *
- * A NATIVE (v2) map is authored here instead — the rows are the source. Those
- * write functions and their routes land later in R2; what is below is the read
- * side, which now serves both kinds and tells them apart by `nodeId`.
+ * A NATIVE (v2) map is authored through the routes instead: the rows are the
+ * source, written by packages/content/src/recall-native.ts. The reads below
+ * serve both kinds and tell them apart by `nodeId`.
  *
  * Unlike the agent-facing `recall_index`, the catalog here includes maps
  * that never compiled clean (nodeCount 0): a failed compile is exactly what
@@ -213,9 +213,18 @@ export async function getRecallStateForPage(
  * RecallWriteError is a bug, not a refusal, and is rethrown so `app.onError`
  * answers an opaque 500 rather than this layer inventing a reason.
  */
+/** The refusals that mean the THING addressed is missing. A bad reference
+ *  inside a body (an option to a missing map, a folder that does not exist)
+ *  is a 400: the request was wrong, not the address. */
+const RECALL_NOT_FOUND_CODES = new Set(['map_not_found', 'card_not_found', 'revision_not_found']);
+
 export function recallWriteFailure(err: unknown): Response {
   if (err instanceof RecallWriteError) {
-    const status = err.code.endsWith('_not_found') ? 404 : err.code === 'version_stale' ? 409 : 400;
+    const status = RECALL_NOT_FOUND_CODES.has(err.code)
+      ? 404
+      : err.code === 'version_stale'
+        ? 409
+        : 400;
     return NextResponse.json({ error: err.message, code: err.code }, { status });
   }
   throw err;
@@ -251,9 +260,9 @@ export async function getRecallCardDetail(
   };
 }
 
-/** The revisions panel. `actorName` is not resolved yet: the log stores the
- *  actor's id, and naming an agent or a co-admin is a join this panel does not
- *  need to render its first version. */
+/** The revisions panel. `actorName` is the name stored with the revision (the
+ *  agent's slug, 'mcp', or the admin's display name); null on rows written
+ *  before migration 0206. */
 export async function getRecallRevisions(
   ownerId: string,
   mapId: string,
@@ -264,7 +273,7 @@ export async function getRecallRevisions(
     cardId: r.cardId,
     cardSlug: r.cardSlug,
     actorKind: r.actorKind,
-    actorName: null,
+    actorName: r.actorName,
     summary: r.summary,
     createdAt: r.createdAt,
   }));

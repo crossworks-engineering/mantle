@@ -15,12 +15,18 @@
  *   recall_go(map, target)     → any node by slug: content + its options
  *   recall_match(need)         → top prompts by meaning; open the winner
  *
- * Every read is one indexed row off the COMPILED serving tables
- * (recall_maps / recall_nodes, built by commitPage — packages/content/src/
- * recall.ts). No ProseMirror parsing, no joins on the hot path, no LLM;
- * recall_match is one ANN probe over the partial prompt index plus one
- * (cached) embed of the query line. Bodies are budget-capped at COMPILE
- * time, so responses are small by construction.
+ * Every read is one indexed row off the serving tables (recall_maps /
+ * recall_nodes): written directly by the native path for a v2 map
+ * (packages/content/src/recall-native.ts), compiled from pages for a v1 map
+ * until R5 retires those. No ProseMirror parsing, no LLM; recall_match is one
+ * ANN probe over the partial prompt index plus one (cached) embed of the
+ * query line. Bodies are budget-capped at write time, so responses are small
+ * by construction.
+ *
+ * Owner surfaces only (web, Telegram, owner paths such as MCP). The grant
+ * already keeps these away from team and client agents; the check here is the
+ * second lock, so an owner who widens `recall-read` by mistake does not open
+ * every prompt to a team agent before team sharing exists (R6).
  *
  * `intent` on every tool is the flight-recorder line (why the caller came).
  * Accepted now for schema stability; RECORDED from S3 — until then it is
@@ -30,13 +36,14 @@
  * the map's signposts, the caller decides. All four are read-only.
  */
 
-import { and, arrayContains, asc, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, arrayContains, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db, nodes, recallMaps, recallNodes } from '@mantle/db';
-import { recallFolderCrumbs } from '@mantle/content';
+import { embedPendingRecallPrompts, recallFolderCrumbs } from '@mantle/content';
 import { embed } from '@mantle/embeddings';
-import type { BuiltinToolDef } from './types';
+import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { str } from './coerce';
 import { errorMessage } from '@mantle/std';
+import { OWNER_ONLY_ERROR, isOwnerSurface } from './surface';
 
 const MATCH_LIMIT = 3;
 
@@ -64,6 +71,11 @@ const INTENT_PROP = {
 } as const;
 
 type MapRow = typeof recallMaps.$inferSelect;
+
+/** The refusal for anyone who is not the owner (see the header). */
+function notOwner(ctx: Pick<ToolHandlerContext, 'surface'>): ToolHandlerResult | null {
+  return isOwnerSurface(ctx.surface) ? null : { ok: false, error: OWNER_ONLY_ERROR };
+}
 
 /**
  * Resolve a map reference the way an agent might hold one: its slug, a slug it
@@ -117,23 +129,58 @@ function nativeMap(map: MapRow): boolean {
   return map.nodeId !== null;
 }
 
-function nodePayload(map: MapRow, row: typeof recallNodes.$inferSelect) {
+/**
+ * One card as agents read it.
+ *
+ * `use_when` rides on every card that has one, not only on prompts: an agent
+ * edits by read-modify-write, and a line it was never shown is a line its
+ * write would not carry. `version` is the map's, for the same reason: a write
+ * tool that is sent it refuses a card that changed since this read.
+ *
+ * A cross-map option to a map that is no longer published (or no longer
+ * exists) is left out: an agent cannot follow it, and it cannot tell a dead
+ * option from a live one. The owner sees it as a warning in the editor.
+ */
+async function nodePayload(ownerId: string, map: MapRow, row: typeof recallNodes.$inferSelect) {
+  const crossMaps = [
+    ...new Set((row.options ?? []).flatMap((o) => (o.targetMap ? [o.targetMap] : []))),
+  ];
+  const live =
+    crossMaps.length === 0
+      ? new Set<string>()
+      : new Set(
+          (
+            await db
+              .select({ slug: recallMaps.slug })
+              .from(recallMaps)
+              .where(
+                and(
+                  eq(recallMaps.ownerId, ownerId),
+                  eq(recallMaps.published, true),
+                  inArray(recallMaps.slug, crossMaps),
+                ),
+              )
+          ).map((r) => r.slug),
+        );
   return {
     map: map.slug,
     node: row.slug,
     kind: row.kind,
     title: row.title,
     body_md: row.bodyMd,
-    ...(row.kind === 'prompt' && row.useWhen ? { use_when: row.useWhen } : {}),
-    options: (row.options ?? []).map((o) => ({
-      label: o.label,
-      use_when: o.useWhen,
-      target: o.targetSlug,
-      // Cross-map option: the target is another map's entry card. Additive —
-      // an older caller ignores the extra key and `recall_go(map, target)`
-      // still lands, because `target` resolves across maps too (see below).
-      ...(o.targetMap ? { map: o.targetMap } : {}),
-    })),
+    ...(row.useWhen ? { use_when: row.useWhen } : {}),
+    options: (row.options ?? [])
+      .filter((o) => !o.targetMap || live.has(o.targetMap))
+      .map((o) => ({
+        label: o.label,
+        use_when: o.useWhen,
+        target: o.targetSlug,
+        // Cross-map option: the target is another map's entry card. Additive:
+        // an older caller ignores the extra key and `recall_go(map, target)`
+        // still lands, because `target` resolves across maps too (see below).
+        ...(o.targetMap ? { map: o.targetMap } : {}),
+      })),
+    ...(nativeMap(map) ? { version: map.version } : {}),
     updated_at: row.updatedAt.toISOString(),
     ...(staleNote(map) ? { note: staleNote(map) } : {}),
   };
@@ -149,6 +196,8 @@ const recall_index: BuiltinToolDef = {
     "The catalog of this brain's Recall maps — owner-authored memory maps for agents. Each entry says WHEN to enter it ('enter_when'). Call this before working in a domain a map covers, then recall_open the relevant map and follow its options. For prompts (reusable procedures/styles), recall_match finds them by meaning instead.",
   inputSchema: { type: 'object', properties: { ...INTENT_PROP } },
   handler: async (_input, ctx) => {
+    const refused = notOwner(ctx);
+    if (refused) return refused;
     const rows = await db
       .select({
         id: recallMaps.id,
@@ -192,7 +241,7 @@ const recall_index: BuiltinToolDef = {
         ok: true,
         output: {
           maps: [],
-          note: 'No Recall maps yet. The owner authors one by tagging a page tree’s root `recall` — see docs/recall.md.',
+          note: 'No Recall maps yet. The owner starts one in the Recall screen (see docs/recall.md).',
         },
       };
     }
@@ -233,6 +282,8 @@ const recall_open: BuiltinToolDef = {
     required: ['map'],
   },
   handler: async (input, ctx) => {
+    const refused = notOwner(ctx);
+    if (refused) return refused;
     const ref = str(input.map).trim();
     if (!ref) return { ok: false, error: 'map is required' };
     const map = await mapBySlugOrId(ctx.ownerId, ref);
@@ -259,7 +310,7 @@ const recall_open: BuiltinToolDef = {
           : `Map '${map.slug}' has no compiled index yet — its pages likely failed lint. The owner can check the report in the editor.`,
       };
     }
-    return { ok: true, output: nodePayload(map, row) };
+    return { ok: true, output: await nodePayload(ctx.ownerId, map, row) };
   },
 };
 
@@ -281,6 +332,8 @@ const recall_go: BuiltinToolDef = {
     required: ['map', 'target'],
   },
   handler: async (input, ctx) => {
+    const refused = notOwner(ctx);
+    if (refused) return refused;
     const ref = str(input.map).trim();
     const target = str(input.target).trim();
     if (!ref || !target) return { ok: false, error: 'map and target are required' };
@@ -311,7 +364,7 @@ const recall_go: BuiltinToolDef = {
           .from(recallNodes)
           .where(and(eq(recallNodes.mapId, other.id), eq(recallNodes.kind, 'index')))
           .limit(1);
-        if (entry) return { ok: true, output: nodePayload(other, entry) };
+        if (entry) return { ok: true, output: await nodePayload(ctx.ownerId, other, entry) };
       }
     }
     if (!row) {
@@ -328,7 +381,7 @@ const recall_go: BuiltinToolDef = {
         error: `No node '${target}' in map '${map.slug}'. Its nodes: ${shown.map((s) => s.slug).join(', ')}${more}.`,
       };
     }
-    return { ok: true, output: nodePayload(map, row) };
+    return { ok: true, output: await nodePayload(ctx.ownerId, map, row) };
   },
 };
 
@@ -352,8 +405,31 @@ const recall_match: BuiltinToolDef = {
     required: ['need'],
   },
   handler: async (input, ctx) => {
+    const refused = notOwner(ctx);
+    if (refused) return refused;
     const need = str(input.need).trim();
     if (!need) return { ok: false, error: 'need is required' };
+
+    // Self-healing: a prompt whose embed failed at write time (the embedder
+    // was down, the process restarted) has a NULL vector and never matches.
+    // One cheap indexed probe here refills it in the background, so the next
+    // match finds it without a sweep job.
+    const [missing] = await db
+      .select({ id: recallNodes.id })
+      .from(recallNodes)
+      .where(
+        and(
+          eq(recallNodes.ownerId, ctx.ownerId),
+          eq(recallNodes.kind, 'prompt'),
+          isNull(recallNodes.embedding),
+        ),
+      )
+      .limit(1);
+    if (missing) {
+      void embedPendingRecallPrompts(ctx.ownerId).catch((err) => {
+        console.error('[recall] prompt embed refill failed (non-fatal):', err);
+      });
+    }
 
     let vec: string;
     try {

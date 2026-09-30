@@ -47,21 +47,50 @@ What that means in practice:
   is v1's rule carried over: an agent could edit pages inside a tagged tree but
   never add the `recall` or `prompt` tag. What an agent may change is what the
   brain knows, not what the brain tells other agents to do.
-- **Every write is logged** in `recall_revisions` (the last 50 per map), which
-  backs undo and the audit of agent edits — the latter matters precisely
-  because an agent's card edit serves immediately.
+- **Every write is logged** in `recall_revisions` (the last 50 per map), with
+  the actor's kind and name (agent slug, `mcp`, or the admin's display name),
+  which backs undo and the audit of agent edits. The latter matters
+  precisely because an agent's card edit serves immediately.
+- **Versions are real.** Every write locks the map row and compares the
+  caller's `version`, so two writes from the same version cannot both land:
+  the second is refused `version_stale` (409). Agents read the version from
+  `recall_open` / `recall_go` and must send it to replace or delete a card.
+- **Card writes are field-sticky.** `title` and `body` replace; `use_when`,
+  `options` and `prompt` keep the card's value when left out. So a typo fix
+  never demotes a prompt or drops an agent's pending request, and a caller
+  that did not send `options` does not wipe the card's edges. An agent can
+  never turn a confirmed prompt back into knowledge.
+- **Restore puts back what that write replaced**: a card's content; a deleted
+  card under its old slug, at its old place, with the options other cards had
+  to it; the old order for a reorder; the map fields that write changed (the
+  slug included). "map created" has nothing to restore. Undoing "card added"
+  deletes the card.
+- **Slugs are remembered.** A map's or card's former slugs keep resolving,
+  and no other map or card may take them. A card slug changes only by an
+  explicit owner write (`slug` on the card PUT); options in the map follow.
+- **Dead cross-map options are hidden.** An option to a map that is no longer
+  published is left out of what agents read, and the owner gets a
+  `cross_map_target_gone` warning on the next write.
 
 Surfaces:
 
 | Surface                   | What                                                                                                                                                                                                                                                                       |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `recall-write` tool group | `recall_map_create`, `recall_card_put`, `recall_card_delete`, `recall_map_update`. In no default grant.                                                                                                                                                                    |
+| `recall-write` tool group | `recall_map_create`, `recall_card_put`, `recall_card_delete`, `recall_map_update`. In no default grant inside the app. ALWAYS on the MCP surface (an MCP client holds the owner's token; decided 2026-09-30), where they still run as an agent.                            |
 | Owner HTTP                | `POST /api/recall/maps`, `PATCH`/`DELETE /api/recall/maps/:id`, `POST /api/recall/maps/:id/cards`, `GET`/`PUT`/`DELETE /api/recall/maps/:id/cards/:card`, `POST …/cards/reorder`, `POST …/cards/:card/prompt`, `GET …/revisions`, `POST /api/recall/revisions/:id/restore` |
 | Client contract           | `@mantle/client-types` (map summary gains `nodeId`, `folder`, `published`, `version`; a card gains `rank`, `promptPending`; an option gains `targetId`, `targetMap`)                                                                                                       |
 | Capability flag           | `features.recallV2` in `GET /api/shell`. Absent on an older brain, so a client tests `features?.recallV2`.                                                                                                                                                                 |
 
-Still to come: authoring in the owner UI (jackdaw), re-authoring the dev
-brain's maps by hand, retiring the v1 compiler, and team-level sharing.
+The owner UI (jackdaw, behind `features.recallV2`) is the v2 editor. Still to
+come: re-authoring the dev brain's maps by hand (R4), retiring the v1
+compiler (R5), and team-level sharing (R6; until then a Recall folder cannot
+be shared at all). Read tools and write tools run on owner surfaces only.
+
+**Keeping a v1 slug in R4.** While a v1 map exists its slug is taken, so a
+native map with the same title gets `-2`. To carry a remembered slug (such as
+`mantle-registry-start-here`) over: retire the v1 map first (untag its root
+page, which deletes its rows), then set the slug on the native map with
+`PATCH /api/recall/maps/:id { slug }`.
 **v1 is not migrated by tooling** — it was experimental and is in real use
 only on the dev brain, so its maps are re-authored and the v1 code is then
 deleted.

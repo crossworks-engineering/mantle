@@ -6,7 +6,8 @@ import { getRecallMapDetail, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
 import { UUID_RE } from '@mantle/std';
 
-/** One compiled map: nodes + options + the last lint report. */
+/** One map: its cards (without bodies) and options; for a page-built map,
+ *  also its last lint report. */
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
@@ -50,7 +51,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
 }
 
 /** Retire a map. The item goes and the cascades take its cards, its map row
- *  and its revisions (migration 0202). */
+ *  and its revisions (migration 0203). */
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;

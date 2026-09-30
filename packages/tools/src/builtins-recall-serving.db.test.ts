@@ -221,6 +221,30 @@ describe.skipIf(!URL)('Recall serving, native and page-built, on Postgres', () =
     expect(crossed.output).toMatchObject({ map: 'status-workflow', kind: 'index' });
   });
 
+  it('drops a cross-map option to a map that is not published, and returns the version', async () => {
+    await m.db.execute(sqlTag`
+      update recall_nodes
+         set options = options || ${JSON.stringify([
+           {
+             label: 'The draft',
+             useWhen: 'never',
+             targetSlug: 'agent-draft',
+             targetMap: 'agent-draft',
+           },
+         ])}::jsonb
+       where id = ${native.entry}`);
+    try {
+      const res = await okOf(open, { map: 'fleet-and-access' });
+      const targets = (res.output!.options as { target: string }[]).map((o) => o.target);
+      expect(targets).toContain('status-workflow');
+      expect(targets).not.toContain('agent-draft');
+      expect(res.output).toMatchObject({ version: 1 });
+    } finally {
+      await m.db.execute(sqlTag`
+        update recall_nodes set options = options - 2 where id = ${native.entry}`);
+    }
+  });
+
   it('applies the score floor, and skips pending and unpublished prompts', async () => {
     const res = await okOf(match, { need: 'the task at hand' });
     const hits = res.output?.prompts as { target: string; score: number }[];
