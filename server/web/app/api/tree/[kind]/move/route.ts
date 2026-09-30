@@ -9,6 +9,8 @@ const Body = z.object({
   ids: z.array(z.string().uuid()).min(1).max(200),
   /** The destination folder; null = the root (unsorted). */
   folderId: z.string().uuid().nullable(),
+  /** Go ahead although it changes who can see items (else 409 with the list). */
+  confirm: z.boolean().optional(),
 });
 
 /** POST /api/tree/:kind/move — move items into a folder. Each item moves on
@@ -22,7 +24,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ kind: string }
   if (!parsed.success)
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   try {
-    const result = await moveTreeItems(user.id, kind, parsed.data.ids, parsed.data.folderId);
+    const result = await moveTreeItems(user.id, kind, parsed.data.ids, parsed.data.folderId, {
+      confirm: parsed.data.confirm,
+    });
     if (result.moved) await notifyTreeChanged(user.id, kind);
     return NextResponse.json(result);
   } catch (err) {

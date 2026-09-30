@@ -186,6 +186,8 @@ export type TreeFolder = {
   parentId: string | null;
   /** The folder's own share (it shares everything below it); null = none. */
   share: TreeShareLevel | null;
+  /** The share of the nearest shared folder above it; null = none. */
+  inherited?: TreeShareLevel | null;
   /** Made by Mantle (Auto-filed): the name is locked and it cannot be shared. */
   system: boolean;
   folderCount: number;
@@ -220,6 +222,9 @@ export type TreeItem = {
   /** Who can read it: its own level, or its folder's share when that is more
    *  open. */
   level: AccessLevel;
+  /** The share it takes from the nearest shared folder holding it (what
+   *  "Shared via" names); null = none. `level` already counts it. */
+  inherited?: TreeShareLevel | null;
   state: TreeItemState | null;
   updatedAt: string;
   meta?: TreeItemMeta;
@@ -286,4 +291,11 @@ export type TreeVisibilityChange = {
   from: AccessLevel;
   to: AccessLevel;
 };
-export type TreeVisibilityRefusal = { error: 'visibility'; changes: TreeVisibilityChange[] };
+export type TreeVisibilityRefusal = {
+  error: 'visibility';
+  /** The first changes (at most TREE_VISIBILITY_LIST_MAX). */
+  changes: TreeVisibilityChange[];
+  /** How many items change in all. */
+  total: number;
+};
+export const TREE_VISIBILITY_LIST_MAX = 100;

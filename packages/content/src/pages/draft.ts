@@ -12,7 +12,7 @@
  * writing while the user types) from silently winning a lost update.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { asViewerLevel, db, nodes, notifyNodeIngested, pages } from '@mantle/db';
+import { db, nodes, notifyNodeIngested, pages } from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { PageVisibility, PageWidth } from '@mantle/client-types';
 import { docToText } from '../doc-to-text';
@@ -20,7 +20,7 @@ import { recallAfterPageWrite } from '../recall';
 import { EMPTY_DOC, dedupeTags, detailOf, type PageDetail } from './shared';
 import { filtersPageText, pageDocText } from './level-text';
 import { referencedEmbedIds } from '../doc-assets';
-import { followNewEmbeds } from '../embed-closure';
+import { followNewEmbeds, itemLevel } from '../embed-closure';
 
 /** Later embeds follow on save (embedding means sharing): a page below admin
  *  that gains an embed in this write takes it, and what it embeds, to the
@@ -33,15 +33,16 @@ async function followPageEmbeds(
   next: Record<string, unknown>,
 ): Promise<void> {
   const [prev] = await tx
-    .select({ audience: nodes.audience, doc: pages.doc })
+    .select({ audience: nodes.audience, inheritedLevel: nodes.inheritedLevel, doc: pages.doc })
     .from(nodes)
     .innerJoin(pages, eq(pages.nodeId, nodes.id))
     .where(eq(nodes.id, id))
     .limit(1);
-  if (!prev || prev.audience === 'admin') return;
+  const level = prev ? itemLevel(prev.audience, prev.inheritedLevel) : 'admin';
+  if (!prev || level === 'admin') return;
   await followNewEmbeds(
     ownerId,
-    { id, audience: prev.audience },
+    { id, audience: level },
     referencedEmbedIds(prev.doc),
     referencedEmbedIds(next),
     tx,
@@ -169,7 +170,7 @@ export async function updatePage(
       const doc = input.doc as Record<string, unknown>;
       await followPageEmbeds(tx, ownerId, id, doc);
       // At client or public, the text of what that level reads (level-text.ts).
-      const level = asViewerLevel(node.audience);
+      const level = itemLevel(node.audience, node.inheritedLevel);
       const docText = filtersPageText(level)
         ? await pageDocText(ownerId, level, doc, tx, { assets: false })
         : docToText(doc);
@@ -334,7 +335,12 @@ export async function commitPage(
     // its summary reflects them), not just their filenames. At client or
     // public, only what that level reads (pages/level-text.ts). Read after
     // the embeds followed the page down, in this transaction.
-    const docText = await pageDocText(ownerId, asViewerLevel(node.audience), enriched, tx);
+    const docText = await pageDocText(
+      ownerId,
+      itemLevel(node.audience, node.inheritedLevel),
+      enriched,
+      tx,
+    );
     const [row] = await tx
       .update(nodes)
       .set({ data: newData, embedding: null, updatedAt: new Date() })

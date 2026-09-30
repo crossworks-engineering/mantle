@@ -85,6 +85,8 @@ function asLevel(v: string): ViewerLevel {
   return isViewerLevel(v) ? v : 'admin';
 }
 
+export { itemLevel } from './item-level';
+
 /** Is level `a` strictly above `b`? */
 export function levelAbove(a: ViewerLevel, b: ViewerLevel): boolean {
   return RANK[a] > RANK[b];

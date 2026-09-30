@@ -127,6 +127,46 @@ app; `PUT /api/app-nav/pins` and the open counter keep working through
 `item_marks`. Tree writes to apps also notify `app_nav_changed`, so an older
 client refetches.
 
+## Sharing a folder (phase 4)
+
+A folder of a shareable kind (files, notes, pages, draw, tables, formulas,
+apps) can be shared with the team or with clients: `PATCH
+/api/tree/:kind/folders/:id { share: 'team' | 'client' | null }`. The share
+reaches everything below it, now and later. Public stays a per-item link.
+System folders (Auto-filed) and the admin-only kinds (tasks, events,
+contacts, secrets) cannot be shared.
+
+- **In the database** (migration 0200). `nodes.share_level` on the folder;
+  `nodes.inherited_level` on every row, kept true by triggers: a row takes
+  the share of the nearest shared folder holding it (same owner; an item
+  holds its folder's own share, a folder only what is above it), on insert
+  and on a path change, and a folder whose path or share changes refreshes
+  its subtree. Every writer that files an item (the UI, agents, uploads, the
+  disk watcher) gets it for free. Only workspace kinds ever inherit (the type
+  ceiling); a member's draft (another owner) never does.
+- **Who reads it.** `nodes_viewer_read` reads a brain row at its own level
+  OR its inherited share; still a same-row check. Chunks, facts, pages and
+  the rest follow their node as before.
+- **The level shown** is the effective level (`effectiveLevel`,
+  `@mantle/content-core/tree`): the more open of the item's own level and
+  its inherited share. Tree rows carry it in `level`, with `inherited` naming
+  the share. Embeds follow it and a page's indexed text is folded for it
+  (`itemLevel`, `packages/content/src/item-level.ts`): text folded for the
+  more open reader is safe for every reader of the row.
+- **Confirm first.** A share change, an item or folder move, and a folder
+  delete that lifts its contents are computed dry first
+  (`packages/content/src/tree/visibility.ts`). If who can see anything would
+  change, the write is refused with 409 `{ error: 'visibility', changes,
+  total }` and nothing is written; the same call with `confirm: true` goes
+  ahead (`?confirm=true` on DELETE). The agent folder tools take `confirm`
+  too and tell the model to ask first. A rename never asks.
+- **After a confirmed change**, embeds of the pages, drawings and notes
+  concerned follow them to the level they are now read at (never raising
+  anything) and the pages' text is re-folded.
+- **Clients** still read through their own tools, which list and redact by
+  an item's own level today; folder-shared items reach them with the member
+  and client trees (next in this phase).
+
 ## For agents
 
 Files keep their own `folder_*` tools (their folders are directories). Every

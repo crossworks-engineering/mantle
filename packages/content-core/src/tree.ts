@@ -10,7 +10,28 @@ import {
   TREE_KINDS,
   TREE_MAX_DEPTH,
   type TreeKind,
+  type TreeShareLevel,
 } from '@mantle/client-types/tree';
+import type { AccessLevel } from '@mantle/client-types';
+
+const LEVEL_RANK: Record<AccessLevel, number> = { public: 0, client: 1, team: 2, admin: 3 };
+
+/**
+ * The level an item is read at: the more open of its own level and the share
+ * it inherits from a folder (public < client < team < admin). This is the
+ * level its pill shows, its embeds follow and its indexed page text is
+ * folded for. Folding for the more open reader is safe for every reader of
+ * the row: what a public or client reader may see, every reader above may
+ * too. (Which ROLES read the row is the database's union of the two:
+ * nodes_viewer_read, migration 0200.)
+ */
+export function effectiveLevel(
+  own: AccessLevel,
+  inherited: TreeShareLevel | null | undefined,
+): AccessLevel {
+  if (!inherited) return own;
+  return LEVEL_RANK[inherited] < LEVEL_RANK[own] ? inherited : own;
+}
 
 function labels(path: string): string[] {
   return path ? path.split('.') : [];

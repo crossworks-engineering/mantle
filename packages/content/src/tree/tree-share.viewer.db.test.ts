@@ -120,10 +120,10 @@ describe.skipIf(!URL)('sharing a folder', () => {
   });
 
   it('moving an item out drops the share, and moving it in picks it up', async () => {
-    await tree.moveTreeItems(brain, 'notes', [ids.inSub], null);
+    await tree.moveTreeItems(brain, 'notes', [ids.inSub], null, { confirm: true });
     expect(await inherited(ids.inSub)).toBeNull();
     expect(await reads('team', [ids.inSub])).toEqual([]);
-    await tree.moveTreeItems(brain, 'notes', [ids.inSub], ids.sub);
+    await tree.moveTreeItems(brain, 'notes', [ids.inSub], ids.sub, { confirm: true });
     expect(await inherited(ids.inSub)).toBe('team');
   });
 
@@ -190,5 +190,100 @@ describe.skipIf(!URL)('sharing a folder', () => {
     await insert(tasksFolder, 'branch', `tasks.${label}`);
     await refuse(share(tasksFolder, 'team'));
     await m.systemDb.execute(sqlTag`delete from nodes where id = ${tasksFolder}`);
+  });
+
+  describe('through the tree writes', () => {
+    const audience = async (id: string) => {
+      const [row] = (await m.systemDb.execute(
+        sqlTag`select audience from nodes where id = ${id}`,
+      )) as unknown as Array<{ audience: string }>;
+      return row?.audience;
+    };
+    const refusal = async (p: Promise<unknown>) => {
+      try {
+        await p;
+      } catch (err) {
+        if (err instanceof tree.TreeVisibilityError) return err.diff;
+        throw err;
+      }
+      throw new Error('expected a visibility refusal');
+    };
+
+    it('asks before a share, and a confirmed share reaches the subtree', async () => {
+      const diff = await refusal(tree.updateTreeFolder(brain, 'notes', ids.top, { share: 'team' }));
+      expect(diff.total).toBe(3); // the subfolder and the two notes
+      expect(diff.changes.find((c) => c.id === ids.inTop)).toMatchObject({
+        from: 'admin',
+        to: 'team',
+      });
+      expect(await inherited(ids.inTop)).toBeNull(); // nothing written
+      const folder = await tree.updateTreeFolder(
+        brain,
+        'notes',
+        ids.top,
+        { share: 'team' },
+        { confirm: true },
+      );
+      expect(folder.share).toBe('team');
+      expect(await inherited(ids.inTop)).toBe('team');
+      const page = await tree.loadTreeFolder(brain, 'notes', { folderId: ids.top });
+      expect(page!.items.find((i) => i.id === ids.inTop)).toMatchObject({
+        level: 'team',
+        inherited: 'team',
+      });
+    });
+
+    it('asks before a move in or out, and before lifting a shared folder’s contents', async () => {
+      await refusal(tree.moveTreeItems(brain, 'notes', [ids.outside], ids.top));
+      expect(await inherited(ids.outside)).toBeNull();
+      await tree.moveTreeItems(brain, 'notes', [ids.outside], ids.top, { confirm: true });
+      expect(await inherited(ids.outside)).toBe('team');
+      await refusal(tree.moveTreeItems(brain, 'notes', [ids.outside], null));
+      await tree.moveTreeItems(brain, 'notes', [ids.outside], null, { confirm: true });
+      expect(await inherited(ids.outside)).toBeNull();
+      // Deleting the shared folder would lift its contents out of the share.
+      await refusal(tree.deleteTreeFolder(brain, 'notes', ids.top));
+      // A rename changes nobody's access: no question.
+      await tree.updateTreeFolder(brain, 'notes', ids.sub, { name: 'Sub two' });
+      expect(await inherited(ids.inSub)).toBe('team');
+    });
+
+    it('takes what a shared note embeds to the level it is read at, never raising it', async () => {
+      const file = randomUUID();
+      const note = randomUUID();
+      await m.systemDb.execute(sqlTag`
+        insert into nodes (id, owner_id, type, title, path, data, tags)
+        values (${file}, ${brain}, 'file', 'pic.png', 'files', '{}'::jsonb, '{}')`);
+      await m.systemDb.execute(sqlTag`
+        insert into nodes (id, owner_id, type, title, path, data, tags)
+        values (${note}, ${brain}, 'note', 'with pic', 'notes',
+                ${JSON.stringify({ content: `![pic](media:${file})` })}::jsonb, '{}')`);
+      await tree.moveTreeItems(brain, 'notes', [note], ids.top, { confirm: true });
+      expect(await audience(file)).toBe('team');
+      // Out again: the note is admin once more, the image keeps its level.
+      await tree.moveTreeItems(brain, 'notes', [note], null, { confirm: true });
+      expect(await audience(file)).toBe('team');
+      await m.systemDb.execute(sqlTag`delete from nodes where id in (${file}, ${note})`);
+    });
+
+    it('refuses what cannot be shared', async () => {
+      await tree.ensureKindRoot(brain, 'tasks');
+      const tasksFolder = await tree.createTreeFolder(brain, 'tasks', {
+        parentId: null,
+        name: `${label}_tasks`,
+      });
+      await expect(
+        tree.updateTreeFolder(brain, 'tasks', tasksFolder.id, { share: 'team' }, { confirm: true }),
+      ).rejects.toMatchObject({ code: 'invalid' });
+      await tree.deleteTreeFolder(brain, 'tasks', tasksFolder.id);
+      const autoFiled = (await tree.listTreeFolders(brain, 'notes')).find((f) => f.system);
+      if (autoFiled) {
+        await expect(
+          tree.updateTreeFolder(brain, 'notes', autoFiled.id, { share: 'team' }, { confirm: true }),
+        ).rejects.toMatchObject({ code: 'invalid' });
+      }
+      await tree.updateTreeFolder(brain, 'notes', ids.top, { share: null }, { confirm: true });
+      expect(await inherited(ids.inTop)).toBeNull();
+    });
   });
 });

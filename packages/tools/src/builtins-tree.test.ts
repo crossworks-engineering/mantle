@@ -15,8 +15,14 @@ vi.mock('@mantle/content/tree', () => {
       super(message);
     }
   }
+  class TreeVisibilityError extends Error {
+    constructor(readonly diff: { changes: unknown[]; total: number }) {
+      super('visibility');
+    }
+  }
   return {
     TreeError,
+    TreeVisibilityError,
     createTreeFolder: vi.fn(),
     deleteTreeFolder: vi.fn(),
     listTreeFolders: vi.fn(),
@@ -28,6 +34,7 @@ vi.mock('@mantle/content/tree', () => {
 
 import {
   TreeError,
+  TreeVisibilityError,
   createTreeFolder,
   deleteTreeFolder,
   moveTreeItems,
@@ -84,7 +91,37 @@ describe('tree folder tools', () => {
       { kind: 'tasks', folder_id: FOLDER, parent_id: null },
       owner,
     );
-    expect(updateTreeFolder).toHaveBeenCalledWith('o1', 'tasks', FOLDER, { parentId: null });
+    expect(updateTreeFolder).toHaveBeenCalledWith(
+      'o1',
+      'tasks',
+      FOLDER,
+      { parentId: null },
+      { confirm: false },
+    );
+  });
+
+  it('names what a share change would do, and waits for confirm', async () => {
+    vi.mocked(moveTreeItems).mockRejectedValueOnce(
+      new TreeVisibilityError({
+        changes: [{ id: 'n1', title: 'Plan', from: 'admin', to: 'team' }],
+        total: 1,
+      }),
+    );
+    const err = errorOf(
+      await tool('tree_item_move').handler(
+        { kind: 'notes', item_ids: ['n1'], folder_id: FOLDER },
+        owner,
+      ),
+    );
+    expect(err).toMatch(/'Plan' admin → team/);
+    expect(err).toMatch(/confirm: true only once they agree/);
+    await tool('tree_item_move').handler(
+      { kind: 'notes', item_ids: ['n1'], folder_id: FOLDER, confirm: true },
+      owner,
+    );
+    expect(moveTreeItems).toHaveBeenLastCalledWith('o1', 'notes', ['n1'], FOLDER, {
+      confirm: true,
+    });
   });
 
   it('says what to do when no item moved', async () => {
@@ -111,7 +148,7 @@ describe('tree_folder_delete', () => {
       owner,
     );
     expect(ok.ok).toBe(true);
-    expect(deleteTreeFolder).toHaveBeenCalledWith('o1', 'notes', FOLDER);
+    expect(deleteTreeFolder).toHaveBeenCalledWith('o1', 'notes', FOLDER, { confirm: false });
     vi.mocked(deleteTreeFolder).mockRejectedValueOnce(
       new TreeError('invalid', 'this folder is made by Mantle; it cannot be deleted'),
     );
