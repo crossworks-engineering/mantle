@@ -16,13 +16,17 @@
  * become visible outside psql.
  */
 import { and, asc, eq, ilike, or, sql } from 'drizzle-orm';
+import { NextResponse } from '@/server/http-compat';
 import { db, recallMaps, recallNodes } from '@mantle/db';
+import { RecallWriteError, getRecallCard, listRecallRevisions } from '@mantle/content';
 import type {
+  RecallCardDetailDTO,
   RecallLintIssueDTO,
   RecallMapDetailDTO,
   RecallMapSummaryDTO,
   RecallNodeDTO,
   RecallPageStateDTO,
+  RecallRevisionDTO,
 } from '@mantle/client-types';
 
 type MapRow = typeof recallMaps.$inferSelect;
@@ -173,4 +177,69 @@ export async function getRecallStateForPage(
     node: nodeInfo,
     report: (map.lastCompileReport as RecallLintIssueDTO[] | null) ?? null,
   };
+}
+
+// ── v2: the write side ───────────────────────────────────────────────────────
+
+/**
+ * A refused write is a 400 with the module's own message, which is written to
+ * be actionable ("split it: keep the overview here…"). Anything that is not a
+ * RecallWriteError is a bug, not a refusal, and is rethrown so `app.onError`
+ * answers an opaque 500 rather than this layer inventing a reason.
+ */
+export function recallWriteFailure(err: unknown): Response {
+  if (err instanceof RecallWriteError) {
+    const status = err.code.endsWith('_not_found') ? 404 : err.code === 'version_stale' ? 409 : 400;
+    return NextResponse.json({ error: err.message, code: err.code }, { status });
+  }
+  throw err;
+}
+
+/** One card with its body, for the editor. */
+export async function getRecallCardDetail(
+  ownerId: string,
+  mapId: string,
+  cardSlug: string,
+): Promise<RecallCardDetailDTO | null> {
+  const row = await getRecallCard(ownerId, mapId, cardSlug);
+  if (!row) return null;
+  return {
+    id: row.id,
+    slug: row.slug,
+    kind: row.kind as RecallNodeDTO['kind'],
+    title: row.title,
+    useWhen: row.useWhen,
+    bodyMd: row.bodyMd,
+    bodyChars: row.bodyChars,
+    options: (row.options ?? []).map((o) => ({
+      label: o.label,
+      useWhen: o.useWhen,
+      targetSlug: o.targetSlug,
+      ...(o.targetId ? { targetId: o.targetId } : {}),
+      ...(o.targetMap ? { targetMap: o.targetMap } : {}),
+    })),
+    sourceVersion: row.sourceVersion,
+    rank: row.rank,
+    promptPending: row.promptPending,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+/** The revisions panel. `actorName` is not resolved yet: the log stores the
+ *  actor's id, and naming an agent or a co-admin is a join this panel does not
+ *  need to render its first version. */
+export async function getRecallRevisions(
+  ownerId: string,
+  mapId: string,
+): Promise<RecallRevisionDTO[]> {
+  const rows = await listRecallRevisions(ownerId, mapId);
+  return rows.map((r) => ({
+    id: r.id,
+    cardId: r.cardId,
+    cardSlug: r.cardSlug,
+    actorKind: r.actorKind,
+    actorName: null,
+    summary: r.summary,
+    createdAt: r.createdAt,
+  }));
 }

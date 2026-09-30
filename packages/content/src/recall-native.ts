@@ -274,9 +274,13 @@ async function recordRevision(
     ownerId,
     mapId,
     cardId: entry.cardId ?? null,
+    cardSlug: entry.cardSlug ?? null,
+    summary: entry.summary,
     actorKind: actor.kind,
     actorId: actor.id ?? null,
-    before: { ...(before as object), _slug: entry.cardSlug ?? null, _summary: entry.summary },
+    // Pure snapshots: restore writes `before` back as it was, so nothing
+    // that is not part of the content may be smuggled in here.
+    before: before as never,
     after: after as never,
   });
   // Keep the last N per map. One statement, so a hot map cannot grow the log.
@@ -894,16 +898,140 @@ export async function listRecallRevisions(
     .where(and(eq(recallRevisions.ownerId, ownerId), eq(recallRevisions.mapId, mapId)))
     .orderBy(desc(recallRevisions.createdAt))
     .limit(limit);
-  return rows.map((r) => {
-    const before = (r.before ?? {}) as { _slug?: string | null; _summary?: string };
-    return {
-      id: r.id,
-      cardId: r.cardId,
-      cardSlug: before._slug ?? null,
-      actorKind: r.actorKind as 'owner' | 'agent',
-      actorId: r.actorId,
-      summary: before._summary ?? 'changed',
-      createdAt: r.createdAt.toISOString(),
+  return rows.map((r) => ({
+    id: r.id,
+    cardId: r.cardId,
+    cardSlug: r.cardSlug,
+    actorKind: r.actorKind as 'owner' | 'agent',
+    actorId: r.actorId,
+    summary: r.summary,
+    createdAt: r.createdAt.toISOString(),
+  }));
+}
+
+/**
+ * Put one revision's BEFORE state back. The editor's undo.
+ *
+ * There are three shapes, because a revision records what changed rather than
+ * a whole map:
+ *  - a card edit (before = the card's content) writes that content back;
+ *  - a card ADD (before = null, cardSlug set) is undone by deleting the card;
+ *  - a map-level change (no cardSlug) writes the map fields back.
+ *
+ * A restore is itself a write: it takes the current version, records its own
+ * revision, and runs every check. So restoring a card whose body is now over
+ * budget, or whose options point at cards since deleted, is refused with the
+ * same teaching error as any other write rather than quietly reinstating a
+ * map that no longer holds together.
+ *
+ * The restore is always attributed to the OWNER: it is their act, even when
+ * the revision being undone was an agent's.
+ */
+export async function restoreRecallRevision(
+  ownerId: string,
+  revisionId: string,
+  actor: RecallActor,
+): Promise<RecallWriteResult> {
+  if (actor.kind !== 'owner') {
+    throw new RecallWriteError(
+      'restore_is_owners',
+      "Restoring a revision is the owner's act. An agent can write a card directly instead.",
+    );
+  }
+  const [rev] = await db
+    .select()
+    .from(recallRevisions)
+    .where(and(eq(recallRevisions.ownerId, ownerId), eq(recallRevisions.id, revisionId)))
+    .limit(1);
+  if (!rev) {
+    throw new RecallWriteError(
+      'revision_not_found',
+      `No revision '${revisionId}'. The log keeps the last ${RECALL_REVISIONS_PER_MAP} per map, so an older one may have been pruned.`,
+    );
+  }
+  const [map] = await db
+    .select({ version: recallMaps.version, slug: recallMaps.slug })
+    .from(recallMaps)
+    .where(eq(recallMaps.id, rev.mapId))
+    .limit(1);
+  if (!map) {
+    throw new RecallWriteError(
+      'map_not_found',
+      'That revision belongs to a map that no longer exists.',
+    );
+  }
+
+  // A card that was ADDED: undoing it means removing it again.
+  if (rev.cardSlug && rev.before === null) {
+    return await deleteRecallCard(ownerId, rev.mapId, rev.cardSlug, actor, map.version);
+  }
+
+  // A card edit or delete: write the old content back. A deleted card comes
+  // back as a new card with its old slug, which `putRecallCard` allows because
+  // the slug is free again.
+  if (rev.cardSlug) {
+    const before = (rev.before ?? {}) as {
+      title?: string;
+      bodyMd?: string;
+      useWhen?: string;
+      options?: RecallOptionInput[];
     };
-  });
+    const exists = await db
+      .select({ slug: recallNodes.slug })
+      .from(recallNodes)
+      .where(and(eq(recallNodes.mapId, rev.mapId), eq(recallNodes.slug, rev.cardSlug)))
+      .limit(1);
+    return await putRecallCard(
+      ownerId,
+      rev.mapId,
+      exists[0] ? rev.cardSlug : null,
+      {
+        title: before.title ?? rev.cardSlug,
+        bodyMd: before.bodyMd ?? '',
+        useWhen: before.useWhen,
+        options: before.options ?? [],
+      },
+      actor,
+      map.version,
+    );
+  }
+
+  // A map-level change.
+  const before = (rev.before ?? {}) as {
+    title?: string;
+    enterWhen?: string;
+    slug?: string;
+    published?: boolean;
+  };
+  return await updateRecallMap(
+    ownerId,
+    rev.mapId,
+    {
+      ...(before.title ? { title: before.title } : {}),
+      ...(before.enterWhen ? { enterWhen: before.enterWhen } : {}),
+      ...(before.published !== undefined ? { published: before.published } : {}),
+      version: map.version,
+    },
+    actor,
+  );
+}
+
+/** One card with its body — what the editor opens. */
+export async function getRecallCard(
+  ownerId: string,
+  mapId: string,
+  cardSlug: string,
+): Promise<CardRow | null> {
+  const [row] = await db
+    .select()
+    .from(recallNodes)
+    .where(
+      and(
+        eq(recallNodes.ownerId, ownerId),
+        eq(recallNodes.mapId, mapId),
+        eq(recallNodes.slug, cardSlug),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
 }

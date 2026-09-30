@@ -171,6 +171,11 @@ export const recallRevisions = pgTable(
     /** 'owner' (the UI) or 'agent' (a recall-write tool). CHECK in SQL. */
     actorKind: text('actor_kind').notNull(),
     actorId: uuid('actor_id'),
+    /** The card's slug at the time, so the panel can name a deleted card. */
+    cardSlug: text('card_slug'),
+    /** One line for the panel. Its own column so `before`/`after` stay pure
+     *  snapshots — restore writes `before` back exactly as it was. */
+    summary: text('summary').default('changed').notNull(),
     before: jsonb('before').$type<unknown>(),
     after: jsonb('after').$type<unknown>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

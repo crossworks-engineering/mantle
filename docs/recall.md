@@ -10,6 +10,62 @@ serving tools + the tier-1 hook). The flight recorder, internal
 auto-match, and the viewer are S3–S5 — see the design page "Recall —
 architecture plan v1" on the dev brain (roadmap task `97cf7850`).
 
+## v2: a map is its own item
+
+Everything below describes **v1**, where a map is a page tree whose root
+carries the `recall` tag and the serving rows are compiled from it. v2
+replaces that authoring layer: a map is one `recall` item in the tree, and
+its cards are rows written directly. The serving contract does not change —
+the four tools keep their names and shapes, and the additions are extra
+fields. Plan: "PLAN: Recall v2, its own content type" on the dev brain
+(roadmap task `5d6ce06a`).
+
+Why: in v1 the checks run **after** the commit. A page that breaks its map
+publishes anyway, the map keeps serving its last good revision, and the only
+sign is a note on every agent read. The dev brain's registry served a
+revision from 2026-09-15 that way for a fortnight. In v2 the checks run
+inside the write and a failing write is refused, so nothing is ever served
+that failed one and there is no stale revision to explain.
+
+What that means in practice:
+
+- **A map is a `recall` node** under the `recall` tree root, filed in folders
+  (at most three deep). Cards are rows, not nodes, so they never appear in the
+  tree and a card has no access level of its own — a walk can never break
+  halfway on an unreadable card.
+- **No compile step, no lint lag.** `recall_maps` / `recall_nodes` are the
+  source. A native map never carries the stale-revision note.
+- **Refusals teach.** A body over `RECALL_BODY_CHAR_BUDGET` says to split the
+  card; an option pointing nowhere lists the map's cards and suggests the near
+  miss; a stale `version` says to re-read and resend.
+- **Slugs are stored, not re-derived.** A retitle keeps the slug, because
+  agents and skills remember slugs (`mantle-recall` hard-codes one). Changing
+  a slug is explicit and the old one keeps resolving via `former_slugs`.
+- **Agents may write cards; three things stay the owner's.** Publishing a map,
+  making a card a prompt, and deleting a map. An agent's `prompt: true` records
+  a request (`prompt_pending`) and the card never matches until confirmed. This
+  is v1's rule carried over: an agent could edit pages inside a tagged tree but
+  never add the `recall` or `prompt` tag. What an agent may change is what the
+  brain knows, not what the brain tells other agents to do.
+- **Every write is logged** in `recall_revisions` (the last 50 per map), which
+  backs undo and the audit of agent edits — the latter matters precisely
+  because an agent's card edit serves immediately.
+
+Surfaces:
+
+| Surface                   | What                                                                                                                                                                                                                                                                       |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `recall-write` tool group | `recall_map_create`, `recall_card_put`, `recall_card_delete`, `recall_map_update`. In no default grant.                                                                                                                                                                    |
+| Owner HTTP                | `POST /api/recall/maps`, `PATCH`/`DELETE /api/recall/maps/:id`, `POST /api/recall/maps/:id/cards`, `GET`/`PUT`/`DELETE /api/recall/maps/:id/cards/:card`, `POST …/cards/reorder`, `POST …/cards/:card/prompt`, `GET …/revisions`, `POST /api/recall/revisions/:id/restore` |
+| Client contract           | `@mantle/client-types` (map summary gains `nodeId`, `folder`, `published`, `version`; a card gains `rank`, `promptPending`; an option gains `targetId`, `targetMap`)                                                                                                       |
+| Capability flag           | `features.recallV2` in `GET /api/shell`. Absent on an older brain, so a client tests `features?.recallV2`.                                                                                                                                                                 |
+
+Still to come: authoring in the owner UI (jackdaw), re-authoring the dev
+brain's maps by hand, retiring the v1 compiler, and team-level sharing.
+**v1 is not migrated by tooling** — it was experimental and is in real use
+only on the dev brain, so its maps are re-authored and the v1 code is then
+deleted.
+
 ## The serving tools (S2)
 
 Four read-only builtins (`packages/tools/src/builtins-recall.ts`), granted
