@@ -23,6 +23,7 @@ import { TERMINAL_TOOLS } from './builtins-terminal';
 import { SANDBOX_TOOLS } from './builtins-sandbox';
 import { RECALL_TOOLS } from './builtins-recall';
 import { RECALL_WRITE_TOOLS } from './builtins-recall-write';
+import { RECALL_OWNER_TOOLS } from './builtins-recall-owner';
 import { REPLAY_TOOLS } from './builtins-replay';
 import { RESEARCH_TOOLS } from './builtins-research';
 import { CRAWL_TOOLS } from './builtins-crawl';
@@ -156,6 +157,7 @@ export const BUILTIN_TOOLS: BuiltinToolDef[] = [
   // (find_window locates via digests, replay_window pulls raw turns).
   ...RECALL_TOOLS,
   ...RECALL_WRITE_TOOLS,
+  ...RECALL_OWNER_TOOLS,
   ...REPLAY_TOOLS,
   // Research — outward to the live internet via Perplexity Sonar. The
   // raw-search primitive for the `researcher` agent; the smart layer is

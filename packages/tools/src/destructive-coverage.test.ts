@@ -95,6 +95,10 @@ const DESTRUCTIVE_WITHOUT_CONFIRM: Record<string, { reason: string; mcpOnly?: tr
   // recall_revisions, the entry card is refused outright, and retiring a whole
   // map is the owner's own act rather than an agent's.
   recall_card_delete: { reason: 'card delete via the deliberate recall-write group' },
+  // The owner's own map delete, on the MCP surface only (mcpOnly, never
+  // granted in the app). It has its own gate: without confirm: true it only
+  // says what would go, and asks the model to tell the user first.
+  recall_map_delete: { reason: 'owner act on MCP; refuses without confirm: true', mcpOnly: true },
 };
 
 /**

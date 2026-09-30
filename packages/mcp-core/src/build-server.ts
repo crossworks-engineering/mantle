@@ -49,6 +49,7 @@ import {
   EMAIL_TOOLS,
   RECALL_TOOLS,
   RECALL_WRITE_TOOLS,
+  RECALL_OWNER_TOOLS,
   SANDBOX_TOOLS,
   NODE_READ_TOOLS,
   SEARCH_TOOLS,
@@ -191,6 +192,12 @@ export function registerMantleTools(
   // `recall-write` grant, in no default. Either way they run as an AGENT, so
   // publishing a map, minting a prompt and deleting a map stay the owner's act.
   registerBuiltinTools(RECALL_WRITE_TOOLS);
+  // And the OWNER's Recall acts (builtins-recall-owner.ts): confirm a prompt,
+  // publish or delete a map, reorder, restore, change a slug, and the owner's
+  // own reads of what waits. mcpOnly, like pending_approve: the MCP client is
+  // the owner, and no in-app agent can ever hold them (Jason, 2026-09-30:
+  // "I still want to be able to confirm it through mcp if needed").
+  registerBuiltinTools(RECALL_OWNER_TOOLS);
   registerBuiltinTools(JOURNAL_TOOLS);
   registerBuiltinTools(PEER_TOOLS);
   // Outbound email included: email_send is gated by the contacts allowlist the

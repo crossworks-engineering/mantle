@@ -58,7 +58,7 @@ function actorOf(ctx: ToolHandlerContext): RecallActor {
 
 /** Resolve a map by slug, a slug it answered to before a rename, or its id,
  *  and hand back its id and current version. */
-async function mapRef(
+export async function mapRef(
   ownerId: string,
   ref: string,
 ): Promise<{ id: string; version: number; slug: string } | null> {
@@ -220,7 +220,7 @@ const recall_card_put: BuiltinToolDef = {
   slug: 'recall_card_put',
   name: 'Write a Recall card',
   description:
-    'Create or replace one card in an existing Recall map; it serves to every agent at once. To replace, read the card with `recall_go` first and send its `version`: a card changed since your read is refused, not overwritten. `title` and `body` replace; `use_when`, `options` and `prompt` keep their value when omitted, and `options` when sent replaces the whole list. A body over budget is refused and tells you to split the card. `prompt: true` only REQUESTS prompt status; the owner confirms it. To remove a card use `recall_card_delete`.',
+    'Create or replace one card in an existing Recall map; it serves to every agent at once. To replace, read the card with `recall_go` first and send its `version`: a card changed since your read is refused, not overwritten. `title` and `body` replace; `use_when`, `options` and `prompt` keep their value when omitted, and `options` when sent replaces the whole list. A body over budget is refused and tells you to split the card. `prompt: true` only REQUESTS prompt status, and changing the text of a confirmed prompt sends it back to the owner to confirm. To remove a card use `recall_card_delete`.',
   inputSchema: {
     type: 'object',
     properties: {

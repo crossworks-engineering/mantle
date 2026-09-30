@@ -900,13 +900,27 @@ describe.skipIf(!URL)('Recall v2 native writes, on Postgres', () => {
       expect(made.map((x) => x.slug).sort()).toEqual(['same-title', 'same-title-2']);
     });
 
-    it('H2: an agent editing a confirmed prompt leaves it a prompt', async () => {
+    /** Give the 'deploy' card a vector, so a test can see whether it is kept. */
+    const embedDeploy = async (mapId: string) =>
+      await m.db.execute(sqlTag`
+        update recall_nodes
+           set embedding = ${`[${Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0)).join(',')}]`}::vector
+         where map_id = ${mapId} and slug = 'deploy'`);
+
+    it('H2: an agent edit that leaves the text alone keeps a confirmed prompt', async () => {
       const map = await withPrompt('Sticky agent');
+      await c.putRecallCard(owner, map.mapId, null, { title: 'Next', bodyMd: '' }, OWNER, 2);
+      await embedDeploy(map.mapId);
+      // Options only: the words the owner approved are unchanged.
       await c.putRecallCard(
         owner,
         map.mapId,
         'deploy',
-        { title: 'Deploy', bodyMd: 'do x.' },
+        {
+          title: 'Deploy',
+          bodyMd: 'do x',
+          options: [{ label: 'Then', useWhen: 'after', targetSlug: 'next' }],
+        },
         AGENT,
         await v(map.mapId),
       );
@@ -914,18 +928,98 @@ describe.skipIf(!URL)('Recall v2 native writes, on Postgres', () => {
         kind: 'prompt',
         prompt_pending: false,
         use_when: 'deploying',
+        no_vec: false,
       });
-      // Asking again, or trying to demote it, changes nothing, and says so.
+      // Trying to demote it changes nothing, and says so.
       const res = await c.putRecallCard(
         owner,
         map.mapId,
         'deploy',
-        { title: 'Deploy', bodyMd: 'do x.', prompt: false },
+        { title: 'Deploy', bodyMd: 'do x', prompt: false },
         AGENT,
         await v(map.mapId),
       );
       expect((await row(map.mapId, 'deploy'))!.kind).toBe('prompt');
       expect(res.warnings.map((w) => w.code)).toContain('prompt_kept');
+    });
+
+    it("N8: an agent changing a confirmed prompt's text sends it back for the owner to confirm", async () => {
+      const map = await withPrompt('Reconfirm');
+      await embedDeploy(map.mapId);
+      const res = await c.putRecallCard(
+        owner,
+        map.mapId,
+        'deploy',
+        { title: 'Deploy', bodyMd: 'do x differently' },
+        AGENT,
+        await v(map.mapId),
+      );
+      // Pending, and without a vector: recall_match filters on kind 'prompt'
+      // and a vector, so it stops finding the card.
+      expect(await row(map.mapId, 'deploy')).toMatchObject({
+        kind: 'knowledge',
+        prompt_pending: true,
+        no_vec: true,
+        body_md: 'do x differently',
+      });
+      expect(res.warnings.map((w) => w.code)).toContain('prompt_needs_confirm');
+      const rev = (await c.listRecallRevisions(owner, map.mapId))[0]!;
+      expect(rev).toMatchObject({
+        summary: 'prompt edited by agent, awaits confirm',
+        actorKind: 'agent',
+      });
+
+      // The owner's undo puts back the old words AND the confirmed state.
+      await c.restoreRecallRevision(owner, rev.id, OWNER);
+      expect(await row(map.mapId, 'deploy')).toMatchObject({
+        kind: 'prompt',
+        prompt_pending: false,
+        body_md: 'do x',
+      });
+    });
+
+    it('N8: the owner confirming the edited prompt makes it matchable again', async () => {
+      const bridge = await import('./embed-bridge');
+      const recall = await import('./recall');
+      const map = await withPrompt('Reconfirmed');
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'deploy',
+        { title: 'Deploy', bodyMd: 'do x again' },
+        AGENT,
+        await v(map.mapId),
+      );
+      await c.confirmRecallPrompt(owner, map.mapId, 'deploy', true, OWNER, await v(map.mapId));
+      expect(await row(map.mapId, 'deploy')).toMatchObject({
+        kind: 'prompt',
+        prompt_pending: false,
+      });
+      const vec = Array.from({ length: 768 }, (_, i) => (i === 1 ? 1 : 0));
+      bridge.registerRecallEmbedder(async (_o, texts) => texts.map(() => vec));
+      try {
+        await recall.embedPendingRecallPrompts(owner);
+        expect((await row(map.mapId, 'deploy'))!.no_vec).toBe(false);
+      } finally {
+        bridge.__resetRecallEmbedderForTests();
+      }
+    });
+
+    it("N8: the owner's own text edit keeps a confirmed prompt confirmed", async () => {
+      const map = await withPrompt('Owner edits');
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'deploy',
+        { title: 'Deploy', bodyMd: 'the owner rewrote it' },
+        OWNER,
+        await v(map.mapId),
+      );
+      expect(await row(map.mapId, 'deploy')).toMatchObject({
+        kind: 'prompt',
+        prompt_pending: false,
+      });
+      expect((await c.listRecallRevisions(owner, map.mapId))[0]!.summary).toBe('card edited');
     });
 
     it('H2: an owner save without the flag keeps a prompt, and keeps a pending request', async () => {

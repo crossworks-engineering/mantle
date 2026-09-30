@@ -14,10 +14,14 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/tools/src/builtins-recall-write.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { BuiltinToolDef, ToolHandlerContext } from './types';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
+
+/** recall_match embeds its query: every query lands on axis 0. */
+const AXIS0 = Array.from({ length: 768 }, (_, i) => (i === 0 ? 1 : 0));
+vi.mock('@mantle/embeddings', () => ({ embed: vi.fn(async () => AXIS0) }));
 
 describe.skipIf(!URL)('the Recall write tools, on Postgres', () => {
   type Db = typeof import('@mantle/db');
@@ -207,7 +211,10 @@ describe.skipIf(!URL)('the Recall write tools, on Postgres', () => {
     expect(stale.error).toMatch(/changed since you read it/);
   });
 
-  it('an agent edit keeps a confirmed prompt a prompt, and its options', async () => {
+  it("an agent's text edit sends a confirmed prompt back for confirm; options survive", async () => {
+    const matchTool = (await import('./builtins-recall')).RECALL_TOOLS.find(
+      (t) => t.slug === 'recall_match',
+    )!;
     const map = await publishedMap('Prompted');
     await call(put, { map, title: 'Target', body: 't' });
     await call(put, {
@@ -217,9 +224,16 @@ describe.skipIf(!URL)('the Recall write tools, on Postgres', () => {
       use_when: 'writing',
       options: [{ label: 'Then', use_when: 'after', target: 'target' }],
     });
+    // The owner confirmed it (as the confirm route would), and it is embedded.
     await m.db.execute(sqlTag`
-      update recall_nodes set kind = 'prompt'
+      update recall_nodes set kind = 'prompt', embedding = ${`[${AXIS0.join(',')}]`}::vector
        where owner_id = ${owner} and slug = 'style'`);
+    const matched = async () =>
+      ((await call(matchTool, { need: 'write briefly' })).output!.prompts as { target: string }[])
+        .map((p) => p.target)
+        .includes('style');
+    expect(await matched()).toBe(true);
+
     const read = await call(go, { map, target: 'style' });
     expect(read.output).toMatchObject({ use_when: 'writing' });
     const res = await call(put, {
@@ -230,14 +244,24 @@ describe.skipIf(!URL)('the Recall write tools, on Postgres', () => {
       version: Number(read.output!.version),
     });
     expect(res.ok).toBe(true);
+    expect((res.output!.warnings as string[]).join(' ')).toMatch(/confirm it again/);
     const rows = (await m.db.execute(sqlTag`
-      select kind, use_when, jsonb_array_length(options) as n from recall_nodes
+      select kind, prompt_pending, use_when, jsonb_array_length(options) as n from recall_nodes
        where owner_id = ${owner} and slug = 'style'`)) as unknown as {
       kind: string;
+      prompt_pending: boolean;
       use_when: string;
       n: number;
     }[];
-    expect(rows[0]).toMatchObject({ kind: 'prompt', use_when: 'writing', n: 1 });
+    // Back with the owner; the use-when line and the options the agent did
+    // not send are kept.
+    expect(rows[0]).toMatchObject({
+      kind: 'knowledge',
+      prompt_pending: true,
+      use_when: 'writing',
+      n: 1,
+    });
+    expect(await matched()).toBe(false);
   });
 
   it('finds a map by a slug it had before a rename', async () => {

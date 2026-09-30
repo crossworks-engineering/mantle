@@ -100,6 +100,7 @@ export { NOTE_TOOLS, NOTE_OPERATOR_TOOLS } from './builtins-notes';
 export { TREE_TOOLS, TREE_OPERATOR_TOOLS, TREE_TOOL_KINDS } from './builtins-tree';
 export { RECALL_TOOLS } from './builtins-recall';
 export { RECALL_WRITE_TOOLS } from './builtins-recall-write';
+export { RECALL_OWNER_TOOLS } from './builtins-recall-owner';
 export { EVENT_TOOLS } from './builtins-events';
 export { PEER_TOOLS } from './builtins-peers';
 export { EMAIL_TOOLS } from './builtins-email';

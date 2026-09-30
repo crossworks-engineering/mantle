@@ -873,7 +873,20 @@ async function writeCard(
           keptPrompt: false,
         }
       : nextPromptState(existing, input.prompt, actor);
-    const { kind, promptPending } = state;
+    // Jason's call (2026-09-30, audit N8): an AGENT that changes the text of a
+    // CONFIRMED prompt sends it back to the owner. The card goes pending, loses
+    // its vector and stops matching until the owner confirms it again, because
+    // a prompt is the owner's instruction to every agent and its words are
+    // what the owner approved. An edit that leaves the text alone (options
+    // only) keeps it confirmed, and the owner's own edits always do.
+    const reconfirm =
+      !restore &&
+      actor.kind === 'agent' &&
+      existing?.kind === 'prompt' &&
+      (existing.title !== title || existing.useWhen !== useWhen || existing.bodyMd !== bodyMd);
+    const { kind, promptPending } = reconfirm
+      ? { kind: 'knowledge' as const, promptPending: true }
+      : state;
     if ((kind === 'prompt' || promptPending) && !useWhen) {
       throw new RecallWriteError(
         'prompt_needs_use_when',
@@ -1045,7 +1058,11 @@ async function writeCard(
       {
         cardId,
         cardSlug: slug,
-        summary: existing ? 'card edited' : 'card added',
+        summary: reconfirm
+          ? 'prompt edited by agent, awaits confirm'
+          : existing
+            ? 'card edited'
+            : 'card added',
       },
       existing
         ? {
@@ -1069,7 +1086,13 @@ async function writeCard(
       },
     );
     const warnings = await warningsFor(tx, ownerId, await cardsOf(tx, map.id));
-    if (state.keptPrompt) {
+    if (reconfirm) {
+      warnings.push({
+        code: 'prompt_needs_confirm',
+        cardSlug: slug,
+        message: `Card '${slug}' was a confirmed prompt. Your edit changed its text, so it waits for the owner to confirm it again; until then recall_match does not find it.`,
+      });
+    } else if (state.keptPrompt) {
       warnings.push({
         code: 'prompt_kept',
         cardSlug: slug,

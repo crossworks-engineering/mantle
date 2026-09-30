@@ -47,6 +47,15 @@ What that means in practice:
   is v1's rule carried over: an agent could edit pages inside a tagged tree but
   never add the `recall` or `prompt` tag. What an agent may change is what the
   brain knows, not what the brain tells other agents to do.
+- **An agent that changes a confirmed prompt's words sends it back.** When
+  an agent's write changes the title, `use_when` or body of a confirmed
+  prompt, the card goes back to pending: no vector, no `recall_match` hits,
+  until the owner confirms it again. The write result says so
+  (`prompt_needs_confirm`) and the revision reads "prompt edited by agent,
+  awaits confirm"; restoring it puts back the old words and the confirmed
+  state. An agent edit that leaves the words alone (options only) keeps it a
+  prompt, and the owner's own edits always do (Jason, 2026-09-30). An agent
+  may still delete a prompt card; that is open.
 - **Every write is logged** in `recall_revisions` (the last 50 per map), with
   the actor's kind and name (agent slug, `mcp`, or the admin's display name),
   which backs undo and the audit of agent edits. The latter matters
@@ -90,6 +99,30 @@ Surfaces:
 | Owner HTTP                | `POST /api/recall/maps`, `PATCH`/`DELETE /api/recall/maps/:id`, `POST /api/recall/maps/:id/cards`, `GET`/`PUT`/`DELETE /api/recall/maps/:id/cards/:card`, `POST …/cards/reorder`, `POST …/cards/:card/prompt`, `GET …/revisions`, `POST /api/recall/revisions/:id/restore` |
 | Client contract           | `@mantle/client-types` (map summary gains `nodeId`, `folder`, `published`, `version`; a card gains `rank`, `promptPending`; an option gains `targetId`, `targetMap`)                                                                                                       |
 | Capability flag           | `features.recallV2` in `GET /api/shell`. Absent on an older brain, so a client tests `features?.recallV2`.                                                                                                                                                                 |
+
+### Over MCP
+
+Every Recall act has an MCP tool, so the owner can do from an MCP client
+what the editor does. An MCP client holds the owner's token.
+
+| Tool                                                                              | What                                          | Actor                                        |
+| --------------------------------------------------------------------------------- | --------------------------------------------- | -------------------------------------------- |
+| `recall_index`, `recall_open`, `recall_go`, `recall_match`                        | read published maps                           | reader                                       |
+| `recall_map_create`, `recall_card_put`, `recall_card_delete`, `recall_map_update` | draft maps, edit cards, retitle               | agent (also the in-app `recall-write` group) |
+| `recall_pending`                                                                  | what waits: unpublished maps, prompt requests | owner (MCP only)                             |
+| `recall_map_get`                                                                  | one map whole, published or not               | owner (MCP only)                             |
+| `recall_prompt_confirm`                                                           | confirm, drop or demote a prompt              | owner (MCP only)                             |
+| `recall_map_publish`                                                              | publish or unpublish a map                    | owner (MCP only)                             |
+| `recall_map_delete`                                                               | delete a map (needs `confirm: true`)          | owner (MCP only)                             |
+| `recall_cards_reorder`                                                            | order a map's cards                           | owner (MCP only)                             |
+| `recall_revisions`, `recall_revision_restore`                                     | the log, and undo                             | owner (MCP only)                             |
+| `recall_map_set_slug`, `recall_card_set_slug`                                     | explicit slug changes                         | owner (MCP only)                             |
+
+The owner tools are `mcpOnly`: never in a tool group, so no in-app agent can
+hold them. Their descriptions tell the model to call them only when the user
+asked for that act in the conversation, and the confirm, publish, reorder and
+slug tools take the map `version` the user was shown, so nobody approves text
+that changed after it was shown. Their revisions read "owner (mcp)".
 
 The owner UI (jackdaw, behind `features.recallV2`) is the v2 editor. Still to
 come: re-authoring the dev brain's maps by hand (R4), retiring the v1

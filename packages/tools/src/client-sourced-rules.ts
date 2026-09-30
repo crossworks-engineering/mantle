@@ -295,6 +295,15 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   recall_card_put: always(RECALL_GUIDANCE),
   recall_card_delete: always(RECALL_GUIDANCE),
   recall_map_update: always(RECALL_GUIDANCE),
+  // The owner's own Recall acts, MCP only (builtins-recall-owner.ts). Never
+  // granted in the app; classified all the same, for the same reason.
+  recall_prompt_confirm: always(RECALL_GUIDANCE),
+  recall_map_publish: always(RECALL_GUIDANCE),
+  recall_map_delete: always(RECALL_GUIDANCE),
+  recall_cards_reorder: always(RECALL_GUIDANCE),
+  recall_revision_restore: always(RECALL_GUIDANCE),
+  recall_map_set_slug: always(RECALL_GUIDANCE),
+  recall_card_set_slug: always(RECALL_GUIDANCE),
   my_items_list: free(OWN_SPACE),
   my_item_open: free(OWN_SPACE),
 };
