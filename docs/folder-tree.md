@@ -157,7 +157,7 @@ contacts, secrets) cannot be shared.
   delete that lifts its contents are computed dry first
   (`packages/content/src/tree/visibility.ts`). If who can see anything would
   change, the write is refused with 409 `{ error: 'visibility', changes,
-  total }` and nothing is written; the same call with `confirm: true` goes
+total }` and nothing is written; the same call with `confirm: true` goes
   ahead (`?confirm=true` on DELETE). The agent folder tools take `confirm`
   too and tell the model to ask first. A rename never asks.
 - **Shared via.** `GET /api/access/nodes/:id` names the shared folder an
@@ -178,8 +178,11 @@ contacts, secrets) cannot be shared.
   client's "Shared with you" (list, open, the `client_shared_*` tools), a
   client's redaction (which references keep their names), drawing and chat
   images, and apps (an app runs at its effective level, so an admin app in
-  a team-shared folder is a team app). The client thread is not there yet
-  (its read rule is a DB policy, migration 0194).
+  a team-shared folder is a team app). The client thread too: an item read
+  at client level through a folder carries it (migration 0204 widens the
+  0194 read policy to the union rule; `client-thread.ts`, `addNodeComment`
+  and the admin usage report check the same rule). Unsharing the folder, or
+  moving the item out, hides the thread below admin again.
 - **The member and client trees.** `GET /api/member/tree/:kind` and
   `/api/client/tree/:kind` (with `/search`) serve the kinds a Library holds
   (`READER_TREE_KINDS`: files, notes, drawings, tables; the shells list them

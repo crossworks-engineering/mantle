@@ -1,7 +1,9 @@
 /**
  * The client thread on a client-level brain item (client logins C5,
  * decision 8): one discussion that the team, the admins and every client
- * login read and write, while the item is at client level.
+ * login read and write, while the item is at client level. "At client
+ * level" is the union rule (item-level.ts): its own level, or the share it
+ * inherits from a folder shared with clients (migration 0204).
  *
  * Stored in node_comments with `thread_scope` 'client', the brain's id as
  * owner. Row security holds the reads (migration 0194): the client role and
@@ -34,6 +36,7 @@ import {
   type CommentPageQuery,
 } from './node-comments';
 import { assertThreadRoom, takeClientCommentPlace } from './client-comment-caps';
+import { readAtAliasSql, readAtSql } from './item-level';
 
 /** Who writes on the client thread: a client or a member login, with its
  *  display-name snapshot (the route picks it from the session). */
@@ -72,7 +75,7 @@ export async function listClientThread(
   const [node] = await db
     .select({ id: nodes.id })
     .from(nodes)
-    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, anchorId), eq(nodes.audience, 'client')))
+    .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, anchorId), readAtSql(['client'])))
     .limit(1);
   if (!node) return null;
   const where = and(eq(nodeComments.nodeId, nodeId), eq(nodeComments.threadScope, 'client'));
@@ -106,7 +109,7 @@ export async function addClientThreadComment(
       // a 404 takes no place of the day.
       const there = (await tx.execute(sql`
         select 1 as ok from nodes n
-         where n.id = ${nodeId} and n.owner_id = ${anchorId} and n.audience = 'client'
+         where n.id = ${nodeId} and n.owner_id = ${anchorId} and ${readAtAliasSql('n', ['client'])}
            and mantle_workspace_kind(n.type)
          for share of n`)) as unknown as { ok: number }[];
       if (!there.length) return null;
@@ -121,7 +124,7 @@ export async function addClientThreadComment(
           from nodes n
          where n.id = ${nodeId}
            and n.owner_id = ${anchorId}
-           and n.audience = 'client'
+           and ${readAtAliasSql('n', ['client'])}
            and mantle_workspace_kind(n.type)
          for share of n
         returning id`)) as unknown as { id: string }[];
