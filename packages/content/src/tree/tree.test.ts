@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -37,11 +37,17 @@ describe('the tree limits agree everywhere', () => {
     expect(FOLDER_NAME_MAX).toBe(TREE_FOLDER_NAME_MAX);
   });
 
-  it('the database depth check names every kind root (migration 0201)', () => {
-    const sqlText = readFileSync(
-      join(__dirname, '..', '..', '..', 'db', 'migrations', '0201_item_tree.sql'),
-      'utf8',
-    );
+  it('the database depth check names every kind root (its latest definition)', () => {
+    // 0201 made it; a later migration may replace it (0204 added recall).
+    const dir = join(__dirname, '..', '..', '..', 'db', 'migrations');
+    const latest = readdirSync(dir)
+      .filter((f) => f.endsWith('.sql'))
+      .sort()
+      .filter((f) =>
+        readFileSync(join(dir, f), 'utf8').includes('"nodes_tree_folder_depth_ck" CHECK'),
+      )
+      .at(-1)!;
+    const sqlText = readFileSync(join(dir, latest), 'utf8');
     expect(sqlText).toContain(`nlevel("path") <= ${TREE_MAX_DEPTH + 1}`);
     for (const k of TREE_KINDS) expect(sqlText).toContain(`'${TREE_KIND_SPECS[k].root}'`);
   });
