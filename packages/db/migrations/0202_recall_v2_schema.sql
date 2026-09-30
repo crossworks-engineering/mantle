@@ -113,6 +113,12 @@ CREATE TABLE IF NOT EXISTS "public"."recall_revisions" (
   "card_id" uuid,
   "actor_kind" text NOT NULL,
   "actor_id" uuid,
+  -- The card's slug AT THE TIME, so the panel can name a card that is gone.
+  "card_slug" text,
+  -- One line for the panel ('card edited', 'published'). A column rather than
+  -- a key inside `before`, so before/after stay pure snapshots: restore
+  -- writes `before` back as-is, and anything smuggled in would go with it.
+  "summary" text NOT NULL DEFAULT 'changed',
   "before" jsonb,
   "after" jsonb,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,

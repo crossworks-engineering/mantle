@@ -431,6 +431,140 @@ describe.skipIf(!URL)('Recall v2 native writes, on Postgres', () => {
       expect(revs.at(-1)).toMatchObject({ actorKind: 'owner', summary: 'map created' });
     });
 
+    it('restores an edited card to what it was', async () => {
+      const map = await freshMap('Undoable');
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        null,
+        { title: 'Card', bodyMd: 'first' },
+        OWNER,
+        map.version,
+      );
+      const v = (await mapRow(map.mapId)).version;
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'card',
+        { title: 'Card', bodyMd: 'second' },
+        OWNER,
+        v,
+      );
+
+      // The revision for the EDIT carries the pre-edit body.
+      const revs = await c.listRecallRevisions(owner, map.mapId);
+      const edit = revs.find((r) => r.summary === 'card edited' && r.cardSlug === 'card')!;
+      await c.restoreRecallRevision(owner, edit.id, OWNER);
+      const rows = (await m.db.execute(sqlTag`
+        select body_md from recall_nodes where map_id = ${map.mapId} and slug = 'card'`)) as unknown as {
+        body_md: string;
+      }[];
+      expect(rows[0]!.body_md).toBe('first');
+    });
+
+    it('restoring a card ADDITION removes the card again', async () => {
+      const map = await freshMap('Undo add');
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        null,
+        { title: 'Added', bodyMd: 'x' },
+        OWNER,
+        map.version,
+      );
+      const revs = await c.listRecallRevisions(owner, map.mapId);
+      const added = revs.find((r) => r.summary === 'card added')!;
+      await c.restoreRecallRevision(owner, added.id, OWNER);
+      expect((await cardsOf(map.mapId)).map((x) => x.slug)).not.toContain('added');
+    });
+
+    it('brings a DELETED card back, with its slug', async () => {
+      const map = await freshMap('Undo delete');
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        null,
+        { title: 'Gone', bodyMd: 'body' },
+        OWNER,
+        map.version,
+      );
+      const v = (await mapRow(map.mapId)).version;
+      await c.deleteRecallCard(owner, map.mapId, 'gone', OWNER, v);
+      const revs = await c.listRecallRevisions(owner, map.mapId);
+      const del = revs.find((r) => r.summary === 'card deleted')!;
+      await c.restoreRecallRevision(owner, del.id, OWNER);
+      const back = (await cardsOf(map.mapId)).find((x) => x.slug === 'gone');
+      expect(back).toBeDefined();
+    });
+
+    it('restores a map rename', async () => {
+      const map = await freshMap('Old title');
+      await c.updateRecallMap(
+        owner,
+        map.mapId,
+        { title: 'New title', version: map.version },
+        OWNER,
+      );
+      const revs = await c.listRecallRevisions(owner, map.mapId);
+      const renamed = revs.find((r) => r.summary === 'renamed')!;
+      await c.restoreRecallRevision(owner, renamed.id, OWNER);
+      expect((await mapRow(map.mapId)).title).toBe('Old title');
+    });
+
+    it('a restore runs the checks, so it cannot reinstate a broken map', async () => {
+      // The card being restored pointed at a card that has since gone. The
+      // restore is refused rather than putting a dead option back.
+      const map = await freshMap('Checked restore');
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        null,
+        { title: 'Target', bodyMd: 't' },
+        OWNER,
+        map.version,
+      );
+      let v = (await mapRow(map.mapId)).version;
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        null,
+        {
+          title: 'Pointer',
+          bodyMd: 'p',
+          options: [{ label: 'On', useWhen: 'later', targetSlug: 'target' }],
+        },
+        OWNER,
+        v,
+      );
+      v = (await mapRow(map.mapId)).version;
+      // Edit the pointer (this revision's BEFORE still names 'target') ...
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        'pointer',
+        { title: 'Pointer', bodyMd: 'p2' },
+        OWNER,
+        v,
+      );
+      v = (await mapRow(map.mapId)).version;
+      // ... then delete the target.
+      await c.deleteRecallCard(owner, map.mapId, 'target', OWNER, v);
+
+      const revs = await c.listRecallRevisions(owner, map.mapId);
+      const edit = revs.find((r) => r.summary === 'card edited' && r.cardSlug === 'pointer')!;
+      await expect(c.restoreRecallRevision(owner, edit.id, OWNER)).rejects.toThrow(
+        /not in this map/i,
+      );
+    });
+
+    it('is the owner’s act, not an agent’s', async () => {
+      const map = await freshMap('Owner only');
+      const revs = await c.listRecallRevisions(owner, map.mapId);
+      await expect(c.restoreRecallRevision(owner, revs[0]!.id, AGENT)).rejects.toThrow(
+        /owner's act/i,
+      );
+    });
+
     it('deleting the map takes its cards and its revisions with it', async () => {
       const map = await freshMap('Doomed');
       await c.putRecallCard(
