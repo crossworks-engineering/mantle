@@ -6,6 +6,7 @@ import { getOwnerOr401, mintAssetToken } from '@/lib/auth';
 import { isOnboarded } from '@/lib/onboarding';
 import { shellPart } from '@/lib/shell-part';
 import { TREE_LIVE_KINDS } from '@mantle/content/tree';
+import { shellFeatures } from '@/lib/features';
 
 type Prefs = Awaited<ReturnType<typeof loadPreferencesFor>>;
 
@@ -81,6 +82,10 @@ export async function GET() {
   );
   return NextResponse.json({
     onboarded,
+    // What this BRAIN can do, for a client on its own release cadence: the
+    // client branches on capability rather than on a version number. Absent
+    // on an older brain, so a client tests `features?.x`. See lib/features.ts.
+    features: shellFeatures(),
     avatar,
     avatarPhotoVersion,
     pendingApprovals,

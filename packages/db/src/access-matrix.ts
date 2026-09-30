@@ -362,6 +362,10 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.entity_merge_dismissals'),
   none('public.recall_maps'),
   none('public.recall_nodes'),
+  // Recall v2: the revision log. Admin pool only, like the other two — the
+  // reader filter for a team agent (R6) runs in the tools against the map's
+  // node under the viewer, never by opening these tables to a viewer role.
+  none('public.recall_revisions'),
   // Comments on personal items (Phase 2): the space role reads and writes its
   // own login's comments on its own items; the team role reads the comments on
   // teammates' team-shared items (human flag on). Brain threads stay admin.
