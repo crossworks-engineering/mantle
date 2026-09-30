@@ -7,8 +7,8 @@ import { firstIssue } from '@/lib/zod-issue';
 
 const PAGE_SIZE = 20;
 
-/** The Recall catalog: every map + its compile state, failed compiles
- *  included. URL-driven search + pagination (`q` / `page`) like the other
+/** The Recall catalog: every map, drafts and maps with no cards included.
+ *  URL-driven search + pagination (`q` / `page`) like the other
  *  list APIs; `total`/`page`/`pageSize` ride along for the client pager. */
 export async function GET(req: Request) {
   const user = await getOwnerOr401();

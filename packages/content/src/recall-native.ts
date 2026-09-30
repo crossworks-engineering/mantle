@@ -277,6 +277,8 @@ async function resolveOptions(
         .where(
           and(
             eq(recallMaps.ownerId, ownerId),
+            // A leftover page-built (v1) row is not a map an option can lead to.
+            isNotNull(recallMaps.nodeId),
             or(
               eq(recallMaps.slug, o.targetMap),
               arrayContains(recallMaps.formerSlugs, [o.targetMap]),
@@ -369,6 +371,7 @@ async function warningsFor(tx: Tx, ownerId: string, cards: CardRow[]): Promise<R
             and(
               eq(recallMaps.ownerId, ownerId),
               eq(recallMaps.published, true),
+              isNotNull(recallMaps.nodeId),
               inArray(recallMaps.slug, [...crossMaps]),
             ),
           )
@@ -1687,6 +1690,15 @@ export async function getRecallCard(
   mapId: string,
   cardSlug: string,
 ): Promise<CardRow | null> {
+  // Only a native map's cards: a leftover page-built (v1) row has no item.
+  const [map] = await db
+    .select({ id: recallMaps.id })
+    .from(recallMaps)
+    .where(
+      and(eq(recallMaps.ownerId, ownerId), eq(recallMaps.id, mapId), isNotNull(recallMaps.nodeId)),
+    )
+    .limit(1);
+  if (!map) return null;
   const mine = and(eq(recallNodes.ownerId, ownerId), eq(recallNodes.mapId, mapId));
   const [row] = await db
     .select()

@@ -225,8 +225,8 @@ Every login has a personal space: a row in `spaces` (migration 0165), made
 with the login by a trigger. `nodes.owner_id` points at a space: the brain
 (one row whose id is the anchor login's id, so no brain row changed) or a
 personal space. Every brain path filters on the brain id, so a personal item
-is invisible to the brain from its first row: never indexed, embedded,
-extracted or compiled into Recall. The ingest trigger skips it,
+is invisible to the brain from its first row: never indexed, embedded or
+extracted. The ingest trigger skips it,
 `notifyNodeIngested` and `isBrainOwnerId` refuse inside a space scope, and the
 extractor gate checks the owner.
 

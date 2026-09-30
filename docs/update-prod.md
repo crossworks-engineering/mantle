@@ -485,33 +485,79 @@ client in `client-pair.tag`. What changes for a box:
 ## Rolling to the Recall R5 release (page-built maps retired, migration 0209)
 
 R5 removes page-built (v1) Recall maps: maps compiled from a page tree whose
-root carries the `recall` tag. After the roll a map is only ever a native
-`recall` item, `recall` and `prompt` are ordinary page tags, and migration
-0209 deletes every `recall_maps` row with `node_id` NULL (their cards go with
-them). What to do per box:
+root carries the `recall` tag. From the moment the R5 code runs, a map is
+only ever a native `recall` item and no page-built map is served, whether or
+not 0209 has run yet. `recall` and `prompt` become ordinary page tags, and
+0209 deletes every `recall_maps` row with `node_id` NULL (their cards go
+with them).
 
-- **Before the roll**, run on the box:
+**What must be true on a box before this release reaches it:**
 
-  ```sql
-  select slug, title from recall_maps where node_id is null;
-  ```
+1. `select slug, title from recall_maps where node_id is null;` returns
+   **zero rows**. (A box before Recall v2 has no `node_id` column: there,
+   every row is page-built.) Zero is the only state that passes: while a v1
+   row exists no native map can hold its slug, current or former
+   (`recall_maps_owner_slug_uq`), so "a native map answers it" cannot be
+   true yet. `scripts/roll.sh` checks this and refuses the box; set
+   `ROLL_ALLOW_V1_RECALL=1` only for a map the owner agreed may go.
+2. No page tree root still carries the `recall` tag. Untag them on EVERY
+   box, not only dev: a tagged tree left behind recompiles on a rollback
+   (below).
 
-  Roll only when it returns zero rows, or every slug it lists is answered by
-  a native map (its current slug or one of its `former_slugs`). A slug that
-  nothing answers stops resolving for every agent and skill that remembers
-  it. Only dev and jason-prod ever had page-built maps.
+   ```sql
+   select id, title from nodes
+    where type = 'page' and parent_id is null and 'recall' = any(tags);
+   ```
 
-- **On dev**, the v1 maps are retired by hand BEFORE this roll, on a release
-  that still has the v1 code: move each remembered slug onto its native map,
-  then untag the root (the v1 hooks drop its compiled map). 0209 then finds
-  nothing, and its NOTICE in the migrate log says so.
-- **The migrate log** shows `recall R5: deleting N page-built map(s): ...`
-  on every box. Anything other than 0 on a box other than dev and jason-prod
-  is unexpected: read the slugs.
-- **Rolling back** to the release before R5 is safe for the schema
-  (`last_compile_ok` and `last_compile_report` stay, unused). The deleted rows
-  do not come back on their own; a page still tagged `recall` recompiles on
-  its next commit under the old release.
+3. Migration 0208 is already applied (0209's `when` is higher: a box that
+   applied 0209 first would skip 0208 for ever).
+4. The client paired with it is the jackdaw R5 client (older clients probe
+   `GET /api/recall/pages/:id` on every page open and log a 404).
+5. Skills and notes that remember a v1 CARD slug were checked too; the
+   query in (1) covers map slugs only.
+
+**Retiring a page-built map by hand** (on a release that still has the v1
+code, so before this one):
+
+1. Untag the map's root page (remove `recall`) through the owner editor or
+   the owner page route (`PATCH /api/pages/:id`). It must go through the
+   page write path: the v1 hook there drops the compiled map and frees its
+   slug. A raw SQL update of `nodes.tags` does not run the hook.
+2. Give the native map the old slug as a former slug: `recall_map_set_slug`
+   (or `PATCH /api/recall/maps/:id { slug }`) to the old slug, then back to
+   the native slug. The old one stays in `former_slugs` and keeps resolving.
+3. Confirm with `recall_open(<old slug>)`: it lands on the native map.
+4. Remove the `prompt` tag from the old source pages.
+
+On dev that is four maps: `mantle-registry-start-here` (to `architecture`),
+`mantle-status-workflow` (to `status-workflow`), `jackdaw-ui-standards` (to
+`ui-standards`) and `recall-workshop-test-map` (a test map: untag only).
+jason-prod has one test map (`recall-test-page`), for the owner to decide.
+
+**The demo site box**: the demo branch seeds its Recall map the v1 way
+(tagged pages). Before main with R5 is merged into `demo`, the demo seeder
+must create its map through `POST /api/recall/maps` and the card routes, or
+0209 deletes the seeded map there and the public demo's Recall is empty
+(dev-brain task 64c99b44).
+
+**The migrate log** shows `recall R5: deleting N page-built map(s): ...`.
+With the checks above done it says 0 on every box; anything else, read the
+slugs.
+
+**Rolling back** to the release before R5 keeps the schema working
+(`last_compile_ok` and `last_compile_report` stay, unused), but the `recall`
+and `prompt` tags become live again there. Under R5 an agent may set them,
+and under the old release the next commit of such a page compiles it into a
+served map or prompt. Before rolling back, list and untag them:
+
+```sql
+select id, title, tags from nodes where type = 'page' and tags && '{recall,prompt}';
+```
+
+A v1 map compiled after a rollback survives a roll forward (0209 does not
+run twice), so check (1) again after any rollback. The follow-up migration
+that drops `last_compile_*` repeats the `node_id` NULL delete and sets
+`node_id` NOT NULL.
 
 ## Rollback
 

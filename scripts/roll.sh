@@ -4,7 +4,8 @@
 # guards the fleet rules ask for, and stop loudly the moment one fails.
 #
 #   1. preflight: the updater is idle, no request is pending
-#   2. count apps, sandboxes (Postgres) and app-db files (mantle_web) BEFORE
+#   2. count apps, sandboxes (Postgres) and app-db files (mantle_web) BEFORE;
+#      refuse a box that still has a page-built (v1) Recall map (2b)
 #   3. backup: scripts/db-dump.sh on the box, strict, its OWN exit status
 #      (no pipe in front of it). Skipped only when the box's updater takes
 #      its own strict pre-roll backup (see pre_roll_backup in
@@ -30,6 +31,8 @@
 # (MANTLE_STACK_DIR), so a box whose stack is not in ~/mantle is still right.
 #
 # --dry-run runs steps 1 and 2 only: read-only, no backup, no request.
+#
+# ROLL_ALLOW_V1_RECALL=1 lets step 2b pass a page-built Recall map.
 #
 # Exit codes: 0 rolled and verified, 1 a step failed (nothing requested when it
 # failed before step 4), 2 usage, 3 COUNTS DROPPED after the roll.
@@ -149,6 +152,36 @@ rsh "df -h '$STACK' | tail -1" || true
 C0=$(counts) || die "could not count apps / sandboxes / app-db files (is the stack up?)"
 read -r APPS0 SBX0 FILES0 <<< "$C0"
 echo "before: apps=$APPS0 sandboxes=$SBX0 app-db files=$FILES0"
+
+# ── 2b. Recall: no page-built (v1) map may be left ──────────────────────────
+# From Recall R5 (migration 0209) a page-built map is not served, and 0209
+# deletes it. Its slug must first be retired by hand on a release that still
+# has the v1 code (docs/update-prod.md, "Rolling to the Recall R5 release"),
+# or every agent and skill that remembers it loses it silently. So a box that
+# still has one is refused. A box before Recall v2 has no node_id column: all
+# of its maps are page-built. ROLL_ALLOW_V1_RECALL=1 overrides, for a map the
+# owner agreed may go (or a roll to a tag before R5).
+V1=$(rsh 'sh -s' <<'EOF'
+set -e
+q() { docker exec -i mantle_pg psql -U postgres -d postgres -v ON_ERROR_STOP=1 -At -c "$1"; }
+if [ "$(q "select to_regclass('public.recall_maps') is not null")" != t ]; then exit 0; fi
+if [ "$(q "select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'recall_maps' and column_name = 'node_id'")" = 1 ]; then
+  q "select coalesce(string_agg(slug, ' ' order by slug), '') from recall_maps where node_id is null"
+else
+  q "select coalesce(string_agg(slug, ' ' order by slug), '') from recall_maps"
+fi
+EOF
+) || die "could not check for page-built Recall maps"
+V1=$(printf '%s' "$V1" | tr -d '\r')
+if [ -n "$V1" ]; then
+  if [ "${ROLL_ALLOW_V1_RECALL:-}" = 1 ]; then
+    echo "recall: page-built map(s) left, allowed by ROLL_ALLOW_V1_RECALL=1: $V1"
+  else
+    die "page-built Recall map(s) still on this box: $V1. Retire them first (untag the root on the current release, then move the slug onto the native map; docs/update-prod.md), or set ROLL_ALLOW_V1_RECALL=1 if the owner agreed they may go."
+  fi
+else
+  echo "recall: no page-built maps"
+fi
 
 if [ -n "$DRY" ]; then
   echo "dry run: stopping before the backup and the request"

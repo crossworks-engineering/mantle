@@ -26,8 +26,6 @@ refused, so nothing is ever served that failed one.
 
 ## How a map works
 
-What that means in practice:
-
 - **A map is a `recall` node** under the `recall` tree root, filed in folders
   (at most three deep). Cards are rows, not nodes, so they never appear in the
   tree and a card has no access level of its own — a walk can never break
@@ -132,10 +130,11 @@ and write tools run on owner surfaces only. Still to come: team-level sharing
 taken for every other map. To give a native map a slug another map answers
 to, retire or re-slug that map first, then set the slug with
 `recall_map_set_slug` or `PATCH /api/recall/maps/:id { slug }`; the native
-map's old slug keeps resolving as a former slug. On dev the v1 slugs
+map's old slug keeps resolving as a former slug. On dev the four v1 maps
 (`mantle-registry-start-here`, `mantle-status-workflow`,
-`jackdaw-ui-standards`) are freed by untagging their roots while the v1 code
-still runs, before the R5 release is rolled (docs/update-prod.md).
+`jackdaw-ui-standards` and the test map) are retired before the R5 release
+is rolled: untag the root while the v1 code still runs, THEN set the slug,
+then check `recall_open(<old slug>)` (docs/update-prod.md).
 
 ## The serving tools (S2)
 

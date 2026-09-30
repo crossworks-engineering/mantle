@@ -7,25 +7,31 @@
 -- so any row left is dead weight. This deletes them; their cards go with them
 -- (recall_nodes.map_id ON DELETE CASCADE, migration 0203).
 --
--- This is the cleanup for leftovers, not the retirement itself. On dev the
--- four v1 maps are retired BEFORE this release is rolled: their slugs move to
--- the native maps and their roots are untagged while the v1 code still runs,
--- and untagging a root removes its compiled map through the v1 hooks. So on
--- a box where that was done, this finds nothing. Only dev and jason-prod ever
--- had v1 maps (Jason, 2026-09-30: "not used anymore").
+-- This is the cleanup for leftovers, not the retirement itself: from the
+-- moment the R5 code runs, no page-built map is served, whether or not this
+-- has run. The retirement is done by hand BEFORE this release reaches a box,
+-- on a release that still has the v1 code: untag the map's root (the v1
+-- hooks drop its compiled map and free its slug), then give the native map
+-- the old slug as a former slug. On dev that is four maps
+-- (mantle-registry-start-here, mantle-status-workflow, jackdaw-ui-standards,
+-- recall-workshop-test-map); jason-prod has one test map.
 --
--- PRE-ROLL CHECK on each box (docs/update-prod.md): run
---   select slug, title from recall_maps where node_id is null;
--- and roll only when it returns zero rows, or every slug it lists is answered
--- by a native map (its current slug or one of its former_slugs). A slug that
--- nothing answers stops resolving for every agent and skill that remembers it.
--- The NOTICE below puts the count and the slugs in the roll log.
+-- PRE-ROLL CHECK on each box (docs/update-prod.md; scripts/roll.sh refuses a
+-- box that fails it): select slug, title from recall_maps where node_id is
+-- null; must return ZERO rows. No other state passes: while a v1 row exists,
+-- no native map can hold its slug. The NOTICE below puts the count and the
+-- slugs in the roll log.
 --
--- Rollback: one-way for the deleted rows (they were compiled from pages, and
--- the previous release recompiles a map on the next commit to a page in a
--- still-tagged tree). The schema is unchanged: last_compile_ok and
--- last_compile_report stay, unused, so the previous release still runs on
--- this table; a later migration drops them.
+-- ORDER: this `when` (1790018820000) is above 0208's. A database that
+-- applies this before 0208 skips 0208 for ever (the runner applies only
+-- entries above the highest applied `when`), so 0208 must be on a box first.
+--
+-- Rollback: one-way for the deleted rows. The schema is unchanged:
+-- last_compile_ok and last_compile_report stay, unused, so the previous
+-- release still runs on this table. Under that release the `recall` and
+-- `prompt` page tags are live again, so untag them before rolling back
+-- (docs/update-prod.md). The follow-up migration that drops last_compile_*
+-- repeats this delete and sets node_id NOT NULL.
 SET LOCAL lock_timeout = '30s';
 --> statement-breakpoint
 DO $$

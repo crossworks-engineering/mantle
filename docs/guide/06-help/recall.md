@@ -1,57 +1,67 @@
 ---
 title: Recall
-toolGroups: [recall-read]
+toolGroups: [recall-read, recall-write]
 ---
 
 ## Recall
 
-Memory maps for agents. A map is a small set of pages an agent walks node by
-node: each node carries a piece of knowledge plus **options**; signposts that
-say where to go next and when. One map's root is its index, the entry point.
-Pages tagged `prompt` are reusable procedures agents find by meaning.
+Memory maps for agents. A map is a small set of **cards** an agent walks one
+at a time: each card holds a piece of knowledge plus **options**, signposts
+that say where to go next and when ("use when …"). Every map starts at its
+**entry card**. A card can also be a **prompt**: a reusable procedure agents
+find by meaning.
 
-This screen is the map workshop. The catalog lists every map with its compile
-state; open one to see its lint report, its nodes, and the **routing graph**;
-the whole map drawn as nodes and edges, with the entry marked and orphaned
-nodes flagged. The **Routing** button on a node edits its options without
-hand-writing the markdown convention: pick a target, write the label and the
-"use when" line, and the section is written for you. On the graph, each option
-carries a chip; hover or focus it for the full label and its "use when" line,
-and the **Labels / Dots / Off** toggle sets how much a dense map shows at once.
+This screen is the map editor. The left side is the Recall tree: your maps,
+filed in folders (up to three deep). **New map** creates one with its entry
+card already written. Open a map to work on it in three views:
 
-Maps are authored as ordinary pages, and **New** on this screen writes one for
-you: a map, or a standalone prompt. Inside a map, **Add node** creates the page
-AND the option that leads an agent to it, in one step. An index that has
-children but no options fails its lint, so the two are never separated. Each
-dialog runs the real lint as you type and tells you, before you save, whether
-the page will compile.
+- **Cards** lists the cards in order (drag to reorder) and opens one to edit:
+  its title, body (up to 6,000 characters), its "use when" line, the
+  **Prompt** switch, and its options. An option leads to another card in the
+  map, or to another published map's entry card.
+- **Graph** draws the map as cards and edges, with the entry marked and cards
+  no option leads to flagged. Hover or focus an edge's chip for the full
+  label and its "use when" line; **Labels / Dots / Off** sets how much a
+  dense map shows at once.
+- **Revisions** is the log of every change, yours and agents', with who made
+  it. **Restore** puts back what that change replaced.
 
-You can also turn a page you are already writing into a prompt: open it and use
-**Make a prompt** in its header. It adds the `Use when` line and the tags in the
-order that keeps the compile clean.
+Every save is checked as it is made. A card over the size cap, an option that
+points nowhere, or a prompt without a "use when" line is refused with a
+message that says what to fix, so an agent never reads a broken map. If the
+map changed since you opened it (an agent, or another tab), the save is
+refused and the map reloads, rather than overwriting their change.
 
-Tagging a page tree's root `recall` by hand still works and does the same thing.
-Only you can set that tag, or `prompt`. Every commit recompiles the map; if the
-new version fails its lint, agents keep reading the last good version and the
-report here says why.
+Three things are yours alone. **Publish** makes a map visible to agents; a map
+an agent starts waits here as a draft until you publish it. **Prompt** status:
+an agent can only ask for it, and the card shows the request until you confirm
+it; until then it never matches. And deleting a map. If an agent changes the
+words of a confirmed prompt, it goes back to waiting for your confirm.
+
+A map's slug is what agents and skills remember. Renaming a map keeps its
+slug; changing the slug is a separate step in the map's settings, and the old
+slug keeps working.
 
 ## Assistant
 
 - "Which Recall maps do we have?"
-- "Open the registry map and summarise the fleet node."
-- "Draft a new node for the deploy procedure under the ops map."
+- "Open the fleet map and summarise the box-by-box card."
+- "Add a card for the deploy procedure to the running-mantle map."
 
-Agents read maps through the `recall_index` / `recall_open` / `recall_go` /
-`recall_match` tools. They can draft map pages, but they cannot activate them;
-the `recall` and `prompt` tags are yours alone, which is what keeps injected
-content from ever becoming a served map.
+Agents read maps through `recall_index`, `recall_open`, `recall_go` and
+`recall_match`. With the Recall authoring tools (`recall-write`, in no agent's
+default grant) an agent can add and edit cards and start a draft map; the
+change is logged in Revisions and serves at once. An MCP client on your token
+also has the owner tools (publish, confirm a prompt, reorder, restore, change
+a slug, delete), and uses them only when you ask in the conversation.
 
 ## Technical
 
-Pages are the authoring layer; commits compile them into small serving rows
-(`recall_maps` / `recall_nodes`) so an agent read is one indexed row; no
-document parsing on the hot path. Bodies are budgeted at 6,000 characters per
-node and 100 nodes per map. Prompts are embedded (768-dim) for `recall_match`.
-Lint errors block the compile, never the commit. The routing editor writes the
-`## Options` section through the same code path the agent authoring tools use,
-so both produce byte-identical markdown.
+A map is one `recall` item in the tree; its cards are rows in `recall_nodes`,
+written directly and checked in the same transaction, so an agent read is one
+indexed row with no compile step. Caps: 6,000 characters per card body, 100
+cards per map. Prompts are embedded (768-dim) for `recall_match`, which only
+returns confirmed prompts on published maps above a score floor. Every write
+carries the map's version, and the last 50 changes per map are kept for
+restore. Maps built from tagged pages (Recall v1) were retired in R5; `recall`
+and `prompt` are ordinary page tags now.

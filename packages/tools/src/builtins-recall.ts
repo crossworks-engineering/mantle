@@ -404,6 +404,7 @@ const recall_match: BuiltinToolDef = {
           eq(recallNodes.ownerId, ctx.ownerId),
           eq(recallNodes.kind, 'prompt'),
           isNull(recallNodes.embedding),
+          sql`exists (select 1 from recall_maps m where m.id = ${recallNodes.mapId} and m.node_id is not null)`,
         ),
       )
       .limit(1);

@@ -148,6 +148,8 @@ async function embedPendingBatch(
         eq(recallNodes.ownerId, ownerId),
         eq(recallNodes.kind, 'prompt'),
         isNull(recallNodes.embedding),
+        // Never a leftover page-built (v1) row's prompt: it is not served.
+        sql`exists (select 1 from recall_maps m where m.id = ${recallNodes.mapId} and m.node_id is not null)`,
         ...(seen.length > 0 ? [notInArray(recallNodes.id, seen)] : []),
       ),
     )

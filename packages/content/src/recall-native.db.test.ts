@@ -298,6 +298,26 @@ describe.skipIf(!URL)('Recall v2 native writes, on Postgres', () => {
       await expect(
         c.putRecallCard(owner, legacy, null, { title: 'X', bodyMd: 'y' }, OWNER, 0),
       ).rejects.toMatchObject({ code: 'map_not_found' });
+      // Nor can a native card lead to it, nor the card GET read it.
+      await m.db.execute(sqlTag`
+        insert into recall_nodes (id, owner_id, map_id, slug, kind, title, body_md)
+        values (${legacy}, ${owner}, ${legacy}, 'start', 'index', 'V1 map', 'stale')`);
+      expect(await c.getRecallCard(owner, legacy, 'start')).toBeNull();
+      const map = await freshMap('Toward v1');
+      await expect(
+        c.putRecallCard(
+          owner,
+          map.mapId,
+          'start',
+          {
+            title: 'Toward v1',
+            bodyMd: '',
+            options: [{ label: 'Old', useWhen: 'never', targetSlug: 'x', targetMap: `v1-${tag}` }],
+          },
+          OWNER,
+          map.version,
+        ),
+      ).rejects.toMatchObject({ code: 'cross_map_not_found' });
     });
   });
 
