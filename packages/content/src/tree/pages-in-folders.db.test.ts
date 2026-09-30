@@ -110,7 +110,13 @@ describe.skipIf(!URL)('migration 0210: pages in folders', () => {
     // have): A > B > D > E > F (E's folder would be a fourth level), A > C,
     // two parents named "Plan", a Cyrillic parent, a stray id-label path
     // without a parent, a flat page, and a member's draft with a child.
-    const page = (pid: string, title: string, path: string, parent: string | null, owner = brain) =>
+    const page = (
+      pid: string,
+      title: string,
+      path: string,
+      parent: string | null,
+      owner: string = brain,
+    ) =>
       x(sqlTag`insert into nodes (id, owner_id, type, title, path, parent_id)
           values (${pid}, ${owner}, 'page', ${title}, ${path}::ltree, ${parent})`);
     await page(id.a, 'Alpha', 'pages', null);
