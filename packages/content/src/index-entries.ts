@@ -69,6 +69,7 @@ export {
   type CommentViewer,
   type NodeComment,
   type NodeCommentAuthorKind,
+  type NodeCommentScope,
 } from './node-comments';
 
 export {

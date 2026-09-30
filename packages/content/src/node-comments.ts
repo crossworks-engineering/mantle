@@ -106,8 +106,14 @@ const onOwnersNode = (ownerId: string) =>
     db.select({ id: nodes.id }).from(nodes).where(eq(nodes.ownerId, ownerId)),
   );
 
+/** Which of a node's threads the owner reads: every scope (the default), or
+ *  only the client thread (`thread_scope` 'client', client logins C6: what
+ *  the team and every client login read on a client-level item). */
+export type NodeCommentScope = 'client';
+
 /** The thread, oldest first. Empty when the node isn't this owner's. With
- *  `page`: one page of it (the owner route pages every read). */
+ *  `page`: one page of it (the owner route pages every read). With
+ *  `scope: 'client'`: only the client thread. */
 export async function listNodeComments(
   ownerId: string,
   nodeId: string,
@@ -116,16 +122,19 @@ export async function listNodeComments(
   ownerId: string,
   nodeId: string,
   page: CommentPageQuery,
+  opts?: { scope?: NodeCommentScope },
 ): Promise<CommentPage>;
 export async function listNodeComments(
   ownerId: string,
   nodeId: string,
   page?: CommentPageQuery,
+  opts: { scope?: NodeCommentScope } = {},
 ): Promise<NodeCommentDbRow[] | CommentPage> {
   const where = and(
     eq(nodeComments.ownerId, ownerId),
     eq(nodeComments.nodeId, nodeId),
     onOwnersNode(ownerId),
+    opts.scope === 'client' ? eq(nodeComments.threadScope, 'client') : undefined,
   );
   if (page) return commentPage(where, page);
   return db.select().from(nodeComments).where(where).orderBy(asc(nodeComments.createdAt));
