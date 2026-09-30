@@ -20,7 +20,7 @@
  *
  * Read-only in Phase 1. Writing and personal spaces come in Phase 2.
  */
-import { and, desc, eq, ilike, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import { currentViewerLevel, db, nodes, type ViewerLevel } from '@mantle/db';
 import { getNote } from './notes';
 import { getPage } from './pages/read';
@@ -85,9 +85,14 @@ function levelsOf<T>(table: Readonly<Record<ViewerLevel, readonly T[]>>): readon
   return Object.hasOwn(table, level) ? table[level] : [];
 }
 
-/** A level rule as SQL: false when the reader has no level there. */
+/** A level rule as SQL: false when the reader has no level there. An item
+ *  counts at its own level OR the share it inherits from a folder holding it
+ *  (folder sharing), the union rule the row policy uses: a note an admin keeps
+ *  at admin in a folder shared with the team is in a member's Library. */
 function levelWhere(levels: readonly string[] = levelsOf(LIBRARY_LEVELS)) {
-  return levels.length ? inArray(nodes.audience, [...levels]) : sql`false`;
+  return levels.length
+    ? or(inArray(nodes.audience, [...levels]), inArray(nodes.inheritedLevel, [...levels]))!
+    : sql`false`;
 }
 
 /** Refuse to run at admin: this module exists to be read at a member's level,
@@ -107,8 +112,9 @@ function rowOf(n: typeof nodes.$inferSelect): LibraryRow {
     icon: typeof d.icon === 'string' && d.icon.trim() ? d.icon : null,
     summary: typeof d.summary === 'string' ? d.summary : null,
     // The list admits only these two; a public item opened by id (B10), or
-    // anything else, reads as team: the Client badge is never gained.
-    audience: n.audience === 'client' ? 'client' : 'team',
+    // anything else, reads as team: the Client badge is never gained. A
+    // client reads it at its own level or through a client-shared folder.
+    audience: n.audience === 'client' || n.inheritedLevel === 'client' ? 'client' : 'team',
     updatedAt: n.updatedAt.toISOString(),
   };
 }

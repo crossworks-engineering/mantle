@@ -211,7 +211,7 @@ describe('GET /api/member/items', () => {
     const acc = h.calls.find((c) => c.fn === 'listAccepted')!;
     expect(acc.args.slice(0, 2)).toEqual([ANCHOR, LOGIN]);
     // Only what the Library does not list already, merged on updatedAt.
-    expect(acc.args[2]).toMatchObject({ order: 'updated', audiences: ['public', 'admin'] });
+    expect(acc.args[2]).toMatchObject({ order: 'updated', outside: ['team', 'client'] });
   });
 
   it('gives the Library rows of the page their author and byMe', async () => {

@@ -171,7 +171,9 @@ export function acceptedItemRow(
   row: AcceptedRow,
   libraryLevels: readonly LibraryAudience[],
 ): MemberItemRow {
-  const inLibrary = (libraryLevels as readonly ViewerLevel[]).includes(row.audience);
+  const levels = libraryLevels as readonly ViewerLevel[];
+  const inLibrary =
+    levels.includes(row.audience) || (!!row.inherited && levels.includes(row.inherited));
   return {
     id: row.id,
     type: row.type,
