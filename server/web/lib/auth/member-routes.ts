@@ -19,6 +19,12 @@ export const MEMBER_ROUTES: readonly string[] = [
   // the team level, folders shown only on the way to them.
   'GET /api/member/tree/:kind',
   'GET /api/member/tree/:kind/search',
+  // The member's own folders in that tree and filing its own drafts (folder
+  // plan phase 5): only its own rows change.
+  'POST /api/member/tree/:kind/folders',
+  'PATCH /api/member/tree/:kind/folders/:id',
+  'DELETE /api/member/tree/:kind/folders/:id',
+  'POST /api/member/tree/:kind/move',
   'GET /api/member/files/:id',
   'GET /api/member/draws/:id/svg',
   // Chat with the team-level agent, the login's own thread (Phase 1).

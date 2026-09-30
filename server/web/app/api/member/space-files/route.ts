@@ -14,8 +14,11 @@ import {
   spacesRootAvailable,
   sweepSpool,
 } from '@mantle/files';
+import { memberFilingPath } from '@mantle/content/tree';
+import { z } from 'zod';
 import { getMemberOr401 } from '@/lib/auth';
 import { inMySpace, memberWriteGate, spaceStateResponse } from '@/lib/member-space';
+import { memberTreeScope, treeErrorResponse } from '@/lib/tree-route';
 import { readMultipartUpload, type ParsedUpload } from '@/lib/upload-stream';
 
 /** Multipart framing around the file part (boundaries, part headers). */
@@ -30,7 +33,9 @@ const MULTIPART_OVERHEAD_BYTES = 64 * 1024;
  * at the headroom, and they are checked again, under the space's quota lock,
  * before the bytes are kept (409 `quota`). Nothing is extracted or indexed.
  * Answers 201 with `{ row, body }`, the same item shape as
- * GET /api/member/space/:id.
+ * GET /api/member/space/:id. An optional `folderId` field files it in a
+ * Files folder the member's tree shows (folder plan phase 5; 404 for one it
+ * does not see).
  */
 export async function POST(req: Request) {
   const member = await getMemberOr401();
@@ -76,6 +81,24 @@ export async function POST(req: Request) {
   }
   const upload = parsed.file;
   if (!upload) return NextResponse.json({ error: 'A file is required.' }, { status: 400 });
+  const folderId = z
+    .string()
+    .uuid()
+    .optional()
+    .safeParse(parsed.fields.folderId || undefined);
+  if (!folderId.success) {
+    await discardSpooled(upload.spooled);
+    return NextResponse.json({ error: 'Invalid folder.' }, { status: 400 });
+  }
+  let path: string | undefined;
+  if (folderId.data) {
+    try {
+      path = await memberFilingPath(memberTreeScope(member), 'files', folderId.data);
+    } catch (err) {
+      await discardSpooled(upload.spooled);
+      return treeErrorResponse(err);
+    }
+  }
   if (upload.spooled.size === 0) {
     await discardSpooled(upload.spooled);
     return NextResponse.json({ error: 'The file is empty.' }, { status: 400 });
@@ -85,6 +108,7 @@ export async function POST(req: Request) {
       const id = await createMineFile(member.spaceId, {
         filename: upload.filename,
         spooled: upload.spooled,
+        path,
       });
       return getMineItem(member.spaceId, id);
     });

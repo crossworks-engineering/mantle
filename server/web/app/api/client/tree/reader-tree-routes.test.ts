@@ -95,6 +95,24 @@ vi.mock('@mantle/content/tree', async (importOriginal) => ({
       nextCursor: null,
     };
   },
+  // A member's tree merges its own folders and drafts (phase 5).
+  loadMemberTreeFolder: async (...args: unknown[]) => {
+    h.calls.push({ fn: 'member-load', args });
+    if (h.hidden) return null;
+    return {
+      kind: 'notes',
+      folder,
+      crumbs: [],
+      folders: [folder],
+      items: [item],
+      sort: 'updated',
+      nextCursor: null,
+    };
+  },
+  searchMemberTree: async (...args: unknown[]) => {
+    h.calls.push({ fn: 'member-search', args });
+    return { kind: 'notes', folders: [], items: [], nextCursor: null };
+  },
 }));
 
 type Tokens = typeof import('@/lib/auth/tokens');
@@ -127,7 +145,7 @@ async function call(login: string, url: string, handler: Handler, kind: string) 
 }
 
 describe('the member and client tree routes', () => {
-  it('reads as each role: a member at team, a client at client', async () => {
+  it('reads as each role: a member in its own space and at team, a client at client', async () => {
     const member = (await import('../../member/tree/[kind]/route')).GET;
     const client = (await import('./[kind]/route')).GET;
     expect(
@@ -136,9 +154,9 @@ describe('the member and client tree routes', () => {
     expect(
       (await call(CLIENT, `/api/client/tree/notes?folder=${FOLDER}`, client, 'notes')).status,
     ).toBe(200);
-    expect(h.calls.map((c) => [c.fn, c.args[0], c.args[1], c.args[2]])).toEqual([
-      ['load', ANCHOR, 'team', 'notes'],
-      ['load', ANCHOR, 'client', 'notes'],
+    expect(h.calls.map((c) => [c.fn, c.args[0], c.args[1]])).toEqual([
+      ['member-load', { anchorId: ANCHOR, spaceId: SPACE, loginId: MEMBER }, 'notes'],
+      ['load', ANCHOR, 'client'],
     ]);
   });
 

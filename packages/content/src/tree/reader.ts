@@ -19,7 +19,7 @@
  * reader's (what it would see inside), never the brain's.
  *
  * Call it on the admin pool, outside any viewer scope: it scopes its own item
- * reads. The member's own folders (drafts in place) come with phase 5.
+ * reads. A member's own folders and drafts are merged in by ./member-tree.
  */
 import { sql, type SQL } from 'drizzle-orm';
 import { currentSpaceScope, currentViewerLevel, db, withViewer } from '@mantle/db';
@@ -62,20 +62,20 @@ function assertAdminScope(): void {
 }
 
 /** What the reader lists of a kind's items (`and ...` on alias `n`). */
-function readerItems(reader: TreeReader, alias: string): SQL {
+export function readerItems(reader: TreeReader, alias: string): SQL {
   const a = sql.raw(alias);
   return sql`and ${readAtAliasSql(alias, libraryLevelsOf(reader))}
     and not (${a}.type = 'file' and ${a}.data ? 'sourceFileId')`;
 }
 
-type Visible = {
+export type Visible = {
   /** The folder paths the reader sees. */
   paths: Set<string>;
   /** Readable items per path (the kind's root included). */
   items: Map<string, number>;
 };
 
-async function visibleFolders(
+export async function visibleFolders(
   anchorId: string,
   reader: TreeReader,
   kind: TreeKind,

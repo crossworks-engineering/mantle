@@ -56,3 +56,20 @@ export {
   searchReaderTree,
   type TreeReader,
 } from './reader';
+export {
+  loadMemberTreeFolder,
+  memberView,
+  searchMemberTree,
+  storedPathOf,
+  treePathOf,
+  type MemberTreeScope,
+  type MemberView,
+} from './member-tree';
+export {
+  createMemberFolder,
+  deleteMemberFolder,
+  memberFilingPath,
+  moveMemberItems,
+  updateMemberFolder,
+  type MemberFolderPatch,
+} from './member-tree-write';
