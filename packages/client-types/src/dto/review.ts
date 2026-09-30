@@ -5,7 +5,7 @@
  * the wire, so an older brain or an older client keeps working.
  */
 import type { AccessItemView, AccessLevel } from './access';
-import type { TreeCrumb, TreeKind } from '../tree';
+import type { TreeCrumb, TreeKind, TreeShareLevel, TreeVisibilityChange } from '../tree';
 
 /** Who wrote a reviewable item: a member or a client login. */
 export type ReviewAuthorRole = 'member' | 'client';
@@ -43,6 +43,10 @@ export type AcceptPlace = {
   /** The folder's crumbs, top-down, itself included. */
   crumbs: TreeCrumb[];
   creates: string[];
+  /** The share it is read at there through a shared folder (null: none):
+   *  the item is read at the more open of this and the chosen level. Absent
+   *  from brains before v0.232.357. */
+  share?: TreeShareLevel | null;
 };
 
 /** POST /api/team-admin/submissions/:id/accept and
@@ -61,6 +65,21 @@ export type AcceptRequest = {
    *  For a client's item at client or public every closure item that goes
    *  down must be here. */
   confirmedIds?: string[];
+  /** The admin saw the `visibility` refusal's list and accepts that those
+   *  items are read above the chosen level where they land. */
+  visibilityConfirmed?: boolean;
+};
+
+/** 409 from either Accept (v0.232.357 on): the item, or something of its
+ *  bundle, lands in a shared folder and would be read above the chosen
+ *  level there. Nothing moved; repeat with `visibilityConfirmed: true`. */
+export type AcceptVisibilityRefusal = {
+  error: string;
+  reason: 'visibility';
+  /** The first changes (at most TREE_VISIBILITY_LIST_MAX): `from` the
+   *  chosen level, `to` the level it would be read at. */
+  changes: TreeVisibilityChange[];
+  total: number;
 };
 
 /** 409 from either Accept: a client's item at client or public without the

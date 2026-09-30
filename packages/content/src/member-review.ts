@@ -133,13 +133,21 @@ import {
   withMoveHooks,
 } from './member-takeover';
 import { writeAcceptedSnapshots } from './member-snapshots';
-import { TREE_KIND_SPECS } from '@mantle/client-types/tree';
+import {
+  TREE_KIND_SPECS,
+  TREE_VISIBILITY_LIST_MAX,
+  type TreeVisibilityChange,
+} from '@mantle/client-types/tree';
+import { effectiveLevel } from '@mantle/content-core/tree';
 import {
   acceptPlace,
   dropEmptyOwnFolders,
   ensurePlaced,
   planPlace,
+  sharesAt,
+  treeKindOfType,
   type AcceptPlace,
+  type PlacePlan,
 } from './accept-place';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -156,11 +164,16 @@ export class ReviewError extends Error {
       | 'invalid'
       | 'too-large'
       // A client's item to client or public level, not confirmed (C1).
-      | 'confirm-level',
+      | 'confirm-level'
+      // It lands in a shared folder and would be read above the chosen
+      // level (folder plan phase 5): repeat with visibilityConfirmed.
+      | 'visibility',
     message: string,
     /** `confirm-level` only: the brain items the Accept would take down
      *  with the item (its embed closure above the chosen level). */
     readonly goingDown?: EmbedItem[],
+    /** `visibility` only: what would be read above the chosen level. */
+    readonly visibility?: { changes: TreeVisibilityChange[]; total: number },
   ) {
     super(message);
     this.name = 'ReviewError';
@@ -587,6 +600,9 @@ export type AcceptClosureItem = {
 export async function previewAccept(
   id: string,
   brainId?: string,
+  /** The folder the admin picked (see AcceptOptions.folderId): the place is
+   *  worked out for it instead of in place. */
+  pick?: string | null,
 ): Promise<(Bundle & { closure?: AcceptClosureItem[]; place?: AcceptPlace }) | null> {
   const found = await reviewRow(id);
   if (!found) return null;
@@ -599,7 +615,9 @@ export async function previewAccept(
     type: string;
     path: string;
   }>;
-  const place = node ? await acceptPlace(db, brainId, found.spaceId, node) : null;
+  const place = node
+    ? await acceptPlace(db, brainId, found.spaceId, { id: found.row.id, ...node }, pick)
+    : null;
   return {
     ...bundle,
     closure: await acceptClosure(db, brainId, found.spaceId, bundle.items),
@@ -687,11 +705,17 @@ export type AcceptOptions = {
    *  folders still go below it). Pages keep `parentPageId`. The rest of the
    *  bundle always lands in place. */
   folderId?: string | null;
+  /** The admin saw, and accepts, that items land in a shared folder and are
+   *  read above the chosen level there (the `visibility` refusal's list). */
+  visibilityConfirmed?: boolean;
 };
 
 export type AcceptResult = {
   id: string;
   audience: ViewerLevel;
+  /** The level the item is read at: the more open of `audience` and the
+   *  share of the folder it landed in. */
+  readAt: ViewerLevel;
   moved: BundleItem[];
   linksStayingBehind: number;
   /** Brain items it embeds that went down to its level with it (embedding
@@ -778,6 +802,19 @@ function confirmLevelError(level: ViewerLevel, goingDown: EmbedItem[]): ReviewEr
     'confirm-level',
     `A client wrote this. At ${level} level ${readersAt(level)}.${also} Confirm that, or accept it at team.`,
     goingDown,
+  );
+}
+
+/** Items that would be read above the chosen level where they land. */
+function visibilityError(changes: TreeVisibilityChange[]): ReviewError {
+  const n = changes.length;
+  const what = n === 1 ? 'It lands' : `${n} items land`;
+  return new ReviewError(
+    'visibility',
+    `${what} in a shared folder and would be read above the level you chose. ` +
+      'Confirm that, or pick another folder.',
+    undefined,
+    { changes: changes.slice(0, TREE_VISIBILITY_LIST_MAX), total: n },
   );
 }
 
@@ -1235,17 +1272,71 @@ async function moveIntoBrain(
       const items = bundle.items.filter((b) => inSpace.has(b.id));
       const ids = items.map((b) => b.id);
 
-      // 3b. A client's item at client or public (audit A28): the admin
-      //     confirmed the level AND ticked every brain item that goes down
-      //     with it, read here on the locked rows. Refused before anything
-      //     moves, with the list, so the dialog can show it.
-      if (needsLevelConfirm(authorRole, audience)) {
+      // 3a. Where each item lands, planned before anything moves (read
+      //     only), and the share it is read at there (folder plan phase 5):
+      //     in a shared folder an item is read at the more open of its level
+      //     and the folder's share (migration 0204), so a landing that reads
+      //     above the chosen level needs the admin's confirmation, listed
+      //     item by item (the bundle too: its items land where they were
+      //     filed). Refused before anything moves.
+      const storedPath = new Map(
+        (
+          await tx
+            .select({ id: nodes.id, path: nodes.path })
+            .from(nodes)
+            .where(inArray(nodes.id, ids))
+        ).map((r) => [r.id, String(r.path)]),
+      );
+      const plans = new Map<string, PlacePlan>();
+      const landingOf = new Map<string, string>();
+      for (const b of items) {
+        if (b.type === 'file' && legacyFolder) {
+          landingOf.set(b.id, legacyFolder);
+          continue;
+        }
+        const from = storedPath.get(b.id);
+        if (!treeKindOfType(b.type) || from === undefined) continue;
+        const plan = await planPlace(
+          tx,
+          brainId,
+          spaceId,
+          { type: b.type, path: from },
+          b.id === id ? opts.folderId : undefined,
+        );
+        if (!plan) throw new ReviewError('invalid', 'That folder is not in the brain.');
+        plans.set(b.id, plan);
+        landingOf.set(b.id, plan.target);
+      }
+      const shares = await sharesAt(
+        tx,
+        brainId,
+        items.flatMap((b) => {
+          const at = landingOf.get(b.id);
+          return at ? [{ id: b.id, path: at, type: b.type }] : [];
+        }),
+      );
+      const readAtOf = (itemId: string): ViewerLevel =>
+        effectiveLevel(audience, shares.get(itemId) ?? null) as ViewerLevel;
+      const readAt = readAtOf(id);
+      const exposed: TreeVisibilityChange[] = items
+        .filter((b) => readAtOf(b.id) !== audience)
+        .map((b) => ({ id: b.id, title: b.title, from: audience, to: readAtOf(b.id) }));
+      if (exposed.length && opts.visibilityConfirmed !== true) {
+        throw visibilityError(exposed);
+      }
+
+      // 3b. A client's item read at client or public (audit A28), by its
+      //     level or by the folder it lands in: the admin confirmed the
+      //     level AND ticked every brain item that goes down with it, read
+      //     here on the locked rows. Refused before anything moves, with the
+      //     list, so the dialog can show it.
+      if (needsLevelConfirm(authorRole, readAt)) {
         const goingDown = (await acceptClosure(tx, brainId, spaceId, items)).filter((c) =>
-          levelAbove(c.audience, audience),
+          levelAbove(c.audience, readAt),
         );
         const ticked = new Set(opts.confirmedIds ?? []);
         if (opts.lowerConfirmed !== true || goingDown.some((g) => !ticked.has(g.id))) {
-          throw confirmLevelError(audience, goingDown);
+          throw confirmLevelError(readAt, goingDown);
         }
       }
       const sharing = await tx
@@ -1281,17 +1372,11 @@ async function moveIntoBrain(
         if (!f) throw new ReviewError('invalid', 'That folder is not in the brain.');
       }
 
-      /** Where a tree kind's item lands: in place, or (the item itself) the
-       *  admin's pick, with its brain folders made. */
+      /** Where a tree kind's item lands (planned in 3a): in place, or (the
+       *  item itself) the admin's pick, with its brain folders made. */
       const fromPaths: string[] = [];
       const landing = async (b: BundleItem, stored: string): Promise<string> => {
-        const plan = await planPlace(
-          tx,
-          brainId,
-          spaceId,
-          { type: b.type, path: stored },
-          b.id === id ? opts.folderId : undefined,
-        );
+        const plan = plans.get(b.id);
         if (!plan) throw new ReviewError('invalid', 'That folder is not in the brain.');
         await ensurePlaced(tx, brainId, plan);
         fromPaths.push(stored);
@@ -1436,8 +1521,10 @@ async function moveIntoBrain(
 
       // 4b. Embedding means sharing: at a level below admin, what the item
       //     embeds that is already the brain's (a Library item) goes down
-      //     with it. The bundle itself took the level above.
-      const { lowered: alsoLowered } = await lowerEmbedClosure(brainId, id, audience, tx);
+      //     with it, to the level it is READ at (its folder's share
+      //     included), as a folder share does. The bundle itself took the
+      //     level above.
+      const { lowered: alsoLowered } = await lowerEmbedClosure(brainId, id, readAt, tx);
       // What the moved pages index is their new level's (pages/level-text.ts,
       // SQL only); the extractor hears of them once, below, as before.
       await refoldPageTexts(brainId, ids, tx);
@@ -1469,6 +1556,7 @@ async function moveIntoBrain(
       return {
         id,
         audience,
+        readAt,
         moved: items,
         linksStayingBehind: bundle.linksStayingBehind,
         alsoLowered,

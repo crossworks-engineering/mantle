@@ -2,6 +2,9 @@
  * POST /api/admin/space/:id/accept
  *   { audience?: 'admin'|'team'|'client'|'public', parentPageId?, folderPath?,
  *     folderId?, lowerConfirmed?, confirmedIds? }
+ * `visibilityConfirmed`: it lands in a shared folder and is read above the
+ * chosen level there, and the admin saw the list (else 409 `visibility`
+ * with `changes` and `total`, before anything moves).
  * `folderId` (folder plan phase 5): where the item lands; left out, it stays
  * in the brain folder it was filed in (the author's own folders below it
  * become brain folders); null is the top level. `folderPath` is the Files
@@ -34,6 +37,7 @@ const Body = z.object({
   folderId: z.string().uuid().nullable().optional(),
   lowerConfirmed: z.boolean().optional(),
   confirmedIds: z.array(z.string().uuid()).max(5000).optional(),
+  visibilityConfirmed: z.boolean().optional(),
 });
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {

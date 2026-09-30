@@ -61,7 +61,35 @@ describe('review Accept routes', () => {
     const res = await GET(new Request('http://x'), ctx);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ items: [], linksStayingBehind: 0, closure: [] });
-    expect(callOf('previewAccept')).toEqual([ITEM, ANCHOR]);
+    expect(callOf('previewAccept')).toEqual([ITEM, ANCHOR, undefined]);
+  });
+
+  it('the bundle preview works the place out for a picked folder, or the top level', async () => {
+    const { GET } = await import('./[id]/bundle/route');
+    expect((await GET(new Request(`http://x?folderId=${FILE}`), ctx)).status).toBe(200);
+    expect(callOf('previewAccept')).toEqual([ITEM, ANCHOR, FILE]);
+    h.calls.length = 0;
+    expect((await GET(new Request('http://x?folderId=root'), ctx)).status).toBe(200);
+    expect(callOf('previewAccept')).toEqual([ITEM, ANCHOR, null]);
+    expect((await GET(new Request('http://x?folderId=nope'), ctx)).status).toBe(404);
+  });
+
+  it('Accept forwards visibilityConfirmed, and a visibility refusal carries the list', async () => {
+    const { POST } = await import('./[id]/accept/route');
+    expect((await POST(post({ visibilityConfirmed: true }), ctx)).status).toBe(200);
+    expect(callOf('acceptReviewItem')?.[3]).toEqual({ visibilityConfirmed: true });
+    const { ReviewError } = await import('@mantle/content');
+    const changes = [{ id: FILE, title: 'x', from: 'admin' as const, to: 'client' as const }];
+    const res = (await import('@/lib/member-review')).reviewErrorResponse(
+      new ReviewError('visibility', 'lands shared', undefined, { changes, total: 1 }),
+    );
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'lands shared',
+      reason: 'visibility',
+      changes,
+      total: 1,
+    });
   });
 
   it('Accept forwards lowerConfirmed and confirmedIds', async () => {

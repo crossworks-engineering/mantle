@@ -197,12 +197,24 @@ describe.skipIf(!URL)('a member’s tree: own folders, drafts in place, teammate
     const loose = await draft(a, 'loose');
     expect((await tree.moveMemberItems(scopeA, 'notes', [loose], mine.id)).moved).toBe(1);
     expect(await pathOf(loose)).toBe(`notes.${L}_team.drafts`);
+    const [before] = (await m.systemDb.execute(
+      sqlTag`select review_state from space_items where node_id = ${loose}`,
+    )) as unknown as Array<{ review_state: string }>;
     await m.systemDb.execute(
       sqlTag`update space_items set review_state = 'submitted' where node_id = ${loose}`,
     );
     expect((await tree.moveMemberItems(scopeA, 'notes', [loose], null)).moved).toBe(0);
     expect(await pathOf(loose)).toBe(`notes.${L}_team.drafts`);
-    // A folder move still carries it: filing is not an edit.
+    // Nor does its folder move while it is with an admin: the admin's Accept
+    // lands it where it was reviewed.
+    await expect(
+      tree.updateMemberFolder(scopeA, 'notes', mine.id, { parentId: null }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    expect(await pathOf(loose)).toBe(`notes.${L}_team.drafts`);
+    // Back from review, the folder move carries it.
+    await m.systemDb.execute(
+      sqlTag`update space_items set review_state = ${before!.review_state} where node_id = ${loose}`,
+    );
     const moved = await tree.updateMemberFolder(scopeA, 'notes', mine.id, { parentId: null });
     expect(moved.path).toBe('notes.drafts');
     expect(await pathOf(loose)).toBe('notes.drafts');

@@ -5,6 +5,9 @@
  * (merging by name, keeping their name and look, cut to three levels), the
  * admin may pick another folder (the member's folders still go below it),
  * and the member's emptied folders go. Files land on the brain's disk path.
+ * A landing in a shared folder that would be read above the chosen level is
+ * refused (reason `visibility`, the list) until the admin confirms, and a
+ * member's folder holding a submitted draft does not move.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/accept-place.viewer.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -132,6 +135,7 @@ describe.skipIf(!URL)('Accept claims in place', () => {
         { id: folders.acme, name: 'Acme' },
       ],
       creates: ['Mine Stuff'],
+      share: null,
     });
     await rv.acceptReviewItem(anchor, id, reviewer());
     expect(await row(id)).toMatchObject({ owner_id: anchor, path: 'notes.clients.acme.mine' });
@@ -218,6 +222,70 @@ describe.skipIf(!URL)('Accept claims in place', () => {
     const onDisk = path.join(root, 'files', 'docs', String(accepted!.data?.filename));
     expect(existsSync(onDisk)).toBe(true);
     expect(readFileSync(onDisk, 'utf8')).toBe('DOCBYTES');
+  });
+
+  it('refuses a landing in a client-shared folder until the admin confirms, and nothing moves', async () => {
+    const portal = await tree.createTreeFolder(anchor, 'notes', {
+      parentId: null,
+      name: 'Portal',
+    });
+    await tree.updateTreeFolder(anchor, 'notes', portal.id, { share: 'client' }, { confirm: true });
+    const id = await submittedNote('into portal', 'notes.portal');
+    expect((await rv.previewAccept(id, anchor))?.place).toMatchObject({
+      folderId: portal.id,
+      share: 'client',
+    });
+    // The default level (admin) would be read at client there: refused.
+    await expect(rv.acceptReviewItem(anchor, id, reviewer())).rejects.toMatchObject({
+      reason: 'visibility',
+      visibility: { total: 1, changes: [{ id, from: 'admin', to: 'client' }] },
+    });
+    expect(await row(id)).toMatchObject({ owner_id: space, path: 'notes.portal' });
+    // Confirmed: it lands, read at client.
+    const res = await rv.acceptReviewItem(anchor, id, reviewer(), { visibilityConfirmed: true });
+    expect(res).toMatchObject({ audience: 'admin', readAt: 'client' });
+    const [landed] = (await m.systemDb.execute(sqlTag`
+      select owner_id, audience, inherited_level from nodes where id = ${id}`)) as unknown as Array<{
+      owner_id: string;
+      audience: string;
+      inherited_level: string | null;
+    }>;
+    expect(landed).toEqual({ owner_id: anchor, audience: 'admin', inherited_level: 'client' });
+
+    // The admin's pick into the shared folder is refused the same way; a
+    // level at or below the share needs no confirmation.
+    const picked = await submittedNote('picked into portal', 'notes.clients');
+    await expect(
+      rv.acceptReviewItem(anchor, picked, reviewer(), { folderId: portal.id }),
+    ).rejects.toMatchObject({ reason: 'visibility' });
+    expect((await rv.previewAccept(picked, anchor, portal.id))?.place).toMatchObject({
+      folderId: portal.id,
+      share: 'client',
+    });
+    await rv.acceptReviewItem(anchor, picked, reviewer(), {
+      folderId: portal.id,
+      audience: 'client',
+    });
+    expect(await row(picked)).toMatchObject({ owner_id: anchor, path: 'notes.portal' });
+  });
+
+  it('keeps a member folder that holds a submitted draft where it is', async () => {
+    const held = await ownFolder('notes.clients.held', 'Held');
+    const id = await submittedNote('held', 'notes.clients.held');
+    const scope = { anchorId: anchor, spaceId: space, loginId: login };
+    await expect(
+      tree.updateMemberFolder(scope, 'notes', held, { parentId: folders.acme }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    await expect(
+      tree.updateMemberFolder(scope, 'notes', held, { name: 'Renamed' }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    await expect(tree.deleteMemberFolder(scope, 'notes', held)).rejects.toMatchObject({
+      code: 'conflict',
+    });
+    expect(await row(id)).toMatchObject({ path: 'notes.clients.held' });
+    // Its look still changes (no move).
+    await tree.updateMemberFolder(scope, 'notes', held, { icon: '🗂️' });
+    expect(await row(held)).toMatchObject({ path: 'notes.clients.held', data: { icon: '🗂️' } });
   });
 
   it('a client from before the tree still files every file in its folderPath', async () => {

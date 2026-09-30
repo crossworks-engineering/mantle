@@ -11,8 +11,9 @@
  * The checks read the member's view on the admin pool (./member-tree); the
  * writes run on the admin pool too, always narrowed to the member's own space
  * (owner_id = its space id, from the session). A draft submitted for review
- * (frozen) is not moved on its own, but a folder rename or move carries it:
- * filing is organisational, never an edit.
+ * (frozen) never moves: not on its own, and not with its folder. A folder
+ * that holds one is not renamed, moved or deleted until the review is done,
+ * so the place the admin reviewed is the place Accept uses.
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
@@ -138,6 +139,27 @@ async function rewriteOwn(
   await tx.execute(sql`update nodes n set path = ${mapped} where ${own}`);
 }
 
+/** Refuse to move a folder (rename, move, delete) while it holds a draft
+ *  that is with an admin: the admin's Accept lands it where it sits. */
+async function refuseFrozenInside(
+  tx: Pick<typeof db, 'execute'>,
+  spaceId: string,
+  stored: string,
+  name: string,
+): Promise<void> {
+  const [hit] = (await tx.execute(sql`
+    select 1 from nodes
+     where owner_id = ${spaceId} and path <@ ${stored}::ltree and type <> 'branch'
+       and mantle_space_item_frozen(id)
+     limit 1`)) as unknown as unknown[];
+  if (hit) {
+    throw new TreeError(
+      'conflict',
+      `'${name}' holds a draft that is with an admin for review; it stays where it is until the review is done`,
+    );
+  }
+}
+
 /** Change one of the member's own folders: move, then rename, then look. */
 export async function updateMemberFolder(
   scope: MemberTreeScope,
@@ -185,6 +207,7 @@ export async function updateMemberFolder(
   }
   await db.transaction(async (tx) => {
     if (path !== folder.path) {
+      await refuseFrozenInside(tx, scope.spaceId, storedPathOf(kind, folder.path), folder.name);
       await rewriteOwn(
         tx,
         scope.spaceId,
@@ -224,6 +247,7 @@ export async function deleteMemberFolder(
     );
   }
   await db.transaction(async (tx) => {
+    await refuseFrozenInside(tx, scope.spaceId, storedPathOf(kind, folder.path), folder.name);
     await rewriteOwn(
       tx,
       scope.spaceId,

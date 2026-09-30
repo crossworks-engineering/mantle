@@ -25,6 +25,7 @@ export function reviewErrorResponse(err: unknown): Response {
         error: err.message,
         reason: err.reason,
         ...(err.goingDown ? { goingDown: err.goingDown } : {}),
+        ...(err.visibility ? err.visibility : {}),
       },
       { status },
     );

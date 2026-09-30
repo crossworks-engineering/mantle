@@ -56,6 +56,7 @@ export type {
   AcceptPlace,
   AcceptPreview,
   AcceptRequest,
+  AcceptVisibilityRefusal,
   ReviewAuthorRole,
   ReviewAuthorView,
 } from './dto/review';

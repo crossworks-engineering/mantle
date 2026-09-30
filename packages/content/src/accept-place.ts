@@ -23,6 +23,7 @@ import {
   TREE_MAX_DEPTH,
   type TreeCrumb,
   type TreeKind,
+  type TreeShareLevel,
 } from '@mantle/client-types/tree';
 import { treeFolderChain } from '@mantle/content-core/tree';
 import { treePathOf } from './tree/member-tree';
@@ -180,6 +181,27 @@ export async function dropEmptyOwnFolders(
   }
 }
 
+/**
+ * The share each item would inherit where it lands in the brain (migration
+ * 0204's rule, mantle_inherited_level): the nearest shared brain folder at or
+ * above its landing path. The chain folders an Accept makes are never shared,
+ * so the answer holds before they exist. Read only.
+ */
+export async function sharesAt(
+  via: Via,
+  brainId: string,
+  landings: ReadonlyArray<{ id: string; path: string; type: string }>,
+): Promise<Map<string, TreeShareLevel | null>> {
+  if (!landings.length) return new Map();
+  const rows = (await via.execute(sql`
+    select x.id, mantle_inherited_level(${brainId}::uuid, x.p::ltree, x.t::node_type) as share
+      from (values ${sql.join(
+        landings.map((l) => sql`(${l.id}, ${l.path}, ${l.type})`),
+        sql`, `,
+      )}) as x(id, p, t)`)) as unknown as Array<{ id: string; share: TreeShareLevel | null }>;
+  return new Map(rows.map((r) => [r.id, r.share ?? null]));
+}
+
 /** What the accept dialog shows: where the item goes by default. */
 export type AcceptPlace = {
   kind: TreeKind;
@@ -189,16 +211,26 @@ export type AcceptPlace = {
   crumbs: TreeCrumb[];
   /** The member's own folders that become brain folders below it. */
   creates: string[];
+  /** The share it is read at there through a shared folder (null: none). The
+   *  item is read at the more open of this and its chosen level. */
+  share: TreeShareLevel | null;
 };
 
+/** Where an Accept puts the item: in place (`pick` undefined), the top
+ *  level (null) or a brain folder of its kind. Null when it has no tree (a
+ *  page) or the pick is not such a folder. */
 export async function acceptPlace(
   via: Via,
   brainId: string,
   spaceId: string,
-  item: { type: string; path: string },
+  item: { id: string; type: string; path: string },
+  pick?: string | null,
 ): Promise<AcceptPlace | null> {
-  const plan = await planPlace(via, brainId, spaceId, item);
+  const plan = await planPlace(via, brainId, spaceId, item, pick);
   if (!plan) return null;
+  const shares = await sharesAt(via, brainId, [
+    { id: item.id, path: plan.target, type: item.type },
+  ]);
   const chain = plan.base.id ? treeFolderChain(plan.base.path) : [];
   const rows = chain.length
     ? ((await via.execute(sql`
@@ -218,5 +250,6 @@ export async function acceptPlace(
       return r ? [{ id: r.id, name: r.title }] : [];
     }),
     creates: plan.chain.map((f) => f.title),
+    share: shares.get(item.id) ?? null,
   };
 }
