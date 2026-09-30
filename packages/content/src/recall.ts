@@ -21,7 +21,7 @@
  * page write down with it.
  */
 
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 
 import { db, isBrainOwnerId, nodes, notifyNodeIngested, recallMaps, recallNodes } from '@mantle/db';
 import { getRecallEmbedder } from './embed-bridge';
@@ -528,6 +528,27 @@ async function hasCompiledRows(ownerId: string, ids: string[]): Promise<boolean>
  *  register one — deliberately loud, because the caller is fire-and-forget and
  *  a silent zero here is invisible until recall_match stops finding prompts. */
 export async function embedPendingRecallPrompts(ownerId: string): Promise<number> {
+  // Batches of 50 until none are left. A row the embedder skipped, or whose
+  // text moved under it, is not asked for twice in one call: `seen` keeps a
+  // stubborn row from looping, and the next call (recall_match) retries it.
+  // The round cap is a guard, not a product limit: 2,000 prompts.
+  const seen: string[] = [];
+  let done = 0;
+  for (let round = 0; round < 40; round += 1) {
+    const { tried, written } = await embedPendingBatch(ownerId, seen);
+    done += written;
+    if (tried.length < RECALL_EMBED_BATCH) break;
+    seen.push(...tried);
+  }
+  return done;
+}
+
+const RECALL_EMBED_BATCH = 50;
+
+async function embedPendingBatch(
+  ownerId: string,
+  seen: string[],
+): Promise<{ tried: string[]; written: number }> {
   const pending = await db
     .select({
       id: recallNodes.id,
@@ -541,10 +562,11 @@ export async function embedPendingRecallPrompts(ownerId: string): Promise<number
         eq(recallNodes.ownerId, ownerId),
         eq(recallNodes.kind, 'prompt'),
         isNull(recallNodes.embedding),
+        ...(seen.length > 0 ? [notInArray(recallNodes.id, seen)] : []),
       ),
     )
-    .limit(50);
-  if (pending.length === 0) return 0;
+    .limit(RECALL_EMBED_BATCH);
+  if (pending.length === 0) return { tried: [], written: 0 };
 
   const embedBatch = getRecallEmbedder();
   const texts = pending.map((p) => `${p.title}\n${p.useWhen}\n${p.bodyMd}`.slice(0, 6000));
@@ -572,7 +594,7 @@ export async function embedPendingRecallPrompts(ownerId: string): Promise<number
       );
     done++;
   }
-  return done;
+  return { tried: pending.map((p) => p.id), written: done };
 }
 
 /**

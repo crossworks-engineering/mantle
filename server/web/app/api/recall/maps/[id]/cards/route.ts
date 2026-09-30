@@ -1,6 +1,12 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { putRecallCard } from '@mantle/content';
+import {
+  RECALL_LABEL_MAX,
+  RECALL_LINE_MAX,
+  RECALL_OPTIONS_MAX,
+  RECALL_TITLE_MAX,
+  putRecallCard,
+} from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 import { recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
@@ -9,19 +15,20 @@ import { UUID_RE } from '@mantle/std';
 /** Add a card. The slug comes from the title; `after` places it. Replacing an
  *  existing card is PUT on the card itself. */
 const NewCard = z.object({
-  title: z.string().min(1),
+  title: z.string().min(1).max(RECALL_TITLE_MAX),
   bodyMd: z.string(),
-  useWhen: z.string().optional(),
+  useWhen: z.string().max(RECALL_LINE_MAX).optional(),
   prompt: z.boolean().optional(),
   options: z
     .array(
       z.object({
-        label: z.string().min(1),
-        useWhen: z.string(),
+        label: z.string().min(1).max(RECALL_LABEL_MAX),
+        useWhen: z.string().max(RECALL_LINE_MAX),
         targetSlug: z.string(),
         targetMap: z.string().optional(),
       }),
     )
+    .max(RECALL_OPTIONS_MAX)
     .optional(),
   after: z.string().optional(),
   version: z.number().int().nonnegative(),

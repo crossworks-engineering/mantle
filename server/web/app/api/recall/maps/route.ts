@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { createRecallMap } from '@mantle/content';
+import { RECALL_LINE_MAX, RECALL_TITLE_MAX, createRecallMap } from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 import { countRecallMaps, listRecallMaps, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
@@ -24,8 +24,8 @@ export async function GET(req: Request) {
 }
 
 const NewMap = z.object({
-  title: z.string().min(1),
-  enterWhen: z.string().min(1),
+  title: z.string().min(1).max(RECALL_TITLE_MAX),
+  enterWhen: z.string().min(1).max(RECALL_LINE_MAX),
   folder: z.string().optional(),
 });
 

@@ -90,6 +90,8 @@ const WEB = 'reads the web';
 const OWN_SPACE = "reads the caller's own space";
 const UNSEEN = 'it runs code or actions whose target its input does not name';
 const LATER = "a run's workers act later, outside this turn";
+const RECALL_GUIDANCE =
+  "Recall is the owner's guidance to every agent; a card keeps no client mark";
 
 /**
  * Every built-in write tool (every builtin not marked `readOnly`), by slug.
@@ -283,15 +285,16 @@ export const WRITE_RULES: Readonly<Record<string, WriteRule>> = {
   openrouter_rankings: free(READS),
   openrouter_task_classes: free(READS),
   recall_eval: free('scores retrieval; writes nothing a client reads'),
-  // Recall v2 authoring. A map is admin-only: the recall tables are `none` in
-  // the access matrix, and a map is not shareable below admin at all until the
-  // team-sharing phase, which is TEAM only and never client or public. So no
-  // Recall write can put brain content in front of a client. Revisit if
-  // client-level Recall sharing is ever added (the plan refuses it for now).
-  recall_map_create: free('makes an admin-only Recall map; nothing a client reads'),
-  recall_card_put: free('writes a card in an admin-only Recall map'),
-  recall_card_delete: free('removes a card from an admin-only Recall map'),
-  recall_map_update: free('retitles an admin-only Recall map'),
+  // Recall v2 authoring. No client reads a map (admin-only, not shareable
+  // below team), but that is not the risk here: Recall is where agents are
+  // TOLD what to do. Cards are rows, not nodes, so text a client-marked turn
+  // wrote into one would never be seen as client-sourced again, and every
+  // later agent would read it as the owner's guidance. So in a marked turn
+  // every Recall write waits for the owner (Recall audit N7, 2026-09-30).
+  recall_map_create: always(RECALL_GUIDANCE),
+  recall_card_put: always(RECALL_GUIDANCE),
+  recall_card_delete: always(RECALL_GUIDANCE),
+  recall_map_update: always(RECALL_GUIDANCE),
   my_items_list: free(OWN_SPACE),
   my_item_open: free(OWN_SPACE),
 };

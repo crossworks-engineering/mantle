@@ -1,6 +1,11 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { deleteRecallMap, updateRecallMap } from '@mantle/content';
+import {
+  RECALL_LINE_MAX,
+  RECALL_TITLE_MAX,
+  deleteRecallMap,
+  updateRecallMap,
+} from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getRecallMapDetail, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
@@ -19,8 +24,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 }
 
 const Patch = z.object({
-  title: z.string().min(1).optional(),
-  enterWhen: z.string().min(1).optional(),
+  title: z.string().min(1).max(RECALL_TITLE_MAX).optional(),
+  enterWhen: z.string().min(1).max(RECALL_LINE_MAX).optional(),
   /** An explicit slug change. The old slug is kept and keeps resolving. */
   slug: z.string().min(1).optional(),
   published: z.boolean().optional(),

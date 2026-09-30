@@ -245,6 +245,29 @@ describe.skipIf(!URL)('Recall serving, native and page-built, on Postgres', () =
     }
   });
 
+  it('follows a cross-map option the natural way: recall_go(map: X, target: X)', async () => {
+    const res = await okOf(go, { map: 'status-workflow', target: 'status-workflow' });
+    expect(res.error).toBeUndefined();
+    expect(res.output).toMatchObject({ map: 'status-workflow', node: 'start' });
+    const native2 = await okOf(go, { map: 'fleet-and-access', target: 'fleet-and-access' });
+    expect(native2.output).toMatchObject({ map: 'fleet-and-access', node: 'start', kind: 'index' });
+  });
+
+  it('opens a v1 one-page prompt map, whose only card is the prompt', async () => {
+    const solo = randomUUID();
+    await m.db.execute(sqlTag`
+      insert into recall_maps (id, owner_id, slug, title, enter_when, node_count, node_id,
+                               published, version, former_slugs)
+      values (${solo}, ${owner}, 'solo-prompt', 'Solo prompt', 'x', 1, null, true, 0, '{}')`);
+    await m.db.execute(sqlTag`
+      insert into recall_nodes (id, owner_id, map_id, slug, kind, title, body_md, use_when,
+                                options, rank, prompt_pending)
+      values (${solo}, ${owner}, ${solo}, 'solo-prompt', 'prompt', 'Solo prompt', 'do it',
+              'when soloing', '[]'::jsonb, 0, false)`);
+    const res = await okOf(open, { map: 'solo-prompt' });
+    expect(res.output).toMatchObject({ node: 'solo-prompt', kind: 'prompt' });
+  });
+
   it('applies the score floor, and skips pending and unpublished prompts', async () => {
     const res = await okOf(match, { need: 'the task at hand' });
     const hits = res.output?.prompts as { target: string; score: number }[];

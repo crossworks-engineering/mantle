@@ -25,7 +25,7 @@
 
 import { randomUUID } from 'node:crypto';
 
-import { and, arrayContains, asc, count, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, arrayContains, asc, count, desc, eq, inArray, or, sql } from 'drizzle-orm';
 
 import {
   db,
@@ -42,6 +42,22 @@ import {
 } from '@mantle/content-core/recall-compile';
 
 import { RECALL_ROOT_LABEL, embedPendingRecallPrompts, ensureRecallRoot } from './recall';
+import { notifyTreeChanged } from './tree/write';
+
+/**
+ * Size caps on everything a write stores besides the body (which has its own
+ * budget). A map's title and enter-when line ride in every recall_index call
+ * and a card's options in every read, so an unbounded one is a cost every
+ * agent pays on every turn. Mirrored in the route and tool schemas.
+ */
+export const RECALL_TITLE_MAX = 200;
+export const RECALL_LINE_MAX = 500;
+export const RECALL_LABEL_MAX = 200;
+export const RECALL_OPTIONS_MAX = 30;
+
+/** Card slugs a route already owns: `cards/reorder` is a literal route, so a
+ *  card with that slug could never be read or written by its own URL. */
+const RESERVED_CARD_SLUGS = new Set(['reorder']);
 
 /** Who is writing. An `agent` may edit cards in an existing map and have them
  *  served at once, but may not create a map or mint a prompt: those stay the
@@ -146,9 +162,10 @@ function uniqueSlug(base: string, taken: Set<string>): string {
 }
 
 /** Every slug a set of cards answers to, current and former: a new card must
- *  not take a slug an agent still remembers for another card. */
+ *  not take a slug an agent still remembers for another card. The reserved
+ *  route words are taken too. */
 function cardSlugsTaken(cards: Pick<CardRow, 'slug' | 'formerSlugs'>[]): Set<string> {
-  const out = new Set<string>();
+  const out = new Set<string>(RESERVED_CARD_SLUGS);
   for (const c of cards) {
     out.add(c.slug);
     for (const s of c.formerSlugs ?? []) out.add(s);
@@ -202,6 +219,16 @@ function assertVersion(map: { slug: string; version: number }, sent: number | un
   }
 }
 
+/** A line over its cap: says which field and what to do. */
+function assertMax(field: string, value: string, max: number, where: string): void {
+  if (value.length > max) {
+    throw new RecallWriteError(
+      'too_long',
+      `The ${field} of ${where} has ${value.length} characters, over the ${max} allowed. Keep it to one short line; detail belongs in a card body.`,
+    );
+  }
+}
+
 /** Card body budget. The one refusal a long write is most likely to hit, so
  *  it names the shape of the fix rather than just the number. */
 function assertBody(bodyMd: string, title: string): void {
@@ -228,18 +255,37 @@ async function resolveOptions(
 ): Promise<StoredOption[]> {
   const bySlug = new Map(cards.map((c) => [c.slug, c.id]));
   const out: StoredOption[] = [];
+  if (options.length > RECALL_OPTIONS_MAX) {
+    throw new RecallWriteError(
+      'too_many_options',
+      `Card '${cardTitle}' has ${options.length} options, over the ${RECALL_OPTIONS_MAX} allowed. A reader chooses between them, so fewer is better: group the rest behind a card of their own.`,
+    );
+  }
   for (const o of options) {
-    if (!o.label?.trim()) {
+    if (!o.label?.trim() || !o.useWhen?.trim()) {
       throw new RecallWriteError(
-        'option_label_required',
-        `An option on card '${cardTitle}' has no label. Each option needs a label and a 'use when' line: they are what a reader chooses between.`,
+        o.label?.trim() ? 'option_use_when_required' : 'option_label_required',
+        `An option on card '${cardTitle}' has no ${o.label?.trim() ? `'use when' line (option '${o.label}')` : 'label'}. Each option needs a label and a 'use when' line: they are what a reader chooses between.`,
       );
     }
+    assertMax('label', o.label, RECALL_LABEL_MAX, `option '${o.label.slice(0, 40)}'`);
+    assertMax("'use when' line", o.useWhen, RECALL_LINE_MAX, `option '${o.label}'`);
     if (o.targetMap) {
+      // A slug the map had before a rename still lands, and is stored as the
+      // map's slug NOW, so the option does not depend on the old one.
       const [target] = await tx
         .select({ slug: recallMaps.slug, published: recallMaps.published })
         .from(recallMaps)
-        .where(and(eq(recallMaps.ownerId, ownerId), eq(recallMaps.slug, o.targetMap)))
+        .where(
+          and(
+            eq(recallMaps.ownerId, ownerId),
+            or(
+              eq(recallMaps.slug, o.targetMap),
+              arrayContains(recallMaps.formerSlugs, [o.targetMap]),
+            ),
+          ),
+        )
+        .orderBy(sql`${recallMaps.slug} = ${o.targetMap} desc`)
         .limit(1);
       if (!target) {
         throw new RecallWriteError(
@@ -256,8 +302,8 @@ async function resolveOptions(
       out.push({
         label: o.label,
         useWhen: o.useWhen,
-        targetSlug: o.targetMap,
-        targetMap: o.targetMap,
+        targetSlug: target.slug,
+        targetMap: target.slug,
       });
       continue;
     }
@@ -390,10 +436,15 @@ async function bumpMap(tx: Tx, mapId: string, version: number): Promise<number> 
     .where(eq(recallNodes.mapId, mapId));
   const n = counted[0]?.n ?? 0;
   const next = version + 1;
+  const now = new Date();
   await tx
     .update(recallMaps)
-    .set({ version: next, nodeCount: Number(n), updatedAt: new Date() })
+    .set({ version: next, nodeCount: Number(n), updatedAt: now })
     .where(eq(recallMaps.id, mapId));
+  // The map's tree item too: the tree sorts by its updated_at, and a map is
+  // edited through its cards, which are not nodes. (A native map's id is its
+  // node id.)
+  await tx.update(nodes).set({ updatedAt: now }).where(eq(nodes.id, mapId));
   return next;
 }
 
@@ -446,10 +497,12 @@ export async function createRecallMap(
       `Map '${title}' needs an 'enter when' line — the one sentence in recall_index that tells an agent whether to come in. Without it the map is invisible in practice.`,
     );
   }
+  assertMax('title', title, RECALL_TITLE_MAX, 'the map');
+  assertMax("'enter when' line", enterWhen, RECALL_LINE_MAX, `map '${title}'`);
   await ensureRecallRoot(ownerId);
   const path = await resolveFolderPath(ownerId, input.folder);
 
-  return await db.transaction(async (tx) => {
+  const made = await db.transaction(async (tx) => {
     // Two creates with the same title at once would both pick the same free
     // slug and the second would die on the unique index as a raw 500. One
     // owner-scoped lock makes the slug pick and the insert one step.
@@ -494,39 +547,66 @@ export async function createRecallMap(
     });
     return { mapId, slug, version: 1, published };
   });
+  await notifyTreeChanged(ownerId, 'recall');
+  return made;
 }
 
 /** Folder crumbs ("Mantle / Fleet") to the ltree path a map item sits on.
  *  Each crumb is a DIRECT child of the one before it. The folders must already
  *  exist: this is Recall's write path, not the tree's. */
 async function resolveFolderPath(ownerId: string, folder?: string): Promise<string> {
-  const crumbs = (folder ?? '')
-    .split('/')
+  const raw = (folder ?? '').trim();
+  if (!raw) return RECALL_ROOT_LABEL;
+  // Crumbs as recall_index prints them ("Mantle / Fleet"), split on the
+  // spaced slash so a folder titled "CI/CD" stays one crumb. A bare "a/b" is
+  // tried as one title first, then as two crumbs.
+  const spaced = raw
+    .split(/\s+\/\s+/)
     .map((s) => s.trim())
     .filter(Boolean);
-  if (crumbs.length === 0) return RECALL_ROOT_LABEL;
+  if (spaced.length === 1 && raw.includes('/')) {
+    const whole = await folderUnder(ownerId, RECALL_ROOT_LABEL, raw);
+    if (whole) return whole;
+    return await walkFolders(
+      ownerId,
+      raw
+        .split('/')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+  }
+  return await walkFolders(ownerId, spaced);
+}
+
+/** A folder titled `title` directly under `parent`, or null. */
+async function folderUnder(ownerId: string, parent: string, title: string): Promise<string | null> {
+  const [row] = await db
+    .select({ path: nodes.path })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.ownerId, ownerId),
+        eq(nodes.type, 'branch'),
+        eq(nodes.title, title),
+        sql`${nodes.path} <@ ${parent}::ltree`,
+        sql`nlevel(${nodes.path}) = nlevel(${parent}::ltree) + 1`,
+      ),
+    )
+    .limit(1);
+  return row ? String(row.path) : null;
+}
+
+async function walkFolders(ownerId: string, crumbs: string[]): Promise<string> {
   let path = RECALL_ROOT_LABEL;
   for (const crumb of crumbs) {
-    const [row] = await db
-      .select({ path: nodes.path })
-      .from(nodes)
-      .where(
-        and(
-          eq(nodes.ownerId, ownerId),
-          eq(nodes.type, 'branch'),
-          eq(nodes.title, crumb),
-          sql`${nodes.path} <@ ${path}::ltree`,
-          sql`nlevel(${nodes.path}) = nlevel(${path}::ltree) + 1`,
-        ),
-      )
-      .limit(1);
-    if (!row) {
+    const found = await folderUnder(ownerId, path, crumb);
+    if (!found) {
       throw new RecallWriteError(
         'folder_not_found',
         `No Recall folder '${crumb}'${path === RECALL_ROOT_LABEL ? '' : ` under '${path}'`}. Create the folder first, or leave 'folder' off to file the map at the top.`,
       );
     }
-    path = String(row.path);
+    path = found;
   }
   return path;
 }
@@ -544,7 +624,11 @@ export async function updateRecallMap(
   },
   actor: RecallActor,
 ): Promise<RecallWriteResult> {
-  return await db.transaction(async (tx) => {
+  if (patch.title) assertMax('title', patch.title.trim(), RECALL_TITLE_MAX, 'the map');
+  if (patch.enterWhen) {
+    assertMax("'enter when' line", patch.enterWhen.trim(), RECALL_LINE_MAX, 'the map');
+  }
+  const out = await db.transaction(async (tx) => {
     const map = await mapOr404(tx, ownerId, mapId);
     assertVersion(map, patch.version);
     if (patch.published !== undefined && actor.kind !== 'owner') {
@@ -603,6 +687,7 @@ export async function updateRecallMap(
       return {
         version: map.version,
         warnings: await warningsFor(tx, ownerId, await cardsOf(tx, map.id)),
+        treeChanged: false,
       };
     }
     await tx.update(recallMaps).set(set).where(eq(recallMaps.id, map.id));
@@ -639,8 +724,16 @@ export async function updateRecallMap(
       { title: map.title, enterWhen: map.enterWhen, slug: map.slug, published: map.published },
       set,
     );
-    return { version, warnings: await warningsFor(tx, ownerId, await cardsOf(tx, map.id)) };
+    return {
+      version,
+      warnings: await warningsFor(tx, ownerId, await cardsOf(tx, map.id)),
+      // A title or the draft pill changed: open trees refetch.
+      treeChanged: Boolean(set.title || set.published !== undefined),
+    };
   });
+  if (out.treeChanged) await notifyTreeChanged(ownerId, 'recall');
+  const { treeChanged: _t, ...rest } = out;
+  return rest;
 }
 
 function describeMapPatch(set: Partial<typeof recallMaps.$inferInsert>): string {
@@ -749,6 +842,10 @@ async function writeCard(
   }
   const bodyMd = input.bodyMd ?? '';
   assertBody(bodyMd, title);
+  assertMax('title', title, RECALL_TITLE_MAX, 'the card');
+  if (input.useWhen) {
+    assertMax("'use when' line", input.useWhen.trim(), RECALL_LINE_MAX, `card '${title}'`);
+  }
 
   const result = await db.transaction(async (tx) => {
     const map = await mapOr404(tx, ownerId, mapId);
@@ -799,6 +896,12 @@ async function writeCard(
           );
         }
         const others = cardSlugsTaken(cards.filter((c) => c.id !== existing.id));
+        if (RESERVED_CARD_SLUGS.has(wanted)) {
+          throw new RecallWriteError(
+            'slug_reserved',
+            `'${wanted}' is a word the Recall routes use, so a card cannot have it as its slug. Pick another.`,
+          );
+        }
         if (others.has(wanted)) {
           throw new RecallWriteError(
             'slug_taken',
@@ -1195,7 +1298,11 @@ export async function confirmRecallPrompt(
       {
         cardId: card.id,
         cardSlug: card.slug,
-        summary: confirm ? 'prompt confirmed' : 'prompt request dropped',
+        summary: confirm
+          ? 'prompt confirmed'
+          : card.kind === 'prompt'
+            ? 'prompt demoted'
+            : 'prompt request dropped',
       },
       { kind: card.kind, promptPending: card.promptPending },
       { kind: confirm ? 'prompt' : 'knowledge', promptPending: false },
@@ -1229,6 +1336,7 @@ export async function deleteRecallMap(
     }
     await tx.delete(nodes).where(and(eq(nodes.ownerId, ownerId), eq(nodes.id, map.nodeId!)));
   });
+  await notifyTreeChanged(ownerId, 'recall');
 }
 
 /** The revisions panel: newest first. */
@@ -1358,9 +1466,27 @@ export async function restoreRecallRevision(
     return await reorderRecallCards(ownerId, rev.mapId, order, actor, map.version);
   }
 
-  // A card that was ADDED: undoing it means removing it again.
+  // A card that was ADDED: undoing it means removing it again. The card is
+  // found by its id: the slug may since have moved, or been freed by a delete
+  // and taken by a NEW card, which a slug match would then delete.
   if (rev.cardSlug && rev.before === null) {
-    return await deleteRecallCard(ownerId, rev.mapId, rev.cardSlug, actor, map.version);
+    const [added] = await db
+      .select({ slug: recallNodes.slug })
+      .from(recallNodes)
+      .where(
+        and(
+          eq(recallNodes.mapId, rev.mapId),
+          rev.cardId ? eq(recallNodes.id, rev.cardId) : eq(recallNodes.slug, rev.cardSlug),
+        ),
+      )
+      .limit(1);
+    if (!added) {
+      throw new RecallWriteError(
+        'card_not_found',
+        `The card this revision added ('${rev.cardSlug}') is already gone, so there is nothing to remove.`,
+      );
+    }
+    return await deleteRecallCard(ownerId, rev.mapId, added.slug, actor, map.version);
   }
 
   // A card edit or delete: write the old content back. A deleted card comes

@@ -1278,5 +1278,159 @@ describe.skipIf(!URL)('Recall v2 native writes, on Postgres', () => {
         bridge.__resetRecallEmbedderForTests();
       }
     });
+
+    // ── second audit (session "Recall and folder systems audit") ────────────
+
+    it('N5: undoing "card added" never deletes a newer card that took the slug', async () => {
+      const map = await freshMap('Reused slug');
+      const add = await c.putRecallCard(
+        owner,
+        map.mapId,
+        null,
+        { title: 'Fleet', bodyMd: 'old' },
+        OWNER,
+        1,
+      );
+      const firstAdd = (await c.listRecallRevisions(owner, map.mapId)).find(
+        (r) => r.summary === 'card added',
+      )!;
+      const del = await c.deleteRecallCard(owner, map.mapId, 'fleet', OWNER, add.version);
+      await c.putRecallCard(
+        owner,
+        map.mapId,
+        null,
+        { title: 'Fleet', bodyMd: 'new' },
+        OWNER,
+        del.version,
+      );
+      await expect(c.restoreRecallRevision(owner, firstAdd.id, OWNER)).rejects.toMatchObject({
+        code: 'card_not_found',
+      });
+      expect((await row(map.mapId, 'fleet'))!.body_md).toBe('new');
+    });
+
+    it('N6: caps on lines and options, and an option needs its use-when', async () => {
+      await expect(
+        c.createRecallMap(owner, { title: 'Capped', enterWhen: 'x'.repeat(501) }, OWNER),
+      ).rejects.toMatchObject({ code: 'too_long' });
+      const map = await freshMap('Capped options');
+      await c.putRecallCard(owner, map.mapId, null, { title: 'Two', bodyMd: '' }, OWNER, 1);
+      const ver = await v(map.mapId);
+      await expect(
+        c.putRecallCard(
+          owner,
+          map.mapId,
+          'start',
+          {
+            title: 'Capped options',
+            bodyMd: '',
+            options: [{ label: 'Go', useWhen: ' ', targetSlug: 'two' }],
+          },
+          OWNER,
+          ver,
+        ),
+      ).rejects.toMatchObject({ code: 'option_use_when_required' });
+      await expect(
+        c.putRecallCard(
+          owner,
+          map.mapId,
+          'start',
+          {
+            title: 'Capped options',
+            bodyMd: '',
+            options: Array.from({ length: 31 }, (_, i) => ({
+              label: `Go ${i}`,
+              useWhen: 'x',
+              targetSlug: 'two',
+            })),
+          },
+          OWNER,
+          ver,
+        ),
+      ).rejects.toMatchObject({ code: 'too_many_options' });
+    });
+
+    it('N11: no card can take the slug the reorder route owns', async () => {
+      const map = await freshMap('Reserved');
+      const res = await c.putRecallCard(
+        owner,
+        map.mapId,
+        null,
+        { title: 'Reorder', bodyMd: '' },
+        OWNER,
+        1,
+      );
+      expect(res.cardSlug).toBe('reorder-2');
+      await expect(
+        c.putRecallCard(
+          owner,
+          map.mapId,
+          'reorder-2',
+          { title: 'Reorder', bodyMd: '', slug: 'reorder' },
+          OWNER,
+          res.version,
+        ),
+      ).rejects.toMatchObject({ code: 'slug_reserved' });
+    });
+
+    it('M6: a cross-map option to a former slug is stored under the slug now', async () => {
+      const target = await freshMap('Moved target');
+      await c.updateRecallMap(owner, target.mapId, { slug: 'moved-target-now', version: 1 }, OWNER);
+      const from = await freshMap('Moved source');
+      await c.putRecallCard(
+        owner,
+        from.mapId,
+        'start',
+        {
+          title: 'Moved source',
+          bodyMd: '',
+          options: [
+            { label: 'Go', useWhen: 'x', targetSlug: 'moved-target', targetMap: 'moved-target' },
+          ],
+        },
+        OWNER,
+        1,
+      );
+      expect((await row(from.mapId, 'start'))!.options[0]).toMatchObject({
+        targetMap: 'moved-target-now',
+        targetSlug: 'moved-target-now',
+      });
+    });
+
+    it('keeps the tree item fresh: a card write moves the map item updated_at', async () => {
+      const map = await freshMap('Fresh item');
+      await m.db.execute(sqlTag`
+        update nodes set updated_at = now() - interval '1 day' where id = ${map.mapId}`);
+      await c.putRecallCard(owner, map.mapId, null, { title: 'X', bodyMd: '' }, OWNER, 1);
+      const [item] = (await m.db.execute(sqlTag`
+        select updated_at > now() - interval '1 minute' as fresh from nodes where id = ${map.mapId}`)) as unknown as {
+        fresh: boolean;
+      }[];
+      expect(item!.fresh).toBe(true);
+    });
+
+    it('files a map in a folder whose title has a slash', async () => {
+      await m.db.execute(sqlTag`
+        insert into nodes (owner_id, type, title, slug, path)
+        values (${owner}, 'branch', 'CI/CD', 'ci_cd', 'recall.ci_cd'::ltree)
+        on conflict do nothing`);
+      const made = await c.createRecallMap(
+        owner,
+        { title: 'Pipelines', enterWhen: 'x', folder: 'CI/CD' },
+        OWNER,
+      );
+      const [item] = (await m.db.execute(sqlTag`
+        select path::text as path from nodes where id = ${made.mapId}`)) as unknown as {
+        path: string;
+      }[];
+      expect(item!.path).toBe('recall.ci_cd');
+    });
+
+    it('logs the owner turning a confirmed prompt off as a demotion', async () => {
+      const map = await withPrompt('Demoted');
+      await c.confirmRecallPrompt(owner, map.mapId, 'deploy', false, OWNER, await v(map.mapId));
+      expect((await c.listRecallRevisions(owner, map.mapId))[0]!.summary).toBe('prompt demoted');
+      expect((await row(map.mapId, 'deploy'))!.kind).toBe('knowledge');
+    });
   });
 });

@@ -1,6 +1,13 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
-import { deleteRecallCard, putRecallCard } from '@mantle/content';
+import {
+  RECALL_LABEL_MAX,
+  RECALL_LINE_MAX,
+  RECALL_OPTIONS_MAX,
+  RECALL_TITLE_MAX,
+  deleteRecallCard,
+  putRecallCard,
+} from '@mantle/content';
 import { getOwnerOr401 } from '@/lib/auth';
 import { getRecallCardDetail, recallWriteFailure } from '@/lib/recall';
 import { firstIssue } from '@/lib/zod-issue';
@@ -16,18 +23,18 @@ import { UUID_RE } from '@mantle/std';
  * keeps resolving and options in the map follow it.
  */
 const Option = z.object({
-  label: z.string().min(1),
-  useWhen: z.string(),
+  label: z.string().min(1).max(RECALL_LABEL_MAX),
+  useWhen: z.string().max(RECALL_LINE_MAX),
   targetSlug: z.string(),
   targetMap: z.string().optional(),
 });
 
 const Card = z.object({
-  title: z.string().min(1),
+  title: z.string().min(1).max(RECALL_TITLE_MAX),
   bodyMd: z.string(),
-  useWhen: z.string().optional(),
+  useWhen: z.string().max(RECALL_LINE_MAX).optional(),
   prompt: z.boolean().optional(),
-  options: z.array(Option).optional(),
+  options: z.array(Option).max(RECALL_OPTIONS_MAX).optional(),
   slug: z.string().min(1).optional(),
   version: z.number().int().nonnegative(),
 });

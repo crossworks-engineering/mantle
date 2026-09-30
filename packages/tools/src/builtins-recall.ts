@@ -297,11 +297,20 @@ const recall_open: BuiltinToolDef = {
     // answered "has no compiled index yet, its pages likely failed lint" —
     // a lint failure that had not happened, on pages that do not exist.
     // `kind` is the honest key and is correct for both.
-    const [row] = await db
+    let [row] = await db
       .select()
       .from(recallNodes)
       .where(and(eq(recallNodes.mapId, map.id), eq(recallNodes.kind, 'index')))
       .limit(1);
+    // A v1 one-page prompt map compiles its only page as kind 'prompt', so it
+    // has no 'index' row; its root card shares the map id. Until R5 retires v1.
+    if (!row && !nativeMap(map)) {
+      [row] = await db
+        .select()
+        .from(recallNodes)
+        .where(and(eq(recallNodes.mapId, map.id), eq(recallNodes.id, map.id)))
+        .limit(1);
+    }
     if (!row) {
       return {
         ok: false,
@@ -340,10 +349,12 @@ const recall_go: BuiltinToolDef = {
     const map = await mapBySlugOrId(ctx.ownerId, ref);
     if (!map) return { ok: false, error: `No Recall map '${ref}' — recall_index lists them.` };
     // Resolution order: a card in this map, a slug a card in this map used to
-    // answer to, then another published map (serving ITS entry card, with the
-    // payload's `map` naming that one). The last step is what makes a
-    // cross-map option work for a caller that only knows recall_go's old two
-    // arguments, and what keeps an older agent's remembered target landing.
+    // answer to, then a map by that slug (serving ITS entry card, with the
+    // payload's `map` naming that one). A cross-map option is served as
+    // { target: X, map: X }, so the natural follow is recall_go(map: X,
+    // target: X): the target names the map itself, and lands on its entry.
+    // recall_go(this map, X) lands the same way, for a caller that only knows
+    // the old two arguments.
     let [row] = await db
       .select()
       .from(recallNodes)
@@ -358,7 +369,7 @@ const recall_go: BuiltinToolDef = {
     }
     if (!row) {
       const other = await mapBySlugOrId(ctx.ownerId, target);
-      if (other && other.id !== map.id) {
+      if (other) {
         const [entry] = await db
           .select()
           .from(recallNodes)

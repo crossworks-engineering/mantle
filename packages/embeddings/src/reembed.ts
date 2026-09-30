@@ -26,6 +26,7 @@ import { and, eq, isNotNull, isNull, not, sql, type SQL } from 'drizzle-orm';
 import {
   contentChunks,
   db,
+  recallNodes,
   entities,
   extractExemptSql,
   facts,
@@ -369,6 +370,18 @@ async function _runReembedInner(ownerId: string, opts: ReembedOpts): Promise<Ree
         await db.update(contentChunks).set({ embedding: vec }).where(eq(contentChunks.id, id));
       },
     });
+  }
+
+  // Recall prompts carry a vector too (recall_nodes, kind 'prompt'). After a
+  // model swap an old-space vector scores under recall_match's floor, so
+  // every prompt would quietly stop matching. They are few, so rather than a
+  // fifth walk they are cleared here: recall_match refills a prompt with a
+  // NULL vector in the background, in the new model's space.
+  if (!dryRun && tables.has('nodes') && !types) {
+    await db
+      .update(recallNodes)
+      .set({ embedding: null })
+      .where(and(eq(recallNodes.ownerId, ownerId), eq(recallNodes.kind, 'prompt')));
   }
 
   const totalRows =

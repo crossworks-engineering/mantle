@@ -33,6 +33,10 @@
 import { and, arrayContains, eq } from 'drizzle-orm';
 import { db, recallMaps } from '@mantle/db';
 import {
+  RECALL_LABEL_MAX,
+  RECALL_LINE_MAX,
+  RECALL_OPTIONS_MAX,
+  RECALL_TITLE_MAX,
   RecallWriteError,
   createRecallMap,
   deleteRecallCard,
@@ -134,14 +138,20 @@ const VERSION_PROP = {
 
 const OPTIONS_PROP = {
   type: 'array',
+  maxItems: RECALL_OPTIONS_MAX,
   description:
     "The card's whole option list, replacing what was there; omit it to keep the card's options. Each is an affordance, never a command: a `label`, a `use_when` line, and a `target` card slug in this map, or a `map` slug to lead to another map's entry card.",
   items: {
     type: 'object',
     properties: {
-      label: { type: 'string', description: "What the option offers, e.g. 'Box by box'." },
+      label: {
+        type: 'string',
+        maxLength: RECALL_LABEL_MAX,
+        description: "What the option offers, e.g. 'Box by box'.",
+      },
       use_when: {
         type: 'string',
+        maxLength: RECALL_LINE_MAX,
         description: "When a reader should follow it, e.g. 'You need one box'.",
       },
       target: { type: 'string', description: "The target card's slug in this map." },
@@ -162,9 +172,14 @@ const recall_map_create: BuiltinToolDef = {
   inputSchema: {
     type: 'object',
     properties: {
-      title: { type: 'string', description: "The map's name, e.g. 'Fleet and access'." },
+      title: {
+        type: 'string',
+        maxLength: RECALL_TITLE_MAX,
+        description: "The map's name, e.g. 'Fleet and access'.",
+      },
       enter_when: {
         type: 'string',
+        maxLength: RECALL_LINE_MAX,
         description:
           "The one line recall_index shows: when an agent should come in, e.g. 'Working on any box in the fleet'.",
       },
@@ -215,13 +230,18 @@ const recall_card_put: BuiltinToolDef = {
         description:
           "The card's slug to replace. Omit to add a new card, whose slug comes from its title.",
       },
-      title: { type: 'string', description: "The card's title, e.g. 'Box by box'." },
+      title: {
+        type: 'string',
+        maxLength: RECALL_TITLE_MAX,
+        description: "The card's title, e.g. 'Box by box'.",
+      },
       body: {
         type: 'string',
         description: 'The card body, in markdown. What a reader arriving here should read.',
       },
       use_when: {
         type: 'string',
+        maxLength: RECALL_LINE_MAX,
         description:
           'For a prompt: the one line recall_match compares a task against. Required with `prompt`.',
       },
@@ -272,7 +292,7 @@ const recall_card_put: BuiltinToolDef = {
           card: res.cardSlug,
           version: res.version,
           ...(res.warnings.length > 0 ? { warnings: res.warnings.map((w) => w.message) } : {}),
-          ...(input.prompt === true
+          ...(input.prompt === true && res.cardSlug !== 'start'
             ? {
                 note: 'If this card was not already a prompt, this is recorded as a prompt REQUEST. The owner confirms it in the Recall editor; until then the card serves by slug but never matches.',
               }
@@ -339,9 +359,10 @@ const recall_map_update: BuiltinToolDef = {
     type: 'object',
     properties: {
       map: { type: 'string', description: "The map's slug." },
-      title: { type: 'string', description: "The map's new name." },
+      title: { type: 'string', maxLength: RECALL_TITLE_MAX, description: "The map's new name." },
       enter_when: {
         type: 'string',
+        maxLength: RECALL_LINE_MAX,
         description: 'The new catalog line: when an agent should enter this map.',
       },
       version: VERSION_PROP,

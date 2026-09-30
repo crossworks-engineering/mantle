@@ -54,6 +54,10 @@ export {
 } from './recall';
 
 export {
+  RECALL_LABEL_MAX,
+  RECALL_LINE_MAX,
+  RECALL_OPTIONS_MAX,
+  RECALL_TITLE_MAX,
   RecallWriteError,
   confirmRecallPrompt,
   createRecallMap,
