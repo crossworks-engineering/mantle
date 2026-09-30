@@ -29,7 +29,15 @@
  */
 import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import { db, nodes, appDatabases, appTableExports, type AppTableExport } from '@mantle/db';
+import {
+  asSystem,
+  clientSourcedNodes,
+  db,
+  nodes,
+  appDatabases,
+  appTableExports,
+  type AppTableExport,
+} from '@mantle/db';
 import { importMaxRows } from '@mantle/tabledb';
 import { getApp } from './apps';
 import { appDbReadQuery } from './app-broker';
@@ -147,6 +155,24 @@ async function clientAppState(
   return { clientLevel, clientWritten: clientLevel || !!row?.clientWrittenAt };
 }
 
+/** Mark a Table that holds rows clients wrote as client-sourced for good
+ *  (`client_sourced_nodes`, audit I3): the mark then outlives the export
+ *  link and the app, as the rows do. Written as the system; best-effort,
+ *  like the other marks (the link check in client-sourced.ts still holds
+ *  while the link exists). */
+async function markExportClientSourced(ownerId: string, tableNodeId: string): Promise<void> {
+  try {
+    await asSystem(() =>
+      db
+        .insert(clientSourcedNodes)
+        .values({ nodeId: tableNodeId, ownerId, via: 'app_table_export' })
+        .onConflictDoNothing(),
+    );
+  } catch (err) {
+    console.warn('[app-table-exports] could not mark the export table:', errorMessage(err));
+  }
+}
+
 /** Keep the Table's index depth in step with its app (audit I2): retrieval
  *  only while clients write the app, the full pipeline otherwise. Set before
  *  the commit that notifies the extractor. */
@@ -208,6 +234,7 @@ async function materialize(link: AppTableExport): Promise<'synced' | 'unchanged'
     if (grid.hash === link.contentHash) return 'unchanged';
     const { clientWritten } = await clientAppState(link.ownerId, link.appNodeId);
     await stampExportDepth(link.tableNodeId, clientWritten);
+    if (clientWritten) await markExportClientSourced(link.ownerId, link.tableNodeId);
     const doc = tableDocFromGrid({ columns: grid.columns, rows: grid.rows });
     const saved = await saveTableDraft(
       link.ownerId,
@@ -331,11 +358,14 @@ export async function createAppTableExport(
     .returning();
   if (!link) throw new Error('failed to create the export link');
   await stampAppLinkMark(detail.id, { appId: appNodeId, appName: app.title, sqliteTable });
+  if (clientWritten) await markExportClientSourced(ownerId, detail.id);
   return { export: infoOf(link), tableId: detail.id, rows: grid.rows.length, created: true };
 }
 
 /** Dissolve a link. The Table survives as an ordinary editable table (its
- *  data is the last materialized state); returns false when no link exists. */
+ *  data is the last materialized state); returns false when no link exists.
+ *  When clients wrote the app, the Table keeps the client-sourced mark
+ *  (audit I3): the rows they wrote are still in it. */
 export async function removeAppTableExport(
   ownerId: string,
   appNodeId: string,
@@ -352,6 +382,8 @@ export async function removeAppTableExport(
     )
     .returning();
   if (!link) return false;
+  const { clientWritten } = await clientAppState(ownerId, appNodeId);
+  if (clientWritten) await markExportClientSourced(ownerId, link.tableNodeId);
   await stampAppLinkMark(link.tableNodeId, null);
   return true;
 }

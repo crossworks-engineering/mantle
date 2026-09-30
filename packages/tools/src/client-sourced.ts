@@ -92,9 +92,10 @@ function batches<T>(list: readonly T[]): T[][] {
  * export copies the app's rows into the table, and the rows a client wrote
  * stay in the app's database, and so in every later export, whatever the
  * app's level becomes. So the mark is set by the level, and once a client
- * has written it holds until the export is removed (or the app, and its
- * data, are deleted): raising the app above client does not clear it. Call
- * as the system.
+ * has written it holds: raising the app above client does not clear it.
+ * The Table itself is also marked in `client_sourced_nodes` once it holds
+ * rows clients wrote (app-table-exports.ts), so the mark outlives the link
+ * and the app. Call as the system.
  */
 function clientAppExportsAmong(ownerId: string, list: readonly string[]) {
   return db

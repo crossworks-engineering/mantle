@@ -205,14 +205,21 @@ describe.skipIf(!URL)('namesClientSourced', () => {
       const [again] = await admin<{ at: string | null }[]>`
         select client_written_at::text as at from app_databases where app_node_id = ${ids.clientApp}`;
       expect(again?.at).toBe(row?.at);
-      // Removing the export ends the mark (the link is what copies the rows).
-      await admin`delete from app_table_exports where table_node_id = ${ids.clientAppTable}`;
-      expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(false);
+      // Removing the export keeps the mark: the Table still holds the rows
+      // clients wrote.
+      const { removeAppTableExport } = await import('@mantle/content/app-table-exports');
+      expect(await removeAppTableExport(owner, ids.clientApp, 'orders')).toBe(true);
+      expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(true);
+      // A team app's Table no client wrote stays unmarked after its removal.
+      expect(await removeAppTableExport(owner, ids.teamApp, 'orders')).toBe(true);
+      expect(await cs.namesClientSourced(owner, [ids.teamAppTable])).toBe(false);
     } finally {
       await admin`update nodes set audience = 'client' where id = ${ids.clientApp}`;
       await admin`insert into app_table_exports (owner_id, app_node_id, sqlite_table, table_node_id)
-        values (${owner}, ${ids.clientApp}, 'orders', ${ids.clientAppTable})
+        values (${owner}, ${ids.clientApp}, 'orders', ${ids.clientAppTable}),
+               (${owner}, ${ids.teamApp}, 'orders', ${ids.teamAppTable})
         on conflict do nothing`;
+      await admin`delete from client_sourced_nodes where node_id = ${ids.clientAppTable}`;
     }
   });
 
