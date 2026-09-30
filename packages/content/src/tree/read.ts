@@ -258,7 +258,8 @@ function likePattern(q: string): string {
 /**
  * Search a kind by name: matching folders first (at most one page, with their
  * crumbs), then items by name, paged. Both carry the crumbs of where they
- * live, so a result can be shown and opened in place.
+ * live, so a result can be shown and opened in place. An empty `q` is the
+ * A to Z view: every item of the kind by name, and no folders.
  */
 export async function searchTree(
   ownerId: string,
@@ -268,18 +269,21 @@ export async function searchTree(
 ): Promise<TreeSearchResult> {
   const spec = TREE_KIND_SPECS[kind];
   const limit = treePageLimit(opts.limit);
-  const pattern = likePattern(q.trim());
+  const term = q.trim();
+  const pattern = likePattern(term);
   const cursor = decodeTreeCursor(opts.cursor, 'name');
-  const folders = cursor
-    ? []
-    : (
-        await selectFolders(
-          ownerId,
-          kind,
-          sql`f.path <@ ${spec.root}::ltree and nlevel(f.path) > 1
-              and (f.title ilike ${pattern} or f.slug ilike ${pattern})`,
-        )
-      ).slice(0, limit);
+  const folders =
+    cursor || !term
+      ? []
+      : (
+          await selectFolders(
+            ownerId,
+            kind,
+            sql`f.path <@ ${spec.root}::ltree and nlevel(f.path) > 1
+                and (f.title ilike ${pattern} or f.slug ilike ${pattern})`,
+          )
+        ).slice(0, limit);
+  const match = term ? sql`and n.title ilike ${pattern}` : sql``;
   const after = cursor
     ? sql`and (lower(n.title), n.id) > (${cursor.key}, ${cursor.id}::uuid)`
     : sql``;
@@ -288,7 +292,7 @@ export async function searchTree(
            lower(n.title) as sort_key
       from nodes n
      where n.owner_id = ${ownerId} and n.type = ${spec.nodeType}
-       and n.path <@ ${spec.root}::ltree and n.title ilike ${pattern} ${after}
+       and n.path <@ ${spec.root}::ltree ${match} ${after}
      order by lower(n.title), n.id
      limit ${limit + 1}`)) as unknown as ItemSqlRow[];
   const more = rows.length > limit;

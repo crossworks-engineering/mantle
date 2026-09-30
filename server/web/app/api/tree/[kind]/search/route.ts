@@ -6,13 +6,14 @@ import { searchTree } from '@mantle/content/tree';
 import { treeKindOr404 } from '@/lib/tree-route';
 
 const Query = z.object({
-  q: z.string().trim().min(1).max(TREE_SEARCH_MAX),
+  q: z.string().trim().max(TREE_SEARCH_MAX).default(''),
   cursor: z.string().max(500).optional(),
   limit: z.coerce.number().int().positive().optional(),
 });
 
 /** GET /api/tree/:kind/search?q=&cursor= — matching folders, then items, each
- *  with the crumbs of where it lives (TreeSearchResult). */
+ *  with the crumbs of where it lives (TreeSearchResult). An empty or missing
+ *  `q` lists every item by name (the A to Z view), no folders. */
 export async function GET(req: Request, ctx: { params: Promise<{ kind: string }> }) {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;

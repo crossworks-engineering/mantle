@@ -154,6 +154,20 @@ describe.skipIf(!URL)('the item tree on Files', () => {
     expect((await tree.searchTree(owner, 'files', '%')).items).toEqual([]);
   });
 
+  it('lists every item by name for an empty search, and no folders (A to Z)', async () => {
+    const all = await tree.searchTree(owner, 'files', '  ');
+    expect(all.folders).toEqual([]);
+    const titles = all.items.map((i) => i.title);
+    expect(titles).toEqual(['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt']);
+    expect(all.items[0]!.crumbs.map((c) => c.name)).toEqual(['Paged']);
+    const first = await tree.searchTree(owner, 'files', '', { limit: 3 });
+    expect(first.items.map((i) => i.title)).toEqual(['a.txt', 'b.txt', 'c.txt']);
+    const rest = await tree.searchTree(owner, 'files', '', { cursor: first.nextCursor, limit: 3 });
+    expect(rest.folders).toEqual([]);
+    expect(rest.items.map((i) => i.title)).toEqual(['d.txt', 'e.txt']);
+    expect(rest.nextCursor).toBeNull();
+  });
+
   it('moves items and deletes a folder by lifting what it holds', async () => {
     const box = await tree.createTreeFolder(owner, 'files', { parentId: null, name: 'Box' });
     const inner = await tree.createTreeFolder(owner, 'files', { parentId: box.id, name: 'Inner' });
