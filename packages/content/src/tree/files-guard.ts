@@ -25,10 +25,15 @@ import {
   type VisibilityDiff,
 } from './visibility';
 
-export type ConfirmOpts = { confirm?: boolean };
+/** As the tree writes take it (TreeWriteOpts): `seen` is the total the
+ *  caller was shown; a different change now is refused again. */
+export type ConfirmOpts = { confirm?: boolean; seen?: number };
 
 function check(diff: VisibilityDiff, opts: ConfirmOpts): VisibilityDiff {
   if (diff.total > 0 && !opts.confirm) throw new TreeVisibilityError(diff);
+  if (opts.confirm && opts.seen !== undefined && diff.total !== opts.seen) {
+    throw new TreeVisibilityError(diff);
+  }
   return diff;
 }
 

@@ -201,6 +201,34 @@ export async function untrackedFilesOnDisk(ltreePath: string, limit = 5): Promis
   return found;
 }
 
+/** Files directly in a folder's directory (not its subfolders) that the
+ *  brain does not track: names (lower-cased) outside `tracked`, OS chaff
+ *  aside. Read only. A folder delete that lifts its contents asks this first,
+ *  so it refuses before moving anything rather than after (the final delete
+ *  refuses a folder still holding untracked files). */
+export async function strayFilesIn(
+  ltreePath: string,
+  tracked: ReadonlySet<string>,
+  limit = 5,
+): Promise<string[]> {
+  const dir = isFilesPath(ltreePath) ? diskPathForLtree(ltreePath) : null;
+  if (!dir) return [];
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+  const found: string[] = [];
+  for (const e of entries) {
+    if (found.length >= limit) break;
+    if (e.isDirectory() || isDiskChaff(e.name)) continue;
+    if (!tracked.has(e.name.toLowerCase())) found.push(e.name);
+  }
+  return found;
+}
+
 /** Recursively remove a folder. Caller must check it's empty in the DB AND
  *  on disk (`untrackedFilesOnDisk`) beforehand — this is the unconditional
  *  "delete from disk" half, and it takes any chaff with it. */

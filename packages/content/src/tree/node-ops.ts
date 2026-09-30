@@ -115,6 +115,48 @@ async function subtreeLevels(ownerId: string, path: string): Promise<number> {
   return Number(row?.levels ?? 1);
 }
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Inside a write's transaction: lock the folder (and the destination folder,
+ * for a move) and check again what was checked before it began. Two writes
+ * racing (A into B while B goes into A, a rename onto a name just taken) then
+ * cannot both pass on a stale read: the second waits for the first and
+ * refuses on what it finds.
+ */
+async function lockAndRecheck(
+  tx: Tx,
+  ownerId: string,
+  folder: BranchRow,
+  opts: { destParentPath?: string; newPath: string },
+): Promise<void> {
+  const dest = opts.destParentPath;
+  const rows = (await tx.execute(sql`
+    select id, path::text as path from nodes
+     where owner_id = ${ownerId} and type = 'branch'
+       and (id = ${folder.id} ${dest !== undefined ? sql`or path = ${dest}::ltree` : sql``})
+     order by id
+     for update`)) as unknown as Array<{ id: string; path: string }>;
+  const self = rows.find((r) => r.id === folder.id);
+  if (!self || self.path !== folder.path) {
+    throw new NodeOpRefusal('conflict', `'${folder.title}' changed meanwhile; try again`);
+  }
+  if (dest !== undefined && folderDepth(dest) > 0) {
+    const d = rows.find((r) => r.path === dest);
+    if (!d) throw new NodeOpRefusal('not-found', 'the destination folder was not found');
+    if (dest === folder.path || dest.startsWith(`${folder.path}.`)) {
+      throw new NodeOpRefusal('invalid', 'a folder cannot move inside itself');
+    }
+  }
+  const [taken] = (await tx.execute(sql`
+    select 1 from nodes
+     where owner_id = ${ownerId} and type = 'branch' and path = ${opts.newPath}::ltree
+     limit 1`)) as unknown as unknown[];
+  if (taken) {
+    throw new NodeOpRefusal('conflict', `a folder named '${folder.title}' is already there`);
+  }
+}
+
 /**
  * Rewrite the path of a folder and everything below it (folders and items:
  * an item's path IS its folder's). The folder's own row maps straight to the
@@ -195,6 +237,7 @@ export async function renameNodeFolder(
     throw new NodeOpRefusal('conflict', `a folder named '${title}' already exists here`);
   }
   await db.transaction(async (tx) => {
+    await lockAndRecheck(tx, ownerId, folder, { newPath });
     await rewriteSubtree(tx, ownerId, folder.path, newPath);
     await tx
       .update(nodes)
@@ -231,6 +274,7 @@ export async function moveNodeFolder(
     );
   }
   await db.transaction(async (tx) => {
+    await lockAndRecheck(tx, ownerId, folder, { destParentPath, newPath });
     await rewriteSubtree(tx, ownerId, folder.path, newPath);
     await tx
       .update(nodes)
@@ -261,14 +305,20 @@ export async function moveNodeItem(
 
 export async function removeEmptyNodeFolder(ownerId: string, folderId: string): Promise<void> {
   const folder = await branchById(ownerId, folderId);
-  const inside = (await db.execute(sql`
-    select 1 from nodes
-     where owner_id = ${ownerId} and path <@ ${folder.path}::ltree and id <> ${folderId}
-     limit 1`)) as unknown as unknown[];
-  if (inside.length) throw new NodeOpRefusal('conflict', 'the folder is not empty');
   // Members' drafts and folders in it move up to the parent (never deleted).
+  // Emptiness is checked on the locked row, in the delete's transaction.
   await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      select 1 from nodes where id = ${folderId} and owner_id = ${ownerId} for update`);
+    const inside = (await tx.execute(sql`
+      select 1 from nodes
+       where owner_id = ${ownerId} and path <@ ${folder.path}::ltree and id <> ${folderId}
+       limit 1`)) as unknown as unknown[];
+    if (inside.length) throw new NodeOpRefusal('conflict', 'the folder is not empty');
     await carrySpaceRows(tx, ownerId, folder.path, treeParentPath(folder.path), { lift: true });
     await tx.delete(nodes).where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
   });
+  // Anything filed into it while it went (an upload racing the delete) took
+  // its share on the way in: settle what sits at its path now.
+  await db.execute(sql`select mantle_refresh_inherited(${ownerId}::uuid, ${folder.path}::ltree)`);
 }

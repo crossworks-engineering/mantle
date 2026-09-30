@@ -4,7 +4,7 @@
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/tree/tree.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -213,6 +213,17 @@ describe.skipIf(!URL)('the item tree on Files', () => {
     await upload(outer.path, 'same.md');
     await upload(inner.path, 'same.md');
     await expect(tree.deleteTreeFolder(owner, 'files', inner.id)).rejects.toThrow(/same\.md/);
+  });
+
+  it('refuses a delete over an untracked file on disk before anything moves', async () => {
+    const shell = await tree.createTreeFolder(owner, 'files', { parentId: null, name: 'Shell' });
+    const sub = await tree.createTreeFolder(owner, 'files', { parentId: shell.id, name: 'Sub' });
+    await upload(shell.path, 'tracked.md');
+    await writeFile(path.join(root, 'shell', 'stray.bin'), 'x');
+    await expect(tree.deleteTreeFolder(owner, 'files', shell.id)).rejects.toThrow(/stray\.bin/);
+    // Nothing moved: the subfolder is still inside.
+    const page = await tree.loadTreeFolder(owner, 'files', { folderId: shell.id });
+    expect(page!.folders.map((f) => f.id)).toEqual([sub.id]);
   });
 
   it('keeps each login its own pins, recent and most used', async () => {

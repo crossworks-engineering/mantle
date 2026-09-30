@@ -46,3 +46,8 @@ export function pgConstraint(err: unknown): string | null {
 export function isUniqueViolation(err: unknown): boolean {
   return pgErrorCode(err) === '23505';
 }
+
+/** 23514 check_violation: the write broke a CHECK constraint. */
+export function isCheckViolation(err: unknown): boolean {
+  return pgErrorCode(err) === '23514';
+}

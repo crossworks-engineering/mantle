@@ -26,7 +26,11 @@ const PatchBody = z.union([
   z.object({ indexing: z.enum(['full', 'metadata', 'inherit']) }),
   // Move to another folder (filename unchanged; rename is its own action).
   // Into or out of a shared folder: 409 `visibility` unless `confirm`.
-  z.object({ move: z.string().min(1).max(500), confirm: z.boolean().optional() }),
+  z.object({
+    move: z.string().min(1).max(500),
+    confirm: z.boolean().optional(),
+    seen: z.number().int().min(0).optional(),
+  }),
 ]);
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -116,6 +120,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     if ('move' in parsed.data) {
       await guardFileTo(user.id, idParsed.data.id, parsed.data.move, {
         confirm: parsed.data.confirm === true,
+        seen: parsed.data.seen,
       });
       const file = await moveFileById({
         ownerId: user.id,
@@ -206,6 +211,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       new_filename: z.string().max(200).optional(),
       // Into a shared folder: 409 `visibility` unless confirmed.
       confirm: z.boolean().optional(),
+      seen: z.number().int().min(0).optional(),
     })
     .safeParse(raw);
   if (!body.success) {
@@ -214,6 +220,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     await guardFileTo(user.id, idParsed.data.id, body.data.copy_to, {
       confirm: body.data.confirm === true,
+      seen: body.data.seen,
     });
     const file = await copyFileById({
       ownerId: user.id,

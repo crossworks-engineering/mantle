@@ -11,6 +11,9 @@ const Body = z.object({
   folderId: z.string().uuid().nullable(),
   /** Go ahead although it changes who can see items (else 409 with the list). */
   confirm: z.boolean().optional(),
+  /** With `confirm`: the `total` the caller was shown; a different change
+   *  now is refused again with the new list. */
+  seen: z.number().int().min(0).optional(),
 });
 
 /** POST /api/tree/:kind/move — move items into a folder. Each item moves on
@@ -26,6 +29,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ kind: string }
   try {
     const result = await moveTreeItems(user.id, kind, parsed.data.ids, parsed.data.folderId, {
       confirm: parsed.data.confirm,
+      seen: parsed.data.seen,
     });
     if (result.moved) await notifyTreeChanged(user.id, kind);
     return NextResponse.json(result);

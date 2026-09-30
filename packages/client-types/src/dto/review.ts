@@ -45,7 +45,7 @@ export type AcceptPlace = {
   creates: string[];
   /** The share it is read at there through a shared folder (null: none):
    *  the item is read at the more open of this and the chosen level. Absent
-   *  from brains before v0.232.357. */
+   *  from brains before the Accept visibility check. */
   share?: TreeShareLevel | null;
 };
 
@@ -70,7 +70,7 @@ export type AcceptRequest = {
   visibilityConfirmed?: boolean;
 };
 
-/** 409 from either Accept (v0.232.357 on): the item, or something of its
+/** 409 from either Accept (brains with the Accept visibility check): the item, or something of its
  *  bundle, lands in a shared folder and would be read above the chosen
  *  level there. Nothing moved; repeat with `visibilityConfirmed: true`. */
 export type AcceptVisibilityRefusal = {

@@ -234,9 +234,22 @@ describe.skipIf(!URL)('sharing a folder', () => {
     });
 
     it('asks before a move in or out, and before lifting a shared folder’s contents', async () => {
-      await refusal(tree.moveTreeItems(brain, 'notes', [ids.outside], ids.top));
+      const shown = await refusal(tree.moveTreeItems(brain, 'notes', [ids.outside], ids.top));
       expect(await inherited(ids.outside)).toBeNull();
-      await tree.moveTreeItems(brain, 'notes', [ids.outside], ids.top, { confirm: true });
+      // A confirm for another list (it changed while the dialog was open) is
+      // refused again with the list as it is now.
+      const again = await refusal(
+        tree.moveTreeItems(brain, 'notes', [ids.outside], ids.top, {
+          confirm: true,
+          seen: shown.total + 1,
+        }),
+      );
+      expect(again.total).toBe(shown.total);
+      expect(await inherited(ids.outside)).toBeNull();
+      await tree.moveTreeItems(brain, 'notes', [ids.outside], ids.top, {
+        confirm: true,
+        seen: shown.total,
+      });
       expect(await inherited(ids.outside)).toBe('team');
       await refusal(tree.moveTreeItems(brain, 'notes', [ids.outside], null));
       await tree.moveTreeItems(brain, 'notes', [ids.outside], null, { confirm: true });

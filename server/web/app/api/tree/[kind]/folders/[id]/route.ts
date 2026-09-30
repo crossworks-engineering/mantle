@@ -25,10 +25,13 @@ const Patch = z
     /** Go ahead although it changes who can see items (else 409 with the
      *  list). */
     confirm: z.boolean(),
+    /** With `confirm`: the `total` the caller was shown; a different change
+     *  now is refused again with the new list. */
+    seen: z.number().int().min(0),
   })
   .partial()
   .strict()
-  .refine((p) => Object.keys(p).some((k) => k !== 'confirm'), 'nothing to change');
+  .refine((p) => Object.keys(p).some((k) => k !== 'confirm' && k !== 'seen'), 'nothing to change');
 
 /** PATCH /api/tree/:kind/folders/:id — rename, restyle, move, reorder or
  *  share a folder (any combination); answers `{ folder }`. A move or a share
@@ -45,8 +48,8 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (!parsed.success)
     return NextResponse.json({ error: firstIssue(parsed.error) }, { status: 400 });
   try {
-    const { confirm, ...patch } = parsed.data;
-    const folder = await updateTreeFolder(user.id, kind, id.data, patch, { confirm });
+    const { confirm, seen, ...patch } = parsed.data;
+    const folder = await updateTreeFolder(user.id, kind, id.data, patch, { confirm, seen });
     await notifyTreeChanged(user.id, kind);
     return NextResponse.json({ folder });
   } catch (err) {
@@ -54,7 +57,7 @@ export async function PATCH(req: Request, ctx: Ctx) {
   }
 }
 
-/** DELETE /api/tree/:kind/folders/:id[?confirm=true] — delete a folder;
+/** DELETE /api/tree/:kind/folders/:id[?confirm=true[&seen=N]] — delete a folder;
  *  what it holds moves up to its parent first (409 when a name there would
  *  clash, or with the visibility changes when leaving a shared folder
  *  changes who can see them and `confirm` is not set). */
@@ -66,8 +69,10 @@ export async function DELETE(req: Request, ctx: Ctx) {
   const id = Id.safeParse((await ctx.params).id);
   if (!id.success) return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   try {
-    const confirm = new URL(req.url).searchParams.get('confirm') === 'true';
-    await deleteTreeFolder(user.id, kind, id.data, { confirm });
+    const q = new URL(req.url).searchParams;
+    const confirm = q.get('confirm') === 'true';
+    const seen = /^\d+$/.test(q.get('seen') ?? '') ? Number(q.get('seen')) : undefined;
+    await deleteTreeFolder(user.id, kind, id.data, { confirm, seen });
     await notifyTreeChanged(user.id, kind);
     return NextResponse.json({ ok: true });
   } catch (err) {

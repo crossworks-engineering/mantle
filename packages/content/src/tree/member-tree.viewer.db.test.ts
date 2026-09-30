@@ -199,11 +199,12 @@ describe.skipIf(!URL)('a member’s tree: own folders, drafts in place, teammate
     let cursor: string | null = null;
     let pages = 0;
     do {
-      const p = (await tree.loadMemberTreeFolder(scopeA, 'notes', {
-        folderId: mine.id,
-        cursor,
-        limit: 2,
-      }))!;
+      const p: import('@mantle/client-types/tree').TreeFolderPage =
+        (await tree.loadMemberTreeFolder(scopeA, 'notes', {
+          folderId: mine.id,
+          cursor,
+          limit: 2,
+        }))!;
       expect(p.items.length).toBeLessThanOrEqual(2);
       seen.push(...p.items.map((i) => i.id));
       cursor = p.nextCursor;

@@ -89,7 +89,10 @@ of one brain keep their own.
   moves (`parentId`) or reorders (`after`: the sibling to follow, null = first).
 - `DELETE /api/tree/:kind/folders/:id` deletes a folder after moving what it
   holds up to its parent. It is refused, before anything moves, when a name
-  would clash there.
+  would clash there, or (Files) when the directory holds a file the brain
+  does not track. A folder rename or move checks again on the locked rows
+  inside its transaction, so two writes racing cannot both pass a stale
+  check.
 - `POST /api/tree/:kind/move` moves items into a folder (null = the root). Each
   item moves on its own; the answer lists any that could not.
 
@@ -158,7 +161,10 @@ contacts, secrets) cannot be shared.
   (`packages/content/src/tree/visibility.ts`). If who can see anything would
   change, the write is refused with 409 `{ error: 'visibility', changes,
 total }` and nothing is written; the same call with `confirm: true` goes
-  ahead (`?confirm=true` on DELETE). A rename never asks. The same check
+  ahead (`?confirm=true` on DELETE). A caller that sends `seen` (the
+  `total` it showed; `&seen=` on DELETE) is refused again with the new list
+  when the change differs by then, so a confirm never covers items filed or
+  shared while the dialog was open. A rename never asks. The same check
   guards every Files write outside the tree routes
   (`packages/content/src/tree/files-guard.ts`): the Files screen's move and
   copy (`PATCH /api/files/files/:id { move, confirm }`, `POST ... { copy_to,

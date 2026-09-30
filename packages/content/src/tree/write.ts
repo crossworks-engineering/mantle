@@ -9,13 +9,14 @@
  * order are plain row data for every kind.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes } from '@mantle/db';
+import { db, isCheckViolation, nodes } from '@mantle/db';
 import {
   createFolder as createFilesFolder,
   deleteFolder as deleteFilesFolder,
   moveFileById,
   moveFolderById,
   renameFolderById,
+  strayFilesIn,
 } from '@mantle/files';
 import type { AppTint } from '@mantle/client-types/app-nav';
 import {
@@ -205,7 +206,14 @@ export type TreeFolderPatch = {
 
 /** How a write that changes who can see items goes ahead: refused with the
  *  list of changes (TreeVisibilityError) unless `confirm` is set. */
-export type TreeWriteOpts = { confirm?: boolean };
+export type TreeWriteOpts = {
+  confirm?: boolean;
+  /** With `confirm`: how many changes the caller was shown. When the change
+   *  now differs (an agent or another admin filed or shared something while
+   *  the dialog was open), it is refused again with the new list instead of
+   *  going ahead unseen. Left out, `confirm` alone goes ahead. */
+  seen?: number;
+};
 
 async function checkVisibility(
   diff: Promise<VisibilityDiff>,
@@ -213,6 +221,9 @@ async function checkVisibility(
 ): Promise<VisibilityDiff> {
   const d = await diff;
   if (d.total > 0 && !opts.confirm) throw new TreeVisibilityError(d);
+  if (opts.confirm && opts.seen !== undefined && d.total !== opts.seen) {
+    throw new TreeVisibilityError(d);
+  }
   return d;
 }
 
@@ -325,11 +336,20 @@ async function setFolderShare(
   }
   if ((folder.share ?? null) === share) return;
   const diff = await checkVisibility(shareDiff(ownerId, folder, share), opts);
-  // The database refreshes everything below (migration 0204 triggers).
-  await db
-    .update(nodes)
-    .set({ shareLevel: share, updatedAt: new Date() })
-    .where(and(eq(nodes.id, folder.id), eq(nodes.ownerId, ownerId)));
+  // The database refreshes everything below (migration 0204 triggers). Its
+  // share check is the last word on which roots may share: a refusal there
+  // is a refusal, not a server error.
+  try {
+    await db
+      .update(nodes)
+      .set({ shareLevel: share, updatedAt: new Date() })
+      .where(and(eq(nodes.id, folder.id), eq(nodes.ownerId, ownerId)));
+  } catch (err) {
+    if (isCheckViolation(err)) {
+      throw new TreeError('invalid', `${kind} folders cannot be shared on this brain yet`);
+    }
+    throw err;
+  }
   if (diff.total > 0) await followShares(ownerId, { path: folder.path });
 }
 
@@ -457,6 +477,17 @@ export async function deleteTreeFolder(
     }>;
     const names = new Set(taken.map((t) => t.name));
     for (const i of items) if (names.has(i.name)) clashes.push(i.title);
+  }
+  // Files: a file on disk the brain does not track would stop the final
+  // delete after everything else moved up; refuse now, before anything moves.
+  if (kind === 'files') {
+    const stray = await strayFilesIn(folder.path, new Set(items.map((i) => i.name)));
+    if (stray.length) {
+      throw new TreeError(
+        'conflict',
+        `the folder holds file(s) on disk the brain does not track (${stray.join(', ')}); move or delete them first`,
+      );
+    }
   }
   if (clashes.length) {
     throw new TreeError(
