@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
-## Unreleased: folder system audit fixes (branch feat/folder-audit-fixes)
+## 0.232.360: folder system audit fixes
 
 From the folder system audit of 2026-09-30 (dev brain, "AUDIT: Universal
 folder system, phases 1 to 5") and a second audit's review.
