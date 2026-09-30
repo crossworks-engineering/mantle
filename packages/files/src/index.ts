@@ -50,6 +50,10 @@ export {
   isSafeDiskBasename,
   ltreeForDiskPath,
   FILES_ROOT_LABEL,
+  FILES_MAX_FOLDER_DEPTH,
+  filesFolderDepth,
+  assertFilesFolderDepth,
+  clampFilesFolderPath,
 } from './paths';
 
 export {
@@ -131,6 +135,8 @@ export {
   deleteFolder,
   renameFolderById,
   renamedFolderPath,
+  FOLDER_NAME_MAX,
+  folderDisplayName,
   listFolders,
   listAllFolders,
   folderById,

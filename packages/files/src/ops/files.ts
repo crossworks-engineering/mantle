@@ -8,6 +8,7 @@ import { createReadStream, promises as fsp } from 'node:fs';
 import { Readable } from 'node:stream';
 import { and, eq, sql } from 'drizzle-orm';
 import {
+  assertFilesFolderDepth,
   diskPathForFile,
   extOf,
   isFilesPath,
@@ -542,6 +543,9 @@ export async function syncFileFromDisk(args: {
     )
     .limit(1);
   if (!parent) {
+    // A directory made on disk deeper than the tree allows stays out of the
+    // brain: the caller (the watcher) logs the refusal and moves on.
+    assertFilesFolderDepth(args.parentPath, 'syncFileFromDisk');
     await ensureBranchChain(args.ownerId, args.parentPath);
   }
 

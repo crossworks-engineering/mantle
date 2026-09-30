@@ -11,6 +11,7 @@ import {
   parseSpaceItemChange,
   type SpaceItemChange,
 } from '@mantle/content';
+import { TREE_CHANGED_CHANNEL } from '@mantle/content/tree';
 import { PENDING_CHANGED_CHANNEL } from '@mantle/tools';
 import { RUNS_CHANGED_CHANNEL, RUNS_CHANGED_TYPE } from '@mantle/runs';
 import { TURN_STREAM_CHANNEL, type TurnStreamEnvelope } from '@mantle/turn-stream';
@@ -137,6 +138,17 @@ async function ensureListening(): Promise<void> {
     const subAppNav = await sql.listen(APP_NAV_CHANGED_CHANNEL, (ownerId) => {
       broadcast({ ownerId, type: 'app-nav', id: '' });
     });
+    // Item-tree writes (folders created, renamed, moved, restyled, deleted;
+    // items moved; pins). JSON {ownerId, kind} payload, broadcast typed 'tree'
+    // with the kind as id so a client refetches that kind's open folders.
+    const subTree = await sql.listen(TREE_CHANGED_CHANNEL, (payload) => {
+      try {
+        const c = JSON.parse(payload) as { ownerId?: string; kind?: string };
+        if (c && c.ownerId && c.kind) broadcast({ ownerId: c.ownerId, type: 'tree', id: c.kind });
+      } catch {
+        /* malformed payload: drop it rather than crash the listener */
+      }
+    });
     // Comment writes (migration 0149) — JSON {ownerId, nodeId} payload,
     // broadcast typed 'comment' with the node id so a thread view can
     // invalidate precisely.
@@ -195,6 +207,7 @@ async function ensureListening(): Promise<void> {
         await subRuns.unlisten();
         await subTasks.unlisten();
         await subAppNav.unlisten();
+        await subTree.unlisten();
         await subComments.unlisten();
         await subConversation.unlisten();
         await subTurnStream.unlisten();

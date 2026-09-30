@@ -1,0 +1,350 @@
+/**
+ * The item tree's writes: create, rename, restyle, move and reorder folders,
+ * delete a folder (its contents move up to the parent), and move items.
+ *
+ * What differs by kind lives in one small ops table. Files are the one kind
+ * whose folders are real directories, so their ops are the Files package's
+ * disk-safe operations (disk first, then the database, rolled back together);
+ * the look and the order are plain row data for every kind.
+ */
+import { and, eq, sql } from 'drizzle-orm';
+import { db, nodes } from '@mantle/db';
+import {
+  createFolder as createFilesFolder,
+  deleteFolder as deleteFilesFolder,
+  moveFileById,
+  moveFolderById,
+  renameFolderById,
+} from '@mantle/files';
+import type { AppTint } from '@mantle/client-types/app-nav';
+import {
+  TREE_FOLDER_NAME_MAX,
+  TREE_KIND_SPECS,
+  type TreeFolder,
+  type TreeKind,
+} from '@mantle/client-types/tree';
+import { treeParentPath } from '@mantle/content-core/tree';
+import { ranksAfter } from '../rank';
+import { isTreeLiveKind } from './kinds';
+import { treeFolderById } from './read';
+
+/** NOTIFY channel for a tree write (payload: JSON {ownerId, kind}). Consumed
+ *  by server/web/lib/realtime.ts, which broadcasts it as type 'tree'. */
+export const TREE_CHANGED_CHANNEL = 'tree_changed';
+
+/** Tell every open client that a kind's tree changed. Best-effort: a missed
+ *  notify only delays the refresh. Item uploads and deletes already raise
+ *  their own node events. */
+export async function notifyTreeChanged(ownerId: string, kind: TreeKind): Promise<void> {
+  try {
+    await db.execute(
+      sql`SELECT pg_notify(${TREE_CHANGED_CHANNEL}, ${JSON.stringify({ ownerId, kind })})`,
+    );
+  } catch (err) {
+    console.error('[tree] notify failed:', err instanceof Error ? err.message : err);
+  }
+}
+
+/** A refusal the caller can show: `not-found` (404), `conflict` (409),
+ *  `invalid` (400). */
+export class TreeError extends Error {
+  constructor(
+    readonly code: 'not-found' | 'conflict' | 'invalid',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'TreeError';
+  }
+}
+
+/** The per-kind half of a write. Paths are ltree strings. */
+type TreeKindOps = {
+  /** Returns the new folder's id. */
+  createFolder(ownerId: string, parentPath: string, name: string): Promise<string>;
+  renameFolder(ownerId: string, folderId: string, name: string): Promise<void>;
+  moveFolder(ownerId: string, folderId: string, destParentPath: string): Promise<void>;
+  moveItem(ownerId: string, itemId: string, destPath: string): Promise<void>;
+  /** Remove a folder that no longer holds anything. */
+  removeEmptyFolder(ownerId: string, folderId: string): Promise<void>;
+};
+
+const FILES_OPS: TreeKindOps = {
+  async createFolder(ownerId, parentPath, name) {
+    return (await createFilesFolder({ ownerId, parentPath, slug: name, name })).id;
+  },
+  async renameFolder(ownerId, folderId, name) {
+    await renameFolderById({ ownerId, folderId, newSlug: name });
+  },
+  async moveFolder(ownerId, folderId, destParentPath) {
+    await moveFolderById({ ownerId, folderId, destParentPath });
+  },
+  async moveItem(ownerId, itemId, destPath) {
+    await moveFileById({ ownerId, fileId: itemId, destPath });
+  },
+  async removeEmptyFolder(ownerId, folderId) {
+    const res = await deleteFilesFolder({ ownerId, folderId });
+    if (!res.ok) throw new TreeError('conflict', res.reason);
+  },
+};
+
+function opsFor(kind: TreeKind): TreeKindOps {
+  if (!isTreeLiveKind(kind)) throw new TreeError('invalid', `the ${kind} tree is not served yet`);
+  switch (kind) {
+    case 'files':
+      return FILES_OPS;
+    default:
+      throw new TreeError('invalid', `the ${kind} tree is not served yet`);
+  }
+}
+
+/** A Files op throws plain errors whose message is written for people
+ *  (a clash, a depth refusal): pass them on as refusals. */
+async function refusing<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof TreeError) throw err;
+    const message = err instanceof Error ? err.message : String(err);
+    throw new TreeError(/already exists|unique/i.test(message) ? 'conflict' : 'invalid', message);
+  }
+}
+
+async function folderOrThrow(
+  ownerId: string,
+  kind: TreeKind,
+  folderId: string,
+): Promise<TreeFolder> {
+  const folder = await treeFolderById(ownerId, kind, folderId);
+  if (!folder) throw new TreeError('not-found', 'folder not found');
+  return folder;
+}
+
+/** The path a folder id stands for; null (or no id) is the kind's root. */
+async function pathOf(ownerId: string, kind: TreeKind, folderId: string | null): Promise<string> {
+  return folderId
+    ? (await folderOrThrow(ownerId, kind, folderId)).path
+    : TREE_KIND_SPECS[kind].root;
+}
+
+function cleanName(name: string): string {
+  const clean = name.trim().replace(/\s+/g, ' ').slice(0, TREE_FOLDER_NAME_MAX);
+  if (!clean) throw new TreeError('invalid', 'a folder needs a name');
+  return clean;
+}
+
+async function folderAt(ownerId: string, path: string): Promise<{ id: string } | null> {
+  const [row] = await db
+    .select({ id: nodes.id })
+    .from(nodes)
+    .where(
+      and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'branch'), sql`${nodes.path}::text = ${path}`),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+/** Create a folder under `parentId` (null = the top level). */
+export async function createTreeFolder(
+  ownerId: string,
+  kind: TreeKind,
+  args: { parentId: string | null; name: string },
+): Promise<TreeFolder> {
+  const ops = opsFor(kind);
+  const parentPath = await pathOf(ownerId, kind, args.parentId);
+  const name = cleanName(args.name);
+  const id = await refusing(() => ops.createFolder(ownerId, parentPath, name));
+  return folderOrThrow(ownerId, kind, id);
+}
+
+export type TreeFolderPatch = {
+  name?: string;
+  icon?: string | null;
+  color?: AppTint | null;
+  /** Move under another folder; null = the top level. */
+  parentId?: string | null;
+  /** Reorder among its siblings: directly after this sibling; null = first. */
+  after?: string | null;
+};
+
+/** Apply one or more changes to a folder, in a fixed order: move, rename,
+ *  look, then place. Returns the folder as it now is. */
+export async function updateTreeFolder(
+  ownerId: string,
+  kind: TreeKind,
+  folderId: string,
+  patch: TreeFolderPatch,
+): Promise<TreeFolder> {
+  const ops = opsFor(kind);
+  const folder = await folderOrThrow(ownerId, kind, folderId);
+  if (patch.parentId !== undefined) {
+    if (patch.parentId === folderId) throw new TreeError('invalid', 'a folder cannot hold itself');
+    const dest = await pathOf(ownerId, kind, patch.parentId);
+    if (dest !== treeParentPath(folder.path)) {
+      await refusing(() => ops.moveFolder(ownerId, folderId, dest));
+    }
+  }
+  if (patch.name !== undefined) {
+    if (folder.system)
+      throw new TreeError('invalid', 'this folder is made by Mantle; its name is fixed');
+    await refusing(() => ops.renameFolder(ownerId, folderId, cleanName(patch.name!)));
+  }
+  if (patch.icon !== undefined || patch.color !== undefined) {
+    await setFolderLook(ownerId, folderId, { icon: patch.icon, color: patch.color });
+  }
+  if (patch.after !== undefined) {
+    await placeFolder(ownerId, kind, folderId, patch.after);
+  }
+  return folderOrThrow(ownerId, kind, folderId);
+}
+
+async function setFolderLook(
+  ownerId: string,
+  folderId: string,
+  look: { icon?: string | null; color?: AppTint | null },
+): Promise<void> {
+  const [row] = await db
+    .select({ data: nodes.data })
+    .from(nodes)
+    .where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)))
+    .limit(1);
+  const data = { ...((row?.data ?? {}) as Record<string, unknown>) };
+  for (const key of ['icon', 'color'] as const) {
+    const value = look[key];
+    if (value === undefined) continue;
+    if (value === null || value === '') delete data[key];
+    else data[key] = value;
+  }
+  await db
+    .update(nodes)
+    .set({ data, updatedAt: new Date() })
+    .where(and(eq(nodes.id, folderId), eq(nodes.ownerId, ownerId)));
+}
+
+/** The direct subfolders of `parentPath` in their current order. */
+async function childFolderIds(
+  ownerId: string,
+  parentPath: string,
+): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
+  const rows = (await db.execute(sql`
+    select id, data from nodes
+     where owner_id = ${ownerId} and type = 'branch'
+       and path ~ ${`${parentPath}.*{1}`}::lquery
+     order by data->>'rank' collate "C" nulls last, lower(title), id`)) as unknown as Array<{
+    id: string;
+    data: Record<string, unknown> | null;
+  }>;
+  return rows.map((r) => ({ id: r.id, data: r.data ?? {} }));
+}
+
+/**
+ * Put a folder directly after `afterId` among its siblings (null = first).
+ * The whole sibling list is re-ranked in its new order: a level holds a
+ * handful of folders, and fresh ranks never collide with older ones.
+ */
+async function placeFolder(
+  ownerId: string,
+  kind: TreeKind,
+  folderId: string,
+  afterId: string | null,
+): Promise<void> {
+  const folder = await folderOrThrow(ownerId, kind, folderId);
+  const siblings = (await childFolderIds(ownerId, treeParentPath(folder.path))).filter(
+    (s) => s.id !== folderId,
+  );
+  const at = afterId === null ? 0 : siblings.findIndex((s) => s.id === afterId) + 1;
+  if (afterId !== null && at === 0)
+    throw new TreeError('invalid', 'the sibling to place after was not found');
+  const moving = { id: folderId, data: {} as Record<string, unknown> };
+  const order = [...siblings.slice(0, at), moving, ...siblings.slice(at)];
+  const ranks = ranksAfter(null, order.length);
+  await db.transaction(async (tx) => {
+    for (const [i, s] of order.entries()) {
+      await tx.execute(sql`
+        update nodes set data = jsonb_set(coalesce(data, '{}'::jsonb), '{rank}', to_jsonb(${ranks[i]!}::text))
+         where id = ${s.id} and owner_id = ${ownerId}`);
+    }
+  });
+}
+
+/**
+ * Delete a folder; what it holds moves up to its parent first. Refused before
+ * anything moves when the parent already has a folder or an item of the same
+ * name, so a delete never merges or renames silently.
+ */
+export async function deleteTreeFolder(
+  ownerId: string,
+  kind: TreeKind,
+  folderId: string,
+): Promise<void> {
+  const ops = opsFor(kind);
+  const folder = await folderOrThrow(ownerId, kind, folderId);
+  const parentPath = treeParentPath(folder.path);
+  const spec = TREE_KIND_SPECS[kind];
+  const [children, items] = await Promise.all([
+    db.execute(sql`
+      select id, path::text as path, title from nodes
+       where owner_id = ${ownerId} and type = 'branch'
+         and path ~ ${`${folder.path}.*{1}`}::lquery`) as unknown as Promise<
+      Array<{ id: string; path: string; title: string }>
+    >,
+    db.execute(sql`
+      select id, title, lower(coalesce(data->>'filename', title)) as name from nodes
+       where owner_id = ${ownerId} and type = ${spec.nodeType}
+         and path = ${folder.path}::ltree`) as unknown as Promise<
+      Array<{ id: string; title: string; name: string }>
+    >,
+  ]);
+  const clashes: string[] = [];
+  for (const c of children) {
+    const label = c.path.split('.').at(-1)!;
+    if (await folderAt(ownerId, `${parentPath}.${label}`)) clashes.push(c.title);
+  }
+  if (kind === 'files' && items.length) {
+    const taken = (await db.execute(sql`
+      select lower(data->>'filename') as name from nodes
+       where owner_id = ${ownerId} and type = 'file' and path = ${parentPath}::ltree`)) as unknown as Array<{
+      name: string;
+    }>;
+    const names = new Set(taken.map((t) => t.name));
+    for (const i of items) if (names.has(i.name)) clashes.push(i.title);
+  }
+  if (clashes.length) {
+    throw new TreeError(
+      'conflict',
+      `the folder above already has ${clashes.length === 1 ? 'something' : 'things'} named ${clashes
+        .slice(0, 5)
+        .map((c) => `'${c}'`)
+        .join(', ')}; rename or move ${clashes.length === 1 ? 'it' : 'them'} first`,
+    );
+  }
+  for (const c of children) await refusing(() => ops.moveFolder(ownerId, c.id, parentPath));
+  for (const i of items) await refusing(() => ops.moveItem(ownerId, i.id, parentPath));
+  await ops.removeEmptyFolder(ownerId, folderId);
+}
+
+export type TreeMoveResult = {
+  moved: number;
+  failed: Array<{ id: string; error: string }>;
+};
+
+/** Move items into a folder (null = the kind's root, unsorted). Each item
+ *  moves on its own; one that cannot is reported, the rest still move. */
+export async function moveTreeItems(
+  ownerId: string,
+  kind: TreeKind,
+  itemIds: readonly string[],
+  folderId: string | null,
+): Promise<TreeMoveResult> {
+  const ops = opsFor(kind);
+  const dest = await pathOf(ownerId, kind, folderId);
+  const result: TreeMoveResult = { moved: 0, failed: [] };
+  for (const id of new Set(itemIds)) {
+    try {
+      await ops.moveItem(ownerId, id, dest);
+      result.moved += 1;
+    } catch (err) {
+      result.failed.push({ id, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return result;
+}

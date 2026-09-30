@@ -50,6 +50,8 @@ const PUBLIC = [
   'listAllFolders',
   'renamedFolderPath',
   'renameFolderById',
+  'FOLDER_NAME_MAX',
+  'folderDisplayName',
 ] as const;
 
 /** Exported from ops/shared.ts for the siblings only. */

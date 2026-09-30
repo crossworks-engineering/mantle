@@ -171,3 +171,22 @@ export type {
   AppOpenStat,
   AppTint,
 } from './app-nav';
+
+// Types only at the root; the runtime constants (kinds, specs, limits) are the
+// `@mantle/client-types/tree` subpath.
+export type {
+  TreeCrumb,
+  TreeFolder,
+  TreeFolderPage,
+  TreeItem,
+  TreeItemState,
+  TreeKind,
+  TreeKindSpec,
+  TreeMarkList,
+  TreeMarkView,
+  TreeSearchResult,
+  TreeShareLevel,
+  TreeSort,
+  TreeVisibilityChange,
+  TreeVisibilityRefusal,
+} from './tree';
