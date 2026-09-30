@@ -123,6 +123,7 @@ function rowOf(n: Node, s: Partial<SidecarCols> = {}): AppRow {
     audience: asViewerLevel(n.audience),
     inherited:
       n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
+    embedded: n.embeddedLevel === 'team' || n.embeddedLevel === 'client' ? n.embeddedLevel : null,
     dataReadOnly: s.dataReadOnly === true,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),

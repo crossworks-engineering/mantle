@@ -29,6 +29,7 @@ import {
   isWorkspaceKind,
   oldLinksAboveItem,
   setItemLevel,
+  readThroughEmbeds,
   sharedViaFolder,
   type ShareSummary,
 } from '@mantle/content';
@@ -75,17 +76,21 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     .where(and(eq(nodes.id, idParsed.data.id), eq(nodes.ownerId, user.id)))
     .limit(1);
   if (!item) return NextResponse.json({ error: 'Not found.' }, { status: 404 });
-  const [closure, share, childCount, authors, oldLinks, sharedVia] = await Promise.all([
-    accessClosure(user.id, item.id),
-    getActiveShareForNode(user.id, item.id),
-    item.type === 'page' ? countPageDescendants(user.id, item.id) : Promise.resolve(0),
-    acceptedAuthors(user.id, [item.id]),
-    // Old live links above a client item (a client folder over it, a client
-    // page embedding it): anyone with one opens this item too (audit A11).
-    item.audience === 'client' ? oldLinksAboveItem(user.id, item.id) : Promise.resolve([]),
-    // The shared folder it takes its share from: the control's floor.
-    sharedViaFolder(user.id, item.id),
-  ]);
+  const [closure, share, childCount, authors, oldLinks, sharedVia, readThrough] = await Promise.all(
+    [
+      accessClosure(user.id, item.id),
+      getActiveShareForNode(user.id, item.id),
+      item.type === 'page' ? countPageDescendants(user.id, item.id) : Promise.resolve(0),
+      acceptedAuthors(user.id, [item.id]),
+      // Old live links above a client item (a client folder over it, a client
+      // page embedding it): anyone with one opens this item too (audit A11).
+      item.audience === 'client' ? oldLinksAboveItem(user.id, item.id) : Promise.resolve([]),
+      // The shared folder it takes its share from: the control's floor.
+      sharedViaFolder(user.id, item.id),
+      // What embeds it and carries a share (0208): a floor too.
+      readThroughEmbeds(user.id, item.id),
+    ],
+  );
   const { path, ...rest } = item;
   const body: AccessNodeView = {
     item: { ...rest, audience: isViewerLevel(rest.audience) ? rest.audience : 'admin' },
@@ -105,6 +110,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     openLinkLevels: ['public'],
     ...(item.audience === 'client' ? { oldLinksAbove: oldLinks } : {}),
     sharedVia,
+    readThrough,
   };
   return NextResponse.json(body);
 }

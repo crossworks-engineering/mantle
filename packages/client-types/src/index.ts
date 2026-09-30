@@ -41,6 +41,7 @@ export type {
   AccessNodeUpdate,
   AccessNodeView,
   AccessSharedVia,
+  AccessReadThrough,
   ClientOldLinkAbove,
   ClientReport,
   ClientReportAck,

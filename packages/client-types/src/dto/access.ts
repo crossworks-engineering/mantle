@@ -77,6 +77,30 @@ export type AccessNodeView = {
   /** The shared folder it takes its share from (folder sharing); null when
    *  none. Absent from brains before folder sharing. */
   sharedVia?: AccessSharedVia | null;
+  /** What it is read through by embeds (migration 0208); null when nothing
+   *  reaches it. Absent from brains before 0208. */
+  readThrough?: AccessReadThrough | null;
+};
+
+/** An item is read through the items that embed it (migration 0208): a
+ *  shared note makes its image readable wherever the image lives. The item
+ *  is read at least at `level`, whatever its own level says, so the control
+ *  offers nothing above it: take the embed out, or move the embedder out of
+ *  its shared folder, to hide it. */
+export type AccessReadThrough = {
+  level: 'team' | 'client';
+  /** The nearest items that embed it and carry a share, most open first
+   *  (at most five). */
+  via: Array<{
+    id: string;
+    title: string;
+    /** The node type ('note', 'page', 'draw', ...). */
+    type: string;
+    level: 'team' | 'client';
+    /** 'folder': shared by its own folder; 'embed': itself read through
+     *  another embed. */
+    through: 'folder' | 'embed';
+  }>;
 };
 
 /** The nearest shared folder holding an item (folder sharing, phase 4). The

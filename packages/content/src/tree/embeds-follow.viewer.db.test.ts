@@ -345,6 +345,31 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
     expect(refusal!.diff.alsoEmbeds).toHaveLength(100);
   });
 
+  it('the Access control and the rows say what an item is read through (review F2)', async () => {
+    await setShare(folderF, 'client');
+    const contract = await node('file', 'files', 'contract.pdf');
+    const inner = await node('note', 'notes', 'inner note');
+    const n = await note(
+      folderF.path,
+      'Kickoff',
+      `![c](media:${contract})\n\n![n](media:${inner})`,
+    );
+    const { readThroughEmbeds } = await import('../shared-via');
+    expect(await readThroughEmbeds(brain, contract)).toEqual({
+      level: 'client',
+      via: [{ id: n, title: 'Kickoff', type: 'note', level: 'client', through: 'folder' }],
+    });
+    // Nothing reaches the note itself through an embed: its share is its folder's.
+    expect(await readThroughEmbeds(brain, n)).toBeNull();
+    const files = await import('@mantle/files');
+    expect(await files.fileById({ ownerId: brain, fileId: contract })).toMatchObject({
+      audience: 'admin',
+      embedded: 'client',
+    });
+    const { getNote } = await import('../notes');
+    expect(await getNote(brain, inner)).toMatchObject({ audience: 'admin', embedded: 'client' });
+  });
+
   it('a page save that adds a child page card reaches it, and folds its text', async () => {
     const secret = await node('note', 'notes', 'Secret plans');
     const child = await page(

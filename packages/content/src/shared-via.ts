@@ -13,7 +13,7 @@
  */
 import { sql } from 'drizzle-orm';
 import { db } from '@mantle/db';
-import type { AccessSharedVia } from '@mantle/client-types';
+import type { AccessReadThrough, AccessSharedVia } from '@mantle/client-types';
 
 export async function sharedViaFolder(
   ownerId: string,
@@ -42,5 +42,57 @@ export async function sharedViaFolder(
     folderId: row.id,
     trail: trail.map((t) => t.title ?? 'Untitled'),
     level: row.level,
+  };
+}
+
+/**
+ * What an item is read through by embeds (migration 0208): its embedded
+ * level, and the nearest items that embed it and carry a share (a note in a
+ * client-shared folder, or an item itself read through an embed), most open
+ * first, at most `limit`. The Access control names them ("Read through: the
+ * note 'Kickoff'") and uses the level as a floor, as it does sharedVia: the
+ * item is read there whatever its own level says, so the way to hide it is
+ * to take the embed out, or the embedder out of the shared folder. Null
+ * when nothing reaches it. Read-only, on the admin pool.
+ */
+export async function readThroughEmbeds(
+  ownerId: string,
+  nodeId: string,
+  limit = 5,
+): Promise<AccessReadThrough | null> {
+  const [row] = (await db.execute(sql`
+    select embedded_level as level from nodes
+     where id = ${nodeId} and owner_id = ${ownerId}`)) as unknown as Array<{
+    level: string | null;
+  }>;
+  const level = row?.level;
+  if (level !== 'team' && level !== 'client') return null;
+  const via = (await db.execute(sql`
+    select e.from_id::text as id, x.title, x.type::text as type,
+           mantle_share_max(x.inherited_level, x.embedded_level) as level,
+           x.inherited_level is not null as folder
+      from node_embeds e
+      join nodes x on x.id = e.from_id and x.owner_id = ${ownerId}
+     where e.to_id = ${nodeId}
+       and (x.inherited_level is not null or x.embedded_level is not null)
+     order by (mantle_share_max(x.inherited_level, x.embedded_level) = 'client') desc,
+              lower(x.title), x.id
+     limit ${limit}`)) as unknown as Array<{
+    id: string;
+    title: string | null;
+    type: string;
+    level: 'team' | 'client';
+    folder: boolean;
+  }>;
+  return {
+    level,
+    via: via.map((v) => ({
+      id: v.id,
+      title: v.title ?? 'Untitled',
+      type: v.type,
+      level: v.level,
+      // Shared by its own folder, or itself read through another embed.
+      through: v.folder ? 'folder' : 'embed',
+    })),
   };
 }

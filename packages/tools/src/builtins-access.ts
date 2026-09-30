@@ -12,6 +12,7 @@ import {
   setAgentAudience,
   setItemLevel,
   setToolGroupAudience,
+  readThroughEmbeds,
   sharedViaFolder,
 } from '@mantle/content';
 import { errorMessage } from '@mantle/std';
@@ -32,13 +33,26 @@ async function sharedFolderWarning(
   nodeId: string,
   level: string,
 ): Promise<string | null> {
-  const via = await sharedViaFolder(ownerId, nodeId);
-  if (!via || (RANK[level] ?? 0) <= RANK[via.level]!) return null;
-  const who = via.level === 'team' ? 'the team' : 'clients';
-  return (
-    `It is still read at ${via.level}: it sits in "${via.trail.join(' / ')}", a folder ` +
-    `shared with ${who}. Move it out of that folder to hide it.`
-  );
+  const [via, through] = await Promise.all([
+    sharedViaFolder(ownerId, nodeId),
+    readThroughEmbeds(ownerId, nodeId),
+  ]);
+  const lines: string[] = [];
+  if (via && (RANK[level] ?? 0) > RANK[via.level]!) {
+    const who = via.level === 'team' ? 'the team' : 'clients';
+    lines.push(
+      `It is still read at ${via.level}: it sits in "${via.trail.join(' / ')}", a folder ` +
+        `shared with ${who}. Move it out of that folder to hide it.`,
+    );
+  }
+  if (through && (RANK[level] ?? 0) > RANK[through.level]!) {
+    const names = through.via.map((v) => `the ${v.type} '${v.title}'`).join(', ');
+    lines.push(
+      `It is still read at ${through.level} through what embeds it (${names}). ` +
+        'Take it out of those, or move them out of their shared folder, to hide it.',
+    );
+  }
+  return lines.length ? lines.join(' ') : null;
 }
 
 function ownerOnly(ctx: ToolHandlerContext): ToolHandlerResult | null {
@@ -58,7 +72,7 @@ export const access_get: BuiltinToolDef = {
   preconditions: NODE_ID_PRE,
   name: 'Get an access level',
   description:
-    'Read the level (admin, team, client or public) of one brain item, agent or tool group. For an item in a shared folder it returns `sharedVia`: the folder it takes its share from, which it is read at at least. For an item it also returns its CLOSURE, each with its own level: for a page, drawing or note what it embeds (images, files, drawings, child pages), which goes down with it when it is lowered; for a folder its contents, which keep their own levels. Use before `access_set` to see what lowering an item will also share.',
+    'Read the level (admin, team, client or public) of one brain item, agent or tool group. For an item in a shared folder it returns `sharedVia`: the folder it takes its share from; for one a shared item embeds, `readThrough`: those items. It is read at least at their level. For an item it also returns its CLOSURE, each with its own level: for a page, drawing or note what it embeds (images, files, drawings, child pages), which goes down with it when it is lowered; for a folder its contents, which keep their own levels. Use before `access_set` to see what lowering an item will also share.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -85,14 +99,21 @@ export const access_get: BuiltinToolDef = {
           .where(and(eq(nodes.id, nodeId), eq(nodes.ownerId, ctx.ownerId)))
           .limit(1);
         if (!row) return { ok: false, error: 'item not found: find its id with search_nodes' };
-        const [closure, sharedVia] = await Promise.all([
+        const [closure, sharedVia, readThrough] = await Promise.all([
           accessClosure(ctx.ownerId, nodeId),
           sharedViaFolder(ctx.ownerId, nodeId),
+          readThroughEmbeds(ctx.ownerId, nodeId),
         ]);
-        // In a shared folder it is read at least at the folder's share.
+        // In a shared folder it is read at least at the folder's share, and
+        // through what embeds it at least at theirs (0208).
         return {
           ok: true,
-          output: sharedVia ? { item: row, closure, sharedVia } : { item: row, closure },
+          output: {
+            item: row,
+            closure,
+            ...(sharedVia ? { sharedVia } : {}),
+            ...(readThrough ? { readThrough } : {}),
+          },
         };
       }
       if (agentSlug) {

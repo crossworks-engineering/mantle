@@ -127,6 +127,10 @@ export type DrawRow = {
   /** The share it inherits from a folder above it (team or client), or
    *  null. It is read at the more open of this and `audience`. */
   inherited: 'team' | 'client' | null;
+  /** The share it is read at through something that embeds it (migration
+   *  0208), or null. It is read at the most open of this, `inherited` and
+   *  `audience`. */
+  embedded: 'team' | 'client' | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -160,6 +164,7 @@ function rowOf(n: Node, hasSvg = false, hasDraft = false): DrawRow {
     audience: asViewerLevel(n.audience),
     inherited:
       n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
+    embedded: n.embeddedLevel === 'team' || n.embeddedLevel === 'client' ? n.embeddedLevel : null,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };

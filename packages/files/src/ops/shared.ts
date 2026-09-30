@@ -34,6 +34,10 @@ export type FolderRow = {
   /** The share it inherits from a folder above it (team or client), or
    *  null. It is read at the more open of this and `audience`. */
   inherited: 'team' | 'client' | null;
+  /** The share it is read at through something that embeds it (migration
+   *  0208), or null. It is read at the most open of this, `inherited` and
+   *  `audience`. */
+  embedded: 'team' | 'client' | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -60,6 +64,10 @@ export type FileRow = {
   /** The share it inherits from a folder above it (team or client), or
    *  null. It is read at the more open of this and `audience`. */
   inherited: 'team' | 'client' | null;
+  /** The share it is read at through something that embeds it (migration
+   *  0208), or null. It is read at the most open of this, `inherited` and
+   *  `audience`. */
+  embedded: 'team' | 'client' | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -176,6 +184,8 @@ export function folderRowFromNode(
     share: row.shareLevel === 'team' || row.shareLevel === 'client' ? row.shareLevel : null,
     inherited:
       row.inheritedLevel === 'team' || row.inheritedLevel === 'client' ? row.inheritedLevel : null,
+    embedded:
+      row.embeddedLevel === 'team' || row.embeddedLevel === 'client' ? row.embeddedLevel : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -208,6 +218,8 @@ export function fileRowFromNode(row: Node): FileRow {
     audience: asViewerLevel(row.audience),
     inherited:
       row.inheritedLevel === 'team' || row.inheritedLevel === 'client' ? row.inheritedLevel : null,
+    embedded:
+      row.embeddedLevel === 'team' || row.embeddedLevel === 'client' ? row.embeddedLevel : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

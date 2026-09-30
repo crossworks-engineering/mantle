@@ -4,10 +4,19 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ setItem: vi.fn(), sharedVia: vi.fn() }));
+const h = vi.hoisted(() => ({
+  setItem: vi.fn(),
+  sharedVia: vi.fn(),
+  readThrough: vi.fn(async () => null),
+}));
 vi.mock('@mantle/content', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content')>();
-  return { ...actual, setItemLevel: h.setItem, sharedViaFolder: h.sharedVia };
+  return {
+    ...actual,
+    setItemLevel: h.setItem,
+    sharedViaFolder: h.sharedVia,
+    readThroughEmbeds: h.readThrough,
+  };
 });
 
 import { AccessError } from '@mantle/content';
@@ -92,6 +101,27 @@ describe('access tools', () => {
     h.sharedVia.mockResolvedValueOnce(via);
     const same = await access_set.handler({ node_id: 'n1', level: 'client' }, OWNER);
     expect(same.ok && (same.output as { warnings?: string[] }).warnings).toBeUndefined();
+  });
+
+  it('warn that a raise above what embeds it leaves it read there (0208)', async () => {
+    const done = {
+      item: { id: 'n1', type: 'file' },
+      lowered: [],
+      alsoLowered: [],
+      stillAbove: [],
+      raised: [],
+      stillBelow: [],
+    };
+    h.setItem.mockResolvedValueOnce(done);
+    h.sharedVia.mockResolvedValueOnce(null);
+    h.readThrough.mockResolvedValueOnce({
+      level: 'client',
+      via: [{ id: 'e1', title: 'Kickoff', type: 'note', level: 'client', through: 'folder' }],
+    });
+    const up = await access_set.handler({ node_id: 'n1', level: 'admin' }, OWNER);
+    expect(up.ok && (up.output as { warnings?: string[] }).warnings).toEqual([
+      "It is still read at client through what embeds it (the note 'Kickoff'). Take it out of those, or move them out of their shared folder, to hide it.",
+    ]);
   });
 
   it('turn the type ceiling into a readable tool error', async () => {

@@ -45,6 +45,8 @@ export type FormulaRow = {
    *  null; it is read at the more open of this and `audience`. Optional:
    *  absent from brains before the folder audit fixes. */
   inherited?: 'team' | 'client' | null;
+  /** The share it is read at through something that embeds it (0208). */
+  embedded?: 'team' | 'client' | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -63,6 +65,7 @@ function rowOf(n: Node): FormulaRow {
     audience: asViewerLevel(n.audience),
     inherited:
       n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
+    embedded: n.embeddedLevel === 'team' || n.embeddedLevel === 'client' ? n.embeddedLevel : null,
     createdAt: (n.createdAt as unknown as Date)?.toISOString?.() ?? String(n.createdAt),
     updatedAt: (n.updatedAt as unknown as Date)?.toISOString?.() ?? String(n.updatedAt),
   };

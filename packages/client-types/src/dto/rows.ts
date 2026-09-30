@@ -179,6 +179,9 @@ export type AppRow = {
    *  null; it is read at the more open of this and `audience`. Optional:
    *  absent from brains before the folder audit fixes. */
   inherited?: 'team' | 'client' | null;
+  /** The share it is read at through something that embeds it (migration
+   *  0208), or null. Optional: absent from brains before it. */
+  embedded?: 'team' | 'client' | null;
   /** Informational (client logins C6): members and clients only read the
    *  app's data. Off, an app at team or client level is a shared workspace
    *  everyone who runs it writes. Set with PATCH /api/apps/:id
