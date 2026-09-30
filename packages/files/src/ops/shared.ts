@@ -28,6 +28,12 @@ export type FolderRow = {
   fileCount: number;
   /** Access level (admin > team > client > public); the owner UI's badge. */
   audience: ViewerLevel;
+  /** The folder's own share (team or client), or null. Everything below it
+   *  is read at least at this level. */
+  share: 'team' | 'client' | null;
+  /** The share it inherits from a folder above it (team or client), or
+   *  null. It is read at the more open of this and `audience`. */
+  inherited: 'team' | 'client' | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -51,6 +57,9 @@ export type FileRow = {
   indexingApplied: 'full' | 'metadata' | null;
   /** Access level (admin > team > client > public); the owner UI's badge. */
   audience: ViewerLevel;
+  /** The share it inherits from a folder above it (team or client), or
+   *  null. It is read at the more open of this and `audience`. */
+  inherited: 'team' | 'client' | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -164,6 +173,9 @@ export function folderRowFromNode(
     childFolderCount,
     fileCount,
     audience: asViewerLevel(row.audience),
+    share: row.shareLevel === 'team' || row.shareLevel === 'client' ? row.shareLevel : null,
+    inherited:
+      row.inheritedLevel === 'team' || row.inheritedLevel === 'client' ? row.inheritedLevel : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -194,6 +206,8 @@ export function fileRowFromNode(row: Node): FileRow {
           ? 'full'
           : null,
     audience: asViewerLevel(row.audience),
+    inherited:
+      row.inheritedLevel === 'team' || row.inheritedLevel === 'client' ? row.inheritedLevel : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

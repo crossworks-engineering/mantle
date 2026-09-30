@@ -30,6 +30,9 @@ export type NoteRow = {
   summary: string | null;
   /** Access level (admin > team > client > public); the owner UI's badge. */
   audience: ViewerLevel;
+  /** The share it inherits from a folder above it (team or client), or
+   *  null. It is read at the more open of this and `audience`. */
+  inherited: 'team' | 'client' | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -43,6 +46,8 @@ function rowOf(n: Node): NoteRow {
     tags: n.tags ?? [],
     summary: typeof d.summary === 'string' ? d.summary : null,
     audience: asViewerLevel(n.audience),
+    inherited:
+      n.inheritedLevel === 'team' || n.inheritedLevel === 'client' ? n.inheritedLevel : null,
     createdAt: n.createdAt.toISOString(),
     updatedAt: n.updatedAt.toISOString(),
   };
