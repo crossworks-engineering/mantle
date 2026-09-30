@@ -155,6 +155,12 @@ describe('effectiveBrainDepth', () => {
     expect(effectiveBrainDepth('documentation', 'full')).toBe('full');
   });
 
+  it('honours a retrieval stamp on a table, and only retrieval (client tier audit I2)', () => {
+    expect(effectiveBrainDepth('table', 'retrieval')).toBe('retrieval');
+    expect(effectiveBrainDepth('table', undefined)).toBe('full');
+    expect(effectiveBrainDepth('table', 'full')).toBe('full');
+  });
+
   it('always returns full for non-documentation types', () => {
     expect(effectiveBrainDepth('note', 'retrieval')).toBe('full');
     expect(effectiveBrainDepth('file', undefined)).toBe('full');

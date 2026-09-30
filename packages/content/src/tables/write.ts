@@ -74,6 +74,10 @@ export type CreateTableInput = {
    * generated summary can't overwrite it.
    */
   description?: string;
+  /** Index at retrieval depth only (`data.brain_depth`: no entities,
+   *  relations or facts). A Table exported from an app clients write
+   *  (app-table-exports.ts, client tier audit I2). */
+  brainDepth?: 'retrieval';
 };
 
 export async function createTable(ownerId: string, input: CreateTableInput): Promise<TableDetail> {
@@ -117,6 +121,7 @@ export async function createTable(ownerId: string, input: CreateTableInput): Pro
             ...(input.icon ? { icon: input.icon } : {}),
             ...(input.sourceFileId ? { sourceFileId: input.sourceFileId } : {}),
             ...(input.description?.trim() ? { description: input.description.trim() } : {}),
+            ...(input.brainDepth ? { brain_depth: input.brainDepth } : {}),
           },
           tags: dedupeTags(input.tags ?? []),
         })
