@@ -101,9 +101,9 @@ const SITES: Record<string, Site> = {
   },
   'server/web/app/api/apps/[id]/tool-broker/route.ts': {
     calls: 1,
-    surface: /surface: \{ kind: 'web' \}/,
+    surface: /surface: scope\.surface/,
     scope: 'call',
-    why: "the owner's own app",
+    why: "the owner's own app: appToolScope, web for an admin-level app, the app level's surface below it (client tier audit L1)",
   },
   // ── someone else: their surface, explicitly ──
   'packages/runtime/src/assistant/run-team-turn.ts': {
@@ -115,15 +115,15 @@ const SITES: Record<string, Site> = {
   },
   'server/web/app/api/member/apps/[id]/tool-broker/route.ts': {
     calls: 1,
-    surface: /surface: \{\s*kind: 'team',/,
+    surface: /surface: scope\.surface/,
     scope: 'call',
-    why: "a member's app call (team, never the owner)",
+    why: "a member's app call: appToolScope, team or client by the app's level, never the owner",
   },
   'server/web/app/api/client/apps/[id]/tool-broker/route.ts': {
     calls: 1,
-    surface: /surface: \{ kind: 'client', loginId: client\.loginId/,
+    surface: /surface: scope\.surface/,
     scope: 'call',
-    why: "a client's app call (client logins C6: client, never the owner)",
+    why: "a client's app call: appToolScope at client level (client logins C6), never the owner",
   },
   // ── pass-through: the caller's surface, unchanged ──
   'packages/tools/src/dispatch.ts': {
