@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
-## Unreleased: a folder delete merges; embeds follow their embedder (branch feat/folder-audit-fixes-2)
+## 0.232.361: a folder delete merges; embeds follow their embedder
 
 Follow-up to the folder system audit of 2026-09-30 (findings C2 and S5),
 decided by Jason the same day.
