@@ -119,6 +119,12 @@ const SITES: Record<string, Site> = {
     scope: 'call',
     why: "a member's app call (team, never the owner)",
   },
+  'server/web/app/api/client/apps/[id]/tool-broker/route.ts': {
+    calls: 1,
+    surface: /surface: \{ kind: 'client', loginId: client\.loginId/,
+    scope: 'call',
+    why: "a client's app call (client logins C6: client, never the owner)",
+  },
   // ── pass-through: the caller's surface, unchanged ──
   'packages/tools/src/dispatch.ts': {
     calls: 1,
