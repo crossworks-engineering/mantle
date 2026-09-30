@@ -167,6 +167,25 @@ export interface RecallMapCreateDTO {
   folder?: string;
 }
 
+/** `POST /api/recall/maps` answers 201 with this. An owner-created map is
+ *  published at once; only an agent's starts as a draft. */
+export interface RecallMapCreateResultDTO {
+  mapId: string;
+  slug: string;
+  version: number;
+  published: boolean;
+}
+
+/** The body of every refused Recall write. `error` is a sentence written to be
+ *  shown as is: what failed and what to do. `code` is stable and absent only on
+ *  a malformed request (a body that failed validation). A stale `version` is
+ *  409 with code `version_stale`; any code ending `_not_found` is 404; every
+ *  other refusal is 400. */
+export interface RecallWriteErrorDTO {
+  error: string;
+  code?: string;
+}
+
 /** `PATCH /api/recall/maps/:id` — only the fields present are changed.
  *  Renaming does NOT change the slug: agents and skills remember slugs. */
 export interface RecallMapPatchDTO {
@@ -198,14 +217,25 @@ export interface RecallCardWriteDTO {
   version: number;
 }
 
-/** What a write answers with. The warnings are advisory and never block: an
- *  orphan card is a normal intermediate state while a map is being built. */
+/** One advisory warning from a native write. Never blocks: an orphan card is
+ *  a normal intermediate state while a map is being built. No `severity`,
+ *  because a native write has only one kind of issue it reports rather than
+ *  refuses. Codes today: `orphan_card`, `entry_without_options`. */
+export interface RecallWarningDTO {
+  code: string;
+  message: string;
+  /** The card the warning is about, when it is about one. */
+  cardSlug?: string;
+}
+
+/** What a write answers with. */
 export interface RecallWriteResultDTO {
-  /** The map's new version — carry it into the next write. */
+  /** The map's new version. Carry it into the next write. */
   version: number;
-  /** The card written, absent for a map-level write. */
-  card?: RecallCardDetailDTO;
-  warnings: RecallLintIssueDTO[];
+  /** The slug of the card written, absent for a map-level write. The body is
+   *  not echoed back: GET the card if the editor needs it again. */
+  cardSlug?: string;
+  warnings: RecallWarningDTO[];
   /** Cards whose options pointed at a card this write deleted, and so had
    *  that option removed in the same transaction. */
   optionsDropped?: { cardSlug: string; label: string }[];

@@ -21,13 +21,9 @@
  * shapes (@mantle/client-types) carry the v2 fields, so a client may build
  * the v2 screen against this brain.
  *
- * ⚠ The owner WRITE routes (POST /api/recall/maps and friends) land later in
- * R2. Until they do, this flag is ahead of the brain: it says the v2 screen
- * may be used, and a save from that screen would 404. That is fine on an
- * unmerged branch and NOT fine in a release — so this branch must not be
- * released before those routes exist. When they land, pin the pairing with a
- * test (flag true implies the routes are in the manifest) so the flag cannot
- * lie again.
+ * The eleven owner write routes exist, and `features.test.ts` fails if this
+ * flag is true while any of them is missing from the route manifest, so the
+ * flag cannot say more than the brain can do.
  */
 export const RECALL_V2 = true;
 

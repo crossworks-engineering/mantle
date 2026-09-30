@@ -17,6 +17,7 @@ export type {
   RecallLintIssueDTO,
   RecallLintSeverity,
   RecallMapCreateDTO,
+  RecallMapCreateResultDTO,
   RecallMapDetailDTO,
   RecallMapPatchDTO,
   RecallMapSummaryDTO,
@@ -24,5 +25,7 @@ export type {
   RecallOptionDTO,
   RecallPageStateDTO,
   RecallRevisionDTO,
+  RecallWarningDTO,
+  RecallWriteErrorDTO,
   RecallWriteResultDTO,
 } from '../types/recall';
