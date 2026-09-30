@@ -107,7 +107,13 @@ function clientAppExportsAmong(ownerId: string, list: readonly string[]) {
       and(
         eq(appTableExports.ownerId, ownerId),
         inArray(appTableExports.tableNodeId, [...list]),
-        or(eq(nodes.audience, 'client'), isNotNull(appDatabases.clientWrittenAt)),
+        // At client level by its own level OR through a client-shared folder
+        // (the row policy's union rule, item-level.ts).
+        or(
+          eq(nodes.audience, 'client'),
+          eq(nodes.inheritedLevel, 'client'),
+          isNotNull(appDatabases.clientWrittenAt),
+        ),
       ),
     );
 }

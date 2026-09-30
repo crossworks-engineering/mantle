@@ -139,19 +139,24 @@ async function stampAppLinkMark(tableNodeId: string, mark: TableAppLink | null):
   await db.update(nodes).set({ data: d, updatedAt: new Date() }).where(eq(nodes.id, tableNodeId));
 }
 
-/** Whether clients write this app: it is at client level now, or a client
+/** Whether clients write this app: it is read at client level now (its own
+ *  level, or a client-shared folder it sits in: the union rule), or a client
  *  login has written its database (`client_written_at`, audit I3). */
 async function clientAppState(
   ownerId: string,
   appNodeId: string,
 ): Promise<{ clientLevel: boolean; clientWritten: boolean }> {
   const [row] = await db
-    .select({ audience: nodes.audience, clientWrittenAt: appDatabases.clientWrittenAt })
+    .select({
+      audience: nodes.audience,
+      inherited: nodes.inheritedLevel,
+      clientWrittenAt: appDatabases.clientWrittenAt,
+    })
     .from(nodes)
     .leftJoin(appDatabases, eq(appDatabases.appNodeId, nodes.id))
     .where(and(eq(nodes.id, appNodeId), eq(nodes.ownerId, ownerId)))
     .limit(1);
-  const clientLevel = row?.audience === 'client';
+  const clientLevel = row?.audience === 'client' || row?.inherited === 'client';
   return { clientLevel, clientWritten: clientLevel || !!row?.clientWrittenAt };
 }
 
