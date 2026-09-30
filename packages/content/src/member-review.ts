@@ -1545,13 +1545,25 @@ async function moveIntoBrain(
 
       // 4b. Embedding means sharing: at a level below admin, what the item
       //     embeds that is already the brain's (a Library item) goes down
-      //     with it, to the level it is READ at (its folder's share
-      //     included), as a folder share does. The bundle itself took the
-      //     level above.
-      const { lowered: alsoLowered } = await lowerEmbedClosure(brainId, id, readAt, tx);
-      // What the moved pages index is their new level's (pages/level-text.ts,
-      // SQL only); the extractor hears of them once, below, as before.
-      await refoldPageTexts(brainId, ids, tx);
+      //     with it, to the level the admin chose. The share of the folder it
+      //     lands in reaches its embeds through the database instead
+      //     (nodes.embedded_level, migration 0208), and goes again when the
+      //     folder is unshared or the item moves out. The bundle itself took
+      //     the level above.
+      const { lowered: alsoLowered } = await lowerEmbedClosure(brainId, id, audience, tx);
+      // What the moved pages, and the pages they reach through embeds,
+      // index is their new level's (pages/level-text.ts, SQL only); the
+      // extractor hears of the moved ones once, below, as before.
+      const reached = (await tx.execute(sql`
+        select r.id::text as id from mantle_embeds_reached(${brainId}::uuid, array[${sql.join(
+          ids.map((i) => sql`${i}::uuid`),
+          sql`, `,
+        )}]) r`)) as unknown as Array<{ id: string }>;
+      await refoldPageTexts(
+        brainId,
+        reached.map((r) => r.id),
+        tx,
+      );
 
       // 5. The state rows, settled by the caller's rule; the recorded
       //    bundles of what moved are done with. Every item now accepted

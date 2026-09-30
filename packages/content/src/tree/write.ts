@@ -35,10 +35,8 @@ import {
   moveItemsDiff,
   shareDiff,
   type VisibilityDiff,
-  withEmbedsGoingDown,
+  withEmbedChanges,
 } from './visibility';
-import { itemLevel } from '../item-level';
-import { lowerEmbedClosure } from '../embed-closure';
 import { refoldPageTexts } from '../pages/level-text';
 import {
   NodeOpRefusal,
@@ -221,15 +219,17 @@ async function checkVisibility(
     (d.total > 0 && !opts.confirm) ||
     // A different change than was shown asks again; none at all goes ahead.
     (opts.confirm && opts.seen !== undefined && d.total > 0 && d.total !== opts.seen);
-  if (refused) throw new TreeVisibilityError(await withEmbedsGoingDown(ownerId, d));
+  if (refused) throw new TreeVisibilityError(await withEmbedChanges(ownerId, d));
   return d;
 }
 
 /**
- * After a write changed where items sit relative to shared folders: embeds
- * follow each page, drawing and note to the level it is now read at (never
- * raising anything), and the indexed text of the pages concerned is folded
- * for that level (pages/level-text.ts). `scope` is a subtree path, or ids.
+ * After a write changed where items sit relative to shared folders: the
+ * database has already carried what they embed along (nodes.embedded_level,
+ * migration 0208; nothing's own level changes), so what is left is the
+ * indexed text: the pages concerned, the items they reach through embeds,
+ * and the pages that name any of them are folded for the level they are now
+ * read at (pages/level-text.ts). `scope` is a subtree path, or ids.
  */
 async function followShares(
   ownerId: string,
@@ -245,20 +245,18 @@ async function followShares(
           )})`
         : sql`false`;
   const rows = (await db.execute(sql`
-    select id::text as id, type::text as type, audience, inherited_level from nodes
-     where owner_id = ${ownerId} and type in ('page', 'draw', 'note') and ${where}`)) as unknown as Array<{
+    select r.id::text as id from mantle_embeds_reached(${ownerId}::uuid, array(
+      select id from nodes where owner_id = ${ownerId} and ${where})) r`)) as unknown as Array<{
     id: string;
-    type: string;
-    audience: string;
-    inherited_level: string | null;
   }>;
-  for (const r of rows) {
-    const level = itemLevel(r.audience, r.inherited_level);
-    if (level !== 'admin') await lowerEmbedClosure(ownerId, r.id, level);
+  const ids = rows.map((r) => r.id);
+  for (let i = 0; i < ids.length; i += REFOLD_BATCH) {
+    await refoldPageTexts(ownerId, ids.slice(i, i + REFOLD_BATCH));
   }
-  const pageIds = rows.filter((r) => r.type === 'page').map((r) => r.id);
-  if (pageIds.length) await refoldPageTexts(ownerId, pageIds);
 }
+
+/** Ids per refold: each names a pattern the refold matches page docs by. */
+const REFOLD_BATCH = 200;
 
 /** Apply one or more changes to a folder, in a fixed order: move, rename,
  *  look, then place. Returns the folder as it now is. */

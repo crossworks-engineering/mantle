@@ -18,7 +18,7 @@ import {
   type Node,
   type ViewerLevel,
 } from '@mantle/db';
-import { followNewEmbeds, itemLevel, noteEmbedIds } from './embed-closure';
+import { followNewEmbeds, noteEmbedIds, refoldEmbedReach } from './embed-closure';
 
 export const NOTES_ROOT_LABEL = 'notes';
 
@@ -207,20 +207,17 @@ export async function updateNote(
     delete newData.entities;
   }
   const [updated] = await db.transaction(async (tx) => {
-    // Later embeds follow on save: a note below admin that gains an image,
-    // file or drawing takes it to its level (embedding means sharing).
-    const level = itemLevel(node.audience, node.inheritedLevel);
+    // Later embeds follow on save: a note whose own level is below admin and
+    // that gains an image, file or drawing takes it to that level (embedding
+    // means sharing). A folder share it is read through is the database's to
+    // follow (0208).
+    const level = asViewerLevel(node.audience);
+    const before = noteEmbedIds(typeof oldData.content === 'string' ? oldData.content : '');
+    const after = contentChanged ? noteEmbedIds(input.content ?? '') : before;
     if (contentChanged && level !== 'admin') {
-      const before = typeof oldData.content === 'string' ? oldData.content : '';
-      await followNewEmbeds(
-        ownerId,
-        { id, audience: level },
-        noteEmbedIds(before),
-        noteEmbedIds(input.content ?? ''),
-        tx,
-      );
+      await followNewEmbeds(ownerId, { id, audience: level }, before, after, tx);
     }
-    return tx
+    const rows = await tx
       .update(nodes)
       .set({
         ...(input.title !== undefined
@@ -233,6 +230,8 @@ export async function updateNote(
       })
       .where(eq(nodes.id, id))
       .returning();
+    if (contentChanged) await refoldEmbedReach(ownerId, id, before, after, tx);
+    return rows;
   });
   if (!updated) throw new Error('updateNote: update returned no row');
   if (contentChanged) {

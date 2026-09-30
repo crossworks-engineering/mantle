@@ -25,12 +25,12 @@ export function visibilityRefusal(err: unknown): string | null {
     .slice(0, 10)
     .map((c) => `'${c.title}' ${c.from} → ${c.to}`)
     .join(', ');
-  const down = err.diff.alsoLowered ?? [];
-  const also = down.length
-    ? ` It also takes down what they embed: ${down
+  const through = err.diff.alsoEmbeds ?? [];
+  const also = through.length
+    ? ` What they embed changes with them: ${through
         .slice(0, 10)
         .map((c) => `'${c.title}' ${c.from} → ${c.to}`)
-        .join(', ')}${down.length > 10 ? ', …' : ''}.`
+        .join(', ')}${through.length > 10 ? ', …' : ''}.`
     : '';
   return (
     `this changes who can see ${err.diff.total} item(s) (${shown}${err.diff.total > 10 ? ', …' : ''}).${also} ` +

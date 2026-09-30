@@ -8,13 +8,12 @@
  * the write is refused with the list (TreeVisibilityError, 409).
  *
  * Levels compared are EFFECTIVE levels (content-core effectiveLevel): the
- * more open of an item's own level and its inherited share, the level its
- * pill shows. Only workspace kinds ever inherit (migration 0204), so the rest
+ * most open of an item's own level, its inherited share and its embedded
+ * level (migration 0208), the level its pill shows. Only workspace kinds ever inherit (migration 0204), so the rest
  * never appear. A member's draft is another owner's row and never inherits.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { db, WORKSPACE_NODE_TYPES, type ViewerLevel } from '@mantle/db';
-import { EMBEDDING_KINDS, embedClosure, levelAbove } from '../embed-closure';
+import { db } from '@mantle/db';
 import {
   TREE_KIND_SPECS,
   TREE_VISIBILITY_LIST_MAX,
@@ -27,9 +26,12 @@ import type { AccessLevel } from '@mantle/client-types';
 export type VisibilityDiff = {
   changes: TreeVisibilityChange[];
   total: number;
-  /** Embedded items elsewhere that would go down with the changes (see
-   *  TreeVisibilityRefusal.alsoLowered); filled in when a write is refused. */
-  alsoLowered?: TreeVisibilityChange[];
+  /** Embedded items elsewhere whose access changes with them (see
+   *  TreeVisibilityRefusal.alsoEmbeds); filled in when a write is refused. */
+  alsoEmbeds?: TreeVisibilityChange[];
+  /** For each listed change, the folder share it would inherit: what its
+   *  embeds would be read through. Internal, never sent. */
+  newShares?: ReadonlyMap<string, string | null>;
 };
 
 /** A write refused until it is repeated with `confirm: true`. */
@@ -46,65 +48,85 @@ export class TreeVisibilityError extends Error {
 export const NO_CHANGE: VisibilityDiff = { changes: [], total: 0 };
 
 /**
- * What else a refused write would take down (TreeVisibilityRefusal
- * .alsoLowered): after a confirmed change, embeds follow each page, drawing
- * and note to the level it is then read at (write.ts followShares), and
- * those embeds may live anywhere. Dry, for the list only: for each such
- * change that opens an item up, the workspace-kind items of its embed
- * closure above its new level, outside the changes themselves.
+ * What else a refused write changes (TreeVisibilityRefusal.alsoEmbeds): an
+ * item read through a folder share makes what it embeds readable at that
+ * share too, wherever that lives (nodes.embedded_level, migration 0208), and
+ * an unshare or a move out takes that away again. Dry, for the list only:
+ * the items the listed changes reach through embeds, each at the level it
+ * would be read at with the new shares, where that differs from now.
  */
-export async function withEmbedsGoingDown(
+export async function withEmbedChanges(
   ownerId: string,
   diff: VisibilityDiff,
 ): Promise<VisibilityDiff> {
-  const opening = diff.changes.filter((c) =>
-    levelAbove(c.from as ViewerLevel, c.to as ViewerLevel),
+  const shares = diff.newShares;
+  if (!shares?.size) return diff;
+  const values = sql.join(
+    [...shares].map(([id, level]) => sql`(${id}::uuid, ${level}::text)`),
+    sql`, `,
   );
-  if (!opening.length) return diff;
-  const kinds = (await db.execute(sql`
-    select id::text as id from nodes
-     where owner_id = ${ownerId} and type::text in (${sql.join(
-       EMBEDDING_KINDS.map((k) => sql`${k}`),
-       sql`, `,
-     )})
-       and id in (${sql.join(
-         opening.map((c) => sql`${c.id}::uuid`),
-         sql`, `,
-       )})`)) as unknown as Array<{ id: string }>;
-  const embedding = new Set(kinds.map((k) => k.id));
-  const inDiff = new Set(diff.changes.map((c) => c.id));
-  const workspace = new Set<string>(WORKSPACE_NODE_TYPES);
-  const down = new Map<string, TreeVisibilityChange>();
-  for (const c of opening) {
-    if (!embedding.has(c.id)) continue;
-    for (const e of await embedClosure(ownerId, c.id)) {
-      if (inDiff.has(e.id) || !workspace.has(e.type)) continue;
-      if (!levelAbove(e.audience, c.to as ViewerLevel)) continue;
-      const seen = down.get(e.id);
-      // The most open level wins when two changes embed the same item.
-      if (seen && !levelAbove(seen.to as ViewerLevel, c.to as ViewerLevel)) continue;
-      down.set(e.id, { id: e.id, title: e.title, from: e.audience, to: c.to });
-    }
-    if (down.size >= TREE_VISIBILITY_LIST_MAX) break;
-  }
-  return down.size ? { ...diff, alsoLowered: [...down.values()] } : diff;
+  const inherited = sql`(case when ov.id is not null then ov.lvl else m.inherited_level end)`;
+  const found = (await db.execute(sql`
+    with recursive ov(id, lvl) as (values ${values}),
+    down(id) as (
+      select e.to_id from node_embeds e join ov on e.from_id = ov.id
+      union
+      select e.to_id from node_embeds e
+        join down on e.from_id = down.id
+        join nodes x on x.id = down.id and x.owner_id = ${ownerId}
+    ),
+    tg as (
+      select n.id, n.title, n.audience, n.inherited_level, n.embedded_level
+        from nodes n join down on n.id = down.id
+       where n.owner_id = ${ownerId} and mantle_workspace_kind(n.type)
+         and not exists (select 1 from ov where ov.id = n.id)
+    ),
+    up(t, id) as (
+      select tg.id, e.from_id from tg
+        join node_embeds e on e.to_id = tg.id
+        join nodes x on x.id = e.from_id and x.owner_id = ${ownerId}
+      union
+      select up.t, e.from_id from up
+        join node_embeds e on e.to_id = up.id
+        join nodes x on x.id = e.from_id and x.owner_id = ${ownerId}
+    ),
+    lv as (
+      select up.t,
+             case when bool_or(${inherited} = 'client') then 'client'
+                  when bool_or(${inherited} = 'team') then 'team' end as emb
+        from up
+        join nodes m on m.id = up.id
+        left join ov on ov.id = m.id
+       where m.id <> up.t
+       group by up.t
+    )
+    select r.id::text as id, r.title, r."from", r."to" from (
+      select tg.id, tg.title,
+             ${eff(sql`tg.audience`, sql`tg.inherited_level`, sql`tg.embedded_level`)} as "from",
+             ${eff(sql`tg.audience`, sql`tg.inherited_level`, sql`lv.emb`)} as "to"
+        from tg left join lv on lv.t = tg.id) r
+     where r."from" is distinct from r."to"
+     order by lower(r.title), r.id
+     limit ${TREE_VISIBILITY_LIST_MAX}`)) as unknown as TreeVisibilityChange[];
+  return found.length ? { ...diff, alsoEmbeds: found } : diff;
 }
 
-/** effectiveLevel in SQL over two expressions. */
-function eff(audience: SQL, inherited: SQL): SQL {
+/** effectiveLevel in SQL: the most open of an own level and two shares. */
+function eff(audience: SQL, inherited: SQL, embedded: SQL): SQL {
   return sql`(case
-      when ${inherited} = 'client' and ${audience} in ('admin', 'team') then 'client'
-      when ${inherited} = 'team' and ${audience} = 'admin' then 'team'
+      when 'client' in (${inherited}, ${embedded}) and ${audience} in ('admin', 'team') then 'client'
+      when 'team' in (${inherited}, ${embedded}) and ${audience} = 'admin' then 'team'
       else ${audience} end)`;
 }
 
-/** Run a query of rows (id, title, audience, old_inh, new_inh) and keep the
- *  ones whose effective level changes. */
+/** Run a query of rows (id, title, audience, emb, old_inh, new_inh) and keep
+ *  the ones whose effective level changes. The embedded level is as it is
+ *  now: what changes through embeds is listed apart (withEmbedChanges). */
 async function diffOf(rows: SQL): Promise<VisibilityDiff> {
-  const from = eff(sql`r.audience`, sql`r.old_inh`);
-  const to = eff(sql`r.audience`, sql`r.new_inh`);
+  const from = eff(sql`r.audience`, sql`r.old_inh`, sql`r.emb`);
+  const to = eff(sql`r.audience`, sql`r.new_inh`, sql`r.emb`);
   const found = (await db.execute(sql`
-    select r.id::text as id, r.title, ${from} as "from", ${to} as "to",
+    select r.id::text as id, r.title, ${from} as "from", ${to} as "to", r.new_inh,
            count(*) over () as total
       from (${rows}) r
      where ${from} is distinct from ${to}
@@ -114,11 +136,13 @@ async function diffOf(rows: SQL): Promise<VisibilityDiff> {
     title: string;
     from: AccessLevel;
     to: AccessLevel;
+    new_inh: string | null;
     total: number | string;
   }>;
   return {
     changes: found.map(({ id, title, from: f, to: t }) => ({ id, title, from: f, to: t })),
     total: Number(found[0]?.total ?? 0),
+    ...(found.length ? { newShares: new Map(found.map((r) => [r.id, r.new_inh])) } : {}),
   };
 }
 
@@ -138,7 +162,7 @@ function subtreeRows(
 ): SQL {
   const inside = keepRoot ? sql`true` : sql`a.path <> ${path}::ltree`;
   return sql`
-    select n.id, n.title, n.audience, n.inherited_level as old_inh,
+    select n.id, n.title, n.audience, n.embedded_level as emb, n.inherited_level as old_inh,
       case
         when not mantle_workspace_kind(n.type) then null
         when exists (
@@ -214,7 +238,7 @@ export function liftDiff(
          and s.path <@ ${p} and s.id <> ${folder.id}
          and not ${existingAt(landing('s'))}
     )
-    select n.id, n.title, n.audience, n.inherited_level as old_inh,
+    select n.id, n.title, n.audience, n.embedded_level as emb, n.inherited_level as old_inh,
       case when not mantle_workspace_kind(n.type) then null else (
         select post.share_level from post
          where post.path @> ${landing('n')}
@@ -252,8 +276,13 @@ export function copyDiff(
     'fileId' in source
       ? sql`n.id = ${source.fileId}::uuid`
       : sql`n.path <@ ${source.folder.path}::ltree`;
-  const from = eff(sql`n.audience`, sql`n.inherited_level`);
-  const to = eff(sql`'admin'`, sql`mantle_inherited_level(n.owner_id, ${newPath}, 'file')`);
+  const from = eff(sql`n.audience`, sql`n.inherited_level`, sql`n.embedded_level`);
+  // A copy is a new row: nothing embeds it yet.
+  const to = eff(
+    sql`'admin'`,
+    sql`mantle_inherited_level(n.owner_id, ${newPath}, 'file')`,
+    sql`null::text`,
+  );
   return (async () => {
     const found = (await db.execute(sql`
       select r.id, r.title, r."from", r."to", count(*) over () as total
@@ -286,7 +315,7 @@ export function moveItemsDiff(
   if (!itemIds.length) return Promise.resolve(NO_CHANGE);
   const nodeType = TREE_KIND_SPECS[kind].nodeType;
   return diffOf(sql`
-    select n.id, n.title, n.audience, n.inherited_level as old_inh,
+    select n.id, n.title, n.audience, n.embedded_level as emb, n.inherited_level as old_inh,
            mantle_inherited_level(n.owner_id, ${destPath}::ltree, n.type) as new_inh
       from nodes n
      where n.owner_id = ${ownerId} and n.type::text = ${nodeType}

@@ -12,7 +12,7 @@
  * writing while the user types) from silently winning a lost update.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { db, nodes, notifyNodeIngested, pages } from '@mantle/db';
+import { asViewerLevel, db, nodes, notifyNodeIngested, pages } from '@mantle/db';
 import { ensureBlockIds, repairTableRows } from '@mantle/content-core/block-ids';
 import type { PageVisibility, PageWidth } from '@mantle/client-types';
 import { docToText } from '../doc-to-text';
@@ -20,33 +20,34 @@ import { recallAfterPageWrite } from '../recall';
 import { EMPTY_DOC, dedupeTags, detailOf, type PageDetail } from './shared';
 import { filtersPageText, pageDocText } from './level-text';
 import { referencedEmbedIds } from '../doc-assets';
-import { followNewEmbeds, itemLevel } from '../embed-closure';
+import { followNewEmbeds, itemLevel, refoldEmbedReach } from '../embed-closure';
 
-/** Later embeds follow on save (embedding means sharing): a page below admin
- *  that gains an embed in this write takes it, and what it embeds, to the
- *  page's level, inside the write's transaction. Reads the page's level and
- *  its published doc BEFORE the write replaces it. */
+/** Later embeds follow on save (embedding means sharing): a page whose OWN
+ *  level is below admin and that gains an embed in this write takes it, and
+ *  what it embeds, to that level, inside the write's transaction. A folder
+ *  share it is read through is the database's to follow (0208), not this.
+ *  Reads the page's level and its published doc BEFORE the write replaces
+ *  it; returns what the published doc embedded, for `refoldEmbedReach`
+ *  once the new doc is written. */
 async function followPageEmbeds(
   tx: PageTx,
   ownerId: string,
   id: string,
   next: Record<string, unknown>,
-): Promise<void> {
+): Promise<string[]> {
   const [prev] = await tx
-    .select({ audience: nodes.audience, inheritedLevel: nodes.inheritedLevel, doc: pages.doc })
+    .select({ audience: nodes.audience, doc: pages.doc })
     .from(nodes)
     .innerJoin(pages, eq(pages.nodeId, nodes.id))
     .where(eq(nodes.id, id))
     .limit(1);
-  const level = prev ? itemLevel(prev.audience, prev.inheritedLevel) : 'admin';
-  if (!prev || level === 'admin') return;
-  await followNewEmbeds(
-    ownerId,
-    { id, audience: level },
-    referencedEmbedIds(prev.doc),
-    referencedEmbedIds(next),
-    tx,
-  );
+  if (!prev) return [];
+  const before = referencedEmbedIds(prev.doc);
+  const level = asViewerLevel(prev.audience);
+  if (level !== 'admin') {
+    await followNewEmbeds(ownerId, { id, audience: level }, before, referencedEmbedIds(next), tx);
+  }
+  return before;
 }
 
 // ── Draft concurrency control (audit item #3) ────────────────────────────────
@@ -168,9 +169,9 @@ export async function updatePage(
 
     if (docChanged) {
       const doc = input.doc as Record<string, unknown>;
-      await followPageEmbeds(tx, ownerId, id, doc);
+      const before = await followPageEmbeds(tx, ownerId, id, doc);
       // At client or public, the text of what that level reads (level-text.ts).
-      const level = itemLevel(node.audience, node.inheritedLevel);
+      const level = itemLevel(node.audience, node.inheritedLevel, node.embeddedLevel);
       const docText = filtersPageText(level)
         ? await pageDocText(ownerId, level, doc, tx, { assets: false })
         : docToText(doc);
@@ -183,6 +184,7 @@ export async function updatePage(
           updatedAt: new Date(),
         })
         .where(eq(pages.nodeId, id));
+      await refoldEmbedReach(ownerId, id, before, referencedEmbedIds(doc), tx);
       return detailOf(row, doc);
     }
     const [p] = await tx
@@ -329,7 +331,7 @@ export async function commitPage(
     if (decision.conflict) {
       return { ok: false as const, conflict: true as const, rev: decision.rev };
     }
-    await followPageEmbeds(tx, ownerId, id, enriched);
+    const before = await followPageEmbeds(tx, ownerId, id, enriched);
     // Fold the text *inside* embedded images (vision/OCR) + doc chips into the
     // indexed plaintext, so the page is searchable by its own assets (and
     // its summary reflects them), not just their filenames. At client or
@@ -337,7 +339,7 @@ export async function commitPage(
     // the embeds followed the page down, in this transaction.
     const docText = await pageDocText(
       ownerId,
-      itemLevel(node.audience, node.inheritedLevel),
+      itemLevel(node.audience, node.inheritedLevel, node.embeddedLevel),
       enriched,
       tx,
     );
@@ -359,6 +361,7 @@ export async function commitPage(
         updatedAt: new Date(),
       })
       .where(eq(pages.nodeId, id));
+    await refoldEmbedReach(ownerId, id, before, referencedEmbedIds(enriched), tx);
     return {
       ok: true as const,
       page: detailOf(row, enriched, null, { draftRev: decision.nextRev }),

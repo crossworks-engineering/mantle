@@ -32,7 +32,12 @@ import { acceptSceneSvg, EXCALIDRAW_ENGINE } from './scene-svg';
 // The etag decision and the embedded-asset text bounds are shared with
 // pages — identical semantics, one truth.
 import { evaluateDraftRev, foldEmbeddedText } from './pages';
-import { drawEmbedIds, drawPlacedFileIds, followNewEmbeds, itemLevel } from './embed-closure';
+import {
+  drawEmbedIds,
+  drawPlacedFileIds,
+  followNewEmbeds,
+  refoldEmbedReach,
+} from './embed-closure';
 
 export const DRAWS_ROOT_LABEL = 'draw';
 
@@ -727,7 +732,6 @@ export async function commitDraw(
     const [prev] = await tx
       .select({
         audience: nodes.audience,
-        inheritedLevel: nodes.inheritedLevel,
         scene: draws.scene,
         fileRefs: draws.fileRefs,
       })
@@ -735,13 +739,17 @@ export async function commitDraw(
       .innerJoin(draws, eq(draws.nodeId, nodes.id))
       .where(eq(nodes.id, id))
       .limit(1);
-    const level = prev ? itemLevel(prev.audience, prev.inheritedLevel) : 'admin';
+    // Its own level only: a folder share it is read through is the
+    // database's to follow (0208).
+    const level = prev ? asViewerLevel(prev.audience) : 'admin';
+    const embedsBefore = prev ? drawEmbedIds(prev.fileRefs) : [];
+    const embedsAfter = prev ? drawEmbedIds(opts.fileRefs ?? prev.fileRefs) : [];
     if (prev && level !== 'admin') {
       await followNewEmbeds(
         ownerId,
         { id, audience: level },
         drawPlacedFileIds(prev.scene, prev.fileRefs),
-        drawEmbedIds(opts.fileRefs ?? prev.fileRefs),
+        embedsAfter,
         tx,
       );
     }
@@ -769,6 +777,7 @@ export async function commitDraw(
         ...(opts.fileRefs !== undefined ? { fileRefs: opts.fileRefs } : {}),
       })
       .where(eq(draws.nodeId, id));
+    await refoldEmbedReach(ownerId, id, embedsBefore, embedsAfter, tx);
     return {
       ok: true as const,
       draw: detailOf(row, normalized, null, {

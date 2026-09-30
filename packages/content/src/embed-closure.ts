@@ -29,6 +29,11 @@
  * Every read and write runs through the caller's `q` (the pool or its
  * transaction): the walk that decides what to lower sees the rows the caller
  * is changing.
+ *
+ * This is the OWN-level rule. A folder share lowers nothing: what a shared
+ * item embeds is read through it only while it is, kept by the database
+ * (nodes.embedded_level over node_embeds, migration 0208), and callers pass
+ * an item's own level here, never the level a folder makes it read at.
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import {
@@ -333,6 +338,44 @@ export async function followNewEmbeds(
   if (added.length === 0) return [];
   const items = await embedClosureOf(ownerId, added, q, [item.id]);
   return (await lowerEmbeds(ownerId, items, level, q)).lowered;
+}
+
+/**
+ * After a save changed what an item embeds: when the item is read through a
+ * folder share, or through something that embeds it, the database has moved
+ * its embeds along already (nodes.embedded_level, migration 0208). What is
+ * left is the indexed text: the pages the added and removed embeds reach
+ * (a child page card newly read by clients must not keep its team text),
+ * and the pages that name them, are folded for the level they are read at
+ * now. A brain with no shared folder returns after one row read.
+ */
+export async function refoldEmbedReach(
+  ownerId: string,
+  itemId: string,
+  before: readonly string[],
+  after: readonly string[],
+  q: ClosureDb = db,
+): Promise<void> {
+  const had = new Set(before.map((id) => id.toLowerCase()));
+  const has = new Set(after.map((id) => id.toLowerCase()));
+  const changed = [...had, ...has].filter((id) => had.has(id) !== has.has(id) && UUID.test(id));
+  if (changed.length === 0) return;
+  const [row] = await q
+    .select({ inherited: nodes.inheritedLevel, embedded: nodes.embeddedLevel })
+    .from(nodes)
+    .where(and(eq(nodes.id, itemId), eq(nodes.ownerId, ownerId)))
+    .limit(1);
+  if (!row || (!row.inherited && !row.embedded)) return;
+  const reached = (await q.execute(sql`
+    select r.id::text as id from mantle_embeds_reached(${ownerId}::uuid, ${sql`array[${sql.join(
+      changed.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    )}]`}) r`)) as unknown as Array<{ id: string }>;
+  await refoldPageTexts(
+    ownerId,
+    reached.map((r) => r.id),
+    q,
+  );
 }
 
 /** One item below admin whose embed closure holds items above it. */
