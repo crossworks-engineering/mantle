@@ -1429,6 +1429,13 @@
       "when": 1790018460000,
       "tag": "0203_recall_v2_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 200,
+      "version": "7",
+      "when": 1790018280000,
+      "tag": "0200_folder_sharing",
+      "breakpoints": true
     }
   ]
 }

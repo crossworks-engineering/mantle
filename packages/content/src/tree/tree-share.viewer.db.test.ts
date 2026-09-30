@@ -1,0 +1,194 @@
+/**
+ * Folder sharing in the database (folder plan phase 4, migration 0200): a
+ * folder's share reaches every row below it through `inherited_level`, kept
+ * by triggers, and the viewer roles read through it. Reads run inside
+ * withViewer, as the real team and client roles.
+ *
+ * Brain rows belong to the shared test anchor (mantle_brain_id()), under a
+ * folder of this run's own, removed after.
+ *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run packages/content/src/tree/tree-share.viewer.db.test.ts
+ */
+import { randomUUID } from 'node:crypto';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+const URL = process.env.MANTLE_TEST_DATABASE_URL;
+
+describe.skipIf(!URL)('sharing a folder', () => {
+  type Db = typeof import('@mantle/db');
+  let m: Db;
+  let tree: typeof import('./index');
+  let sqlTag: typeof import('drizzle-orm').sql;
+  let brain = '';
+  const label = `share_${randomUUID().slice(0, 8)}`;
+  const top = `notes.${label}`;
+  const ids = {
+    top: randomUUID(),
+    sub: randomUUID(),
+    inTop: randomUUID(),
+    inSub: randomUUID(),
+    outside: randomUUID(),
+  };
+  const member = randomUUID();
+  let space = '';
+
+  const insert = async (id: string, type: string, path: string, title = id) => {
+    await m.systemDb.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, data, tags)
+      values (${id}, ${brain}, ${type}::node_type, ${title}, ${path}::ltree, '{}'::jsonb, '{}')`);
+  };
+  const inherited = async (id: string) => {
+    const [row] = (await m.systemDb.execute(
+      sqlTag`select inherited_level from nodes where id = ${id}`,
+    )) as unknown as Array<{ inherited_level: string | null }>;
+    return row?.inherited_level ?? null;
+  };
+  const share = (id: string, level: string | null) =>
+    m.systemDb.execute(sqlTag`update nodes set share_level = ${level} where id = ${id}`);
+  /** Which of `ids` the role reads. */
+  const reads = async (level: 'team' | 'client' | 'public', want: string[]) =>
+    m.withViewer(level, async () => {
+      const rows = (await m.db.execute(sqlTag`
+        select id::text as id from nodes where id in (${sqlTag.join(
+          want.map((id) => sqlTag`${id}::uuid`),
+          sqlTag`, `,
+        )})`)) as unknown as Array<{ id: string }>;
+      return rows.map((r) => r.id).sort();
+    });
+  const items = () => [ids.inTop, ids.inSub, ids.outside];
+
+  beforeAll(async () => {
+    process.env.DATABASE_URL = URL;
+    process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
+    m = await import('@mantle/db');
+    tree = await import('./index');
+    sqlTag = (await import('drizzle-orm')).sql;
+    const { ensureTestAnchor } = await import('@mantle/db/test-support');
+    const admin = (m.systemDb as unknown as { $client: Parameters<Db['ensureViewerRoles']>[0] })
+      .$client;
+    await m.ensureViewerRoles(admin, process.env.MANTLE_MASTER_KEY);
+    brain = await ensureTestAnchor(admin);
+    await tree.ensureKindRoot(brain, 'notes');
+    await insert(ids.top, 'branch', top, 'Shared');
+    await insert(ids.sub, 'branch', `${top}.sub`, 'Sub');
+    await insert(ids.inTop, 'note', top);
+    await insert(ids.inSub, 'note', `${top}.sub`);
+    await insert(ids.outside, 'note', 'notes');
+    // A member with a space of their own, for the draft case.
+    await m.systemDb.execute(sqlTag`
+      insert into auth.users (id, email, password_hash, role)
+      values (${member}, ${`${label}@example.invalid`}, 'x', 'member')`);
+    // A member login gets its personal space on insert.
+    const [row] = (await m.systemDb.execute(sqlTag`
+      select id::text as id from spaces where login_id = ${member} and kind = 'personal'`)) as unknown as Array<{
+      id: string;
+    }>;
+    space = row!.id;
+  });
+
+  afterAll(async () => {
+    if (space) await m.systemDb.execute(sqlTag`delete from nodes where owner_id = ${space}`);
+    await m.systemDb.execute(
+      sqlTag`delete from nodes where owner_id = ${brain} and (path <@ ${top}::ltree or id in (${sqlTag.join(
+        Object.values(ids).map((id) => sqlTag`${id}::uuid`),
+        sqlTag`, `,
+      )}) or path <@ ${`notes.${label}_moved`}::ltree)`,
+    );
+    if (space) await m.systemDb.execute(sqlTag`delete from spaces where id = ${space}`);
+    await m.systemDb.execute(sqlTag`delete from auth.users where id = ${member}`);
+  });
+
+  it('changes nobody’s access until a folder is shared', async () => {
+    expect(await inherited(ids.inTop)).toBeNull();
+    expect(await reads('team', items())).toEqual([]);
+  });
+
+  it('a team share reaches everything below, including what lands there later', async () => {
+    await share(ids.top, 'team');
+    expect(await inherited(ids.top)).toBeNull();
+    expect(await inherited(ids.sub)).toBe('team');
+    expect(await inherited(ids.inTop)).toBe('team');
+    expect(await inherited(ids.inSub)).toBe('team');
+    expect(await inherited(ids.outside)).toBeNull();
+    expect(await reads('team', items())).toEqual([ids.inSub, ids.inTop].sort());
+    expect(await reads('client', items())).toEqual([]);
+    expect(await reads('public', items())).toEqual([]);
+
+    const later = randomUUID();
+    await insert(later, 'note', `${top}.sub`);
+    expect(await inherited(later)).toBe('team');
+    await m.systemDb.execute(sqlTag`delete from nodes where id = ${later}`);
+  });
+
+  it('moving an item out drops the share, and moving it in picks it up', async () => {
+    await tree.moveTreeItems(brain, 'notes', [ids.inSub], null);
+    expect(await inherited(ids.inSub)).toBeNull();
+    expect(await reads('team', [ids.inSub])).toEqual([]);
+    await tree.moveTreeItems(brain, 'notes', [ids.inSub], ids.sub);
+    expect(await inherited(ids.inSub)).toBe('team');
+  });
+
+  it('the nearest shared folder wins: a client share inside a team folder', async () => {
+    await share(ids.sub, 'client');
+    expect(await inherited(ids.inSub)).toBe('client');
+    expect(await inherited(ids.inTop)).toBe('team');
+    expect(await reads('client', items())).toEqual([ids.inSub]);
+    expect(await reads('team', items())).toEqual([ids.inSub, ids.inTop].sort());
+    await share(ids.sub, null);
+    expect(await inherited(ids.inSub)).toBe('team');
+  });
+
+  it('a rename or move of the shared folder keeps the whole subtree right', async () => {
+    await tree.updateTreeFolder(brain, 'notes', ids.top, { name: `${label}_moved` });
+    expect(await inherited(ids.sub)).toBe('team');
+    expect(await inherited(ids.inSub)).toBe('team');
+    // Moved under an unshared folder, the subtree keeps its own share.
+    const holder = await tree.createTreeFolder(brain, 'notes', {
+      parentId: null,
+      name: `${label}_holder`,
+    });
+    await tree.updateTreeFolder(brain, 'notes', ids.top, { parentId: holder.id });
+    expect(await inherited(ids.inSub)).toBe('team');
+    await tree.updateTreeFolder(brain, 'notes', ids.top, { parentId: null });
+    await tree.deleteTreeFolder(brain, 'notes', holder.id);
+    // Put back where the other cases expect it.
+    await tree.updateTreeFolder(brain, 'notes', ids.top, { name: label });
+    expect(await inherited(ids.inTop)).toBe('team');
+  });
+
+  it('unsharing takes it all back', async () => {
+    await share(ids.top, null);
+    for (const id of [ids.sub, ids.inTop, ids.inSub]) expect(await inherited(id)).toBeNull();
+    expect(await reads('team', items())).toEqual([]);
+  });
+
+  it('a member draft in a shared folder never inherits', async () => {
+    await share(ids.top, 'team');
+    const draft = randomUUID();
+    await m.systemDb.execute(sqlTag`
+      insert into nodes (id, owner_id, type, title, path, data, tags)
+      values (${draft}, ${space}, 'note', 'draft', ${top}::ltree, '{}'::jsonb, '{}')`);
+    expect(await inherited(draft)).toBeNull();
+    await share(ids.top, null);
+  });
+
+  it('holds the type ceiling and the share rules in the database', async () => {
+    await share(ids.top, 'team');
+    // A task (never a workspace kind) filed under a shared folder stays unshared.
+    const task = randomUUID();
+    await insert(task, 'task', top);
+    expect(await inherited(task)).toBeNull();
+    await m.systemDb.execute(sqlTag`delete from nodes where id = ${task}`);
+    await share(ids.top, null);
+
+    // drizzle wraps the Postgres error; the check violation is its cause.
+    const refuse = (q: Promise<unknown>) =>
+      expect(q).rejects.toMatchObject({ cause: expect.objectContaining({ code: '23514' }) });
+    await refuse(share(ids.top, 'public'));
+    await refuse(share(ids.inTop, 'team'));
+    const tasksFolder = randomUUID();
+    await tree.ensureKindRoot(brain, 'tasks');
+    await insert(tasksFolder, 'branch', `tasks.${label}`);
+    await refuse(share(tasksFolder, 'team'));
+    await m.systemDb.execute(sqlTag`delete from nodes where id = ${tasksFolder}`);
+  });
+});
