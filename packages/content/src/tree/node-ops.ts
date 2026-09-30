@@ -42,6 +42,7 @@ const ROOT_TITLE: Record<TreeKind, string> = {
   events: 'Events',
   contacts: 'Contacts',
   secrets: 'Secrets',
+  recall: 'Recall',
 };
 
 /** Make sure the kind's root row exists (every kind's own create does this

@@ -27,6 +27,9 @@ export const TREE_KINDS = [
   'events',
   'contacts',
   'secrets',
+  // Recall v2's maps (its own content type, not pages). Appended last so no
+  // earlier kind's index moves. Not served until the Recall screen ships.
+  'recall',
 ] as const;
 export type TreeKind = (typeof TREE_KINDS)[number];
 
@@ -70,6 +73,11 @@ export type TreeKindSpec = {
   shareable: boolean;
   /** The item orders offered, the first being the default. */
   sorts: readonly TreeSort[];
+  /** Which levels a folder of this kind may be shared at. Absent means both
+   *  of TREE_SHARE_LEVELS. Recall is team-only: a client agent matching the
+   *  owner's prompts is the case the Recall v1 plan deferred. Enforced where
+   *  folders are shared (phase 4). */
+  shareLevels?: readonly TreeShareLevel[];
 };
 
 export const TREE_KIND_SPECS: Readonly<Record<TreeKind, TreeKindSpec>> = {
@@ -148,6 +156,16 @@ export const TREE_KIND_SPECS: Readonly<Record<TreeKind, TreeKindSpec>> = {
     root: 'secrets',
     nodeType: 'secret',
     shareable: false,
+    sorts: ['name', 'updated'],
+  },
+  // The tree lists maps only; a map's cards are recall_nodes rows, never
+  // nodes, so they never appear as items.
+  recall: {
+    kind: 'recall',
+    root: 'recall',
+    nodeType: 'recall',
+    shareable: true,
+    shareLevels: ['team'],
     sorts: ['name', 'updated'],
   },
 };
