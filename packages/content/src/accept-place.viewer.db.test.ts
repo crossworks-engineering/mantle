@@ -211,8 +211,11 @@ describe.skipIf(!URL)('Accept claims in place', () => {
       creates: [],
     });
     await rv.acceptReviewItem(anchor, id, reviewer());
-    expect(await row(id)).toMatchObject({ owner_id: anchor, path: 'files.docs' });
-    const onDisk = path.join(root, 'files', 'docs', 'Brief.txt');
+    const accepted = await row(id);
+    expect(accepted).toMatchObject({ owner_id: anchor, path: 'files.docs' });
+    // The name as the brain filed it (Accept's own sanitised name), exactly:
+    // a case-sensitive disk must find it.
+    const onDisk = path.join(root, 'files', 'docs', String(accepted!.data?.filename));
     expect(existsSync(onDisk)).toBe(true);
     expect(readFileSync(onDisk, 'utf8')).toBe('DOCBYTES');
   });
