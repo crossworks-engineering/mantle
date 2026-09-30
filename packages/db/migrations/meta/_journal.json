@@ -1457,6 +1457,13 @@
       "when": 1790018700000,
       "tag": "0207_folder_share_delete_refresh",
       "breakpoints": true
+    },
+    {
+      "idx": 208,
+      "version": "7",
+      "when": 1790018760000,
+      "tag": "0208_embeds_follow_embedder",
+      "breakpoints": true
     }
   ]
 }

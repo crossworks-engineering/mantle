@@ -360,6 +360,9 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.entities', 'content'),
   none('public.entity_edges', 'content'),
   none('public.entity_merge_dismissals'),
+  // The embed edges (0208): written by triggers, read by the refresh and
+  // the admin pool; the viewer roles read embedded_level on the row.
+  none('public.node_embeds', 'content'),
   none('public.recall_maps'),
   none('public.recall_nodes'),
   // Recall v2: the revision log. Admin pool only, like the other two — the

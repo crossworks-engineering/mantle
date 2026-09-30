@@ -19,6 +19,7 @@ export * from './assistant-read-cursors';
 export * from './push';
 export * from './profiles';
 export * from './nodes';
+export * from './node-embeds';
 export * from './node-comments';
 export * from './emails';
 export * from './microsoft';

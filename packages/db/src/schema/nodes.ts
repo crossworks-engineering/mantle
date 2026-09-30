@@ -93,6 +93,11 @@ export const nodes = pgTable(
      *  kept by the database (migration 0204 triggers); never written by
      *  code. Null when nothing above is shared. */
     inheritedLevel: text('inherited_level'),
+    /** The most open share among the owner's rows that reach this row
+     *  through embeds (a shared note embeds this image), kept by the
+     *  database (migration 0208 triggers over node_embeds); never written by
+     *  code. Null when nothing that embeds it is shared. */
+    embeddedLevel: text('embedded_level'),
     /** Why: 'version' (filename-family sibling), 'migrated' (page built from
      *  this source), 'corrected' (explicit mark — demotes harder). */
     supersededReason: text('superseded_reason').$type<'version' | 'migrated' | 'corrected'>(),
