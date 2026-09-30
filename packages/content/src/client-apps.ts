@@ -21,6 +21,11 @@ import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
 import type { AppTint, ClientAppCard } from '@mantle/client-types';
 import { isReadAt, readAtSql } from './item-level';
 
+/** An app is used, not only read (run, tools, its database): an embed in a
+ *  shared item opens READING only, so an app named by an embed stays at its
+ *  own level and folder share here (migration 0208, review F5). */
+const APP_READ = { embeds: false } as const;
+
 /** The app levels a client may run: client, and nothing else. */
 export const CLIENT_APP_LEVELS = ['client'] as const;
 
@@ -50,7 +55,7 @@ function runnableWhere(anchorId: string) {
     eq(nodes.ownerId, anchorId),
     eq(nodes.type, 'app'),
     // At client by its own level or through a folder shared with clients.
-    readAtSql(CLIENT_APP_LEVELS),
+    readAtSql(CLIENT_APP_LEVELS, APP_READ),
     publishedGreen,
   );
 }
@@ -64,7 +69,6 @@ export async function listClientApps(anchorId: string): Promise<ClientAppCard[]>
       data: nodes.data,
       audience: nodes.audience,
       inheritedLevel: nodes.inheritedLevel,
-      embeddedLevel: nodes.embeddedLevel,
       updatedAt: nodes.updatedAt,
       manifest: apps.manifest,
       dataReadOnly: apps.dataReadOnly,
@@ -77,7 +81,7 @@ export async function listClientApps(anchorId: string): Promise<ClientAppCard[]>
   return rows.flatMap((r): ClientAppCard[] => {
     // The query already keeps to client level; a row outside it is never a
     // card, whatever the column holds.
-    if (!isReadAt(r.audience, r.inheritedLevel, CLIENT_APP_LEVELS, r.embeddedLevel)) return [];
+    if (!isReadAt(r.audience, r.inheritedLevel, CLIENT_APP_LEVELS)) return [];
     const d = (r.data ?? {}) as Record<string, unknown>;
     const description = (r.manifest as AppManifest | null)?.description;
     return [
@@ -108,7 +112,6 @@ export async function getClientRunnableApp(
       data: nodes.data,
       audience: nodes.audience,
       inheritedLevel: nodes.inheritedLevel,
-      embeddedLevel: nodes.embeddedLevel,
       manifest: apps.manifest,
       publishedBuild: apps.publishedBuild,
       dataReadOnly: apps.dataReadOnly,
@@ -117,10 +120,7 @@ export async function getClientRunnableApp(
     .innerJoin(apps, eq(apps.nodeId, nodes.id))
     .where(and(eq(nodes.id, appId), runnableWhere(anchorId)))
     .limit(1);
-  if (
-    !row?.publishedBuild?.ok ||
-    !isReadAt(row.audience, row.inheritedLevel, CLIENT_APP_LEVELS, row.embeddedLevel)
-  ) {
+  if (!row?.publishedBuild?.ok || !isReadAt(row.audience, row.inheritedLevel, CLIENT_APP_LEVELS)) {
     return null;
   }
   const d = (row.data ?? {}) as Record<string, unknown>;
