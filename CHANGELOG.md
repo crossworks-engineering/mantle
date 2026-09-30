@@ -4,6 +4,34 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.363: Recall R5, page-built maps retired
+
+Recall v1 compiled a map from a page tree whose root carried the `recall`
+tag. The dev maps were re-authored as native maps (R4), so the compiler and
+everything around it goes (Jason, 2026-09-30: "completely remove the Page
+Built Maps, that is legacy").
+
+- **A map is only a native `recall` item.** The page compiler, the page
+  hooks (create, commit, update, move, delete), the extractor's metadata-only
+  path for map pages, `GET /api/recall/pages/:id`, the compile report
+  (`lastCompileOk`, the map `report`, `RecallLintIssueDTO`,
+  `RecallPageStateDTO`) and the v1 fallbacks in `recall_open` and
+  `recall_map_get` are removed. `content-core/recall-compile` keeps only
+  `recallSlug` and the two caps clients read.
+- **`recall` and `prompt` are ordinary page tags** again; agent page tools no
+  longer strip them.
+- **Nothing serves a leftover v1 row.** Every serving read, the owner API and
+  the write path require `recall_maps.node_id`, so a row without its tree item
+  is never listed, opened, followed, matched, embedded or written.
+- **Migration 0209** deletes those rows (their cards cascade) and names them
+  in a NOTICE. `last_compile_ok` and `last_compile_report` stay, unused, so
+  the previous release still runs after a rollback.
+- **`scripts/roll.sh` refuses a box that still has a page-built map**, naming
+  its slugs; `ROLL_ALLOW_V1_RECALL=1` overrides for a map the owner agreed may
+  go. Pre-roll checks and the rollback note are in docs/update-prod.md.
+- The in-app Recall help page is rewritten for native maps, and the folder
+  tools' `kind` hint now names `recall`.
+
 ## 0.232.361: a folder delete merges; embeds follow their embedder
 
 Follow-up to the folder system audit of 2026-09-30 (findings C2 and S5),
