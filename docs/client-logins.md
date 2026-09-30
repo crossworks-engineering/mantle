@@ -474,3 +474,64 @@ took one over, and accepted.
   (`packages/content/src/member-space-purge.ts`), and a disabled
   client's space stays as it is. Give back of a taken item into a full
   client space is refused (409 `quota`): accept it or delete it instead.
+
+## 10. Client apps
+
+A client runs the brain's apps at **client level** in the portal
+(`/api/client/apps*`, the member app routes' twins, never shared with them).
+Only admins create, edit, build, publish, share or delete an app.
+
+- **Which apps.** An app at client level with a green published build, and
+  nothing else: never a team, admin or public app (a public app is for
+  visitors on its link), never a draft. `GET /api/client/apps` lists them by
+  title (no level, no author). Any other id, a team app's included, is the
+  same plain 404 as an id that does not exist, on every route.
+- **A shared workspace.** An app at team or client level is a shared
+  workspace: everyone who runs it reads AND writes its one database. Members
+  write team and client apps; clients write client apps. A public app stays
+  read only for members. App data is shared per app, not per person: every
+  client login and every member reads what the others wrote.
+- **Informational apps.** An admin can mark an app informational
+  (`PATCH /api/apps/:id` `{ "dataReadOnly": true }`, admin only; the owner's
+  app DTOs carry `dataReadOnly`). Then members and clients only read its
+  data: a write answers 403 `{ ok: false, error, reason: 'read-only' }`.
+  The member and client app cards carry `dataReadOnly` so the portal can say
+  so. Stored as `apps.data_read_only` (migration 0198).
+- **Running one.** `POST /api/client/apps/:id/frame-ticket` (30 a minute)
+  mints a two-minute ticket that names the client login and its session
+  epoch; the sandbox frame (`GET /api/client/apps/:id/frame?t=`) opens only
+  with a client ticket, only while the login is an enabled client at that
+  epoch: Sign out, End sessions and Disable refuse a ticket minted before
+  them, and the brokers below take the session cookie, so a running app's
+  next call is refused at once. The owner, member and share frames refuse a
+  client's ticket, and the client frame refuses theirs. Published build
+  only.
+- **Its database.** `POST /api/client/apps/:id/db-broker`
+  (`{ op: 'query' | 'exec', sql, params }`, 300 a minute). The level check is
+  in the lookup and runs on the client role (row security holds as a second
+  lock); the SQLite work runs for the brain.
+- **Its tools.** `POST /api/client/apps/:id/tool-broker` (`{ slug, input }`,
+  60 a minute) calls only a tool the app declares that is one of the client
+  tools (`client_shared_list`, `client_shared_search`, `client_shared_open`:
+  the "Shared with you" reads, as the portal shows them), a read-only
+  built-in with no confirmation, held by an enabled tool group at client
+  level (or public). It runs on the client role, on a client surface that
+  names the login, as the client chat does. A brain-wide read tool
+  (`search_chunks`, `page_get`, `node_read`) is refused even when a
+  client-level group holds it: its summaries and chunks are built from text
+  above client level. `my_items_list` and `my_item_open` are refused as well:
+  they read the client's private drafts, and an app could copy them into its
+  shared database (`clientAppToolVerdict`,
+  `packages/tools/src/client-app-tools.ts`).
+- **The access log.** Every ticket, tool call and database call, refused ones
+  included, lands in the app's access log with the client login
+  (`detail.via = 'client'`).
+- **Client-written rows reach staff through table exports.** A write
+  schedules the app's table-export sync (debounced, hash-gated, as for a
+  member). An exported Table stays admin level, and a Table exported from an
+  app at client level counts as client-written for the lowering guard
+  (section 8): a staff turn that reads it waits in Pending before it lowers
+  anything to client or public, or writes into an item clients read.
+- **Cost.** A client app starts no model of its own: no tool it may call
+  spends. A write costs what a member's does: the export sync commits an
+  exported Table only when its rows changed (bounded, not zero).
