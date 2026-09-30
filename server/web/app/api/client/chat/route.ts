@@ -12,6 +12,7 @@ import {
   type TeamTurnRunResult,
 } from '@mantle/runtime/assistant';
 import {
+  chatTextsForReader,
   claimMemberTurn,
   listTeamThread,
   recordTeamAccess,
@@ -41,7 +42,9 @@ import { firstIssue } from '@/lib/zod-issue';
  * level (the turn engine refuses any other level too). The turn runs at
  * client level twice over (the agent's level and the client's own wrap), with
  * the client tools only: what the client reads in the chat is what their
- * portal shows. One thread per login (team_messages.login_id), read here by
+ * portal shows. A picture in the thread points at the client's own file or
+ * drawing route, and only at an item at client level; every other image is
+ * left out (chat-images.ts, client logins C6), never an owner route. One thread per login (team_messages.login_id), read here by
  * the session's own login.
  *
  * Limits (decision 7 A): the member caps, per client login: 6 messages a
@@ -98,12 +101,19 @@ export async function GET(req: Request) {
       withPrivate: true,
     }),
   ]);
+  // Every picture points at the client's own routes, and only at an item they
+  // may read at the client level (client logins C6): never at an owner route.
+  const texts = await chatTextsForReader(
+    client.anchorId,
+    'client',
+    rows.map((r) => r.text),
+  );
   const body: ClientChatThread = {
     agent: agent ? { name: agent.name } : null,
-    messages: rows.map((r) => ({
+    messages: rows.map((r, i) => ({
       id: r.id,
       direction: r.direction as 'inbound' | 'outbound',
-      text: r.text,
+      text: texts[i] ?? '',
       status: r.status,
       // Internals (provider errors, agent config) stay admin-side.
       failed: r.status === 'failed',
