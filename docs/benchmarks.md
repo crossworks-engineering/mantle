@@ -65,6 +65,18 @@ pnpm bench:memory --dataset=locomo --download --haystacks=1 --questions=20 --max
 | `--keep-db`                         | Keep the scratch databases for inspection.                          |
 | `--memory-config='{"chunk_limit":20}'` | The responder's retrieval limits (`chunk_limit`, `content_hit_limit`, `fact_limit`, ...); default: the code's. |
 | `--answer-prompt=infer\|strict`    | `infer` (default) lets the model reason from what the memory says; `strict` (runs A, A2) makes it say so when the answer is not stated. |
+| `--snapshot=NAME`                   | Keep each haystack's ingested database as `mantle_bsnap_NAME_<haystack>`; when it already exists, answer on a copy of it instead of ingesting again. |
+| `--retrieve-only`                   | Retrieve and record the context and the evidence check; no answer, no judge (costs only the query embeddings). |
+
+**Comparing retrieval changes.** Extraction is a model call, so two fresh
+ingests of the same data differ, and a small retrieval change drowns in that
+noise. Make one snapshot (`--snapshot=lc1` on the baseline run), then run every
+variant with the same `--snapshot=lc1`: the runs differ only in the code under
+test, and pay no extraction. `--retrieve-only` on a snapshot measures evidence
+reach for the whole dataset in minutes, for next to nothing; spend on answers
+only for the variants that reach further. A snapshot holds the schema of the
+code that made it: make a new one after a migration. Drop old ones with
+`drop database` on the benchmark server (they are named `mantle_bsnap_*`).
 
 Output: `results.jsonl` (one line per question: the exact memory context the
 answer model got, its full response, the judge's text), `summary.json` and
