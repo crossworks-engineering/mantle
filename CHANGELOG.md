@@ -4,6 +4,14 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.348: client v0.6.179 (client logins C6)
+
+- Pairs the client at jackdaw v0.6.179, the client half of 0.232.346/347.
+  Clients get Apps beside Shared with you and My requests: the apps an admin
+  set to client level, run in the sandbox. An informational app says so to
+  members and clients; an admin marks an app informational on its page. The
+  admin's client thread panel shows only the client thread.
+
 ## 0.232.347: C6, released
 
 - The release of 0.232.346 (client apps and finish). The 0.232.346 tag built
