@@ -1,7 +1,11 @@
 /**
  * POST /api/admin/space/:id/accept
  *   { audience?: 'admin'|'team'|'client'|'public', parentPageId?, folderPath?,
- *     lowerConfirmed?, confirmedIds? }
+ *     folderId?, lowerConfirmed?, confirmedIds? }
+ * `folderId` (folder plan phase 5): where the item lands; left out, it stays
+ * in the brain folder it was filed in (the author's own folders below it
+ * become brain folders); null is the top level. `folderPath` is the Files
+ * folder of a client from before the tree.
  * An admin accepts one of their OWN private items into the brain, with no
  * review (member logins Phase 7). The same body and answer as
  * POST /api/team-admin/submissions/:id/accept: the item and its bundle move
@@ -27,6 +31,7 @@ const Body = z.object({
   audience: z.enum(VIEWER_LEVELS).optional(),
   parentPageId: z.string().uuid().nullable().optional(),
   folderPath: z.string().max(500).nullable().optional(),
+  folderId: z.string().uuid().nullable().optional(),
   lowerConfirmed: z.boolean().optional(),
   confirmedIds: z.array(z.string().uuid()).max(5000).optional(),
 });
