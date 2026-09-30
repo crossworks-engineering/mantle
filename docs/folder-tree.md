@@ -48,6 +48,8 @@ private items come first (they have no folder yet).
 
 `GET /api/tree/:kind/search?q=` answers matching folders, then matching items,
 each with the crumbs of where it lives, so a result can be opened in place.
+An empty `q` is the A to Z view: every item of the kind by name, paged the
+same way, and no folders.
 
 ## Pins, Recent and Most used
 
