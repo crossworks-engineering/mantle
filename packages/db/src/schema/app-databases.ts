@@ -25,6 +25,10 @@ export const appDatabases = pgTable(
     storagePath: text('storage_path').notNull(),
     schemaVersion: integer('schema_version').default(0).notNull(),
     sizeBytes: integer('size_bytes').default(0).notNull(),
+    /** When a CLIENT login first wrote this database (client tier audit I3,
+     *  migration 0199). Never cleared: a Table exported from the app stays
+     *  client-sourced after the app is raised above client. */
+    clientWrittenAt: timestamp('client_written_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },

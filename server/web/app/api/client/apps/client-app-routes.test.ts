@@ -34,6 +34,7 @@ const h = vi.hoisted(() => ({
   dbCalls: [] as string[],
   dbError: null as Error | null,
   callers: [] as unknown[],
+  marked: [] as string[],
   synced: [] as string[],
   rendered: [] as string[],
 }));
@@ -112,6 +113,9 @@ vi.mock('@mantle/content/app-broker', async (importOriginal) => {
   return {
     AppSqlError,
     AppSqlBusyError,
+    markAppClientWritten: vi.fn(async (owner: string, app: string) => {
+      h.marked.push(`${owner}:${app}`);
+    }),
     appDbQuery: vi.fn(async (owner: string, app: string, ...rest: unknown[]) => {
       h.callers.push(rest[3]);
       if (h.dbError) throw h.dbError;
@@ -182,6 +186,7 @@ beforeEach(() => {
   h.dbCalls.length = 0;
   h.dbError = null;
   h.callers.length = 0;
+  h.marked.length = 0;
   h.synced.length = 0;
   h.rendered.length = 0;
   verdictMock?.mockClear();
@@ -278,6 +283,8 @@ describe('client tool broker', () => {
 describe('client db broker', () => {
   it('runs every statement under the login as its caller key (audit I1)', async () => {
     await dbBroker(post({ op: 'query', sql: 'select 1' }), params());
+    // A read marks nothing (audit I3: only a client's write does).
+    expect(h.marked).toEqual([]);
     await dbBroker(post({ op: 'exec', sql: 'insert into t values (1)' }), params());
     expect(h.callers).toEqual([{ callerKey: `client:${LOGIN}` }, { callerKey: `client:${LOGIN}` }]);
   });
@@ -313,6 +320,8 @@ describe('client db broker', () => {
     expect(res.status).toBe(200);
     expect(h.dbCalls).toEqual([`exec:${ANCHOR}:${APP}:admin`]);
     expect(h.synced).toEqual([`${ANCHOR}:${APP}`]);
+    // Remembered for good: the app's exports stay client-sourced (audit I3).
+    expect(h.marked).toEqual([`${ANCHOR}:${APP}`]);
     expect(h.logged).toEqual([
       expect.objectContaining({
         ownerId: ANCHOR,

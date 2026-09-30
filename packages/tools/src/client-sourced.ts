@@ -29,11 +29,13 @@
  *
  * Client apps (client logins C6): a client writes an app's SQLite at client
  * level, and an app-table export copies those rows into an admin-level brain
- * Table. Such a table is client-sourced for as long as its app is at client
- * level (`clientAppExportsAmong`).
+ * Table. Such a table is client-sourced while its app is at client level, and
+ * after a client has written the app, whatever its level
+ * (`clientAppExportsAmong`, client tier audit I3).
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import {
+  appDatabases,
   appTableExports,
   authUsers,
   CLIENT_REQUEST_SOURCE,
@@ -84,23 +86,27 @@ function batches<T>(list: readonly T[]): T[][] {
 }
 
 /**
- * Which of `ids` name a brain Table exported from an app at CLIENT level
- * (client logins C6): the app's database is written by client logins, and
- * the export copies its rows into the table. Decided by the app's level NOW,
- * so raising the app above client clears the mark on its next write (the
- * rows a client wrote stay in the table until then; the mark errs wide
- * only while the app is at client level). Call as the system.
+ * Which of `ids` name a brain Table exported from an app clients write
+ * (client logins C6): an app at client level NOW, or one a client login has
+ * written (`app_databases.client_written_at`, client tier audit I3). The
+ * export copies the app's rows into the table, and the rows a client wrote
+ * stay in the app's database, and so in every later export, whatever the
+ * app's level becomes. So the mark is set by the level, and once a client
+ * has written it holds until the export is removed (or the app, and its
+ * data, are deleted): raising the app above client does not clear it. Call
+ * as the system.
  */
 function clientAppExportsAmong(ownerId: string, list: readonly string[]) {
   return db
     .select({ id: appTableExports.tableNodeId })
     .from(appTableExports)
     .innerJoin(nodes, eq(nodes.id, appTableExports.appNodeId))
+    .leftJoin(appDatabases, eq(appDatabases.appNodeId, appTableExports.appNodeId))
     .where(
       and(
         eq(appTableExports.ownerId, ownerId),
         inArray(appTableExports.tableNodeId, [...list]),
-        eq(nodes.audience, 'client'),
+        or(eq(nodes.audience, 'client'), isNotNull(appDatabases.clientWrittenAt)),
       ),
     );
 }
@@ -111,7 +117,8 @@ function clientAppExportsAmong(ownerId: string, list: readonly string[]) {
  * (client logins C5): a `space_items` row stamped `author_role` 'client',
  * in any state (submitted, taken over, accepted into the brain), or a node a
  * marked staff turn created (`client_sourced_nodes`, L10), or a Table
- * exported from an app at client level (C6: clients write its rows). The stamp
+ * exported from an app at client level or one a client wrote (C6: clients
+ * write its rows). The stamp
  * outlives the client login, so an item accepted from a client's space still
  * counts after that login is deleted. As the system: the tasks
  * are admin level and the check must see them whatever the turn's level. It
@@ -166,7 +173,7 @@ export async function namesClientSourced(
 /**
  * Which of `ids` (node ids) are client-sourced items: client request tasks,
  * items a client wrote, nodes a marked turn created, tables exported from a
- * client-level app. For callers that must
+ * client-level or client-written app. For callers that must
  * leave such items out rather than mark a turn (the owner's corpus map, L4).
  * As the system, like namesClientSourced.
  */

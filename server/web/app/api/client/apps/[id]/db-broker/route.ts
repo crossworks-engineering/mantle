@@ -1,6 +1,6 @@
 import { NextResponse } from '@/server/http-compat';
 import { recordAppAccess } from '@mantle/content';
-import { appDbExec, appDbQuery } from '@mantle/content/app-broker';
+import { appDbExec, appDbQuery, markAppClientWritten } from '@mantle/content/app-broker';
 import { scheduleAppTableExportSync } from '@mantle/content/app-table-exports';
 import { getClientOr401 } from '@/lib/auth';
 import { AppDbBody, appDbBodyError, appDbErrorResponse } from '@/lib/app-db-broker-body';
@@ -70,7 +70,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     // run for the brain (the sync is not a client act). The exported table
     // stays admin level, and a staff turn that reads it is marked as having
     // read client-written text (namesClientSourced).
-    if (op === 'exec') scheduleAppTableExportSync(client.anchorId, app.id);
+    if (op === 'exec') {
+      // Remembered for good (audit I3): the app's exports stay client-sourced
+      // even if an admin later raises the app above client.
+      await markAppClientWritten(client.anchorId, app.id).catch((err) =>
+        console.error('[client-db-broker] could not mark the app client-written:', err),
+      );
+      scheduleAppTableExportSync(client.anchorId, app.id);
+    }
     return NextResponse.json({ ok: true, output });
   } catch (err) {
     return appDbErrorResponse(err, 'client-db-broker');

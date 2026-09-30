@@ -168,12 +168,51 @@ describe.skipIf(!URL)('namesClientSourced', () => {
     expect([
       ...(await cs.clientSourcedAmong(owner, [ids.clientAppTable, ids.teamAppTable])),
     ]).toEqual([ids.clientAppTable]);
-    // Raise the app above client: its table stops counting.
+    // Raise the app above client before any client wrote it: its table
+    // stops counting.
     await admin`update nodes set audience = 'team' where id = ${ids.clientApp}`;
     try {
       expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(false);
     } finally {
       await admin`update nodes set audience = 'client' where id = ${ids.clientApp}`;
+    }
+  });
+
+  it('once a client wrote the app, its Table stays client-sourced after a raise (audit I3)', async () => {
+    const { markAppClientWritten } = await import('@mantle/content/app-broker');
+    await admin`insert into app_databases (owner_id, app_node_id, storage_path) values
+      (${owner}, ${ids.clientApp}, '/nowhere/app.sqlite'),
+      (${owner}, ${ids.teamApp}, '/nowhere/team.sqlite')`;
+    await markAppClientWritten(owner, ids.clientApp);
+    const [row] = await admin<{ at: Date | null }[]>`
+      select client_written_at as at from app_databases where app_node_id = ${ids.clientApp}`;
+    expect(row?.at).toBeInstanceOf(Date);
+    // Another brain cannot mark this app.
+    await markAppClientWritten(other, ids.teamApp);
+    expect(await cs.namesClientSourced(owner, [ids.teamAppTable])).toBe(false);
+
+    await admin`update nodes set audience = 'team' where id = ${ids.clientApp}`;
+    try {
+      expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(true);
+      expect([...(await cs.clientSourcedAmong(owner, [ids.clientAppTable]))]).toEqual([
+        ids.clientAppTable,
+      ]);
+      // Even at admin level.
+      await admin`update nodes set audience = 'admin' where id = ${ids.clientApp}`;
+      expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(true);
+      // A second client write keeps the first stamp.
+      await markAppClientWritten(owner, ids.clientApp);
+      const [again] = await admin<{ at: Date | null }[]>`
+        select client_written_at as at from app_databases where app_node_id = ${ids.clientApp}`;
+      expect(again?.at?.getTime()).toBe(row?.at?.getTime());
+      // Removing the export ends the mark (the link is what copies the rows).
+      await admin`delete from app_table_exports where table_node_id = ${ids.clientAppTable}`;
+      expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(false);
+    } finally {
+      await admin`update nodes set audience = 'client' where id = ${ids.clientApp}`;
+      await admin`insert into app_table_exports (owner_id, app_node_id, sqlite_table, table_node_id)
+        values (${owner}, ${ids.clientApp}, 'orders', ${ids.clientAppTable})
+        on conflict do nothing`;
     }
   });
 

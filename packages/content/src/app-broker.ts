@@ -16,7 +16,7 @@ import { mkdir, rm, stat } from 'node:fs/promises';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { db, nodes, appDatabases } from '@mantle/db';
 import { env } from '@mantle/config';
 import { errorMessage } from '@mantle/std';
@@ -334,6 +334,26 @@ export async function appDbExec(
     /* size tracking is best-effort */
   }
   return res;
+}
+
+/**
+ * Record that a CLIENT login wrote this app's database (client tier audit
+ * I3): set once, on the first client write, and never cleared, so a Table
+ * exported from the app stays client-sourced after the app is raised above
+ * client (packages/tools/src/client-sourced.ts). The client db-broker calls
+ * it after a successful exec, so the registry row exists.
+ */
+export async function markAppClientWritten(ownerId: string, appNodeId: string): Promise<void> {
+  await db
+    .update(appDatabases)
+    .set({ clientWrittenAt: new Date() })
+    .where(
+      and(
+        eq(appDatabases.appNodeId, appNodeId),
+        eq(appDatabases.ownerId, ownerId),
+        isNull(appDatabases.clientWrittenAt),
+      ),
+    );
 }
 
 // ── Bulk seeding (authoring tools) ───────────────────────────────────────────
