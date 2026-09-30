@@ -7,7 +7,7 @@
  * Library carries the author's name. The rules themselves are proven on
  * Postgres in packages/content/src/member-accepted.viewer.db.test.ts.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ANCHOR = '33333333-3333-4333-8333-333333333333';
 const LOGIN = '22222222-2222-4222-8222-222222222222';
@@ -123,6 +123,19 @@ vi.mock('@mantle/content', async (importOriginal) => ({
 }));
 
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) });
+
+// The first import of each route compiles its graph; under a loaded run
+// that alone can pass a test's timeout, so it happens here, once.
+beforeAll(async () => {
+  await Promise.all([
+    import('../files/[id]/route'),
+    import('../draws/[id]/svg/route'),
+    import('./route'),
+    import('./[id]/route'),
+    import('../library/route'),
+    import('../library/[id]/route'),
+  ]);
+}, 60_000);
 
 beforeEach(() => {
   h.teamHit = false;
