@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   setItem: vi.fn(),
   sharedVia: vi.fn(),
-  readThrough: vi.fn(async () => null),
+  readThrough: vi.fn(async (): Promise<unknown> => null),
 }));
 vi.mock('@mantle/content', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@mantle/content')>();
