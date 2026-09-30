@@ -825,8 +825,11 @@ function visibilityError(
   const what = n === 1 ? 'It lands' : `${n} items land`;
   return new ReviewError(
     'visibility',
-    `${what} in a shared folder and would be read above the level you chose. ` +
-      'Confirm that, or pick another folder.',
+    n > 0
+      ? `${what} in a shared folder and would be read above the level you chose. ` +
+          'Confirm that, or pick another folder.'
+      : 'It lands in a shared folder, and what it embeds would be read there too. ' +
+          'Confirm that, or pick another folder.',
     undefined,
     {
       changes: changes.slice(0, TREE_VISIBILITY_LIST_MAX),
@@ -1400,10 +1403,12 @@ async function moveIntoBrain(
       const exposed: TreeVisibilityChange[] = items
         .filter((b) => readAtOf(b.id) !== audience)
         .map((b) => ({ id: b.id, title: b.title, from: audience, to: readAtOf(b.id) }));
-      if (exposed.length && opts.visibilityConfirmed !== true) {
+      if (opts.visibilityConfirmed !== true) {
         // What the bundle embeds is read through it at the folder's share
-        // (0208) too, whoever wrote it: listed with it, before anything moves.
-        throw visibilityError(exposed, await embedsReadThrough(tx, brainId, items, shares));
+        // (0208) too, whoever wrote it: listed with it, before anything moves,
+        // even when the item itself is read at the level chosen (review F1).
+        const throughEmbeds = await embedsReadThrough(tx, brainId, items, shares);
+        if (exposed.length || throughEmbeds.length) throw visibilityError(exposed, throughEmbeds);
       }
 
       // 3b. A client's item read at client or public (audit A28), by its

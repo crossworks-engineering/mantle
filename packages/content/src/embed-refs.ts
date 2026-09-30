@@ -162,6 +162,26 @@ export function noteRefs(markdown: string, ownUrl?: OwnUrl): EmbedRefs {
   return c.result();
 }
 
+/**
+ * The references a member's note may carry, for the save gate: noteRefs
+ * plus EVERY `media:<id>` and `draw:<id>` anywhere in the text (a heading, a
+ * table cell, a code span, bold text). The database records an embed edge
+ * wherever the note shows an image (migration 0208,
+ * mantle_note_embed_refs), which is more than markdownToDoc lifts; the
+ * gate checks a superset of those, so nothing it lets through can open an
+ * item the member could not share (review F1).
+ */
+export function noteGateRefs(markdown: string, ownUrl?: OwnUrl): EmbedRefs {
+  const refs = noteRefs(markdown, ownUrl);
+  const ids = new Set(refs.ids);
+  for (const m of (markdown ?? '').matchAll(
+    /(?:media|draw):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi,
+  )) {
+    ids.add(m[1]!.toLowerCase());
+  }
+  return { ...refs, ids: [...ids] };
+}
+
 /** The references in a drawing's scene: element links (links, never
  *  embeds: a drawing's own images are its file refs); an embedded frame's
  *  link is a source, like an image's, for the refusals. */

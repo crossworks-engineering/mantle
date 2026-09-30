@@ -59,7 +59,7 @@ import {
   type CommitPageResult,
   type SaveDraftResult,
 } from './pages/draft';
-import { cellRefs, noteRefs, pageRefs, sceneRefs, type EmbedRefs } from './embed-refs';
+import { cellRefs, noteGateRefs, pageRefs, sceneRefs, type EmbedRefs } from './embed-refs';
 import { commitDraw, type CommitDrawResult } from './draws';
 import { notifySpaceItemChanged } from './member-space-events';
 import { deletePage, createPage } from './pages/tree';
@@ -457,7 +457,7 @@ export async function createMineItem(
   if (input.type === 'page' && input.doc)
     await assertEmbeds(spaceId, pageRefs(input.doc), 'page', writer);
   if (input.type === 'note' && input.content)
-    await assertEmbeds(spaceId, noteRefs(input.content), 'note', writer);
+    await assertEmbeds(spaceId, noteGateRefs(input.content), 'note', writer);
   if (input.type === 'draw' && input.scene)
     await assertEmbeds(spaceId, sceneRefs(input.scene), 'drawing', writer);
   // A client's page and note text counts toward its storage (audit I3).
@@ -1041,7 +1041,7 @@ export async function updateMineItem(
       // A note has no draft: its text is what teammates and a reviewer read,
       // so the embed rule holds on every change. A client's note text counts
       // toward its storage (audit I3).
-      if (content !== undefined) await assertEmbeds(spaceId, noteRefs(content), 'note', writer);
+      if (content !== undefined) await assertEmbeds(spaceId, noteGateRefs(content), 'note', writer);
       await withClientTextRoom(spaceId, id, () => updateNote(spaceId, id, { title, content }));
       break;
     case 'draw':
