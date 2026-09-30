@@ -107,3 +107,35 @@ CREATE TRIGGER "nodes_share_deleted_after"
   FOR EACH ROW
   WHEN (OLD."type" = 'branch' AND OLD."share_level" IS NOT NULL)
   EXECUTE FUNCTION "public"."mantle_nodes_unshare_deleted_trg"();
+--> statement-breakpoint
+
+-- 4. The folder checks were added NOT VALID (0201, 0204) so older rows were
+--    left alone; nothing validated them since (folder audit C7). Validate
+--    each where the data already satisfies it; a brain that still holds a
+--    row the check refuses (a folder deeper than three levels from before
+--    the tree) keeps it NOT VALID and says so, rather than failing the
+--    roll. VALIDATE takes a SHARE UPDATE EXCLUSIVE lock: reads and writes
+--    go on while it scans.
+DO $$
+BEGIN
+  ALTER TABLE "public"."nodes" VALIDATE CONSTRAINT "nodes_tree_folder_depth_ck";
+EXCEPTION WHEN check_violation THEN
+  RAISE NOTICE 'nodes_tree_folder_depth_ck stays NOT VALID: a folder deeper than three levels exists';
+END
+$$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  ALTER TABLE "public"."nodes" VALIDATE CONSTRAINT "nodes_share_level_ck";
+EXCEPTION WHEN check_violation THEN
+  RAISE NOTICE 'nodes_share_level_ck stays NOT VALID: a share outside the shareable roots exists';
+END
+$$;
+--> statement-breakpoint
+DO $$
+BEGIN
+  ALTER TABLE "public"."nodes" VALIDATE CONSTRAINT "nodes_inherited_level_ck";
+EXCEPTION WHEN check_violation THEN
+  RAISE NOTICE 'nodes_inherited_level_ck stays NOT VALID: an inherited share on a non-workspace row exists';
+END
+$$;
