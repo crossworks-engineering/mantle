@@ -44,6 +44,16 @@ export const RELATION_ANCHOR_LIMIT = 5;
 /** Cosine cutoff for a section-level passage to be worth its tokens. */
 export const CHUNK_CUTOFF = 0.65;
 
+/** How many of the top facts' source notes get a passage (promotePassages). */
+export const FACT_PASSAGES = 3;
+
+/** A promoted passage must still be this close to the question. Looser than
+ *  CHUNK_CUTOFF: the note is already vouched for by a matching fact, and a
+ *  2.7k-char chunk sits further from a short question than the one sentence
+ *  inside it that answers. Not open: it keeps a small-talk turn, whose facts
+ *  match only loosely, from pulling in whole passages. */
+export const PROMOTED_PASSAGE_CUTOFF = 0.75;
+
 export type FactRow = {
   content: string;
   kind: string;
@@ -215,14 +225,23 @@ export function selectContentHits(rows: ContentRow[]): {
   return { hits: contentHits, sent: contentSentSnap, dropped: contentDroppedSnap };
 }
 
-/** Section-level passages worth their tokens, plus the snapshot split. */
+/** Section-level passages worth their tokens, plus the snapshot split.
+ *  `promote` (see promotePassages) gives trusted notes their text inside the
+ *  same chunk_limit. */
 export function selectChunkHits(
   hits: ChunkSearchHit[],
   chunkLimit: number,
+  promote?: {
+    sources: ReadonlyArray<{ nodeIds: readonly string[]; max: number }>;
+    best: readonly ChunkSearchHit[];
+  },
 ): { hits: ChunkContextHit[]; sent: SnapshotItem[]; dropped: SnapshotItem[] } {
-  const selected = hits
+  const cut = hits
     .filter((h) => h.distance < CHUNK_CUTOFF && h.nodeType !== 'telegram_message')
     .slice(0, chunkLimit);
+  const selected = promote
+    ? promotePassages(cut, promote.sources, promote.best, chunkLimit)
+    : cut;
   const chunkHits = selected.map((h) => ({
     nodeId: h.nodeId,
     title: h.nodeTitle,
@@ -245,6 +264,47 @@ export function selectChunkHits(
     .map(toSnapItem);
 
   return { hits: chunkHits, sent: chunkSentSnap, dropped: chunkDroppedSnap };
+}
+
+/**
+ * Give the notes retrieval already trusts their text. `sources` lists node
+ * ids best first, each with its own cap (the notes the top facts came from);
+ * for each such node with no passage in `selected`, its closest passage
+ * (`best`, one per node) joins the cut if it clears PROMOTED_PASSAGE_CUTOFF.
+ * The budget holds: free slots go first, then the weakest selected passages
+ * make room.
+ *
+ * Why: a fact is one sentence and matches a question far better than a
+ * 2.7k-char passage does, so the facts point at the right notes when the
+ * passages do not. LoCoMo at the lean budget: 71 of 1,540 questions got no
+ * passage at all and 430 fewer than 8 (the 0.65 cutoff), while the facts
+ * named the note holding the answer; giving the top 3 facts' notes a passage
+ * raised evidence reach from 77.5% to 84.3% (multi-hop 43% to 56%).
+ */
+export function promotePassages(
+  selected: readonly ChunkSearchHit[],
+  sources: ReadonlyArray<{ nodeIds: readonly string[]; max: number }>,
+  best: readonly ChunkSearchHit[],
+  limit: number,
+  cutoff = PROMOTED_PASSAGE_CUTOFF,
+): ChunkSearchHit[] {
+  const have = new Set(selected.map((h) => h.nodeId));
+  const byNode = new Map(best.map((b) => [b.nodeId, b]));
+  const promoted: ChunkSearchHit[] = [];
+  for (const src of sources) {
+    let taken = 0;
+    for (const id of src.nodeIds) {
+      if (taken >= src.max || promoted.length >= limit) break;
+      const b = byNode.get(id);
+      if (!b || have.has(id) || b.distance >= cutoff || b.nodeType === 'telegram_message')
+        continue;
+      have.add(id);
+      promoted.push(b);
+      taken++;
+    }
+  }
+  const keep = Math.max(0, Math.min(selected.length, limit - promoted.length));
+  return [...selected.slice(0, keep), ...promoted];
 }
 
 /** Node ids of hits that point at a superseded node, so one batched query can

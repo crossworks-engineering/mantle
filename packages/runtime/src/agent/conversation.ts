@@ -74,6 +74,7 @@ import {
 } from '@mantle/decisions';
 import {
   searchChunks,
+  bestChunkPerNode,
   chunkPairSimilarities,
   entityRelationsFor,
   pgArrayLiteral,
@@ -171,6 +172,7 @@ import {
   buildHistory,
   CHUNK_CUTOFF,
   exchangeText,
+  FACT_PASSAGES,
   groupExchanges,
   mergePreferences,
   patchSuperseded,
@@ -895,7 +897,31 @@ async function loadConversationContextAtLevel(args: {
     }
     // Same exclusions as content hits: a raw telegram turn isn't a "passage"
     // (it's the conversation), and a weak match isn't worth the tokens.
-    const selection = selectChunkHits(hits, chunkLimit);
+    // The notes the top facts came from get their text: a fact matches a
+    // question far better than a whole passage does, so it points at the
+    // right note when the passages miss it (see promotePassages). One small
+    // query over those notes' own chunks, inside the same chunk_limit.
+    const factNodeIds = [
+      ...new Set(
+        factRows
+          .filter((f) => f.kind !== 'preference')
+          .map((f) => f.sourceNodeId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const best =
+      factNodeIds.length > 0
+        ? await bestChunkPerNode({
+            ownerId,
+            embedding: retrievalVec,
+            nodeIds: factNodeIds,
+            excludeSystemOrigin: true,
+          })
+        : [];
+    const selection = selectChunkHits(hits, chunkLimit, {
+      sources: [{ nodeIds: factNodeIds, max: FACT_PASSAGES }],
+      best,
+    });
     chunkHits = selection.hits;
     chunkSentSnap = selection.sent;
     chunkDroppedSnap = selection.dropped;

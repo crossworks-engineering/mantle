@@ -200,6 +200,40 @@ export async function searchChunks(opts: ChunkSearchOptions): Promise<ChunkHit[]
     .map(toChunkHit);
 }
 
+/**
+ * Each listed node's closest passage to the query embedding (one per node,
+ * raw cosine). For a node retrieval already trusts (the source of a matching
+ * fact) whose text never made the passage cut: its best passage is what the
+ * model needs to answer from it. Nodes with no embedded chunk are absent, and
+ * so are system-seeded docs when `excludeSystemOrigin` is set (as in
+ * searchChunks).
+ */
+export async function bestChunkPerNode(opts: {
+  ownerId: string;
+  embedding: number[];
+  nodeIds: readonly string[];
+  excludeSystemOrigin?: boolean;
+}): Promise<ChunkHit[]> {
+  if (opts.nodeIds.length === 0) return [];
+  const vec = JSON.stringify(opts.embedding);
+  const rows = (await db.execute(sql`
+    select distinct on (${contentChunks.nodeId})
+           ${contentChunks.nodeId} as node_id, ${nodes.title} as node_title,
+           ${nodes.type} as node_type, ${contentChunks.ordinal} as ordinal,
+           ${contentChunks.headingPath} as heading_path, ${contentChunks.text} as text,
+           ${nodes.supersededBy} as superseded_by,
+           ${contentChunks.embedding} <=> ${vec}::vector as dist
+    from ${contentChunks}
+    inner join ${nodes} on ${nodes.id} = ${contentChunks.nodeId}
+    where ${contentChunks.ownerId} = ${opts.ownerId}
+      and ${contentChunks.nodeId} = any(${pgArrayLiteral([...opts.nodeIds])}::uuid[])
+      and ${contentChunks.embedding} is not null
+      ${opts.excludeSystemOrigin ? sql`and (${nodes.data}->>'origin') is distinct from 'system'` : sql``}
+    order by ${contentChunks.nodeId}, dist
+  `)) as unknown as RawChunkRow[];
+  return rows.map(toChunkHit);
+}
+
 type RawChunkRow = {
   node_id: string;
   node_title: string;

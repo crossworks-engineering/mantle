@@ -42,6 +42,7 @@ export { resolveSupersededTargets, terminalSuccessors, type SupersededTarget } f
 export {
   searchChunks,
   readSection,
+  bestChunkPerNode,
   buildSectionOutline,
   selectSectionChunks,
   assembleSection,
