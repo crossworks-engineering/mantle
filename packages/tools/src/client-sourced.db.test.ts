@@ -184,9 +184,9 @@ describe.skipIf(!URL)('namesClientSourced', () => {
       (${owner}, ${ids.clientApp}, '/nowhere/app.sqlite'),
       (${owner}, ${ids.teamApp}, '/nowhere/team.sqlite')`;
     await markAppClientWritten(owner, ids.clientApp);
-    const [row] = await admin<{ at: Date | null }[]>`
-      select client_written_at as at from app_databases where app_node_id = ${ids.clientApp}`;
-    expect(row?.at).toBeInstanceOf(Date);
+    const [row] = await admin<{ at: string | null }[]>`
+      select client_written_at::text as at from app_databases where app_node_id = ${ids.clientApp}`;
+    expect(row?.at).toMatch(/^\d{4}-/);
     // Another brain cannot mark this app.
     await markAppClientWritten(other, ids.teamApp);
     expect(await cs.namesClientSourced(owner, [ids.teamAppTable])).toBe(false);
@@ -202,9 +202,9 @@ describe.skipIf(!URL)('namesClientSourced', () => {
       expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(true);
       // A second client write keeps the first stamp.
       await markAppClientWritten(owner, ids.clientApp);
-      const [again] = await admin<{ at: Date | null }[]>`
-        select client_written_at as at from app_databases where app_node_id = ${ids.clientApp}`;
-      expect(again?.at?.getTime()).toBe(row?.at?.getTime());
+      const [again] = await admin<{ at: string | null }[]>`
+        select client_written_at::text as at from app_databases where app_node_id = ${ids.clientApp}`;
+      expect(again?.at).toBe(row?.at);
       // Removing the export ends the mark (the link is what copies the rows).
       await admin`delete from app_table_exports where table_node_id = ${ids.clientAppTable}`;
       expect(await cs.namesClientSourced(owner, [ids.clientAppTable])).toBe(false);
