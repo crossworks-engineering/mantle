@@ -20,7 +20,7 @@ const Body = z.object({
   name: z.string().trim().min(1).max(TREE_FOLDER_NAME_MAX),
   /** Its look from the start (the same values PATCH takes); left out or
    *  null = the default tile. */
-  icon: FolderIconBody.nullable().optional(),
+  icon: FolderIconBody.optional(),
   color: FolderColorBody.nullable().optional(),
 });
 

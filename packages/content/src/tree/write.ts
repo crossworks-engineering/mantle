@@ -87,8 +87,7 @@ export class TreeError extends Error {
 /** The per-kind half of a write. Paths are ltree strings. */
 type TreeKindOps = {
   /** Returns the new folder's id. `look` (icon, color) rides in the row
-   *  where the kind's folder is a row; Files sets it after (its create is
-   *  disk first, in its own transaction). */
+   *  insert of the create itself, for every kind. */
   createFolder(
     ownerId: string,
     parentPath: string,
@@ -101,8 +100,8 @@ type TreeKindOps = {
 };
 
 const FILES_OPS: TreeKindOps = {
-  async createFolder(ownerId, parentPath, name) {
-    return (await createFilesFolder({ ownerId, parentPath, slug: name, name })).id;
+  async createFolder(ownerId, parentPath, name, look) {
+    return (await createFilesFolder({ ownerId, parentPath, slug: name, name, ...look })).id;
   },
   async renameFolder(ownerId, folderId, name) {
     await renameFolderById({ ownerId, folderId, newSlug: name });
@@ -204,7 +203,6 @@ export async function createTreeFolder(
   const name = cleanName(args.name);
   const look = lookOf(args);
   const id = await refusing(() => ops.createFolder(ownerId, parentPath, name, look ?? undefined));
-  if (look && kind === 'files') await setFolderLook(ownerId, id, look);
   return folderOrThrow(ownerId, kind, id);
 }
 

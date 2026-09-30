@@ -89,7 +89,8 @@ of one brain keep their own.
 ## Writing
 
 - `POST /api/tree/:kind/folders` creates a folder under `parentId` (null = top),
-  with its `icon` and `color` when chosen (the same values PATCH takes).
+  with its `icon` and `color` when chosen (the same values PATCH takes; null
+  or an empty icon is none).
 - `PATCH /api/tree/:kind/folders/:id` renames, restyles (`icon`, `color`),
   moves (`parentId`) or reorders (`after`: the sibling to follow, null = first).
 - `DELETE /api/tree/:kind/folders/:id` deletes a folder after moving what it

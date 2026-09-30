@@ -148,14 +148,19 @@ export async function readerTreeKindOr404(ctx: {
   return kind;
 }
 
-/** A folder's look as a body field, for a create and a restyle alike: an
+/** A folder's icon as a body field, for a create and a restyle alike: an
  *  emoji (up to APP_ICON_EMOJI_MAX UTF-16 units) or `lucide:<name>`, the
- *  app-nav icon vocabulary; anything else is a 400, never stored. */
-export const FolderIconBody = z
-  .string()
-  .trim()
-  .max(APP_ICON_MAX)
-  .refine((v) => projectAppIcon(v) !== undefined, 'icon must be an emoji or lucide:<name>');
+ *  app-nav icon vocabulary; null, or an empty string (older callers), is
+ *  none. Anything else is a 400, never stored. */
+export const FolderIconBody = z.preprocess(
+  (v) => (typeof v === 'string' && v.trim() === '' ? null : v),
+  z
+    .string()
+    .trim()
+    .max(APP_ICON_MAX)
+    .refine((v) => projectAppIcon(v) !== undefined, 'icon must be an emoji or lucide:<name>')
+    .nullable(),
+);
 
 /** A folder's tint: one of APP_TINTS. */
 export const FolderColorBody = z.enum(APP_TINTS);

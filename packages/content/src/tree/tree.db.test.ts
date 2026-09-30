@@ -71,6 +71,20 @@ describe.skipIf(!URL)('the item tree on Files', () => {
       color: 'cyan',
     });
     expect((await stat(path.join(root, 'acme-corp'))).isDirectory()).toBe(true);
+    // The look goes in with the Files create's own row insert, not as a
+    // second write after the disk create.
+    expect(
+      await files.createFolder({
+        ownerId: owner,
+        parentPath: 'files',
+        slug: 'looked',
+        name: 'Looked',
+        icon: '🗂️',
+        color: 'pink',
+      }),
+    ).toMatchObject({ icon: '🗂️', color: 'pink' });
+    const looked = (await tree.listTreeFolders(owner, 'files')).find((f) => f.name === 'Looked')!;
+    await tree.deleteTreeFolder(owner, 'files', looked.id);
 
     const a = await tree.createTreeFolder(owner, 'files', {
       parentId: clients.id,

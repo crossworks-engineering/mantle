@@ -88,6 +88,10 @@ describe('POST /api/tree/:kind/folders', () => {
     h.calls.length = 0;
     expect((await post({ parentId: null, name: 'Fun', icon: '🎉', color: null })).status).toBe(201);
     expect(h.calls[0]!.args[2]).toEqual({ parentId: null, name: 'Fun', icon: '🎉', color: null });
+    // An empty icon (older callers) is none, as null is.
+    h.calls.length = 0;
+    expect((await post({ parentId: null, name: 'Plain', icon: '' })).status).toBe(201);
+    expect(h.calls[0]!.args[2]).toEqual({ parentId: null, name: 'Plain', icon: null });
   });
 
   it('refuses a tint outside APP_TINTS and an icon of the wrong shape, writing nothing', async () => {
@@ -130,6 +134,10 @@ describe('PATCH /api/tree/:kind/folders/:id', () => {
     h.calls.length = 0;
     expect((await patch({ icon: null, color: null })).status).toBe(200);
     expect(h.calls[0]!.args[3]).toEqual({ icon: null, color: null });
+    // '' cleared the icon before the shape check; it still does.
+    h.calls.length = 0;
+    expect((await patch({ icon: '' })).status).toBe(200);
+    expect(h.calls[0]!.args[3]).toEqual({ icon: null });
   });
 
   it('refuses the same bad looks as the create', async () => {

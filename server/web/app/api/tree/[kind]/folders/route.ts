@@ -18,11 +18,11 @@ const Body = z.object({
   name: z.string().trim().min(1).max(TREE_FOLDER_NAME_MAX),
   /** Its look from the start (the same values PATCH takes); left out or
    *  null = the default tile. */
-  icon: FolderIconBody.nullable().optional(),
+  icon: FolderIconBody.optional(),
   color: FolderColorBody.nullable().optional(),
 });
 
-/** POST /api/tree/:kind/folders — create a folder, with its icon and colour
+/** POST /api/tree/:kind/folders: create a folder, with its icon and colour
  *  when chosen; answers `{ folder }`. */
 export async function POST(req: Request, ctx: { params: Promise<{ kind: string }> }) {
   const user = await getOwnerOr401();

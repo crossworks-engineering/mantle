@@ -111,6 +111,50 @@ describe('tree folder tools', () => {
       ),
     ).toMatch(/emoji or lucide/);
     expect(createTreeFolder).not.toHaveBeenCalled();
+    // A padded emoji is stored trimmed.
+    vi.mocked(createTreeFolder).mockResolvedValue({ id: 'f', path: 'notes.a' } as never);
+    await tool('tree_folder_create').handler({ kind: 'notes', name: 'A', icon: ' 🎉 ' }, owner);
+    expect(createTreeFolder).toHaveBeenCalledWith('o1', 'notes', {
+      parentId: null,
+      name: 'A',
+      icon: '🎉',
+    });
+  });
+
+  it('changes a folder’s icon or colour on its own, and clears with null', async () => {
+    vi.mocked(updateTreeFolder).mockResolvedValue({ id: FOLDER, path: 'tasks.x' } as never);
+    await tool('tree_folder_update').handler(
+      { kind: 'tasks', folder_id: FOLDER, icon: 'lucide:briefcase', color: 'cyan' },
+      owner,
+    );
+    expect(updateTreeFolder).toHaveBeenCalledWith(
+      'o1',
+      'tasks',
+      FOLDER,
+      { icon: 'lucide:briefcase', color: 'cyan' },
+      { confirm: false },
+    );
+    await tool('tree_folder_update').handler(
+      { kind: 'tasks', folder_id: FOLDER, icon: null, color: null },
+      owner,
+    );
+    expect(updateTreeFolder).toHaveBeenLastCalledWith(
+      'o1',
+      'tasks',
+      FOLDER,
+      { icon: null, color: null },
+      { confirm: false },
+    );
+    vi.clearAllMocks();
+    expect(
+      errorOf(
+        await tool('tree_folder_update').handler(
+          { kind: 'tasks', folder_id: FOLDER, color: 'magenta' },
+          owner,
+        ),
+      ),
+    ).toMatch(/color must be one of/);
+    expect(updateTreeFolder).not.toHaveBeenCalled();
   });
 
   it('moves a folder only when asked, and to the top level on null', async () => {

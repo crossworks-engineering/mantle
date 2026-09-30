@@ -24,7 +24,7 @@ import {
   type TreeFolderPatch,
 } from '@mantle/content/tree';
 import { TREE_KIND_SPECS, TREE_MAX_DEPTH, type TreeKind } from '@mantle/client-types/tree';
-import { APP_TINTS, isAppTint } from '@mantle/client-types/app-nav';
+import { APP_TINTS, isAppTint, type AppTint } from '@mantle/client-types/app-nav';
 import { projectAppIcon } from '@mantle/content-core/app-nav';
 import type { BuiltinToolDef, ToolHandlerContext, ToolHandlerResult } from './types';
 import { str, strArr } from './coerce';
@@ -71,6 +71,30 @@ function kindOf(input: Record<string, unknown>): TreeToolKind | null {
 function parentOf(v: unknown): string | null {
   const s = typeof v === 'string' ? v.trim() : '';
   return s ? s : null;
+}
+
+/** The look fields of a folder call: an emoji or `lucide:<name>`, and a
+ *  tint in APP_TINTS. Left out = untouched (undefined); null or an empty
+ *  string = clear (null). A wrong value is the error to answer with. */
+function lookOf(
+  input: Record<string, unknown>,
+): { icon?: string | null; color?: AppTint | null } | { error: string } {
+  const out: { icon?: string | null; color?: AppTint | null } = {};
+  if ('icon' in input) {
+    const icon = str(input.icon).trim();
+    if (input.icon === null || !icon) out.icon = null;
+    else if (projectAppIcon(icon) === undefined) {
+      return { error: 'icon must be an emoji or lucide:<name>' };
+    } else out.icon = icon;
+  }
+  if ('color' in input) {
+    const color = str(input.color).trim();
+    if (input.color === null || !color) out.color = null;
+    else if (!isAppTint(color)) {
+      return { error: `color must be one of ${APP_TINTS.join(', ')}` };
+    } else out.color = color;
+  }
+  return out;
 }
 
 /** The checks every call shares, then the work. */
@@ -159,19 +183,13 @@ export const tree_folder_create: BuiltinToolDef = {
     run(input, ctx, async (kind) => {
       const name = str(input.name);
       if (!name) return { ok: false, error: 'name required' };
-      const icon = str(input.icon);
-      if (icon && projectAppIcon(icon) === undefined) {
-        return { ok: false, error: 'icon must be an emoji or lucide:<name>' };
-      }
-      const color = str(input.color);
-      if (color && !isAppTint(color)) {
-        return { ok: false, error: `color must be one of ${APP_TINTS.join(', ')}` };
-      }
+      const look = lookOf(input);
+      if ('error' in look) return { ok: false, error: look.error };
       const folder = await createTreeFolder(ctx.ownerId, kind, {
         parentId: parentOf(input.parent_id),
         name,
-        ...(icon ? { icon } : {}),
-        ...(isAppTint(color) ? { color } : {}),
+        ...(look.icon ? { icon: look.icon } : {}),
+        ...(look.color ? { color: look.color } : {}),
       });
       await notifyTreeChanged(ctx.ownerId, kind);
       ctx.step?.setOutput({ kind, folderId: folder.id, path: folder.path });
@@ -182,9 +200,9 @@ export const tree_folder_create: BuiltinToolDef = {
 export const tree_folder_update: BuiltinToolDef = {
   slug: 'tree_folder_update',
   ownerOnly: true,
-  name: 'Rename or move a folder',
+  name: 'Rename, move or restyle a folder',
   description:
-    'Rename a folder (`name`), move it under another folder (`parent_id`; null for the top level), or both. Everything inside comes along. Refused for a system folder, a move into itself, a move that would nest deeper than ' +
+    'Rename a folder (`name`), move it under another folder (`parent_id`; null for the top level), change its icon or colour (`icon`, `color`; null clears), or any of these together. Everything inside comes along on a move. Refused for a system folder, a move into itself, a move that would nest deeper than ' +
     `${TREE_MAX_DEPTH} levels, and a name already taken where it lands.`,
   preconditions: [
     { kind: 'node_exists', param: 'folder_id', nodeType: 'branch', lookup: 'tree_folders' },
@@ -201,6 +219,15 @@ export const tree_folder_update: BuiltinToolDef = {
         description:
           'move it into this folder; null for the top level; omit to leave it where it is',
       },
+      icon: {
+        type: ['string', 'null'],
+        description: 'an emoji, or `lucide:<name>` (kebab-case); null for the default glyph',
+      },
+      color: {
+        type: ['string', 'null'],
+        enum: [...APP_TINTS, null],
+        description: 'the tile colour; null for none',
+      },
       confirm: CONFIRM_INPUT,
     },
     required: ['kind', 'folder_id'],
@@ -213,8 +240,12 @@ export const tree_folder_update: BuiltinToolDef = {
       const name = str(input.name);
       if (name) patch.name = name;
       if ('parent_id' in input) patch.parentId = parentOf(input.parent_id);
-      if (patch.name === undefined && patch.parentId === undefined) {
-        return { ok: false, error: 'pass `name`, `parent_id`, or both' };
+      const look = lookOf(input);
+      if ('error' in look) return { ok: false, error: look.error };
+      if (look.icon !== undefined) patch.icon = look.icon;
+      if (look.color !== undefined) patch.color = look.color;
+      if (Object.keys(patch).length === 0) {
+        return { ok: false, error: 'pass `name`, `parent_id`, `icon` or `color` (any of them)' };
       }
       const folder = await updateTreeFolder(ctx.ownerId, kind, folderId, patch, {
         confirm: input.confirm === true,

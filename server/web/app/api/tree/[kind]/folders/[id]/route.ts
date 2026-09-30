@@ -17,7 +17,7 @@ const Id = z.string().uuid();
 const Patch = z
   .object({
     name: z.string().trim().min(1).max(TREE_FOLDER_NAME_MAX),
-    icon: FolderIconBody.nullable(),
+    icon: FolderIconBody,
     color: FolderColorBody.nullable(),
     /** Move under this folder; null = the top level. */
     parentId: z.string().uuid().nullable(),
