@@ -48,8 +48,22 @@ import { appToolWarnings } from './app-tool-level';
 import type { BuiltinToolDef, ToolPrecondition } from './types';
 import { str, strArr } from './coerce';
 import { errorMessage } from '@mantle/std';
-import { isOwnerSurface } from './surface';
+import { isOwnerSurface, OWNER_ONLY_ERROR } from './surface';
 import { currentViewerLevel } from '@mantle/db/viewer';
+
+/**
+ * The app write tools (everything that writes an app's code, manifest,
+ * schema, data or exports outside the brokers) run only for the owner
+ * (client tier audit I8). Marked `ownerOnly` so dispatchTool refuses a team,
+ * client or missing surface first; this is the handler's own check, for the
+ * MCP path that calls handlers directly. Before, only the column grant held
+ * it (a limited role cannot read `apps.draft_source`).
+ */
+function ownerOnlyRefusal(
+  ctx: Parameters<BuiltinToolDef['handler']>[1],
+): { ok: false; error: string } | null {
+  return isOwnerSurface(ctx.surface) ? null : { ok: false, error: OWNER_ONLY_ERROR };
+}
 
 const APP_ID_PRE: readonly ToolPrecondition[] = [
   { kind: 'node_exists', param: 'id', nodeType: 'app', lookup: 'app_list' },
@@ -75,6 +89,7 @@ function fileList(app: AppDetail) {
 
 const app_create: BuiltinToolDef = {
   slug: 'app_create',
+  ownerOnly: true,
   name: 'Create a mini app',
   description:
     'Create a new mini app (an `app` node under /apps). `name` required. Starts with a trivial entry file you then flesh out with `app_file_write` + `app_build`. ' +
@@ -94,6 +109,8 @@ const app_create: BuiltinToolDef = {
     required: ['name'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const name = str(input.name).trim();
     if (!name) return { ok: false, error: 'name is required' };
     try {
@@ -174,6 +191,7 @@ const app_get: BuiltinToolDef = {
 
 const app_file_write: BuiltinToolDef = {
   slug: 'app_file_write',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Write a file in a mini app',
   description:
@@ -192,6 +210,8 @@ const app_file_write: BuiltinToolDef = {
     required: ['id', 'path', 'content'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     const path = str(input.path).trim();
     if (!id || !path) return { ok: false, error: 'id and path are required' };
@@ -218,6 +238,7 @@ const app_file_write: BuiltinToolDef = {
 
 const app_file_delete: BuiltinToolDef = {
   slug: 'app_file_delete',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Delete a file from a mini app',
   description:
@@ -231,6 +252,8 @@ const app_file_delete: BuiltinToolDef = {
     required: ['id', 'path'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     const path = str(input.path).trim();
     if (!id || !path) return { ok: false, error: 'id and path are required' };
@@ -251,6 +274,7 @@ const app_file_delete: BuiltinToolDef = {
 
 const app_source_set: BuiltinToolDef = {
   slug: 'app_source_set',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Set a mini app's whole source tree",
   description:
@@ -274,6 +298,8 @@ const app_source_set: BuiltinToolDef = {
     required: ['id', 'entry', 'files'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     const entry = str(input.entry).trim();
     if (!id) return { ok: false, error: 'id is required' };
@@ -318,6 +344,7 @@ const app_source_set: BuiltinToolDef = {
 
 const app_build: BuiltinToolDef = {
   slug: 'app_build',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Build a mini app',
   description:
@@ -328,6 +355,8 @@ const app_build: BuiltinToolDef = {
     required: ['id'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     const app = await getApp(ctx.ownerId, id);
@@ -391,6 +420,7 @@ const app_build: BuiltinToolDef = {
 
 const app_tools_set: BuiltinToolDef = {
   slug: 'app_tools_set',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Declare a mini app's data tools",
   description:
@@ -408,6 +438,8 @@ const app_tools_set: BuiltinToolDef = {
     required: ['id', 'tool_slugs'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     const slugs = strArr(input.tool_slugs);
@@ -436,6 +468,7 @@ const app_tools_set: BuiltinToolDef = {
 
 const app_db_schema_set: BuiltinToolDef = {
   slug: 'app_db_schema_set',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Set a mini app's SQLite schema",
   description:
@@ -452,6 +485,8 @@ const app_db_schema_set: BuiltinToolDef = {
     required: ['id', 'schema_sql'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     const schemaSql = str(input.schema_sql);
     if (!id) return { ok: false, error: 'id is required' };
@@ -484,6 +519,7 @@ const app_db_schema_set: BuiltinToolDef = {
 
 const app_db_seed: BuiltinToolDef = {
   slug: 'app_db_seed',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Bulk-load rows into a mini app's database",
   description:
@@ -511,6 +547,8 @@ const app_db_seed: BuiltinToolDef = {
     required: ['id', 'table', 'rows'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     const table = str(input.table).trim();
     if (!id) return { ok: false, error: 'id is required' };
@@ -601,6 +639,7 @@ const app_list: BuiltinToolDef = {
 
 const app_publish: BuiltinToolDef = {
   slug: 'app_publish',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Publish a mini app',
   description:
@@ -611,6 +650,8 @@ const app_publish: BuiltinToolDef = {
     required: ['id'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     try {
@@ -637,6 +678,7 @@ const app_publish: BuiltinToolDef = {
 
 const app_delete: BuiltinToolDef = {
   slug: 'app_delete',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Delete a mini app',
   description:
@@ -648,6 +690,8 @@ const app_delete: BuiltinToolDef = {
     required: ['id'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     try {
@@ -780,6 +824,7 @@ const app_db_query: BuiltinToolDef = {
 
 const app_table_export_set: BuiltinToolDef = {
   slug: 'app_table_export_set',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: "Export an app's table to Tables",
   description:
@@ -800,6 +845,8 @@ const app_table_export_set: BuiltinToolDef = {
     required: ['id', 'table'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     const table = str(input.table).trim();
     if (!id) return { ok: false, error: 'id is required' };
@@ -829,6 +876,7 @@ const app_table_export_set: BuiltinToolDef = {
 
 const app_table_export_remove: BuiltinToolDef = {
   slug: 'app_table_export_remove',
+  ownerOnly: true,
   preconditions: APP_ID_PRE,
   name: 'Remove an app-table export',
   description:
@@ -842,6 +890,8 @@ const app_table_export_remove: BuiltinToolDef = {
     required: ['id', 'table'],
   },
   handler: async (input, ctx) => {
+    const refused = ownerOnlyRefusal(ctx);
+    if (refused) return refused;
     const id = str(input.id).trim();
     const table = str(input.table).trim();
     if (!id) return { ok: false, error: 'id is required' };
