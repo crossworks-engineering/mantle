@@ -14,6 +14,7 @@ import { notFound } from '../errors';
 import { errorMessage } from '@mantle/std';
 import { DRAFT_REVIEW_HINT, PAGE_ID_PRE, PAGE_NODE_ID_PRE } from './common';
 import { CONFIRM_INPUT, visibilityRefusal } from '../visibility-refusal';
+import { isOwnerSurface, OWNER_ONLY_ERROR } from '../surface';
 
 export const page_split: BuiltinToolDef = {
   slug: 'page_split',
@@ -151,6 +152,7 @@ export const page_move: BuiltinToolDef = {
     required: ['id'],
   },
   handler: async (input, ctx) => {
+    if (!isOwnerSurface(ctx.surface)) return { ok: false, error: OWNER_ONLY_ERROR };
     const id = str(input.id).trim();
     if (!id) return { ok: false, error: 'id is required' };
     const folderId = str(input.folder_id).trim();

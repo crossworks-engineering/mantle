@@ -52,7 +52,8 @@ const update = all.find((t) => t.slug === 'page_update')!;
 const move = all.find((t) => t.slug === 'page_move')!;
 const mention = all.find((t) => t.slug === 'page_mention')!;
 
-const ctx: ToolHandlerContext = { ownerId: 'o1' };
+// An owner surface: page_move is owner only (like tree_item_move).
+const ctx: ToolHandlerContext = { ownerId: 'o1', surface: { kind: 'owner', via: 'mcp' } };
 const PAGE_ID = 'p-1';
 const PARENT_ID = 'p-parent';
 const FOLDER_ID = 'f-plans';

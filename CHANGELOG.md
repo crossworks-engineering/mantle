@@ -4,7 +4,7 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
-## 0.232.364: folder system phase 7, pages in folders
+## 0.232.365: folder system phase 7, pages in folders
 
 Pages join the item tree like notes, and a page is never the parent of
 another page (Jason, 2026-09-30: pages live in folders exactly like notes;
