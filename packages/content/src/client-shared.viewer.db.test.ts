@@ -252,8 +252,10 @@ describe.skipIf(!URL)('what a client reads', () => {
     expect(text).not.toContain('STALELABEL');
     expect(text).not.toContain('STALECHILD');
     expect(text.split(`${tag} client page two`).length - 1).toBe(2);
+    // `folderId` (folder phase 7): the folder it sits in, for the Folder
+    // index block; a client reads the folder through its own tree route.
     expect(Object.keys(item!).sort()).toEqual(
-      ['doc', 'icon', 'id', 'title', 'type', 'updatedAt'].sort(),
+      ['doc', 'folderId', 'icon', 'id', 'title', 'type', 'updatedAt'].sort(),
     );
   });
 

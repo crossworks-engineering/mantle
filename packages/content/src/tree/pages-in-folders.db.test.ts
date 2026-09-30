@@ -149,7 +149,10 @@ describe.skipIf(!URL)('migration 0210: pages in folders', () => {
     ) =>
       x(sqlTag`insert into nodes (id, owner_id, type, title, path, parent_id, tags, audience)
           values (${pid}, ${owner}, 'page', ${title}, ${path}::ltree, ${parent},
-                  ${extra.tags ?? []}::text[], ${extra.audience ?? 'admin'})`);
+                  ${JSON.stringify(extra.tags ?? [])
+                    .replace(/^\[/, '{')
+                    .replace(/\]$/, '}')}::text[],
+                  ${extra.audience ?? 'admin'})`);
     await page(id.a, 'Alpha', 'pages', null, brain, { tags: ['plans', 'q3'] });
     await page(id.b, 'Beta', `pages.${label(id.b)}`, id.a);
     await page(id.c, 'Gamma', `pages.${label(id.c)}`, id.a);
