@@ -85,6 +85,13 @@ export const nodes = pgTable(
      *  nodes_audience_kind_ck). Enforced by row level security for the
      *  viewer roles; the admin pool ignores it. */
     audience: text('audience').notNull().default('admin'),
+    /** A folder's share, 'team' or 'client' (folder plan phase 4): shares
+     *  everything below it, now and later. Null for everything else. */
+    shareLevel: text('share_level'),
+    /** The share of the nearest shared folder above this row (same owner),
+     *  kept by the database (migration 0200 triggers); never written by
+     *  code. Null when nothing above is shared. */
+    inheritedLevel: text('inherited_level'),
     /** Why: 'version' (filename-family sibling), 'migrated' (page built from
      *  this source), 'corrected' (explicit mark — demotes harder). */
     supersededReason: text('superseded_reason').$type<'version' | 'migrated' | 'corrected'>(),
