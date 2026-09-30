@@ -32,7 +32,7 @@ import { acceptSceneSvg, EXCALIDRAW_ENGINE } from './scene-svg';
 // The etag decision and the embedded-asset text bounds are shared with
 // pages — identical semantics, one truth.
 import { evaluateDraftRev, foldEmbeddedText } from './pages';
-import { drawEmbedIds, drawPlacedFileIds, followNewEmbeds } from './embed-closure';
+import { drawEmbedIds, drawPlacedFileIds, followNewEmbeds, itemLevel } from './embed-closure';
 
 export const DRAWS_ROOT_LABEL = 'draw';
 
@@ -720,15 +720,21 @@ export async function commitDraw(
     // takes it to its level. "Before" is what the committed scene placed (a
     // draft autosave may already have rewritten the file map).
     const [prev] = await tx
-      .select({ audience: nodes.audience, scene: draws.scene, fileRefs: draws.fileRefs })
+      .select({
+        audience: nodes.audience,
+        inheritedLevel: nodes.inheritedLevel,
+        scene: draws.scene,
+        fileRefs: draws.fileRefs,
+      })
       .from(nodes)
       .innerJoin(draws, eq(draws.nodeId, nodes.id))
       .where(eq(nodes.id, id))
       .limit(1);
-    if (prev && prev.audience !== 'admin') {
+    const level = prev ? itemLevel(prev.audience, prev.inheritedLevel) : 'admin';
+    if (prev && level !== 'admin') {
       await followNewEmbeds(
         ownerId,
-        { id, audience: prev.audience },
+        { id, audience: level },
         drawPlacedFileIds(prev.scene, prev.fileRefs),
         drawEmbedIds(opts.fileRefs ?? prev.fileRefs),
         tx,

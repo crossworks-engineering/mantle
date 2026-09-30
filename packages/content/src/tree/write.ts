@@ -21,12 +21,25 @@ import type { AppTint } from '@mantle/client-types/app-nav';
 import {
   TREE_FOLDER_NAME_MAX,
   TREE_KIND_SPECS,
+  TREE_SHARE_LEVELS,
   type TreeFolder,
   type TreeKind,
+  type TreeShareLevel,
 } from '@mantle/client-types/tree';
 import { treeParentPath } from '@mantle/content-core/tree';
 import { ranksAfter } from '../rank';
 import { isTreeLiveKind } from './kinds';
+import {
+  TreeVisibilityError,
+  liftDiff,
+  moveFolderDiff,
+  moveItemsDiff,
+  shareDiff,
+  type VisibilityDiff,
+} from './visibility';
+import { itemLevel } from '../item-level';
+import { lowerEmbedClosure } from '../embed-closure';
+import { refoldPageTexts } from '../pages/level-text';
 import {
   NodeOpRefusal,
   createNodeFolder,
@@ -185,7 +198,58 @@ export type TreeFolderPatch = {
   parentId?: string | null;
   /** Reorder among its siblings: directly after this sibling; null = first. */
   after?: string | null;
+  /** Share the folder, and everything in it now and later, with the team or
+   *  clients; null stops sharing it (folder plan phase 4). */
+  share?: TreeShareLevel | null;
 };
+
+/** How a write that changes who can see items goes ahead: refused with the
+ *  list of changes (TreeVisibilityError) unless `confirm` is set. */
+export type TreeWriteOpts = { confirm?: boolean };
+
+async function checkVisibility(
+  diff: Promise<VisibilityDiff>,
+  opts: TreeWriteOpts,
+): Promise<VisibilityDiff> {
+  const d = await diff;
+  if (d.total > 0 && !opts.confirm) throw new TreeVisibilityError(d);
+  return d;
+}
+
+/**
+ * After a write changed where items sit relative to shared folders: embeds
+ * follow each page, drawing and note to the level it is now read at (never
+ * raising anything), and the indexed text of the pages concerned is folded
+ * for that level (pages/level-text.ts). `scope` is a subtree path, or ids.
+ */
+async function followShares(
+  ownerId: string,
+  scope: { path: string } | { ids: readonly string[] },
+): Promise<void> {
+  const where =
+    'path' in scope
+      ? sql`path <@ ${scope.path}::ltree`
+      : scope.ids.length
+        ? sql`id in (${sql.join(
+            scope.ids.map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})`
+        : sql`false`;
+  const rows = (await db.execute(sql`
+    select id::text as id, type::text as type, audience, inherited_level from nodes
+     where owner_id = ${ownerId} and type in ('page', 'draw', 'note') and ${where}`)) as unknown as Array<{
+    id: string;
+    type: string;
+    audience: string;
+    inherited_level: string | null;
+  }>;
+  for (const r of rows) {
+    const level = itemLevel(r.audience, r.inherited_level);
+    if (level !== 'admin') await lowerEmbedClosure(ownerId, r.id, level);
+  }
+  const pageIds = rows.filter((r) => r.type === 'page').map((r) => r.id);
+  if (pageIds.length) await refoldPageTexts(ownerId, pageIds);
+}
 
 /** Apply one or more changes to a folder, in a fixed order: move, rename,
  *  look, then place. Returns the folder as it now is. */
@@ -194,6 +258,7 @@ export async function updateTreeFolder(
   kind: TreeKind,
   folderId: string,
   patch: TreeFolderPatch,
+  opts: TreeWriteOpts = {},
 ): Promise<TreeFolder> {
   const ops = opsFor(kind);
   const folder = await folderOrThrow(ownerId, kind, folderId);
@@ -204,7 +269,12 @@ export async function updateTreeFolder(
     }
     const dest = await pathOf(ownerId, kind, patch.parentId);
     if (dest !== treeParentPath(folder.path)) {
+      const diff = await checkVisibility(moveFolderDiff(ownerId, folder, dest), opts);
       await refusing(() => ops.moveFolder(ownerId, folderId, dest));
+      if (diff.total > 0) {
+        const moved = await folderOrThrow(ownerId, kind, folderId);
+        await followShares(ownerId, { path: moved.path });
+      }
     }
   }
   if (patch.name !== undefined) {
@@ -218,7 +288,49 @@ export async function updateTreeFolder(
   if (patch.after !== undefined) {
     await placeFolder(ownerId, kind, folderId, patch.after);
   }
+  if (patch.share !== undefined) {
+    await setFolderShare(
+      ownerId,
+      kind,
+      await folderOrThrow(ownerId, kind, folderId),
+      patch.share,
+      opts,
+    );
+  }
   return folderOrThrow(ownerId, kind, folderId);
+}
+
+/** Share a folder (and everything below it) at `share`, or stop sharing it. */
+async function setFolderShare(
+  ownerId: string,
+  kind: TreeKind,
+  folder: TreeFolder,
+  share: TreeShareLevel | null,
+  opts: TreeWriteOpts,
+): Promise<void> {
+  const spec = TREE_KIND_SPECS[kind];
+  if (share !== null) {
+    if (!spec.shareable) {
+      throw new TreeError('invalid', `${kind} folders stay with admins; they cannot be shared`);
+    }
+    if (!(spec.shareLevels ?? TREE_SHARE_LEVELS).includes(share)) {
+      throw new TreeError(
+        'invalid',
+        `a ${kind} folder can only be shared with the ${(spec.shareLevels ?? TREE_SHARE_LEVELS).join(' or ')}`,
+      );
+    }
+    if (folder.system) {
+      throw new TreeError('invalid', 'this folder is made by Mantle and stays with admins');
+    }
+  }
+  if ((folder.share ?? null) === share) return;
+  const diff = await checkVisibility(shareDiff(ownerId, folder, share), opts);
+  // The database refreshes everything below (migration 0200 triggers).
+  await db
+    .update(nodes)
+    .set({ shareLevel: share, updatedAt: new Date() })
+    .where(and(eq(nodes.id, folder.id), eq(nodes.ownerId, ownerId)));
+  if (diff.total > 0) await followShares(ownerId, { path: folder.path });
 }
 
 async function setFolderLook(
@@ -299,12 +411,23 @@ export async function deleteTreeFolder(
   ownerId: string,
   kind: TreeKind,
   folderId: string,
+  opts: TreeWriteOpts = {},
 ): Promise<void> {
   const ops = opsFor(kind);
   const folder = await folderOrThrow(ownerId, kind, folderId);
   if (folder.system) {
     throw new TreeError('invalid', 'this folder is made by Mantle; it cannot be deleted');
   }
+  const diff = await checkVisibility(liftDiff(ownerId, folder), opts);
+  const affected = diff.total
+    ? (
+        (await db.execute(sql`
+          select id::text as id from nodes
+           where owner_id = ${ownerId} and path <@ ${folder.path}::ltree and id <> ${folderId}`)) as unknown as Array<{
+          id: string;
+        }>
+      ).map((r) => r.id)
+    : [];
   const parentPath = treeParentPath(folder.path);
   const spec = TREE_KIND_SPECS[kind];
   const [children, items] = await Promise.all([
@@ -347,6 +470,7 @@ export async function deleteTreeFolder(
   for (const c of children) await refusing(() => ops.moveFolder(ownerId, c.id, parentPath));
   for (const i of items) await refusing(() => ops.moveItem(ownerId, i.id, parentPath));
   await ops.removeEmptyFolder(ownerId, folderId);
+  if (affected.length) await followShares(ownerId, { ids: affected });
 }
 
 export type TreeMoveResult = {
@@ -361,11 +485,14 @@ export async function moveTreeItems(
   kind: TreeKind,
   itemIds: readonly string[],
   folderId: string | null,
+  opts: TreeWriteOpts = {},
 ): Promise<TreeMoveResult> {
   const ops = opsFor(kind);
   const dest = await pathOf(ownerId, kind, folderId);
+  const ids = [...new Set(itemIds)];
+  const diff = await checkVisibility(moveItemsDiff(ownerId, kind, ids, dest), opts);
   const result: TreeMoveResult = { moved: 0, failed: [] };
-  for (const id of new Set(itemIds)) {
+  for (const id of ids) {
     try {
       await ops.moveItem(ownerId, id, dest);
       result.moved += 1;
@@ -373,5 +500,6 @@ export async function moveTreeItems(
       result.failed.push({ id, error: err instanceof Error ? err.message : String(err) });
     }
   }
+  if (diff.total > 0 && result.moved) await followShares(ownerId, { ids });
   return result;
 }

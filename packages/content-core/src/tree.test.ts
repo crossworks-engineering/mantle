@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TREE_KIND_SPECS, TREE_KINDS, TREE_MAX_DEPTH } from '@mantle/client-types/tree';
 import {
   clampTreePath,
+  effectiveLevel,
   isTreeFolderPathAllowed,
   treeDepth,
   treeFolderChain,
@@ -55,5 +56,18 @@ describe('tree path math', () => {
       expect(TREE_KIND_SPECS[k].kind).toBe(k);
       expect(TREE_KIND_SPECS[k].sorts.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('the effective level', () => {
+  it('is the more open of an item’s own level and its folder’s share', () => {
+    expect(effectiveLevel('admin', null)).toBe('admin');
+    expect(effectiveLevel('admin', 'team')).toBe('team');
+    expect(effectiveLevel('admin', 'client')).toBe('client');
+    expect(effectiveLevel('team', 'client')).toBe('client');
+    expect(effectiveLevel('client', 'team')).toBe('client');
+    // A public item stays public in a client folder: folding its text for the
+    // public reader is safe for the client reader too.
+    expect(effectiveLevel('public', 'client')).toBe('public');
   });
 });

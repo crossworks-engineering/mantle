@@ -27,6 +27,7 @@ import { docToText } from '../doc-to-text';
 import { clientOwnUrl, docRefIds, redactClientDoc } from '../client-redact';
 import { clientRedactOrigins } from '../client-origins';
 import { embeddedAssetText } from './embed';
+import { itemLevel } from '../item-level';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 /** The pool, or a caller's transaction (the level writes run in one). */
@@ -54,12 +55,23 @@ async function readableAt(
   const wanted = [...new Set(ids.filter((i) => UUID.test(i)).map((i) => i.toLowerCase()))];
   if (!wanted.length) return new Map();
   const rows = await q
-    .select({ id: nodes.id, title: nodes.title, audience: nodes.audience })
+    .select({
+      id: nodes.id,
+      title: nodes.title,
+      audience: nodes.audience,
+      inheritedLevel: nodes.inheritedLevel,
+    })
     .from(nodes)
     .where(and(eq(nodes.ownerId, ownerId), inArray(nodes.id, wanted)));
+  // A reader reads a row at its own level or its inherited share
+  // (nodes_viewer_read, migration 0200): the same union here.
   return new Map(
     rows
-      .filter((r) => levelCovers(level, asViewerLevel(r.audience)))
+      .filter(
+        (r) =>
+          levelCovers(level, asViewerLevel(r.audience)) ||
+          (!!r.inheritedLevel && levelCovers(level, asViewerLevel(r.inheritedLevel))),
+      )
       .map((r) => [r.id.toLowerCase(), r.title]),
   );
 }
@@ -126,6 +138,7 @@ export async function refoldPageTexts(
     .select({
       id: nodes.id,
       audience: nodes.audience,
+      inheritedLevel: nodes.inheritedLevel,
       doc: pages.doc,
       docText: pages.docText,
     })
@@ -136,13 +149,16 @@ export async function refoldPageTexts(
         eq(nodes.ownerId, ownerId),
         or(
           inArray(pages.nodeId, ids),
-          and(inArray(nodes.audience, [...FILTERED]), sql`(${names})`),
+          and(
+            or(inArray(nodes.audience, [...FILTERED]), eq(nodes.inheritedLevel, 'client')),
+            sql`(${names})`,
+          ),
         ),
       ),
     );
   let written = 0;
   for (const r of rows) {
-    const text = await pageDocText(ownerId, asViewerLevel(r.audience), r.doc, q);
+    const text = await pageDocText(ownerId, itemLevel(r.audience, r.inheritedLevel), r.doc, q);
     if (text === r.docText) continue;
     await q.update(pages).set({ docText: text }).where(eq(pages.nodeId, r.id));
     written += 1;

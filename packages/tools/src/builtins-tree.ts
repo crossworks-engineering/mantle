@@ -15,6 +15,7 @@
  */
 import {
   TreeError,
+  TreeVisibilityError,
   createTreeFolder,
   deleteTreeFolder,
   listTreeFolders,
@@ -80,6 +81,18 @@ async function run(
     return await work(kind);
   } catch (err) {
     if (err instanceof TreeError) return { ok: false, error: err.message };
+    if (err instanceof TreeVisibilityError) {
+      const shown = err.diff.changes
+        .slice(0, 10)
+        .map((c) => `'${c.title}' ${c.from} → ${c.to}`)
+        .join(', ');
+      return {
+        ok: false,
+        error:
+          `this changes who can see ${err.diff.total} item(s) (${shown}${err.diff.total > 10 ? ', …' : ''}). ` +
+          'Tell the user what changes; call again with confirm: true only once they agree.',
+      };
+    }
     return { ok: false, error: errorMessage(err) };
   }
 }
@@ -188,7 +201,9 @@ export const tree_folder_update: BuiltinToolDef = {
       if (patch.name === undefined && patch.parentId === undefined) {
         return { ok: false, error: 'pass `name`, `parent_id`, or both' };
       }
-      const folder = await updateTreeFolder(ctx.ownerId, kind, folderId, patch);
+      const folder = await updateTreeFolder(ctx.ownerId, kind, folderId, patch, {
+        confirm: input.confirm === true,
+      });
       await notifyTreeChanged(ctx.ownerId, kind);
       ctx.step?.setOutput({ kind, folderId, path: folder.path });
       return { ok: true, output: folder };
@@ -219,6 +234,11 @@ export const tree_item_move: BuiltinToolDef = {
         type: ['string', 'null'],
         description: 'the destination folder; null for the top level',
       },
+      confirm: {
+        type: 'boolean',
+        description:
+          'go ahead although it changes who can see items; only after the user agreed to the changes a first call listed',
+      },
     },
     required: ['kind', 'item_ids', 'folder_id'],
   },
@@ -226,7 +246,9 @@ export const tree_item_move: BuiltinToolDef = {
     run(input, ctx, async (kind) => {
       const ids = strArr(input.item_ids);
       if (!ids.length) return { ok: false, error: 'item_ids required' };
-      const result = await moveTreeItems(ctx.ownerId, kind, ids, parentOf(input.folder_id));
+      const result = await moveTreeItems(ctx.ownerId, kind, ids, parentOf(input.folder_id), {
+        confirm: input.confirm === true,
+      });
       if (result.moved) await notifyTreeChanged(ctx.ownerId, kind);
       ctx.step?.setOutput({ kind, moved: result.moved, failed: result.failed.length });
       if (!result.moved && result.failed.length) {
@@ -252,14 +274,22 @@ export const tree_folder_delete: BuiltinToolDef = {
   ],
   inputSchema: {
     type: 'object',
-    properties: { kind: KIND_PROP, folder_id: FOLDER_ID_PROP },
+    properties: {
+      kind: KIND_PROP,
+      folder_id: FOLDER_ID_PROP,
+      confirm: {
+        type: 'boolean',
+        description:
+          'go ahead although it changes who can see items; only after the user agreed to the changes a first call listed',
+      },
+    },
     required: ['kind', 'folder_id'],
   },
   handler: (input, ctx) =>
     run(input, ctx, async (kind) => {
       const folderId = str(input.folder_id);
       if (!folderId) return { ok: false, error: 'folder_id required' };
-      await deleteTreeFolder(ctx.ownerId, kind, folderId);
+      await deleteTreeFolder(ctx.ownerId, kind, folderId, { confirm: input.confirm === true });
       await notifyTreeChanged(ctx.ownerId, kind);
       ctx.step?.setOutput({ kind, folderId });
       return { ok: true, output: 'deleted; what it held moved up to its parent' };

@@ -38,5 +38,14 @@ export {
   moveTreeItems,
   updateTreeFolder,
   type TreeFolderPatch,
+  type TreeWriteOpts,
   type TreeMoveResult,
 } from './write';
+export {
+  TreeVisibilityError,
+  liftDiff,
+  moveFolderDiff,
+  moveItemsDiff,
+  shareDiff,
+  type VisibilityDiff,
+} from './visibility';

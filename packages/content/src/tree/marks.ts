@@ -95,7 +95,7 @@ export async function listTreeMarks(
         ? sql`m.opened_at desc`
         : sql`m.open_count desc, m.opened_at desc`;
   const rows = (await db.execute(sql`
-    select n.id, n.path::text as path, n.title, n.data, n.audience, n.updated_at,
+    select n.id, n.path::text as path, n.title, n.data, n.audience, n.inherited_level, n.updated_at,
            '' as sort_key
       from item_marks m join nodes n on n.id = m.node_id
      where m.actor_id = ${actorId} and ${filter}

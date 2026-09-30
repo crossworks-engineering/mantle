@@ -12,6 +12,7 @@ import {
   reconcileAppNav,
   reconcileNotesAutoFiled,
   TreeError,
+  TreeVisibilityError,
 } from '@mantle/content/tree';
 import { ensureFilesRootBranch } from '@/lib/files';
 import { allPrivateRows } from '@/lib/admin-private-rows';
@@ -49,6 +50,14 @@ export async function ensureTreeRoot(
 
 /** A TreeError as its HTTP answer; anything else is rethrown (a 500). */
 export function treeErrorResponse(err: unknown): NextResponse {
+  // Who can see items would change: the list, so the caller can ask and
+  // repeat with confirm (TreeVisibilityRefusal).
+  if (err instanceof TreeVisibilityError) {
+    return NextResponse.json(
+      { error: 'visibility', changes: err.diff.changes, total: err.diff.total },
+      { status: 409 },
+    );
+  }
   if (err instanceof TreeError) {
     const status = err.code === 'not-found' ? 404 : err.code === 'conflict' ? 409 : 400;
     return NextResponse.json({ error: err.message }, { status });

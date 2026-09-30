@@ -18,7 +18,7 @@ import {
   type Node,
   type ViewerLevel,
 } from '@mantle/db';
-import { followNewEmbeds, noteEmbedIds } from './embed-closure';
+import { followNewEmbeds, itemLevel, noteEmbedIds } from './embed-closure';
 
 export const NOTES_ROOT_LABEL = 'notes';
 
@@ -204,11 +204,12 @@ export async function updateNote(
   const [updated] = await db.transaction(async (tx) => {
     // Later embeds follow on save: a note below admin that gains an image,
     // file or drawing takes it to its level (embedding means sharing).
-    if (contentChanged && node.audience !== 'admin') {
+    const level = itemLevel(node.audience, node.inheritedLevel);
+    if (contentChanged && level !== 'admin') {
       const before = typeof oldData.content === 'string' ? oldData.content : '';
       await followNewEmbeds(
         ownerId,
-        { id, audience: node.audience },
+        { id, audience: level },
         noteEmbedIds(before),
         noteEmbedIds(input.content ?? ''),
         tx,

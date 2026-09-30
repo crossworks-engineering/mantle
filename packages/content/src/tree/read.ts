@@ -16,6 +16,7 @@ import type {
   TreeKind,
   TreeFilter,
   TreeSearchResult,
+  TreeShareLevel,
   TreeSort,
   TreeTagList,
 } from '@mantle/client-types/tree';
@@ -26,7 +27,7 @@ import {
   TREE_TAGS_LIST_MAX,
 } from '@mantle/client-types/tree';
 import { projectAppIcon, projectAppTint } from '@mantle/content-core/app-nav';
-import { treeFolderChain, treeParentPath } from '@mantle/content-core/tree';
+import { effectiveLevel, treeFolderChain, treeParentPath } from '@mantle/content-core/tree';
 import type { AccessLevel } from '@mantle/client-types';
 import { decodeTreeCursor, encodeTreeCursor } from './cursor';
 import { itemMeta, itemSubtype, kindItemFilter } from './kinds';
@@ -36,6 +37,8 @@ type FolderSqlRow = {
   path: string;
   title: string;
   data: Record<string, unknown> | null;
+  share_level: string | null;
+  inherited_level: string | null;
   parent_id: string | null;
   folder_count: number;
   item_count: number;
@@ -47,12 +50,27 @@ type ItemSqlRow = {
   title: string;
   data: Record<string, unknown> | null;
   audience: string;
+  inherited_level: string | null;
   updated_at: Date | string;
   sort_key: string;
 };
 
 function iso(v: Date | string): string {
   return v instanceof Date ? v.toISOString() : new Date(v).toISOString();
+}
+
+function asShare(v: string | null): TreeShareLevel | null {
+  return v === 'team' || v === 'client' ? v : null;
+}
+
+/** effectiveLevel (content-core) in SQL, for filters: the more open of the
+ *  row's own level and its inherited share. */
+export function effectiveLevelSql(alias: string): SQL {
+  const n = sql.raw(alias);
+  return sql`(case
+      when ${n}.inherited_level = 'client' and ${n}.audience in ('admin', 'team') then 'client'
+      when ${n}.inherited_level = 'team' and ${n}.audience = 'admin' then 'team'
+      else ${n}.audience end)`;
 }
 
 function asLevel(v: string): AccessLevel {
@@ -69,7 +87,8 @@ export function treeFolderFromRow(r: FolderSqlRow): TreeFolder {
     color: projectAppTint(data.color) ?? null,
     depth: r.path.split('.').length - 1,
     parentId: r.parent_id,
-    share: null,
+    share: asShare(r.share_level),
+    inherited: asShare(r.inherited_level),
     system: data.system === true,
     folderCount: Number(r.folder_count),
     itemCount: Number(r.item_count),
@@ -85,7 +104,8 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
     icon: projectAppIcon(data.icon) ?? null,
     color: projectAppTint(data.color) ?? null,
     subtype: itemSubtype(kind, data),
-    level: asLevel(r.audience),
+    level: effectiveLevel(asLevel(r.audience), asShare(r.inherited_level)),
+    inherited: asShare(r.inherited_level),
     state: null,
     updatedAt: iso(r.updated_at),
     ...(meta ? { meta } : {}),
@@ -97,7 +117,7 @@ function treeItemFromRow(kind: TreeKind, r: ItemSqlRow): TreeItem {
 async function selectFolders(ownerId: string, kind: TreeKind, where: SQL): Promise<TreeFolder[]> {
   const itemType = TREE_KIND_SPECS[kind].nodeType;
   const rows = (await db.execute(sql`
-    select f.id, f.path::text as path, f.title, f.data,
+    select f.id, f.path::text as path, f.title, f.data, f.share_level, f.inherited_level,
            (select p.id from nodes p
              where p.owner_id = f.owner_id and p.type = 'branch'
                and nlevel(f.path) > 2
@@ -235,7 +255,7 @@ async function itemPage(
     : sql``;
   const order = desc ? sql`${key} desc, n.id desc` : sql`${key} asc, n.id asc`;
   const rows = (await db.execute(sql`
-    select n.id, n.path::text as path, n.title, n.data, n.audience, n.updated_at,
+    select n.id, n.path::text as path, n.title, n.data, n.audience, n.inherited_level, n.updated_at,
            ${key} as sort_key
       from nodes n
      where n.owner_id = ${ownerId} and n.type = ${TREE_KIND_SPECS[kind].nodeType}
@@ -334,13 +354,13 @@ export async function searchTree(
   const match = term ? sql`and n.title ilike ${pattern}` : sql``;
   // Phase 1 has no folder shares, so an item's own level is the level it is
   // read at. The inherited level joins this with sharing (phase 4).
-  const level = opts.level ? sql`and n.audience = ${opts.level}` : sql``;
+  const level = opts.level ? sql`and ${effectiveLevelSql('n')} = ${opts.level}` : sql``;
   const tag = opts.tag ? sql`and ${opts.tag} = any(n.tags)` : sql``;
   const after = cursor
     ? sql`and (lower(n.title), n.id) > (${cursor.key}, ${cursor.id}::uuid)`
     : sql``;
   const rows = (await db.execute(sql`
-    select n.id, n.path::text as path, n.title, n.data, n.audience, n.updated_at,
+    select n.id, n.path::text as path, n.title, n.data, n.audience, n.inherited_level, n.updated_at,
            lower(n.title) as sort_key
       from nodes n
      where n.owner_id = ${ownerId} and n.type = ${spec.nodeType}
