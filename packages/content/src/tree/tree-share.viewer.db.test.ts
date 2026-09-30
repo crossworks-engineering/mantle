@@ -271,6 +271,11 @@ describe.skipIf(!URL)('sharing a folder', () => {
         insert into nodes (id, owner_id, type, title, path, data, tags)
         values (${note}, ${brain}, 'note', 'with pic', 'notes',
                 ${JSON.stringify({ content: `![pic](media:${file})` })}::jsonb, '{}')`);
+      // The refusal lists the image too: it would go down with the note.
+      const diff = await refusal(tree.moveTreeItems(brain, 'notes', [note], ids.top));
+      expect(diff.changes.map((c) => c.id)).toEqual([note]);
+      expect(diff.alsoLowered).toEqual([{ id: file, title: 'pic.png', from: 'admin', to: 'team' }]);
+      expect(await audience(file)).toBe('admin');
       await tree.moveTreeItems(brain, 'notes', [note], ids.top, { confirm: true });
       expect(await audience(file)).toBe('team');
       // Out again: the note is admin once more, the image keeps its level.

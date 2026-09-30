@@ -68,7 +68,12 @@ export function treeErrorResponse(err: unknown): NextResponse {
   // repeat with confirm (TreeVisibilityRefusal).
   if (err instanceof TreeVisibilityError) {
     return NextResponse.json(
-      { error: 'visibility', changes: err.diff.changes, total: err.diff.total },
+      {
+        error: 'visibility',
+        changes: err.diff.changes,
+        total: err.diff.total,
+        ...(err.diff.alsoLowered?.length ? { alsoLowered: err.diff.alsoLowered } : {}),
+      },
       { status: 409 },
     );
   }

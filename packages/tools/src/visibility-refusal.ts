@@ -22,8 +22,15 @@ export function visibilityRefusal(err: unknown): string | null {
     .slice(0, 10)
     .map((c) => `'${c.title}' ${c.from} → ${c.to}`)
     .join(', ');
+  const down = err.diff.alsoLowered ?? [];
+  const also = down.length
+    ? ` It also takes down what they embed: ${down
+        .slice(0, 10)
+        .map((c) => `'${c.title}' ${c.from} → ${c.to}`)
+        .join(', ')}${down.length > 10 ? ', …' : ''}.`
+    : '';
   return (
-    `this changes who can see ${err.diff.total} item(s) (${shown}${err.diff.total > 10 ? ', …' : ''}). ` +
+    `this changes who can see ${err.diff.total} item(s) (${shown}${err.diff.total > 10 ? ', …' : ''}).${also} ` +
     'Tell the user what changes; call again with confirm: true only once they agree.'
   );
 }

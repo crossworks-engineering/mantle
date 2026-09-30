@@ -185,7 +185,9 @@ confirm }`, and the same on `/api/files/folders/:id`), a new file or an
   `access_set` warns that the item is still read at the folder's share.
 - **After a confirmed change**, embeds of the pages, drawings and notes
   concerned follow them to the level they are now read at (never raising
-  anything) and the pages' text is re-folded.
+  anything) and the pages' text is re-folded. Those embeds may live
+  anywhere, so the refusal lists them too (`alsoLowered`: "also goes down
+  with them"), and they keep that level after an unshare.
 - **Members and clients** read a folder-shared item wherever they read
   items, by the row policy's union rule: its own level OR its inherited
   share is one of the reader's levels (`isReadAt` / `readAtSql`,

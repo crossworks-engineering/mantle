@@ -37,6 +37,7 @@ import {
   moveItemsDiff,
   shareDiff,
   type VisibilityDiff,
+  withEmbedsGoingDown,
 } from './visibility';
 import { itemLevel } from '../item-level';
 import { lowerEmbedClosure } from '../embed-closure';
@@ -216,14 +217,15 @@ export type TreeWriteOpts = {
 };
 
 async function checkVisibility(
+  ownerId: string,
   diff: Promise<VisibilityDiff>,
   opts: TreeWriteOpts,
 ): Promise<VisibilityDiff> {
   const d = await diff;
-  if (d.total > 0 && !opts.confirm) throw new TreeVisibilityError(d);
-  if (opts.confirm && opts.seen !== undefined && d.total !== opts.seen) {
-    throw new TreeVisibilityError(d);
-  }
+  const refused =
+    (d.total > 0 && !opts.confirm) ||
+    (opts.confirm && opts.seen !== undefined && d.total !== opts.seen);
+  if (refused) throw new TreeVisibilityError(await withEmbedsGoingDown(ownerId, d));
   return d;
 }
 
@@ -280,7 +282,7 @@ export async function updateTreeFolder(
     }
     const dest = await pathOf(ownerId, kind, patch.parentId);
     if (dest !== treeParentPath(folder.path)) {
-      const diff = await checkVisibility(moveFolderDiff(ownerId, folder, dest), opts);
+      const diff = await checkVisibility(ownerId, moveFolderDiff(ownerId, folder, dest), opts);
       await refusing(() => ops.moveFolder(ownerId, folderId, dest));
       if (diff.total > 0) {
         const moved = await folderOrThrow(ownerId, kind, folderId);
@@ -335,7 +337,7 @@ async function setFolderShare(
     }
   }
   if ((folder.share ?? null) === share) return;
-  const diff = await checkVisibility(shareDiff(ownerId, folder, share), opts);
+  const diff = await checkVisibility(ownerId, shareDiff(ownerId, folder, share), opts);
   // The database refreshes everything below (migration 0204 triggers). Its
   // share check is the last word on which roots may share: a refusal there
   // is a refusal, not a server error.
@@ -438,7 +440,7 @@ export async function deleteTreeFolder(
   if (folder.system) {
     throw new TreeError('invalid', 'this folder is made by Mantle; it cannot be deleted');
   }
-  const diff = await checkVisibility(liftDiff(ownerId, folder), opts);
+  const diff = await checkVisibility(ownerId, liftDiff(ownerId, folder), opts);
   const affected = diff.total
     ? (
         (await db.execute(sql`
@@ -521,7 +523,7 @@ export async function moveTreeItems(
   const ops = opsFor(kind);
   const dest = await pathOf(ownerId, kind, folderId);
   const ids = [...new Set(itemIds)];
-  const diff = await checkVisibility(moveItemsDiff(ownerId, kind, ids, dest), opts);
+  const diff = await checkVisibility(ownerId, moveItemsDiff(ownerId, kind, ids, dest), opts);
   const result: TreeMoveResult = { moved: 0, failed: [] };
   for (const id of ids) {
     try {

@@ -309,6 +309,12 @@ export type TreeVisibilityRefusal = {
   changes: TreeVisibilityChange[];
   /** How many items change in all. */
   total: number;
+  /** Items elsewhere that pages, drawings and notes in `changes` embed, and
+   *  that would go down with them to the level those are read at (embedding
+   *  means sharing). They keep that level after an unshare: nothing is ever
+   *  raised again by itself. Absent when there are none, and from brains
+   *  before it was listed. */
+  alsoLowered?: TreeVisibilityChange[];
 };
 export const TREE_VISIBILITY_LIST_MAX = 100;
 

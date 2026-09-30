@@ -13,7 +13,8 @@
  * never appear. A member's draft is another owner's row and never inherits.
  */
 import { sql, type SQL } from 'drizzle-orm';
-import { db } from '@mantle/db';
+import { db, WORKSPACE_NODE_TYPES, type ViewerLevel } from '@mantle/db';
+import { EMBEDDING_KINDS, embedClosure, levelAbove } from '../embed-closure';
 import {
   TREE_KIND_SPECS,
   TREE_VISIBILITY_LIST_MAX,
@@ -23,7 +24,13 @@ import {
 } from '@mantle/client-types/tree';
 import type { AccessLevel } from '@mantle/client-types';
 
-export type VisibilityDiff = { changes: TreeVisibilityChange[]; total: number };
+export type VisibilityDiff = {
+  changes: TreeVisibilityChange[];
+  total: number;
+  /** Embedded items elsewhere that would go down with the changes (see
+   *  TreeVisibilityRefusal.alsoLowered); filled in when a write is refused. */
+  alsoLowered?: TreeVisibilityChange[];
+};
 
 /** A write refused until it is repeated with `confirm: true`. */
 export class TreeVisibilityError extends Error {
@@ -37,6 +44,51 @@ export class TreeVisibilityError extends Error {
 }
 
 export const NO_CHANGE: VisibilityDiff = { changes: [], total: 0 };
+
+/**
+ * What else a refused write would take down (TreeVisibilityRefusal
+ * .alsoLowered): after a confirmed change, embeds follow each page, drawing
+ * and note to the level it is then read at (write.ts followShares), and
+ * those embeds may live anywhere. Dry, for the list only: for each such
+ * change that opens an item up, the workspace-kind items of its embed
+ * closure above its new level, outside the changes themselves.
+ */
+export async function withEmbedsGoingDown(
+  ownerId: string,
+  diff: VisibilityDiff,
+): Promise<VisibilityDiff> {
+  const opening = diff.changes.filter((c) =>
+    levelAbove(c.from as ViewerLevel, c.to as ViewerLevel),
+  );
+  if (!opening.length) return diff;
+  const kinds = (await db.execute(sql`
+    select id::text as id from nodes
+     where owner_id = ${ownerId} and type::text in (${sql.join(
+       EMBEDDING_KINDS.map((k) => sql`${k}`),
+       sql`, `,
+     )})
+       and id in (${sql.join(
+         opening.map((c) => sql`${c.id}::uuid`),
+         sql`, `,
+       )})`)) as unknown as Array<{ id: string }>;
+  const embedding = new Set(kinds.map((k) => k.id));
+  const inDiff = new Set(diff.changes.map((c) => c.id));
+  const workspace = new Set<string>(WORKSPACE_NODE_TYPES);
+  const down = new Map<string, TreeVisibilityChange>();
+  for (const c of opening) {
+    if (!embedding.has(c.id)) continue;
+    for (const e of await embedClosure(ownerId, c.id)) {
+      if (inDiff.has(e.id) || !workspace.has(e.type)) continue;
+      if (!levelAbove(e.audience, c.to as ViewerLevel)) continue;
+      const seen = down.get(e.id);
+      // The most open level wins when two changes embed the same item.
+      if (seen && !levelAbove(seen.to as ViewerLevel, c.to as ViewerLevel)) continue;
+      down.set(e.id, { id: e.id, title: e.title, from: e.audience, to: c.to });
+    }
+    if (down.size >= TREE_VISIBILITY_LIST_MAX) break;
+  }
+  return down.size ? { ...diff, alsoLowered: [...down.values()] } : diff;
+}
 
 /** effectiveLevel in SQL over two expressions. */
 function eff(audience: SQL, inherited: SQL): SQL {
