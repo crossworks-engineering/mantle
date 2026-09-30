@@ -62,6 +62,23 @@ export async function clientStorageRows(): Promise<ClientStorageRow[]> {
   }));
 }
 
+/**
+ * What the databases of this brain's CLIENT-level apps hold, in bytes (client
+ * tier audit I1): clients write them, but they are not part of the client
+ * space limits (each app file has its own cap, APP_SQL_MAX_DB_MB). The size
+ * recorded at each app's last write (`app_databases.size_bytes`).
+ */
+export async function clientAppDbBytes(brainId: string): Promise<number> {
+  const [row] = (await db.execute(sql`
+    select coalesce(sum(d.size_bytes), 0)::text as bytes
+      from app_databases d
+      join nodes n on n.id = d.app_node_id
+     where d.owner_id = ${brainId} and n.audience = 'client'`)) as unknown as {
+    bytes: string;
+  }[];
+  return Number(row?.bytes ?? 0);
+}
+
 /** One client-level item whose client thread had a client comment lately. */
 export type ClientThreadActivityRow = {
   nodeId: string;

@@ -321,6 +321,7 @@ export {
 } from './space-limits';
 export {
   clientStorageRows,
+  clientAppDbBytes,
   clientThreadActivity,
   deleteClientComments,
   type ClientStorageRow,

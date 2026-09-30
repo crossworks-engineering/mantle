@@ -59,6 +59,7 @@ vi.mock('@mantle/content', async (importOriginal) => {
       { at: '2026-09-29T00:00:00.000Z', loginId: CLIENT, reason: 'total' },
     ]),
     clientThreadActivity: rec('clientThreadActivity', () => []),
+    clientAppDbBytes: rec('clientAppDbBytes', () => 4096),
     deleteClientComments: rec('deleteClientComments', () => 7),
   };
 });
@@ -90,6 +91,9 @@ describe('GET /api/team-admin/clients/storage', () => {
       { at: '2026-09-29T00:00:00.000Z', loginId: CLIENT, reason: 'total' },
     ]);
     expect(h.calls.find(([n]) => n === 'listClientQuotaRefusals')?.[1]).toEqual([50]);
+    // What client-level apps' databases hold, for this brain (audit I1).
+    expect(body.clientAppDbBytes).toBe(4096);
+    expect(h.calls.find(([n]) => n === 'clientAppDbBytes')?.[1]).toEqual([ANCHOR]);
     process.env.MANTLE_CLIENT_SPACES_TOTAL_BYTES = String(8 * 1024 * 1024 * 1024);
     const raised = (await (await GET()).json()) as { limits: { totalBytes: number } };
     expect(raised.limits.totalBytes).toBe(8 * 1024 * 1024 * 1024);

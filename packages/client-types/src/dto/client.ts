@@ -423,6 +423,12 @@ export type ClientStorageUsage = {
   }[];
   /** Quota refusals in the last 7 days, newest first, at most 50. */
   refusals: { at: string; loginId: string | null; reason: string }[];
+  /** What the databases of the brain's CLIENT-level apps hold, in bytes,
+   *  as recorded at each app's last write. Clients write them, but they do
+   *  not count toward the client limits above: each app file has its own
+   *  cap (256 MB unless the box sets APP_SQL_MAX_DB_MB). Optional: an older
+   *  brain does not send it. */
+  clientAppDbBytes?: number;
 };
 
 /**

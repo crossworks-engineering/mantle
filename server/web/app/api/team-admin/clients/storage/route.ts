@@ -5,12 +5,15 @@
  * each client space's bytes (files, page and note text), uploads in the
  * last 24 hours, items and open submissions, a deleted client's space while
  * it waits for its purge (`former`: it still counts), and the quota
- * refusals of the last 7 days. The storage card in Team admin > Clients.
+ * refusals of the last 7 days, and what client-level apps' databases hold
+ * (`clientAppDbBytes`, client tier audit I1). The storage card in Team
+ * admin > Clients.
  * Admin only.
  */
 import { NextResponse } from '@/server/http-compat';
 import {
   CLIENT_SPACE_LIMITS,
+  clientAppDbBytes,
   clientSpacesTotalBytes,
   clientSpacesUsed,
   clientStorageRows,
@@ -22,10 +25,11 @@ import { getOwnerOr401 } from '@/lib/auth';
 export async function GET() {
   const user = await getOwnerOr401();
   if (user instanceof Response) return user;
-  const [totalUsedBytes, rows, refusals] = await Promise.all([
+  const [totalUsedBytes, rows, refusals, appDbBytes] = await Promise.all([
     clientSpacesUsed(),
     clientStorageRows(),
     listClientQuotaRefusals(50),
+    clientAppDbBytes(user.id),
   ]);
   const lim = CLIENT_SPACE_LIMITS;
   const body: ClientStorageUsage = {
@@ -41,6 +45,7 @@ export async function GET() {
     totalUsedBytes,
     rows,
     refusals,
+    clientAppDbBytes: appDbBytes,
   };
   return NextResponse.json(body);
 }
