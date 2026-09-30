@@ -163,7 +163,7 @@ describe.skipIf(!URL)('embeds follow their embedder', () => {
     await setShare(folderG, 'team');
     await setShare(folderF, null);
     // I2 is still embedded by N2 in the team-shared G; D and I1 only by N.
-    expect(await reads('team', [I2])).toEqual([I2]);
+    expect(await reads('team', [N2, I2])).toEqual(sorted(N2, I2));
     expect(await reads('client', [I2])).toEqual([]);
     expect(await reads('client', [N, D, I1])).toEqual([]);
     expect(await reads('team', [D, I1])).toEqual([]);
