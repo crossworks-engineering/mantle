@@ -83,15 +83,16 @@ EOF
 fi
 
 echo "→ infrastructure"
-# createbucket is deliberately NOT in the --wait set. `up --wait` waits for
+# The one-shots are deliberately NOT in the --wait set. `up --wait` waits for
 # every named service to be running-or-healthy, and a one-shot that exits 0 is
-# neither — so including it makes the command fail on success. Wait for the
-# long-lived pair, then run the one-shot and check its exit code directly.
-"${COMPOSE[@]}" up -d --wait postgres minio
-"${COMPOSE[@]}" up -d createbucket >/dev/null
-BUCKET_RC=$(docker wait mantle_demo_srv_createbucket)
-[ "$BUCKET_RC" = "0" ] || fail "createbucket exited $BUCKET_RC — the app only HEADs the bucket and never creates it"
-echo "  postgres + minio healthy, bucket ready"
+# neither, so naming one makes the command fail on success. Wait for the
+# long-lived pair (objectstore pulls objectstore_init in by itself), then run
+# the bucket one-shot and check its exit code directly.
+"${COMPOSE[@]}" up -d --wait postgres objectstore
+"${COMPOSE[@]}" up -d objectstore_ensure >/dev/null
+BUCKET_RC=$(docker wait mantle_demo_srv_objectstore_ensure)
+[ "$BUCKET_RC" = "0" ] || fail "objectstore_ensure exited $BUCKET_RC: the app only HEADs the bucket and never creates it"
+echo "  postgres + object store healthy, bucket ready"
 
 # Restoring over a populated brain silently doubles content or half-fails on
 # conflicts. Make it a decision, not an accident.
@@ -138,11 +139,17 @@ docker exec -i "$PG" psql -U postgres -d postgres -q -v ON_ERROR_STOP=1 < "$BUND
 echo "  demo_reader ready"
 
 echo "→ object store"
-MC_NET=$(docker inspect mantle_demo_srv_minio --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')
-docker run --rm --network "$MC_NET" -v "$BUNDLE/minio:/in:ro" --entrypoint sh \
-  minio/mc:RELEASE.2025-08-13T08-35-41Z -c \
-  "mc alias set l http://minio:9000 \${S3_ACCESS_KEY:-minio} \${S3_SECRET_KEY:-minio12345} >/dev/null && mc mirror --quiet --overwrite /in l/mantle" >/dev/null
-echo "  $(manifest minio_objects) object(s) mirrored"
+# Plain S3 calls, run inside the server image the stack already uses (it
+# carries tsx and packages/storage). The script travels in the bundle and is
+# mounted where its relative imports resolve. No vendor CLI: this used MinIO's
+# `mc`, whose images are gone from every registry.
+[ -f "$BUNDLE/objectstore-sync.ts" ] || fail "no objectstore-sync.ts in the bundle: re-pack with the current demo/scripts/pack.sh"
+"${COMPOSE[@]}" run --rm --no-deps -T \
+  -v "$BUNDLE/objectstore:/in:ro" \
+  -v "$BUNDLE/objectstore-sync.ts:/app/demo/seed/objectstore-sync.ts:ro" \
+  objectstore_ensure pnpm -s -C server/web exec tsx /app/demo/seed/objectstore-sync.ts import /in \
+  || fail "the object store import failed"
+echo "  $(manifest objectstore_objects) object(s) in the bucket"
 
 echo "→ verifying the restore against the manifest"
 q() { docker exec "$PG" psql -U postgres -d postgres -tAc "$1"; }

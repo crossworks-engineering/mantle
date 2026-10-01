@@ -131,15 +131,25 @@ drop schema if exists auth cascade;
 drop schema if exists pgboss cascade;
 drop schema if exists drizzle cascade;
 SQL
+  # DBOS keeps its workflow state in a database of its own (server/api
+  # provision). Left in place, a fresh brain would start with the old brain's
+  # unfinished workflows waiting to be recovered against it.
+  docker exec -i mantle_demo_pg psql -U postgres -d postgres -q -c "drop database if exists mantle_dbos_sys"
   docker exec -i mantle_demo_pg psql -U postgres -d postgres -q < infra/postgres/init/01-extensions.sql
   docker exec -i mantle_demo_pg psql -U postgres -d postgres -q < infra/postgres/init/02-auth-schema.sql
 fi
 
-echo "→ migrations + pg-boss schema"
-# Output kept on the log, not /dev/null: silencing it is what hid the
-# "Already up to date." over an empty database above.
+echo "→ migrations + pg-boss schema + DBOS database + bucket"
+# The same four steps, in the same order, as the `migrate` one-shot in the
+# root compose. Output kept on the log, not /dev/null: silencing it is what hid
+# the "Already up to date." over an empty database above. `pipefail` is on, so
+# a step that fails stops the seed even though its output goes through tail.
 pnpm --filter @mantle/db migrate 2>&1 | tail -2
 pnpm -C server/web pgboss:init 2>&1 | tail -1
+pnpm -C server/api provision 2>&1 | tail -1
+# The app only HEADs the bucket and never creates it; without one the first
+# upload fails "The specified bucket does not exist".
+pnpm -C packages/storage objectstore:ensure 2>&1 | tail -1
 # Prove the schema is really there — migrate reporting success is not enough.
 docker exec -i mantle_demo_pg psql -U postgres -d postgres -At \
   -c "select to_regclass('public.audit_log') is not null and to_regclass('public.nodes') is not null" \

@@ -49,38 +49,56 @@ services:
       timeout: 3s
       retries: 20
 
-  minio:
-    image: minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
-    container_name: mantle_demo_minio
-    command: server /data --console-address ":9001"
+  # ── Object store: RustFS (S3-compatible), as on main since v0.232.249 ─────
+  # It was MinIO until MinIO left open source: its images are gone from every
+  # registry, so a stack that still names one cannot be pulled on a new host.
+  # Same pinned mirror, memory cap and nofile limit as the root compose.
+  #
+  # One-shot, as root, before the store starts: a new named volume belongs to
+  # root, and RustFS runs as UID 10001.
+  objectstore_init:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-rustfs:${RUSTFS_IMAGE_TAG:-1.0.0}
+    container_name: mantle_demo_objectstore_init
+    restart: "no"
+    user: "0:0"
+    entrypoint: ["sh", "-ec"]
+    command: ["chown 10001:10001 /data"]
+    volumes:
+      - objectstoredata:/data
+
+  objectstore:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-rustfs:${RUSTFS_IMAGE_TAG:-1.0.0}
+    container_name: mantle_demo_objectstore
+    # Reading every object of a 667 MB store peaked at 293 MiB (main, 2026-09-25).
+    mem_limit: 1g
+    # RustFS disables its file-descriptor cache below this limit (it warns).
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    depends_on:
+      objectstore_init: { condition: service_completed_successfully }
     environment:
-      MINIO_ROOT_USER: minio
-      MINIO_ROOT_PASSWORD: minio12345
+      # The demo's fixed dummy keys (the names are from the MinIO days; the
+      # bucket holds fictional attachments only).
+      RUSTFS_ACCESS_KEY: minio
+      RUSTFS_SECRET_KEY: minio12345
+      RUSTFS_VOLUMES: /data
+      RUSTFS_CONSOLE_ENABLE: "false"
+      RUSTFS_REGION: us-east-1
+      # Empty = log to stdout (the image default writes files under /logs).
+      RUSTFS_OBS_LOG_DIRECTORY: ""
     ports:
       - "127.0.0.1:56900:9000"
-      - "127.0.0.1:56901:9001"
     volumes:
-      - miniodata:/data
+      - objectstoredata:/data
     healthcheck:
-      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health/ready"]
       interval: 10s
       timeout: 5s
       retries: 12
-
-  # One-shot: the app expects the `mantle` bucket to exist (a missing bucket
-  # is a known fresh-install failure mode). Run by stack-up.sh after the
-  # stack is healthy.
-  createbucket:
-    image: minio/mc:latest
-    profiles: ["setup"]
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set demo http://minio:9000 minio minio12345 &&
-      mc mb --ignore-existing demo/mantle
-      "
+      start_period: 10s
+  # The `mantle` bucket is created by seed.sh after the migrations
+  # (`objectstore:ensure`, a plain S3 CreateBucket), as main's migrate step
+  # does. The old `createbucket` one-shot needed MinIO's `mc`.
 
   # File-ingest text extraction — the generator emits files (P2) and the real
   # ingest pipeline (P3) needs to parse them. Heap settings mirror the root
@@ -141,5 +159,5 @@ services:
 
 volumes:
   pgdata:
-  miniodata:
+  objectstoredata:
   ollamadata:

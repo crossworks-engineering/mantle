@@ -9,11 +9,12 @@
 # thing that guarantees all five leave together:
 #
 #   brain.dump      pg_dump of mantle_demo_pg
-#   minio/          the `mantle` bucket (small — attachments only)
+#   objectstore/    the `mantle` bucket (small: attachments only), as plain
+#                   files plus an index, exported with plain S3 calls
 #   table-dbs/      SQLite workbooks. Postgres holds only the registry that
 #                   POINTS at these; a mismatch is TableFileMissingError on
 #                   every table
-#   files/          file BYTES. Not in the database, not in MinIO
+#   files/          file BYTES. Not in the database, not in the object store
 #   docs/           generated demo docs + guide/06-help, both read from disk at
 #                   request time
 #
@@ -36,7 +37,7 @@ while [ $# -gt 0 ]; do
 done
 
 PG_CONTAINER="mantle_demo_pg"
-MINIO_CONTAINER="mantle_demo_minio"
+STORE_CONTAINER="mantle_demo_objectstore"
 OWNER_URL="postgres://postgres:postgres@127.0.0.1:56432/postgres"
 DOCS_ROOT="$DEMO/generator/out/docs"
 TABLE_DBS="$ART/table-dbs"
@@ -59,8 +60,8 @@ echo "→ preflight"
 # already been bitten by.
 docker inspect -f '{{.State.Running}}' "$PG_CONTAINER" 2>/dev/null | grep -q true \
   || fail "$PG_CONTAINER is not running — demo/scripts/stack-up.sh first"
-docker inspect -f '{{.State.Running}}' "$MINIO_CONTAINER" 2>/dev/null | grep -q true \
-  || fail "$MINIO_CONTAINER is not running — demo/scripts/stack-up.sh first"
+docker inspect -f '{{.State.Running}}' "$STORE_CONTAINER" 2>/dev/null | grep -q true \
+  || fail "$STORE_CONTAINER is not running: demo/scripts/stack-up.sh first"
 PG_SERVER=$(psql_owner "show server_version" | cut -d. -f1)
 echo "  postgres $PG_SERVER (dumping with its own client — no skew)"
 
@@ -122,17 +123,17 @@ docker exec "$PG_CONTAINER" pg_dump -U postgres -d postgres -Fc --no-owner --no-
 # The role is created fresh on the box AFTER the restore, so the grants match
 # the schema that actually landed rather than the one that was dumped.
 
-echo "  minio/"
-mkdir -p "$B/minio"
-# --user: mc runs as root by default and would leave the mirrored objects
-# root-owned on the host, so the staging directory could not be cleaned up
-# (or re-packed) without sudo.
-docker run --rm --network "$(docker inspect "$MINIO_CONTAINER" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')" \
-  --user "$(id -u):$(id -g)" -e HOME=/tmp \
-  -v "$(cd "$B/minio" && pwd):/out" --entrypoint sh \
-  minio/mc:RELEASE.2025-08-13T08-35-41Z -c \
-  "mc alias set l http://minio:9000 minio minio12345 >/dev/null && mc mirror --quiet --overwrite l/mantle /out" >/dev/null
-OBJ=$(find "$B/minio" -type f | wc -l | tr -d ' ')
+echo "  objectstore/"
+mkdir -p "$B/objectstore"
+# Plain S3 calls from this checkout (demo/seed/objectstore-sync.ts), through
+# the store's loopback port. This used MinIO's `mc`, whose images are gone
+# from every registry; the store is RustFS now, as on main.
+S3_ENDPOINT="http://127.0.0.1:56900" S3_REGION="us-east-1" S3_ACCESS_KEY="minio" \
+S3_SECRET_KEY="minio12345" S3_BUCKET="mantle" \
+  pnpm -s -C server/web exec tsx ../../demo/seed/objectstore-sync.ts export "$(cd "$B/objectstore" && pwd)" >/dev/null
+OBJ=$(find "$B/objectstore/objects" -type f 2>/dev/null | wc -l | tr -d ' ')
+[ "$OBJ" = "$(node -p "require('$(cd "$B/objectstore" && pwd)/index.json').length")" ] \
+  || fail "the object store export is incomplete: $OBJ file(s) on disk does not match its index"
 echo "    $OBJ objects"
 
 echo "  table-dbs/ · files/ · docs/"
@@ -146,6 +147,8 @@ cp -a "$DEMO/deploy/readonly-role.sql" "$B/"
 cp -a "$DEMO/deploy/.env.demo.example" "$B/"
 cp -a "$DEMO/deploy/README-embedder.md" "$B/"
 cp -a "$DEMO/deploy/restore.sh" "$B/" 2>/dev/null || echo "    ⚠ restore.sh not found — bundle will need it copied in by hand"
+# restore.sh runs this inside the server image to put the objects back.
+cp -a "$DEMO/seed/objectstore-sync.ts" "$B/"
 cp -a infra/postgres/init "$B/postgres-init"
 
 # Provenance + the counts restore will re-check. Written before the checksums
@@ -171,7 +174,7 @@ table_nodes      $REG
 table_workbooks  $WB
 file_nodes       $INDEXED
 file_bytes       $FCOUNT
-minio_objects    $OBJ
+objectstore_objects $OBJ
 docs_markdown    $MD
 help_topics      $HELP
 EOF

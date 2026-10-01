@@ -8,7 +8,7 @@
 # about it is the operator's call.
 set -euo pipefail
 
-PORTS=(56432 56900 56901 56998 56434)
+PORTS=(56432 56900 56998 56434)
 NAME_PREFIX="mantle_demo_"
 
 fail=0

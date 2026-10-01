@@ -11,9 +11,10 @@
 #   docker compose -f docker-compose.demo.yml --env-file .env.demo up -d --wait web client
 #
 # Name the two long-lived services, not a bare `up --wait`: --wait waits for
-# every service it starts to be running-or-healthy, and `createbucket` is a
-# one-shot that EXITS — so a bare `up --wait` reports failure at the moment it
-# succeeds. web pulls createbucket in via depends_on anyway.
+# every service it starts to be running-or-healthy, and the object store's
+# two one-shots (`objectstore_init`, `objectstore_ensure`) EXIT, so a bare
+# `up --wait` reports failure at the moment it succeeds. web pulls both in via
+# depends_on anyway.
 # Normally you do not run this by hand at all: deploy/restore.sh does it.
 #
 # ── What is NOT here, and why ────────────────────────────────────────────────
@@ -111,7 +112,7 @@ x-demo-app-env: &demo-app-env
   MANTLE_MASTER_KEY: ${MANTLE_MASTER_KEY:?must match the seed-time value exactly}
   # Blank: the runtime resolves the sole auth.users row, which the dump carries.
   ALLOWED_USER_ID: ${ALLOWED_USER_ID:-}
-  S3_ENDPOINT: http://minio:9000
+  S3_ENDPOINT: http://objectstore:9000
   S3_REGION: us-east-1
   S3_BUCKET: mantle
   S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minio}
@@ -194,46 +195,80 @@ services:
       retries: 20
 
   # ── Object store: file blobs and image bytes ───────────────────────────────
-  minio:
-    image: minio/minio:${MINIO_IMAGE_TAG:-RELEASE.2025-09-07T16-13-09Z}
-    container_name: mantle_demo_srv_minio
-    restart: unless-stopped
-    mem_limit: 512m
-    command: server /data --console-address ':9001'
-    environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minio}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minio12345}
+  # RustFS (S3-compatible), as on main since v0.232.249. It was MinIO until
+  # MinIO left open source: its images are gone from every registry, so a box
+  # that had to pull one could not be set up again. Same pinned mirror, memory
+  # cap and nofile limit as the root compose.
+  #
+  # One-shot, as root, before the store starts: make the data directory and
+  # hand it to UID 10001, the user RustFS runs as. Every restore has a new
+  # data directory (the bundle is the data root), so there is no MinIO data to
+  # carry over: restore.sh puts the bundle's objects in through S3.
+  objectstore_init:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-rustfs:${RUSTFS_IMAGE_TAG:-1.0.0}
+    container_name: mantle_demo_srv_objectstore_init
+    restart: 'no'
+    user: '0:0'
+    entrypoint: ['sh', '-ec']
+    command: ['mkdir -p /demo-data/rustfs && chown 10001:10001 /demo-data/rustfs']
     volumes:
-      - ${DEMO_DATA_DIR:?set DEMO_DATA_DIR to an ABSOLUTE path (restore.sh writes it into .env.demo) — a relative default silently creates an EMPTY cluster}/minio:/data
+      - ${DEMO_DATA_DIR:?set DEMO_DATA_DIR to an ABSOLUTE path (restore.sh writes it into .env.demo); a relative default silently creates an EMPTY cluster}:/demo-data
+
+  objectstore:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-rustfs:${RUSTFS_IMAGE_TAG:-1.0.0}
+    container_name: mantle_demo_srv_objectstore
+    restart: unless-stopped
+    # Not MinIO's 512m: reading every object of a 667 MB store peaked at
+    # 293 MiB and was OOM-killed under a 256m cap (main, 2026-09-25).
+    mem_limit: 1g
+    # RustFS disables its file-descriptor cache below this limit (it warns).
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    depends_on:
+      objectstore_init: { condition: service_completed_successfully }
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-minio}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-minio12345}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_CONSOLE_ENABLE: 'false'
+      RUSTFS_REGION: us-east-1
+      # Empty = log to stdout, so docker's log rotation applies (the image
+      # default writes files under /logs inside the container).
+      RUSTFS_OBS_LOG_DIRECTORY: ''
+    volumes:
+      - ${DEMO_DATA_DIR:?set DEMO_DATA_DIR to an ABSOLUTE path (restore.sh writes it into .env.demo); a relative default silently creates an EMPTY cluster}/rustfs:/data
     ports:
-      # Loopback only — `mc mirror` target for the bucket transfer.
-      - '127.0.0.1:${DEMO_MINIO_PORT:-57900}:9000'
+      # Loopback only: for debugging from a shell on the box.
+      - '127.0.0.1:${DEMO_OBJECTSTORE_PORT:-57900}:9000'
     healthcheck:
-      test: ['CMD-SHELL', 'mc ready local || exit 1']
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:9000/health/ready']
       interval: 10s
       timeout: 5s
       retries: 12
+      # The very first probe lands before RustFS is ready and is logged as an
+      # ERROR (503). Harmless; the grace period keeps it from counting.
+      start_period: 10s
 
-  # One-shot, idempotent. The app only HEADs the bucket and never creates it,
-  # so a MinIO that is up with no bucket is a fresh-install failure mode that
-  # looks like healthy infrastructure.
-  createbucket:
-    image: minio/mc:${MC_IMAGE_TAG:-RELEASE.2025-08-13T08-35-41Z}
-    container_name: mantle_demo_srv_createbucket
+  # One-shot, idempotent: create the bucket if it is missing, with a plain S3
+  # CreateBucket from the server image (`objectstore:ensure`, what main's
+  # `migrate` step runs). The app only HEADs the bucket and never creates it,
+  # so a store that is up with no bucket is a fresh-install failure mode that
+  # looks like healthy infrastructure. restore.sh also runs its object import
+  # through this service, which is why it carries the S3 settings.
+  objectstore_ensure:
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:?pin the release the brain was seeded on, e.g. v0.232.366}
+    container_name: mantle_demo_srv_objectstore_ensure
     restart: 'no'
     depends_on:
-      minio: { condition: service_healthy }
+      objectstore: { condition: service_healthy }
     environment:
+      S3_ENDPOINT: http://objectstore:9000
+      S3_REGION: us-east-1
+      S3_BUCKET: mantle
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minio}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-minio12345}
-    entrypoint: ['sh', '-c']
-    command:
-      - |
-        set -e
-        mc alias set local http://minio:9000 "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY"
-        mc mb --ignore-existing local/mantle
-        mc anonymous set none local/mantle
-        echo "[createbucket] bucket 'mantle' ready"
+      S3_FORCE_PATH_STYLE: 'true'
+    command: ['pnpm', '-C', 'packages/storage', 'objectstore:ensure']
 
   # ── File previews ──────────────────────────────────────────────────────────
   # Stateless. Heap settings are the root compose's hard-won values: 512m was
@@ -301,14 +336,14 @@ services:
   # pointing the edge at this service alone yields a working /api/* and a 404
   # for every actual page, which is exactly what happened the first time.
   web:
-    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:?pin the release the brain was seeded on, e.g. v0.217.1}
+    image: ${MANTLE_IMAGE_NAMESPACE:-titanwest}/mantle-server:${MANTLE_IMAGE_TAG:?pin the release the brain was seeded on, e.g. v0.232.366}
     container_name: mantle_demo_srv_web
     restart: unless-stopped
     mem_limit: 1.5g
     depends_on:
       postgres: { condition: service_healthy }
-      minio: { condition: service_healthy }
-      createbucket: { condition: service_completed_successfully }
+      objectstore: { condition: service_healthy }
+      objectstore_ensure: { condition: service_completed_successfully }
     environment:
       <<: *demo-app-env
     volumes:
@@ -322,7 +357,7 @@ services:
       #                             — without them every "?" panel in the demo
       #                             answers 404 while looking perfectly fine.
       - ${DEMO_DOCS_ROOT:?set DEMO_DOCS_ROOT to an ABSOLUTE path — it must contain guide/06-help}:/data/docs:ro
-      # File BYTES — 85 of them. Not in the database, not in MinIO.
+      # File BYTES, 85 of them. Not in the database, not in the object store.
       - ${DEMO_FILES_ROOT:?set DEMO_FILES_ROOT to an ABSOLUTE path — the file bytes}:/data/files:ro
       # The 11 SQLite workbooks. Postgres holds only the registry that POINTS
       # at these, so a dump without them is TableFileMissingError on every

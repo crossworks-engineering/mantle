@@ -14,10 +14,13 @@ else
   scripts/preflight.sh
 fi
 
-docker compose up -d --wait postgres minio tika ollama
+# objectstore pulls its one-shot (objectstore_init) in through depends_on. It
+# is deliberately NOT named here: `up --wait` waits for every service it names
+# to be running or healthy, and a one-shot that exits 0 is neither.
+docker compose up -d --wait postgres objectstore tika ollama
 
-# One-shots (profile "setup" keeps them out of `up`'s default set):
-docker compose --profile setup run --rm createbucket
+# One-shot (profile "setup" keeps it out of `up`'s default set). The bucket is
+# not made here: seed.sh creates it after the migrations (objectstore:ensure).
 docker compose --profile setup run --rm ollama_pull
 
 echo
@@ -25,6 +28,6 @@ docker compose ps --format 'table {{.Name}}\t{{.Status}}\t{{.Ports}}'
 echo
 echo "✓ demo stack up:"
 echo "    postgres  127.0.0.1:56432   (postgres/postgres)"
-echo "    minio     127.0.0.1:56900   (minio/minio12345, bucket 'mantle')"
+echo "    rustfs    127.0.0.1:56900   (S3 API; keys minio/minio12345; seed.sh makes the bucket)"
 echo "    tika      127.0.0.1:56998"
 echo "    ollama    127.0.0.1:56434   (embeddinggemma pulled)"

@@ -27,7 +27,7 @@ UI — no fixture server, no per-screen demo code.
 
 ## The seed/test stack
 
-Throwaway infra (Postgres + MinIO + Tika + Ollama) for generating, ingesting
+Throwaway infra (Postgres + RustFS + Tika + Ollama) for generating, ingesting
 and testing the demo brain. Isolation recipe copied from `e2e/stack/`:
 distinct project + container names (`mantle_demo_*`), loopback-only
 non-default ports, project-scoped named volumes — no bind mounts, so it
@@ -42,7 +42,7 @@ demo/scripts/stack-down.sh --wipe  # stop + wipe → next up is a fresh brain
 | service  | host address      | notes |
 |---|---|---|
 | postgres | `127.0.0.1:56432` | pgvector, same init scripts as the real stack |
-| minio    | `127.0.0.1:56900` | console `:56901`, bucket `mantle` pre-created |
+| rustfs   | `127.0.0.1:56900` | the S3 object store (MinIO until main moved, v0.232.249); `seed.sh` creates the `mantle` bucket |
 | tika     | `127.0.0.1:56998` | file-ingest text extraction |
 | ollama   | `127.0.0.1:56434` | embeddings; `embeddinggemma` pulled on up |
 
