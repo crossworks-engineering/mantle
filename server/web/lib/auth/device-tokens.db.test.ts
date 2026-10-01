@@ -92,17 +92,20 @@ describe.skipIf(!URL)('device tokens for an admin, a member and a client', () =>
     made.push(id);
     return id;
   };
-  /** The emailed code, as the worker would mail it. */
+  /** An open emailed code for the client, written as the worker stores it.
+   *  Not through createClientEmailCode: its brain-wide daily cap is shared
+   *  with every test file on this database (client-codes.db.test.ts fills
+   *  it on purpose), and what this file tests is the redeem. */
   const mailedCode = async (name: string) => {
     const requestId = randomUUID();
-    const d = await content.createClientEmailCode({
-      email: emailOf(name),
-      requestId,
-      ip: `198.51.100.${(ip += 1) % 250}`,
-      requestedAt: new Date().toISOString(),
-    });
-    expect(d.kind).toBe('send');
-    return { requestId, code: d.kind === 'send' ? d.code : '' };
+    const code = content.generateClientCode();
+    const [login] = await sql<Row[]>`select id from auth.users where email = ${emailOf(name)}`;
+    await sql`insert into client_signin_codes
+                (owner_id, login_id, kind, code_hash, request_id, request_ip, expires_at)
+              values (${anchor}, ${login!.id as string}, 'email',
+                      ${content.hashClientCode(requestId, code)}, ${requestId},
+                      ${`198.51.100.${(ip += 1) % 250}`}, now() + interval '10 minutes')`;
+    return { requestId, code };
   };
   /** Sign a client in on a phone: the device token and its device id. */
   const clientPhone = async (name: string, deviceName = 'Client phone') => {
