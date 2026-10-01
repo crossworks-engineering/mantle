@@ -7,7 +7,15 @@
  */
 import { randomBytes } from 'node:crypto';
 import { and, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
-import { db, nodes, shares, WORKSPACE_NODE_TYPES, type Share, type ViewerLevel } from '@mantle/db';
+import {
+  bestEffortWrite,
+  db,
+  nodes,
+  shares,
+  WORKSPACE_NODE_TYPES,
+  type Share,
+  type ViewerLevel,
+} from '@mantle/db';
 import type { ShareMode } from '@mantle/client-types';
 import { env } from '@mantle/config';
 import { EMBEDDING_KINDS, levelAbove, lowerEmbedClosure, type LoweredItem } from './embed-closure';
@@ -480,12 +488,17 @@ export async function isRetiredTeamLinkToken(token: string): Promise<boolean> {
   return !!row;
 }
 
-/** Best-effort view counter bump for a token (fire-and-forget by callers). */
+/** Best-effort view counter bump for a token (fire-and-forget by callers).
+ *  Callers do not await it, so a database that refuses writes (a read-only
+ *  replica, a reader role) is caught here: the view is served and not
+ *  counted, instead of an unhandled rejection per view. */
 export async function recordShareView(shareId: string): Promise<void> {
-  await db
-    .update(shares)
-    .set({ viewCount: sql`${shares.viewCount} + 1`, lastViewedAt: new Date() })
-    .where(eq(shares.id, shareId));
+  await bestEffortWrite('a share view counter', () =>
+    db
+      .update(shares)
+      .set({ viewCount: sql`${shares.viewCount} + 1`, lastViewedAt: new Date() })
+      .where(eq(shares.id, shareId)),
+  );
 }
 
 export type ActiveShareListing = ShareSummary & {

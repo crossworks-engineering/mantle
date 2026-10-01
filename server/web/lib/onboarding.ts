@@ -1,4 +1,4 @@
-import { db, agents, eq, and, resolveSingleOwnerId } from '@mantle/db';
+import { db, agents, eq, and, bestEffortWrite, resolveSingleOwnerId } from '@mantle/db';
 import { loadPreferencesFor, savePreferencesFor, type ProfilePreferences } from '@mantle/content';
 
 /**
@@ -40,7 +40,12 @@ export async function isOnboarded(userId: string, prefs?: ProfilePreferences): P
     .where(and(eq(agents.ownerId, brainId), eq(agents.enabled, true)))
     .limit(1);
   if (agent) {
-    await markOnboarded(userId);
+    // The answer is already known from what was read; the stamp only saves the
+    // next call this lookup. On a database that refuses writes (a read-only
+    // replica, a reader role) it is skipped, not a failed GET /api/onboarding.
+    await bestEffortWrite('the onboarded stamp of a brain already set up', () =>
+      markOnboarded(userId),
+    );
     return true;
   }
   return false;

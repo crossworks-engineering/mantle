@@ -24,7 +24,6 @@ describe.skipIf(!URL)('tree reads on a database that refuses writes', () => {
   type Db = typeof import('@mantle/db');
   let m: Db;
   let tree: typeof import('./index');
-  let guard: typeof import('./refused-write');
   let appNav: typeof import('../app-nav');
   let files: typeof import('@mantle/files');
   let sqlTag: typeof import('drizzle-orm').sql;
@@ -74,7 +73,6 @@ describe.skipIf(!URL)('tree reads on a database that refuses writes', () => {
     process.env.MANTLE_MASTER_KEY ??= 'mantle-viewer-test-key';
     m = await import('@mantle/db');
     tree = await import('./index');
-    guard = await import('./refused-write');
     appNav = await import('../app-nav');
     files = await import('@mantle/files');
     sqlTag = (await import('drizzle-orm')).sql;
@@ -158,7 +156,7 @@ describe.skipIf(!URL)('tree reads on a database that refuses writes', () => {
     });
 
     // Each test meets the database's refusal itself, not the memory of one.
-    beforeEach(() => guard.forgetWriteRefusal());
+    beforeEach(() => m.forgetWriteRefusals());
 
     it('is refused every write, even one that would change nothing', async () => {
       // The root is there, so this insert would do nothing: Postgres refuses
@@ -193,7 +191,7 @@ describe.skipIf(!URL)('tree reads on a database that refuses writes', () => {
 
     it('reads Apps with the layout and marks moves still to do', async () => {
       expect(await tree.reconcileAppNav(owner)).toBeNull();
-      guard.forgetWriteRefusal();
+      m.forgetWriteRefusals();
       expect(await tree.reconcileAppMarks(owner, owner)).toBeNull();
       const root = (await tree.loadTreeFolder(owner, 'apps'))!;
       expect(root.items.map((i) => i.id)).toEqual([ids.app]);
@@ -211,13 +209,13 @@ describe.skipIf(!URL)('tree reads on a database that refuses writes', () => {
 
     it('reads a brain with no root rows as empty kinds, never an error', async () => {
       for (const kind of tree.TREE_LIVE_KINDS) {
-        guard.forgetWriteRefusal();
+        m.forgetWriteRefusals();
         if (kind === 'files') expect(await files.ensureFilesRootBranch(fresh)).toBeNull();
         else expect(await tree.ensureKindRoot(fresh, kind)).toBe(false);
         const page = await tree.loadTreeFolder(fresh, kind);
         expect(page, kind).toMatchObject({ kind, folder: null, folders: [], items: [] });
       }
-      guard.forgetWriteRefusal();
+      m.forgetWriteRefusals();
       const view = await appNav.loadAppNavView(fresh, fresh);
       expect(view).toMatchObject({ apps: [], pins: [], nav: { entries: [] } });
     });

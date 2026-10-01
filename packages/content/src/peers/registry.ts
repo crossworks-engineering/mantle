@@ -10,7 +10,7 @@
  * `MantlePeer` is not.
  */
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
-import { db, mantlePeers, nodes, type MantlePeer } from '@mantle/db';
+import { bestEffortWrite, db, mantlePeers, nodes, type MantlePeer } from '@mantle/db';
 import { open, seal } from '@mantle/crypto';
 import { hashToken, mintInboundToken, tokenMatchesHash } from '../peers-crypto';
 
@@ -267,7 +267,11 @@ export async function verifyInboundToken(token: string): Promise<MantlePeer | nu
   // Defence-in-depth: confirm in constant time (the unique-hash lookup already
   // matched, but never trust a single equality on an auth path).
   if (!tokenMatchesHash(token, row.inboundTokenHash)) return null;
-  await db.update(mantlePeers).set({ lastSeenAt: new Date() }).where(eq(mantlePeers.id, row.id));
+  // The token is verified by now; last-seen is a note for the peers screen.
+  // On a database that refuses writes it is skipped, never a failed peer call.
+  await bestEffortWrite("a peer's last-seen stamp", () =>
+    db.update(mantlePeers).set({ lastSeenAt: new Date() }).where(eq(mantlePeers.id, row.id)),
+  );
   return row;
 }
 

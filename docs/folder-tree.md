@@ -91,10 +91,11 @@ still to do waits for a database that takes it. Looking first is not enough by
 itself, because Postgres checks a table's privilege when a statement starts,
 before it looks at a row, so even `INSERT ... ON CONFLICT DO NOTHING` of a row
 that exists is refused; the refusal is caught with `isWriteRefused`
-(`packages/content/src/tree/refused-write.ts`), which catches nothing else, so
-a broken query still fails loudly. After a refusal the tree tries no write for
-five minutes, so a read-only brain does not fill its database log with one
-refused statement per read. Any new step a read makes for itself must follow
+(`packages/content/src/tree/refused-write.ts`, over `bestEffortWrite` in
+`@mantle/db`), which catches nothing else, so a broken query still fails
+loudly. After a refusal the tree tries no write for five minutes, so a
+read-only brain does not fill its database log with one refused statement per
+read. Any new step a read makes for itself must follow
 the same rule; `tree-readonly.db.test.ts` and `tree-readonly-routes.db.test.ts`
 run the reads as such a role and check that nothing was written.
 

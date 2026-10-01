@@ -55,7 +55,12 @@ export {
   extractExemptSql,
   unextractedNodeConds,
 } from './extract-exempt';
-export { isWriteRefused } from './write-refused';
+export {
+  WRITE_RETRY_AFTER_MS,
+  bestEffortWrite,
+  forgetWriteRefusals,
+  isWriteRefused,
+} from './write-refused';
 export {
   BUSY_MESSAGE,
   BusyError,
