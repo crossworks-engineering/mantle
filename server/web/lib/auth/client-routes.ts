@@ -31,10 +31,10 @@ export const CLIENT_ROUTES: readonly string[] = [
   // The client's own chat with the client-responder (Phase C4).
   'GET /api/client/chat',
   'POST /api/client/chat',
-  // Its own unread count and read cursor (the phone app's badge, 0211).
+  // Its own unread count and read cursor (the phone app's badge, mobile_roles_push).
   'GET /api/client/chat/unread',
   'POST /api/client/chat/read',
-  // Its own phone's push enrolment, device list and toggles (0211).
+  // Its own phone's push enrolment, device list and toggles (mobile_roles_push).
   'POST /api/client/push/connect',
   'POST /api/client/push/subscriptions',
   'GET /api/client/push/subscriptions',

@@ -3,7 +3,7 @@ import { loginPushConnect } from '@/lib/push/login-routes';
 
 /**
  * POST /api/client/push/connect { platform, osPushToken } -> { ticket,
- * relayUrl }: the Connect step for a CLIENT login's phone (migration 0211,
+ * relayUrl }: the Connect step for a CLIENT login's phone (migration mobile_roles_push,
  * docs/mobile-companion-backend.md "Three roles on the phone"). The app takes
  * the ticket to the relay's /enroll, then posts the routing token to
  * /api/client/push/subscriptions. A client never

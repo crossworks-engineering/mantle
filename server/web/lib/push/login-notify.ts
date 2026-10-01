@@ -1,4 +1,4 @@
-// The send path for a MEMBER's or a CLIENT's own pushes (migration 0211,
+// The send path for a MEMBER's or a CLIENT's own pushes (migration mobile_roles_push,
 // docs/mobile-companion-backend.md "Three roles on the phone"): a reply in
 // its chat thread, a review result on its item, a new comment. Each message
 // is for ONE login (@mantle/content login-notices.ts decides who and with

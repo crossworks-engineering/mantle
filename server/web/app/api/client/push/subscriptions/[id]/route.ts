@@ -3,7 +3,7 @@ import { loginPushUnpair } from '@/lib/push/login-routes';
 
 /**
  * DELETE /api/client/push/subscriptions/:id: unpair one of this login's own
- * devices (0211). Another login's device, or an unknown id, is a 404.
+ * devices (mobile_roles_push). Another login's device, or an unknown id, is a 404.
  */
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const client = await getClientOr401();

@@ -3,7 +3,7 @@ import { loginPushPrefs, loginPushPrefsUpdate } from '@/lib/push/login-routes';
 
 /**
  * GET/PUT /api/client/push/preferences: this login's own push toggles
- * (0211): { chatReplies, reviewResults, comments }, all on by default. PUT
+ * (mobile_roles_push): { chatReplies, reviewResults, comments }, all on by default. PUT
  * takes a partial patch; unknown or mistyped fields are ignored.
  */
 export async function GET() {

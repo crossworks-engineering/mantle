@@ -82,11 +82,11 @@ const DEVICE_COLUMNS = {
   label: pushSubscriptions.label,
 };
 
-/** The device token that enrolled the device is still live (0211). */
+/** The device token that enrolled the device is still live (mobile_roles_push). */
 const tokenLive = () => and(isNull(mobileTokens.revokedAt), gt(mobileTokens.expiresAt, sql`now()`));
 
 // There is deliberately NO "every device of this brain" list for the send
-// path. Before 0211 pushOutbound and pushApproval used one, and a member's or
+// path. Before mobile_roles_push pushOutbound and pushApproval used one, and a member's or
 // a client's device, once enrolled, would have received the owner's assistant
 // teasers. Every send names the logins it is for: the admins
 // (listAdminSubscriptions) or ONE member or client (listLoginSubscriptions).
@@ -96,7 +96,7 @@ const tokenLive = () => and(isNull(mobileTokens.revokedAt), gt(mobileTokens.expi
  * approvals and the "needs you" notices are never a member's or a client's
  * business. Fails closed: a device with no login on record, or whose login is
  * a member, a client or deactivated, is left out; so is a device whose own
- * token was revoked or expired (a device enrolled before 0211 has no token on
+ * token was revoked or expired (a device enrolled before mobile_roles_push has no token on
  * record and keeps the login-level rule). `loginId` narrows to ONE admin (an
  * agent assigned to that login).
  */
@@ -123,7 +123,7 @@ export async function listAdminSubscriptions(
 
 /**
  * The devices of ONE member or client login, for a push that concerns that
- * login alone (0211). Fails closed on every side: the login must be an
+ * login alone (mobile_roles_push). Fails closed on every side: the login must be an
  * active member or client, the device must carry the token that enrolled it,
  * that token must belong to the same login and be live. A signed-out,
  * revoked or expired phone gets nothing; an admin's device is never here.
@@ -190,7 +190,7 @@ export async function insertSubscription(args: {
   ownerId: string;
   /** The login that enrolled the device (0173): its lockout unpairs it. */
   loginId: string;
-  /** The device token the caller authenticated with (0211), when it did so
+  /** The device token the caller authenticated with (mobile_roles_push), when it did so
    *  by bearer: the device is pushed to only while that token is live. */
   tokenId?: string | null;
   routingToken: string;
@@ -345,7 +345,7 @@ export async function updatePushPrefs(patch: Partial<PushPreferences>): Promise<
   return next;
 }
 
-// --- Per-login preferences (a member or a client; 0211) ---
+// --- Per-login preferences (a member or a client; mobile_roles_push) ---
 
 export interface LoginPushPreferences {
   /** A reply in the login's own chat thread. */

@@ -2,7 +2,7 @@ import { getMemberOr401 } from '@/lib/auth';
 import { loginPushDevices, loginPushSubscribe } from '@/lib/push/login-routes';
 
 /**
- * /api/member/push/subscriptions (a MEMBER login's own devices, 0211)
+ * /api/member/push/subscriptions (a MEMBER login's own devices, mobile_roles_push)
  *   POST { routingToken, publicKey, platform, label?, deviceId? } -> { id }
  *        store the device the app just enrolled with the relay. Needs the
  *        app's bearer (400 `bearer_required` otherwise): the device is

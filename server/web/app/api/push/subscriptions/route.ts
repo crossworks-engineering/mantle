@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     ownerId: owner.id,
     // The login, not the brain: locking this login out unpairs the device.
     loginId: owner.actor.id,
-    // The device token it signed in with (0211), when it did so by bearer:
+    // The device token it signed in with (mobile_roles_push), when it did so by bearer:
     // revoking that device then stops its pushes too.
     tokenId: await callerTokenId(req, owner.actor.id),
     routingToken,

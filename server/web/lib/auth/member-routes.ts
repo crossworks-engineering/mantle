@@ -30,10 +30,10 @@ export const MEMBER_ROUTES: readonly string[] = [
   // Chat with the team-level agent, the login's own thread (Phase 1).
   'GET /api/member/chat',
   'POST /api/member/chat',
-  // Its own unread count and read cursor (the phone app's badge, 0211).
+  // Its own unread count and read cursor (the phone app's badge, mobile_roles_push).
   'GET /api/member/chat/unread',
   'POST /api/member/chat/read',
-  // Its own phone's push enrolment, device list and toggles (0211).
+  // Its own phone's push enrolment, device list and toggles (mobile_roles_push).
   'POST /api/member/push/connect',
   'POST /api/member/push/subscriptions',
   'GET /api/member/push/subscriptions',

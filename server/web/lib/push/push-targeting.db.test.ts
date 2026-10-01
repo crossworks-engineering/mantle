@@ -2,7 +2,7 @@
  * WHO a push goes to, on a real migrated Postgres, through the real store and
  * the real send path (only the relay, the sealing and the brain-wide
  * singletons are stood in). This is the gate for members and clients on the
- * phone app (migration 0211):
+ * phone app (migration mobile_roles_push):
  *
  *  - the owner's assistant teaser, an approval and a "needs you" notice go to
  *    the devices of ACTIVE ADMIN logins and to no other device: a member's
@@ -13,7 +13,7 @@
  *  - one phone belongs to one login, and a signed-out token takes its
  *    devices with it.
  *
- * Before 0211 pushOutbound and pushApproval listed every device of the brain.
+ * Before mobile_roles_push pushOutbound and pushApproval listed every device of the brain.
  *   MANTLE_TEST_DATABASE_URL=postgres://… pnpm vitest run server/web/lib/push/push-targeting.db.test.ts
  */
 import { randomUUID } from 'node:crypto';
@@ -75,7 +75,7 @@ describe.skipIf(!URL)('push targeting: who a push goes to', () => {
   const tag = `ptarget-${randomUUID().slice(0, 8)}`;
   const brain = randomUUID();
   const otherBrain = randomUUID();
-  const admin1 = randomUUID(); // a device from before 0211 (no token on record)
+  const admin1 = randomUUID(); // a device from before mobile_roles_push (no token on record)
   const admin2 = randomUUID(); // a device with a live token
   const admin3 = randomUUID(); // a device whose token was revoked
   const goneAdmin = randomUUID(); // deactivated

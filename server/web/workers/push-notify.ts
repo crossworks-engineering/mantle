@@ -6,7 +6,7 @@
  * to the ADMIN devices and hands it to Mantle Push (push-notifications.md
  * §8/§10). Those three are the owner's side: admin devices only.
  *
- * `login_notice` (migration 0211) is the member's and the client's side: a
+ * `login_notice` (migration mobile_roles_push) is the member's and the client's side: a
  * reply in a login's own chat thread, a review result on its item, a new
  * comment. Each goes to the devices of the ONE login it concerns
  * (lib/push/login-notify.ts). Sends only: nothing here starts LLM work. Its own dedicated LISTEN connection — a
@@ -100,7 +100,7 @@ function handleNeedsYou(ownerId: string): void {
   });
 }
 
-// Member and client notices (migration 0211). One at a time, in order, so a
+// Member and client notices (migration mobile_roles_push). One at a time, in order, so a
 // burst cannot open many relay connections at once.
 let loginChain: Promise<void> = Promise.resolve();
 const queueLogin = (

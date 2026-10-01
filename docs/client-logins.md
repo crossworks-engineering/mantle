@@ -236,7 +236,7 @@ rule is `reapClientSigninCodes` in `packages/content/src/client-codes.ts`.
   a shared computer, and a download URL left in its history must stop
   working. It does not revoke a sign-in link or an emailed code the client
   has not used yet: End sessions and Disable do (section 2).
-- **The phone app's device token** (migration 0211). `POST
+- **The phone app's device token** (migration mobile_roles_push). `POST
 /api/auth/client-code/verify` with the request id in the body (device
   mode) answers a bearer and sets no cookie. It is a `mobile_tokens` row
   under the client login (listed and revoked in Team admin like every

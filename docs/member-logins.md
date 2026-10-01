@@ -652,14 +652,14 @@ with a green **published** build, never a draft
 and the routes read on the team role as well, so both locks hold. Set an
 app's level in its Access control; nothing else lists it to members.
 
-| Route                                    | What                                               |
-| ---------------------------------------- | -------------------------------------------------- |
+| Route                                    | What                                                |
+| ---------------------------------------- | --------------------------------------------------- |
 | `GET /api/member/apps`                   | The apps the member may run, their folders, home id |
-| `POST /api/member/apps/:id/frame-ticket` | A seconds-lived frame ticket that names the login  |
-| `GET /api/member/apps/:id/frame?t=`      | The frame document: the PUBLISHED build            |
-| `POST /api/member/apps/:id/tool-broker`  | `host.tools.call()` (rules below)                  |
-| `POST /api/member/apps/:id/db-broker`    | `host.db.query` / `host.db.exec` on the app SQLite |
-| `GET /api/member/home`                   | The home app and what its `host.hub.get()` answers |
+| `POST /api/member/apps/:id/frame-ticket` | A seconds-lived frame ticket that names the login   |
+| `GET /api/member/apps/:id/frame?t=`      | The frame document: the PUBLISHED build             |
+| `POST /api/member/apps/:id/tool-broker`  | `host.tools.call()` (rules below)                   |
+| `POST /api/member/apps/:id/db-broker`    | `host.db.query` / `host.db.exec` on the app SQLite  |
+| `GET /api/member/home`                   | The home app and what its `host.hub.get()` answers  |
 
 - **Folders.** `GET /api/member/apps` also answers `folders`: where those
   apps sit in the admin's Apps folders, read only (`AppLauncherFolder`: id,
@@ -1412,7 +1412,7 @@ it used to stop at 100.
 queue, started waiting in the last two minutes, not pushed before), to
 devices of active admin logins only (`listAdminSubscriptions`: a member's,
 a client's, a deactivated admin's or an unattributed device is never
-listed). Since 0211 every owner push follows that rule (assistant messages
+listed). Since mobile_roles_push every owner push follows that rule (assistant messages
 and approvals too), and a member or a client gets pushes of its own: a
 reply in its chat, a review result, a comment
 (mobile-companion-backend.md, "Three roles on the phone"). The

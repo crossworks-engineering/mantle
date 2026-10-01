@@ -521,7 +521,7 @@ not read are already removed. Two ways to load one:
 
 ### 6. How the brain does it (server notes)
 
-**Migration `0211_mobile_roles_push`.** `push_subscriptions.token_id` (the
+**Migration `mobile_roles_push`.** `push_subscriptions.token_id` (the
 device token that enrolled the device), `push_login_prefs` (per-login
 toggles), `login_chat_read_cursors` (per-login read cursor), and the
 `login_notice` NOTIFY channel with three notify-only triggers: a finished

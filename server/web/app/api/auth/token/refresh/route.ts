@@ -117,7 +117,7 @@ export async function POST(req: Request) {
       expiresAt: minted.expiresAt,
       lastUsedAt: new Date(),
     });
-    // The push devices the old token enrolled follow the new one (0211):
+    // The push devices the old token enrolled follow the new one (mobile_roles_push):
     // a device is pushed to only while its token is live.
     await tx
       .update(pushSubscriptions)

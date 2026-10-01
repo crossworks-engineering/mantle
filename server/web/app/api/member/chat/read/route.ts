@@ -7,7 +7,7 @@ import { readJsonNoNul } from '@/lib/strip-nul';
 /**
  * POST /api/member/chat/read { at? } -> { unread, lastReadAt }: mark this
  * login's own thread read up to `at` (an ISO time; the future counts as now)
- * or up to now (0211). The cursor never moves backwards. Its own thread
+ * or up to now (mobile_roles_push). The cursor never moves backwards. Its own thread
  * only, by the session's login.
  */
 export async function POST(req: Request) {

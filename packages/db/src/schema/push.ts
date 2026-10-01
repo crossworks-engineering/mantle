@@ -51,9 +51,9 @@ export const pushSubscriptions = pgTable(
      *  deletes its devices; deleting it cascades. Null only on a brain that
      *  had no anchor row when 0173 backfilled. */
     loginId: uuid('login_id'),
-    /** The device token that enrolled the device (0211). A member's or a
+    /** The device token that enrolled the device (mobile_roles_push). A member's or a
      *  client's device is pushed to only while this token is live; null on
-     *  admin rows from before 0211, which keep the login-level rule. */
+     *  admin rows from before mobile_roles_push, which keep the login-level rule. */
     tokenId: uuid('token_id').references(() => mobileTokens.id, { onDelete: 'cascade' }),
     /** The relay's deviceId (from /enroll), kept for reference/unpair. */
     relayDeviceId: text('relay_device_id'),
@@ -100,7 +100,7 @@ export const pushPrefs = pgTable(
 export type PushPrefsRow = typeof pushPrefs.$inferSelect;
 
 /**
- * `push_login_prefs`: one login's push toggles (0211), for a member or a
+ * `push_login_prefs`: one login's push toggles (mobile_roles_push), for a member or a
  * client. No row means every toggle is on. `push_prefs` above is the brain's
  * single row for the admin pushes. The `login_id` FK into `auth.users` is
  * declared in the SQL migration (cross-schema, cascade).

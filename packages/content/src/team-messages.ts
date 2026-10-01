@@ -345,7 +345,7 @@ export async function listMemberChatActivity(ownerId: string): Promise<MemberCha
   }));
 }
 
-// ── A login's own unread count (the phone app's badge, migration 0211) ──────
+// ── A login's own unread count (the phone app's badge, migration mobile_roles_push) ──────
 
 /** What a member or a client has not read in its own thread. */
 export type LoginChatUnread = { unread: number; lastReadAt: string };

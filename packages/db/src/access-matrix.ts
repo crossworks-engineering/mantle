@@ -304,7 +304,7 @@ export const ACCESS_MATRIX: readonly TableAccess[] = [
   none('public.team_messages', 'system'),
   none('public.team_notifications', 'system'),
   none('public.team_read_cursors', 'system'),
-  // A member's or a client's own chat read cursor (0211): its own routes
+  // A member's or a client's own chat read cursor (mobile_roles_push): its own routes
   // read and write it on the admin pool, by the session's login.
   none('public.login_chat_read_cursors', 'system'),
   none('public.assistant_read_cursors', 'system'),

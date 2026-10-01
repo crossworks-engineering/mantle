@@ -2,7 +2,7 @@ import { pgTable, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 /**
  * How far a member or a client login has read its OWN chat thread
- * (team_messages by login, 0211). Unread = finished outbound rows newer than
+ * (team_messages by login, mobile_roles_push). Unread = finished outbound rows newer than
  * `last_read_at`. One row per login, made by the login's first unread read
  * (so a login starts with nothing unread). `team_read_cursors` is the admin
  * side, keyed by contact. The `login_id` FK into `auth.users` is declared in

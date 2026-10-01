@@ -1,6 +1,6 @@
 /**
  * What a member or a client login is told about on its phone (migration
- * 0211, docs/mobile-companion-backend.md "Three roles on the phone"): a reply
+ * mobile_roles_push, docs/mobile-companion-backend.md "Three roles on the phone"): a reply
  * in its own chat thread, a review result on its own item, a new comment.
  *
  * The `login_notice` NOTIFY (raised by triggers) carries ids only. This

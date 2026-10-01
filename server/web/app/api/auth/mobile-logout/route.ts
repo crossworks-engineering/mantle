@@ -10,7 +10,7 @@ import { deleteTokenSubscriptions, forgetRelayDevices } from '@/lib/push/store';
  * /api/auth prefix. Idempotent — always 200, so it can't be used to probe
  * whether a token is valid.
  *
- * The push devices that token enrolled go with it (0211): a signed-out phone
+ * The push devices that token enrolled go with it (mobile_roles_push): a signed-out phone
  * gets no more teasers. A CLIENT's sign-out ends every session of the login
  * (its other devices and its browser too), as its web sign-out does (client
  * logins audit B23).

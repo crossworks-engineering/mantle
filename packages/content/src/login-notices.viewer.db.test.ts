@@ -1,5 +1,5 @@
 /**
- * What a member or a client is told about on its phone (migration 0211), on
+ * What a member or a client is told about on its phone (migration mobile_roles_push), on
  * a real, migrated Postgres:
  *
  *  - the `login_notice` event fires for a finished reply in a login's own

@@ -1,4 +1,4 @@
-// The push routes of a MEMBER or a CLIENT login (migration 0211,
+// The push routes of a MEMBER or a CLIENT login (migration mobile_roles_push,
 // docs/mobile-companion-backend.md "Three roles on the phone"): the same
 // steps as the admin's /api/push/*, for the caller's OWN devices and its own
 // toggles. The route files under /api/member/push and /api/client/push gate

@@ -858,7 +858,7 @@ export async function endLoginSessions(
           ...(opts.keepJti ? [ne(mobileTokens.id, opts.keepJti)] : []),
         ),
       );
-    // The push devices those tokens enrolled go with them (0211): a signed
+    // The push devices those tokens enrolled go with them (mobile_roles_push): a signed
     // out phone gets no more teasers. The send path refuses a device whose
     // token is dead anyway; this removes the rows. The relay keeps a device
     // nobody can address (the routing token lived only here).
