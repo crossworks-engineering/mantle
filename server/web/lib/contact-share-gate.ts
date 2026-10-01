@@ -15,7 +15,7 @@
  * from the URL or the body: the contact is always the one the SHARE names.
  */
 import { NextResponse } from '@/server/http-compat';
-import { contactShareGateRow, type ContactShareGateRow } from '@mantle/content';
+import { contactShareGateRow, recordShareAccess, type ContactShareGateRow } from '@mantle/content';
 import { resolveActiveShareRowByToken } from '@/lib/shares';
 import type { Share } from '@mantle/db';
 import {
@@ -114,8 +114,20 @@ export async function contactTicketAdmits(
 }
 
 /** The 401 every /s route but the page answers on a contact share without
- *  an admitting cookie. Says nothing about the item or the contact. */
-export function contactCodeRequired(): Response {
+ *  an admitting cookie. Says nothing about the item or the contact. The
+ *  refusal goes on the share's trail, sampled like an open (at most one
+ *  row per share a minute). */
+export function contactCodeRequired(share: Share): Response {
+  if (share.contactId) {
+    recordShareAccess({
+      ownerId: share.ownerId,
+      shareId: share.id,
+      contactId: share.contactId,
+      kind: 'refused',
+      detail: { refused: 'code-required' },
+      sampled: true,
+    });
+  }
   return NextResponse.json(
     { ok: false, error: 'code required' },
     { status: 401, headers: { 'cache-control': 'no-store' } },

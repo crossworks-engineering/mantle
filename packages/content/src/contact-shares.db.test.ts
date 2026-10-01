@@ -4,9 +4,11 @@
  *
  * Data: two contacts and the open link live side by side on one item; a
  * second live share for the same contact is refused; a folder is refused;
- * deleting the contact removes its shares and its code row; switch off then
- * Enable never revives an old cookie (the epoch only goes up) and starts
- * with no shares; the CHECK refuses can_write on a page and the trigger a
+ * deleting the contact removes its shares and its code row, and keeps its
+ * trail with NULL ids; switch off then Enable never revives an old cookie
+ * (the epoch only goes up) and starts with no shares, also when a switch
+ * off races a share create; a double click (two Enables, two identical
+ * shares at once) answers one code and one share, never a 500; the CHECK refuses can_write on a page and the trigger a
  * share to a node that is not a contact; share_access_log is reaped at 90
  * days.
  *
@@ -18,7 +20,8 @@
  *
  * Codes: a right code opens; the per-share limit (10 an hour) and the
  * per-contact lock (30 a day) hold, counted in the database (a "restart",
- * fresh module state, changes nothing); regenerate clears the lock.
+ * fresh module state, changes nothing); a try the share limit refused is
+ * not counted on the contact; regenerate clears the lock.
  *
  * The contact menu and the admin "Shared" tab: only the live shares of that
  * contact; revoked, expired and deleted items leave; at most 50 with
@@ -207,16 +210,95 @@ describe.skipIf(!URL)('contact shares on Postgres', () => {
       });
     });
 
-    it('deleting a contact removes its shares and its code row', async () => {
+    it('deleting a contact removes its shares and its code row; its trail stays', async () => {
       const gone = randomUUID();
+      const marker = randomUUID();
       await insertNodes([[gone, 'contact', `${tag} Gone`, 'contacts']]);
       await codes.enableContactSharing(owner, gone);
-      await cs.createContactShares(owner, note, [gone]);
+      const [s] = await cs.createContactShares(owner, note, [gone]);
+      await m.db.execute(sqlTag`
+        insert into share_access_log (owner_id, share_id, contact_id, kind, detail) values
+          (${owner}, ${s!.shareId}, ${gone}, 'open', ${JSON.stringify({ marker })}::jsonb),
+          (${owner}, ${s!.shareId}, ${gone}, 'code_failed', ${JSON.stringify({ marker })}::jsonb)`);
       await m.db.execute(sqlTag`delete from nodes where id = ${gone}`);
       const left = await exec<{ s: number; c: number }>(sqlTag`
         select (select count(*)::int from shares where contact_id = ${gone}) as s,
                (select count(*)::int from contact_share_codes where contact_id = ${gone}) as c`);
       expect(left[0]).toEqual({ s: 0, c: 0 });
+      // The trail outlives the share and the contact, with both ids NULL.
+      const trail = await exec<{ share_id: string | null; contact_id: string | null }>(sqlTag`
+        select share_id, contact_id from share_access_log
+         where owner_id = ${owner} and detail->>'marker' = ${marker}`);
+      expect(trail).toEqual([
+        { share_id: null, contact_id: null },
+        { share_id: null, contact_id: null },
+      ]);
+    });
+
+    it('a switch off racing a share create leaves no live share after Enable again', async () => {
+      for (let i = 0; i < 10; i++) {
+        const c = randomUUID();
+        const item = randomUUID();
+        await insertNodes([
+          [c, 'contact', `${tag} Race ${i}`, 'contacts'],
+          [item, 'note', `${tag} race ${i}`, 'notes'],
+        ]);
+        await codes.enableContactSharing(owner, c);
+        const [made, off] = await Promise.allSettled([
+          cs.createContactShares(owner, item, [c]),
+          codes.disableContactSharing(owner, c),
+        ]);
+        expect(off).toMatchObject({ status: 'fulfilled', value: { revoked: expect.any(Number) } });
+        // The create either ran first (the switch off revoked it) or waited
+        // and was refused: never a live share while sharing is off.
+        if (made.status === 'rejected') {
+          expect(made.reason).toMatchObject({ reason: 'sharing-off' });
+        }
+        expect(await liveContactShares(item), `round ${i}`).toBe(0);
+        await codes.enableContactSharing(owner, c);
+        expect(await liveContactShares(item), `round ${i}`).toBe(0);
+        expect(await codes.contactSharingFor(owner, c)).toMatchObject({ shareCount: 0 });
+      }
+    });
+
+    it('Enable again revokes a share that outlived a switch off', async () => {
+      const c = randomUUID();
+      const item = randomUUID();
+      await insertNodes([
+        [c, 'contact', `${tag} Stray`, 'contacts'],
+        [item, 'note', `${tag} stray`, 'notes'],
+      ]);
+      await codes.enableContactSharing(owner, c);
+      await cs.createContactShares(owner, item, [c]);
+      // The state the race used to leave: sharing off, a live share.
+      await m.db.execute(sqlTag`
+        update contact_share_codes set code_hash = null, disabled_at = now() where contact_id = ${c}`);
+      expect(await liveContactShares(item)).toBe(1);
+      await codes.enableContactSharing(owner, c);
+      expect(await liveContactShares(item)).toBe(0);
+    });
+
+    it('a double click: two Enables give one code; two identical shares give one share', async () => {
+      const c = randomUUID();
+      const item = randomUUID();
+      await insertNodes([
+        [c, 'contact', `${tag} Twice`, 'contacts'],
+        [item, 'note', `${tag} twice`, 'notes'],
+      ]);
+      const enables = await Promise.all([
+        codes.enableContactSharing(owner, c),
+        codes.enableContactSharing(owner, c),
+      ]);
+      expect(enables.filter((e) => e && 'code' in e)).toHaveLength(1);
+      expect(enables.filter((e) => e && 'alreadyOn' in e)).toHaveLength(1);
+      const made = await Promise.all([
+        cs.createContactShares(owner, item, [c]),
+        cs.createContactShares(owner, item, [c]),
+        cs.createContactShares(owner, item, [c]),
+      ]);
+      expect(new Set(made.map((r) => r[0]!.shareId)).size).toBe(1);
+      expect(new Set(made.map((r) => r[0]!.path)).size).toBe(1);
+      expect(await liveContactShares(item)).toBe(1);
     });
 
     it('switch off revokes every share; Enable starts fresh, the epoch only goes up', async () => {
@@ -348,9 +430,31 @@ describe.skipIf(!URL)('contact shares on Postgres', () => {
       vi.resetModules();
       const fresh = await import('./contact-share-codes');
       expect(await fresh.checkContactShareCode(shares[0]!, code)).toMatchObject({ ok: false });
-      // 12 failures so far. 18 more on other shares reach 30: locked.
+      // 10 failures counted on the contact: the two tries the share limit
+      // refused were logged on the share, not counted on the contact.
+      const counted = async () =>
+        (
+          await exec<{ n: number }>(
+            sqlTag`select failed_attempts as n from contact_share_codes where contact_id = ${c}`,
+          )
+        )[0]!.n;
+      expect(await counted()).toBe(10);
+      const failedOnShare0 = await exec<{ n: number }>(sqlTag`
+        select count(*)::int as n from share_access_log where share_id = ${shares[0]!.id} and kind = 'code_failed'`);
+      expect(failedOnShare0[0]!.n).toBe(12);
+      // One link holder cannot lock the contact: 25 more on the closed share
+      // still count nothing.
+      for (let i = 0; i < 25; i++) {
+        expect(await fresh.checkContactShareCode(shares[0]!, 'zzzzzzzz')).toMatchObject({
+          ok: false,
+          lockedNow: false,
+        });
+      }
+      expect(await counted()).toBe(10);
+      expect((await fresh.contactShareGateRow(c))?.open).toBe(true);
+      // 20 more on other shares (10 each, inside their own limit) reach 30: locked.
       let locked = false;
-      for (let i = 0; i < 18; i++) {
+      for (let i = 0; i < 20; i++) {
         const r = await fresh.checkContactShareCode(shares[1 + (i % 2)]!, 'yyyyyyyy');
         if (!r.ok && r.lockedNow) locked = true;
       }

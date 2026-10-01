@@ -1,8 +1,8 @@
 /**
  * The contact share audit trail (migration 0214): what a contact did on a
- * contact share. One row per asset, write and refusal; an open and a
- * database read land at most one row per share a minute (an app polls, a
- * reader reloads). Failed codes are written by the code check itself
+ * contact share. One row per asset, write and refusal; an open, a
+ * database read and a gate 401 (no admitting cookie) land at most one row
+ * per share a minute (an app polls, a reader reloads). Failed codes are written by the code check itself
  * (contact-share-codes.ts), in its transaction.
  *
  * Fire-and-forget, like the app access log: an audit hiccup never blocks a
@@ -20,6 +20,9 @@ export type ShareAccessEntry = {
   contactId: string | null;
   kind: ShareAccessKind;
   detail?: Record<string, unknown>;
+  /** Sample this row like an open (at most one per share a minute): a gate
+   *  401 on a contact share, which an app or a reload can repeat fast. */
+  sampled?: boolean;
 };
 
 /** Opens and reads land at most one row per share this often. */
@@ -30,8 +33,8 @@ export const SHARE_ACCESS_LOG_RETENTION_DAYS = 90;
 const lastSampled = new Map<string, number>();
 
 function sampledAway(entry: ShareAccessEntry, now: number): boolean {
-  if (entry.kind !== 'open' && entry.kind !== 'query') return false;
-  const key = `${entry.kind}:${entry.shareId}`;
+  if (entry.kind !== 'open' && entry.kind !== 'query' && !entry.sampled) return false;
+  const key = `${entry.kind}${entry.sampled ? ':sampled' : ''}:${entry.shareId}`;
   const last = lastSampled.get(key);
   if (last !== undefined && now - last < SHARE_ACCESS_SAMPLE_MS) return true;
   if (lastSampled.size >= 10_000) {

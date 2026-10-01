@@ -48,7 +48,7 @@ export function ContactCodePrompt({ shareToken }: { shareToken: string }) {
   };
 
   return (
-    <div className="flex h-dvh items-center justify-center overflow-y-auto bg-background p-6">
+    <div className="scrollbar-thin flex h-dvh items-center justify-center overflow-y-auto bg-background p-4">
       <div className="w-full max-w-sm space-y-6 rounded-lg border border-border bg-card p-6">
         <div className="space-y-1.5 text-center">
           <KeyRound className="mx-auto size-8 text-muted-foreground" aria-hidden />

@@ -41,7 +41,8 @@ export type ShareAccessKind = 'open' | 'asset' | 'query' | 'write' | 'refused' |
 /**
  * The contact share audit trail (migration 0214): one row per open (at most
  * one a minute per share), asset, database call, refusal and failed code.
- * Reaped after 90 days by the app-access-log-reap sweep.
+ * Reaped after 90 days by the app-access-log-reap sweep. Deleting a share
+ * or a contact sets its id NULL (like app_access_log): the trail stays.
  */
 export const shareAccessLog = pgTable(
   'share_access_log',
@@ -50,10 +51,10 @@ export const shareAccessLog = pgTable(
       .primaryKey()
       .default(sql`gen_random_uuid()`),
     ownerId: uuid('owner_id').notNull(),
-    shareId: uuid('share_id')
-      .notNull()
-      .references(() => shares.id, { onDelete: 'cascade' }),
-    contactId: uuid('contact_id').references(() => nodes.id, { onDelete: 'cascade' }),
+    /** NULL once the share is deleted (a deleted contact takes its shares):
+     *  the trail stays. */
+    shareId: uuid('share_id').references(() => shares.id, { onDelete: 'set null' }),
+    contactId: uuid('contact_id').references(() => nodes.id, { onDelete: 'set null' }),
     kind: text('kind').$type<ShareAccessKind>().notNull(),
     detail: jsonb('detail')
       .$type<Record<string, unknown>>()

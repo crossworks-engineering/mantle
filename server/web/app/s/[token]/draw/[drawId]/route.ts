@@ -42,7 +42,7 @@ export async function GET(
   }
 
   const gate = await gateShare(req, token);
-  if (gate.kind === 'code') return contactCodeRequired();
+  if (gate.kind === 'code') return contactCodeRequired(gate.share);
   const share = gate.kind === 'ok' ? gate.share : null;
   if (!share || share.nodeType !== 'page') return notFound();
 

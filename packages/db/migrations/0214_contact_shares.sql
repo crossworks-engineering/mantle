@@ -18,7 +18,8 @@
 --    share per item (shares_node_open_uq, shares_node_contact_uq).
 -- 3. share_access_log: what a contact did on a contact share (open, asset,
 --    query, write, refused, code_failed). Reaped after 90 days by the
---    app-access-log-reap sweep.
+--    app-access-log-reap sweep. Deleting a share or a contact sets its id
+--    NULL here: the trail stays.
 -- 4. needs_you_changed fires when a contact's sharing locks or unlocks: a
 --    locked contact is an admin notice in "Needs you".
 --
@@ -151,14 +152,30 @@ CREATE INDEX IF NOT EXISTS "shares_contact_idx"
 CREATE TABLE IF NOT EXISTS "public"."share_access_log" (
   "id"         uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "owner_id"   uuid NOT NULL,
-  "share_id"   uuid NOT NULL REFERENCES "public"."shares"("id") ON DELETE CASCADE,
-  "contact_id" uuid REFERENCES "public"."nodes"("id") ON DELETE CASCADE,
+  "share_id"   uuid REFERENCES "public"."shares"("id") ON DELETE SET NULL,
+  "contact_id" uuid REFERENCES "public"."nodes"("id") ON DELETE SET NULL,
   "kind"       text NOT NULL,
   "detail"     jsonb NOT NULL DEFAULT '{}'::jsonb,
   "created_at" timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT "share_access_log_kind_ck"
     CHECK ("kind" IN ('open', 'asset', 'query', 'write', 'refused', 'code_failed'))
 );
+--> statement-breakpoint
+-- The trail outlives its share and its contact (like app_access_log):
+-- deleting a contact cascades its shares, and both ids go NULL here, so the
+-- rows stay. Restated so a database that ran an earlier draft of this file
+-- gets the same shape (idempotent).
+ALTER TABLE "public"."share_access_log" ALTER COLUMN "share_id" DROP NOT NULL;
+--> statement-breakpoint
+ALTER TABLE "public"."share_access_log"
+  DROP CONSTRAINT IF EXISTS "share_access_log_share_id_fkey",
+  ADD CONSTRAINT "share_access_log_share_id_fkey"
+    FOREIGN KEY ("share_id") REFERENCES "public"."shares"("id") ON DELETE SET NULL;
+--> statement-breakpoint
+ALTER TABLE "public"."share_access_log"
+  DROP CONSTRAINT IF EXISTS "share_access_log_contact_id_fkey",
+  ADD CONSTRAINT "share_access_log_contact_id_fkey"
+    FOREIGN KEY ("contact_id") REFERENCES "public"."nodes"("id") ON DELETE SET NULL;
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "share_access_log_share_idx"
   ON "public"."share_access_log" ("share_id", "created_at" DESC);

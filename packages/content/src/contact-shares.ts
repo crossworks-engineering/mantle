@@ -90,14 +90,25 @@ export async function createContactShares(
       throw new ContactShareRefusedError('write-not-app', 'Only an app can let a contact write.');
     }
     const contacts = await tx
-      .select({ id: nodes.id, on: contactShareCodes.codeHash })
+      .select({ id: nodes.id })
       .from(nodes)
-      .leftJoin(contactShareCodes, eq(contactShareCodes.contactId, nodes.id))
       .where(and(eq(nodes.ownerId, ownerId), eq(nodes.type, 'contact'), inArray(nodes.id, ids)));
     if (contacts.length !== ids.length) {
       throw new ContactShareRefusedError('not-a-contact', 'Not a contact of this brain.');
     }
-    if (contacts.some((c) => !c.on)) {
+    // The code rows, locked FOR SHARE (in id order) before the sharing-off
+    // check. A switch off (or an Enable from off) updates the row, so it
+    // waits for this transaction, or this one waits for it and then reads
+    // the row as it left it. Without the lock a share made while a switch
+    // off ran survived it, and Enable again opened it with the new code.
+    const codeRows = await tx
+      .select({ id: contactShareCodes.contactId, on: contactShareCodes.codeHash })
+      .from(contactShareCodes)
+      .where(and(eq(contactShareCodes.ownerId, ownerId), inArray(contactShareCodes.contactId, ids)))
+      .orderBy(contactShareCodes.contactId)
+      .for('share');
+    const on = new Set(codeRows.filter((r) => r.on).map((r) => r.id));
+    if (ids.some((c) => !on.has(c))) {
       throw new ContactShareRefusedError(
         'sharing-off',
         'Sharing is off for this contact. Turn it on in Contacts first.',
@@ -131,6 +142,9 @@ export async function createContactShares(
     const have = new Map(existing.map((e) => [e.contactId!, e]));
     const missing = ids.filter((c) => !have.has(c));
     if (missing.length) {
+      // A second identical request at the same time (a double click) meets
+      // the first one's row on shares_node_contact_uq: do nothing, then
+      // read the row it made, so both answer the same share.
       const made = await tx
         .insert(shares)
         .values(
@@ -143,8 +157,28 @@ export async function createContactShares(
             canWrite,
           })),
         )
+        .onConflictDoNothing({
+          target: [shares.nodeId, shares.contactId],
+          where: sql`"revoked_at" is null and "contact_id" is not null`,
+        })
         .returning({ id: shares.id, contactId: shares.contactId, token: shares.token });
       for (const m of made) have.set(m.contactId!, m);
+      const raced = missing.filter((c) => !have.has(c));
+      if (raced.length) {
+        const found = await tx
+          .select({ id: shares.id, contactId: shares.contactId, token: shares.token })
+          .from(shares)
+          .where(
+            and(
+              eq(shares.ownerId, ownerId),
+              eq(shares.nodeId, nodeId),
+              inArray(shares.contactId, raced),
+              isNull(shares.revokedAt),
+            ),
+          );
+        for (const f of found) have.set(f.contactId!, f);
+        if (found.length !== raced.length) throw new Error('contact share: a raced row is gone');
+      }
     }
     return ids.map((contactId) => {
       const s = have.get(contactId)!;

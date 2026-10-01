@@ -216,7 +216,13 @@ code, and a master key change ends every code (regenerate them).
 `code_epoch` only goes up (regenerate, switch off), so a visitor cookie of
 an older epoch never matches again. Switch off revokes every live share of
 the contact in the same transaction; Enable again gives a new code and no
-shares. Deleting the contact removes its code row and its shares.
+shares. A share create locks the contact's code row (FOR SHARE) before it
+checks that sharing is on, so it cannot slip past a switch off running at
+the same time; Enable from off also revokes any live share of the contact
+in its own transaction. A double click (two Enables, or two identical
+share requests, at once) answers one code (the other `alreadyOn`, 409) and
+one share, never a 500. Deleting the contact removes its code row and its
+shares; its trail rows stay (below).
 
 **The share.** `shares.contact_id` names the contact; each contact gets its
 own row, so its own token and link (`/s/<token>`, 128 bits). One live share
@@ -259,10 +265,14 @@ per address (an IPv4 address or an IPv6 /64) 10 a minute and 30 an hour;
 per share 10 failures an hour (counted from `share_access_log`); per
 contact 30 failures a day, then a 24-hour lock, an audit row
 (`contact.sharing_locked`) and a "Needs you" notice
-(docs/member-logins.md section 12). The share and contact counters live in
-the database, so a restart or a second web process does not reset them. A
-good code sets the cookie and writes `auth.contact_code_signin`; a bad one
-`auth.contact_code_failed`.
+(docs/member-logins.md section 12). A try the per-share limit already
+refused is logged on the share (`code_failed`) but not counted on the
+contact, after the same work: one holder of one link cannot lock all of
+the contact's links. The share and contact counters live in the database,
+so a restart or a second web process does not reset them. The per-address
+limits live in the web process's memory (`rateLimit`): a restart resets
+them, and each web process counts its own. A good code sets the cookie and
+writes `auth.contact_code_signin`; a bad one `auth.contact_code_failed`.
 
 **What a contact may do.** Read the item. An app only: write its data when
 the share has "Can write" (the db broker's `exec`; the write schedules the
@@ -286,10 +296,18 @@ icon, title and a link to that item's own `/s/<token>`. Nothing else. An
 open link shows no menu.
 
 **Audit.** `share_access_log` records opens (at most one a minute per
-share), assets, database reads (sampled the same way) and writes,
-refusals and failed codes, reaped after 90 days by the
-`app-access-log-reap` sweep. An app's access log also names the contact
-(`app_access_log.contact_id`), so its Activity tab shows who.
+share), assets, database reads (sampled the same way) and writes, failed
+codes, and refusals with the share's contact: a read-only `exec`, a tool
+broker call, and a gate 401 (no admitting cookie; sampled like an open, at
+most one row per share a minute). Rows are reaped after 90 days by the
+`app-access-log-reap` sweep. Deleting a share or its contact sets
+`share_id` and `contact_id` NULL (like `app_access_log`): the trail stays.
+An app's access log also names the contact (`app_access_log.contact_id`),
+so its Activity tab shows who. The admin's actions are in `audit_log`:
+`contact.sharing_enabled` / `_regenerated` / `_disabled`,
+`contact.shares_revoked_all`, `contact.share_created` (nodeId, contactIds,
+canWrite) and `contact.share_can_write` (shareId, contactId, value).
+`share_access_log` has no owner UI yet (later).
 
 **The honest limit.** The code proves "holds the code", not "owns the
 mailbox". If the link and the code travel in the same message, whoever has

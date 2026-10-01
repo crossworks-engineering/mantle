@@ -56,6 +56,9 @@ export type AuditEntry = {
     | 'contact.sharing_regenerated'
     | 'contact.sharing_disabled'
     | 'contact.shares_revoked_all'
+    // An admin shared an item with contacts, or set "Can write" on one.
+    | 'contact.share_created'
+    | 'contact.share_can_write'
     | 'client.signin_sender_set'
     | 'client.signin_link_issued'
     | 'client.signin_link_revoked'

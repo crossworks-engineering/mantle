@@ -3,7 +3,8 @@
  * shares, migration 0214): share one item with one or more contacts. One
  * share per contact, each with its own link (`path`, `/s/<token>`), opened
  * with that contact's code. Idempotent per item and contact. Changes no
- * level: the team never sees the item. Admins only.
+ * level: the team never sees the item. Admins only. Audited
+ * (`contact.share_created`).
  *
  * 400 `{ error, reason }` when refused: a contact with sharing off
  * (`sharing-off`), not a contact of this brain (`not-a-contact`), a folder
@@ -15,6 +16,7 @@ import { NextResponse } from '@/server/http-compat';
 import { ContactShareRefusedError, createContactShares } from '@mantle/content';
 import type { CreateContactSharesResponse } from '@mantle/client-types';
 import { getOwnerOr401 } from '@/lib/auth';
+import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import { firstIssue } from '@/lib/zod-issue';
 
 const Body = z.object({
@@ -37,6 +39,19 @@ export async function POST(req: Request) {
       parsed.data.contactIds,
       parsed.data.canWrite === true,
     );
+    auditFireAndForget({
+      actorId: user.actor.id,
+      actorEmail: user.actor.email,
+      action: 'contact.share_created',
+      method: 'POST',
+      path: '/api/shares/contacts',
+      detail: {
+        nodeId: parsed.data.nodeId,
+        contactIds: shares.map((s) => s.contactId),
+        canWrite: parsed.data.canWrite === true,
+      },
+      ...requestMetaFrom(req),
+    });
     return NextResponse.json({ shares } satisfies CreateContactSharesResponse);
   } catch (err) {
     if (err instanceof ContactShareRefusedError) {

@@ -21,7 +21,8 @@
  *  - the failure counters live in the row (a restart or a second web
  *    process does not reset them): 30 failures in a day lock the contact for
  *    24 hours; a share takes 10 failures an hour (counted from
- *    share_access_log);
+ *    share_access_log), and an attempt that limit refused is not counted
+ *    on the contact;
  *  - every failure to check a code is the same `null`, after the same work
  *    ({@link codeCheckSteps}).
  */
@@ -221,7 +222,15 @@ export async function enableContactSharing(
       .limit(1);
     if (existing?.codeHash) return { alreadyOn: true };
     if (!existing) {
-      await tx.insert(contactShareCodes).values({ contactId, ownerId, codeHash, createdAt: now });
+      // Two Enables at once (a double click) both find no row to lock: the
+      // second meets the first one's row here, waits for it, and answers
+      // alreadyOn rather than a primary key error.
+      const made = await tx
+        .insert(contactShareCodes)
+        .values({ contactId, ownerId, codeHash, createdAt: now })
+        .onConflictDoNothing({ target: contactShareCodes.contactId })
+        .returning({ id: contactShareCodes.contactId });
+      if (!made.length) return { alreadyOn: true };
     } else {
       await tx
         .update(contactShareCodes)
@@ -235,6 +244,20 @@ export async function enableContactSharing(
           rotatedAt: now,
         })
         .where(eq(contactShareCodes.contactId, contactId));
+      // Enable again starts with no shares (decision 3). Switch off revoked
+      // them, and a share create waits on this row's lock, but a share that
+      // got past an older switch off is revoked here, in the same
+      // transaction, before the new code can open it.
+      await tx
+        .update(shares)
+        .set({ revokedAt: now })
+        .where(
+          and(
+            eq(shares.ownerId, ownerId),
+            eq(shares.contactId, contactId),
+            isNull(shares.revokedAt),
+          ),
+        );
     }
     return { code };
   });
@@ -417,13 +440,19 @@ export const codeCheckSteps = {
   },
   /** A failure: counted on the contact's row (the same statement touches
    *  nothing with no row) and logged on the share (a statement that writes
-   *  nothing with no share). Returns whether this failure locked it. */
+   *  nothing with no share). An attempt the share limit already refused
+   *  (`shareFailures` at the limit) is logged on the share but not counted
+   *  on the contact, so one link holder cannot lock all of the contact's
+   *  links; the same statement still runs, against no row. Returns whether
+   *  this failure locked it. */
   async countFailure(
     tx: Tx,
     share: CodeCheckShare | null,
-    row: CodeRow | null,
+    found: CodeRow | null,
+    shareFailures: number,
     now: Date,
   ): Promise<boolean> {
+    const row = shareFailures >= CONTACT_CODE_SHARE_HOURLY_FAILURES ? null : found;
     const windowOpen = !!row?.failedSince && now.getTime() - row.failedSince.getTime() < DAY_MS;
     const failures = (windowOpen ? (row?.failedAttempts ?? 0) : 0) + 1;
     const alreadyLocked = !!row?.lockedUntil && row.lockedUntil > now;
@@ -478,7 +507,7 @@ export async function checkContactShareCode(
       failures < CONTACT_CODE_SHARE_HOURLY_FAILURES &&
       code.length === CONTACT_CODE_LENGTH;
     if (!usable || !match || !row) {
-      const lockedNow = await steps.countFailure(tx, share, row, now);
+      const lockedNow = await steps.countFailure(tx, share, row, failures, now);
       return { ok: false, lockedNow, contactId };
     }
     await steps.accept(tx, row, now);

@@ -1,13 +1,14 @@
 /**
  * The owner API of contact shares on a real, migrated Postgres (contact
- * shares, migration 0214; plan section 7). Only the owner check is stood
- * in. Seeds its own brain and removes it.
+ * shares, migration 0214; plan section 7). Only the owner check and the
+ * audit write are stood in. Seeds its own brain and removes it.
  *
  *  - POST /api/contacts/:id/sharing: enable answers the code once (a second
  *    enable is 409), the contact DTO carries `sharing`, regenerate answers a
  *    new code, disable revokes every live share and names how many;
- *  - POST /api/shares/contacts: one share per contact, refusals by reason;
- *    PATCH /api/shares/:id { canWrite } for an app only;
+ *  - POST /api/shares/contacts: one share per contact, refusals by reason,
+ *    audited as contact.share_created; PATCH /api/shares/:id { canWrite }
+ *    for an app only, audited as contact.share_can_write;
  *  - DELETE /api/shares/:id on a contact share changes no level (the tab's
  *    Revoke and the dialog's Remove are this one call);
  *  - GET /api/contacts/:id/shares lists the contact's live shares;
@@ -20,7 +21,18 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const URL = process.env.MANTLE_TEST_DATABASE_URL;
-const h = vi.hoisted(() => ({ owner: '' }));
+const h = vi.hoisted(() => ({
+  owner: '',
+  audits: [] as Array<{ action: string; detail?: Record<string, unknown> }>,
+}));
+
+// The audit trail is captured, not written: the test reads what it got.
+vi.mock('@/lib/audit', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  auditFireAndForget: vi.fn((entry: { action: string; detail?: Record<string, unknown> }) => {
+    h.audits.push(entry);
+  }),
+}));
 
 vi.mock('@/lib/auth', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -133,6 +145,14 @@ describe.skipIf(!URL)('the contact share owner API on Postgres', () => {
     expect(made.shares.map((s) => s.contactId).sort()).toEqual([ann, ben].sort());
     expect(made.shares.every((s) => s.path.startsWith('/s/'))).toBe(true);
     expect(await levelOf(page)).toBe('team');
+    const created = h.audits.filter((a) => a.action === 'contact.share_created');
+    // The refused create wrote no audit row; the made one did.
+    expect(created).toHaveLength(1);
+    expect(created[0]!.detail).toEqual({
+      nodeId: page,
+      contactIds: expect.arrayContaining([ann, ben]),
+      canWrite: false,
+    });
     const write = await r.create!(
       call('POST', '/x', { nodeId: page, contactIds: [ann], canWrite: true }),
     );
@@ -147,11 +167,18 @@ describe.skipIf(!URL)('the contact share owner API on Postgres', () => {
       p({ id: appShare!.shareId }),
     );
     expect(await patched.json()).toEqual({ ok: true, canWrite: true });
+    expect(h.audits.filter((a) => a.action === 'contact.share_can_write')).toEqual([
+      expect.objectContaining({
+        detail: { shareId: appShare!.shareId, contactId: ann, value: true },
+      }),
+    ]);
     const notApp = await r.patch!(
       call('PATCH', '/x', { canWrite: true }),
       p({ id: made.shares[0]!.shareId }),
     );
     expect(notApp.status).toBe(400);
+    // A refused PATCH writes no audit row.
+    expect(h.audits.filter((a) => a.action === 'contact.share_can_write')).toHaveLength(1);
   });
 
   it('the access view and Shared links name the contacts', async () => {

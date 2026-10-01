@@ -41,6 +41,15 @@ the team (docs/sharing.md section 4b). The item's level never changes.
 - **Contract** (`@mantle/client-types`): `dto/contact-shares.ts`,
   `AccessNodeView.contactShares`, `SharedLinkRow.contactId/contactName/
   canWrite`, `NeedsYou.sharing`; `ContactRow.sharing` in content-core.
+- **Races and the trail (audit fix round).** A share create locks the
+  contact's code row before its sharing-on check, so a switch off running
+  at the same time cannot leave a live share; Enable from off revokes any
+  live share too. A double click on Enable or on Share answers one code or
+  one share, not a 500. `share_access_log` keeps its rows when a share or a
+  contact is deleted (both ids SET NULL). A try the per-share limit refused
+  no longer counts toward the contact lock. The tool broker and the gate
+  401 write `refused` trail rows (the 401 sampled, one a minute per share);
+  `contact.share_created` and `contact.share_can_write` audit rows.
 - **Fix.** The code alphabet of the retired team codes is 54 characters, not
   56; the new generator rejects bytes from the real length, so every
   character is equally likely.

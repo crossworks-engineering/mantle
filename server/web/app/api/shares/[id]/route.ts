@@ -1,6 +1,7 @@
 import { NextResponse } from '@/server/http-compat';
 import { z } from 'zod';
 import { getOwnerOr401 } from '@/lib/auth';
+import { auditFireAndForget, requestMetaFrom } from '@/lib/audit';
 import {
   getContactShare,
   setContactShareCanWrite,
@@ -28,6 +29,7 @@ const PatchBody = z.union([z.object({ mode: z.string() }), z.object({ canWrite: 
 
 /** PATCH /api/shares/[id] { canWrite } → "Can write" on a contact share of
  *  an app (contact shares, 0214); 400 `write-not-app` on another kind.
+ *  Audited (`contact.share_can_write`).
  *
  *  PATCH /api/shares/[id] { mode } → set the link's admission (owner-scoped).
  *  'public' is the only mode (a live link already is: this confirms it).
@@ -52,6 +54,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     const ok = await setContactShareCanWrite(user.id, id, parsed.data.canWrite);
     if (!ok) return NextResponse.json({ error: 'not found' }, { status: 404 });
+    auditFireAndForget({
+      actorId: user.actor.id,
+      actorEmail: user.actor.email,
+      action: 'contact.share_can_write',
+      method: 'PATCH',
+      path: '/api/shares/:id',
+      detail: { shareId: id, contactId: share.contactId, value: parsed.data.canWrite },
+      ...requestMetaFrom(req),
+    });
     return NextResponse.json({ ok: true, canWrite: parsed.data.canWrite });
   }
   const { mode } = parsed.data;

@@ -16,6 +16,7 @@
 import { contactCodeRequired, gateShare } from '@/lib/contact-share-gate';
 import { NextResponse } from '@/server/http-compat';
 import { rateLimit, clientIp } from '@/lib/rate-limit';
+import { recordShareAccess } from '@mantle/content';
 
 export async function POST(req: Request, ctx: { params: Promise<{ token: string }> }) {
   const { token } = await ctx.params;
@@ -32,10 +33,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   }
 
   const gate = await gateShare(req, token);
-  if (gate.kind === 'code') return contactCodeRequired();
+  if (gate.kind === 'code') return contactCodeRequired(gate.share);
   const share = gate.kind === 'ok' ? gate.share : null;
   if (!share || share.nodeType !== 'app') {
     return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });
+  }
+  if (share.contactId) {
+    recordShareAccess({
+      ownerId: share.ownerId,
+      shareId: share.id,
+      contactId: share.contactId,
+      kind: 'refused',
+      detail: { refused: 'tools' },
+    });
   }
 
   return NextResponse.json(

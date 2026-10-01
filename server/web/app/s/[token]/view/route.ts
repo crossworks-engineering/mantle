@@ -48,7 +48,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ token: string }
   }
 
   const gate = await gateShare(req, token);
-  if (gate.kind === 'code') return contactCodeRequired();
+  if (gate.kind === 'code') return contactCodeRequired(gate.share);
   const share = gate.kind === 'ok' ? gate.share : null;
   if (!share) return notFound();
 

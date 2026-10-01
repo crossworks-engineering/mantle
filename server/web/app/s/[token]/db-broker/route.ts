@@ -41,7 +41,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ token: string 
   }
 
   const gate = await gateShare(req, token);
-  if (gate.kind === 'code') return contactCodeRequired();
+  if (gate.kind === 'code') return contactCodeRequired(gate.share);
   const share = gate.kind === 'ok' ? gate.share : null;
   if (!share || share.nodeType !== 'app') {
     return NextResponse.json({ ok: false, error: 'not found' }, { status: 404 });

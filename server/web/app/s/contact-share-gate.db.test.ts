@@ -1,8 +1,9 @@
 /**
  * The /s layer of CONTACT shares on a real, migrated Postgres (contact
  * shares, migration 0214; docs/sharing.md, "Contact shares"). The routes run
- * as they are; only the app's SQLite, the export sync, the frame document,
- * the bundle bytes and the file bytes are stood in. Seeds its own brain.
+ * as they are; only the app's SQLite (appDbQuery, appDbExec), the export
+ * sync, the frame document, the bundle bytes and the file bytes are stood
+ * in. Seeds its own brain.
  *
  *  - Gate: a forwarded link with no cookie gets the prompt (401, no title,
  *    no contact name, no menu) and serves nothing (view, bundle, bundle css,
@@ -13,9 +14,10 @@
  *  - Code prompt: a good code sets the cookie; every failure is the same
  *    401 body; the per-address limit answers 429.
  *  - Brokers: Can write off is query only (exec 403 read-only); on, exec
- *    runs, the export sync is scheduled, client_written_at is marked, and
- *    the app's access log names the contact; the tool broker refuses every
- *    call.
+ *    runs, the export sync is scheduled, app_databases.client_written_at
+ *    is stamped, and the app's access log names the contact; the tool
+ *    broker refuses every call and logs a 'refused' row on a contact share;
+ *    a gate 401 logs a 'refused' row too, at most one per share a minute.
  *  - Embeds: a contact share of an ADMIN page serves the image the page
  *    embeds, refuses a file it does not; after a revoke, nothing.
  *  - Menu: the page of a contact share lists exactly that contact's live
@@ -34,7 +36,6 @@ const h = vi.hoisted(() => ({
   execs: 0,
   queries: 0,
   synced: 0,
-  marked: 0,
   frames: 0,
 }));
 
@@ -51,9 +52,8 @@ vi.mock('@mantle/content/app-broker', async (importOriginal) => {
       h.execs += 1;
       return { changes: 1 };
     }),
-    markAppClientWritten: vi.fn(async () => {
-      h.marked += 1;
-    }),
+    // The real helper: the test reads app_databases.client_written_at.
+    markAppClientWritten: real.markAppClientWritten,
   };
 });
 vi.mock('@mantle/content/app-table-exports', () => ({
@@ -198,6 +198,8 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
       insert into pages (node_id, doc) values (${page}, ${JSON.stringify(doc)}::jsonb)`);
     await m.db.execute(sqlTag`
       insert into apps (node_id, manifest, published_build) values (${app}, '{}'::jsonb, ${green}::jsonb)`);
+    await m.db.execute(sqlTag`
+      insert into app_databases (owner_id, app_node_id, storage_path) values (${owner}, ${app}, ${`apps/${app}.sqlite`})`);
     codeA = ((await content.enableContactSharing(owner, contactA)) as { code: string }).code;
     codeB = ((await content.enableContactSharing(owner, contactB)) as { code: string }).code;
     const [aPage] = await content.createContactShares(owner, page, [contactA]);
@@ -212,6 +214,7 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
   afterAll(async () => {
     await m.db.execute(sqlTag`delete from app_access_log where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from share_access_log where owner_id = ${owner}`);
+    await m.db.execute(sqlTag`delete from app_databases where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from shares where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from contact_share_codes where owner_id = ${owner}`);
     await m.db.execute(sqlTag`delete from nodes where owner_id = ${owner}`);
@@ -224,9 +227,25 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
     h.execs = 0;
     h.queries = 0;
     h.synced = 0;
-    h.marked = 0;
     h.frames = 0;
   });
+
+  /** The share's trail rows of one kind (the writes are fire-and-forget:
+   *  wait until `done` holds). */
+  type TrailRow = { detail: Record<string, unknown> };
+  const trail = async (shareToken: string, kind: string, done: (rows: TrailRow[]) => boolean) => {
+    let rows: TrailRow[] = [];
+    for (let i = 0; i < 100; i++) {
+      rows = (await m.db.execute(sqlTag`
+        select l.detail from share_access_log l join shares s on s.id = l.share_id
+         where s.token = ${shareToken} and l.kind = ${kind} and l.contact_id = s.contact_id`)) as unknown as {
+        detail: Record<string, unknown>;
+      }[];
+      if (done(rows)) break;
+      await new Promise((res) => setTimeout(res, 20));
+    }
+    return rows;
+  };
 
   /** Every /s route of `token` with this cookie: their statuses. */
   const everyRoute = async (token: string, cookie?: string) => {
@@ -276,6 +295,14 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
         });
       }
       expect(h.queries + h.execs + h.frames).toBe(0);
+      // The 401s land on the share's trail, sampled: one row per share a
+      // minute, though every route answered 401.
+      for (const token of [tok.aPage!, tok.aApp!]) {
+        await trail(token, 'refused', (rows) => rows.length >= 1);
+        await new Promise((res) => setTimeout(res, 100));
+        const rows = await trail(token, 'refused', () => true);
+        expect(rows.map((x) => x.detail)).toEqual([{ refused: 'code-required' }]);
+      }
     });
 
     it("contact B's cookie never opens contact A's link", async () => {
@@ -394,6 +421,11 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
           ),
           p({ token: tok.aApp! }),
         );
+      const [before] = (await m.db.execute(sqlTag`
+        select client_written_at as at from app_databases where app_node_id = ${app}`)) as unknown as {
+        at: Date | null;
+      }[];
+      expect(before?.at).toBeNull();
       const off = await exec();
       expect(off.status).toBe(403);
       expect(await off.json()).toMatchObject({ reason: 'read-only' });
@@ -411,7 +443,11 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
       expect(on.status).toBe(200);
       expect(h.execs).toBe(1);
       expect(h.synced).toBe(1);
-      expect(h.marked).toBe(1);
+      const [db] = (await m.db.execute(sqlTag`
+        select client_written_at as at from app_databases where app_node_id = ${app}`)) as unknown as {
+        at: Date | null;
+      }[];
+      expect(db?.at).not.toBeNull();
       let rows: Awaited<ReturnType<typeof content.listAppAccess>> = [];
       for (let i = 0; i < 100 && !rows.some((x) => x.detail.op === 'exec'); i++) {
         await new Promise((res) => setTimeout(res, 20));
@@ -430,6 +466,10 @@ describe.skipIf(!URL)('contact shares through /s on Postgres', () => {
         p({ token: tok.aApp! }),
       );
       expect(res.status).toBe(403);
+      const rows = await trail(tok.aApp!, 'refused', (all) =>
+        all.some((x) => x.detail.refused === 'tools'),
+      );
+      expect(rows.map((x) => x.detail)).toContainEqual({ refused: 'tools' });
     });
   });
 
