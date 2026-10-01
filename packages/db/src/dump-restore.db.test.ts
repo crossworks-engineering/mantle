@@ -248,7 +248,7 @@ describe.skipIf(!DB_URL || (!tools && !ci))('a dump of a migrated brain restores
   afterAll(async () => {
     for (const t of targets) await t.drop();
     await source?.drop();
-  });
+  }, 120_000);
 
   it('restores with no pg_restore error: every trigger, policy, function, constraint, index and row', async () => {
     const { target, errors, log } = await dumpAndRestore();

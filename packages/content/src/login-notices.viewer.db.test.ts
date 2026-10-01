@@ -160,7 +160,7 @@ describe.skipIf(!URL)('login notices: the event, who is told, the unread count',
     await m?.closeDb();
     await scratch?.drop();
     rmSync(root, { recursive: true, force: true });
-  });
+  }, 120_000);
 
   // ── Chat ────────────────────────────────────────────────────────────────
 

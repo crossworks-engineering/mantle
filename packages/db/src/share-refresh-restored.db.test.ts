@@ -147,7 +147,7 @@ describe.skipIf(!URL)('migration 0212: the share refresh trigger and the levels 
   afterAll(async () => {
     await sql?.end();
     await scratch?.drop();
-  });
+  }, 120_000);
 
   it('the migrated trigger compares the text of the path, and refreshes a share', async () => {
     const [t] = await sql<{ def: string }[]>`

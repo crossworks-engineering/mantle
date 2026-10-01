@@ -147,7 +147,7 @@ describe.skipIf(!URL)('needs you: the live event and the counts', () => {
     await m?.closeDb();
     await scratch?.drop();
     rmSync(root, { recursive: true, force: true });
-  });
+  }, 120_000);
 
   let pageId: string;
 
