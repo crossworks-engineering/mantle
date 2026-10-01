@@ -270,7 +270,34 @@ removing any one wrap fails a test.
   from migration 0187 on `agents_viewer_read`, `agents_client_read`,
   `tool_groups_viewer_read` and `tool_groups_client_read`. Each check applies
   once the dump's own migration ledger shows the migration that made it, so
-  an older pre-roll dump is judged by what its release had.
+  an older pre-roll dump is judged by what its release had. It also exits 2
+  when a trigger the dump lists (`pg_restore --list`) is not in the restored
+  database. When the checks pass but `pg_restore` reported an error the
+  script cannot explain, it finishes its steps and exits 3, and never says
+  "Restore complete": something in the dump did not restore.
+- **Restores made from migration 0204 up to 0210 lost one trigger.** 0204
+  made `nodes_share_refresh_after` with `IS DISTINCT FROM` on the ltree
+  `path` column. pg_dump cannot write that form so that pg_restore can run
+  it (`operator does not exist: public.ltree = public.ltree`), and the
+  script went on and said "Restore complete, WITH 1 pg_restore error(s)". A
+  brain restored that way no longer refreshed `inherited_level` below a
+  folder that was shared, unshared, moved or renamed: the rows below kept
+  the share they had, so an unshared folder's contents stayed readable at
+  the old share (docs/folder-tree.md, "Sharing a folder"). Nothing else was
+  lost, and a brain migrated in place never lost it. On a box whose
+  maintenance worker runs, the nightly `share-drift` sweep set those levels
+  right, so a stale level lived for about a day at most; the sweep's run
+  history shows whether a box was hit ("repaired n of n drifted row(s)").
+  Migration 0212 sets every stale level right once more and makes the
+  trigger again in a form a dump can carry (it compares the text of the
+  path), so such a brain is whole again on its next migrate. To see whether
+  a box has the trigger: `select count(*) from pg_trigger where tgname =
+  'nodes_share_refresh_after'` (1 is right). A dump from before 0212 still
+  gives the one error; the script now makes the trigger itself after such a
+  restore and does not count that error. From 0204 on it fails the restore
+  (exit 2) when the trigger is not there. `packages/db/src/dump-restore.db.test.ts`
+  dumps and restores a migrated brain and fails on any statement a restore
+  cannot run; `db-restore-run.db.test.ts` runs the script itself.
 - **Backups before a roll.** The updater takes a strict four-part backup
   (Postgres, app-dbs, table-dbs, spaces) into `backups/pre-roll/` before
   every server roll and refuses the roll when it fails (docs/update-prod.md).

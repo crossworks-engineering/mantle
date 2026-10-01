@@ -314,15 +314,19 @@ The standard way to move a brain to a new machine. Order matters:
 
 ```bash
 docker compose pull
-docker compose up -d postgres --wait     # init creates extensions + auth schema
+docker compose up -d postgres --wait
 scripts/db-restore.sh backups/mantle-<ts>.dump
 docker compose up -d --wait              # migrate is now a no-op
 ```
 
-Because the init scripts pre-create `auth`, `auth.users` and the extensions,
-`pg_restore` prints benign "already exists" notices for those, expected. The
-script doesn't trust the exit code; it verifies by counting `public.nodes`
-afterwards. It **refuses to restore over a populated brain**. It then puts the
+The script drops the init-made `postgres` database and restores into a
+pristine one, so `pg_restore` should print no error (a dump from before
+migration 0212 prints one, for a trigger the script then makes itself). It
+does not trust the exit code alone: it checks the logins, the role CHECK, the viewer policies
+and every trigger the dump lists (exit 2 when one is missing), and exits 3
+at its end when `pg_restore` reported an error it cannot explain
+([`backups.md`](./backups.md)). It **refuses to restore over a populated
+brain**. It then puts the
 members' personal-space files back: when `mantle-spaces-<ts>.tgz` with the
 dump's timestamp sits next to the dump, it is untarred into
 `$MANTLE_DATA_DIR/spaces` (read from the environment or `.env`, default

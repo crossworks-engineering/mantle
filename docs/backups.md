@@ -91,9 +91,20 @@ docker compose up -d --wait
 `db-restore.sh` drops the init-made `postgres` database and restores into a
 pristine one, so the init scripts do not matter to a restore. It refuses a
 target that already holds items or logins. After the restore it checks the
-logins, the login role CHECK and the viewer row policies. Exit code 2 means
-the restore is not usable: do not start the app. Read the `pg_restore`
-errors it printed, fix the cause, drop the database and run it again.
+logins, the login role CHECK, the viewer row policies and every trigger the
+dump lists. Exit code 2 means the restore is not usable: do not start the
+app. Read the `pg_restore` errors it printed, fix the cause, drop the
+database and run it again. Exit code 3 means the checks passed and every
+step ran, but `pg_restore` reported an error the script cannot explain:
+find what did not restore before you start the app. On exit 2 and 3 the
+full `pg_restore` output is kept; the script prints where.
+
+A dump taken before migration 0212 always gives one `pg_restore` error (the
+folder share refresh trigger; docs/access-levels.md, section 6). The script
+makes that trigger itself and does not count the error. A dump of a brain
+that had already lost the trigger can carry stale folder share levels:
+migration 0212 repairs them at the next migrate, and under a release before
+0212 the nightly `share-drift` sweep does.
 
 `db-restore.sh` also puts members' personal-space files back from the
 `mantle-spaces-<ts>.tgz` beside the dump (into `${MANTLE_DATA_DIR}/spaces`,

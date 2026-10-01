@@ -4,6 +4,46 @@ Notable changes per release. Releases are tagged `vX.Y.Z`; every tag builds
 the `linux/amd64` image (`titanwest/mantle:vX.Y.Z`) and attaches the matching
 deploy bundle. Entries begin at v0.103.0 — earlier history lives in git.
 
+## 0.232.370: a restored brain keeps its folder share refresh
+
+Every `pg_restore` of a dump taken at migration 0204 or later gave one
+error (`operator does not exist: public.ltree = public.ltree`) and the
+restored brain had no `nodes_share_refresh_after` trigger: 0204 compared the
+ltree `path` column with `IS DISTINCT FROM` in the trigger's WHEN clause, a
+form pg_dump cannot write so that a restore can run it. On such a brain a
+folder share, unshare, move or rename no longer reached the rows below the
+folder (an unshare failed open). `scripts/db-restore.sh` went on and said
+"Restore complete, WITH 1 pg_restore error(s)". A brain migrated in place
+never lost the trigger.
+
+- **Migration 0212** (`0212_restorable_share_refresh_trigger.sql`,
+  idempotent) locks `nodes`, sets every stale `inherited_level` right (a
+  brain that never lost the trigger is not written) and makes the trigger
+  again on the text of the path, which a dump can carry. A brain restored
+  without the trigger is repaired on its next migrate. Where the
+  maintenance worker runs, the nightly `share-drift` sweep had already
+  bounded a stale level to about a day; its run history shows whether a box
+  was hit. To check a box: `select count(*) from pg_trigger where tgname =
+  'nodes_share_refresh_after'` (1 is right). A "lock timeout" on 0212 in a
+  roll means a long transaction held `nodes`: run the roll again.
+- **`scripts/db-restore.sh`** checks every trigger the dump lists
+  (`pg_restore --list`) and exits 2, without "Restore complete", when one is
+  missing. After a dump from before 0212 it makes the one trigger such a
+  dump cannot carry, as 0212 does, and from 0204 on it fails the restore
+  when that trigger is not there. It exits 3, after its last step, when
+  `pg_restore` reported an error it cannot explain; it never says "Restore
+  complete" over one. On exit 2 and 3 the full `pg_restore` output is kept.
+- **Tests.** `packages/db/src/dump-restore.db.test.ts` dumps a migrated
+  brain with a few rows (`pg_dump -Fc`), restores it into an empty database
+  and asks for no `pg_restore` error and the same triggers, policies,
+  functions, constraints, indexes and rows on both sides; it also proves
+  that 0204's own trigger is lost that way. `share-refresh-restored.db.test.ts`
+  proves the repair, and `db-restore-run.db.test.ts` runs the restore script
+  against six dumps (exit 0, 2 and 3). No other stored expression in the
+  schema has the pattern.
+
+docs/access-levels.md, section 6.
+
 ## 0.232.368: the team and client Apps launchers get the folders
 
 `GET /api/member/apps` and `GET /api/client/apps` answer `folders` next to

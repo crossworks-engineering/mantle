@@ -27,7 +27,15 @@
  *    nodes. Such a test runs on a database of its own, migrated from scratch
  *    and dropped after, so it shares no table with anything running in
  *    parallel.
+ *  - createEmptyScratchDatabase: the same database before anything is put in
+ *    it (no init scripts, no migration): what a dump is restored into
+ *    (dump-restore.db.test.ts).
+ *  - findPgTools: pg_dump and pg_restore must be at least as new as the
+ *    server. CI and the workstation run Postgres in a local Docker
+ *    container, so the tests that dump and restore use the tools inside
+ *    that container, and a host install only when there is none.
  */
+import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -193,17 +201,11 @@ async function createDatabase(adminUrl: string, name: string): Promise<void> {
 }
 
 /**
- * A new database on the same server as `adminUrl`, prepared the way CI's
- * throwaway database is (infra/postgres/init, then every migration, each in
- * its own transaction, then the access matrix's grants, as migrate.ts runs
- * them). Returns its URL and a
- * `drop()` that removes it, open connections included.
- *
- * The viewer roles are cluster-wide and already exist wherever the shared
- * test database was migrated; a missing one is created without a login
- * (never altered: other test files hold live connections on them).
+ * A new, empty database on the same server as `adminUrl` (a copy of
+ * template1: no init script, no migration). Returns its URL and a `drop()`
+ * that removes it, open connections included.
  */
-export async function createMigratedScratchDatabase(
+export async function createEmptyScratchDatabase(
   adminUrl: string,
 ): Promise<{ url: string; name: string; drop: () => Promise<void> }> {
   const name = `mantle_scratch_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
@@ -217,6 +219,24 @@ export async function createMigratedScratchDatabase(
       await sql.end();
     }
   };
+  return { url, name, drop };
+}
+
+/**
+ * A new database on the same server as `adminUrl`, prepared the way CI's
+ * throwaway database is (infra/postgres/init, then every migration, each in
+ * its own transaction, then the access matrix's grants, as migrate.ts runs
+ * them). Returns its URL and a
+ * `drop()` that removes it, open connections included.
+ *
+ * The viewer roles are cluster-wide and already exist wherever the shared
+ * test database was migrated; a missing one is created without a login
+ * (never altered: other test files hold live connections on them).
+ */
+export async function createMigratedScratchDatabase(
+  adminUrl: string,
+): Promise<{ url: string; name: string; drop: () => Promise<void> }> {
+  const { url, name, drop } = await createEmptyScratchDatabase(adminUrl);
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
   try {
     const initFiles = readdirSync(INIT_DIR)
@@ -288,4 +308,72 @@ export async function withTestLock<T>(url: string, name: string, fn: () => Promi
     await sql`select pg_advisory_unlock_all()`.catch(() => {});
     await sql.end();
   }
+}
+
+export type PgToolRun = { status: number | null; stdout: Buffer; stderr: string };
+export type PgTools = {
+  /** The local Docker container the tools run in; null for a host install. */
+  container: string | null;
+  /** Run pg_dump or pg_restore against database `db` of the test server. */
+  run(tool: 'pg_dump' | 'pg_restore', db: string, args: string[], input?: Buffer): PgToolRun;
+};
+
+/** Run a command to its end; a command that is not there gives status null. */
+export function runCommand(
+  cmd: string,
+  args: string[],
+  opts: { env?: NodeJS.ProcessEnv; input?: Buffer; cwd?: string } = {},
+): PgToolRun {
+  const r = spawnSync(cmd, args, { ...opts, maxBuffer: 256 * 1024 * 1024 });
+  return { status: r.status, stdout: r.stdout ?? Buffer.alloc(0), stderr: String(r.stderr ?? '') };
+}
+
+/**
+ * pg_dump and pg_restore for the server at `url`: the ones inside the local
+ * Docker container that publishes the URL's port (`containerName` names
+ * another one: the tests pass MANTLE_TEST_PG_CONTAINER), else a host install
+ * (one older than the server refuses to dump, and says so), else null.
+ */
+export function findPgTools(url: string, containerName?: string): PgTools | null {
+  const u = new URL(url);
+  const user = decodeURIComponent(u.username) || 'postgres';
+  const port = u.port || '5432';
+  const env = { ...process.env, PGPASSWORD: decodeURIComponent(u.password) };
+
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname);
+  const publishing = local
+    ? runCommand('docker', ['ps', '--format', '{{.Names}}\t{{.Ports}}'], { env })
+        .stdout.toString()
+        .split('\n')
+        .filter((l) => new RegExp(`:${port}->\\d+/tcp`).test(l))
+        .map((l) => l.split('\t')[0]!)
+    : [];
+  const container = containerName ?? (publishing.length === 1 ? publishing[0]! : null);
+  if (
+    container &&
+    runCommand('docker', ['exec', container, 'pg_dump', '--version'], { env }).status === 0
+  ) {
+    // Its own tools match its server, and the local socket needs no host or
+    // port.
+    return {
+      container,
+      run: (tool, db, args, input) =>
+        runCommand(
+          'docker',
+          ['exec', '-i', '-e', 'PGPASSWORD', container, tool, '-U', user, '-d', db, ...args],
+          { env, input },
+        ),
+    };
+  }
+  if (runCommand('pg_dump', ['--version'], { env }).status === 0) {
+    return {
+      container: null,
+      run: (tool, db, args, input) =>
+        runCommand(tool, ['-h', u.hostname, '-p', port, '-U', user, '-d', db, ...args], {
+          env,
+          input,
+        }),
+    };
+  }
+  return null;
 }

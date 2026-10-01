@@ -573,8 +573,9 @@ migration is forward-only, so to undo one, restore the pre-update dump into a
 fresh DB (deploy.md §3b–c). The updater's dumps are in `backups/pre-roll/`
 (newest three), restored with `scripts/db-restore.sh` like any other. It
 restores into a pristine database and exits 2, without "Restore complete",
-when the result has no logins, no role CHECK or a missing viewer policy:
-do not start the app then.
+when the result has no logins, no role CHECK, a missing viewer policy or a
+missing trigger: do not start the app then. It exits 3 when the checks pass
+but `pg_restore` reported an error it cannot explain (docs/backups.md).
 
 **Rollback floors.** Pinning an older tag is safe only while that code still
 matches the schema. Never roll back below:
