@@ -72,8 +72,11 @@ unset MANTLE_DETACHED_DEV NEXT_PUBLIC_MANTLE_API_BASE NEXT_PUBLIC_MANTLE_API_TOK
 #   install -m 600 /dev/null ~/.mantle-demo-openrouter-key
 #   $EDITOR ~/.mantle-demo-openrouter-key     # paste the key, nothing else
 #
-# Without it the seed still runs; extraction produces nothing and verify.ts
-# fails with that exact diagnosis.
+# It is REQUIRED since main v0.232.366: onboarding's `finish` refuses a brain
+# with no assistant ("add an OpenRouter API key and run Set up"), and Set up
+# cannot make one from a placeholder key. Until then a keyless seed ran and
+# only verify.ts complained. So a missing key stops here, before the stack
+# comes up, with the reason.
 KEY_FILE="${DEMO_KEY_FILE:-$HOME/.mantle-demo-openrouter-key}"
 if [ -z "${DEMO_OPENROUTER_KEY:-}" ] && [ -r "$KEY_FILE" ]; then
   DEMO_OPENROUTER_KEY="$(tr -d '[:space:]' < "$KEY_FILE")"
@@ -82,8 +85,9 @@ fi
 if [ -n "${DEMO_OPENROUTER_KEY:-}" ]; then
   echo "→ chat model: key loaded (${#DEMO_OPENROUTER_KEY} chars) — extraction will run"
 else
-  echo "⚠ no chat-model key: content will seed but extraction produces nothing."
-  echo "  See the KEY_FILE note in this script."
+  echo "✗ no chat-model key: the brain refuses to finish onboarding without one, so nothing can be seeded." >&2
+  echo "  Put the key in $KEY_FILE (see the note in this script), or set DEMO_OPENROUTER_KEY." >&2
+  exit 1
 fi
 
 web_pid_file="$ART/web.pid"; web_log="$ART/web.log"

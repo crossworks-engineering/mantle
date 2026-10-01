@@ -128,8 +128,10 @@ chat model**. Without one, content lands but the brain does not — content
 present, brain absent, which is exactly v1's failure shape. `verify.ts` says so
 in those words when derived data is zero.
 
-Set `DEMO_OPENROUTER_KEY` before seeding to give the extractor a working model.
-The bootstrap otherwise saves a placeholder key so onboarding can complete.
+Set `DEMO_OPENROUTER_KEY` before seeding (or keep the key in the file
+`seed.sh` names). It is required: on main, onboarding's `finish` refuses a
+brain with no assistant, and Set up cannot make one from a placeholder key.
+`seed.sh` stops before it brings the stack up when there is no key.
 
 ## Layer-2 assertions
 

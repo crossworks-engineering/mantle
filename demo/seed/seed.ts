@@ -132,13 +132,12 @@ async function bootstrap() {
   }
   const shell = await (await api('/api/shell')).json();
   if (shell.onboarded === false) {
-    // A real key is only needed for P4 (scripted turns). Extraction needs a
-    // working chat model too — DEMO_OPENROUTER_KEY supplies one when present.
-    await post('/api/onboarding', {
-      action: 'saveKey',
-      service: 'openrouter',
-      plaintext: process.env.DEMO_OPENROUTER_KEY ?? 'sk-or-v1-demo-placeholder-key-not-used',
-    });
+    // A REAL key: `finish` refuses a brain with no assistant, and `provision`
+    // cannot make one from a placeholder (main v0.232.366). seed.sh stops
+    // before this when there is none; a direct run gets the reason here.
+    const key = process.env.DEMO_OPENROUTER_KEY;
+    if (!key) throw new Error('bootstrap: DEMO_OPENROUTER_KEY is not set, and the brain will not finish onboarding without a working chat key');
+    await post('/api/onboarding', { action: 'saveKey', service: 'openrouter', plaintext: key });
     await post('/api/onboarding', { action: 'provision' });
     const fin = await post('/api/onboarding', { action: 'finish' });
     if ((fin as { ok?: boolean }).ok !== true)
